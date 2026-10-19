@@ -176,12 +176,12 @@ public sealed unsafe class CommandList
     /// <summary>Begins this list's command buffer as a secondary that continues a rendering of <paramref name="formats"/> (the dynamic-rendering inheritance).</summary>
     internal void BeginSecondary(in AttachmentFormats formats)
     {
-        var colours = stackalloc Format[2] { formats.Colour, formats.Extra };
+        var colours = stackalloc Format[2] { GlConventions.VkFormatOrUndefined(formats.Colour), GlConventions.VkFormatOrUndefined(formats.Extra) };
         var rendering = new CommandBufferInheritanceRenderingInfo
         {
             SType = StructureType.CommandBufferInheritanceRenderingInfo,
-            ColorAttachmentCount = formats.Colour == Format.Undefined ? 0u : formats.Extra == Format.Undefined ? 1u : 2u, PColorAttachmentFormats = colours,
-            DepthAttachmentFormat = formats.Depth, StencilAttachmentFormat = Format.Undefined,
+            ColorAttachmentCount = formats.Colour == InternalFormat.None ? 0u : formats.Extra == InternalFormat.None ? 1u : 2u, PColorAttachmentFormats = colours,
+            DepthAttachmentFormat = GlConventions.VkFormatOrUndefined(formats.Depth), StencilAttachmentFormat = Format.Undefined,
             RasterizationSamples = (SampleCountFlags)Math.Max(formats.Samples, 1),
         };
         var inheritance = new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, PNext = &rendering };

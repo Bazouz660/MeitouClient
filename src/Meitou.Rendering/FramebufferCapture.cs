@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Data.Textures;
 
 using Meitou.Rendering.Gpu;
@@ -29,7 +30,7 @@ public static unsafe class FramebufferCapture
     public static byte[] Read(GpuContext ctx, Texture target, int w, int h)
     {
         var d = target.Desc;
-        if (d.Format != Vk.Format.R8G8B8A8Unorm || d.Samples != 1 || d.Width < w || d.Height < h)
+        if (d.Format != InternalFormat.Rgba8 || d.Samples != 1 || d.Width < w || d.Height < h)
             throw new ArgumentException($"a capture reads an RGBA8 single-sample target of at least {w} x {h} ({d.Format}, {d.Samples} samples, {d.Width} x {d.Height})");
         ctx.Finish();   // submits the frame so far and waits for it (the readback below is outside the frame)
         var device = ctx.Device;

@@ -324,7 +324,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     // ---- vertex input ----
 
     /// <summary>A GL vertex attribute as the legacy model feeds it: the buffer range, its format, stride (0 = tightly packed, as GL) and divisor.</summary>
-    public readonly record struct Attribute(BufferBinding Buffer, Format Format, uint Stride, bool PerInstance);
+    public readonly record struct Attribute(BufferBinding Buffer, InternalFormat Format, uint Stride, bool PerInstance);
 
     /// <summary>
     /// The vertex layout VkGl packs for this program (<c>VkGl.PrepareDraw</c>): for each input location, the attribute's format, its stride

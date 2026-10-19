@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu.Core;
@@ -141,15 +142,15 @@ public sealed unsafe class FsrUpscaler : IUpscaler
         context = 0;
     }
 
-    static uint SurfaceFormat(Format f) => f switch
+    static uint SurfaceFormat(InternalFormat f) => f switch
     {
-        Format.R16G16B16A16Sfloat => 4,
-        Format.R32G32B32A32Sfloat => 3,
-        Format.R16G16Sfloat => 18,
-        Format.R32Sfloat => 28,
-        Format.R8G8B8A8Unorm => 10,
-        Format.R8Unorm => 25,
-        Format.B10G11R11UfloatPack32 => 16,
+        InternalFormat.Rgba16f => 4,
+        InternalFormat.Rgba32f => 3,
+        InternalFormat.RG16f => 18,
+        InternalFormat.R32f => 28,
+        InternalFormat.Rgba8 => 10,
+        InternalFormat.R8 => 25,
+        InternalFormat.R11fG11fB10f => 16,
         _ => 0,
     };
 

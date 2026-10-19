@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
@@ -122,7 +123,7 @@ public sealed unsafe class AccelerationStructure : IDisposable
                     Triangles = new AccelerationStructureGeometryTrianglesDataKHR
                     {
                         SType = StructureType.AccelerationStructureGeometryTrianglesDataKhr,
-                        VertexFormat = Format.R32G32B32Sfloat,
+                        VertexFormat = GlConventions.VkFormat(InternalFormat.Rgb32f),
                         VertexData = new DeviceOrHostAddressConstKHR { DeviceAddress = g.VertexAddress },
                         VertexStride = g.VertexStride,
                         MaxVertex = Math.Max(g.VertexCount, 1) - 1,

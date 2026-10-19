@@ -144,7 +144,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             batch.Write(gridVertices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(grid.AsSpan()));
             batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(gridIndexData.AsSpan()));
         }
-        gridVertex = new LegacyProgram.Attribute(new BufferBinding(gridVertices.Handle, 0, gridVertices.Size), Silk.NET.Vulkan.Format.R32G32Sfloat, 8, false);
+        gridVertex = new LegacyProgram.Attribute(new BufferBinding(gridVertices.Handle, 0, gridVertices.Size), InternalFormat.RG32f, 8, false);
         gridElements = new BufferBinding(gridIndices.Handle, 0, gridIndices.Size);
     }
 
@@ -158,7 +158,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// <summary>A height texture (GL's R16, one level, linear, clamped) through <paramref name="batch"/>, with <paramref name="raw"/> written when given.</summary>
     TerrainTexture HeightTexture(UploadBatch batch, ushort[]? raw, int width, int height)
     {
-        var t = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.R16), width, height, Name: "terrain heights"));
+        var t = batch.Create(new TextureDesc(InternalFormat.R16, width, height, Name: "terrain heights"));
         if (raw is not null) batch.Write(t, 0, 0, Rect(0, 0, width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(raw.AsSpan(0, width * height)));
         return new TerrainTexture(gpu, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
     }
@@ -1147,7 +1147,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         va.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, 64, true);
+            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
         n.Layout = p.VertexLayout(attributes);
         n.VertexCount = p.Own;
         p.Buffers(attributes, n.Vertices);

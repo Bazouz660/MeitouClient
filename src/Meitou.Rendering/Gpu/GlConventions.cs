@@ -16,15 +16,27 @@ public static class GlConventions
     {
         GLEnum.Rgba8 or GLEnum.Rgba => Format.R8G8B8A8Unorm,
         GLEnum.Rgb8 or GLEnum.Rgb => Format.R8G8B8A8Unorm,
+        GLEnum.Srgb8Alpha8 => Format.R8G8B8A8Srgb,
         GLEnum.R8 => Format.R8Unorm,
+        GLEnum.R8ui => Format.R8Uint,
         GLEnum.RG8 => Format.R8G8Unorm,
+        GLEnum.RG16 => Format.R16G16Unorm,
         GLEnum.R16 => Format.R16Unorm,
+        GLEnum.R16ui => Format.R16Uint,
+        GLEnum.R16i => Format.R16Sint,
         GLEnum.R16f => Format.R16Sfloat,
         GLEnum.RG16f => Format.R16G16Sfloat,
+        GLEnum.Rgba16 => Format.R16G16B16A16Unorm,
         GLEnum.Rgba16f => Format.R16G16B16A16Sfloat,
+        GLEnum.Rgba16ui => Format.R16G16B16A16Uint,
         GLEnum.R32f => Format.R32Sfloat,
+        GLEnum.R32ui => Format.R32Uint,
+        GLEnum.R32i => Format.R32Sint,
         GLEnum.RG32f => Format.R32G32Sfloat,
+        GLEnum.Rgb32f => Format.R32G32B32Sfloat,
         GLEnum.Rgba32f => Format.R32G32B32A32Sfloat,
+        GLEnum.Rgba32ui => Format.R32G32B32A32Uint,
+        GLEnum.Rgba32i => Format.R32G32B32A32Sint,
         GLEnum.R11fG11fB10f => Format.B10G11R11UfloatPack32,
         GLEnum.Rgba8ui => Format.R8G8B8A8Uint,
         GLEnum.DepthComponent24 or GLEnum.DepthComponent => Format.D32Sfloat,   // engine choice: 32-bit float depth for GL's 24-bit (same or finer)
@@ -39,10 +51,15 @@ public static class GlConventions
         _ => throw new NotSupportedException($"texture format {f}"),
     };
 
-    public static bool IsDepthFormat(Format f) => f is Format.D32Sfloat or Format.D24UnormS8Uint or Format.X8D24UnormPack32 or Format.D16Unorm;
+    /// <summary>The Vulkan format of a GL internal format, or <c>Undefined</c> for none (an attachment that is not there).</summary>
+    public static Format VkFormatOrUndefined(InternalFormat f) => f == InternalFormat.None ? Format.Undefined : VkFormat(f);
+
+    /// <summary>Whether the format is a depth buffer (with or without a stencil).</summary>
+    public static bool IsDepthFormat(InternalFormat f) => f is InternalFormat.DepthComponent24 or InternalFormat.DepthComponent32f
+        or InternalFormat.Depth24Stencil8 or InternalFormat.Depth16;
 
     /// <summary>Formats sampled with nearest filtering and integer border colours.</summary>
-    public static bool IsIntegerFormat(Format f) => f is Format.R8G8B8A8Uint or Format.R32Uint or Format.R16Uint;
+    public static bool IsIntegerFormat(InternalFormat f) => f is InternalFormat.Rgba8ui or InternalFormat.R32ui or InternalFormat.R16ui or InternalFormat.R8ui;
 
     public static BlendFactor BlendFactor(BlendingFactor f) => f switch
     {
@@ -150,20 +167,19 @@ public static class GlConventions
     public static Viewport VkViewport(PixelViewport v) => new(v.X, v.Y, v.Width, v.Height, v.MinDepth, v.MaxDepth);
 
     /// <summary>The Vulkan format of a GL vertex attribute (<c>glVertexAttribPointer</c> / <c>glVertexAttribIPointer</c>).</summary>
-    public static Format VertexFormat(GLEnum type, int size, bool normalized, bool integer) => (type, size, normalized, integer) switch
+    public static InternalFormat VertexFormat(GLEnum type, int size, bool normalized, bool integer) => (type, size, normalized, integer) switch
     {
-        (GLEnum.Float, 1, _, _) => Format.R32Sfloat,
-        (GLEnum.Float, 2, _, _) => Format.R32G32Sfloat,
-        (GLEnum.Float, 3, _, _) => Format.R32G32B32Sfloat,
-        (GLEnum.Float, 4, _, _) => Format.R32G32B32A32Sfloat,
-        (GLEnum.UnsignedByte, 4, true, false) => Format.R8G8B8A8Unorm,
-        (GLEnum.UnsignedByte, 4, false, true) => Format.R8G8B8A8Uint,
-        (GLEnum.UnsignedByte, 4, false, false) => Format.R8G8B8A8Uscaled,
-        (GLEnum.UnsignedShort, 2, true, false) => Format.R16G16Unorm,
-        (GLEnum.UnsignedShort, 4, true, false) => Format.R16G16B16A16Unorm,
-        (GLEnum.UnsignedShort, 4, false, true) => Format.R16G16B16A16Uint,
-        (GLEnum.Int, 1, _, true) => Format.R32Sint,
-        (GLEnum.UnsignedInt, 1, _, true) => Format.R32Uint,
+        (GLEnum.Float, 1, _, _) => InternalFormat.R32f,
+        (GLEnum.Float, 2, _, _) => InternalFormat.RG32f,
+        (GLEnum.Float, 3, _, _) => InternalFormat.Rgb32f,
+        (GLEnum.Float, 4, _, _) => InternalFormat.Rgba32f,
+        (GLEnum.UnsignedByte, 4, true, false) => InternalFormat.Rgba8,
+        (GLEnum.UnsignedByte, 4, false, true) => InternalFormat.Rgba8ui,
+        (GLEnum.UnsignedShort, 2, true, false) => InternalFormat.Rg16,
+        (GLEnum.UnsignedShort, 4, true, false) => InternalFormat.Rgba16,
+        (GLEnum.UnsignedShort, 4, false, true) => InternalFormat.Rgba16ui,
+        (GLEnum.Int, 1, _, true) => InternalFormat.R32i,
+        (GLEnum.UnsignedInt, 1, _, true) => InternalFormat.R32ui,
         _ => throw new NotSupportedException($"vertex attribute {type} x{size} normalized {normalized} integer {integer}"),
     };
 
@@ -177,11 +193,11 @@ public static class GlConventions
 
     /// <summary>The format a disabled vertex attribute is read with (GL's current generic value (0, 0, 0, 1), from <see cref="GpuDefaults.DummyVertex"/>:
     /// float at offset 0, integer at <see cref="GpuDefaults.DummyIntOffset"/>).</summary>
-    public static Format DummyVertexFormat(ScalarKind kind) => kind switch
+    public static InternalFormat DummyVertexFormat(ScalarKind kind) => kind switch
     {
-        ScalarKind.Int => Format.R32G32B32A32Sint,
-        ScalarKind.UInt or ScalarKind.Bool => Format.R32G32B32A32Uint,
-        _ => Format.R32G32B32A32Sfloat,
+        ScalarKind.Int => InternalFormat.Rgba32i,
+        ScalarKind.UInt or ScalarKind.Bool => InternalFormat.Rgba32ui,
+        _ => InternalFormat.Rgba32f,
     };
 
     /// <summary>The dummy vertex buffer offset a disabled attribute of this kind reads.</summary>
@@ -318,6 +334,7 @@ public enum GLEnum : int
     R8 = 0x8229,
     R16 = 0x822A,
     RG8 = 0x822B,
+    RG16 = 0x822C,
     R16f = 0x822D,
     R32f = 0x822E,
     RG16f = 0x822F,
@@ -333,26 +350,58 @@ public enum GLEnum : int
     Rgba8ui = 0x8D7C,
     CompressedRedRgtc1 = 0x8DBB,
     CompressedRGRgtc2 = 0x8DBD,
+    Srgb8Alpha8 = 0x8C43,
+    Rgba16 = 0x805A,
+    R8ui = 0x8232,
+    Rg16 = 0x822C,
+    R16ui = 0x8234,
+    R16i = 0x8239,
+    R32i = 0x8235,
+    R32ui = 0x8236,
+    Rgba16ui = 0x8D76,
+    Rgba32ui = 0x8D70,
+    Rgba32i = 0x8D82,
+    Rgb32f = 0x8815,
+
 }
 
 public enum InternalFormat : int
 {
+    None = 0,
     Rgba8 = 0x8058,
+    Rgba16 = 0x805A,
     DepthComponent24 = 0x81A6,
     R8 = 0x8229,
     R16 = 0x822A,
+    R16f = 0x822D,
     R32f = 0x822E,
     RG16f = 0x822F,
     RG32f = 0x8230,
+    R8ui = 0x8232,
+    Rg16 = 0x822C,
+    R16ui = 0x8234,
+    R16i = 0x8239,
+    R32i = 0x8235,
+    R32ui = 0x8236,
     CompressedRgbS3TCDxt1Ext = 0x83F0,
     CompressedRgbaS3TCDxt1Ext = 0x83F1,
     CompressedRgbaS3TCDxt3Ext = 0x83F2,
     CompressedRgbaS3TCDxt5Ext = 0x83F3,
     Rgba32f = 0x8814,
+    Rgb32f = 0x8815,
     Rgba16f = 0x881A,
     R11fG11fB10f = 0x8C3A,
+    Srgb8Alpha8 = 0x8C43,
     DepthComponent32f = 0x8CAC,
+    Depth24Stencil8 = 0x88F0,
     Rgba8ui = 0x8D7C,
+    Rgba16ui = 0x8D76,
+    Rgba32ui = 0x8D70,
+    Rgba32i = 0x8D82,
+    CompressedRedRgtc1 = 0x8DBB,
+    CompressedRGRgtc2 = 0x8DBD,
+    Depth16 = 0x81A5,
+    Depth32fStencil8 = 0x8CAD,
 }
 
 public enum PrimitiveType : int

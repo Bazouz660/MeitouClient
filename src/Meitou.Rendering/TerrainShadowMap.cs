@@ -49,11 +49,11 @@ sealed unsafe class TerrainShadowMap : IDisposable
             TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0));
         using (var batch = gpu.Uploads.Begin())
         {
-            heights = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.R16), size, size, Name: "terrain shadow map heights"));
+            heights = batch.Create(new TextureDesc(InternalFormat.R16, size, size, Name: "terrain shadow map heights"));
             batch.Write(heights, 0, 0, new PixelRect(0, 0, (uint)size, (uint)size),
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(coarse.AsSpan(0, size * size)));
             for (int i = 0; i < 2; i++)
-                targets[i] = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.RG32f), size, size,
+                targets[i] = batch.Create(new TextureDesc(InternalFormat.RG32f, size, size,
                     Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "terrain shadow map"));
         }
         heightsSampled = new SampledTexture(linear, heights.View(), heights.Image);
@@ -62,7 +62,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
         sweep = LegacyProgram.Create(gpu, ShadowShaders.FullscreenVertex, MeitouShadowShaders.SweepFragment, "terrain shadow sweep");
         (sourceSlot, uSize, uFirst, uStep, uDrop, uDistance) = (sweep.Sampler("uSource"), sweep.Uniform("uSize"), sweep.Uniform("uFirst"),
             sweep.Uniform("uStep"), sweep.Uniform("uDrop"), sweep.Uniform("uDistance"));
-        format = new AttachmentFormats(targets[0].Desc.Format, Silk.NET.Vulkan.Format.Undefined);
+        format = new AttachmentFormats(targets[0].Desc.Format, InternalFormat.None);
         // What VkGl made of the GL state the sweep set (no culling, depth or blending; all channels; filled).
         state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal,
             false, 0, 0, BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B |

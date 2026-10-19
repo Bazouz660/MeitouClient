@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Data.Textures;
 
 using Meitou.Rendering.Gpu;
@@ -504,7 +505,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     static int FullChain(int w, int h) => 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(w, h), 1)));
 
     /// <summary>A new image with <paramref name="levels"/> levels in GENERAL layout (the transition in the frame's upload commands, before the copies).</summary>
-    Texture Create(Format format, int width, int height, int levels, bool mipmaps) =>
+    Texture Create(InternalFormat format, int width, int height, int levels, bool mipmaps) =>
         Texture.Create(gpu, new TextureDesc(format, width, height, levels,
             Use: TextureUse.Sampled | TextureUse.TransferDst | (mipmaps ? TextureUse.TransferSrc : 0), Name: allocationName), gpu.Frame.PreFrame.Handle);
 
@@ -516,14 +517,14 @@ public sealed unsafe class WorldTextureCache : IDisposable
     {
         var dds = data.Compressed!;
         t.Swizzled = data.Swizzled;
-        var format = GlConventions.VkFormat(dds.Format switch
+        var format = dds.Format switch
         {
             DdsFormat.Bc1 => InternalFormat.CompressedRgbaS3TCDxt1Ext,
             DdsFormat.Bc2 => InternalFormat.CompressedRgbaS3TCDxt3Ext,
-            DdsFormat.Bc4 => (InternalFormat)0x8DBB,   // COMPRESSED_RED_RGTC1
-            DdsFormat.Bc5 => (InternalFormat)0x8DBD,   // COMPRESSED_RG_RGTC2
+            DdsFormat.Bc4 => InternalFormat.CompressedRedRgtc1,
+            DdsFormat.Bc5 => InternalFormat.CompressedRGRgtc2,
             _ => InternalFormat.CompressedRgbaS3TCDxt5Ext,
-        });
+        };
         int blockBytes = BlockCompression.BlockBytes(dds.Format);
         Texture? texture = null;
         steps.Enqueue(() => texture = Create(format, dds.Width, dds.Height, FullChain(dds.Width, dds.Height), mipmaps: false));
@@ -570,7 +571,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
         bool generate = tex.Levels.Count == 1 || tex.Levels[^1].Width > 1 || tex.Levels[^1].Height > 1;
         int uploaded = generate ? 1 : Math.Min(tex.Levels.Count, chain);
         Texture? texture = null;
-        steps.Enqueue(() => texture = Create(Format.R8G8B8A8Unorm, top.Width, top.Height, chain, mipmaps: generate));
+        steps.Enqueue(() => texture = Create(InternalFormat.Rgba8, top.Width, top.Height, chain, mipmaps: generate));
         for (int level = 0; level < uploaded; level++)
         {
             var img = tex.Levels[level];

@@ -49,7 +49,7 @@ public class NativeHostTests
         """;
 
     static Texture Target(GpuContext ctx) =>
-        Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "native host test"));
+        Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "native host test"));
 
     static (byte, byte, byte, byte) At(byte[] p, int x, int y)
     {

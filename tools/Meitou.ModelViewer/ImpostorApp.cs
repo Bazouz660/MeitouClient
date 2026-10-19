@@ -293,9 +293,9 @@ static class ImpostorApp
         frames.Open();
         var cmd = gpu.Frame.PreFrame;
         var pre = cmd.Handle;
-        using var colour = Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
-        using var depth = Texture.Create(gpu, new TextureDesc(Format.D32Sfloat, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
-        using var resolved = Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var colour = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var depth = Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
+        using var resolved = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
         var formats = new AttachmentFormats(colour.Desc.Format, depth.Desc.Format, 4);
         cmd.Barrier(BarrierBatch.Full);
         cmd.BeginRendering(new RenderingDesc(

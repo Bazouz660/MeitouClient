@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data.Textures;
@@ -269,7 +270,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
         try
         {
             var image = TextureLoader.LoadFile(path, allMips: false).Levels[0];
-            noise = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Unorm, image.Width, image.Height, Name: "shadow noise"));
+            noise = Texture.Create(Gpu, new TextureDesc(InternalFormat.Rgba8, image.Width, image.Height, Name: "shadow noise"));
             noiseSize = (image.Width, image.Height);
             noisePixels = image.Pixels;
         }
@@ -307,7 +308,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
         if (size == atlasSize && layers == atlasLayers && atlas is not null) return;
         FreeAtlas();
         (atlasSize, atlasLayers) = (size, layers);
-        atlas = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, size, size, Layers: layers, Kind: TextureKind.Texture2DArray,
+        atlas = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, size, size, Layers: layers, Kind: TextureKind.Texture2DArray,
             Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "shadow atlas"));
         // Linear comparison: the faithful receiver reads texel centres, where the weights are 1, 0, 0, 0 (the game's point sampling);
         // other receivers may use the bilinear weights. The plain sampler (no comparison) is the blocker pass's and the debug view's.
@@ -353,7 +354,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
         if (sceneDepth is null || width != sceneDepth.Desc.Width || height != sceneDepth.Desc.Height)
         {
             sceneDepth?.Dispose();
-            sceneDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, width, height, Name: "shadow debug scene depth"));
+            sceneDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Name: "shadow debug scene depth"));
             sceneDepthSampled = Sampled(sceneDepth, TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.Repeat);
         }
         var source = scene.Image;

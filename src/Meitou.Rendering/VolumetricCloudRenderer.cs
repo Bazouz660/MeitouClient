@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
@@ -51,7 +52,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         shadowSegment = new(gpu, shadow, PrimitiveType.Triangles, "cloud shadow map");
     }
 
-    Texture Make(int width, int height, Vk.Format format, string name)
+    Texture Make(int width, int height, InternalFormat format, string name)
     {
         using var upload = gpu.Uploads.Begin();
         return upload.Create(new TextureDesc(format, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: name));
@@ -110,10 +111,10 @@ public sealed class VolumetricCloudRenderer : IDisposable
         if (h.Current is null || h.Current.Desc.Width != w || h.Current.Desc.Height != ht)
         {
             h.Dispose();
-            h.Current = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud current");
-            h.Distance = Make(w, ht, Vk.Format.R32Sfloat, "cloud distance");
-            h.A = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud history a");
-            h.B = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud history b");
+            h.Current = Make(w, ht, InternalFormat.Rgba16f, "cloud current");
+            h.Distance = Make(w, ht, InternalFormat.R32f, "cloud distance");
+            h.A = Make(w, ht, InternalFormat.Rgba16f, "cloud history a");
+            h.B = Make(w, ht, InternalFormat.Rgba16f, "cloud history b");
         }
         Common(march, coverage, wind, eye);
         march.Set(march.Uniform("uInverse"), in inverse);
@@ -156,7 +157,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         samples.Clear();
         if (shadowTimer.Poll(samples) is { } ms) ShadowGpuMs = ms;
         shadowTimer.Begin();
-        shadowMap ??= Make(512, 512, Vk.Format.R16Sfloat, "cloud shadow map");
+        shadowMap ??= Make(512, 512, InternalFormat.R16f, "cloud shadow map");
         const float texel = VolumetricClouds.ShadowSpan / 512;
         ShadowOrigin = new(MathF.Floor(eye.X / texel) * texel - VolumetricClouds.ShadowSpan * 0.5f,
                            MathF.Floor(eye.Z / texel) * texel - VolumetricClouds.ShadowSpan * 0.5f);

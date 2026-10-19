@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Collections.Concurrent;
 using System.Numerics;
 using Meitou.Data;
@@ -144,8 +145,8 @@ internal sealed unsafe partial class CharacterRenderer
         var (w, h) = entry.Style.TextureSize;
         if (entry.Colour is null)
         {
-            entry.Colour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
-            entry.Depth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
+            entry.Colour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
+            entry.Depth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
             entry.Sampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
                 TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View(), entry.Colour.Image);
         }

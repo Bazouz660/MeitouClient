@@ -5,7 +5,7 @@ namespace Meitou.Rendering.Gpu;
 
 /// <summary>One vertex input: the shader location, its format, the stride of its buffer (0 = a constant, GL's disabled attribute) and the
 /// input rate. Each location has its own binding (binding number = location), as in VkGl.</summary>
-public readonly record struct VertexInput(uint Location, Format Format, uint Stride, bool PerInstance);
+public readonly record struct VertexInput(uint Location, InternalFormat Format, uint Stride, bool PerInstance);
 
 /// <summary>The vertex inputs of a pipeline, by location. Compared by value; hashed once.</summary>
 public sealed class VertexLayout : IEquatable<VertexLayout>
@@ -32,7 +32,7 @@ public sealed class VertexLayout : IEquatable<VertexLayout>
 /// <summary>A pass's attachment formats: one colour attachment (Undefined = none), depth (Undefined = none), samples; <c>ShadingRate</c>: the rendering has a fragment
 /// shading rate attachment (the pipeline is made for it); <paramref name="Extra"/>: a second colour attachment (location 1; the GI resolve's surface target,
 /// docs/render-gi.md), written only by programs whose fragment shader declares that output.</summary>
-public readonly record struct AttachmentFormats(Format Colour, Format Depth, int Samples = 1, bool ShadingRate = false, Format Extra = Format.Undefined);
+public readonly record struct AttachmentFormats(InternalFormat Colour, InternalFormat Depth, int Samples = 1, bool ShadingRate = false, InternalFormat Extra = InternalFormat.None);
 
 /// <summary>GL's blend: one factor pair for colour and alpha, add (or <paramref name="ColourOp"/> / <paramref name="AlphaOp"/>, e.g. min and max).</summary>
 public readonly record struct BlendState(bool Enable, BlendingFactor Src = BlendingFactor.One, BlendingFactor Dst = BlendingFactor.Zero, BlendOperation ColourOp = BlendOperation.Add, BlendOperation AlphaOp = BlendOperation.Add)
@@ -98,7 +98,7 @@ public static unsafe class PipelineFactory
         {
             var input = inputs[i];
             vbind[i] = new VertexInputBindingDescription(input.Location, input.Stride, input.PerInstance ? VertexInputRate.Instance : VertexInputRate.Vertex);
-            vattr[i] = new VertexInputAttributeDescription(input.Location, input.Location, input.Format, 0);
+            vattr[i] = new VertexInputAttributeDescription(input.Location, input.Location, GlConventions.VkFormat(input.Format), 0);
         }
         var vertexInput = new PipelineVertexInputStateCreateInfo
         {
@@ -137,7 +137,7 @@ public static unsafe class PipelineFactory
         };
         // The extra attachment (location 1) is never blended: written by the programs that declare it (extraMask), else left as it is.
         attachments[1] = new PipelineColorBlendAttachmentState { BlendEnable = false, ColorWriteMask = GlConventions.VkColorMask(extraMask) };
-        uint colourCount = targets.Colour == Format.Undefined ? 0u : targets.Extra == Format.Undefined ? 1u : 2u;
+        uint colourCount = targets.Colour == InternalFormat.None ? 0u : targets.Extra == InternalFormat.None ? 1u : 2u;
         if (colourCount == 2 && blendState.Enable && !device.IndependentBlend) attachments[1] = attachments[0] with { ColorWriteMask = GlConventions.VkColorMask(extraMask) };
         var blend = new PipelineColorBlendStateCreateInfo
         {
@@ -147,13 +147,13 @@ public static unsafe class PipelineFactory
         fixed (DynamicState* dynamics = Dynamic)
         {
             var dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = (uint)Dynamic.Length, PDynamicStates = dynamics };
-            var colourFormats = stackalloc Format[2] { targets.Colour, targets.Extra };
-            bool stencil = targets.Depth is Format.D24UnormS8Uint or Format.D32SfloatS8Uint;
+            var colourFormats = stackalloc Format[2] { GlConventions.VkFormatOrUndefined(targets.Colour), GlConventions.VkFormatOrUndefined(targets.Extra) };
+            bool stencil = targets.Depth is InternalFormat.Depth24Stencil8 or InternalFormat.Depth32fStencil8;
             var rendering = new PipelineRenderingCreateInfo
             {
                 SType = StructureType.PipelineRenderingCreateInfo,
                 ColorAttachmentCount = colourCount, PColorAttachmentFormats = colourFormats,
-                DepthAttachmentFormat = targets.Depth, StencilAttachmentFormat = stencil ? targets.Depth : Format.Undefined,
+                DepthAttachmentFormat = GlConventions.VkFormatOrUndefined(targets.Depth), StencilAttachmentFormat = stencil ? GlConventions.VkFormat(targets.Depth) : Format.Undefined,
             };
             // A rendering with a shading rate attachment (Formats.ShadingRate): the pipeline keeps its own rate (1x1) and takes the attachment's.
             var rate = new PipelineFragmentShadingRateStateCreateInfoKHR { SType = StructureType.PipelineFragmentShadingRateStateCreateInfoKhr, FragmentSize = new Extent2D(1, 1) };

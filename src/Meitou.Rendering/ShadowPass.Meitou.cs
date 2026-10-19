@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data.World;
@@ -196,7 +197,7 @@ public sealed unsafe partial class ShadowPass
         if (landmarkMap is null)
         {
             // A map of its own (4096², larger than a cascade layer), read through its own sampler (uShadowLandmark), not a layer of the cascade array.
-            landmarkMap = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, LandmarkMapSize, LandmarkMapSize, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "landmark shadow map"));
+            landmarkMap = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, LandmarkMapSize, LandmarkMapSize, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "landmark shadow map"));
             landmarkSampled = Sampled(landmarkMap, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, compare: true);
         }
         var host = BeginHost("landmark shadows", clear: true, landmarkMap);
@@ -294,7 +295,7 @@ public sealed unsafe partial class ShadowPass
         if (blocker is null || blocker.Desc.Width != size || blocker.Desc.Layers != count)
         {
             blocker?.Dispose();
-            blocker = Texture.Create(Gpu, new TextureDesc(Format.R32Sfloat, size, size, Layers: count, Kind: TextureKind.Texture2DArray,
+            blocker = Texture.Create(Gpu, new TextureDesc(InternalFormat.R32f, size, size, Layers: count, Kind: TextureKind.Texture2DArray,
                 Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "shadow blocker map"));
             blockerSampled = Sampled(blocker, TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge);
             blockerPublished = false;
@@ -322,7 +323,7 @@ public sealed unsafe partial class ShadowPass
         p.Set(blockerSizeHandle, (float)atlasSize);
         p.Bind(blockerAtlasSlot, atlasPlain);
         var cmd = Gpu.BeginNative("shadow blockers");
-        var formats = new AttachmentFormats(map.Desc.Format, Format.Undefined, 1);
+        var formats = new AttachmentFormats(map.Desc.Format, InternalFormat.None, 1);
         int side = map.Desc.Width;
         var whole = new PixelRect(0, 0, (uint)side, (uint)side);
         var pipeline = Gpu.Pipelines.Get(BlockerState.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles, formats, "shadow blockers"));

@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -199,10 +200,10 @@ internal sealed unsafe partial class CharacterRenderer
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         part.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[CharacterShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Sfloat, CharInstance.Size, true);
-        attributes[CharacterShaders.DataLocation] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Uint, CharInstance.Size, true);
+            attributes[CharacterShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, CharInstance.Size, true);
+        attributes[CharacterShaders.DataLocation] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32ui, CharInstance.Size, true);
         for (int a = 0; a < 4; a++)
-            attributes[CharacterShaders.PreviousLocation + a] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Sfloat, CharInstance.Size, true);
+            attributes[CharacterShaders.PreviousLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, CharInstance.Size, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
         n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);

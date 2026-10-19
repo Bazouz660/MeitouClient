@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
@@ -83,8 +84,8 @@ internal sealed unsafe partial class CharacterRenderer
     void MakeStage(int width, int height)
     {
         DisposeStage();
-        stageColour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
-        stageDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, width, height, Use: TextureUse.DepthTarget, Name: "character stage depth"));
+        stageColour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
+        stageDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "character stage depth"));
         stageSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), stageColour.View(), stageColour.Image);
     }

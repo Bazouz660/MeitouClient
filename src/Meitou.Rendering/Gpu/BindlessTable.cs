@@ -154,7 +154,7 @@ public sealed unsafe class BindlessTable : IDisposable
     /// <summary>The array a texture of <paramref name="format"/> and <paramref name="kind"/> belongs in: integer formats (UINT, SINT) go to
     /// <see cref="BindlessKind.UTexture2D"/> / <see cref="BindlessKind.ITexture2D"/>, a depth texture read with comparison
     /// (<paramref name="shadow"/>) to <see cref="BindlessKind.Shadow2D"/> (a 2D array one to <see cref="BindlessKind.ShadowArray"/>), the rest by kind.</summary>
-    public static BindlessKind KindFor(Format format, TextureKind kind = TextureKind.Texture2D, bool shadow = false)
+    public static BindlessKind KindFor(InternalFormat format, TextureKind kind = TextureKind.Texture2D, bool shadow = false)
     {
         if (shadow)
         {
@@ -173,14 +173,14 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>What a shader reads from a colour texture of <paramref name="format"/>: UInt for UINT formats, Int for SINT, Float otherwise
     /// (UNORM, SNORM, SFLOAT, SRGB, and depth: a depth-stencil format's stencil part is not sampled).</summary>
-    public static ScalarKind ScalarOf(Format format) => Scalars.TryGetValue(format, out var s) ? s : ScalarByName(format);
+    public static ScalarKind ScalarOf(InternalFormat format) => Scalars.TryGetValue(format, out var s) ? s : ScalarByName(format);
 
     /// <summary><see cref="ScalarByName"/> of every named format, worked out once: <see cref="ScalarOf"/> runs for every
     /// texture registered, and the enum's name is a string allocation and three searches (~0.1 us).</summary>
-    static readonly System.Collections.Frozen.FrozenDictionary<Format, ScalarKind> Scalars =
-        System.Collections.Frozen.FrozenDictionary.ToFrozenDictionary(Enum.GetValues<Format>().Distinct(), f => f, ScalarByName);
+    static readonly System.Collections.Frozen.FrozenDictionary<InternalFormat, ScalarKind> Scalars =
+        System.Collections.Frozen.FrozenDictionary.ToFrozenDictionary(Enum.GetValues<InternalFormat>().Distinct(), f => f, ScalarByName);
 
-    static ScalarKind ScalarByName(Format format)
+    static ScalarKind ScalarByName(InternalFormat format)
     {
         var name = format.ToString();
         if (GlConventions.IsDepthFormat(format) || name.EndsWith("S8Uint", StringComparison.Ordinal)) return ScalarKind.Float;   // depth(-stencil)

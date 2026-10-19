@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
@@ -116,14 +117,14 @@ internal sealed unsafe class GiProbes : IDisposable
         invalidatePipeline = ctx.Pipelines.Get(new ComputePipelineDesc(invalidateProgram, "gi probe invalidate"));
         Variant(Rays);
         int rows = Cascades * Columns * Layers;
-        irradiance = Texture.Create(ctx, new TextureDesc(Format.R16G16B16A16Sfloat, Columns * (IrradianceTexels + 2), rows * (IrradianceTexels + 2),
+        irradiance = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba16f, Columns * (IrradianceTexels + 2), rows * (IrradianceTexels + 2),
             Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "gi probe irradiance"));
-        distance = Texture.Create(ctx, new TextureDesc(Format.R16G16Sfloat, Columns * (DistanceTexels + 2), rows * (DistanceTexels + 2),
+        distance = Texture.Create(ctx, new TextureDesc(InternalFormat.RG16f, Columns * (DistanceTexels + 2), rows * (DistanceTexels + 2),
             Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe distance"));
         // One per frame slot: the CPU writes the base heights of the frame being recorded while the one before may still read its own.
         bases = new Texture[ctx.Device.Frames.Count];
         for (int i = 0; i < bases.Length; i++)
-            bases[i] = Texture.Create(ctx, new TextureDesc(Format.R32Sfloat, Columns, Columns * Cascades, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe bases"));
+            bases[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.R32f, Columns, Columns * Cascades, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe bases"));
         rays = DeviceBuffer.Create(ctx, (ulong)Probes * MaxRays * 16, BufferUse.Storage, "gi probe rays");
         state = DeviceBuffer.Create(ctx, (ulong)Probes * 16, BufferUse.Storage | BufferUse.TransferDst, "gi probe state");
         lists = new GpuBuffer[ctx.Device.Frames.Count];

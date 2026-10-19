@@ -1262,7 +1262,7 @@ internal sealed class SampledImage : IDisposable
     {
         int levels = mipmaps ? 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(width, height), 1))) : 1;
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, levels,
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, width, height, levels,
             Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name));
         batch.Write(t, 0, 0, Rect(width, height), rgba.AsSpan(0, width * height * 4));
         if (mipmaps) batch.Commands.GenerateMips(t);
@@ -1277,7 +1277,7 @@ internal sealed class SampledImage : IDisposable
     public static SampledImage FromDds(GpuContext ctx, Meitou.Data.Textures.DdsFile dds, bool repeat, string name)
     {
         bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
-        var format = bc1 ? Silk.NET.Vulkan.Format.BC1RgbaUnormBlock : Silk.NET.Vulkan.Format.R8G8B8A8Unorm;
+        var format = bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8;
         using var batch = ctx.Uploads.Begin();
         var t = batch.Create(new TextureDesc(format, dds.Width, dds.Height, dds.MipCount, Name: name));
         for (int level = 0; level < dds.MipCount; level++)
@@ -1301,7 +1301,7 @@ internal sealed class SampledImage : IDisposable
     public static SampledImage Rgba32F(GpuContext ctx, Vector4[] data, int width, int height, string name)
     {
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, width, height, Name: name));
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba32f, width, height, Name: name));
         batch.Write(t, 0, 0, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(data.AsSpan(0, width * height)));
         return new SampledImage(ctx, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat);
     }
@@ -1316,7 +1316,7 @@ internal sealed class SampledImage : IDisposable
         if (!dds.IsCubemap || dds.ImageCount < 6) throw new InvalidOperationException($"not a cube map: {dds}");
         var first = DdsDecoder.Decode(dds, 0, 0);
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, first.Width, first.Height, dds.MipCount, Kind: TextureKind.Cube, Name: name));
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, first.Width, first.Height, dds.MipCount, Kind: TextureKind.Cube, Name: name));
         for (int face = 0; face < 6; face++)
             for (int level = 0; level < dds.MipCount; level++)
             {

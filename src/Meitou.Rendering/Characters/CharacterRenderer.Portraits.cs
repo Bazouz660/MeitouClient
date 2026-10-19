@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Data.Characters;
 using System.Numerics;
 using Meitou.Rendering.Gpu;
@@ -35,8 +36,8 @@ internal sealed unsafe partial class CharacterRenderer
             if (portraitColour is null)
             {
                 int w = PortraitSize * PortraitColumns, h = PortraitSize * PortraitRows;
-                portraitColour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
-                portraitDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
+                portraitColour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Srgb8Alpha8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
+                portraitDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
                 portraitSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
                     TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), portraitColour.View(), portraitColour.Image);
                 cleared = false;

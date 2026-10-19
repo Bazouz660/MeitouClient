@@ -1,3 +1,4 @@
+using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Gpu.Core;
 using Silk.NET.Vulkan;
 
@@ -50,7 +51,7 @@ public unsafe class CoreTests(ITestOutputHelper output)
                 {
                     SType = StructureType.ImageCreateInfo,
                     ImageType = ImageType.Type2D,
-                    Format = Format.R8G8B8A8Unorm,
+                    Format = GlConventions.VkFormat(InternalFormat.Rgba8),
                     Extent = new Extent3D((uint)w, (uint)h, 1),
                     MipLevels = 1,
                     ArrayLayers = 1,

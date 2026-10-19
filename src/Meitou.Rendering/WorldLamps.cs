@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Data.World;
@@ -52,9 +53,9 @@ internal sealed class WorldLamps : IDisposable
         const TextureUse use = TextureUse.Sampled | TextureUse.TransferDst;
         for (int i = 0; i < frames; i++)
         {
-            cells[i] = Texture.Create(ctx, new TextureDesc(Format.R32G32Sfloat, Cells, Cells, Use: use, Name: "lamp cells"));
-            index[i] = Texture.Create(ctx, new TextureDesc(Format.R32Sfloat, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
-            data[i] = Texture.Create(ctx, new TextureDesc(Format.R32G32B32A32Sfloat, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
+            cells[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.RG32f, Cells, Cells, Use: use, Name: "lamp cells"));
+            index[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.R32f, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
+            data[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba32f, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
         }
         nearest = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));

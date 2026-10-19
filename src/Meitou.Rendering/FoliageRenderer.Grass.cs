@@ -62,8 +62,8 @@ public sealed unsafe partial class FoliageRenderer
     {
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         var arena = grassStore.BladeBuffer;
-        attributes[0] = new LegacyProgram.Attribute(new BufferBinding(arena, 0), Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, FoliageGrassGpu.BladeBytes, true);
-        attributes[1] = new LegacyProgram.Attribute(new BufferBinding(arena, 16), Silk.NET.Vulkan.Format.R32Sfloat, FoliageGrassGpu.BladeBytes, true);
+        attributes[0] = new LegacyProgram.Attribute(new BufferBinding(arena, 0), InternalFormat.Rgba32f, FoliageGrassGpu.BladeBytes, true);
+        attributes[1] = new LegacyProgram.Attribute(new BufferBinding(arena, 16), InternalFormat.R32f, FoliageGrassGpu.BladeBytes, true);
         return new NativeMesh { Layout = p.Layout(attributes), Vertices = p.Buffers(attributes, p.Own) };
     }
 

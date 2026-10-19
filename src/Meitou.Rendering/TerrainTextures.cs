@@ -244,7 +244,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         if (biomes.Count == 0) return;
         // The cell table (GL RGBA8UI, nearest, clamped), written whole by UploadCells.
-        cellTexture = Make(GlConventions.VkFormat(InternalFormat.Rgba8ui), CellsX * 2, CellsZ, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+        cellTexture = Make(InternalFormat.Rgba8ui, CellsX * 2, CellsZ, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, "terrain cells");
         UploadCells();
 
@@ -253,7 +253,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         normalArray = AllocateArray(false);
 
         // One parameter row per biome; its layer indices are written when the biome becomes resident.
-        paramTexture = Make(GlConventions.VkFormat(InternalFormat.Rgba32f), TerrainShaders.ParamTexels, biomes.Count, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+        paramTexture = Make(InternalFormat.Rgba32f, TerrainShaders.ParamTexels, biomes.Count, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, "terrain biome parameters");
         using (var batch = Gpu.Uploads.Begin())
             batch.Write(paramTexture.Texture, 0, 0, Rect(0, 0, TerrainShaders.ParamTexels, biomes.Count), new byte[biomes.Count * TerrainShaders.ParamTexels * 16]);
@@ -265,7 +265,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     static PixelRect Rect(int x, int y, int width, int height) => new(x, y, (uint)width, (uint)height);
 
     /// <summary>A native texture with the GL sampler state the GL one had (nothing written yet; its transition goes with the next uploads).</summary>
-    TerrainTexture Make(Silk.NET.Vulkan.Format format, int width, int height, int levels, int layers, TextureMinFilter min, TextureMagFilter mag,
+    TerrainTexture Make(InternalFormat format, int width, int height, int levels, int layers, TextureMinFilter min, TextureMagFilter mag,
         TextureWrapMode wrap, string name, float anisotropy = 1, TextureKind kind = TextureKind.Texture2D)
     {
         using var batch = Gpu.Uploads.Begin();
@@ -282,7 +282,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         int levels = mipmaps ? 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(width, height), 1))) : 1;
         using var batch = Gpu.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.Rgba8), width, height, levels,
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, width, height, levels,
             Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name));
         batch.Write(t, 0, 0, Rect(0, 0, width, height), rgba.AsSpan(0, width * height * 4));
         if (mipmaps) batch.Commands.GenerateMips(t);
@@ -308,7 +308,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         try
         {
-            return Make(GlConventions.VkFormat(FormatOf(diffuse)), layerSize, layerSize, levelCount, Math.Max(Capacity, 1), TextureMinFilter.LinearMipmapLinear,
+            return Make(FormatOf(diffuse), layerSize, layerSize, levelCount, Math.Max(Capacity, 1), TextureMinFilter.LinearMipmapLinear,
                 TextureMagFilter.Linear, TextureWrapMode.Repeat, diffuse ? "terrain textures diffuse" : "terrain textures normal", anisotropy: 8, kind: TextureKind.Texture2DArray);
         }
         catch (Meitou.Rendering.Gpu.Core.VulkanException e)
@@ -732,7 +732,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>A window texture: <paramref name="levels"/> levels (the GL one had more allocated but sampled only these), trilinear, repeating.</summary>
     TerrainTexture EmptyMap(int size, int levels, string name) =>
-        Make(GlConventions.VkFormat(InternalFormat.Rgba8), size, size, levels, 1, TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, name);
+        Make(InternalFormat.Rgba8, size, size, levels, 1, TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, name);
 
     // ---- whole-world maps ----------------------------------------------------------------------------------
 

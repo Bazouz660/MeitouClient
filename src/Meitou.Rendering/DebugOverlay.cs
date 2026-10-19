@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
@@ -139,7 +140,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         // The glyphs (R8), sampled as the GL texture was: linear, repeating, no mips.
         using (var upload = gpu.Uploads.Begin())
         {
-            atlas = upload.Create(new TextureDesc(Format.R8Unorm, AtlasSize, AtlasSize, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "debug overlay font"));
+            atlas = upload.Create(new TextureDesc(InternalFormat.R8, AtlasSize, AtlasSize, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "debug overlay font"));
             upload.Write(atlas, 0, 0, new PixelRect(0, 0, (uint)AtlasSize, (uint)AtlasSize), pixels);
         }
         atlasSampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat,
@@ -403,9 +404,9 @@ public sealed unsafe class DebugOverlay : IDisposable
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset), Format.R32G32Sfloat, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32Sfloat, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
+            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
         ];
         var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, t.Formats, "debug overlay"));
         cmd.BindPipeline(pipeline);
@@ -486,9 +487,9 @@ public sealed unsafe class DebugOverlay : IDisposable
                 MemoryMarshal.AsBytes(data).CopyTo(new Span<byte>(upload.Pointer, data.Length * 4));
                 Span<LegacyProgram.Attribute?> attributes =
                 [
-                    new(new BufferBinding(upload.Handle, upload.Offset), Format.R32G32Sfloat, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 8), Format.R32G32Sfloat, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
+                    new(new BufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),
+                    new(new BufferBinding(upload.Handle, upload.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+                    new(new BufferBinding(upload.Handle, upload.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
                 ];
                 var program = painter.program;
                 var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, targets.Formats, "UI overlay"));

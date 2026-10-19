@@ -71,7 +71,7 @@ public class GpuApiTests
         using (var ctx = new GpuContext(d!))
         {
             // The sources through LegacyProgram into an RGBA8 texture (until phase 8 stage 3 compared byte for byte with VkGl's picture).
-            using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
+            using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
             using var lp = LegacyProgram.Create(ctx, Vertex, Fragment, "golden triangle");
             Assert.True(lp.Uniform("uMissing") is { IsValid: false });
             lp.Set(lp.Uniform("uOffset"), 0.1f, -0.05f);
@@ -84,11 +84,11 @@ public class GpuApiTests
             var vertices = frame.Constants.Write<float>(Vertices);
             LegacyProgram.Attribute?[] attributes =
             [
-                new LegacyProgram.Attribute(vertices.Binding, Format.R32G32Sfloat, 20, false),
-                new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32B32Sfloat, 20, false),
+                new LegacyProgram.Attribute(vertices.Binding, InternalFormat.RG32f, 20, false),
+                new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.Rgb32f, 20, false),
             ];
             var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveType.Triangles,
-                new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
+                new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
                 ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
@@ -183,8 +183,8 @@ public class GpuApiTests
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         using (var ctx = new GpuContext(d!))
         {
-            using var source = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1, Name: "pre-frame source"));
-            using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
+            using var source = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: "pre-frame source"));
+            using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
             using var args = DeviceBuffer.Create(ctx, 20, BufferUse.Storage | BufferUse.Indirect | BufferUse.TransferSrc, "pre-frame args");
             using var indices = DeviceBuffer.Create(ctx, 16, BufferUse.Index | BufferUse.TransferDst, "indices");
             using var readback = ReadbackBuffer.Create(ctx, 20, "pre-frame readback");
@@ -203,7 +203,7 @@ public class GpuApiTests
             var cmd = frame.Commands;
             cmd.Invalidate();
             var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles,
-                new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
+                new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
                 ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
@@ -287,16 +287,16 @@ public class GpuApiTests
                 const int Columns = 8;
                 var sources = new Texture[Columns];
                 var indices = new uint[Columns];
-                using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
+                using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
                 using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
                 var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                     TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
                 for (int k = 0; k < Columns; k++)
                 {
-                    sources[k] = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1, Name: $"column {k}"));
+                    sources[k] = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"column {k}"));
                     indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View(), sources[k].Image));
                 }
-                var formats = new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined);
+                var formats = new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None);
                 var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles, formats, BlendState.Off,
                     ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
 

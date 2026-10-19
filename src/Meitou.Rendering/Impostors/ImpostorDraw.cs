@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 
@@ -49,7 +50,7 @@ internal sealed class ImpostorDraw : IDisposable
         var program = which switch { ImpostorProgram.Caster => caster, ImpostorProgram.Rock => rock, ImpostorProgram.Prepass => prepass, ImpostorProgram.AfterPrepass => afterPrepass, _ => plain };
         Span<LegacyProgram.Attribute?> rows = new LegacyProgram.Attribute?[FoliageShaders.InstanceLocation + 4];
         for (int a = 0; a < 4; a++)
-            rows[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Format.R32G32B32A32Sfloat, 64, true);
+            rows[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
         p = gpu.Pipelines.Get(state.Pipeline(program.P, program.Layout(rows), PrimitiveType.Triangles, formats, program.P.Name));
         pipelines[key] = p;
         return p;

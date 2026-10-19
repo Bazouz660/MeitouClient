@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
@@ -35,7 +36,7 @@ public sealed unsafe partial class TerrainRenderer
         var attributes = new LegacyProgram.Attribute?[TerrainShaders.MeshInstanceLocation + 4];
         FoliageRenderer.VertexAttributes(vertices).AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, 64, true);
+            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
         var bindings = new BufferBinding[p.Own];
         p.Buffers(attributes, bindings);
         return (p.VertexLayout(attributes), bindings);

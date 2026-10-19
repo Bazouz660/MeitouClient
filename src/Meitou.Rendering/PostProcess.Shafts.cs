@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -64,7 +65,7 @@ public sealed unsafe partial class PostProcess
     /// </summary>
     public bool ShaftScan { get; set; } = true;
     /// <summary>Whether the device can write the atlases as storage images (the scan kernel can run).</summary>
-    public bool ShaftScanSupported => SupportsStorage(Vk.Format.R32Sfloat) && SupportsStorage(Vk.Format.R16G16B16A16Sfloat);
+    public bool ShaftScanSupported => SupportsStorage(InternalFormat.R32f) && SupportsStorage(InternalFormat.Rgba16f);
 
     /// <summary>The scan kernel's uniform block (std140: every member takes a 16-byte slot).</summary>
     [StructLayout(LayoutKind.Sequential)]

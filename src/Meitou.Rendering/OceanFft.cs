@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
@@ -79,7 +80,7 @@ public sealed unsafe class OceanWaves : IDisposable
         int levels = 1 + (int)Math.Log2(size);
         using (var batch = ctx.Uploads.Begin())
         {
-            TextureDesc Desc(string name) => new(Format.R16G16B16A16Sfloat, size, size, levels, Cascades, Kind: TextureKind.Texture2DArray,
+            TextureDesc Desc(string name) => new(InternalFormat.Rgba16f, size, size, levels, Cascades, Kind: TextureKind.Texture2DArray,
                 Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name);
             displacement = batch.Create(Desc("ocean displacement"));
             slopes = batch.Create(Desc("ocean slopes"));

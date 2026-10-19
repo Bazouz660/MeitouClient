@@ -139,7 +139,7 @@ public sealed unsafe partial class GpuContext : IDisposable
         var desc = new TextureDesc(d.Format, 1, 1, 1, slot == 2 ? 1 : d.Layers, Kind: slot == 2 ? TextureKind.Cube : slot == 1 ? TextureKind.Texture2DArray : TextureKind.Texture2D);
         var t = Texture.Borrow(Device, desc, d.Image.Image);
         var sampled = new SampledTexture(Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.Repeat, TextureWrapMode.Repeat,
-            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, GlConventions.IsIntegerFormat(d.Format) || d.Format == Format.R32Sint, 0)), t.View(), d.Image.Image);
+            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, GlConventions.IsIntegerFormat(d.Format) || d.Format == InternalFormat.R32i, 0)), t.View(), d.Image.Image);
         dummies[key] = sampled;
         dummyTextures.Add(t);   // borrowed image, but the view cut on it is ours to destroy
         return sampled;

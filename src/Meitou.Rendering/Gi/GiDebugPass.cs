@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
@@ -56,7 +57,7 @@ sealed unsafe class GiDebugPass : IDisposable
         if (output is null || output.Desc.Width != width || output.Desc.Height != height)
         {
             output?.Dispose();
-            output = Texture.Create(ctx, new TextureDesc(Format.R16G16B16A16Sfloat, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
+            output = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
         }
         var parameters = new Params
         {

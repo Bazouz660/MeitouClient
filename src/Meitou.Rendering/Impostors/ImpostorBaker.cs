@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -371,9 +372,9 @@ public sealed unsafe class ImpostorBaker : IDisposable
             return (kept.Large, kept.Depth, kept.Small);
         }
         int f = size.FramePixels, samples = 2 * f, width = size.Grid * samples;
-        return (Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(Format.D32Sfloat, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target"), pre));
+        return (Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target"), pre),
+            Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target"), pre),
+            Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target"), pre));
     }
 
     /// <summary>Takes a bake's set back (the rows recorded into it are ahead of any later use in the queue).</summary>

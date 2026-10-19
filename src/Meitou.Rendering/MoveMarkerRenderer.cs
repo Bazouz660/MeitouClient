@@ -108,8 +108,8 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         using (var batch = gpu.Uploads.Begin()) batch.Write(vertices, 0, MemoryMarshal.AsBytes(data.AsSpan()));
         vertexSource = new VertexArrayBindings(
         [
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 24, false),
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 24, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 24, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 24, false),
         ], default);
     }
 
@@ -161,9 +161,9 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         {
             msColour?.Dispose(); msDepth?.Dispose(); resolved?.Dispose();
             var sampled = samples > 1 ? TextureUse.TransferSrc : TextureUse.Sampled;
-            msColour = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "move marker colour"));
-            msDepth = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.D32Sfloat, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "move marker depth"));
-            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
+            msColour = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "move marker colour"));
+            msDepth = Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "move marker depth"));
+            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
         }
         var cmd = gpu.BeginNative("move marker");
         var viewport = new PixelViewport(0, 0, width, height, 0, 1);

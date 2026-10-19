@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
@@ -34,8 +35,8 @@ internal sealed unsafe partial class CharacterRenderer
         {
             hoverColour?.Dispose(); hoverDepth?.Dispose();
             // The portraits' formats, so the mask shares their pipelines.
-            hoverColour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "hover mask"));
-            hoverDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, width, height, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "hover mask depth"));
+            hoverColour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "hover mask"));
+            hoverDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "hover mask depth"));
         }
         float distance = Vector3.Distance(eye, l.Centre);
         float near = Math.Max(0.25f, distance - l.Radius * 2), far = distance + l.Radius * 2;

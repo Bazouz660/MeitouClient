@@ -68,8 +68,8 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         sceneDepth = program.Sampler("uSceneDepth");
         vertexSource = new VertexArrayBindings(
         [
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, Stride * sizeof(float), false),
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, Stride * sizeof(float), false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, Stride * sizeof(float), false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, Stride * sizeof(float), false),
         ], default);
     }
 

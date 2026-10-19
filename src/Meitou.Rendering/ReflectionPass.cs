@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data.World;
@@ -192,21 +193,21 @@ public sealed class ReflectionPass : IDisposable
         if (w == width && h == height && colour is not null && builtFor == Samples) return;
         Free();
         (width, height, builtFor) = (w, h, Samples);
-        colour = GpuTexture.Create(Gpu, new TextureDesc(Format.R16G16B16A16Sfloat, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
+        colour = GpuTexture.Create(Gpu, new TextureDesc(InternalFormat.Rgba16f, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
 
         // The picture is drawn multisampled and resolved: the mirrored shoreline, fences and rooflines are hard edges, and
         // without it each texel of the half-resolution image is a visible stair step that the wave distortion then smears.
         samples = Math.Min(Samples, MaxSamples());
         if (samples <= 1) samples = 0;
-        GpuTexture Target(Format format, TextureUse use, int count, string name) =>
+        GpuTexture Target(InternalFormat format, TextureUse use, int count, string name) =>
             GpuTexture.Create(Gpu, new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name));
         if (samples == 0)
         {
-            depth = Target(Format.D32Sfloat, TextureUse.DepthTarget | TextureUse.Sampled, 1, "reflection depth");
+            depth = Target(InternalFormat.DepthComponent24, TextureUse.DepthTarget | TextureUse.Sampled, 1, "reflection depth");
             return;
         }
-        msColour = Target(Format.R16G16B16A16Sfloat, TextureUse.ColourTarget | TextureUse.TransferSrc, samples, "reflection colour msaa");
-        msDepth = Target(Format.D32Sfloat, TextureUse.DepthTarget | TextureUse.Sampled, samples, "reflection depth msaa");
+        msColour = Target(InternalFormat.Rgba16f, TextureUse.ColourTarget | TextureUse.TransferSrc, samples, "reflection colour msaa");
+        msDepth = Target(InternalFormat.DepthComponent24, TextureUse.DepthTarget | TextureUse.Sampled, samples, "reflection depth msaa");
     }
 
     /// <summary>The most samples a colour and depth target may have on this device (VkGl answered GL's MAX_SAMPLES with 8).</summary>
@@ -553,7 +554,7 @@ public sealed class ReflectionPass : IDisposable
             var state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal, false, 0, 0,
                 new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha), DrawState.Rgb, PolygonKind.Fill, false, false);
             fogPipeline = Gpu.Pipelines.Get(state.Pipeline(fogProgram.Program, fogProgram.VertexLayout([]), PrimitiveType.Triangles,
-                new AttachmentFormats(colour.Desc.Format, Format.Undefined), fogProgram.Name));
+                new AttachmentFormats(colour.Desc.Format, InternalFormat.None), fogProgram.Name));
         }
         var p = fogProgram;
         p.Bind(p.Sampler("uDepth"), new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,

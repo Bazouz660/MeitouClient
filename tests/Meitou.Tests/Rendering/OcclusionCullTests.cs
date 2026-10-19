@@ -247,7 +247,7 @@ public class HizPyramidGpuTests
             using (var ctx = new Meitou.Rendering.Gpu.GpuContext(d!))
             {
                 ctx.EnsureFrame();
-                var desc = new Meitou.Rendering.Gpu.TextureDesc(Silk.NET.Vulkan.Format.R32Sfloat, w, h, Use: Meitou.Rendering.Gpu.TextureUse.Sampled | Meitou.Rendering.Gpu.TextureUse.TransferDst, Name: "hiz test depth");
+                var desc = new Meitou.Rendering.Gpu.TextureDesc(InternalFormat.R32f, w, h, Use: Meitou.Rendering.Gpu.TextureUse.Sampled | Meitou.Rendering.Gpu.TextureUse.TransferDst, Name: "hiz test depth");
                 using var nearTexture = Meitou.Rendering.Gpu.Texture.Create(ctx, desc, ctx.Frame.PreFrame.Handle);
                 using var farTexture = Meitou.Rendering.Gpu.Texture.Create(ctx, desc, ctx.Frame.PreFrame.Handle);
                 var region = new PixelRect(0, 0, (uint)w, (uint)h);

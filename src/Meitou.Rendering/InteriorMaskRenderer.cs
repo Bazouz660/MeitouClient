@@ -69,7 +69,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "interior mask");
         mvp = program.Uniform("uMvp");
         inside = program.Uniform("uInside");
-        vertexSource = new VertexArrayBindings([new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 12, false)], default);
+        vertexSource = new VertexArrayBindings([new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 12, false)], default);
     }
 
     /// <summary>Whether the last <see cref="Record"/> drew a mask: only then do <see cref="Index"/> and <see cref="Boxes"/> apply.</summary>
@@ -141,7 +141,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             if (bindless is { } old) gpu.Bindless.Free(BindlessKind.Texture2D, old.Index);
             bindless = null;
             target?.Dispose();
-            target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R16G16B16A16Sfloat, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
+            target = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
         }
         var cmd = gpu.BeginNative("interior mask");
         var viewport = new PixelViewport(0, 0, width, height, 0, 1);

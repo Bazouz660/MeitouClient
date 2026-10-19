@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -35,7 +36,7 @@ public sealed unsafe partial class PostProcess
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0));
 
     /// <summary>Whether the kernels can run: they write storage images (the formats of the motion, depth, reactivity and adaptation targets).</summary>
-    public bool MergeSupported => SupportsStorage(Vk.Format.R16G16B16A16Sfloat) && SupportsStorage(Vk.Format.R32Sfloat) && SupportsStorage(Vk.Format.R32G32Sfloat);
+    public bool MergeSupported => SupportsStorage(InternalFormat.Rgba16f) && SupportsStorage(InternalFormat.R32f) && SupportsStorage(InternalFormat.RG32f);
 
     [StructLayout(LayoutKind.Sequential)]
     struct VelocityParams

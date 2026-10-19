@@ -1940,7 +1940,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         part.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, InstanceStride, true);
+            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceStride, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
         n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);

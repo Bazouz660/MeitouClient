@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Text;
 
@@ -30,7 +31,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         public readonly TextureMagFilter Mag = mag;
         public int Width => Texture.Desc.Width;
         public int Height => Texture.Desc.Height;
-        public Vk.Format Format => Texture.Desc.Format;
+        public InternalFormat Format => Texture.Desc.Format;
         public RenderTarget Attachment => new(Texture.Attachment(), Vk.AttachmentLoadOp.Load, default, Texture.Image);
     }
 
@@ -340,14 +341,15 @@ public sealed unsafe partial class PostProcess : IDisposable
         adaptedValid = historyValid = false;
     }
 
-    readonly Dictionary<Vk.Format, bool> storageSupport = [];
+    readonly Dictionary<InternalFormat, bool> storageSupport = [];
 
     /// <summary>Whether the device can make <paramref name="format"/> a storage image (VkGl gave its float colour textures storage use, which the vendor upscalers write with).</summary>
-    bool SupportsStorage(Vk.Format format)
+    bool SupportsStorage(InternalFormat format)
     {
         if (!storageSupport.TryGetValue(format, out bool ok))
         {
-            Gpu.Device.Vk.GetPhysicalDeviceFormatProperties(Gpu.Device.PhysicalDevice, format, out var props);
+            var vk = GlConventions.VkFormat(format);
+            Gpu.Device.Vk.GetPhysicalDeviceFormatProperties(Gpu.Device.PhysicalDevice, vk, out var props);
             storageSupport[format] = ok = (props.OptimalTilingFeatures & Vk.FormatFeatureFlags.StorageImageBit) != 0;
         }
         return ok;
@@ -356,10 +358,9 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// <summary>A target of a GL internal format (the format VkGl made of it), with the uses VkGl's image had, one level unless asked.</summary>
     Target2D Make(UploadBatch batch, int w, int h, InternalFormat glFormat, TextureMinFilter min, string name, int levels = 1)
     {
-        var format = GlConventions.VkFormat(glFormat);
-        var use = TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst | (GlConventions.IsDepthFormat(format) ? TextureUse.DepthTarget : TextureUse.ColourTarget);
-        if (format is Vk.Format.R16G16B16A16Sfloat or Vk.Format.R32Sfloat or Vk.Format.R16G16Sfloat or Vk.Format.R32G32Sfloat && SupportsStorage(format)) use |= TextureUse.Storage;
-        var texture = batch.Create(new TextureDesc(format, w, h, levels, Use: use, Name: name));
+        var use = TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst | (GlConventions.IsDepthFormat(glFormat) ? TextureUse.DepthTarget : TextureUse.ColourTarget);
+        if (glFormat is InternalFormat.Rgba16f or InternalFormat.R32f or InternalFormat.RG16f or InternalFormat.RG32f && SupportsStorage(glFormat)) use |= TextureUse.Storage;
+        var texture = batch.Create(new TextureDesc(glFormat, w, h, levels, Use: use, Name: name));
         return new Target2D(texture, min, min == TextureMinFilter.Nearest ? TextureMagFilter.Nearest : TextureMagFilter.Linear);
     }
 
@@ -609,17 +610,17 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>One full-screen triangle with <paramref name="p"/> into <paramref name="target"/> (its uniforms and samplers set before), in a
     /// rendering of its own, followed by a full barrier (VkGl barriered before every pass).</summary>
-    readonly Dictionary<(LegacyProgram, Vk.Format, Vk.Format, DrawState), GraphicsPipeline> pipelines = [];
+    readonly Dictionary<(LegacyProgram, InternalFormat, InternalFormat, DrawState), GraphicsPipeline> pipelines = [];
 
     void Draw(LegacyProgram p, Target2D target) => Draw(p, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height);
 
-    void Draw(LegacyProgram p, RenderTarget colour, Vk.Format format, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state = null)
+    void Draw(LegacyProgram p, RenderTarget colour, InternalFormat format, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state = null)
     {
-        DrawPass(p, colour, format, default, Vk.Format.Undefined, targetWidth, targetHeight, viewportWidth, viewportHeight, state);
+        DrawPass(p, colour, format, default, InternalFormat.None, targetWidth, targetHeight, viewportWidth, viewportHeight, state);
     }
 
-    /// <summary>As <see cref="Draw(LegacyProgram, RenderTarget, Vk.Format, int, int, int, int, DrawState?)"/>, with an optional depth attachment (the pipeline is cached per program and attachment formats: one state each).</summary>
-    void DrawPass(LegacyProgram p, RenderTarget colour, Vk.Format format, RenderTarget depth, Vk.Format depthFormat, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state)
+    /// <summary>As <see cref="Draw(LegacyProgram, RenderTarget, InternalFormat, int, int, int, int, DrawState?)"/>, with an optional depth attachment (the pipeline is cached per program and attachment formats: one state each).</summary>
+    void DrawPass(LegacyProgram p, RenderTarget colour, InternalFormat format, RenderTarget depth, InternalFormat depthFormat, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state)
     {
         var cmd = Segment();
         cmd.BeginRendering(new RenderingDesc(colour, depth, targetWidth, targetHeight));
@@ -850,7 +851,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         giDivisor = GiResolve;
         using var batch = Gpu.Uploads.Begin();
         // The lit surfaces' normal, sqrt(albedo) and take-the-probes flag, packed (AtmosphereShaders' giAlbedoOut); the low target signed (the probes' light can be below the sky's) with the view depth in alpha.
-        giAlbedo = new Target2D(batch.Create(new TextureDesc(Vk.Format.R16G16B16A16Uint, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "post gi surface")),
+        giAlbedo = new Target2D(batch.Create(new TextureDesc(InternalFormat.Rgba16ui, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "post gi surface")),
             TextureMinFilter.Nearest, TextureMagFilter.Nearest);
         giLow = Make(batch, (width + giDivisor - 1) / giDivisor, (height + giDivisor - 1) / giDivisor, InternalFormat.Rgba16f, TextureMinFilter.Nearest, "post gi resolve");
     }
@@ -942,7 +943,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         Bind(d.P, d.Depth, sceneDepth);
         d.P.Set(d.FullSize, (float)width, (float)height);
         d.P.Set(d.Div, (float)div);
-        DrawPass(d.P, default, Vk.Format.Undefined, low.Depth!.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) },
+        DrawPass(d.P, default, InternalFormat.None, low.Depth!.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) },
             low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always });
         CloseSegment();
         Stamp("particle depth");
@@ -1222,7 +1223,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     {
         bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
         var top = dds.Surface(0, 0);
-        var format = GlConventions.VkFormat(bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8);
+        var format = bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8;
         using var batch = Gpu.Uploads.Begin();
         var texture = batch.Create(new TextureDesc(format, top.Width, top.Height, dds.MipCount, Name: name));
         for (int level = 0; level < dds.MipCount; level++)

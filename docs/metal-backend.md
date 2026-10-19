@@ -105,9 +105,9 @@ constant), so the Windows build compiles the game without any of it.
   needs `Pipelines`, `Globals`, `Samplers`, `Uploads`, `LodBias` and eight `CommandList` calls
   (`BindPipeline`, `Draw`, `SetViewport`, `SetScissor`, `SetRaster`, `SetDepth`,
   `SetDepthBias`).
-- The **formats**: the passes still state theirs as Vulkan's `Format` (166 references). The
-  engine's GL vocabulary has the rest (`InternalFormat` with `GlConventions.VkFormat`), so the
-  swap is the same shape as the state vocabulary's.
+- The **bindings and the resources**: the passes still hand the Vulkan layer descriptor sets,
+  images and buffers (the `DescriptorSet`, `WriteDescriptorSet`, `ImageLayout` vocabulary of the
+  native model). That is the resource layer, and it is the part a second backend replaces.
 
 ## Constraints
 

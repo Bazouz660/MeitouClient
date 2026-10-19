@@ -1249,7 +1249,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         var targets = Gpu.CurrentTargets();
         // What the GL code's Enable(DepthTest), DepthMask(false), Disable(CullFace), Enable(Blend) and BlendFunc made of the pass's state (the
         // depth test and blending only with the attachment they need, as VkGl's CurrentState).
-        bool hasDepth = targets.Formats.Depth != Silk.NET.Vulkan.Format.Undefined, hasColour = targets.Formats.Colour != Silk.NET.Vulkan.Format.Undefined;
+        bool hasDepth = targets.Formats.Depth != InternalFormat.None, hasColour = targets.Formats.Colour != InternalFormat.None;
         var state = Gpu.CurrentState() with
         {
             Cull = CullMode.None, DepthTest = hasDepth, DepthWrite = false, Blend = hasColour ? AlphaBlend : BlendState.Off,

@@ -190,7 +190,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         var attributes = new LegacyProgram.Attribute?[5];
         attributes[0] = WaterRenderer.QuadAttribute(quad);
         for (int a = 0; a < 4; a++)
-            attributes[1 + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, InstanceBytes, true);
+            attributes[1 + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceBytes, true);
         vertexSource = new VertexArrayBindings(attributes, default);
         white = SampledImage.Rgba8(gpu, 1, 1, [255, 255, 255, 255], repeat: false, mipmaps: false, "particle white");
     }
@@ -378,7 +378,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         bool low = divisor > 1;
         var cmd = gpu.BeginGuest(low ? "particles low" : "particles");
         var targets = gpu.CurrentTargets();
-        bool hasDepth = targets.Formats.Depth != Silk.NET.Vulkan.Format.Undefined, hasColour = targets.Formats.Colour != Silk.NET.Vulkan.Format.Undefined;
+        bool hasDepth = targets.Formats.Depth != InternalFormat.None, hasColour = targets.Formats.Colour != InternalFormat.None;
         var baseState = gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);

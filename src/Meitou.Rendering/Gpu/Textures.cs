@@ -10,7 +10,7 @@ public enum TextureUse { Sampled = 1, Storage = 2, ColourTarget = 4, DepthTarget
 public enum TextureKind { Texture2D, Texture2DArray, Cube }
 
 /// <summary>What a <see cref="Texture"/> is made from (docs/renderer-native.md 2.4).</summary>
-public sealed record TextureDesc(Format Format, int Width, int Height, int Levels = 1, int Layers = 1, int Samples = 1,
+public sealed record TextureDesc(InternalFormat Format, int Width, int Height, int Levels = 1, int Layers = 1, int Samples = 1,
     TextureKind Kind = TextureKind.Texture2D, TextureUse Use = TextureUse.Sampled | TextureUse.TransferDst, string Name = "")
 {
     public bool IsDepth => GlConventions.IsDepthFormat(Format);
@@ -68,7 +68,7 @@ public sealed unsafe class Texture : IDisposable
         int layers = desc.Kind == TextureKind.Cube ? 6 * Math.Max(desc.Layers, 1) : desc.Layers;
         var info = new ImageCreateInfo
         {
-            SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = desc.Format,
+            SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = GlConventions.VkFormat(desc.Format),
             Extent = new Extent3D((uint)desc.Width, (uint)desc.Height, 1), MipLevels = (uint)desc.Levels, ArrayLayers = (uint)layers,
             Samples = (SampleCountFlags)desc.Samples, Tiling = ImageTiling.Optimal, Usage = usage, SharingMode = SharingMode.Exclusive,
             InitialLayout = ImageLayout.Undefined, Flags = desc.Kind == TextureKind.Cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0,
@@ -125,7 +125,7 @@ public sealed unsafe class Texture : IDisposable
         if (views.TryGetValue(key, out var view)) return view;
         var info = new ImageViewCreateInfo
         {
-            SType = StructureType.ImageViewCreateInfo, Image = Image, ViewType = type, Format = Desc.Format, Components = swizzle,
+            SType = StructureType.ImageViewCreateInfo, Image = Image, ViewType = type, Format = GlConventions.VkFormat(Desc.Format), Components = swizzle,
             SubresourceRange = new ImageSubresourceRange(Desc.Aspect, (uint)baseLevel, (uint)levels, (uint)baseLayer, (uint)layers),
         };
         VulkanException.Check(device.Vk.CreateImageView(device.Device, &info, null, out view), "vkCreateImageView");

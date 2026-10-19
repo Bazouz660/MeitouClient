@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Data.Textures;
@@ -501,7 +502,7 @@ public sealed class UiPainter : IDisposable
     {
         var gpu = overlay.Gpu;
         using var upload = gpu.Uploads.Begin();
-        var texture = upload.Create(new TextureDesc(srgb ? Format.R8G8B8A8Srgb : Format.R8G8B8A8Unorm, image.Width, image.Height, Name: $"UI {name}"));
+        var texture = upload.Create(new TextureDesc(srgb ? InternalFormat.Srgb8Alpha8 : InternalFormat.Rgba8, image.Width, image.Height, Name: $"UI {name}"));
         var sampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), texture.View(), texture.Image);
         upload.Write(texture, 0, 0, new PixelRect(0, 0, (uint)image.Width, (uint)image.Height), image.Pixels);

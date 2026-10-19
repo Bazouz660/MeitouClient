@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
@@ -67,7 +68,7 @@ internal sealed class ImpostorPreview : IDisposable
             Span<LegacyProgram.Attribute?> attributes = new LegacyProgram.Attribute?[16];
             FoliageRenderer.VertexAttributes(vertices).AsSpan().CopyTo(attributes);
             for (int a = 0; a < 4; a++)
-                attributes[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Format.R32G32B32A32Sfloat, 64, true);
+                attributes[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
             parts.Add(new ImpostorBaker.Part
             {
                 Vertices = vertices, Indices = indices, Count = mp.Indices.Length, HasColours = mp.HasColours,

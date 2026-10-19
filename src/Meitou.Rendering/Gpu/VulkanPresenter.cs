@@ -70,7 +70,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         if (Backbuffer is not { } b || b.Desc.Width != width || b.Desc.Height != height)
         {
             Backbuffer?.Dispose();   // released after the frames in flight
-            Backbuffer = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, width, height,
+            Backbuffer = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.TransferDst | TextureUse.Sampled, Name: "backbuffer"));
         }
         ctx.BeginFrame();

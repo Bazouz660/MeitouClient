@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using Texture = Meitou.Rendering.Gpu.Texture;
@@ -59,10 +60,10 @@ public sealed class ImpostorTextures : IDisposable
             sources[i] = texture;
             var format = texture.Encoding switch
             {
-                ImpostorEncoding.Bc3 => Format.BC3UnormBlock,
-                ImpostorEncoding.Bc1 => Format.BC1RgbaUnormBlock,
-                ImpostorEncoding.Bc5 => Format.BC5UnormBlock,
-                _ => Format.R8G8B8A8Unorm,
+                ImpostorEncoding.Bc3 => InternalFormat.CompressedRgbaS3TCDxt5Ext,
+                ImpostorEncoding.Bc1 => InternalFormat.CompressedRgbaS3TCDxt1Ext,
+                ImpostorEncoding.Bc5 => InternalFormat.CompressedRGRgtc2,
+                _ => InternalFormat.Rgba8,
             };
             int size = atlas.AtlasPixels >> skips[i];
             maps[i] = batch.Create(new TextureDesc(format, size, size, LevelsOf(i), Name: AllocationName(order[i])));

@@ -149,7 +149,7 @@ internal sealed class ShoreField : IDisposable
                 var value = baked.Value;
                 using (var batch = gpu.Uploads.Begin())
                 {
-                    var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32Sfloat, 1, 1, Name: "shore field"));
+                    var t = batch.Create(new TextureDesc(InternalFormat.RG32f, 1, 1, Name: "shore field"));
                     batch.Write(t, 0, 0, new PixelRect(0, 0, 1, 1), MemoryMarshal.AsBytes(new ReadOnlySpan<Vector2>(in value)));
                     next = new TerrainTexture(gpu, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
                 }
@@ -169,7 +169,7 @@ internal sealed class ShoreField : IDisposable
         else
         {
             using var batch = gpu.Uploads.Begin();
-            target = new TerrainTexture(gpu, batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32Sfloat, size, size, Name: "shore field")),
+            target = new TerrainTexture(gpu, batch.Create(new TextureDesc(InternalFormat.RG32f, size, size, Name: "shore field")),
                 TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
         }
         uploading = (baked, target, 0);

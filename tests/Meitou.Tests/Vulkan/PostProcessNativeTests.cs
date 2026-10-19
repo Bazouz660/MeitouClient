@@ -31,7 +31,7 @@ public unsafe class PostProcessNativeTests
             foreach (var (w, h) in new[] { (64, 36), (80, 48) })
             {
                 // The caller's RGBA8 target, as the viewer's offscreen framebuffer.
-                using var target = Texture.Create(ctx, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, w, h,
+                using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, w, h,
                     Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.Sampled, Name: "test target"));
                 post.Target = target;
 
