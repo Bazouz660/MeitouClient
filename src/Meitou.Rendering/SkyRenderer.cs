@@ -112,6 +112,12 @@ public sealed unsafe partial class SkyRenderer : IDisposable
         }
         """;
 
+    /// <summary>The sky's own GLSL, for a backend that compiles the sky itself (the Metal path): the fullscreen vertex shader and the simple fragment shader.</summary>
+    public static (string Vertex, string SimpleFragment) SimpleShader => (Vertex, SimpleFragment);
+
+    /// <summary>The sky's own GLSL, the physical sky's fragment shader with it.</summary>
+    public static (string Vertex, string Fragment) PhysicalShader => (Vertex, SkyFragment);
+
     // SkyX's skydome per pixel (HDR): the scattered light, its night glow and starfield; no sun disc (the game's sun is the Mie lobe).
     static string F(float v) => v.ToString("0.#########", System.Globalization.CultureInfo.InvariantCulture) + (v == MathF.Floor(v) ? ".0" : "");
 

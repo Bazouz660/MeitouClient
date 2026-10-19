@@ -31,6 +31,8 @@ sealed class GameOptions
     public double? QuitAfter;
     /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
     public string? Load;
+    /// <summary>The renderer for the whole frame: <c>vulkan</c> (the default) or <c>metal</c> (macOS: the sky only so far, the port's first pass).</summary>
+    public string Renderer = "vulkan";
 
     public const string Usage = """
         meitou [where] [options]     boots into the world with the Kenshi camera (default --town "The Hub")
@@ -52,6 +54,7 @@ sealed class GameOptions
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
+          --renderer <vulkan|metal>  the renderer for the whole frame: vulkan (the default) or metal (macOS: the sky only so far, the port's first pass)
           --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
           world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
         Keys: W/A/S/D or arrows move (or the pointer at a screen edge), Q/E rotate, Comma/Period tilt, wheel or Home/End zoom, PageUp/PageDown floor up/down, middle drag orbit, left click or drag selects, right click moves (shift queues), 1..9 / ` select, R stops,
@@ -106,6 +109,13 @@ sealed class GameOptions
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--load": g.Load = Next(); break;
+                case "--renderer":
+                {
+                    string renderer = Next().ToLowerInvariant();
+                    if (renderer is not ("vulkan" or "metal")) throw new ArgumentException("--renderer must be vulkan or metal");
+                    g.Renderer = renderer;
+                    break;
+                }
                 default: rest.Add(a); break;
             }
         }

@@ -6,6 +6,9 @@ This is not a port and not part of the solution. It is a probe of the risky part
 Metal backend, on a local branch (`metal-spike`), so that the answer to "could we rewrite the
 renderer against Metal?" is measured rather than guessed.
 
+The backend that grew out of it is `src/Meitou.Metal/`; its state and the findings are in
+[docs/metal-backend.md](../../docs/metal-backend.md).
+
 ## What is proved so far
 
 | Stage | What it shows | Status |

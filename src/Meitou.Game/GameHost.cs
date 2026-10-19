@@ -75,7 +75,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
 
     public int Run()
     {
-        try { return o.Screenshot is not null ? Screenshot() : Interactive(); }
+        try
+        {
+#if MEITOU_METAL
+            if (g.Renderer == "metal") return Metal();
+#endif
+            if (g.Renderer != "vulkan")
+            {
+                Console.Error.WriteLine($"the {g.Renderer} renderer is macOS only.");
+                return 2;
+            }
+            return o.Screenshot is not null ? Screenshot() : Interactive();
+        }
         finally { DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
     }
 

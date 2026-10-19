@@ -33,7 +33,13 @@
     <ProjectReference Include="../Meitou.Navigation/Meitou.Navigation.csproj" />
     <ProjectReference Include="..\Meitou.Rendering\Meitou.Rendering.csproj" />
     <ProjectReference Include="..\Meitou.Rendering.Display\Meitou.Rendering.Display.csproj" />
+    <!-- The Metal backend (macOS only: SharpMetal P/Invokes /usr/lib/libobjc.A.dylib), so the Windows build never sees it. -->
+    <ProjectReference Include="..\Meitou.Metal\Meitou.Metal.csproj" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
   </ItemGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <DefineConstants>$(DefineConstants);MEITOU_METAL</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="4" />
