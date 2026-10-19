@@ -92,6 +92,23 @@ Two sharp edges:
 The game reaches the Metal backend through a conditional project reference (the `MEITOU_METAL`
 constant), so the Windows build compiles the game without any of it.
 
+## What the passes state
+
+The renderers above `Gpu/` describe a draw in the engine's GL vocabulary, not in Vulkan's words
+(docs/renderer-native.md "Synchronization and shaders"):
+
+| What | The vocabulary | Vulkan's words it replaced |
+|---|---|---|
+| The draw state | `DrawState`, `BlendState` | `CullModeFlags`, `FrontFace`, `CompareOp`, `BlendFactor`, `BlendOp`, `ColorComponentFlags`, `PolygonMode` |
+| The geometry | `PrimitiveType`, `VertexInput` | `PrimitiveTopology` |
+| The targets | `AttachmentFormats`, `PixelViewport`, `PixelRect` | `Format`, `Viewport`, `Rect2D` |
+| The shaders | `ShaderProgram`, `GraphicsPipelineDesc`, `ShaderReflection` | (already neutral) |
+
+`GlConventions` maps the vocabulary to Vulkan (the front face flips, GL's 24-bit depth is a
+32-bit float, the sRGB and the integer formats are named), and a second backend maps it to
+itself. The passes that still speak Vulkan are the ones that touch the resources themselves:
+the descriptor sets, the images and the buffers.
+
 ## What the second backend still needs
 
 - The **physical** sky: the game's DDS textures (the starfield, the planets, the clouds) as
@@ -108,6 +125,32 @@ constant), so the Windows build compiles the game without any of it.
 - The **bindings and the resources**: the passes still hand the Vulkan layer descriptor sets,
   images and buffers (the `DescriptorSet`, `WriteDescriptorSet`, `ImageLayout` vocabulary of the
   native model). That is the resource layer, and it is the part a second backend replaces.
+
+## The road to a Metal frame
+
+Each step ends with something visible; the order is the cheap one first.
+
+| Step | Work | What it gives |
+|---|---|---|
+| Done | The sky on Metal, in the game (`--renderer metal`) | the strategy: the shaders, the uniforms, the present |
+| Done | The state and the formats in the GL vocabulary | the passes state what they want in neutral words |
+| Next | The resource layer behind interfaces: the Vulkan implementation stays, a Metal one joins it | a Metal device that can run any pass |
+| Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
+| Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
+| Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
+
+Two things the passes cannot give a second backend as they are:
+
+- The **physical** sky's uniforms come from `SkyRenderer`, which needs a Vulkan `GpuContext` to
+  exist. The atmosphere's model (CPU) has to become something both backends consume.
+- The **UI** is drawn in Vulkan's immediate mode into the backbuffer image; it needs a twin.
+
+Two names collide with Silk.NET.Vulkan's and are qualified where the file still imports it:
+`InternalFormat` and `PrimitiveType`. Both collisions go away when the file sheds its Vulkan
+imports.
+
+The parity check for a step that changes the Vulkan path: the game's offscreen picture
+(`--screenshot`, the same view) is byte for byte the same before and after.
 
 ## Constraints
 
