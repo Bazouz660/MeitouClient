@@ -254,9 +254,9 @@ public sealed unsafe class LegacyProgram : IDisposable
                 var t = samplerValues[si];
                 if (t.IsNull && globalTextures[si] is { } gt) t = gt();
                 if (t.IsNull) t = ctx.Dummy(s.Info);
-                imageInfos[i] = new DescriptorImageInfo(t.Sampler, t.View, ImageLayout.General);
-                same &= lastPush[w * 3] == t.Sampler.Handle && lastPush[w * 3 + 1] == t.View.Handle;
-                (lastPush[w * 3], lastPush[w * 3 + 1]) = (t.Sampler.Handle, t.View.Handle);
+                imageInfos[i] = new DescriptorImageInfo(ctx.Device.SamplerAt(t.Sampler.Index), t.View, ImageLayout.General);
+                same &= lastPush[w * 3] == (ulong)t.Sampler.Index && lastPush[w * 3 + 1] == t.View.Handle;
+                (lastPush[w * 3], lastPush[w * 3 + 1]) = ((ulong)t.Sampler.Index, t.View.Handle);
                 writes[w++] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet, DstBinding = s.Binding, DescriptorCount = 1,

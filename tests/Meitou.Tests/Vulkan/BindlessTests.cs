@@ -65,7 +65,7 @@ public class BindlessTests
         cmd.SetDepthBias(false, 0, 0);
     }
 
-    static Silk.NET.Vulkan.Sampler Nearest(GpuContext ctx, bool integer) =>
+    static GpuSampler Nearest(GpuContext ctx, bool integer) =>
         ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, integer, 0));
 

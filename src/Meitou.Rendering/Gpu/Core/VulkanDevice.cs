@@ -67,6 +67,11 @@ public sealed unsafe class VulkanDevice : IDisposable
     public GpuAllocator Allocator { get; private set; } = null!;
     public PipelineCache PipelineCache { get; private set; }
     public FrameRing Frames { get; private set; } = null!;
+
+    /// <summary>The samplers the renderers hold by index (index 0 is the null sampler).</summary>
+    readonly List<Silk.NET.Vulkan.Sampler> samplerTable = [default];
+    public Silk.NET.Vulkan.Sampler SamplerAt(int index) => samplerTable[index];
+    public int AddSampler(Silk.NET.Vulkan.Sampler sampler) { samplerTable.Add(sampler); return samplerTable.Count - 1; }
     public int FramesInFlight => options.FramesInFlight;
 
     public bool ValidationEnabled { get; private set; }

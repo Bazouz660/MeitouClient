@@ -25,7 +25,7 @@ internal sealed class WorldLamps : IDisposable
     readonly Task<WorldLight[]> loading;
     WorldLight[]? lamps;
     readonly Texture[] cells, index, data;
-    readonly Sampler nearest;
+    readonly GpuSampler nearest;
     readonly float[] cellValues = new float[Cells * Cells * 2];
     readonly float[] indexValues = new float[IndexWidth * IndexRows];
     readonly Vector4[] dataValues = new Vector4[MaxLamps * DataWidth];
@@ -70,7 +70,7 @@ internal sealed class WorldLamps : IDisposable
 
     /// <summary>The textures of this frame's slot, for a compute pass that binds them itself (the probe trace).</summary>
     internal (Texture Cells, Texture Index, Texture Data) Current => (cells[slot], index[slot], data[slot]);
-    internal Sampler NearestSampler => nearest;
+    internal GpuSampler NearestSampler => nearest;
     /// <summary>This frame's <c>uLightGrid</c> (w 0: no lamps).</summary>
     internal Vector4 Grid => grid;
     internal uint Emitter(string placementId) => emitters.GetValueOrDefault(placementId);

@@ -36,7 +36,7 @@ public readonly record struct SamplerDesc(TextureMinFilter Min, TextureMagFilter
 public sealed unsafe class SamplerCache : IDisposable
 {
     readonly VulkanDevice device;
-    readonly Dictionary<SamplerDesc, Sampler> samplers = [];
+    readonly Dictionary<SamplerDesc, int> samplers = [];
 
     public SamplerCache(VulkanDevice device) => this.device = device;
 
@@ -51,10 +51,10 @@ public sealed unsafe class SamplerCache : IDisposable
     int maxAnisotropy = 16;
     public int Generation { get; private set; }
 
-    public Sampler Get(in SamplerDesc desc)
+    public GpuSampler Get(in SamplerDesc desc)
     {
         var key = device.SamplerAnisotropy ? desc with { Anisotropy = Math.Min(desc.Anisotropy, maxAnisotropy) } : desc with { Anisotropy = 1 };
-        if (samplers.TryGetValue(key, out var sampler)) return sampler;
+        if (samplers.TryGetValue(key, out var index)) return new GpuSampler(index, key);
         var vkFilters = GlConventions.VkFilters(key.Min);
         var info = new SamplerCreateInfo
         {
@@ -70,14 +70,14 @@ public sealed unsafe class SamplerCache : IDisposable
             BorderColor = key.IntegerFormat ? (key.TransparentBorder ? BorderColor.IntTransparentBlack : BorderColor.IntOpaqueBlack)
                 : key.TransparentBorder ? BorderColor.FloatTransparentBlack : BorderColor.FloatOpaqueWhite,
         };
-        VulkanException.Check(device.Vk.CreateSampler(device.Device, &info, null, out sampler), "vkCreateSampler");
-        samplers[key] = sampler;
-        return sampler;
+        VulkanException.Check(device.Vk.CreateSampler(device.Device, &info, null, out var created), "vkCreateSampler");
+        samplers[key] = device.AddSampler(created);
+        return new GpuSampler(samplers[key], key);
     }
 
     public void Dispose()
     {
-        foreach (var s in samplers.Values) device.Vk.DestroySampler(device.Device, s, null);
+        foreach (var s in samplers.Values) device.Vk.DestroySampler(device.Device, device.SamplerAt(s), null);
         samplers.Clear();
     }
 }

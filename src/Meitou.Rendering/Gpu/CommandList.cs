@@ -343,7 +343,7 @@ public sealed unsafe class CommandList
             {
                 case GpuBindingKind.Sampled:
                 case GpuBindingKind.StorageImage:
-                    images[i] = new DescriptorImageInfo(b.Texture.Sampler, b.Texture.View, ImageLayout.General);
+                    images[i] = new DescriptorImageInfo(device.SamplerAt(b.Texture.Sampler.Index), b.Texture.View, ImageLayout.General);
                     writes[i].DescriptorType = b.Kind == GpuBindingKind.Sampled ? DescriptorType.CombinedImageSampler : DescriptorType.StorageImage;
                     writes[i].PImageInfo = &images[i];
                     break;

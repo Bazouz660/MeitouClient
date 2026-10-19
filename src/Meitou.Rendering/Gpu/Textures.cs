@@ -19,13 +19,13 @@ public sealed record TextureDesc(InternalFormat Format, int Width, int Height, i
 
 /// <summary>A texture as a draw samples it: the sampler and the view (combined image sampler, GENERAL layout). <see cref="Image"/> is
 /// for logs and barriers.</summary>
-public readonly record struct SampledTexture(Sampler Sampler, ImageView View, Image Image)
+public readonly record struct SampledTexture(GpuSampler Sampler, ImageView View, Image Image)
 {
     public bool IsNull => View.Handle == 0;
 
     // By handle: Silk.NET's handle structs are not IEquatable, so the generated equality boxed each of them (on every Bindless call).
-    public bool Equals(SampledTexture other) => Sampler.Handle == other.Sampler.Handle && View.Handle == other.View.Handle && Image.Handle == other.Image.Handle;
-    public override int GetHashCode() => HashCode.Combine(Sampler.Handle, View.Handle, Image.Handle);
+    public bool Equals(SampledTexture other) => Sampler == other.Sampler && View.Handle == other.View.Handle && Image.Handle == other.Image.Handle;
+    public override int GetHashCode() => HashCode.Combine(Sampler, View.Handle, Image.Handle);
 }
 
 /// <summary>

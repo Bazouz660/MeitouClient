@@ -15,7 +15,7 @@ sealed unsafe class GiDebugPass : IDisposable
     readonly GpuContext ctx;
     readonly ShaderProgram program;
     readonly ComputePipeline pipeline;
-    readonly Sampler sampler;
+    readonly GpuSampler sampler;
     Texture? output;
     uint frame;
 
@@ -75,7 +75,7 @@ sealed unsafe class GiDebugPass : IDisposable
         var cmd = ctx.BeginNative("gi debug");
         cmd.BeginLabel("gi debug");
         cmd.Barrier(BarrierBatch.Full);
-        var image = new DescriptorImageInfo(sampler, depth.View(), ImageLayout.General);
+        var image = new DescriptorImageInfo(ctx.Device.SamplerAt(sampler.Index), depth.View(), ImageLayout.General);
         var storage = new DescriptorImageInfo(default, output.View(), ImageLayout.General);
         var top = scene.Top.Handle;
         var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &top };

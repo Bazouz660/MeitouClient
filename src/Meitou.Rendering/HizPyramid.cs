@@ -46,7 +46,7 @@ public sealed unsafe class HizPyramid : IDisposable
     Vector3 eye, right, up, back;
     float tanX, tanY;
     long builtFrame = long.MinValue;
-    Sampler sampler;
+    GpuSampler sampler;
 
     public HizPyramid(GpuContext ctx)
     {

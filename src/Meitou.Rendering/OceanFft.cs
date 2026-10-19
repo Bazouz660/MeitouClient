@@ -44,7 +44,7 @@ public sealed unsafe class OceanWaves : IDisposable
     readonly ComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
     readonly Texture displacement, slopes;
-    readonly Sampler sampler;
+    readonly GpuSampler sampler;
     readonly ulong texels;
 
     // The spectra: slot `to` is shown at blend 1. A new one goes into the other slot once the blend is complete.

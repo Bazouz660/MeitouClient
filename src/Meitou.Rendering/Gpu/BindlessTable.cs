@@ -201,7 +201,7 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>Adds <paramref name="texture"/>'s full view with <paramref name="sampler"/> to the array its format and kind select
     /// (<see cref="KindFor"/>; <paramref name="shadow"/> for a depth texture read with comparison).</summary>
-    public BindlessHandle Register(Texture texture, Sampler sampler, bool shadow = false)
+    public BindlessHandle Register(Texture texture, GpuSampler sampler, bool shadow = false)
     {
         var kind = KindFor(texture.Desc.Format, texture.Desc.Kind, shadow);
         return new BindlessHandle(kind, Register(kind, new SampledTexture(sampler, texture.View(), texture.Image)));
@@ -278,7 +278,7 @@ public sealed unsafe class BindlessTable : IDisposable
                         continue;
                     }
                     if (!written.Add((kind, index))) continue;
-                    pi[count] = new DescriptorImageInfo(t.Sampler, t.View, ImageLayout.General);
+                    pi[count] = new DescriptorImageInfo(device.SamplerAt(t.Sampler.Index), t.View, ImageLayout.General);
                     pw[count] = new WriteDescriptorSet
                     {
                         SType = StructureType.WriteDescriptorSet, DstSet = sets[slot], DstBinding = (uint)kind, DstArrayElement = index,

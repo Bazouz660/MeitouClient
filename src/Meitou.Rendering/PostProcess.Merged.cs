@@ -30,9 +30,9 @@ public sealed unsafe partial class PostProcess
     ComputePipeline? velocityPipeline, exposurePipeline;
     DeviceBuffer? exposureState;
     bool exposureStateZeroed;
-    Vk.Sampler pointSampler;
+    GpuSampler pointSampler;
 
-    Vk.Sampler Point() => pointSampler.Handle != 0 ? pointSampler : pointSampler = Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+    GpuSampler Point() => pointSampler.Index != 0 ? pointSampler : pointSampler = Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0));
 
     /// <summary>Whether the kernels can run: they write storage images (the formats of the motion, depth, reactivity and adaptation targets).</summary>
@@ -80,17 +80,12 @@ public sealed unsafe partial class PostProcess
         var cmd = Segment();
         var near = Sampled(sceneDepth!);
         var far = Sampled(farDepth!);
-        var infos = stackalloc Vk.DescriptorImageInfo[5];
-        infos[0] = new Vk.DescriptorImageInfo(Point(), near.View, Vk.ImageLayout.General);
-        infos[1] = new Vk.DescriptorImageInfo(Point(), far.View, Vk.ImageLayout.General);
-        infos[2] = new Vk.DescriptorImageInfo(default, motionOut.Texture.View(), Vk.ImageLayout.General);
-        infos[3] = new Vk.DescriptorImageInfo(default, (depthOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
-        infos[4] = new Vk.DescriptorImageInfo(default, (reactiveOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
         var bindings = stackalloc GpuBinding[6];
-        for (int i = 0; i < 5; i++)
-            bindings[i] = i < 2
-                ? GpuBinding.Sampled((uint)i, new SampledTexture(infos[i].Sampler, infos[i].ImageView, default))
-                : GpuBinding.StorageImage((uint)i, new SampledTexture(default, infos[i].ImageView, default));
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), near.View, default));
+        bindings[1] = GpuBinding.Sampled(1, new SampledTexture(Point(), far.View, default));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, motionOut.Texture.View(), default));
+        bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View(), default));
+        bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View(), default));
         bindings[5] = GpuBinding.Storage(5, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(velocityPipeline!);
@@ -126,15 +121,10 @@ public sealed unsafe partial class PostProcess
             exposureStateZeroed = true;
         }
         var scene = Sampled(postColour);
-        var infos = stackalloc Vk.DescriptorImageInfo[3];
-        infos[0] = new Vk.DescriptorImageInfo(scene.Sampler, scene.View, Vk.ImageLayout.General);
-        infos[1] = new Vk.DescriptorImageInfo(default, adaptA!.Texture.View(), Vk.ImageLayout.General);
-        infos[2] = new Vk.DescriptorImageInfo(default, adaptB!.Texture.View(), Vk.ImageLayout.General);
         var bindings = stackalloc GpuBinding[4];
-        for (int i = 0; i < 3; i++)
-            bindings[i] = i == 0
-                ? GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View, default))
-                : GpuBinding.StorageImage((uint)i, new SampledTexture(default, infos[i].ImageView, default));
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View, default));
+        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View(), default));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View(), default));
         bindings[3] = GpuBinding.Storage(3, new BufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(exposurePipeline!);

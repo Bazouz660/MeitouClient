@@ -45,7 +45,7 @@ internal sealed unsafe class GiProbes : IDisposable
     bool hiddenValid;
     /// <summary>How far the eye may move before the hidden layers are worked out again (the reach boxes are widened by twice that).</summary>
     const float HiddenSlack = 96;
-    readonly Sampler linear, nearest;
+    readonly GpuSampler linear, nearest;
     readonly Vector4[] grid = new Vector4[Cascades * 2];
     readonly float[] baseHeights = new float[Columns * Columns * Cascades];
     readonly (int X, int Z)[] placed = new (int, int)[Cascades];
@@ -325,7 +325,7 @@ internal sealed unsafe class GiProbes : IDisposable
             var uniform = new DescriptorBufferInfo(block.Handle, block.Offset, (ulong)sizeof(Constants));
             var images = stackalloc DescriptorImageInfo[2];
             images[0] = new DescriptorImageInfo(default, irradiance.View(), ImageLayout.General);
-            images[1] = new DescriptorImageInfo(nearest, bases.View(), ImageLayout.General);
+            images[1] = new DescriptorImageInfo(ctx.Device.SamplerAt(nearest.Index), bases.View(), ImageLayout.General);
             var writes = stackalloc WriteDescriptorSet[4];
             writes[0] = Buffer(0, DescriptorType.StorageBuffer, &stateInfo);
             writes[1] = Buffer(1, DescriptorType.UniformBuffer, &uniform);
@@ -343,19 +343,19 @@ internal sealed unsafe class GiProbes : IDisposable
             var rayInfo = new DescriptorBufferInfo(rays.Handle, 0, rays.Size);
             var uniform = new DescriptorBufferInfo(block.Handle, block.Offset, (ulong)sizeof(Constants));
             var images = stackalloc DescriptorImageInfo[9];
-            images[0] = new DescriptorImageInfo(linear, irradiance.View(), ImageLayout.General);
-            images[1] = new DescriptorImageInfo(linear, distance.View(), ImageLayout.General);
-            images[2] = new DescriptorImageInfo(nearest, bases.View(), ImageLayout.General);
+            images[0] = new DescriptorImageInfo(ctx.Device.SamplerAt(linear.Index), irradiance.View(), ImageLayout.General);
+            images[1] = new DescriptorImageInfo(ctx.Device.SamplerAt(linear.Index), distance.View(), ImageLayout.General);
+            images[2] = new DescriptorImageInfo(ctx.Device.SamplerAt(nearest.Index), bases.View(), ImageLayout.General);
             images[3] = Image(g, "uAtmoIrradiance", cube: true);
             images[4] = Image(g, "uAtmoAmbientMap", cube: false);
-            images[5] = ground.IsNull ? images[2] : new DescriptorImageInfo(ground.Sampler, ground.View, ImageLayout.General);
+            images[5] = ground.IsNull ? images[2] : new DescriptorImageInfo(ctx.Device.SamplerAt(ground.Sampler.Index), ground.View, ImageLayout.General);
             // The lamps' textures (a stand-in while there are none: the shader reads them only when LightGrid.w is set).
             if (lamps is not null)
             {
                 var (lampCells, lampIndex, lampData) = lamps.Current;
-                images[6] = new DescriptorImageInfo(lamps.NearestSampler, lampCells.View(), ImageLayout.General);
-                images[7] = new DescriptorImageInfo(lamps.NearestSampler, lampIndex.View(), ImageLayout.General);
-                images[8] = new DescriptorImageInfo(lamps.NearestSampler, lampData.View(), ImageLayout.General);
+                images[6] = new DescriptorImageInfo(ctx.Device.SamplerAt(lamps.NearestSampler.Index), lampCells.View(), ImageLayout.General);
+                images[7] = new DescriptorImageInfo(ctx.Device.SamplerAt(lamps.NearestSampler.Index), lampIndex.View(), ImageLayout.General);
+                images[8] = new DescriptorImageInfo(ctx.Device.SamplerAt(lamps.NearestSampler.Index), lampData.View(), ImageLayout.General);
             }
             else images[6] = images[7] = images[8] = images[2];
             var stateInfo = new DescriptorBufferInfo(state.Handle, 0, state.Size);
@@ -391,7 +391,7 @@ internal sealed unsafe class GiProbes : IDisposable
             var images = stackalloc DescriptorImageInfo[3];
             images[0] = new DescriptorImageInfo(default, irradiance.View(), ImageLayout.General);
             images[1] = new DescriptorImageInfo(default, distance.View(), ImageLayout.General);
-            images[2] = new DescriptorImageInfo(nearest, bases.View(), ImageLayout.General);
+            images[2] = new DescriptorImageInfo(ctx.Device.SamplerAt(nearest.Index), bases.View(), ImageLayout.General);
             var writes = stackalloc WriteDescriptorSet[7];
             writes[0] = Buffer(0, DescriptorType.StorageBuffer, &rayInfo);
             writes[1] = Buffer(1, DescriptorType.StorageBuffer, &stateInfo);
@@ -428,10 +428,10 @@ internal sealed unsafe class GiProbes : IDisposable
     DescriptorImageInfo Image(FrameGlobals g, string name, bool cube)
     {
         var t = g.Texture(name)?.Invoke() ?? default;
-        if (!t.IsNull) return new DescriptorImageInfo(t.Sampler, t.View, ImageLayout.General);
+        if (!t.IsNull) return new DescriptorImageInfo(ctx.Device.SamplerAt(t.Sampler.Index), t.View, ImageLayout.General);
         // Not published yet (the game sky off): a stand-in the shader never reads (uAtmoMaps says the map is absent).
         var standIn = ctx.Dummy(FrameGlobals.Sampler2D(name, cube));
-        return new DescriptorImageInfo(standIn.Sampler, standIn.View, ImageLayout.General);
+        return new DescriptorImageInfo(ctx.Device.SamplerAt(standIn.Sampler.Index), standIn.View, ImageLayout.General);
     }
 
     static T Read<T>(FrameGlobals g, string name) where T : unmanaged

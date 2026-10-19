@@ -8,8 +8,12 @@ replaces it. The renderers state their draws in the engine's GL vocabulary
 The vocabulary below is the shape the port needs. The descriptions are in the code: the draw
 state, the formats, the load op, the clear colour, the index kind, the sampler's filters and
 wrap modes, and the binding list (the renderers state the slots and what each holds; the
-program carries the layout, the backend the image layout and the descriptor type). What is left
-is the handles, the descriptor sets and the seam.
+program carries the layout, the backend the image layout and the descriptor type). The sampler's
+handle is in the code too: the renderers hold a `GpuSampler` (an index into the backend's
+samplers, 0 being the null one) and the backend resolves it where it writes a descriptor.
+
+What is left: the other handles (the views, the textures, the buffers), the descriptor sets and
+the seam.
 
 ## What the renderers would hold
 
@@ -18,7 +22,7 @@ is the handles, the descriptor sets and the seam.
 | `GpuImage`, `GpuBuffer` (classes around a Vulkan object) | `GpuImage`, `GpuBuffer` (handles) | the description is the engine's, the object is the backend's |
 | `Texture` (a class with a view cache) | `GpuTexture` (a handle) | the views are the backend's |
 | `ImageView` (a Vulkan handle) | `GpuView` (a handle) | |
-| `Sampler` | `GpuSampler` (a handle) | |
+| `Sampler` | `GpuSampler` (a handle) | the index into the backend's samplers; 0 is the null one |
 | `BufferBinding(Buffer, Offset, Size)` | `GpuBufferBinding(GpuBuffer, Offset, Size)` | |
 | `PipelineLayout` | none | the reflection knows the sets, the slots and the stages |
 | `WriteDescriptorSet`, `DescriptorImageInfo`, `DescriptorType` | `GpuBinding` | a flat list per set |
