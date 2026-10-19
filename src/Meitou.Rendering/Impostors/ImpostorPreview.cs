@@ -87,10 +87,10 @@ internal sealed class ImpostorPreview : IDisposable
     }
 
     /// <summary>The instance rows in the frame's constants, bound at locations 7 to 10 (row 0 w of each matrix: the fade, 2 = whole).</summary>
-    BufferBinding[] Rows(ReadOnlySpan<Matrix4x4> instances)
+    GpuBufferBinding[] Rows(ReadOnlySpan<Matrix4x4> instances)
     {
         var data = gpu.Frame.Constants.Write(instances, 16);
-        return [.. Enumerable.Range(0, 4).Select(a => new BufferBinding(data.Handle, data.Offset + (ulong)(16 * a)))];
+        return [.. Enumerable.Range(0, 4).Select(a => new GpuBufferBinding(data.Handle, data.Offset + (ulong)(16 * a)))];
     }
 
     static readonly DrawState MeshState = new(CullMode.Back, FrontFaceDirection.Ccw, true, true, DepthFunction.Less, false, 0, 0, BlendState.Off,
@@ -133,7 +133,7 @@ internal sealed class ImpostorPreview : IDisposable
                 pc.UseVertexColour = p.HasColours ? 1u : 0u;
                 cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(meshProgram.P, p.Layout, PrimitiveType.Triangles, formats, "impostor preview meshes")));
                 cmd.BindVertexBuffers(0, p.Bindings);
-                cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
+                cmd.BindIndexBuffer(new GpuBufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
                 cmd.PushConstants(meshProgram.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
                 cmd.DrawIndexed((uint)p.Count, (uint)instances.Length);
             }

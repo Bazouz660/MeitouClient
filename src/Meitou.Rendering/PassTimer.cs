@@ -63,12 +63,12 @@ sealed class FrameBlock(GpuContext gpu, int bytes)
     readonly ulong align = Math.Max(gpu.Device.Limits.MinUniformBufferOffsetAlignment, 16);
     int version = 1, written = -1;
     long frame = -1;
-    BufferBinding binding;
+    GpuBufferBinding binding;
 
     /// <summary>Replaces the whole block.</summary>
     public void Set(ReadOnlySpan<float> values) { values.CopyTo(data); version++; }
 
-    public BufferBinding Binding()
+    public GpuBufferBinding Binding()
     {
         var f = gpu.Frame;
         if (frame != f.Number || written != version)

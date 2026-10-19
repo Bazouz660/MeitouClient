@@ -144,13 +144,13 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             batch.Write(gridVertices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(grid.AsSpan()));
             batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(gridIndexData.AsSpan()));
         }
-        gridVertex = new LegacyProgram.Attribute(new BufferBinding(gridVertices.Handle, 0, gridVertices.Size), InternalFormat.RG32f, 8, false);
-        gridElements = new BufferBinding(gridIndices.Handle, 0, gridIndices.Size);
+        gridVertex = new LegacyProgram.Attribute(new GpuBufferBinding(gridVertices.Handle, 0, gridVertices.Size), InternalFormat.RG32f, 8, false);
+        gridElements = new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size);
     }
 
     /// <summary>The grid's vertex attribute at location 0 and its index buffer, as VkGl fed them from the GL vertex array.</summary>
     readonly LegacyProgram.Attribute gridVertex;
-    readonly BufferBinding gridElements;
+    readonly GpuBufferBinding gridElements;
 
     /// <summary>Width of the band at the fine window's border where it fades into the coarse grid.</summary>
     static float BandOf(HeightWindow w) => Math.Clamp((w.Columns - 1) * w.Spacing * 0.1f, w.Spacing * 4, 3000);
@@ -450,14 +450,14 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         }
 
         /// <summary>Locations 0 .. <see cref="Own"/> − 1 into <paramref name="result"/>: each attribute's buffer, GL's constant where none.</summary>
-        public void Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, Span<BufferBinding> result)
+        public void Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, Span<GpuBufferBinding> result)
         {
             for (int loc = 0; loc < Own; loc++)
             {
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
+                    : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
             }
         }
 
@@ -574,7 +574,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             (written, writtenFrame) = (constants, f.Number);
             f.Stats.ConstantBytes += sizeof(TerrainConstants);
         }
-        ulong key = constantsSlice.Handle.Handle;
+        ulong key = (ulong)constantsSlice.Handle.Index;
         if (key != lastSetKey || lastSet.Handle == 0)
         {
             if (!constantSets.TryGetValue(key, out var made)) constantSets[key] = made = ConstantSet(constantsSlice.Handle);
@@ -583,10 +583,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         return (lastSet, (uint)constantsSlice.Offset);
     }
 
-    Silk.NET.Vulkan.DescriptorSet ConstantSet(Silk.NET.Vulkan.Buffer buffer)
+    Silk.NET.Vulkan.DescriptorSet ConstantSet(GpuBuffer buffer)
     {
         var set = gpu.AllocatePersistentSet(constantsLayout);
-        var info = new Silk.NET.Vulkan.DescriptorBufferInfo(buffer, 0, (ulong)sizeof(TerrainConstants));
+        var info = new Silk.NET.Vulkan.DescriptorBufferInfo(gpu.Device.BufferAt(buffer.Index), 0, (ulong)sizeof(TerrainConstants));
         var write = new Silk.NET.Vulkan.WriteDescriptorSet
         {
             SType = Silk.NET.Vulkan.StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1,
@@ -613,8 +613,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         public SegmentPipeline Segment;
         public GraphicsPipeline Pipeline = null!;
-        public BufferBinding Vertex;
-        public BufferBinding Elements;
+        public GpuBufferBinding Vertex;
+        public GpuBufferBinding Elements;
     }
 
     readonly List<PatchPipeline> patchPipelines = [];
@@ -684,7 +684,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public DrawState State = null!;
         public Silk.NET.Vulkan.PipelineLayout Layout;
         public GraphicsPipeline Pipeline = null!;
-        public BufferBinding Vertex, Elements;
+        public GpuBufferBinding Vertex, Elements;
         public FrameBinding Frame;
         public Silk.NET.Vulkan.DescriptorSet ConstantSet;
         public uint ConstantOffset;
@@ -699,7 +699,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             uint offset = ConstantOffset;
             cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             cmd.BindPipeline(Pipeline);
-            cmd.BindVertexBuffers(0, new ReadOnlySpan<BufferBinding>(in Vertex));
+            cmd.BindVertexBuffers(0, new ReadOnlySpan<GpuBufferBinding>(in Vertex));
             cmd.BindIndexBuffer(Elements, IndexKind.U32);
             var layout = Layout;
             const Silk.NET.Vulkan.ShaderStageFlags stages = Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit;
@@ -725,7 +725,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (patchPipelines.Count >= 16) patchPipelines.Clear();
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         attributes[0] = gridVertex;
-        Span<BufferBinding> vertex = stackalloc BufferBinding[1];
+        Span<GpuBufferBinding> vertex = stackalloc GpuBufferBinding[1];
         p.Buffers(attributes, vertex);
         var entry = new PatchPipeline
         {
@@ -869,7 +869,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <summary>A mesh's own vertex buffers (locations 0 and 1: position, normal), bound with one call.</summary>
     [System.Runtime.CompilerServices.InlineArray(2)]
-    struct OwnVertices { BufferBinding first; }
+    struct OwnVertices { GpuBufferBinding first; }
 
     /// <summary>A mesh resolved for one program: the mesh it came from, its vertex layout and own vertex buffers (locations 0 up to the
     /// placements), its indices, and its pipelines for the last two segment states (the reflection's multisampled target alternates with the
@@ -880,7 +880,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public VertexLayout? Layout;
         public int VertexCount;
         public OwnVertices Vertices;
-        public BufferBinding Elements;
+        public GpuBufferBinding Elements;
         public int SegA, SegB;
         public GraphicsPipeline? PipeA, PipeB;
     }
@@ -991,7 +991,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <summary>Opens a native segment for TERRAIN-mode meshes inside the host's pass: dynamic state (back faces culled, counter-clockwise),
     /// the frame and terrain sets, and the placements' rows from <paramref name="rows"/> at locations 7 to 10.</summary>
-    MeshJob OpenMeshSegment(TerrainProgram p, int kind, string label, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, out MeshSegment s)
+    MeshJob OpenMeshSegment(TerrainProgram p, int kind, string label, GpuBuffer rows, ulong rowsOffset, out MeshSegment s)
     {
         // Prepare (wave 4, docs/renderer-native.md 6.2): what the segment's commands need, into a job recorded by the caller.
         var targets = gpu.CurrentTargets();
@@ -1022,10 +1022,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             public FrontFaceDirection Front;
             public OwnVertices Vertices;
             public int VertexCount;
-            public BufferBinding Elements;
+            public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;
             /// <summary>Indirect: the arguments' buffer (else a plain indexed draw).</summary>
-            public Silk.NET.Vulkan.Buffer Args;
+            public GpuBuffer Args;
             public ulong ArgsOffset;
         }
 
@@ -1037,7 +1037,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public FrameBinding Frame;
         public Silk.NET.Vulkan.DescriptorSet ConstantSet;
         public uint ConstantOffset;
-        public Silk.NET.Vulkan.Buffer Rows;
+        public GpuBuffer Rows;
         public ulong RowsOffset;
         public Draw[] Draws = new Draw[64];
         public int Count;
@@ -1061,8 +1061,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             uint offset = ConstantOffset;
             cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             // The placement's rows at locations the meshes' vertex arrays leave free (their other programs do not read them).
-            Span<BufferBinding> bindings = stackalloc BufferBinding[4];
-            for (int a = 0; a < 4; a++) bindings[a] = new BufferBinding(Rows, RowsOffset + (ulong)(16 * a));
+            Span<GpuBufferBinding> bindings = stackalloc GpuBufferBinding[4];
+            for (int a = 0; a < 4; a++) bindings[a] = new GpuBufferBinding(Rows, RowsOffset + (ulong)(16 * a));
             cmd.BindVertexBuffers(TerrainShaders.MeshInstanceLocation, bindings);
             var front = Ccw;
             for (int i = 0; i < Count; i++)
@@ -1070,9 +1070,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 ref readonly var d = ref Draws[i];
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Front != front) { cmd.SetFrontFace(d.Front); front = d.Front; }
-                cmd.BindVertexBuffers(0, ((ReadOnlySpan<BufferBinding>)d.Vertices)[..d.VertexCount]);
+                cmd.BindVertexBuffers(0, ((ReadOnlySpan<GpuBufferBinding>)d.Vertices)[..d.VertexCount]);
                 cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
-                if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
+                if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }
         }
@@ -1096,7 +1096,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// writes them) from <paramref name="rowsOffset"/>, with the argument's firstInstance. Same programs, state, and GL state left behind as
     /// <see cref="DrawMeshes"/>; the caller orders the meshes. Returns the number of draw calls.
     /// </summary>
-    public int DrawMeshesIndirect(ReadOnlySpan<IndirectMesh> meshes, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, Silk.NET.Vulkan.Buffer args, ulong argsOffset, bool depth = false, bool solid = false,
+    public int DrawMeshesIndirect(ReadOnlySpan<IndirectMesh> meshes, GpuBuffer rows, ulong rowsOffset, GpuBuffer args, ulong argsOffset, bool depth = false, bool solid = false,
         InteriorMaskRenderer? cut = null)
     {
         if (meshes.Length == 0) return 0;
@@ -1117,7 +1117,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshColour, Colour, "terrain meshes");
     }
 
-    int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, Silk.NET.Vulkan.Buffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
+    int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, GpuBuffer rows, ulong rowsOffset, GpuBuffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
     {
         var job = OpenMeshSegment(p, kind, label, rows, rowsOffset, out var s);
         if (meshGroups.Count > 4096) meshGroups.Clear();   // meshes come and go with streaming

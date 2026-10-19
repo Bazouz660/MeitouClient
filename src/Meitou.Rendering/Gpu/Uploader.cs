@@ -24,7 +24,7 @@ public sealed unsafe class Uploader
         var staging = ctx.Frame.Staging.Write(data);
         var copy = new BufferCopy(staging.Offset, offset, (ulong)data.Length);
         var cmd = Cmd;
-        ctx.Device.Vk.CmdCopyBuffer(cmd, staging.Handle, target.Handle, 1, &copy);
+        ctx.Device.Vk.CmdCopyBuffer(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.BufferAt(target.Handle.Index), 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
         if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Underlying.Name, data.Length);
@@ -43,7 +43,7 @@ public sealed unsafe class Uploader
             ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
         var cmd = Cmd;
-        ctx.Device.Vk.CmdCopyBufferToImage(cmd, staging.Handle, target.Image, ImageLayout.General, 1, &copy);
+        ctx.Device.Vk.CmdCopyBufferToImage(cmd, ctx.Device.BufferAt(staging.Handle.Index), target.Image, ImageLayout.General, 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
         if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Desc.Name + (level > 0 ? " mip" : ""), data.Length);
@@ -83,7 +83,7 @@ public sealed unsafe class UploadBatch : IDisposable
 {
     readonly GpuContext ctx;
     readonly bool immediate;
-    readonly List<Meitou.Rendering.Gpu.Core.GpuBuffer> staging = [];
+    readonly List<Meitou.Rendering.Gpu.Core.BufferAllocation> staging = [];
 
     internal UploadBatch(GpuContext ctx)
     {
@@ -123,7 +123,7 @@ public sealed unsafe class UploadBatch : IDisposable
         if (offset + (ulong)data.Length > target.Size) throw new ArgumentOutOfRangeException(nameof(data), "write past the end of the buffer");
         var (buffer, from) = Stage(data);
         var copy = new BufferCopy(from, offset, (ulong)data.Length);
-        ctx.Device.Vk.CmdCopyBuffer(Commands.Handle, buffer, target.Handle, 1, &copy);
+        ctx.Device.Vk.CmdCopyBuffer(Commands.Handle, buffer, ctx.Device.BufferAt(target.Handle.Index), 1, &copy);
         Uploader.TransferBarrier(ctx.Device.Vk, Commands.Handle);
     }
 

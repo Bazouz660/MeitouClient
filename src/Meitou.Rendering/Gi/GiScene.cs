@@ -89,7 +89,7 @@ internal sealed unsafe class GiScene : IDisposable
     /// <summary>This frame's top-level structure (null before the first <see cref="Update"/>).</summary>
     public AccelerationStructure? Top { get; private set; }
     /// <summary>This frame's geometry records (a storage buffer range).</summary>
-    public BufferBinding Records { get; private set; }
+    public GpuBufferBinding Records { get; private set; }
     /// <summary>Statistics of the last update.</summary>
     public int InstanceCount { get; private set; }
     public int MeshCount => meshes.Count;
@@ -112,7 +112,7 @@ internal sealed unsafe class GiScene : IDisposable
 
     sealed class FrameSlot
     {
-        public required GpuBuffer Instances, Records;
+        public required BufferAllocation Instances, Records;
         public required AccelerationStructure Top;
         /// <summary>The instances (bytes) the slot's top level was last built over (ReuseTop).</summary>
         public byte[]? BuiltBytes;
@@ -270,7 +270,7 @@ internal sealed unsafe class GiScene : IDisposable
             seg = null;
         }
         Top = topSlot.Top;
-        Records = new BufferBinding(slot.Records.Buffer, 0, (ulong)(Math.Max(records.Count, 1) * GeometryRecord.Size));
+        Records = new GpuBufferBinding(slot.Records.Handle, 0, (ulong)(Math.Max(records.Count, 1) * GeometryRecord.Size));
         InstanceCount = instances.Count;
         UpdateMs = (float)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
     }

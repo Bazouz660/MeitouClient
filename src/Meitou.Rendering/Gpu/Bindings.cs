@@ -18,7 +18,7 @@ public enum GpuBindingKind : int
 /// (docs/resource-layer.md). The layout, the image layout and the descriptor type are the backend's
 /// business; the program itself says which stage and which set the slot belongs to.
 /// </summary>
-public readonly record struct GpuBinding(uint Slot, GpuBindingKind Kind, SampledTexture Texture = default, BufferBinding Buffer = default)
+public readonly record struct GpuBinding(uint Slot, GpuBindingKind Kind, SampledTexture Texture = default, GpuBufferBinding Buffer = default)
 {
     /// <summary>A texture with its sampler.</summary>
     public static GpuBinding Sampled(uint slot, in SampledTexture texture) => new(slot, GpuBindingKind.Sampled, texture);
@@ -27,8 +27,8 @@ public readonly record struct GpuBinding(uint Slot, GpuBindingKind Kind, Sampled
     public static GpuBinding StorageImage(uint slot, in SampledTexture texture) => new(slot, GpuBindingKind.StorageImage, texture);
 
     /// <summary>A uniform buffer.</summary>
-    public static GpuBinding Uniform(uint slot, in BufferBinding buffer) => new(slot, GpuBindingKind.UniformBuffer, default, buffer);
+    public static GpuBinding Uniform(uint slot, in GpuBufferBinding buffer) => new(slot, GpuBindingKind.UniformBuffer, default, buffer);
 
     /// <summary>A storage buffer.</summary>
-    public static GpuBinding Storage(uint slot, in BufferBinding buffer) => new(slot, GpuBindingKind.StorageBuffer, default, buffer);
+    public static GpuBinding Storage(uint slot, in GpuBufferBinding buffer) => new(slot, GpuBindingKind.StorageBuffer, default, buffer);
 }

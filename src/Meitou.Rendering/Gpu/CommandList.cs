@@ -34,7 +34,7 @@ public sealed unsafe class CommandList
     readonly Dictionary<string, nint> labels = [];
     Pipeline lastPipeline;
     PipelineBindPoint lastPoint;
-    BufferBinding lastIndex;
+    GpuBufferBinding lastIndex;
     IndexKind lastIndexType;
     readonly Buffer[] lastVertex = new Buffer[32];
     readonly ulong[] lastVertexOffset = new ulong[32];
@@ -265,7 +265,7 @@ public sealed unsafe class CommandList
         cmdSetDepthBias(Handle, constant, 0, slope);
     }
 
-    public void BindVertexBuffers(uint first, ReadOnlySpan<BufferBinding> bindings)
+    public void BindVertexBuffers(uint first, ReadOnlySpan<GpuBufferBinding> bindings)
     {
         int n = bindings.Length;
         var buffers = stackalloc Buffer[n];
@@ -278,13 +278,13 @@ public sealed unsafe class CommandList
             for (int i = 0; i < n; i++)
             {
                 ref readonly var bb = ref bindings[i];
-                buffers[i] = bb.Buffer;
+                buffers[i] = device.BufferAt(bb.Buffer.Index);
                 offsets[i] = bb.Offset;
                 uint b = first + (uint)i;
-                if (lastVertex[b].Handle != bb.Buffer.Handle || lastVertexOffset[b] != bb.Offset)
+                if (lastVertex[b].Handle != buffers[i].Handle || lastVertexOffset[b] != bb.Offset)
                 {
                     same = false;
-                    lastVertex[b] = bb.Buffer;
+                    lastVertex[b] = buffers[i];
                     lastVertexOffset[b] = bb.Offset;
                 }
             }
@@ -294,7 +294,7 @@ public sealed unsafe class CommandList
         else
             for (int i = 0; i < n; i++)
             {
-                buffers[i] = bindings[i].Buffer;
+                buffers[i] = device.BufferAt(bindings[i].Buffer.Index);
                 offsets[i] = bindings[i].Offset;
                 uint b = first + (uint)i;
                 if (b < 32) { lastVertex[b] = buffers[i]; lastVertexOffset[b] = offsets[i]; vertexValid |= 1u << (int)b; }
@@ -302,10 +302,11 @@ public sealed unsafe class CommandList
         cmdBindVertexBuffers(Handle, first, (uint)n, buffers, offsets);
     }
 
-    public void BindIndexBuffer(BufferBinding binding, IndexKind type)
+    public void BindIndexBuffer(GpuBufferBinding binding, IndexKind type)
     {
-        if (binding.Buffer.Handle == lastIndex.Buffer.Handle && binding.Offset == lastIndex.Offset && type == lastIndexType && lastIndex.Buffer.Handle != 0) return;
-        cmdBindIndexBuffer(Handle, binding.Buffer, binding.Offset, GlConventions.VkIndexKind(type));
+        var buffer = device.BufferAt(binding.Buffer.Index);
+        if (binding.Buffer.Index == lastIndex.Buffer.Index && binding.Offset == lastIndex.Offset && type == lastIndexType && lastIndex.Buffer.Index != 0) return;
+        cmdBindIndexBuffer(Handle, buffer, binding.Offset, GlConventions.VkIndexKind(type));
         (lastIndex, lastIndexType) = (binding, type);
     }
 
@@ -348,12 +349,12 @@ public sealed unsafe class CommandList
                     writes[i].PImageInfo = &images[i];
                     break;
                 case GpuBindingKind.UniformBuffer:
-                    buffers[i] = new DescriptorBufferInfo(b.Buffer.Buffer, b.Buffer.Offset, b.Buffer.Size);
+                    buffers[i] = new DescriptorBufferInfo(device.BufferAt(b.Buffer.Buffer.Index), b.Buffer.Offset, b.Buffer.Size);
                     writes[i].DescriptorType = DescriptorType.UniformBuffer;
                     writes[i].PBufferInfo = &buffers[i];
                     break;
                 case GpuBindingKind.StorageBuffer:
-                    buffers[i] = new DescriptorBufferInfo(b.Buffer.Buffer, b.Buffer.Offset, b.Buffer.Size);
+                    buffers[i] = new DescriptorBufferInfo(device.BufferAt(b.Buffer.Buffer.Index), b.Buffer.Offset, b.Buffer.Size);
                     writes[i].DescriptorType = DescriptorType.StorageBuffer;
                     writes[i].PBufferInfo = &buffers[i];
                     break;
@@ -381,16 +382,16 @@ public sealed unsafe class CommandList
         Stats.Draws++;
     }
 
-    public void DrawIndexedIndirect(Buffer args, ulong offset, uint count, uint stride = 20)
+    public void DrawIndexedIndirect(GpuBuffer args, ulong offset, uint count, uint stride = 20)
     {
-        cmdDrawIndexedIndirect(Handle, args, offset, count, stride);
+        cmdDrawIndexedIndirect(Handle, device.BufferAt(args.Index), offset, count, stride);
         Stats.Draws++;
         Stats.IndirectDraws++;
     }
 
-    public void DrawIndexedIndirectCount(Buffer args, ulong offset, Buffer count, ulong countOffset, uint maxCount, uint stride = 20)
+    public void DrawIndexedIndirectCount(GpuBuffer args, ulong offset, GpuBuffer count, ulong countOffset, uint maxCount, uint stride = 20)
     {
-        vk.CmdDrawIndexedIndirectCount(Handle, args, offset, count, countOffset, maxCount, stride);
+        vk.CmdDrawIndexedIndirectCount(Handle, device.BufferAt(args.Index), offset, device.BufferAt(count.Index), countOffset, maxCount, stride);
         Stats.Draws++;
         Stats.IndirectDraws++;
     }
@@ -398,9 +399,9 @@ public sealed unsafe class CommandList
     /// <summary>Non-indexed draws from <paramref name="args"/> (<c>VkDrawIndirectCommand</c>, 16 bytes each): the first
     /// <paramref name="count"/> (a 32-bit value in <paramref name="countBuffer"/> at <paramref name="countOffset"/>, at most <paramref name="maxCount"/>),
     /// one call. Needs <c>drawIndirectCount</c> (Vulkan 1.2) and <c>drawIndirectFirstInstance</c> for a non-zero firstInstance.</summary>
-    public void DrawIndirectCount(Buffer args, ulong offset, Buffer countBuffer, ulong countOffset, uint maxCount, uint stride = 16)
+    public void DrawIndirectCount(GpuBuffer args, ulong offset, GpuBuffer countBuffer, ulong countOffset, uint maxCount, uint stride = 16)
     {
-        vk.CmdDrawIndirectCount(Handle, args, offset, countBuffer, countOffset, maxCount, stride);
+        vk.CmdDrawIndirectCount(Handle, device.BufferAt(args.Index), offset, device.BufferAt(countBuffer.Index), countOffset, maxCount, stride);
         Stats.Draws++;
         Stats.IndirectDraws++;
     }
@@ -421,22 +422,22 @@ public sealed unsafe class CommandList
         Stats.Dispatches++;
     }
 
-    public void DispatchIndirect(Buffer args, ulong offset)
+    public void DispatchIndirect(GpuBuffer args, ulong offset)
     {
-        vk.CmdDispatchIndirect(Handle, args, offset);
+        vk.CmdDispatchIndirect(Handle, device.BufferAt(args.Index), offset);
         Stats.Dispatches++;
     }
 
-    public void FillBuffer(Buffer b, ulong offset, ulong size, uint value) => vk.CmdFillBuffer(Handle, b, offset, size, value);
+    public void FillBuffer(GpuBuffer b, ulong offset, ulong size, uint value) => vk.CmdFillBuffer(Handle, device.BufferAt(b.Index), offset, size, value);
 
-    public void CopyBuffer(Buffer src, Buffer dst, in BufferCopy region)
+    public void CopyBuffer(GpuBuffer src, GpuBuffer dst, in BufferCopy region)
     {
-        fixed (BufferCopy* p = &region) vk.CmdCopyBuffer(Handle, src, dst, 1, p);
+        fixed (BufferCopy* p = &region) vk.CmdCopyBuffer(Handle, device.BufferAt(src.Index), device.BufferAt(dst.Index), 1, p);
     }
 
     /// <summary>(Added for the Meitou water's ocean.) Copies tightly packed texels from <paramref name="src"/> at <paramref name="offset"/> over a
     /// whole level and layer of <paramref name="dst"/> (GENERAL layout). The caller orders it against the writes before and the reads after.</summary>
-    public void CopyBufferToImage(Buffer src, ulong offset, Texture dst, int level, int layer)
+    public void CopyBufferToImage(GpuBuffer src, ulong offset, Texture dst, int level, int layer)
     {
         var copy = new BufferImageCopy
         {
@@ -444,7 +445,7 @@ public sealed unsafe class CommandList
             ImageSubresource = new ImageSubresourceLayers(dst.Desc.Aspect, (uint)level, (uint)layer, 1),
             ImageExtent = new Extent3D((uint)Math.Max(dst.Desc.Width >> level, 1), (uint)Math.Max(dst.Desc.Height >> level, 1), 1),
         };
-        vk.CmdCopyBufferToImage(Handle, src, dst.Image, ImageLayout.General, 1, &copy);
+        vk.CmdCopyBufferToImage(Handle, device.BufferAt(src.Index), dst.Image, ImageLayout.General, 1, &copy);
     }
 
     /// <summary>Resolves level 0 / layer 0 of a multisampled colour texture into a single-sampled one (the reflection's 4× target).</summary>

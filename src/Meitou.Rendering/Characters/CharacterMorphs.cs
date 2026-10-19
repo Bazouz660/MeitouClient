@@ -143,7 +143,7 @@ internal sealed class MorphArena : IDisposable
         gpu.Uploads.Write(buffer, (ulong)first * 16, MemoryMarshal.AsBytes(deltas.AsSpan()));
     }
 
-    public BufferBinding Binding(GpuFrame frame) => buffer.Binding(frame);
+    public GpuBufferBinding Binding(GpuFrame frame) => buffer.Binding(frame);
 
     public void Dispose() => buffer.Dispose();
 }

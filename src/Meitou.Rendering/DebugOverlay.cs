@@ -404,13 +404,13 @@ public sealed unsafe class DebugOverlay : IDisposable
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset), InternalFormat.RG32f, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
         ];
         var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, t.Formats, "debug overlay"));
         cmd.BindPipeline(pipeline);
-        Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
+        Span<GpuBufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
         cmd.BindVertexBuffers(0, buffers);
         program.Flush(cmd);
         cmd.Draw((uint)(floats.Length / Stride));
@@ -487,14 +487,14 @@ public sealed unsafe class DebugOverlay : IDisposable
                 MemoryMarshal.AsBytes(data).CopyTo(new Span<byte>(upload.Pointer, data.Length * 4));
                 Span<LegacyProgram.Attribute?> attributes =
                 [
-                    new(new BufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
                 ];
                 var program = painter.program;
                 var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, targets.Formats, "UI overlay"));
                 cmd.BindPipeline(pipeline);
-                Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
+                Span<GpuBufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
                 cmd.BindVertexBuffers(0, buffers);
                 program.Set(painter.uScreen, (float)width, height);
                 var scissor = targets.Scissor;

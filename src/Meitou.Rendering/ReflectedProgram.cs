@@ -45,15 +45,15 @@ sealed class ReflectedProgram : IDisposable
     }
 
     /// <summary>Locations 0 .. <paramref name="count"/> − 1 as one array for one bind: each attribute's buffer, GL's constant where none.</summary>
-    public BufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
+    public GpuBufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
     {
-        var result = new BufferBinding[count];
+        var result = new GpuBufferBinding[count];
         for (int loc = 0; loc < count; loc++)
         {
             int input = Array.IndexOf(locations, loc);
             result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
+                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
         }
         return result;
     }

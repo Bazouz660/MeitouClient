@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace Meitou.Rendering;
 
@@ -12,7 +11,7 @@ public readonly record struct GrassTables(Transient Zones, int ZoneCount, Transi
 
 /// <summary>What one view's grass cull wrote: the indirect draws (16 bytes each, the first <c>Counters[0]</c> of at most <see cref="MaxDraws"/>
 /// valid), and the counters (draws, blades).</summary>
-public readonly record struct GrassResult(Buffer Draws, ulong DrawsOffset, Buffer Counters, ulong CountersOffset, int MaxDraws, Transient Patches)
+public readonly record struct GrassResult(GpuBuffer Draws, ulong DrawsOffset, GpuBuffer Counters, ulong CountersOffset, int MaxDraws, Transient Patches)
 {
     public bool IsEmpty => MaxDraws == 0;
 }
@@ -78,7 +77,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     // ---- the blade arena ----
 
     /// <summary>The arena as a vertex buffer: blade <c>i</c> is at byte <c>i * <see cref="BladeBytes"/></c>.</summary>
-    public Buffer BladeBuffer => arena.Buffer.Handle;
+    public GpuBuffer BladeBuffer => arena.Buffer.Handle;
     public ulong ArenaBytes => arena.Buffer.Size;
     public ulong ArenaUsed => arena.Buffer.Size - arena.FreeBytes;
     /// <summary>Pages that could not be placed (arena or slot table full) since the start.</summary>
@@ -234,15 +233,15 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         rest[6] = (uint)prefixIndex;
         ((float*)rest)[7] = motionScale;
 
-        Span<BufferBinding> b = stackalloc BufferBinding[8];
-        b[0] = new BufferBinding(viewData.Handle, viewData.Offset, 160);
-        b[1] = new BufferBinding(slots.Handle, 0, slots.Size);
-        b[2] = new BufferBinding(prefixes.Handle, 0, prefixes.Size);
-        b[3] = new BufferBinding(tables.Zones.Handle, tables.Zones.Offset, (ulong)Math.Max(tables.ZoneCount, 1) * 8);
-        b[4] = new BufferBinding(tables.Patches.Handle, tables.Patches.Offset, (ulong)tables.PatchCount * GrassPatchRow.Size64);
-        b[5] = new BufferBinding(keys.Buffer, keys.Offset, (ulong)n * 16);
-        b[6] = new BufferBinding(draws.Buffer, draws.Offset, (ulong)n * 16);
-        b[7] = new BufferBinding(counters.Buffer, counters.Offset, 16);
+        Span<GpuBufferBinding> b = stackalloc GpuBufferBinding[8];
+        b[0] = new GpuBufferBinding(viewData.Handle, viewData.Offset, 160);
+        b[1] = new GpuBufferBinding(slots.Handle, 0, slots.Size);
+        b[2] = new GpuBufferBinding(prefixes.Handle, 0, prefixes.Size);
+        b[3] = new GpuBufferBinding(tables.Zones.Handle, tables.Zones.Offset, (ulong)Math.Max(tables.ZoneCount, 1) * 8);
+        b[4] = new GpuBufferBinding(tables.Patches.Handle, tables.Patches.Offset, (ulong)tables.PatchCount * GrassPatchRow.Size64);
+        b[5] = new GpuBufferBinding(keys.Buffer, keys.Offset, (ulong)n * 16);
+        b[6] = new GpuBufferBinding(draws.Buffer, draws.Offset, (ulong)n * 16);
+        b[7] = new GpuBufferBinding(counters.Buffer, counters.Offset, 16);
 
         var cmd = ctx.Frame.PreFrame;
         var stamps = (ctx.Frame.Timestamps.Allocate(), ctx.Frame.Timestamps.Allocate());
@@ -278,7 +277,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         return new GrassResult(draws.Buffer, draws.Offset, counters.Buffer, counters.Offset, n, tables.Patches);
     }
 
-    void Run(CommandList cmd, ShaderProgram program, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<BufferBinding> b, uint groups)
+    void Run(CommandList cmd, ShaderProgram program, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;

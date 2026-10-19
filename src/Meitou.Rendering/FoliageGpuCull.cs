@@ -80,7 +80,7 @@ public readonly record struct FoliageCullWork(Transient Chunks, int ChunkCount, 
 
 /// <summary>What one view's cull wrote: the compacted matrices (bind at locations 7 to 10), the indirect arguments (one per draw, 20 bytes
 /// each), and the chunks' output offsets (ChunkCount + 1, the last one the total).</summary>
-public readonly record struct FoliageCullResult(Buffer Rows, ulong RowsOffset, ulong RowsBytes, Buffer Args, ulong ArgsOffset, Buffer Offsets, ulong OffsetsOffset, int ChunkCount, int DrawCount, bool Split = false)
+public readonly record struct FoliageCullResult(GpuBuffer Rows, ulong RowsOffset, ulong RowsBytes, GpuBuffer Args, ulong ArgsOffset, GpuBuffer Offsets, ulong OffsetsOffset, int ChunkCount, int DrawCount, bool Split = false)
 {
     public bool IsEmpty => DrawCount == 0;
 }
@@ -322,7 +322,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         tallyFrame[s] = ctx.Frame.Number;
     }
 
-    void CopyTally(CommandList cmd, Buffer args, ulong argsOffset, int count)
+    void CopyTally(CommandList cmd, GpuBuffer args, ulong argsOffset, int count)
     {
         if (tallyViews is null || count == 0) return;
         int s = scratchSlot;
@@ -414,17 +414,17 @@ public sealed unsafe class FoliageGpuCull : IDisposable
                 : new Vector4(MathF.Min(boxes[at].X, min.X), MathF.Min(boxes[at].Y, min.Y), MathF.Max(boxes[at].Z, max.X), MathF.Max(boxes[at].W, max.Y));
         }
 
-        Span<BufferBinding> b = stackalloc BufferBinding[10];
-        b[0] = new BufferBinding(viewData.Handle, viewData.Offset, ViewBytes);
-        b[1] = new BufferBinding(arena.Buffer.Handle, 0, arena.Buffer.Size);
-        b[2] = new BufferBinding(work.Chunks.Handle, work.Chunks.Offset, (ulong)n * FoliageCullChunk.Size);
-        b[3] = new BufferBinding(fades.Buffer, fades.Offset, (ulong)work.Candidates * 4);
-        b[4] = new BufferBinding(counts.Buffer, counts.Offset, (ulong)n * 16);
-        b[5] = new BufferBinding(offsets.Buffer, offsets.Offset, (ulong)(2 * n + 5) * 4);
-        b[6] = new BufferBinding(work.Draws.Handle, work.Draws.Offset, (ulong)Math.Max(work.DrawCount, 1) * FoliageCullDraw.Size);
-        b[7] = new BufferBinding(args.Buffer, args.Offset, (ulong)Math.Max(work.DrawCount, 1) * 60);
-        b[8] = new BufferBinding(rows.Buffer, rows.Offset, rowsBytes);
-        b[9] = occlusion.IsEmpty ? new BufferBinding(arena.Buffer.Handle, 0, arena.Buffer.Size) : occlusion.Buffer;   // the pyramid (a stand-in when the occlusion cull is off)
+        Span<GpuBufferBinding> b = stackalloc GpuBufferBinding[10];
+        b[0] = new GpuBufferBinding(viewData.Handle, viewData.Offset, ViewBytes);
+        b[1] = new GpuBufferBinding(arena.Buffer.Handle, 0, arena.Buffer.Size);
+        b[2] = new GpuBufferBinding(work.Chunks.Handle, work.Chunks.Offset, (ulong)n * FoliageCullChunk.Size);
+        b[3] = new GpuBufferBinding(fades.Buffer, fades.Offset, (ulong)work.Candidates * 4);
+        b[4] = new GpuBufferBinding(counts.Buffer, counts.Offset, (ulong)n * 16);
+        b[5] = new GpuBufferBinding(offsets.Buffer, offsets.Offset, (ulong)(2 * n + 5) * 4);
+        b[6] = new GpuBufferBinding(work.Draws.Handle, work.Draws.Offset, (ulong)Math.Max(work.DrawCount, 1) * FoliageCullDraw.Size);
+        b[7] = new GpuBufferBinding(args.Buffer, args.Offset, (ulong)Math.Max(work.DrawCount, 1) * 60);
+        b[8] = new GpuBufferBinding(rows.Buffer, rows.Offset, rowsBytes);
+        b[9] = occlusion.IsEmpty ? new GpuBufferBinding(arena.Buffer.Handle, 0, arena.Buffer.Size) : occlusion.Buffer;   // the pyramid (a stand-in when the occlusion cull is off)
         var push = new FoliageCullPush { Eye = eye, PlaneCount = (uint)view.Planes.Length, ChunkCount = (uint)n, DrawCount = (uint)work.DrawCount, FullThreshold = fullThreshold, Split = split ? 1u : 0u };
 
         var cmd = ctx.Frame.PreFrame;
@@ -483,7 +483,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         return new FoliageCullResult(rows.Buffer, rows.Offset, rowsBytes, args.Buffer, args.Offset, offsets.Buffer, offsets.Offset, n, work.DrawCount, split);
     }
 
-    void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<BufferBinding> b, in FoliageCullPush push, uint x, uint y)
+    void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;

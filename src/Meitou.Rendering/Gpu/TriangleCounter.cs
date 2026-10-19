@@ -18,6 +18,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     readonly Vk vk;
     readonly VulkanDevice device;
     readonly Silk.NET.Vulkan.Buffer buffer;
+    readonly GpuBuffer handle;
     readonly DeviceMemory memory;
     readonly ulong address;
     readonly ReadbackBuffer readback;
@@ -55,6 +56,7 @@ public sealed unsafe class TriangleCounter : IDisposable
         var alloc = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = req.Size, MemoryTypeIndex = type, PNext = &flags };
         VulkanException.Check(vk.AllocateMemory(device.Device, in alloc, null, out memory), "vkAllocateMemory(triangle counters)");
         VulkanException.Check(vk.BindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory(triangle counters)");
+        handle = new GpuBuffer(device.AddBuffer(buffer), Bytes);
         var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
         address = vk.GetBufferDeviceAddress(device.Device, in addressInfo);
         readback = ReadbackBuffer.Create(ctx, Bytes, "triangle counters readback");
@@ -75,7 +77,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     {
         ctx.EnsureFrame();
         var list = ctx.BeginNative("triangle counters clear");
-        list.FillBuffer(buffer, 0, Bytes, 0);
+        list.FillBuffer(handle, 0, Bytes, 0);
         ctx.EndNative(list);
     }
 
@@ -112,7 +114,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     {
         ctx.EnsureFrame();
         var list = ctx.BeginNative("triangle counters read");
-        list.CopyBuffer(buffer, readback.Handle, new BufferCopy(0, 0, Bytes));
+        list.CopyBuffer(handle, readback.Handle, new BufferCopy(0, 0, Bytes));
         ctx.EndNative(list);
         ctx.Finish();
         var bytes = readback.Read(0, Bytes);

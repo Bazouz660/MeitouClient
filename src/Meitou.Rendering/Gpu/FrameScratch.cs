@@ -1,5 +1,4 @@
 using Silk.NET.Vulkan;
-using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace Meitou.Rendering.Gpu;
 
@@ -132,7 +131,7 @@ public sealed class FrameScratch(GpuContext ctx, string name, BufferUse use, ulo
     }
 
     /// <summary>Hands out <paramref name="bytes"/> (aligned to 256) of this frame's scratch; false when the slot's cap does not allow it.</summary>
-    public bool TryAllocate(ulong bytes, out Buffer buffer, out ulong offset)
+    public bool TryAllocate(ulong bytes, out GpuBuffer buffer, out ulong offset)
     {
         NewFrame();
         var s = slots[slot];

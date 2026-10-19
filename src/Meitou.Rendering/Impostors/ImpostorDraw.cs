@@ -40,7 +40,7 @@ internal sealed class ImpostorDraw : IDisposable
     public PipelineLayout Layout => plain.P.Layout;
 
     /// <summary>The six-entry index buffer (0 to 5).</summary>
-    public BufferBinding Quad => new(quad.Handle, 0, quad.Size);
+    public GpuBufferBinding Quad => new(quad.Handle, 0, quad.Size);
 
     /// <summary>The pipeline for <paramref name="state"/>'s fixed-function part into <paramref name="formats"/>. Render thread (Prepare).</summary>
     public GraphicsPipeline Pipeline(ImpostorProgram which, DrawState state, AttachmentFormats formats)

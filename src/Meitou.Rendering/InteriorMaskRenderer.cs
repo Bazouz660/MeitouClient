@@ -168,7 +168,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
                 program.Set(mvp, in m);
                 program.Set(inside, eyeInside ? 1 : 0);
                 program.Flush(cmd);
-                cmd.BindVertexBuffers(0, [new BufferBinding(buffer.Handle, 0)]);
+                cmd.BindVertexBuffers(0, [new GpuBufferBinding(buffer.Handle, 0)]);
                 cmd.Draw((uint)mesh.Count);
                 Drawn++;
                 any = true;

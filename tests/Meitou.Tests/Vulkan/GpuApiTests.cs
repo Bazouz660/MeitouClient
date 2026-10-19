@@ -85,7 +85,7 @@ public class GpuApiTests
             LegacyProgram.Attribute?[] attributes =
             [
                 new LegacyProgram.Attribute(vertices.Binding, InternalFormat.RG32f, 20, false),
-                new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.Rgb32f, 20, false),
+                new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.Rgb32f, 20, false),
             ];
             var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveType.Triangles,
                 new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
@@ -217,7 +217,7 @@ public class GpuApiTests
             var pre = frame.PreFrame;
             var cp = ctx.Pipelines.Get(new ComputePipelineDesc(compute, "args"));
             pre.BindPipeline(cp);
-            var info = new DescriptorBufferInfo(args.Handle, 0, 20);
+            var info = new DescriptorBufferInfo(ctx.Device.BufferAt(args.Handle.Index), 0, 20);
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &info };
             pre.PushDescriptors(compute.Layout, 0, [write], PipelineBindPoint.Compute);
             pre.PushConstants(compute.Layout, ShaderStageFlags.ComputeBit, 3u);

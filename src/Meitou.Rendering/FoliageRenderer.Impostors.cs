@@ -1006,7 +1006,7 @@ public sealed partial class FoliageRenderer
         var forward = new Vector3(viewProjection.M13, viewProjection.M23, viewProjection.M33);
         var view = depth && forward.LengthSquared() > 0 ? new Vector4(-Vector3.Normalize(forward), 1) : Vector4.Zero;
         var quad = impostorDraw.Quad;
-        BufferBinding[] none = [];
+        GpuBufferBinding[] none = [];
         // A TERRAIN-mode rock's colour draws fade to the ground colour with distance as the terrain's mesh shader does (its own program, the terrain's maps in the push).
         GraphicsPipeline? rockPipeline = null;
         (Vector4 Region, uint Ground, uint WorldColour, uint Colour, float HalfWorld, float FarStart, float FarEnd, uint Flags) far = default;

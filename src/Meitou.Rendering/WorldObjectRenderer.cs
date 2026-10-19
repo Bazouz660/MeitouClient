@@ -1094,15 +1094,15 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         }
 
         /// <summary>Locations 0 .. <paramref name="count"/> − 1 as one array for one bind: each attribute's buffer, GL's constant where none.</summary>
-        public BufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
+        public GpuBufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
         {
-            var result = new BufferBinding[count];
+            var result = new GpuBufferBinding[count];
             for (int loc = 0; loc < count; loc++)
             {
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
+                    : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
             }
             return result;
         }
@@ -1144,7 +1144,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             attributes[RowLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceStride, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
@@ -1283,7 +1283,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var job = drawJobs.Rent();
         (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
         job.Frame = nativeFrame.Prepare(in view);
-        for (int a = 0; a < 4; a++) job.Rows[a] = new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+        for (int a = 0; a < 4; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         NewTextureSegment();
         if (job.Draws.Length < drawCount) job.Draws = new DrawJob.Draw[Math.Max(drawCount, job.Draws.Length * 2)];
         var list = draws;
@@ -1305,7 +1305,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             job.Draws[i] = new DrawJob.Draw
             {
                 Pipeline = n.SegA == drawSegment ? n.PipeA! : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
-                Vertices = n.Vertices, Elements = new BufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
+                Vertices = n.Vertices, Elements = new GpuBufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
                 Push = pc, IndexCount = (uint)part.Count[d.Level], Instances = d.Instances, FirstInstance = d.FirstInstance,
                 Cull = d.BackCull ? CullMode.Back : state.Cull,
             };
@@ -1322,8 +1322,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public struct Draw
         {
             public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public ObjectPush Push;
             public uint IndexCount, Instances, FirstInstance;
             public CullMode Cull;
@@ -1334,7 +1334,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public DrawState State = null!;
         public Silk.NET.Vulkan.PipelineLayout Layout;
         public FrameBinding Frame;
-        public readonly BufferBinding[] Rows = new BufferBinding[4];
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;

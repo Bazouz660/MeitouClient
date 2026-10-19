@@ -62,8 +62,8 @@ sealed class GpuObjectPart
 struct ObjectNativeMesh
 {
     public VertexLayout? Layout;
-    public BufferBinding[] Vertices;
-    public BufferBinding Elements;
+    public GpuBufferBinding[] Vertices;
+    public GpuBufferBinding Elements;
     public int SegA, SegB;
     public GraphicsPipeline? PipeA, PipeB;
 }
@@ -492,7 +492,7 @@ sealed unsafe class ObjectMeshCache(GpuContext gpuContext, AssetLocator assets, 
         foreach (var a in Layout)
         {
             var format = a.Integer ? GlConventions.VertexFormat(GLEnum.UnsignedByte, a.Size, false, true) : GlConventions.VertexFormat(GLEnum.Float, a.Size, false, false);
-            result[a.Location] = new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, (ulong)a.Offset), format, (uint)Vertex.Size, false);
+            result[a.Location] = new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, (ulong)a.Offset), format, (uint)Vertex.Size, false);
         }
         return result;
     }

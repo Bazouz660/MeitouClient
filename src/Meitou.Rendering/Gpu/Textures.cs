@@ -35,11 +35,11 @@ public readonly record struct SampledTexture(GpuSampler Sampler, GpuView View, I
 public sealed unsafe class Texture : IDisposable
 {
     readonly VulkanDevice device;
-    readonly GpuImage? owned;
+    readonly ImageAllocation? owned;
     readonly Func<int, int, int, int, GpuView>? attachmentViews;   // borrowed: VkGl's attachment views (level, 1, layer, 1)
     readonly Dictionary<(int, int, int, int, ImageViewType, int), int> views = [];   // the last: the swizzle, packed (a ComponentMapping key was boxed twice per lookup, 130 MB in a minute of flight)
 
-    Texture(VulkanDevice device, TextureDesc desc, Image image, GpuImage? owned, Func<int, int, int, int, GpuView>? attachmentViews)
+    Texture(VulkanDevice device, TextureDesc desc, Image image, ImageAllocation? owned, Func<int, int, int, int, GpuView>? attachmentViews)
     {
         this.device = device;
         Desc = desc;
@@ -51,7 +51,7 @@ public sealed unsafe class Texture : IDisposable
     public TextureDesc Desc { get; }
     public Image Image { get; }
     /// <summary>The allocation behind an owned texture (null when borrowed).</summary>
-    public GpuImage? Underlying => owned;
+    public ImageAllocation? Underlying => owned;
     public bool Borrowed => owned is null;
 
     /// <summary>A new image in GENERAL layout (the transition is recorded into <paramref name="cmd"/>, or submitted at once when null).</summary>

@@ -86,7 +86,7 @@ public sealed unsafe partial class PostProcess
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, motionOut.Texture.View(), default));
         bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View(), default));
         bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View(), default));
-        bindings[5] = GpuBinding.Storage(5, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
+        bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(velocityPipeline!);
         cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
@@ -125,7 +125,7 @@ public sealed unsafe partial class PostProcess
         bindings[0] = GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View, default));
         bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View(), default));
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View(), default));
-        bindings[3] = GpuBinding.Storage(3, new BufferBinding(exposureState.Handle, 0, exposureState.Size));
+        bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(exposurePipeline!);
         cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));

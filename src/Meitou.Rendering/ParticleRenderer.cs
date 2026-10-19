@@ -105,7 +105,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
     readonly NativeSegment segment;
     readonly DeviceBuffer quad;
     readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[5];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[5];
     readonly UniformHandle viewProjection, cameraRight, cameraUp, mode, anchor, commonDirection, commonUp, colourScale, coverageMode, coverageLimit;
     readonly SamplerSlot textureSlot;
     readonly SampledImage white;
@@ -560,8 +560,8 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
                 cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
                 cmd.BindPipeline(segment.Get(state, targets.Formats, vertexSource));
-                bindings[0] = new BufferBinding(quad.Handle, 0);
-                for (int a = 0; a < 4; a++) bindings[1 + a] = new BufferBinding(d.Instances.Handle, d.Instances.Offset + (ulong)(16 * a));
+                bindings[0] = new GpuBufferBinding(quad.Handle, 0);
+                for (int a = 0; a < 4; a++) bindings[1 + a] = new GpuBufferBinding(d.Instances.Handle, d.Instances.Offset + (ulong)(16 * a));
                 cmd.BindVertexBuffers(0, bindings);
                 program.Flush(cmd);
                 cmd.Draw(4, (uint)count, 0, (uint)first);

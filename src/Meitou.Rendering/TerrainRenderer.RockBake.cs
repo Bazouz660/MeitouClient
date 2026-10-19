@@ -30,14 +30,14 @@ public sealed unsafe partial class TerrainRenderer
     internal string? RockBiomeKey(int row) => textures?.BiomeKey(row);
 
     /// <summary>The vertex layout and buffers of a rock's mesh part for the bake program (positions at 0, normals at 1, the placement's rows at 7 to 10).</summary>
-    internal (VertexLayout Layout, BufferBinding[] Bindings) RockBakeVertices(DeviceBuffer vertices)
+    internal (VertexLayout Layout, GpuBufferBinding[] Bindings) RockBakeVertices(DeviceBuffer vertices)
     {
         var p = RockBakeProgram();
         var attributes = new LegacyProgram.Attribute?[TerrainShaders.MeshInstanceLocation + 4];
         FoliageRenderer.VertexAttributes(vertices).AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
             attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
-        var bindings = new BufferBinding[p.Own];
+        var bindings = new GpuBufferBinding[p.Own];
         p.Buffers(attributes, bindings);
         return (p.VertexLayout(attributes), bindings);
     }
@@ -102,14 +102,14 @@ public sealed unsafe partial class TerrainRenderer
         var binding = nativeFrame.Prepare(in view);
         NativeFrame.Record(cmd, p.Layout, in binding);
         var constantsSlice = gpu.Frame.Constants.Write<TerrainConstants>([BakeConstants(row)], uniformAlign);
-        ulong key = constantsSlice.Handle.Handle;
+        ulong key = (ulong)constantsSlice.Handle.Index;
         if (!constantSets.TryGetValue(key, out var set)) constantSets[key] = set = ConstantSet(constantsSlice.Handle);
         uint offset = (uint)constantsSlice.Offset;
         cmd.BindSets(p.Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<DescriptorSet>(in set), new ReadOnlySpan<uint>(in offset));
         var rows = gpu.Frame.Constants.Allocate(64, 64);
         *(Matrix4x4*)rows.Pointer = BakePlacement(scale, row);
-        Span<BufferBinding> instance = stackalloc BufferBinding[4];
-        for (int a = 0; a < 4; a++) instance[a] = new BufferBinding(rows.Handle, rows.Offset + (ulong)(16 * a));
+        Span<GpuBufferBinding> instance = stackalloc GpuBufferBinding[4];
+        for (int a = 0; a < 4; a++) instance[a] = new GpuBufferBinding(rows.Handle, rows.Offset + (ulong)(16 * a));
         cmd.SetRaster(state.Cull, state.Front);
         cmd.BindVertexBuffers(TerrainShaders.MeshInstanceLocation, instance);
         var push = new TerrainBakePush { Dir = new Vector4(dir, distance), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass };
@@ -118,7 +118,7 @@ public sealed unsafe partial class TerrainRenderer
         {
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveType.Triangles, formats, "impostor rock bake")));
             cmd.BindVertexBuffers(0, part.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexKind.U32);
+            cmd.BindIndexBuffer(new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexKind.U32);
             cmd.DrawIndexed((uint)part.Count);
         }
     }

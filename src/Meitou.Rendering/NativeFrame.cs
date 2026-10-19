@@ -33,7 +33,7 @@ sealed unsafe class NativeFrame : IDisposable
     int resolvedVersion = -1;
     FrameGlobals.Uniform?[] uniforms = [];
     Func<SampledTexture>?[] textures = [];
-    Func<BufferBinding>?[] blocks = [];
+    Func<GpuBufferBinding>?[] blocks = [];
     readonly (SampledTexture Texture, uint Index, bool Has)[] entries = new (SampledTexture, uint, bool)[FrameConstants.Textures.Length];
     readonly SamplerInfo[] standIns;
 
@@ -92,7 +92,7 @@ sealed unsafe class NativeFrame : IDisposable
     /// Once per native segment, before its draws: binds set 1 (the bindless table) and set 0 for <paramref name="layout"/> (any native
     /// program's: they are all compatible) with this segment's frame constants, shadow blocks and <paramref name="view"/>.
     /// </summary>
-    public void Bind(CommandList cmd, PipelineLayout layout, in ViewConstants view, ReadOnlySpan<BufferBinding> extra = default)
+    public void Bind(CommandList cmd, PipelineLayout layout, in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
     {
         var binding = Prepare(in view, extra);
         Record(cmd, layout, in binding);
@@ -103,7 +103,7 @@ sealed unsafe class NativeFrame : IDisposable
     /// the frame textures' bindless entries, writes the frame block (when it changed) and <paramref name="view"/> into the frame's constants, and
     /// returns what <see cref="Record"/> binds. Where the device has no push descriptors, the set is allocated and written here.
     /// </summary>
-    public FrameBinding Prepare(in ViewConstants view, ReadOnlySpan<BufferBinding> extra = default)
+    public FrameBinding Prepare(in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
     {
         RenderJobs.AssertNotInJob();
         if (extra.Length != extraStorage) throw new ArgumentException($"this frame's set has {extraStorage} extra storage bindings, {extra.Length} given", nameof(extra));
@@ -140,9 +140,9 @@ sealed unsafe class NativeFrame : IDisposable
         int count = 6 + extraStorage;
         var result = new FrameBinding { Count = count, Table = ctx.Bindless.Set, Push = push };
         Span<DescriptorBufferInfo> infos = result.Infos;
-        infos[(int)NativeShaders.FrameBinding] = new DescriptorBufferInfo(frameSlice.Handle, frameSlice.Offset, (ulong)sizeof(FrameConstants));
-        infos[(int)NativeShaders.ViewBinding] = new DescriptorBufferInfo(viewSlice.Handle, viewSlice.Offset, (ulong)sizeof(ViewConstants));
-        infos[(int)NativeShaders.BonesBinding] = new DescriptorBufferInfo(bones.Handle, bones.Offset, BonesBytes);
+        infos[(int)NativeShaders.FrameBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(frameSlice.Handle.Index), frameSlice.Offset, (ulong)sizeof(FrameConstants));
+        infos[(int)NativeShaders.ViewBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(viewSlice.Handle.Index), viewSlice.Offset, (ulong)sizeof(ViewConstants));
+        infos[(int)NativeShaders.BonesBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(bones.Handle.Index), bones.Offset, BonesBytes);
         for (int i = 0; i < Blocks.Length; i++)
         {
             var (name, binding, size) = Blocks[i];
@@ -154,10 +154,10 @@ sealed unsafe class NativeFrame : IDisposable
                 zeros.Bytes.Clear();
                 value = zeros.Binding;
             }
-            ulong range = value.Size == Vk.WholeSize ? (ulong)size : Math.Min((ulong)size, value.Size);
-            infos[(int)binding] = new DescriptorBufferInfo(value.Buffer, value.Offset, range);
+            ulong range = value.Size == GpuBufferBinding.WholeSize ? (ulong)size : Math.Min((ulong)size, value.Size);
+            infos[(int)binding] = new DescriptorBufferInfo(ctx.Device.BufferAt(value.Buffer.Index), value.Offset, range);
         }
-        for (int i = 0; i < extraStorage; i++) infos[6 + i] = new DescriptorBufferInfo(extra[i].Buffer, extra[i].Offset, extra[i].Size);
+        for (int i = 0; i < extraStorage; i++) infos[6 + i] = new DescriptorBufferInfo(ctx.Device.BufferAt(extra[i].Buffer.Index), extra[i].Offset, extra[i].Size);
         if (!push)
         {
             var set = frame.AllocateSet(SetLayout);

@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using Buffer = Silk.NET.Vulkan.Buffer;
 using Texture = Meitou.Rendering.Gpu.Texture;
 
 namespace Meitou.Rendering.Impostors;
@@ -168,7 +167,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     internal struct Part
     {
         public DeviceBuffer Vertices, Indices;
-        public BufferBinding[] Bindings;
+        public GpuBufferBinding[] Bindings;
         public VertexLayout Layout;
         public int Count;
         public bool HasColours;
@@ -241,7 +240,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <paramref name="readback"/> at pass × the row's bytes.
     /// </summary>
     internal void RecordRow(CommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
-        Texture large, Texture depth, Texture small, Buffer readback, float lodBias, ImpostorSource? rock = null)
+        Texture large, Texture depth, Texture small, GpuBuffer readback, float lodBias, ImpostorSource? rock = null)
     {
         int grid = size.Grid, f = size.FramePixels, samples = 2 * f, width = grid * samples, smallWidth = grid * f;
         PrepareFrameGlobals();
@@ -296,7 +295,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D((uint)smallWidth, (uint)f, 1),
             };
-            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, small.Image, ImageLayout.General, readback, 1, &region);
+            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, small.Image, ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
         }
         var host = new BarrierBatch();
         host.Add(PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.HostBit, AccessFlags2.HostReadBit);
@@ -332,7 +331,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
             pc.UseVertexColour = p.HasColours ? 1u : 0u;
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveType.Triangles, formats, "impostor bake")));
             cmd.BindVertexBuffers(0, p.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
+            cmd.BindIndexBuffer(new GpuBufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
             cmd.PushConstants(program.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
             cmd.DrawIndexed((uint)p.Count);
         }

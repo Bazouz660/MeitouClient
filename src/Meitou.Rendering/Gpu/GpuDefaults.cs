@@ -29,10 +29,10 @@ public sealed unsafe class GpuDefaults : IDisposable
     }
 
     /// <summary>GL's generic attribute value for disabled vertex attributes.</summary>
-    public GpuBuffer DummyVertex { get; }
+    public BufferAllocation DummyVertex { get; }
 
     /// <summary>A 1×1 stand-in image (in GENERAL layout).</summary>
-    public readonly record struct DummyTexture(GpuImage Image, InternalFormat Format, int Layers, int Slot);
+    public readonly record struct DummyTexture(ImageAllocation Image, InternalFormat Format, int Layers, int Slot);
 
     /// <summary>The stand-in for a sampler of target <paramref name="slot"/> (0 2D, 1 2D array, 2 cube), the sampled
     /// <paramref name="kind"/>, and <paramref name="depth"/> (a shadow sampler): created on first use.</summary>

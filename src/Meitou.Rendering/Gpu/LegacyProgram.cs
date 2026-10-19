@@ -26,7 +26,7 @@ public readonly record struct BlockSlot(int Index)
 
 /// <summary>A vertex input as a GL vertex array described it (the pipeline caches' key): per location the attribute (null when disabled)
 /// and the element buffer (null binding when none).</summary>
-public sealed record VertexArrayBindings(LegacyProgram.Attribute?[] Attributes, BufferBinding Elements);
+public sealed record VertexArrayBindings(LegacyProgram.Attribute?[] Attributes, GpuBufferBinding Elements);
 
 /// <summary>
 /// The program VkGl would build for a GLSL source pair (docs/renderer-native.md 3.2, step P): the same SPIR-V and layout (set 0 the named blocks
@@ -45,7 +45,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     readonly (uint Binding, int Size, string Name)[] blocks;
     readonly (uint Binding, SamplerInfo Info, string Name)[] samplers;
     readonly string[] blockNames, samplerNames;
-    readonly BufferBinding[] blockValues;     // per block name
+    readonly GpuBufferBinding[] blockValues;     // per block name
     readonly SampledTexture[] samplerValues;  // per sampler name
     readonly int[] blockIndex, samplerIndex;  // each set-0 entry's name index
     readonly ulong[] lastPush;
@@ -73,7 +73,7 @@ public sealed unsafe class LegacyProgram : IDisposable
         samplers = [.. c.Vertex.Samplers.Concat(c.Fragment.Samplers).Select(s => ((uint)s.Binding, s, s.Name))];
         blockNames = [.. blocks.Select(b => b.Name).Distinct()];
         samplerNames = [.. samplers.Select(s => s.Name).Distinct()];
-        blockValues = new BufferBinding[blockNames.Length];
+        blockValues = new GpuBufferBinding[blockNames.Length];
         samplerValues = new SampledTexture[samplerNames.Length];
         lastPush = new ulong[(blocks.Length + samplers.Length) * 3];
         blockIndex = [.. blocks.Select(b => Array.IndexOf(blockNames, b.Name))];
@@ -156,7 +156,7 @@ public sealed unsafe class LegacyProgram : IDisposable
         if (s.IsValid) { samplerValues[s.Index] = texture; bindingsDirty = true; }
     }
 
-    public void Bind(BlockSlot b, in BufferBinding buffer)
+    public void Bind(BlockSlot b, in GpuBufferBinding buffer)
     {
         if (b.IsValid) { blockValues[b.Index] = buffer; bindingsDirty = true; }
     }
@@ -168,7 +168,7 @@ public sealed unsafe class LegacyProgram : IDisposable
 
     int globalsVersion = -1;
     Func<SampledTexture>?[] globalTextures = [];
-    Func<BufferBinding>?[] globalBlocks = [];
+    Func<GpuBufferBinding>?[] globalBlocks = [];
     (UniformHandle Handle, FrameGlobals.Uniform Value)[] globalUniforms = [];
 
     /// <summary>Re-reads the published names (call only when <see cref="FrameGlobals.Version"/> moved: its closure allocates).</summary>
@@ -237,10 +237,10 @@ public sealed unsafe class LegacyProgram : IDisposable
                 var value = blockValues[bi];
                 if (value.IsNull && globalBlocks[bi] is { } gb) value = gb();
                 if (value.IsNull) throw new InvalidOperationException($"{Name}: no buffer bound for uniform block {b.Name}");
-                ulong range = value.Size == Vk.WholeSize ? (ulong)b.Size : Math.Min((ulong)b.Size, value.Size);
-                bufferInfos[i] = new DescriptorBufferInfo(value.Buffer, value.Offset, range);
-                same &= lastPush[w * 3] == value.Buffer.Handle && lastPush[w * 3 + 1] == value.Offset && lastPush[w * 3 + 2] == range;
-                (lastPush[w * 3], lastPush[w * 3 + 1], lastPush[w * 3 + 2]) = (value.Buffer.Handle, value.Offset, range);
+                ulong range = value.Size == GpuBufferBinding.WholeSize ? (ulong)b.Size : Math.Min((ulong)b.Size, value.Size);
+                bufferInfos[i] = new DescriptorBufferInfo(ctx.Device.BufferAt(value.Buffer.Index), value.Offset, range);
+                same &= lastPush[w * 3] == (ulong)value.Buffer.Index && lastPush[w * 3 + 1] == value.Offset && lastPush[w * 3 + 2] == range;
+                (lastPush[w * 3], lastPush[w * 3 + 1], lastPush[w * 3 + 2]) = ((ulong)value.Buffer.Index, value.Offset, range);
                 writes[w++] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet, DstBinding = b.Binding, DescriptorCount = 1,
@@ -285,7 +285,7 @@ public sealed unsafe class LegacyProgram : IDisposable
 
     DescriptorSet DynamicSet()
     {
-        var key = (VertexBlock is null ? 0 : vertexSlice.Handle.Handle, FragmentBlock is null ? 0 : fragmentSlice.Handle.Handle);
+        var key = (VertexBlock is null ? 0 : (ulong)vertexSlice.Handle.Index, FragmentBlock is null ? 0 : (ulong)fragmentSlice.Handle.Index);
         // The chunks of the last two frames (one 8 MB chunk per frame slot, the usual case): no dictionary.
         if (key == recentKeys[0] && recentSets[0].Handle != 0) return recentSets[0];
         if (key == recentKeys[1] && recentSets[1].Handle != 0) return recentSets[1];
@@ -306,13 +306,13 @@ public sealed unsafe class LegacyProgram : IDisposable
         uint n = 0;
         if (VertexBlock is { } vb)
         {
-            infos[n] = new DescriptorBufferInfo(vertexSlice.Handle, 0, (ulong)vb.Size);
+            infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(vertexSlice.Handle.Index), 0, (ulong)vb.Size);
             writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
             n++;
         }
         if (FragmentBlock is { } fb)
         {
-            infos[n] = new DescriptorBufferInfo(fragmentSlice.Handle, 0, (ulong)fb.Size);
+            infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(fragmentSlice.Handle.Index), 0, (ulong)fb.Size);
             writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
             n++;
         }
@@ -324,7 +324,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     // ---- vertex input ----
 
     /// <summary>A GL vertex attribute as the legacy model feeds it: the buffer range, its format, stride (0 = tightly packed, as GL) and divisor.</summary>
-    public readonly record struct Attribute(BufferBinding Buffer, InternalFormat Format, uint Stride, bool PerInstance);
+    public readonly record struct Attribute(GpuBufferBinding Buffer, InternalFormat Format, uint Stride, bool PerInstance);
 
     /// <summary>
     /// The vertex layout VkGl packs for this program (<c>VkGl.PrepareDraw</c>): for each input location, the attribute's format, its stride
@@ -353,16 +353,16 @@ public sealed unsafe class LegacyProgram : IDisposable
     /// (a location in the range the program does not read gets the float constant; binding it is harmless). Resolve it once per mesh and keep it
     /// while the mesh's <see cref="VertexArrayBindings"/> are the same object.
     /// </summary>
-    public BufferBinding[] VertexBuffers(ReadOnlySpan<Attribute?> byLocation, int first, int count)
+    public GpuBufferBinding[] VertexBuffers(ReadOnlySpan<Attribute?> byLocation, int first, int count)
     {
-        var result = new BufferBinding[count];
+        var result = new GpuBufferBinding[count];
         for (int i = 0; i < count; i++)
         {
             int loc = first + i;
             int input = Array.IndexOf(InputLocations, loc);
             result[i] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? InputKinds[input] : ScalarKind.Float));
+                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? InputKinds[input] : ScalarKind.Float));
         }
         return result;
     }
@@ -370,7 +370,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     /// <summary>Binds each input location's buffer (the dummy constant where null) in one call per run of consecutive locations.</summary>
     public void BindVertices(CommandList cmd, ReadOnlySpan<Attribute?> byLocation)
     {
-        Span<BufferBinding> run = stackalloc BufferBinding[InputLocations.Length];
+        Span<GpuBufferBinding> run = stackalloc GpuBufferBinding[InputLocations.Length];
         int n = 0;
         uint first = 0;
         for (int i = 0; i < InputLocations.Length; i++)
@@ -380,7 +380,7 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (n == 0) first = (uint)loc;
             run[n++] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(InputKinds[i]));
+                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(InputKinds[i]));
         }
         if (n > 0) cmd.BindVertexBuffers(first, run[..n]);
     }

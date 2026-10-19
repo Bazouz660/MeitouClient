@@ -38,7 +38,7 @@ internal sealed unsafe class GiProbes : IDisposable
     readonly Texture[] bases;
     readonly DeviceBuffer rays, state;
     // Per frame slot: the probes this frame traces and blends, written by the CPU (GiFogHide): the probe index, bit 31 a hidden probe's slow update.
-    readonly GpuBuffer[] lists;
+    readonly BufferAllocation[] lists;
     readonly byte[] hiddenLayers = new byte[Cascades * Columns * Columns];   // per tile (cascade, toroidal row, toroidal column): the layers the fog hides
     (object? Block, float Radius, float Weather) hiddenState;
     Vector3 hiddenEye;
@@ -127,12 +127,12 @@ internal sealed unsafe class GiProbes : IDisposable
             bases[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.R32f, Columns, Columns * Cascades, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe bases"));
         rays = DeviceBuffer.Create(ctx, (ulong)Probes * MaxRays * 16, BufferUse.Storage, "gi probe rays");
         state = DeviceBuffer.Create(ctx, (ulong)Probes * 16, BufferUse.Storage | BufferUse.TransferDst, "gi probe state");
-        lists = new GpuBuffer[ctx.Device.Frames.Count];
+        lists = new BufferAllocation[ctx.Device.Frames.Count];
         for (int i = 0; i < lists.Length; i++)
             lists[i] = ctx.Device.Allocator.CreateBuffer((ulong)Probes * 4, BufferUsageFlags.StorageBufferBit, MemoryKind.Upload, "gi probe list");
         // Every probe starts invalid (alpha 0: no surface reads it, no bounce sees it) and unplaced (state w 0: its first blend starts over).
         var cmd = ctx.Device.BeginImmediate();
-        ctx.Device.Vk.CmdFillBuffer(cmd, state.Handle, 0, state.Size, 0);
+        ctx.Device.Vk.CmdFillBuffer(cmd, ctx.Device.BufferAt(state.Handle.Index), 0, state.Size, 0);
         var clear = new ClearColorValue(0f, 0f, 0f, 0f);
         var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
         ctx.Device.Vk.CmdClearColorImage(cmd, irradiance.Image, ImageLayout.General, &clear, 1, &range);
@@ -321,8 +321,8 @@ internal sealed unsafe class GiProbes : IDisposable
         if (moved)
         {
             // The tiles whose probe moved hold another place's light until their update: hide them (GiShaders.ProbeInvalidate).
-            var stateInfo = new DescriptorBufferInfo(state.Handle, 0, state.Size);
-            var uniform = new DescriptorBufferInfo(block.Handle, block.Offset, (ulong)sizeof(Constants));
+            var stateInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(state.Handle.Index), 0, state.Size);
+            var uniform = new DescriptorBufferInfo(ctx.Device.BufferAt(block.Handle.Index), block.Offset, (ulong)sizeof(Constants));
             var images = stackalloc DescriptorImageInfo[2];
             images[0] = new DescriptorImageInfo(default, ctx.Device.ViewAt(irradiance.View().Index), ImageLayout.General);
             images[1] = new DescriptorImageInfo(ctx.Device.SamplerAt(nearest.Index), ctx.Device.ViewAt(bases.View().Index), ImageLayout.General);
@@ -339,9 +339,9 @@ internal sealed unsafe class GiProbes : IDisposable
         {
             var top = scene.Top.Handle;
             var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &top };
-            var records = new DescriptorBufferInfo(scene.Records.Buffer, scene.Records.Offset, scene.Records.Size);
-            var rayInfo = new DescriptorBufferInfo(rays.Handle, 0, rays.Size);
-            var uniform = new DescriptorBufferInfo(block.Handle, block.Offset, (ulong)sizeof(Constants));
+            var records = new DescriptorBufferInfo(ctx.Device.BufferAt(scene.Records.Buffer.Index), scene.Records.Offset, scene.Records.Size);
+            var rayInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(rays.Handle.Index), 0, rays.Size);
+            var uniform = new DescriptorBufferInfo(ctx.Device.BufferAt(block.Handle.Index), block.Offset, (ulong)sizeof(Constants));
             var images = stackalloc DescriptorImageInfo[9];
             images[0] = new DescriptorImageInfo(ctx.Device.SamplerAt(linear.Index), ctx.Device.ViewAt(irradiance.View().Index), ImageLayout.General);
             images[1] = new DescriptorImageInfo(ctx.Device.SamplerAt(linear.Index), ctx.Device.ViewAt(distance.View().Index), ImageLayout.General);
@@ -358,7 +358,7 @@ internal sealed unsafe class GiProbes : IDisposable
                 images[8] = new DescriptorImageInfo(ctx.Device.SamplerAt(lamps.NearestSampler.Index), ctx.Device.ViewAt(lampData.View().Index), ImageLayout.General);
             }
             else images[6] = images[7] = images[8] = images[2];
-            var stateInfo = new DescriptorBufferInfo(state.Handle, 0, state.Size);
+            var stateInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(state.Handle.Index), 0, state.Size);
             var listInfo = new DescriptorBufferInfo(lists[slot].Buffer, 0, (ulong)Math.Max(listed, 1) * 4);
             var writes = stackalloc WriteDescriptorSet[15];
             writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, PNext = &asWrite, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.AccelerationStructureKhr };
@@ -384,10 +384,10 @@ internal sealed unsafe class GiProbes : IDisposable
         cmd = ctx.BeginNative("gi blend");
         cmd.BeginLabel("gi blend");
         {
-            var rayInfo = new DescriptorBufferInfo(rays.Handle, 0, rays.Size);
-            var stateInfo = new DescriptorBufferInfo(state.Handle, 0, state.Size);
+            var rayInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(rays.Handle.Index), 0, rays.Size);
+            var stateInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(state.Handle.Index), 0, state.Size);
             var listInfo = new DescriptorBufferInfo(lists[slot].Buffer, 0, (ulong)Math.Max(listed, 1) * 4);
-            var uniform = new DescriptorBufferInfo(block.Handle, block.Offset, (ulong)sizeof(Constants));
+            var uniform = new DescriptorBufferInfo(ctx.Device.BufferAt(block.Handle.Index), block.Offset, (ulong)sizeof(Constants));
             var images = stackalloc DescriptorImageInfo[3];
             images[0] = new DescriptorImageInfo(default, ctx.Device.ViewAt(irradiance.View().Index), ImageLayout.General);
             images[1] = new DescriptorImageInfo(default, ctx.Device.ViewAt(distance.View().Index), ImageLayout.General);

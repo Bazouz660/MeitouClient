@@ -77,6 +77,11 @@ public sealed unsafe class VulkanDevice : IDisposable
     readonly List<Silk.NET.Vulkan.ImageView> viewTable = [default];
     public Silk.NET.Vulkan.ImageView ViewAt(int index) => viewTable[index];
     public int AddView(Silk.NET.Vulkan.ImageView view) { viewTable.Add(view); return viewTable.Count - 1; }
+
+    /// <summary>The buffers the renderers hold by index (index 0 is the null buffer).</summary>
+    readonly List<Silk.NET.Vulkan.Buffer> bufferTable = [default];
+    public Silk.NET.Vulkan.Buffer BufferAt(int index) => bufferTable[index];
+    public int AddBuffer(Silk.NET.Vulkan.Buffer buffer) { bufferTable.Add(buffer); return bufferTable.Count - 1; }
     public int FramesInFlight => options.FramesInFlight;
 
     public bool ValidationEnabled { get; private set; }
@@ -1068,10 +1073,10 @@ public sealed unsafe class VulkanDevice : IDisposable
     }
 
     /// <summary>Frees the buffer once every frame that could use it has finished.</summary>
-    public void DeferFree(GpuBuffer b) => Frames.DeferDelete(() => Allocator.Free(b));
+    public void DeferFree(BufferAllocation b) => Frames.DeferDelete(() => Allocator.Free(b));
 
     /// <summary>Frees the image once every frame that could use it has finished.</summary>
-    public void DeferFree(GpuImage i) => Frames.DeferDelete(() => Allocator.Free(i));
+    public void DeferFree(ImageAllocation i) => Frames.DeferDelete(() => Allocator.Free(i));
 
     public void WaitIdle()
     {

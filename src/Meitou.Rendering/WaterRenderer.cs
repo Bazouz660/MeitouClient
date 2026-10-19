@@ -830,7 +830,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     public GpuContext Gpu { get; }
     readonly DeviceBuffer quad, grid, gridIndices;
     readonly VertexArrayBindings quadSource, gridSource;   // the vertex inputs (the pipeline cache's key)
-    readonly BufferBinding[] quadVertices, gridVertices;
+    readonly GpuBufferBinding[] quadVertices, gridVertices;
     readonly uint gridIndexCount;
     readonly SampledImage[] maps;   // colour, flow, normal, parameters A and B, rain ripples, foam (Meitou), in the order of WaterProgram.MapNames
     readonly Vector4 seaA, seaB;
@@ -914,7 +914,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
         }
         LegacyProgram.Attribute?[] gridAttributes = [QuadAttribute(grid)];
-        gridSource = new VertexArrayBindings(gridAttributes, new BufferBinding(gridIndices.Handle, 0, gridIndices.Size));
+        gridSource = new VertexArrayBindings(gridAttributes, new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size));
         gridVertices = meitou.P.VertexBuffers(gridAttributes, 0, 1);
         gridIndexCount = (uint)indices.Length;
     }
@@ -922,7 +922,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// <summary>The quad's only vertex input, location 0: two floats, 8 bytes apart (the GL vertex array's
     /// <c>VertexAttribPointer(0, 2, FLOAT, false, 8, 0)</c>); no element buffer.</summary>
     internal static LegacyProgram.Attribute QuadAttribute(DeviceBuffer quad) =>
-        new(new BufferBinding(quad.Handle, 0), GlConventions.VertexFormat(GLEnum.Float, 2, false, false), 8, false);
+        new(new GpuBufferBinding(quad.Handle, 0), GlConventions.VertexFormat(GLEnum.Float, 2, false, false), 8, false);
 
     /// <summary>The Meitou water's mesh: a centre vertex and rings round it whose spacing grows with the radius (as fine across as along, from
     /// 1 unit out to <see cref="GridDetailRadius"/>), then one ring marked to reach the plane's extent. Offsets from the eye, triangle list,
@@ -1243,7 +1243,7 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     static readonly BlendState AlphaBlend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
-    void Record(WaterProgram p, VertexArrayBindings va, BufferBinding[] vertices, uint indexCount)
+    void Record(WaterProgram p, VertexArrayBindings va, GpuBufferBinding[] vertices, uint indexCount)
     {
         var cmd = Gpu.BeginGuest(p == meitou ? "water meitou" : "water");
         var targets = Gpu.CurrentTargets();

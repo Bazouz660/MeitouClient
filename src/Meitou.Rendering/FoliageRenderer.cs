@@ -1098,7 +1098,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     {
         var result = new LegacyProgram.Attribute?[MeshLayout.Length];
         foreach (var a in MeshLayout)
-            result[a.Location] = new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, (ulong)a.Offset),
+            result[a.Location] = new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, (ulong)a.Offset),
                 GlConventions.VertexFormat(GLEnum.Float, a.Size, false, false), (uint)Vertex.Size, false);
         return result;
     }
@@ -1907,8 +1907,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     struct NativeMesh
     {
         public VertexLayout? Layout;
-        public BufferBinding[] Vertices;
-        public BufferBinding Elements;
+        public GpuBufferBinding[] Vertices;
+        public GpuBufferBinding Elements;
         public int SegA, SegB;
         public GraphicsPipeline? PipeA, PipeB;
     }
@@ -1943,7 +1943,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             attributes[RowLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceStride, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
@@ -2081,7 +2081,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         // The GPU cull's compacted rows and one indirect draw per mesh draw (its batch's count and first instance), else this call's constants.
         bool indirect = !gpuResult.IsEmpty;
         for (int a = 0; a < 4; a++)
-            job.Rows[a] = indirect ? new BufferBinding(gpuResult.Rows, gpuResult.RowsOffset + (ulong)(16 * a)) : new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+            job.Rows[a] = indirect ? new GpuBufferBinding(gpuResult.Rows, gpuResult.RowsOffset + (ulong)(16 * a)) : new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         int drawIndex = 0;
         NewTextureSegment();
         // The constants the GL code set on every draw (Shaders.MeshFragment's uniforms the foliage does not vary).
@@ -2175,11 +2175,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             public bool SetRaster;
             public CullMode Cull;
             public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public MeshPush Push;
             /// <summary>Indirect: the arguments' buffer (else a plain indexed draw).</summary>
-            public Silk.NET.Vulkan.Buffer Args;
+            public GpuBuffer Args;
             public ulong ArgsOffset;
             public uint IndexCount, FirstIndex, Instances, FirstInstance;
         }
@@ -2189,7 +2189,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public DrawState State = null!;
         public Silk.NET.Vulkan.PipelineLayout Layout;
         public FrameBinding Frame;
-        public readonly BufferBinding[] Rows = new BufferBinding[4];
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;
@@ -2219,7 +2219,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 if (d.Vertices.Length > 0) cmd.BindVertexBuffers(0, d.Vertices);
                 cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 PushTo(cmd, layout, in d.Push, ref last, ref pushed);
-                if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
+                if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, d.FirstIndex, 0, d.FirstInstance);
             }
         }
@@ -2384,7 +2384,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public Silk.NET.Vulkan.PipelineLayout Layout;
         public FrameBinding Frame;
         public GraphicsPipeline Pipeline = null!;
-        public BufferBinding[] Vertices = [];
+        public GpuBufferBinding[] Vertices = [];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;

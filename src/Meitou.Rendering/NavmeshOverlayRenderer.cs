@@ -46,7 +46,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     readonly LegacyProgram program;
     readonly NativeSegment triangles, lines;
     readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[2];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[2];
     readonly UniformHandle viewProjection, offset, depthScale;
     readonly SamplerSlot sceneDepth;
     DeviceBuffer? fill, edges;
@@ -116,8 +116,8 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     {
         if (buffer is null || count == 0) return;
         cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
-        bindings[0] = new BufferBinding(buffer.Handle, 0);
-        bindings[1] = new BufferBinding(buffer.Handle, 3 * sizeof(float));
+        bindings[0] = new GpuBufferBinding(buffer.Handle, 0);
+        bindings[1] = new GpuBufferBinding(buffer.Handle, 3 * sizeof(float));
         cmd.BindVertexBuffers(0, bindings);
         program.Flush(cmd);
         cmd.Draw((uint)count, 1, 0, 0);

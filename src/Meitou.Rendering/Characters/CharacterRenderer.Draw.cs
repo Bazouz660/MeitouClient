@@ -135,7 +135,7 @@ internal sealed unsafe partial class CharacterRenderer
         (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
         job.Frame = nativeFrame.Prepare(in view, [bones.Binding, materials.Binding, content.Morphs.Binding(Gpu.Frame), previousBones.Binding]);
         job.Cull = depthPass ? CullMode.None : CullMode.Back;
-        for (int a = 0; a < 9; a++) job.Rows[a] = new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+        for (int a = 0; a < 9; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         job.Push = new CharacterPush { DepthIndex = motionPass ? motionDepth : 0, Fill = new(Fill, 0) };
         job.RowCount = motionPass ? 9 : 5;
         if (job.Draws.Length < active.Count) job.Draws = new DrawJob.Draw[Math.Max(active.Count, job.Draws.Length * 2)];
@@ -148,7 +148,7 @@ internal sealed unsafe partial class CharacterRenderer
             job.Draws[n++] = new DrawJob.Draw
             {
                 Pipeline = Gpu.Pipelines.Get(state.Pipeline(prog.P, native.Layout!, PrimitiveType.Triangles, targets.Formats, label)),
-                Vertices = native.Vertices, Elements = new BufferBinding(native.Elements.Buffer, native.Elements.Offset + (ulong)part.Offset[b.Level] * 4),
+                Vertices = native.Vertices, Elements = new GpuBufferBinding(native.Elements.Buffer, native.Elements.Offset + (ulong)part.Offset[b.Level] * 4),
                 IndexCount = (uint)part.Count[b.Level], Instances = (uint)b.Count, FirstInstance = (uint)b.Offset, TwoSided = b.DoubleSided,
             };
             DrawCalls++;
@@ -206,7 +206,7 @@ internal sealed unsafe partial class CharacterRenderer
             attributes[CharacterShaders.PreviousLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, CharInstance.Size, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
@@ -219,8 +219,8 @@ internal sealed unsafe partial class CharacterRenderer
         public struct Draw
         {
             public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;
             public bool TwoSided;
         }
@@ -231,7 +231,7 @@ internal sealed unsafe partial class CharacterRenderer
         public Vk.PipelineLayout Layout;
         public FrameBinding Frame;
         public CullMode Cull;
-        public readonly BufferBinding[] Rows = new BufferBinding[9];
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[9];
         public int RowCount;
         public CharacterPush Push;
         public Draw[] Draws = new Draw[64];

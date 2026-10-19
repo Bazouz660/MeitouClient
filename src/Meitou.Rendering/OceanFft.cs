@@ -170,7 +170,7 @@ public sealed unsafe class OceanWaves : IDisposable
         {
             Lengths = Lengths, Time = (float)time, Blend = blend, From = from, To = to, Choppiness = Choppiness, Dt = dt,
         };
-        Span<BufferBinding> b =
+        Span<GpuBufferBinding> b =
         [
             new(spectrum.Handle, 0, spectrum.Size), new(fieldsA.Handle, 0, fieldsA.Size), new(fieldsB.Handle, 0, fieldsB.Size), new(output.Handle, 0, output.Size),
             new(foam.Handle, 0, foam.Size),
@@ -235,7 +235,7 @@ public sealed unsafe class OceanWaves : IDisposable
         cmd.Barrier(batch);
     }
 
-    static void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<BufferBinding> b, in OceanPush push, uint x, uint y, uint z)
+    static void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
         var slots = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();

@@ -8,10 +8,10 @@ namespace Meitou.Rendering;
 
 /// <summary>What a foliage cull dispatch needs of the previous frame's depth pyramid (<see cref="HizPyramid.ViewFor"/>): the buffer and the
 /// vec4s <see cref="FoliageShaders"/>' <c>ViewData.hz</c> and <c>hzOff</c> hold (<see cref="Vectors"/>).</summary>
-public readonly struct OcclusionView(BufferBinding buffer, Vector4[] vectors)
+public readonly struct OcclusionView(GpuBufferBinding buffer, Vector4[] vectors)
 {
     /// <summary>The pyramid's storage buffer.</summary>
-    public BufferBinding Buffer { get; } = buffer;
+    public GpuBufferBinding Buffer { get; } = buffer;
     /// <summary><see cref="HizPyramid.ViewVectors"/> vec4s: [0] the previous eye and the eye's step, [1..3] the previous view's right, up and back axes,
     /// [4] tan x, tan y, width and height of the depth, [5] pixels per unit of tangent, level count, level 0's width and height, [6..8] the level offsets (as uints).</summary>
     public Vector4[] Vectors { get; } = vectors;
@@ -117,7 +117,7 @@ public sealed unsafe class HizPyramid : IDisposable
             var bindings = stackalloc GpuBinding[3];
             bindings[0] = GpuBinding.Sampled(0, new SampledTexture(sampler, depthView, default));
             bindings[1] = GpuBinding.Sampled(1, new SampledTexture(sampler, farView, default));
-            bindings[2] = GpuBinding.Storage(2, new BufferBinding(buffer.Handle, 0, buffer.Size));
+            bindings[2] = GpuBinding.Storage(2, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(basePipeline);
             cmd.BindProgramResources(baseProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 3));
             var push = new BasePush
@@ -133,7 +133,7 @@ public sealed unsafe class HizPyramid : IDisposable
             // The rest (at most about a thousand texels a level) in one workgroup, a level at a time.
             cmd.Barrier(BarrierBatch.Full);
             var bindings = stackalloc GpuBinding[1];
-            bindings[0] = GpuBinding.Storage(0, new BufferBinding(buffer.Handle, 0, buffer.Size));
+            bindings[0] = GpuBinding.Storage(0, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(reducePipeline);
             cmd.BindProgramResources(reduceProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 1));
             var push = new ReducePush { BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, Levels = (uint)levels.Count };
@@ -160,7 +160,7 @@ public sealed unsafe class HizPyramid : IDisposable
         if (!HasData || ctx.Frame.Number - builtFrame > 1) return default;
         float step = Vector3.Distance(current, eye);
         if (!(step <= maxStep)) return default;
-        return new OcclusionView(new BufferBinding(buffer!.Handle, 0, buffer.Size), Vectors(eye, step, right, up, back, tanX, tanY, width, height, levelCount, baseWidth, baseHeight, offsets));
+        return new OcclusionView(new GpuBufferBinding(buffer!.Handle, 0, buffer.Size), Vectors(eye, step, right, up, back, tanX, tanY, width, height, levelCount, baseWidth, baseHeight, offsets));
     }
 
     /// <summary>The vec4s of <see cref="OcclusionView.Vectors"/>: the camera the depth was drawn from (<paramref name="eye"/>, view axes, tangents of half the field of view, size) and the eye's step since.</summary>

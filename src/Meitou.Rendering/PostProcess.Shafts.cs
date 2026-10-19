@@ -112,7 +112,7 @@ public sealed unsafe partial class PostProcess
         bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View(), default));
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, shaftScatter!.Texture.View(), default));
         bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View, default));
-        bindings[4] = GpuBinding.Uniform(4, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
+        bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(shaftScanPipeline!);
         cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));

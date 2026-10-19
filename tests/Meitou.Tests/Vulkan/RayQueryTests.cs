@@ -81,7 +81,7 @@ public class RayQueryTests
         {
             var handle = tlas.Handle;
             var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &handle };
-            var bufferInfo = new DescriptorBufferInfo(results.Handle, 0, results.Size);
+            var bufferInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(results.Handle.Index), 0, results.Size);
 
             writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, PNext = &asWrite, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.AccelerationStructureKhr };
             writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };

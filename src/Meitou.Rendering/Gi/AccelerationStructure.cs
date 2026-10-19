@@ -44,8 +44,8 @@ public unsafe struct InstanceRecord
 public sealed unsafe class AccelerationStructure : IDisposable
 {
     readonly VulkanDevice device;
-    readonly GpuBuffer storage;
-    GpuBuffer? scratch;
+    readonly BufferAllocation storage;
+    BufferAllocation? scratch;
 
     public AccelerationStructureKHR Handle { get; }
     public ulong Address { get; }

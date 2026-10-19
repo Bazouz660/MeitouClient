@@ -68,7 +68,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     readonly NativeSegment segment;
     readonly DeviceBuffer vertices;
     readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[2];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[2];
     readonly UniformHandle viewProjection, offset, sun, colour, depthScale, hiddenPass;
     readonly SamplerSlot sceneDepth;
     readonly LegacyProgram composite;
@@ -191,8 +191,8 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
             program.Set(hiddenPass, hidden ? 1 : 0);
             state.Record(cmd, t);
             cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
-            bindings[0] = new BufferBinding(vertices.Handle, 0);
-            bindings[1] = new BufferBinding(vertices.Handle, 12);
+            bindings[0] = new GpuBufferBinding(vertices.Handle, 0);
+            bindings[1] = new GpuBufferBinding(vertices.Handle, 12);
             cmd.BindVertexBuffers(0, bindings);
             program.Flush(cmd);
             cmd.Draw((uint)count, 1, 0, 0);

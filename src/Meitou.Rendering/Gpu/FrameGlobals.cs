@@ -13,7 +13,7 @@ namespace Meitou.Rendering.Gpu;
 public sealed class FrameGlobals
 {
     readonly Dictionary<string, Func<SampledTexture>> textures = [];
-    readonly Dictionary<string, Func<BufferBinding>> blocks = [];
+    readonly Dictionary<string, Func<GpuBufferBinding>> blocks = [];
     readonly Dictionary<string, Uniform> uniforms = [];
 
     /// <summary>A loose uniform's getter, typed by what <see cref="LegacyProgram.Set(UniformHandle, float)"/> and its overloads take.</summary>
@@ -82,7 +82,7 @@ public sealed class FrameGlobals
     public int Version { get; private set; }
 
     public void Publish(string name, Func<SampledTexture> texture) { textures[name] = texture; Version++; }
-    public void Publish(string name, Func<BufferBinding> block) { blocks[name] = block; Version++; }
+    public void Publish(string name, Func<GpuBufferBinding> block) { blocks[name] = block; Version++; }
 
     /// <summary>A loose uniform: float, int, Vector2, Vector3, Vector4 or Matrix4x4. With <paramref name="when"/>, written only while it is true.</summary>
     public void PublishUniform<T>(string name, Func<T> value, Func<bool>? when = null) where T : unmanaged
@@ -107,7 +107,7 @@ public sealed class FrameGlobals
         new(name, 0, 0, cube ? SamplerDimension.Cube : SamplerDimension.Dim2D, arrayed, false, shadow, ScalarKind.Float, 0);
 
     public Func<SampledTexture>? Texture(string name) => textures.GetValueOrDefault(name);
-    public Func<BufferBinding>? Block(string name)
+    public Func<GpuBufferBinding>? Block(string name)
     {
         var published = blocks.GetValueOrDefault(name);
         if (published is null) return null;
@@ -115,13 +115,13 @@ public sealed class FrameGlobals
         return () => blockOverrides.Count > 0 && blockOverrides.TryGetValue(name, out var over) ? over() : published();
     }
 
-    readonly Dictionary<string, Func<BufferBinding>> blockOverrides = [];
+    readonly Dictionary<string, Func<GpuBufferBinding>> blockOverrides = [];
 
     /// <summary>
     /// Replaces a published block's value for the segments prepared until it is cleared (<c>null</c>): a pass that needs the frame's blocks
     /// otherwise, as the water reflection's unshadowed receivers. Does not change <see cref="Version"/>; the name must be published.
     /// </summary>
-    public void OverrideBlock(string name, Func<BufferBinding>? getter)
+    public void OverrideBlock(string name, Func<GpuBufferBinding>? getter)
     {
         if (getter is null) blockOverrides.Remove(name); else blockOverrides[name] = getter;
     }
