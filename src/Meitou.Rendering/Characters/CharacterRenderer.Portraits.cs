@@ -84,7 +84,7 @@ internal sealed unsafe partial class CharacterRenderer
         cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
             target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-        if (!cleared) { Gpu.Clear(cmd, true, default, false, 1, new Rect2D(default, new Extent2D((uint)target.Width, (uint)target.Height))); cleared = true; }
+        if (!cleared) { Gpu.Clear(cmd, true, default, false, 1, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height)); cleared = true; }
         foreach (var request in PortraitRequests)
         {
             if (!Due(request, out int index)) continue;
@@ -93,9 +93,9 @@ internal sealed unsafe partial class CharacterRenderer
             portraitShown[request.Cell] = new ShownPortrait(request.Key, request.Serial, l.Asset, l.Radius,
                 l.Asset.Parts.SelectMany(p => p.Material.Tex).Select(t => (t?.Native, t?.Swizzled ?? false)).ToArray());
             int x = request.Cell % PortraitColumns * PortraitSize, y = request.Cell / PortraitColumns * PortraitSize;
-            var rect = new Rect2D(new Offset2D(x, y), new Extent2D(PortraitSize, PortraitSize));
+            var rect = new PixelRect(x, y, PortraitSize, PortraitSize);
             Gpu.Clear(cmd, true, default, true, 1, rect);
-            Gpu.SetPassViewport(new Viewport(x, y, PortraitSize, PortraitSize, 0, 1), rect);
+            Gpu.SetPassViewport(new PixelViewport(x, y, PortraitSize, PortraitSize, 0, 1), rect);
             var (eye, look) = PortraitCamera(in l, head, request.Serial);
             var view = Matrix4x4.CreateLookAt(eye, look, Vector3.UnitY);
             var projection = Matrix4x4.CreatePerspectiveFieldOfView(PortraitFieldOfView, 1, 0.5f, 400);

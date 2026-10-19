@@ -1,6 +1,5 @@
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using PolygonMode = Silk.NET.Vulkan.PolygonMode;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -21,7 +20,7 @@ internal sealed class ImpostorDraw : IDisposable
     readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GraphicsPipeline> pipelines = [];
 
     /// <summary>What of a <see cref="DrawState"/> is in a pipeline (the dynamic parts are not).</summary>
-    readonly record struct DrawStateKey(BlendState Blend, ColorComponentFlags Mask, PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct DrawStateKey(BlendState Blend, ColorMask Mask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     public ImpostorDraw(GpuContext gpu, NativeFrame frame)
     {
@@ -51,7 +50,7 @@ internal sealed class ImpostorDraw : IDisposable
         Span<LegacyProgram.Attribute?> rows = new LegacyProgram.Attribute?[FoliageShaders.InstanceLocation + 4];
         for (int a = 0; a < 4; a++)
             rows[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Format.R32G32B32A32Sfloat, 64, true);
-        p = gpu.Pipelines.Get(state.Pipeline(program.P, program.Layout(rows), PrimitiveTopology.TriangleList, formats, program.P.Name));
+        p = gpu.Pipelines.Get(state.Pipeline(program.P, program.Layout(rows), PrimitiveType.Triangles, formats, program.P.Name));
         pipelines[key] = p;
         return p;
     }

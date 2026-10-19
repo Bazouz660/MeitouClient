@@ -311,9 +311,9 @@ public sealed unsafe partial class ShadowPass
     }
 
     /// <summary>The blocker pass's state, as the GL version's was: no culling, depth or blending, every colour channel written.</summary>
-    static readonly DrawState BlockerState = new(CullModeFlags.None, FrontFace.Clockwise, false, false, CompareOp.LessOrEqual, false, 0, 0,
-        BlendState.Off, ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
-        Silk.NET.Vulkan.PolygonMode.Fill, false, false);
+    static readonly DrawState BlockerState = new(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal, false, 0, 0,
+        BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A,
+        PolygonKind.Fill, false, false);
 
     void RecordBlockers(ReadOnlySpan<bool> drawn, int count, bool fresh)
     {
@@ -324,14 +324,14 @@ public sealed unsafe partial class ShadowPass
         var cmd = Gpu.BeginNative("shadow blockers");
         var formats = new AttachmentFormats(map.Desc.Format, Format.Undefined, 1);
         int side = map.Desc.Width;
-        var whole = new Rect2D(default, new Extent2D((uint)side, (uint)side));
-        var pipeline = Gpu.Pipelines.Get(BlockerState.Pipeline(p.Program, p.VertexLayout([]), PrimitiveTopology.TriangleList, formats, "shadow blockers"));
+        var whole = new PixelRect(0, 0, (uint)side, (uint)side);
+        var pipeline = Gpu.Pipelines.Get(BlockerState.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles, formats, "shadow blockers"));
         for (int i = 0; i < count; i++)
         {
             if (!drawn[i] && !fresh) continue;
             var target = new RenderTarget(map.Attachment(0, i), AttachmentLoadOp.Load, default, map.Image);
             cmd.BeginRendering(new RenderingDesc(target, default, side, side));
-            BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new Viewport(0, 0, side, side, 0, 1), whole));
+            BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new PixelViewport(0, 0, side, side, 0, 1), whole));
             cmd.BindPipeline(pipeline);
             p.Set(blockerLayerHandle, i);
             p.Flush(cmd);

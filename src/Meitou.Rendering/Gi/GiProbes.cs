@@ -291,7 +291,7 @@ internal sealed unsafe class GiProbes : IDisposable
         BuildList(phases, phase, fog, eye, moved);
         int listed = Listed;
         var bases = this.bases[slot];
-        ctx.Uploads.Write(bases, 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(Columns, Columns * Cascades)), MemoryMarshal.AsBytes(baseHeights.AsSpan()));
+        ctx.Uploads.Write(bases, 0, 0, new PixelRect(0, 0, Columns, Columns * Cascades), MemoryMarshal.AsBytes(baseHeights.AsSpan()));
 
         var g = ctx.Globals;
         var constants = new Constants

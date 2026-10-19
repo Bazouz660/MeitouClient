@@ -1141,9 +1141,9 @@ public readonly record struct SkyColourHandles(UniformHandle Sun, UniformHandle 
 /// reflection's multisampled one alternate) and the vertex export they were made for, so a draw compares a few fields instead of building a
 /// pipeline description.
 /// </summary>
-internal sealed class NativeSegment(GpuContext gpu, LegacyProgram program, Silk.NET.Vulkan.PrimitiveTopology topology, string label)
+internal sealed class NativeSegment(GpuContext gpu, LegacyProgram program, PrimitiveType topology, string label)
 {
-    readonly record struct Key(AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask, Silk.NET.Vulkan.PolygonMode Polygon,
+    readonly record struct Key(AttachmentFormats Formats, BlendState Blend, ColorMask Mask, PolygonKind Polygon,
         bool AlphaToCoverage, bool DepthClamp);
 
     Key key0, key1;
@@ -1177,7 +1177,7 @@ sealed class SkyProg : IDisposable
     public SkyProg(GpuContext gpu, string vertex, string fragment, string name)
     {
         P = LegacyProgram.Create(gpu, vertex, fragment, name);
-        Segment = new NativeSegment(gpu, P, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, name);
+        Segment = new NativeSegment(gpu, P, PrimitiveType.Triangles, name);
         InverseViewProjection = P.Uniform("uInverseViewProjection");
         Colours = SkyColourHandles.Resolve(P);
         Extra = P.Uniform("uSkyExtra");
@@ -1247,7 +1247,7 @@ internal sealed class SampledImage : IDisposable
         return cached;
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int width, int height) => new(new(0, 0), new((uint)width, (uint)height));
+    static PixelRect Rect(int width, int height) => new(0, 0, (uint)width, (uint)height);
 
     /// <summary>
     /// What <c>WorldGl.Texture2D</c> made: RGBA8 from top-first rows, with <paramref name="mipmaps"/> the whole chain made on the GPU as GL's

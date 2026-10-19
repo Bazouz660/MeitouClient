@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using PolygonMode = Silk.NET.Vulkan.PolygonMode;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -93,16 +92,16 @@ internal sealed class ImpostorPreview : IDisposable
         return [.. Enumerable.Range(0, 4).Select(a => new BufferBinding(data.Handle, data.Offset + (ulong)(16 * a)))];
     }
 
-    static readonly DrawState MeshState = new(CullModeFlags.BackBit, FrontFace.Clockwise, true, true, CompareOp.Less, false, 0, 0, BlendState.Off,
-        ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, PolygonMode.Fill, false, false);
+    static readonly DrawState MeshState = new(CullMode.Back, FrontFaceDirection.Ccw, true, true, DepthFunction.Less, false, 0, 0, BlendState.Off,
+        ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false);
 
     /// <summary>The instances as meshes into the open rendering of <paramref name="cmd"/> (formats <paramref name="formats"/>), in <paramref name="viewport"/>.</summary>
-    public void DrawMeshes(CommandList cmd, AttachmentFormats formats, Viewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, ReadOnlySpan<Matrix4x4> instances, bool coverage)
+    public void DrawMeshes(CommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, ReadOnlySpan<Matrix4x4> instances, bool coverage)
     {
         var rows = Rows(instances);
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogDistance = 0 };
         cmd.SetViewport(viewport);
-        cmd.SetDepth(true, true, CompareOp.Less);
+        cmd.SetDepth(true, true, DepthFunction.Less);
         cmd.SetDepthBias(false, 0, 0);
         frame.Bind(cmd, meshProgram.P.Layout, in view);
         cmd.BindVertexBuffers(FoliageShaders.InstanceLocation, rows);
@@ -125,13 +124,13 @@ internal sealed class ImpostorPreview : IDisposable
                 Tile = s.Tile, AlphaSource = cut ? 2 : 0, AlphaThreshold = cut ? s.AlphaThreshold : 0f, Specular = textured ? s.Specular : 0.3f,
                 HasNormal = normal || cut ? 1u : 0u, Coverage = coverage ? 1u : 0u, Spare = MeshSurface.NoWeather,
             };
-            var state = MeshState with { Cull = s.DoubleSided ? CullModeFlags.None : CullModeFlags.BackBit, AlphaToCoverage = coverage };
+            var state = MeshState with { Cull = s.DoubleSided ? CullMode.None : CullMode.Back, AlphaToCoverage = coverage };
             cmd.SetRaster(state.Cull, state.Front);
             foreach (var p in parts)
             {
                 pc.HasDual = dual && p.HasColours ? 1u : 0u;
                 pc.UseVertexColour = p.HasColours ? 1u : 0u;
-                cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(meshProgram.P, p.Layout, PrimitiveTopology.TriangleList, formats, "impostor preview meshes")));
+                cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(meshProgram.P, p.Layout, PrimitiveType.Triangles, formats, "impostor preview meshes")));
                 cmd.BindVertexBuffers(0, p.Bindings);
                 cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexType.Uint32);
                 cmd.PushConstants(meshProgram.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
@@ -141,16 +140,16 @@ internal sealed class ImpostorPreview : IDisposable
     }
 
     /// <summary>The instances as impostors: one billboard each, the camera's up axis for the billboards' roll.</summary>
-    public void DrawImpostors(CommandList cmd, AttachmentFormats formats, Viewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 cameraUp, Vector3 light,
+    public void DrawImpostors(CommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 cameraUp, Vector3 light,
         ReadOnlySpan<Matrix4x4> instances, bool coverage)
     {
         if (atlas is null) return;
         var rows = Rows(instances);
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogDistance = 0 };
-        var state = MeshState with { Cull = CullModeFlags.None, AlphaToCoverage = coverage };
+        var state = MeshState with { Cull = CullMode.None, AlphaToCoverage = coverage };
         cmd.SetViewport(viewport);
         cmd.SetRaster(state.Cull, state.Front);
-        cmd.SetDepth(true, true, CompareOp.Less);
+        cmd.SetDepth(true, true, DepthFunction.Less);
         cmd.SetDepthBias(false, 0, 0);
         frame.Bind(cmd, impostors.Layout, in view);
         var a = atlas.Atlas;

@@ -1115,8 +1115,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
     readonly SegmentPipeline[] lastSegment = new SegmentPipeline[5];
@@ -1152,7 +1152,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     GraphicsPipeline PipelineFor(ref ObjectNativeMesh n, ObjProg p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
         if (n.SegB == segment) return n.PipeB!;
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;
@@ -1275,8 +1275,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var targets = Gpu.CurrentTargets();
         // The objects are drawn double-sided (the GL version turned the cull face off); the wireframe as lines pulled forward
         // (GL's PolygonMode LINE with POLYGON_OFFSET_LINE and PolygonOffset(-1, -1)).
-        var state = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
-        if (wire) state = state with { Polygon = Silk.NET.Vulkan.PolygonMode.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None };
+        if (wire) state = state with { Polygon = PolygonKind.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
         int segment = SegmentId(kind, prog.P, targets, state);
         // The fully visible draws of a colour pass use the program without a discard (own segment, own pipelines per part).
         int solidSegment = !depthPass && !wire ? SegmentId(4, solidProg.P, targets, state) : 0;
@@ -1307,7 +1307,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 Pipeline = n.SegA == drawSegment ? n.PipeA! : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
                 Vertices = n.Vertices, Elements = new BufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
                 Push = pc, IndexCount = (uint)part.Count[d.Level], Instances = d.Instances, FirstInstance = d.FirstInstance,
-                Cull = d.BackCull ? Silk.NET.Vulkan.CullModeFlags.BackBit : state.Cull,
+                Cull = d.BackCull ? CullMode.Back : state.Cull,
             };
         }
         job.Count = drawCount;
@@ -1326,7 +1326,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             public BufferBinding Elements;
             public ObjectPush Push;
             public uint IndexCount, Instances, FirstInstance;
-            public Silk.NET.Vulkan.CullModeFlags Cull;
+            public CullMode Cull;
         }
 
         public WorldObjectRenderer Owner = null!;

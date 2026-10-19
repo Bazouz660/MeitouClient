@@ -4,7 +4,6 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using PolygonMode = Silk.NET.Vulkan.PolygonMode;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Texture = Meitou.Rendering.Gpu.Texture;
 
@@ -210,8 +209,8 @@ public sealed unsafe class ImpostorBaker : IDisposable
         return [.. parts];
     }
 
-    static readonly DrawState BakeState = new(CullModeFlags.BackBit, FrontFace.Clockwise, true, true, CompareOp.Less, false, 0, 0, BlendState.Off,
-        ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, PolygonMode.Fill, false, false);
+    static readonly DrawState BakeState = new(CullMode.Back, FrontFaceDirection.Ccw, true, true, DepthFunction.Less, false, 0, 0, BlendState.Off,
+        ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false);
 
     /// <summary>GL's texture 0 (what the GL baker bound for a missing map) as a bindless index.</summary>
     uint StandIn()
@@ -252,7 +251,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
         float rockScale = rock is null ? 1 : rock.MeanScale;
         (c, r) = (c * rockScale, r * rockScale);
         var formats = new AttachmentFormats(large.Desc.Format, depth.Desc.Format);
-        var full = new Rect2D(default, new Extent2D((uint)width, (uint)samples));
+        var full = new PixelRect(0, 0, (uint)width, (uint)samples);
         ulong rowBytes = (ulong)(smallWidth * f * 4);
         for (int pass = 0; pass < 3; pass++)
         {
@@ -262,7 +261,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image),
                 width, samples));
             cmd.SetScissor(full);
-            cmd.SetDepth(true, true, CompareOp.Less);
+            cmd.SetDepth(true, true, DepthFunction.Less);
             cmd.SetDepthBias(false, 0, 0);
             for (int column = 0; column < grid; column++)
             {
@@ -271,7 +270,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 var eye = c + d * (2 * r);
                 var view = Matrix4x4.CreateLookAt(eye, c, up);
                 var projection = Matrix4x4.CreateOrthographic(2 * r, 2 * r, 0.5f * r, 3.5f * r);
-                cmd.SetViewport(new Viewport(column * samples, 0, samples, samples, 0, 1));
+                cmd.SetViewport(new PixelViewport(column * samples, 0, samples, samples, 0, 1));
                 if (rock is not null)
                 {
                     RockTerrain!.RecordRockBake(cmd, formats, BakeState, rock.RockBiome, rockScale, size.BakeDistance, view * projection, eye, d, right, up, pass, mainParts);
@@ -324,13 +323,13 @@ public sealed unsafe class ImpostorBaker : IDisposable
             Tile = s.Tile, AlphaSource = cut ? 2 : 0, AlphaThreshold = cut ? s.AlphaThreshold : 0f, Specular = textured ? s.Specular : 0.3f,
             HasNormal = normal || cut ? 1u : 0u, Spare = MeshSurface.NoWeather,
         };
-        var state = BakeState with { Cull = s.DoubleSided ? CullModeFlags.None : CullModeFlags.BackBit };
+        var state = BakeState with { Cull = s.DoubleSided ? CullMode.None : CullMode.Back };
         cmd.SetRaster(state.Cull, state.Front);
         foreach (var p in parts)
         {
             pc.HasDual = dual && p.HasColours ? 1u : 0u;
             pc.UseVertexColour = p.HasColours ? 1u : 0u;
-            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveTopology.TriangleList, formats, "impostor bake")));
+            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveType.Triangles, formats, "impostor bake")));
             cmd.BindVertexBuffers(0, p.Bindings);
             cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexType.Uint32);
             cmd.PushConstants(program.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);

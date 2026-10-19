@@ -31,7 +31,7 @@ public sealed unsafe class Uploader
     }
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in Rect2D region, ReadOnlySpan<byte> data)
+    public void Write(Texture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         var staging = ctx.Frame.Staging.Write(data);
@@ -39,8 +39,8 @@ public sealed unsafe class Uploader
         {
             BufferOffset = staging.Offset,
             ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
-            ImageOffset = new Offset3D(region.Offset.X, region.Offset.Y, 0),
-            ImageExtent = new Extent3D(region.Extent.Width, region.Extent.Height, 1),
+            ImageOffset = new Offset3D(region.X, region.Y, 0),
+            ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
         var cmd = Cmd;
         ctx.Device.Vk.CmdCopyBufferToImage(cmd, staging.Handle, target.Image, ImageLayout.General, 1, &copy);
@@ -52,7 +52,7 @@ public sealed unsafe class Uploader
     /// <summary>
     /// (Added in phase 8 stage 1, terrain.) Uploads and the commands that belong with them (a new texture's layout transition, its mip
     /// generation) for resources made outside the frame's passes, whether or not a frame is open: while one is, into the frame's upload
-    /// command buffer (<see cref="GpuFrame.PreFrame"/>, as <see cref="Write(Texture, int, int, in Rect2D, ReadOnlySpan{byte})"/>); otherwise
+    /// command buffer (<see cref="GpuFrame.PreFrame"/>, as <see cref="Write(Texture, int, int, in PixelRect, ReadOnlySpan{byte})"/>); otherwise
     /// (at load, before the first frame: VkGl opened a frame for such uploads, the native API does not) into a one-shot command buffer with
     /// staging of its own, which <see cref="UploadBatch.Dispose"/> submits and waits for. Render thread only.
     /// </summary>
@@ -99,7 +99,7 @@ public sealed unsafe class UploadBatch : IDisposable
     public Texture Create(TextureDesc desc) => Texture.Create(ctx, desc, Commands.Handle);
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in Rect2D region, ReadOnlySpan<byte> data)
+    public void Write(Texture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         if (!immediate) { ctx.Uploads.Write(target, level, layer, region, data); return; }
@@ -108,8 +108,8 @@ public sealed unsafe class UploadBatch : IDisposable
         {
             BufferOffset = offset,
             ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
-            ImageOffset = new Offset3D(region.Offset.X, region.Offset.Y, 0),
-            ImageExtent = new Extent3D(region.Extent.Width, region.Extent.Height, 1),
+            ImageOffset = new Offset3D(region.X, region.Y, 0),
+            ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
         ctx.Device.Vk.CmdCopyBufferToImage(Commands.Handle, buffer, target.Image, ImageLayout.General, 1, &copy);
         Uploader.TransferBarrier(ctx.Device.Vk, Commands.Handle);

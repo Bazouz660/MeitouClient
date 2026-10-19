@@ -172,9 +172,9 @@ public sealed unsafe partial class PostProcess
     }
 
     /// <summary>The lean pass: the fog's blend, and the mask depth written (always passing) for the full pass to test.</summary>
-    static readonly DrawState LeanState = FogState with { DepthTest = true, DepthWrite = true, Compare = Vk.CompareOp.Always };
+    static readonly DrawState LeanState = FogState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always };
     /// <summary>The full pass over the pixels the lean one marked (mask depth 1): the full-screen triangle (depth 0.5) is less than it, and not less than the 0 of the rest.</summary>
-    static readonly DrawState FallbackState = FogState with { DepthTest = true, DepthWrite = false, Compare = Vk.CompareOp.Less };
+    static readonly DrawState FallbackState = FogState with { DepthTest = true, DepthWrite = false, Compare = DepthFunction.Less };
 
     void DisposeSceneLayers()
     {

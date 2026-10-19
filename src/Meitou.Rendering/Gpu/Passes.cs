@@ -7,7 +7,7 @@ namespace Meitou.Rendering.Gpu;
 /// What a pass draws into (<see cref="GpuContext.CurrentTargets"/>): its attachments, their formats and size, and the viewport and scissor its
 /// host set (the scissor clipped to the target). A guest drawing into the current pass sets these.
 /// </summary>
-public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, AttachmentFormats Formats, int Width, int Height, Viewport Viewport, Rect2D Scissor, RenderTarget Extra = default)
+public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, AttachmentFormats Formats, int Width, int Height, PixelViewport Viewport, PixelRect Scissor, RenderTarget Extra = default)
 {
     public RenderingDesc Rendering => new(Colour, Depth, Width, Height, 0, 0, ShadingRate, ShadingRateTexel, Extra);
 
@@ -25,20 +25,20 @@ public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, Attach
         int w = any.Desc.Width, h = any.Desc.Height;
         static RenderTarget Target(Texture? t) => t is null ? default : new RenderTarget(t.Attachment(), AttachmentLoadOp.Load, default, t.Image);
         var formats = new AttachmentFormats(colour?.Desc.Format ?? Format.Undefined, depth?.Desc.Format ?? Format.Undefined, any.Desc.Samples, Extra: extra?.Desc.Format ?? Format.Undefined);
-        return new PassTargets(Target(colour), Target(depth), formats, w, h, new Viewport(0, 0, w, h, 0, 1), Whole(w, h), Target(extra));
+        return new PassTargets(Target(colour), Target(depth), formats, w, h, new PixelViewport(0, 0, w, h, 0, 1), Whole(w, h), Target(extra));
     }
 
     /// <summary>The same targets with the viewport <paramref name="viewport"/> and the scissor <paramref name="scissor"/> (clipped to the targets),
     /// or the whole viewport when the scissor is null.</summary>
-    public PassTargets At(Viewport viewport, Rect2D? scissor = null)
+    public PassTargets At(PixelViewport viewport, PixelRect? scissor = null)
     {
         var s = scissor ?? Whole(Width, Height);
-        int x0 = Math.Max(s.Offset.X, 0), y0 = Math.Max(s.Offset.Y, 0);
-        int x1 = Math.Min(s.Offset.X + (int)s.Extent.Width, Width), y1 = Math.Min(s.Offset.Y + (int)s.Extent.Height, Height);
-        return this with { Viewport = viewport, Scissor = new Rect2D(new Offset2D(x0, y0), new Extent2D((uint)Math.Max(x1 - x0, 0), (uint)Math.Max(y1 - y0, 0))) };
+        int x0 = Math.Max(s.X, 0), y0 = Math.Max(s.Y, 0);
+        int x1 = Math.Min(s.X + (int)s.Width, Width), y1 = Math.Min(s.Y + (int)s.Height, Height);
+        return this with { Viewport = viewport, Scissor = new PixelRect(x0, y0, (uint)Math.Max(x1 - x0, 0), (uint)Math.Max(y1 - y0, 0)) };
     }
 
-    static Rect2D Whole(int w, int h) => new(default, new Extent2D((uint)w, (uint)h));
+    static PixelRect Whole(int w, int h) => new(0, 0, (uint)w, (uint)h);
 }
 
 /// <summary>
@@ -46,22 +46,22 @@ public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, Attach
 /// <see cref="For"/> with the rules VkGl applied to GL's state (depth test and write only with a depth attachment, write only while testing; blend
 /// only with a colour attachment; alpha-to-coverage only with more than one sample; depth clamp only where the device has it).
 /// </summary>
-public sealed record DrawState(CullModeFlags Cull, FrontFace Front, bool DepthTest, bool DepthWrite, CompareOp Compare,
-    bool BiasEnable, float BiasConstant, float BiasSlope, BlendState Blend, ColorComponentFlags ColourMask, Silk.NET.Vulkan.PolygonMode Polygon,
+public sealed record DrawState(CullMode Cull, FrontFaceDirection Front, bool DepthTest, bool DepthWrite, DepthFunction Compare,
+    bool BiasEnable, float BiasConstant, float BiasSlope, BlendState Blend, ColorMask ColourMask, PolygonKind Polygon,
     bool AlphaToCoverage, bool DepthClamp)
 {
-    public const ColorComponentFlags Rgba = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
+    public const ColorMask Rgba = ColorMask.All;
     /// <summary>Colour without alpha: the main scene's guests leave the alpha to the characters (the SSAO character mask, <c>PostProcess</c>).</summary>
-    public const ColorComponentFlags Rgb = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit;
+    public const ColorMask Rgb = ColorMask.Rgb;
 
     /// <summary>
     /// The state for a draw into <paramref name="targets"/>, from the state the host means (GL's counter-clockwise front faces, which are Vulkan's
     /// clockwise with the flipped viewport, by default): VkGl's masking rules applied, so the record equals what VkGl reported for the same GL state.
     /// </summary>
-    public static DrawState For(in AttachmentFormats targets, bool deviceDepthClamp, CullModeFlags cull = CullModeFlags.None, bool depthTest = false,
-        bool depthWrite = true, CompareOp compare = CompareOp.Less, BlendState blend = default, ColorComponentFlags mask = Rgba, bool depthClamp = false,
-        FrontFace front = FrontFace.Clockwise, bool biasEnable = false, float biasConstant = 0, float biasSlope = 0,
-        Silk.NET.Vulkan.PolygonMode polygon = Silk.NET.Vulkan.PolygonMode.Fill, bool alphaToCoverage = false)
+    public static DrawState For(in AttachmentFormats targets, bool deviceDepthClamp, CullMode cull = CullMode.None, bool depthTest = false,
+        bool depthWrite = true, DepthFunction compare = DepthFunction.Less, BlendState blend = default, ColorMask mask = Rgba, bool depthClamp = false,
+        FrontFaceDirection front = FrontFaceDirection.Ccw, bool biasEnable = false, float biasConstant = 0, float biasSlope = 0,
+        PolygonKind polygon = PolygonKind.Fill, bool alphaToCoverage = false)
     {
         bool test = depthTest && targets.Depth != Format.Undefined;
         bool on = blend.Enable && targets.Colour != Format.Undefined;
@@ -72,16 +72,16 @@ public sealed record DrawState(CullModeFlags Cull, FrontFace Front, bool DepthTe
 
     /// <summary>The scene's state (the main view's and the reflection's slices): depth tested with less-or-equal and written, no culling,
     /// blending or clamp, the channels in <paramref name="mask"/> (default every one). Each guest puts in its own culling, blending and depth changes.</summary>
-    public static DrawState Scene(in AttachmentFormats targets, ColorComponentFlags mask = Rgba) =>
-        For(targets, false, depthTest: true, depthWrite: true, compare: CompareOp.LessOrEqual, mask: mask);
+    public static DrawState Scene(in AttachmentFormats targets, ColorMask mask = Rgba) =>
+        For(targets, false, depthTest: true, depthWrite: true, compare: DepthFunction.Lequal, mask: mask);
 
     /// <summary>The pipeline for <paramref name="program"/> with this state.</summary>
-    public GraphicsPipelineDesc Pipeline(ShaderProgram program, VertexLayout vertex, PrimitiveTopology topology, AttachmentFormats targets, string name = "") =>
+    public GraphicsPipelineDesc Pipeline(ShaderProgram program, VertexLayout vertex, PrimitiveType topology, AttachmentFormats targets, string name = "") =>
         new(program, vertex, topology, targets, Blend, ColourMask, Polygon, AlphaToCoverage, DepthClamp, name);
 
     /// <summary>Records the dynamic state: <paramref name="t"/>'s viewport and scissor, and this cull, front face, depth and bias
     /// (<paramref name="front"/> overrides the front face, for a draw that turns the winding round).</summary>
-    public void Record(CommandList cmd, PassTargets t, FrontFace? front = null)
+    public void Record(CommandList cmd, PassTargets t, FrontFaceDirection? front = null)
     {
         cmd.SetViewport(t.Viewport);
         cmd.SetScissor(t.Scissor);
@@ -116,7 +116,7 @@ public sealed unsafe partial class GpuContext
     }
 
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
-    public void SetPassViewport(Viewport viewport, Rect2D? scissor = null)
+    public void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null)
     {
         if (passTargets is null) throw new InvalidOperationException("no host pass is open");
         passTargets = passTargets.At(viewport, scissor);

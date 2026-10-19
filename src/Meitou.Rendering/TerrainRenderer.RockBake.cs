@@ -115,7 +115,7 @@ public sealed unsafe partial class TerrainRenderer
         cmd.PushConstants(p.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in push);
         foreach (var part in parts)
         {
-            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveTopology.TriangleList, formats, "impostor rock bake")));
+            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveType.Triangles, formats, "impostor rock bake")));
             cmd.BindVertexBuffers(0, part.Bindings);
             cmd.BindIndexBuffer(new BufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexType.Uint32);
             cmd.DrawIndexed((uint)part.Count);

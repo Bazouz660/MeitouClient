@@ -540,7 +540,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
                 {
                     uint height = (uint)Math.Min(n * 4, s.Height - r0 * 4);
                     int bytes = Math.Min(n * rowBytes, length - r0 * rowBytes);
-                    gpu.Uploads.Write(texture!, s.Level, 0, new Rect2D(new Offset2D(0, r0 * 4), new Extent2D((uint)s.Width, height)),
+                    gpu.Uploads.Write(texture!, s.Level, 0, new PixelRect(0, r0 * 4, (uint)s.Width, height),
                         dds.Data.AsSpan(s.Offset + r0 * rowBytes, bytes));
                 });
             }
@@ -579,7 +579,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
             for (int y = 0; y < img.Height; y += rows)
             {
                 int y0 = y, h = Math.Min(rows, img.Height - y);
-                steps.Enqueue(() => gpu.Uploads.Write(texture!, lv, 0, new Rect2D(new Offset2D(0, y0), new Extent2D((uint)img.Width, (uint)h)),
+                steps.Enqueue(() => gpu.Uploads.Write(texture!, lv, 0, new PixelRect(0, y0, (uint)img.Width, (uint)h),
                     img.Pixels.AsSpan(y0 * rowBytes, h * rowBytes)));
             }
         }

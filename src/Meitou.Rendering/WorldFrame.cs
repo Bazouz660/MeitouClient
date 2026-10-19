@@ -431,7 +431,7 @@ sealed class SceneHost(GpuContext ctx)
     public void ClearDepth()
     {
         if (cmd is not { } list || targets is not { } t) throw new InvalidOperationException("ClearDepth without an open scene host");
-        ctx.ClearDepth(list, 1f, new Vk.Rect2D(default, new Vk.Extent2D((uint)t.Width, (uint)t.Height)));
+        ctx.ClearDepth(list, 1f, new PixelRect(0, 0, (uint)t.Width, (uint)t.Height));
     }
 
     public void Close()

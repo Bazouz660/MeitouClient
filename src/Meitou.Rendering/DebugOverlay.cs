@@ -140,7 +140,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         using (var upload = gpu.Uploads.Begin())
         {
             atlas = upload.Create(new TextureDesc(Format.R8Unorm, AtlasSize, AtlasSize, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "debug overlay font"));
-            upload.Write(atlas, 0, 0, new Rect2D(default, new Extent2D((uint)AtlasSize, (uint)AtlasSize)), pixels);
+            upload.Write(atlas, 0, 0, new PixelRect(0, 0, (uint)AtlasSize, (uint)AtlasSize), pixels);
         }
         atlasSampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat,
             TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas.View(), atlas.Image);
@@ -374,14 +374,14 @@ public sealed unsafe class DebugOverlay : IDisposable
         if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; return; }
         // A native segment of its own. It is begun first: the overlay is also drawn after a frame ended (a screenshot's key list), and the
         // segment opens the frame whose constants hold the vertices.
-        var t = PassTargets.Of(Target, null).At(new Viewport(0, 0, width, height, 0, 1));
+        var t = PassTargets.Of(Target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
         if (clip is { } rect)
         {
             var clipped = rect.Intersect(new(0, 0, width, height));
             // The target keeps the renderer's lower-left convention; UI rectangles use top-left.
             int left = (int)Math.Floor(clipped.X), right = (int)Math.Ceiling(clipped.X + clipped.Width);
             int top = (int)Math.Floor(clipped.Y), bottom = (int)Math.Ceiling(clipped.Y + clipped.Height);
-            t = t with { Scissor = new Rect2D(new Offset2D(left, height - bottom), new Extent2D((uint)(right - left), (uint)(bottom - top))) };
+            t = t with { Scissor = new PixelRect(left, height - bottom, (uint)(right - left), (uint)(bottom - top)) };
         }
         if (pass is not null)
         {
@@ -399,7 +399,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         var vertices = Gpu.Frame.Constants.Allocate((ulong)(floats.Length * 4), 16);
         MemoryMarshal.AsBytes(floats).CopyTo(new Span<byte>(vertices.Pointer, floats.Length * 4));
         // As the GL version drew: no depth test or culling, blended over by alpha.
-        var state = DrawState.For(t.Formats, Gpu.Device.DepthClamp, blend: new BlendState(true, BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha));
+        var state = DrawState.For(t.Formats, Gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
@@ -407,7 +407,7 @@ public sealed unsafe class DebugOverlay : IDisposable
             new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32Sfloat, Stride * 4, false),
             new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
         ];
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveTopology.TriangleList, t.Formats, "debug overlay"));
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, t.Formats, "debug overlay"));
         cmd.BindPipeline(pipeline);
         Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
         cmd.BindVertexBuffers(0, buffers);
@@ -426,7 +426,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         readonly List<Run> runs = [];
         DebugOverlay? renderer;
         Texture? target;
-        readonly record struct Run(SampledTexture Texture, bool Image, Rect2D Scissor, int First, int Count);
+        readonly record struct Run(SampledTexture Texture, bool Image, PixelRect Scissor, int First, int Count);
 
         public OverlayPass Reset(int newWidth, int newHeight)
         {
@@ -435,7 +435,7 @@ public sealed unsafe class DebugOverlay : IDisposable
             return this;
         }
 
-        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, Rect2D clip)
+        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, PixelRect clip)
         {
             if (owner.Gpu != gpu || target is not null && target != owner.Target)
                 throw new InvalidOperationException("An overlay pass must share its GPU and target.");
@@ -444,14 +444,14 @@ public sealed unsafe class DebugOverlay : IDisposable
             // If no geometry reaches outside this scissor, the full viewport clips it identically.
             // Different widget clips can then share a draw without changing their pixels.
             bool contained = true, solid = true;
-            float left = clip.Offset.X, right = left + clip.Extent.Width;
-            float bottom = height - clip.Offset.Y, top = bottom - clip.Extent.Height;
+            float left = clip.X, right = left + clip.Width;
+            float bottom = height - clip.Y, top = bottom - clip.Height;
             for (int i = 0; i < data.Length; i += Stride)
             {
                 contained &= data[i] >= left && data[i] <= right && data[i + 1] >= top && data[i + 1] <= bottom;
                 solid &= data[i + 2] < 0;
             }
-            if (contained) clip = new Rect2D(default, new Extent2D((uint)width, (uint)height));
+            if (contained) clip = new PixelRect(0, 0, (uint)width, (uint)height);
             var texture = image ?? owner.atlasSampled;
             bool isImage = image.HasValue;
             int first = vertices.Count / Stride, count = data.Length / Stride;
@@ -468,18 +468,18 @@ public sealed unsafe class DebugOverlay : IDisposable
             runs.Add(new(texture, isImage, clip, first, count));
         }
 
-        static bool SameClip(Rect2D a, Rect2D b) => a.Offset.X == b.Offset.X && a.Offset.Y == b.Offset.Y
-            && a.Extent.Width == b.Extent.Width && a.Extent.Height == b.Extent.Height;
+        static bool SameClip(PixelRect a, PixelRect b) => a.X == b.X && a.Y == b.Y
+            && a.Width == b.Width && a.Height == b.Height;
 
         public void Dispose()
         {
             if (renderer is not { } painter || target is null || runs.Count == 0) return;
             var cmd = gpu.BeginNative("UI overlay");
-            var targets = PassTargets.Of(target, null).At(new Viewport(0, 0, width, height, 0, 1));
+            var targets = PassTargets.Of(target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
             cmd.BeginRendering(targets.Rendering);
             try
             {
-                var state = DrawState.For(targets.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(targets.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, targets);
                 var data = CollectionsMarshal.AsSpan(vertices);
                 var upload = gpu.Frame.Constants.Allocate((ulong)(data.Length * 4), 16);
@@ -491,7 +491,7 @@ public sealed unsafe class DebugOverlay : IDisposable
                     new(new BufferBinding(upload.Handle, upload.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
                 ];
                 var program = painter.program;
-                var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveTopology.TriangleList, targets.Formats, "UI overlay"));
+                var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, targets.Formats, "UI overlay"));
                 cmd.BindPipeline(pipeline);
                 Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
                 cmd.BindVertexBuffers(0, buffers);

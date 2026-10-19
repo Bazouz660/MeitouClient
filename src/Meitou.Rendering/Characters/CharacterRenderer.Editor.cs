@@ -42,9 +42,9 @@ internal sealed unsafe partial class CharacterRenderer
         var target = PassTargets.Of(stageColour, stageDepth);
         cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-        var rect = new Rect2D(default, new Extent2D((uint)r.Width, (uint)r.Height));
+        var rect = new PixelRect(0, 0, (uint)r.Width, (uint)r.Height);
         Gpu.Clear(cmd, true, default, true, 1, rect);
-        Gpu.SetPassViewport(new Viewport(0, 0, r.Width, r.Height, 0, 1), rect);
+        Gpu.SetPassViewport(new PixelViewport(0, 0, r.Width, r.Height, 0, 1), rect);
         if (index >= 0)
         {
             ref var l = ref live[index];

@@ -46,9 +46,9 @@ public sealed class VolumetricCloudRenderer : IDisposable
         march = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.March, "cloud march");
         resolve = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.Resolve, "cloud history");
         shadow = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.Shadow, "cloud shadow map");
-        marchSegment = new(gpu, march, Vk.PrimitiveTopology.TriangleList, "cloud march");
-        resolveSegment = new(gpu, resolve, Vk.PrimitiveTopology.TriangleList, "cloud history");
-        shadowSegment = new(gpu, shadow, Vk.PrimitiveTopology.TriangleList, "cloud shadow map");
+        marchSegment = new(gpu, march, PrimitiveType.Triangles, "cloud march");
+        resolveSegment = new(gpu, resolve, PrimitiveType.Triangles, "cloud history");
+        shadowSegment = new(gpu, shadow, PrimitiveType.Triangles, "cloud shadow map");
     }
 
     Texture Make(int width, int height, Vk.Format format, string name)

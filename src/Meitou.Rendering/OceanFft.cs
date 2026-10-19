@@ -85,7 +85,7 @@ public sealed unsafe class OceanWaves : IDisposable
             slopes = batch.Create(Desc("ocean slopes"));
         }
         sampler = ctx.Samplers.Get(new SamplerDesc(Filter.Linear, Filter.Linear, SamplerMipmapMode.Linear, true, SamplerAddressMode.Repeat,
-            SamplerAddressMode.Repeat, SamplerAddressMode.Repeat, false, CompareOp.Always, false, false, 8, 0));
+            SamplerAddressMode.Repeat, SamplerAddressMode.Repeat, false, DepthFunction.Always, false, false, 8, 0));
     }
 
     /// <summary>Texels along a cascade's side.</summary>

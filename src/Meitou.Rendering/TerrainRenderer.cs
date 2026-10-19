@@ -163,7 +163,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         return new TerrainTexture(gpu, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int x, int y, int width, int height) => new(new(x, y), new((uint)width, (uint)height));
+    static PixelRect Rect(int x, int y, int width, int height) => new(x, y, (uint)width, (uint)height);
 
     public int LevelCount => quadtree.LevelCount;
     public double FinestSpacing => quadtree.Spacing(0);
@@ -386,8 +386,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (lastGlState is null || pass != lastGlState)
         {
             lastGlState = pass;
-            lastPatchState = pass with { Cull = Silk.NET.Vulkan.CullModeFlags.BackBit, Front = GlConventions.FrontFace(FrontFaceDirection.Ccw) };
-            lastWireState = lastPatchState with { Polygon = Silk.NET.Vulkan.PolygonMode.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
+            lastPatchState = pass with { Cull = CullMode.Back, Front = FrontFaceDirection.Ccw };
+            lastWireState = lastPatchState with { Polygon = PolygonKind.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
             lastPrepassState = lastPatchState with { ColourMask = 0 };   // depth only
             lastLateState = lastPatchState with { DepthWrite = false };   // the prepass wrote it; equal depths pass (less-or-equal)
         }
@@ -730,7 +730,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         var entry = new PatchPipeline
         {
             Segment = segment,
-            Pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, p.VertexLayout(attributes), Silk.NET.Vulkan.PrimitiveTopology.TriangleList, targets.Formats, label)),
+            Pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, p.VertexLayout(attributes), PrimitiveType.Triangles, targets.Formats, label)),
             Vertex = vertex[0], Elements = gridElements,
         };
         patchPipelines.Add(entry);
@@ -864,8 +864,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     /// <summary>A mesh's own vertex buffers (locations 0 and 1: position, normal), bound with one call.</summary>
     [System.Runtime.CompilerServices.InlineArray(2)]
@@ -986,7 +986,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public PassTargets Targets;
         public DrawState State;
         public int Segment;
-        public Silk.NET.Vulkan.FrontFace Ccw, Cw;
+        public FrontFaceDirection Ccw, Cw;
     }
 
     /// <summary>Opens a native segment for TERRAIN-mode meshes inside the host's pass: dynamic state (back faces culled, counter-clockwise),
@@ -999,7 +999,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         s = new MeshSegment
         {
             Targets = targets, State = state, Segment = SegmentId(kind, p.P, targets, state),
-            Ccw = GlConventions.FrontFace(FrontFaceDirection.Ccw), Cw = GlConventions.FrontFace(FrontFaceDirection.CW),
+            Ccw = FrontFaceDirection.Ccw, Cw = FrontFaceDirection.CW,
         };
         var job = meshJobs.Rent();
         (job.Owner, job.Targets, job.State, job.Layout, job.Ccw, job.Count) = (this, targets, state, p.Layout, s.Ccw, 0);
@@ -1019,7 +1019,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public struct Draw
         {
             public GraphicsPipeline Pipeline;
-            public Silk.NET.Vulkan.FrontFace Front;
+            public FrontFaceDirection Front;
             public OwnVertices Vertices;
             public int VertexCount;
             public BufferBinding Elements;
@@ -1033,7 +1033,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public PassTargets Targets = null!;
         public DrawState State = null!;
         public Silk.NET.Vulkan.PipelineLayout Layout;
-        public Silk.NET.Vulkan.FrontFace Ccw;
+        public FrontFaceDirection Ccw;
         public FrameBinding Frame;
         public Silk.NET.Vulkan.DescriptorSet ConstantSet;
         public uint ConstantOffset;
@@ -1054,7 +1054,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
-            cmd.SetRaster(Silk.NET.Vulkan.CullModeFlags.BackBit, Ccw);
+            cmd.SetRaster(CullMode.Back, Ccw);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
             NativeFrame.Record(cmd, Layout, in Frame);
@@ -1161,7 +1161,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         if (n.SegA == segment) return n.PipeA!;
         if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!; }
-        var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;

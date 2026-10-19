@@ -11,7 +11,7 @@ namespace Meitou.Rendering.Gpu;
 /// shadow samplers.
 /// </summary>
 public readonly record struct SamplerDesc(Filter Min, Filter Mag, SamplerMipmapMode Mip, bool Mipmapped,
-    SamplerAddressMode U, SamplerAddressMode V, SamplerAddressMode W, bool Compare, CompareOp Op, bool TransparentBorder,
+    SamplerAddressMode U, SamplerAddressMode V, SamplerAddressMode W, bool Compare, DepthFunction Op, bool TransparentBorder,
     bool IntegerFormat, float Anisotropy, float LodBias)
 {
     /// <param name="compare">The sampler is a shadow sampler and the texture's compare mode is on.</param>
@@ -31,7 +31,7 @@ public readonly record struct SamplerDesc(Filter Min, Filter Mag, SamplerMipmapM
         var vkMag = mag == TextureMagFilter.Nearest ? Filter.Nearest : Filter.Linear;
         if (integerFormat) (vkMin, vkMag, mip) = (Filter.Nearest, Filter.Nearest, SamplerMipmapMode.Nearest);
         return new SamplerDesc(vkMin, vkMag, mip, mipmapped, GlConventions.AddressMode(s), GlConventions.AddressMode(t), GlConventions.AddressMode(r),
-            compare, GlConventions.CompareOp(func), transparentBorder, integerFormat, Math.Clamp(anisotropy, 1, 16), mipmapped ? lodBias : 0);
+            compare, func, transparentBorder, integerFormat, Math.Clamp(anisotropy, 1, 16), mipmapped ? lodBias : 0);
     }
 }
 
@@ -68,7 +68,7 @@ public sealed unsafe class SamplerCache : IDisposable
             MinFilter = key.Min, MagFilter = key.Mag, MipmapMode = key.Mip,
             AddressModeU = key.U, AddressModeV = key.V, AddressModeW = key.W,
             AnisotropyEnable = key.Anisotropy > 1, MaxAnisotropy = key.Anisotropy,
-            CompareEnable = key.Compare, CompareOp = key.Op,
+            CompareEnable = key.Compare, CompareOp = GlConventions.CompareOp(key.Op),
             MinLod = 0, MaxLod = key.Mipmapped ? Vk.LodClampNone : 0.25f,
             // NVIDIA's OpenGL picks mips a quarter level finer than its Vulkan driver with anisotropic filtering on: matched here
             // (docs/engine.md "Vulkan backend"; measured 1.2 -> 0.001 mean difference on the rock view). Plus the upscaler's bias.

@@ -127,7 +127,7 @@ public sealed class ImpostorTextures : IDisposable
         int unit = encoding == ImpostorEncoding.Rgba8 ? 1 : 4;   // pixel rows per row
         // A slab of whole block rows; the last one ends at the level's edge.
         int y = row * unit, height = Math.Min(n * unit, pixels - y);
-        batch.Write(maps[map], level, 0, new Rect2D(new Offset2D(0, y), new Extent2D((uint)pixels, (uint)height)),
+        batch.Write(maps[map], level, 0, new PixelRect(0, y, (uint)pixels, (uint)height),
             sources[map].Levels[source].AsSpan(row * rowBytes, n * rowBytes));
         row += n;
         if (row >= rows)

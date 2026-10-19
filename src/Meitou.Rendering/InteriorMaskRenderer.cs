@@ -66,7 +66,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         this.gpu = gpu;
         this.objects = objects;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "interior mask");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "interior mask");
+        segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "interior mask");
         mvp = program.Uniform("uMvp");
         inside = program.Uniform("uInside");
         vertexSource = new VertexArrayBindings([new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 12, false)], default);
@@ -144,13 +144,13 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R16G16B16A16Sfloat, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
         }
         var cmd = gpu.BeginNative("interior mask");
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(target, null).At(viewport);
         t = t with { Colour = t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(NoFront, 0f, 0f, 0f)) } };
         cmd.BeginRendering(t.Rendering);
         // Min on the colour (the nearest face), max on the alpha (the farthest); every face drawn, no depth test (the game's target has no depth).
-        var blend = new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendOp.Min, Silk.NET.Vulkan.BlendOp.Max);
-        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: blend, mask: Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.ABit);
+        var blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Min, BlendOperation.Max);
+        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: blend, mask: ColorMask.R | ColorMask.A);
         state.Record(cmd, t);
         cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
         var relative = Matrix4x4.CreateTranslation(eye) * viewProjection;   // camera-relative placement keeps the precision far from the origin

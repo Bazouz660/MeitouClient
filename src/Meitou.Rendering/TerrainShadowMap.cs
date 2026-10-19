@@ -50,7 +50,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
         using (var batch = gpu.Uploads.Begin())
         {
             heights = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.R16), size, size, Name: "terrain shadow map heights"));
-            batch.Write(heights, 0, 0, new Silk.NET.Vulkan.Rect2D(default, new((uint)size, (uint)size)),
+            batch.Write(heights, 0, 0, new PixelRect(0, 0, (uint)size, (uint)size),
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(coarse.AsSpan(0, size * size)));
             for (int i = 0; i < 2; i++)
                 targets[i] = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.RG32f), size, size,
@@ -64,9 +64,9 @@ sealed unsafe class TerrainShadowMap : IDisposable
             sweep.Uniform("uStep"), sweep.Uniform("uDrop"), sweep.Uniform("uDistance"));
         format = new AttachmentFormats(targets[0].Desc.Format, Silk.NET.Vulkan.Format.Undefined);
         // What VkGl made of the GL state the sweep set (no culling, depth or blending; all channels; filled).
-        state = new DrawState(Silk.NET.Vulkan.CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, Silk.NET.Vulkan.CompareOp.LessOrEqual,
-            false, 0, 0, BlendState.Off, Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.GBit | Silk.NET.Vulkan.ColorComponentFlags.BBit |
-            Silk.NET.Vulkan.ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false);
+        state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal,
+            false, 0, 0, BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B |
+            ColorMask.A, PolygonKind.Fill, false, false);
     }
 
     readonly AttachmentFormats format;
@@ -102,9 +102,9 @@ sealed unsafe class TerrainShadowMap : IDisposable
         int passes = 1;
         while ((1 << (passes - 1)) < size) passes++;
         int write = 0;
-        pipeline ??= Gpu.Pipelines.Get(state.Pipeline(sweep.Program, sweep.VertexLayout([]), Silk.NET.Vulkan.PrimitiveTopology.TriangleList, format, "terrain shadow sweep"));
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, size, size, 0, 1);
-        var scissor = new Silk.NET.Vulkan.Rect2D(default, new((uint)size, (uint)size));
+        pipeline ??= Gpu.Pipelines.Get(state.Pipeline(sweep.Program, sweep.VertexLayout([]), PrimitiveType.Triangles, format, "terrain shadow sweep"));
+        var viewport = new PixelViewport(0, 0, size, size, 0, 1);
+        var scissor = new PixelRect(0, 0, (uint)size, (uint)size);
         sweep.Set(uSize, (float)size);
         var cmd = Gpu.BeginNative("terrain shadow sweep");
         for (int pass = 0; pass < passes; pass++)

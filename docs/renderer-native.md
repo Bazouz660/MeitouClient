@@ -32,6 +32,11 @@ loose uniforms; resolve handles ahead. Native program layouts come from reflecti
 assumed global set scheme. FrameGlobals publishes render-thread getters, Version invalidates
 resolution, ApplyCount permits within-application caching; jobs consume prepared values.
 
+The renderers state their draw state in the GL vocabulary, not in Vulkan's: DepthFunction,
+BlendingFactor, FrontFaceDirection, CullMode, PolygonKind, BlendOperation, ColorMask,
+PrimitiveType, PixelViewport, PixelRect. GlConventions maps them to Vulkan (the front face flips:
+GL's counter-clockwise is Vulkan's clockwise). A second backend maps them to itself.
+
 BindlessTable has seven typed sampler arrays (BindlessKind bindings0..6). Per-slot descriptor
 journal replays at begin/before submission; freed indices wait for consumers. Updating an index
 changes every submitted draw using it, including already-recorded draws. Use new indices for

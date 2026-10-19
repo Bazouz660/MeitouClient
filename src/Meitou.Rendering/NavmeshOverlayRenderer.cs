@@ -60,8 +60,8 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     {
         this.gpu = gpu;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "navmesh overlay");
-        triangles = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "navmesh overlay fill");
-        lines = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.LineList, "navmesh overlay edges");
+        triangles = new NativeSegment(gpu, program, PrimitiveType.Triangles, "navmesh overlay fill");
+        lines = new NativeSegment(gpu, program, PrimitiveType.Lines, "navmesh overlay edges");
         viewProjection = program.Uniform("uViewProjection");
         offset = program.Uniform("uOffset");
         depthScale = program.Uniform("uDepthScale");
@@ -95,7 +95,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     {
         if (!Visible || fillCount + edgeCount == 0 || width <= 0 || height <= 0) return;
         var cmd = gpu.BeginNative("navmesh overlay");
-        var t = PassTargets.Of(picture, null).At(new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1));
+        var t = PassTargets.Of(picture, null).At(new PixelViewport(0, 0, width, height, 0, 1));
         cmd.BeginRendering(t.Rendering);
         var vp = Matrix4x4.CreateTranslation(eye) * nearViewProjection;
         program.Set(viewProjection, in vp);
@@ -103,7 +103,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Bind(sceneDepth, new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), nearDepth.View(), nearDepth.Image));
-        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha),
+        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha),
             depthClamp: gpu.Device.DepthClamp);
         state.Record(cmd, t);
         Draw(cmd, state, t, triangles, fill, fillCount);

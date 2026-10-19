@@ -127,13 +127,13 @@ internal sealed unsafe partial class CharacterRenderer
         var prog = motionPass ? motionProg : depthPass ? depthProg : colourProg;
         string label = motionPass ? "characters motion" : depthPass ? "characters depth" : "characters";
         var targets = Gpu.CurrentTargets();
-        var state = Gpu.CurrentState() with { Cull = Vk.CullModeFlags.None };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None };
         // The colour pass writes alpha 1 (the scene host masks it off for everything else): the SSAO character mask (PostProcess).
         if (!depthPass && !motionPass) state = state with { ColourMask = DrawState.Rgba };
         var job = drawJobs.Rent();
         (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
         job.Frame = nativeFrame.Prepare(in view, [bones.Binding, materials.Binding, content.Morphs.Binding(Gpu.Frame), previousBones.Binding]);
-        job.Cull = depthPass ? Vk.CullModeFlags.None : Vk.CullModeFlags.BackBit;
+        job.Cull = depthPass ? CullMode.None : CullMode.Back;
         for (int a = 0; a < 9; a++) job.Rows[a] = new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         job.Push = new CharacterPush { DepthIndex = motionPass ? motionDepth : 0, Fill = new(Fill, 0) };
         job.RowCount = motionPass ? 9 : 5;
@@ -146,7 +146,7 @@ internal sealed unsafe partial class CharacterRenderer
             Current(ref native, part, prog);
             job.Draws[n++] = new DrawJob.Draw
             {
-                Pipeline = Gpu.Pipelines.Get(state.Pipeline(prog.P, native.Layout!, Vk.PrimitiveTopology.TriangleList, targets.Formats, label)),
+                Pipeline = Gpu.Pipelines.Get(state.Pipeline(prog.P, native.Layout!, PrimitiveType.Triangles, targets.Formats, label)),
                 Vertices = native.Vertices, Elements = new BufferBinding(native.Elements.Buffer, native.Elements.Offset + (ulong)part.Offset[b.Level] * 4),
                 IndexCount = (uint)part.Count[b.Level], Instances = (uint)b.Count, FirstInstance = (uint)b.Offset, TwoSided = b.DoubleSided,
             };
@@ -229,7 +229,7 @@ internal sealed unsafe partial class CharacterRenderer
         public DrawState State = null!;
         public Vk.PipelineLayout Layout;
         public FrameBinding Frame;
-        public Vk.CullModeFlags Cull;
+        public CullMode Cull;
         public readonly BufferBinding[] Rows = new BufferBinding[9];
         public int RowCount;
         public CharacterPush Push;
@@ -254,7 +254,7 @@ internal sealed unsafe partial class CharacterRenderer
                 ref readonly var d = ref Draws[i];
                 if (twoSided != d.TwoSided)
                 {
-                    cmd.SetRaster(d.TwoSided ? Vk.CullModeFlags.None : Cull, state.Front);
+                    cmd.SetRaster(d.TwoSided ? CullMode.None : Cull, state.Front);
                     twoSided = d.TwoSided;
                 }
                 cmd.BindPipeline(d.Pipeline);

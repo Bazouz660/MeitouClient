@@ -862,7 +862,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         public readonly SamplerSlot[] Maps;
         public readonly SamplerSlot Reflection, OceanDisp, OceanSlope, ShoreField, Refraction;
 
-        public WaterProgram(GpuContext gpu, string vertex, string fragment, string name, Silk.NET.Vulkan.PrimitiveTopology topology)
+        public WaterProgram(GpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
         {
             P = LegacyProgram.Create(gpu, vertex, fragment, name);
             Segment = new NativeSegment(gpu, P, topology, name);
@@ -896,8 +896,8 @@ public sealed unsafe class WaterRenderer : IDisposable
         (this.seaA, this.seaB, this.seaColour) = (seaA, seaB, seaColour);
         Gpu = gpu;
         this.maps = maps;
-        faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip);
-        meitou = new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", Silk.NET.Vulkan.PrimitiveTopology.TriangleList);
+        faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", PrimitiveType.TriangleStrip);
+        meitou = new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", PrimitiveType.Triangles);
         float[] corners = [-1, -1, -1, 1, 1, -1, 1, 1]; // triangle strip, counter-clockwise from above
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");
         using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(corners.AsSpan()));
@@ -1239,9 +1239,9 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     static readonly SamplerDesc ClampLinear = new(Silk.NET.Vulkan.Filter.Linear, Silk.NET.Vulkan.Filter.Linear, Silk.NET.Vulkan.SamplerMipmapMode.Nearest, false,
         Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, false,
-        Silk.NET.Vulkan.CompareOp.Always, false, false, 1, 0);
+        DepthFunction.Always, false, false, 1, 0);
 
-    static readonly BlendState AlphaBlend = new(true, Silk.NET.Vulkan.BlendFactor.SrcAlpha, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha);
+    static readonly BlendState AlphaBlend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
     void Record(WaterProgram p, VertexArrayBindings va, BufferBinding[] vertices, uint indexCount)
     {
@@ -1252,7 +1252,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         bool hasDepth = targets.Formats.Depth != Silk.NET.Vulkan.Format.Undefined, hasColour = targets.Formats.Colour != Silk.NET.Vulkan.Format.Undefined;
         var state = Gpu.CurrentState() with
         {
-            Cull = Silk.NET.Vulkan.CullModeFlags.None, DepthTest = hasDepth, DepthWrite = false, Blend = hasColour ? AlphaBlend : BlendState.Off,
+            Cull = CullMode.None, DepthTest = hasDepth, DepthWrite = false, Blend = hasColour ? AlphaBlend : BlendState.Off,
         };
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);

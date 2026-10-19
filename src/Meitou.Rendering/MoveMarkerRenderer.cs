@@ -89,7 +89,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         this.gpu = gpu;
         count = data.Length / 6;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "move marker");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "move marker");
+        segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "move marker");
         viewProjection = program.Uniform("uViewProjection");
         offset = program.Uniform("uOffset");
         sun = program.Uniform("uSun");
@@ -98,7 +98,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         hiddenPass = program.Uniform("uHidden");
         sceneDepth = program.Sampler("uSceneDepth");
         composite = LegacyProgram.Create(gpu, CompositeVertex, CompositeFragment, "move marker composite");
-        compositeSegment = new NativeSegment(gpu, composite, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "move marker composite");
+        compositeSegment = new NativeSegment(gpu, composite, PrimitiveType.Triangles, "move marker composite");
         markerImage = composite.Sampler("uMarker");
         var l = gpu.Device.Limits;
         uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
@@ -166,7 +166,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
             resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
         }
         var cmd = gpu.BeginNative("move marker");
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(msColour, msDepth).At(viewport);
         t = t with
         {
@@ -180,12 +180,12 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         program.Set(sun, sunDirection);
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View(), nearDepth.Image));
-        var premultiplied = new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha);
+        var premultiplied = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
         for (int pass = 0; pass < 2; pass++)
         {
             bool hidden = pass == 1;
-            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, cull: Silk.NET.Vulkan.CullModeFlags.BackBit, depthTest: true, depthWrite: !hidden,
-                compare: Silk.NET.Vulkan.CompareOp.LessOrEqual, blend: premultiplied, depthClamp: gpu.Device.DepthClamp, front: GlConventions.FrontFace(FrontFaceDirection.Ccw));
+            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, cull: CullMode.Back, depthTest: true, depthWrite: !hidden,
+                compare: DepthFunction.Lequal, blend: premultiplied, depthClamp: gpu.Device.DepthClamp, front: FrontFaceDirection.Ccw);
             var c = hidden ? Hidden : Visible;
             program.Set(colour, c.X, c.Y, c.Z, c.W * Strength);
             program.Set(hiddenPass, hidden ? 1 : 0);

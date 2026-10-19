@@ -1914,8 +1914,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
     readonly SegmentPipeline[] lastSegment = new SegmentPipeline[8];
@@ -1952,7 +1952,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     {
         if (n.SegA == segment) return n.PipeA!;
         if (n.SegB == segment) return n.PipeB!;
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;
@@ -2069,9 +2069,9 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var targets = Gpu.CurrentTargets();
         // The host's state, with what the GL version set around the meshes: back faces culled (GL's cull face on, its mode never changed from
         // BACK), alpha to coverage with a multisampled target.
-        var sceneState = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.BackBit, AlphaToCoverage = coverage };
+        var sceneState = Gpu.CurrentState() with { Cull = CullMode.Back, AlphaToCoverage = coverage };
         // The prepass writes depth only; the colour after it draws exactly the fragments that left their depth there (the prepass has the discards, this has none).
-        var state = prepass ? sceneState with { ColourMask = 0 } : equal ? sceneState with { Compare = Silk.NET.Vulkan.CompareOp.Equal, DepthWrite = false } : sceneState;
+        var state = prepass ? sceneState with { ColourMask = 0 } : equal ? sceneState with { Compare = DepthFunction.Equal, DepthWrite = false } : sceneState;
         int segment = SegmentId(depth ? DepthKind : prepass ? PrepassKind : equal ? EqualKind : ColourKind, p, targets, state);
         var job = meshJobs.Rent();
         (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, p.Layout, 0);
@@ -2091,8 +2091,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             Tint = Vector3.One, TriplanarScale = 1f / 5000, AlphaChannel = 3, GreyChannel = -1, HeadDiffuse = standIn, HeadNormal = standIn,
             Coverage = coverage ? 1u : 0u,
         };
-        var sided = Silk.NET.Vulkan.CullModeFlags.None;
-        Silk.NET.Vulkan.CullModeFlags? side = null;
+        var sided = CullMode.None;
+        CullMode? side = null;
         // The split (EarlyDepth; GPU cull, colour views): the program without the discards draws the fully visible instances of the parts without a cut-out.
         bool splitView = indirect && gpuResult.Split && !depth && !equal;
         // The prepass splits the same way: the empty program for the fully visible instances of a part without a cut-out, the dither (and the cut-out) program for the rest.
@@ -2173,7 +2173,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public struct Draw
         {
             public bool SetRaster;
-            public Silk.NET.Vulkan.CullModeFlags Cull;
+            public CullMode Cull;
             public GraphicsPipeline Pipeline;
             public BufferBinding[] Vertices;
             public BufferBinding Elements;
@@ -2362,10 +2362,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>The host's state for the grass, with what the GL version set around it: no culling (GL's cull face off), alpha to coverage
     /// with a multisampled target.</summary>
     static DrawState GrassState(GpuContext gpu, bool coverage) =>
-        gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None, AlphaToCoverage = coverage };
+        gpu.CurrentState() with { Cull = CullMode.None, AlphaToCoverage = coverage };
 
     /// <summary>The motion pass's state (the host's: colour mask red and green, no depth test, no blending) without culling (GL's cull face off).</summary>
-    static DrawState MotionState(GpuContext gpu) => gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
+    static DrawState MotionState(GpuContext gpu) => gpu.CurrentState() with { Cull = CullMode.None };
 
     readonly JobPool<GrassJob> grassJobs = new();
 

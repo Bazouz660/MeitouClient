@@ -980,7 +980,7 @@ public sealed partial class FoliageRenderer
     void WarmImpostorPipeline(bool depth, bool coverage)
     {
         if (impostorDraw is null || !Impostors) return;
-        var state = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None, AlphaToCoverage = coverage };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None, AlphaToCoverage = coverage };
         impostorDraw.Pipeline(depth ? ImpostorProgram.Caster : ImpostorProgram.Plain, state, Gpu.CurrentTargets().Formats);
         if (!depth && RockImpostorsActive) impostorDraw.Pipeline(ImpostorProgram.Rock, state, Gpu.CurrentTargets().Formats);
         if (!depth && PrepassView && ImpostorPrepass.Enabled && FoliagePrepass.Enabled && !coverage)
@@ -998,7 +998,7 @@ public sealed partial class FoliageRenderer
     void AddImpostorDraws(MeshJob job, bool depth, Matrix4x4 viewProjection, PassTargets targets, DrawState state, bool coverage, bool indirect, int argsFirst, ImpostorPass pass = ImpostorPass.Scene)
     {
         impostorDraw ??= new ImpostorDraw(Gpu, nativeFrame);
-        var drawState = state with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
+        var drawState = state with { Cull = CullMode.None };
         var program = depth ? ImpostorProgram.Caster : pass == ImpostorPass.Prepass ? ImpostorProgram.Prepass : pass == ImpostorPass.AfterPrepass ? ImpostorProgram.AfterPrepass : ImpostorProgram.Plain;
         var pipeline = impostorDraw.Pipeline(program, drawState, targets.Formats);
         var up = new Vector3(viewProjection.M12, viewProjection.M22, viewProjection.M32);

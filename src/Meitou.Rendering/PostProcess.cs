@@ -302,9 +302,9 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>What every pass draws with: what VkGl made of the GL state the chain set (no culling, depth test or write, bias or blending; all
     /// channels; filled; one sample).</summary>
-    static readonly DrawState PassState = new(Vk.CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, Vk.CompareOp.LessOrEqual,
-        false, 0, 0, BlendState.Off, Vk.ColorComponentFlags.RBit | Vk.ColorComponentFlags.GBit | Vk.ColorComponentFlags.BBit | Vk.ColorComponentFlags.ABit,
-        Vk.PolygonMode.Fill, false, false);
+    static readonly DrawState PassState = new(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal,
+        false, 0, 0, BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A,
+        PolygonKind.Fill, false, false);
 
     public PostProcess(GpuContext gpu, PostOptions options)
     {
@@ -624,13 +624,13 @@ public sealed unsafe partial class PostProcess : IDisposable
         var cmd = Segment();
         cmd.BeginRendering(new RenderingDesc(colour, depth, targetWidth, targetHeight));
         var s = state ?? PassState;
-        cmd.SetViewport(new Vk.Viewport(0, 0, viewportWidth, viewportHeight, 0, 1));
-        cmd.SetScissor(new Vk.Rect2D(default, new Vk.Extent2D((uint)targetWidth, (uint)targetHeight)));
+        cmd.SetViewport(new PixelViewport(0, 0, viewportWidth, viewportHeight, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)targetWidth, (uint)targetHeight));
         cmd.SetRaster(s.Cull, s.Front);
         cmd.SetDepth(s.DepthTest, s.DepthWrite, s.Compare);
         cmd.SetDepthBias(s.BiasEnable, s.BiasConstant, s.BiasSlope);
         if (!pipelines.TryGetValue((p, format, depthFormat, s), out var pipeline))
-            pipelines[(p, format, depthFormat, s)] = pipeline = Gpu.Pipelines.Get(s.Pipeline(p.Program, p.VertexLayout([]), Vk.PrimitiveTopology.TriangleList,
+            pipelines[(p, format, depthFormat, s)] = pipeline = Gpu.Pipelines.Get(s.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles,
                 new AttachmentFormats(format, depthFormat), p.Name));
         cmd.BindPipeline(pipeline);
         p.Flush(cmd);
@@ -751,7 +751,7 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>Blends the volumes' accumulated (colour, transmittance) over the scene: source one, destination the source alpha; red, green and
     /// blue only, so the alpha (the characters' SSAO mask) stays.</summary>
-    static readonly DrawState FogState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.SrcAlpha), ColourMask = DrawState.Rgb };
+    static readonly DrawState FogState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha), ColourMask = DrawState.Rgb };
 
     /// <summary>
     /// The placed fog volumes (docs/formats/fogfeatures.md), in one full-screen pass over the finished scene: after the opaque geometry, the water and
@@ -806,7 +806,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     bool aoApplied;
 
     /// <summary>The occlusion multiplied in: the scene colour kept by the factor; red, green and blue only (the alpha is the characters' mask).</summary>
-    static readonly DrawState AoMultiplyState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.Zero, Vk.BlendFactor.SrcColor), ColourMask = DrawState.Rgb };
+    static readonly DrawState AoMultiplyState = PassState with { Blend = new BlendState(true, BlendingFactor.Zero, BlendingFactor.SrcColor), ColourMask = DrawState.Rgb };
 
     /// <summary>
     /// Runs the SSAO and multiplies it into the scene colour now, so what is drawn after (the weather's particles) is not darkened by the occlusion
@@ -893,7 +893,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>The resolve added to the scene: source one, destination one; red, green and blue only (the alpha is the characters' SSAO mask).</summary>
-    static readonly DrawState GiAddState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.One), ColourMask = DrawState.Rgb };
+    static readonly DrawState GiAddState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = DrawState.Rgb };
 
     // ---- low-resolution particles (Meitou) ----
 
@@ -943,7 +943,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         d.P.Set(d.FullSize, (float)width, (float)height);
         d.P.Set(d.Div, (float)div);
         DrawPass(d.P, default, Vk.Format.Undefined, low.Depth!.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) },
-            low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = Vk.CompareOp.Always });
+            low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always });
         CloseSegment();
         Stamp("particle depth");
         var targets = PassTargets.Of(low.Accum.Texture, low.Depth.Texture);
@@ -967,7 +967,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>Premultiplied "over": the accumulation's colour added, the scene kept by one minus its opacity; red, green and blue only (the alpha is the characters' mask).</summary>
-    static readonly DrawState ParticleLowState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.OneMinusSrcAlpha), ColourMask = DrawState.Rgb };
+    static readonly DrawState ParticleLowState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha), ColourMask = DrawState.Rgb };
 
     void DrawFinal(LegacyProgram p, PassTargets final) =>
         Draw(p, final.Colour, final.Formats.Colour, final.Width, final.Height, displayWidth, displayHeight);
@@ -1003,7 +1003,7 @@ public sealed unsafe partial class PostProcess : IDisposable
             var cmd = Gpu.BeginNative("object motion");
             cmd.BeginRendering(targets.Rendering);
             Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp,
-                mask: Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.GBit));
+                mask: ColorMask.R | ColorMask.G));
             objectMotion(new MotionTargets(Sampled(sceneDepth!), nearPlanes, new Vector2(2 * JitterPixels.X / width, 2 * JitterPixels.Y / height), height / (2 * MathF.Tan(fovNow * 0.5f))));
             cmd.EndRendering();
             Gpu.EndHostPass(cmd);
@@ -1018,7 +1018,7 @@ public sealed unsafe partial class PostProcess : IDisposable
             if (!merged && WaterHeight is not null) Velocity(reactive!, 2);
             bool covered = Particles is { HasCoverage: true };
             if (covered) Stamp("velocity");
-            if (covered) RunCoverage(reactive!, Vk.ColorComponentFlags.RBit, clear: WaterHeight is null);
+            if (covered) RunCoverage(reactive!, ColorMask.R, clear: WaterHeight is null);
             CloseSegment();   // the vendor upscaler records its own segment
             if (covered) Stamp("particle coverage");
             done = external.Dispatch(new UpscaleInputs
@@ -1049,7 +1049,7 @@ public sealed unsafe partial class PostProcess : IDisposable
                 warnedFallback = true;
             }
             // The particles' coverage into the motion target's alpha (the TAA's reactive channel; the water's analytic value is there already).
-            if (Particles is { HasCoverage: true }) RunCoverage(motion!, Vk.ColorComponentFlags.ABit, clear: false);
+            if (Particles is { HasCoverage: true }) RunCoverage(motion!, ColorMask.A, clear: false);
             var t = taaPass;
             Bind(t.P, t.Colour, sceneColour);
             Bind(t.P, t.Motion, motion);
@@ -1102,7 +1102,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     public ParticleRenderer? Particles { get; set; }
 
     /// <summary>The particles' coverage into <paramref name="target"/>'s channels <paramref name="mask"/>, added to what is there (or onto zero when <paramref name="clear"/>).</summary>
-    void RunCoverage(Target2D target, Vk.ColorComponentFlags mask, bool clear)
+    void RunCoverage(Target2D target, ColorMask mask, bool clear)
     {
         CloseSegment();
         var targets = PassTargets.Of(target.Texture, null);
@@ -1120,9 +1120,9 @@ public sealed unsafe partial class PostProcess : IDisposable
             // The low-resolution particles' share: from their accumulation, added to what is there (the full-size ones drew theirs above).
             var c = particleCoveragePass;
             Bind(c.P, c.Accum, low.Accum);
-            c.P.Set(c.Limit, mask == Vk.ColorComponentFlags.ABit ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
+            c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
-                PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.One), ColourMask = mask });
+                PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = mask });
         }
         CloseSegment();
     }
@@ -1230,12 +1230,12 @@ public sealed unsafe partial class PostProcess : IDisposable
             if (bc1)
             {
                 var s = dds.Surface(0, level);
-                batch.Write(texture, level, 0, new Vk.Rect2D(default, new Vk.Extent2D((uint)s.Width, (uint)s.Height)), dds.Data.AsSpan(s.Offset, s.Length));
+                batch.Write(texture, level, 0, new PixelRect(0, 0, (uint)s.Width, (uint)s.Height), dds.Data.AsSpan(s.Offset, s.Length));
             }
             else
             {
                 var img = Meitou.Data.Textures.DdsDecoder.Decode(dds, 0, level);
-                batch.Write(texture, level, 0, new Vk.Rect2D(default, new Vk.Extent2D((uint)img.Width, (uint)img.Height)), img.Pixels);
+                batch.Write(texture, level, 0, new PixelRect(0, 0, (uint)img.Width, (uint)img.Height), img.Pixels);
             }
         }
         return texture;

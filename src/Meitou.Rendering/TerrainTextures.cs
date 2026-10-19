@@ -262,7 +262,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         HasBiomes = true;
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int x, int y, int width, int height) => new(new(x, y), new((uint)width, (uint)height));
+    static PixelRect Rect(int x, int y, int width, int height) => new(x, y, (uint)width, (uint)height);
 
     /// <summary>A native texture with the GL sampler state the GL one had (nothing written yet; its transition goes with the next uploads).</summary>
     TerrainTexture Make(Silk.NET.Vulkan.Format format, int width, int height, int levels, int layers, TextureMinFilter min, TextureMagFilter mag,

@@ -162,10 +162,10 @@ internal sealed class WorldLamps : IDisposable
             }
         }
 
-        var full = new Rect2D(new Offset2D(0, 0), new Extent2D(Cells, Cells));
+        var full = new PixelRect(0, 0, Cells, Cells);
         ctx.Uploads.Write(cells[slot], 0, 0, full, MemoryMarshal.AsBytes(cellValues.AsSpan()));
-        ctx.Uploads.Write(index[slot], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(IndexWidth, IndexRows)), MemoryMarshal.AsBytes(indexValues.AsSpan()));
-        ctx.Uploads.Write(data[slot], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(DataWidth, (uint)near.Count)), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
+        ctx.Uploads.Write(index[slot], 0, 0, new PixelRect(0, 0, IndexWidth, IndexRows), MemoryMarshal.AsBytes(indexValues.AsSpan()));
+        ctx.Uploads.Write(data[slot], 0, 0, new PixelRect(0, 0, DataWidth, (uint)near.Count), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
         grid = new Vector4(x0, z0, CellSize, Cells);
         InGrid = near.Count;
     }

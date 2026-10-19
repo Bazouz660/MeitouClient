@@ -92,7 +92,7 @@ public static class GlConventions
     };
 
     /// <summary>GL's counter-clockwise front faces are clockwise in Vulkan's framebuffer space (same pixel rows, opposite sign of the area).</summary>
-    public static FrontFace FrontFace(FrontFaceDirection f) => f == FrontFaceDirection.Ccw ? Silk.NET.Vulkan.FrontFace.Clockwise : Silk.NET.Vulkan.FrontFace.CounterClockwise;
+    public static FrontFace VkFrontFace(FrontFaceDirection f) => f == FrontFaceDirection.Ccw ? Silk.NET.Vulkan.FrontFace.Clockwise : Silk.NET.Vulkan.FrontFace.CounterClockwise;
 
     public static PrimitiveTopology Topology(PrimitiveType mode) => mode switch
     {
@@ -104,6 +104,50 @@ public static class GlConventions
         PrimitiveType.TriangleFan => PrimitiveTopology.TriangleFan,
         _ => throw new NotSupportedException($"primitive {mode}"),
     };
+
+    /// <summary>The Vulkan cull mode of a GL cull face.</summary>
+    public static CullModeFlags VkCull(CullMode mode) => mode switch
+    {
+        CullMode.None => CullModeFlags.None,
+        CullMode.Front => CullModeFlags.FrontBit,
+        CullMode.Back => CullModeFlags.BackBit,
+        _ => CullModeFlags.FrontAndBack,
+    };
+
+    /// <summary>The Vulkan polygon mode of a GL polygon mode.</summary>
+    public static Silk.NET.Vulkan.PolygonMode VkPolygon(PolygonKind kind) => kind switch
+    {
+        PolygonKind.Point => Silk.NET.Vulkan.PolygonMode.Point,
+        PolygonKind.Line => Silk.NET.Vulkan.PolygonMode.Line,
+        _ => Silk.NET.Vulkan.PolygonMode.Fill,
+    };
+
+    /// <summary>The Vulkan blend equation of a GL one.</summary>
+    public static Silk.NET.Vulkan.BlendOp VkBlendOp(BlendOperation op) => op switch
+    {
+        BlendOperation.Add => Silk.NET.Vulkan.BlendOp.Add,
+        BlendOperation.Subtract => Silk.NET.Vulkan.BlendOp.Subtract,
+        BlendOperation.ReverseSubtract => Silk.NET.Vulkan.BlendOp.ReverseSubtract,
+        BlendOperation.Min => Silk.NET.Vulkan.BlendOp.Min,
+        _ => Silk.NET.Vulkan.BlendOp.Max,
+    };
+
+    /// <summary>The Vulkan colour mask of a GL one (the channels a draw writes).</summary>
+    public static ColorComponentFlags VkColorMask(ColorMask mask)
+    {
+        var flags = default(ColorComponentFlags);
+        if (mask.HasFlag(ColorMask.R)) flags |= ColorComponentFlags.RBit;
+        if (mask.HasFlag(ColorMask.G)) flags |= ColorComponentFlags.GBit;
+        if (mask.HasFlag(ColorMask.B)) flags |= ColorComponentFlags.BBit;
+        if (mask.HasFlag(ColorMask.A)) flags |= ColorComponentFlags.ABit;
+        return flags;
+    }
+
+    /// <summary>The Vulkan scissor rectangle of a GL one.</summary>
+    public static Rect2D VkRect(PixelRect r) => new(new Offset2D(r.X, r.Y), new Extent2D(r.Width, r.Height));
+
+    /// <summary>The Vulkan viewport of a GL one.</summary>
+    public static Viewport VkViewport(PixelViewport v) => new(v.X, v.Y, v.Width, v.Height, v.MinDepth, v.MaxDepth);
 
     /// <summary>The Vulkan format of a GL vertex attribute (<c>glVertexAttribPointer</c> / <c>glVertexAttribIPointer</c>).</summary>
     public static Format VertexFormat(GLEnum type, int size, bool normalized, bool integer) => (type, size, normalized, integer) switch
@@ -210,6 +254,7 @@ public enum DepthFunction : int
     Greater = 0x204,
     Notequal = 0x205,
     Gequal = 0x206,
+    Always = 0x207,
 }
 
 public enum FrontFaceDirection : int
@@ -217,6 +262,34 @@ public enum FrontFaceDirection : int
     CW = 0x900,
     Ccw = 0x901,
 }
+
+/// <summary>GL's cull face: the faces a draw discards (the cull is off with <see cref="None"/>).</summary>
+public enum CullMode { None, Front, Back, FrontAndBack }
+
+/// <summary>GL's polygon mode: how a polygon's interior is filled.</summary>
+public enum PolygonKind { Point, Line, Fill }
+
+/// <summary>GL's blend equation, for colour and for alpha separately.</summary>
+public enum BlendOperation { Add, Subtract, ReverseSubtract, Min, Max }
+
+/// <summary>GL's colour mask (glColorMask): the channels a draw writes.</summary>
+[Flags]
+public enum ColorMask
+{
+    None = 0,
+    R = 1,
+    G = 2,
+    B = 4,
+    A = 8,
+    Rgb = R | G | B,
+    All = R | G | B | A,
+}
+
+/// <summary>GL's scissor rectangle, in pixels.</summary>
+public readonly record struct PixelRect(int X, int Y, uint Width, uint Height);
+
+/// <summary>GL's viewport: a pixel rectangle with the depth range.</summary>
+public readonly record struct PixelViewport(float X, float Y, float Width, float Height, float MinDepth = 0, float MaxDepth = 1);
 
 public enum GLEnum : int
 {

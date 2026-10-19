@@ -198,18 +198,18 @@ public sealed unsafe class CommandList
     internal void EndSecondary() => VulkanException.Check(vk.EndCommandBuffer(Handle), "vkEndCommandBuffer");
 
     /// <summary>Clears the depth attachment of the open rendering inside <paramref name="rect"/> (<c>vkCmdClearAttachments</c>; a shadow atlas tile, a depth slice).</summary>
-    public void ClearDepth(float value, Rect2D rect) => Clear(false, default, true, value, rect);
+    public void ClearDepth(float value, PixelRect rect) => Clear(false, default, true, value, rect);
 
     /// <summary>Clears the colour and / or depth attachment of the open rendering inside <paramref name="rect"/> (<c>vkCmdClearAttachments</c>,
     /// the colour first, as <c>VkGl.Clear</c> records it).</summary>
-    public void Clear(bool colour, ClearColorValue colourValue, bool depth, float depthValue, Rect2D rect)
+    public void Clear(bool colour, ClearColorValue colourValue, bool depth, float depthValue, PixelRect rect)
     {
         var attachments = stackalloc ClearAttachment[2];
         uint n = 0;
         if (colour) attachments[n++] = new ClearAttachment(ImageAspectFlags.ColorBit, 0, new ClearValue(colourValue));
         if (depth) attachments[n++] = new ClearAttachment(ImageAspectFlags.DepthBit, 0, new ClearValue(depthStencil: new ClearDepthStencilValue(depthValue, 0)));
         if (n == 0) return;
-        var area = new ClearRect(rect, 0, 1);
+        var area = new ClearRect(GlConventions.VkRect(rect), 0, 1);
         vk.CmdClearAttachments(Handle, n, attachments, 1, &area);
     }
 
@@ -225,33 +225,35 @@ public sealed unsafe class CommandList
         Stats.PipelinesBound++;
     }
 
-    public void SetViewport(in Viewport v)
+    public void SetViewport(in PixelViewport v)
     {
-        fixed (Viewport* p = &v) cmdSetViewport(Handle, 0, 1, p);
+        var vk = GlConventions.VkViewport(v);
+        cmdSetViewport(Handle, 0, 1, &vk);
     }
 
-    public void SetScissor(in Rect2D r)
+    public void SetScissor(in PixelRect r)
     {
-        fixed (Rect2D* p = &r) cmdSetScissor(Handle, 0, 1, p);
+        var vk = GlConventions.VkRect(r);
+        cmdSetScissor(Handle, 0, 1, &vk);
     }
 
-    public void SetRaster(CullModeFlags cull, FrontFace front)
+    public void SetRaster(CullMode cull, FrontFaceDirection front)
     {
-        cmdSetCullMode(Handle, cull);
-        cmdSetFrontFace(Handle, front);
+        cmdSetCullMode(Handle, GlConventions.VkCull(cull));
+        cmdSetFrontFace(Handle, GlConventions.VkFrontFace(front));
     }
 
     /// <summary>The front face alone (a draw that turns the winding round, the cull mode left as set).</summary>
-    public void SetFrontFace(FrontFace front)
+    public void SetFrontFace(FrontFaceDirection front)
     {
-        cmdSetFrontFace(Handle, front);
+        cmdSetFrontFace(Handle, GlConventions.VkFrontFace(front));
     }
 
-    public void SetDepth(bool test, bool write, CompareOp op)
+    public void SetDepth(bool test, bool write, DepthFunction op)
     {
         cmdSetDepthTestEnable(Handle, test);
         cmdSetDepthWriteEnable(Handle, write);
-        cmdSetDepthCompareOp(Handle, op);
+        cmdSetDepthCompareOp(Handle, GlConventions.CompareOp(op));
     }
 
     public void SetDepthBias(bool enable, float constant, float slope)

@@ -205,11 +205,11 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// (casters between the box and the sun are flattened onto its near side, not clipped), no culling (each caster sets its own), no colour.
     /// </summary>
     DrawState CasterState(in AttachmentFormats formats) =>
-        DrawState.For(formats, Gpu.Device.DepthClamp, depthTest: true, depthWrite: true, compare: CompareOp.Less, mask: 0, depthClamp: true);
+        DrawState.For(formats, Gpu.Device.DepthClamp, depthTest: true, depthWrite: true, compare: DepthFunction.Less, mask: 0, depthClamp: true);
 
     /// <summary>The viewport and scissor the casters draw with (a whole layer, or the landmark map).</summary>
     void SetTile(int x, int y, int s) =>
-        Gpu.SetPassViewport(new Viewport(x, y, s, s, 0, 1), new Rect2D(new Offset2D(x, y), new Extent2D((uint)s, (uint)s)));
+        Gpu.SetPassViewport(new PixelViewport(x, y, s, s, 0, 1), new PixelRect(x, y, (uint)s, (uint)s));
 
     /// <summary>The <see cref="StageClock"/> stage of the shadow casters' jobs.</summary>
     const int ShadowStage = 12;
@@ -283,7 +283,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     void UploadNoise()
     {
         if (noiseUploaded || noise is null || noisePixels is null || !Gpu.Frame.Open) return;
-        Gpu.Uploads.Write(noise, 0, 0, new Rect2D(default, new Extent2D((uint)noiseSize.Width, (uint)noiseSize.Height)), noisePixels);
+        Gpu.Uploads.Write(noise, 0, 0, new PixelRect(0, 0, (uint)noiseSize.Width, (uint)noiseSize.Height), noisePixels);
         noiseSampled = Sampled(noise, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat);
         noiseUploaded = true;
         noisePixels = null;
@@ -401,8 +401,8 @@ public sealed unsafe partial class ShadowPass : IDisposable
             p.Set(debugEye, eye);
             p.Set(debugMode, mode);
             p.Bind(debugDepth, sceneDepthSampled);
-            var s = mode == 3 ? state with { Blend = new BlendState(true, BlendFactor.DstColor, BlendFactor.Zero) } : state;
-            DrawFullscreen(cmd, p, t, s, new Viewport(0, 0, width, height, 0, 1), "shadow debug");
+            var s = mode == 3 ? state with { Blend = new BlendState(true, BlendingFactor.DstColor, BlendingFactor.Zero) } : state;
+            DrawFullscreen(cmd, p, t, s, new PixelViewport(0, 0, width, height, 0, 1), "shadow debug");
         }
         if ((mode == 1 || mode == 2) && atlas is not null)
         {
@@ -412,17 +412,17 @@ public sealed unsafe partial class ShadowPass : IDisposable
             p.Bind(atlasSlot, atlasPlain);
             p.Set(atlasLayersHandle, atlasLayers);
             p.Set(atlasGridHandle, atlasLayers == 1 ? Settings.Grid : (int)Math.Ceiling(Math.Sqrt(atlasLayers)));
-            DrawFullscreen(cmd, p, t, scene ? state with { Blend = BlendState.Off } : state, new Viewport(width - side - 8, 8, side, side, 0, 1), "shadow atlas debug");
+            DrawFullscreen(cmd, p, t, scene ? state with { Blend = BlendState.Off } : state, new PixelViewport(width - side - 8, 8, side, side, 0, 1), "shadow atlas debug");
         }
         cmd.EndRendering();
         Gpu.EndNative(cmd);
     }
 
     /// <summary>One fullscreen triangle of <paramref name="p"/> in the debug views' rendering.</summary>
-    void DrawFullscreen(CommandList cmd, LegacyProgram p, PassTargets t, DrawState state, Viewport viewport, string label)
+    void DrawFullscreen(CommandList cmd, LegacyProgram p, PassTargets t, DrawState state, PixelViewport viewport, string label)
     {
         state.Record(cmd, t with { Viewport = viewport });
-        cmd.BindPipeline(Gpu.Pipelines.Get(state.Pipeline(p.Program, p.VertexLayout([]), PrimitiveTopology.TriangleList, t.Formats, label)));
+        cmd.BindPipeline(Gpu.Pipelines.Get(state.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles, t.Formats, label)));
         p.Flush(cmd);
         cmd.Draw(3);
     }

@@ -332,7 +332,7 @@ public sealed class ReflectionPass : IDisposable
         {
             float far = Math.Min(far0, MaxDistance);
             if (far <= near * 1.5f) continue;
-            if (!first) Gpu.ClearDepth(cmd, 1f, new Rect2D(new Offset2D(0, 0), new Extent2D((uint)target.Width, (uint)target.Height)));
+            if (!first) Gpu.ClearDepth(cmd, 1f, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height));
             first = false;
             var projection = Oblique(Perspective(camera.FieldOfView, aspect, near, far), view, clip);
             var viewProjection = view * projection;
@@ -550,9 +550,9 @@ public sealed class ReflectionPass : IDisposable
             fogProgram = LegacyProgram.Create(Gpu, PostProcessShaders.Vertex, FogFragment(samples > 0), "reflection fog volumes");
             fogProgramSamples = samples;
             // The fog volumes pass's blend: scene Ã— transmittance (alpha) + the fog's light, colour only.
-            var state = new DrawState(CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, CompareOp.LessOrEqual, false, 0, 0,
-                new BlendState(true, BlendFactor.One, BlendFactor.SrcAlpha), DrawState.Rgb, PolygonMode.Fill, false, false);
-            fogPipeline = Gpu.Pipelines.Get(state.Pipeline(fogProgram.Program, fogProgram.VertexLayout([]), PrimitiveTopology.TriangleList,
+            var state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal, false, 0, 0,
+                new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha), DrawState.Rgb, PolygonKind.Fill, false, false);
+            fogPipeline = Gpu.Pipelines.Get(state.Pipeline(fogProgram.Program, fogProgram.VertexLayout([]), PrimitiveType.Triangles,
                 new AttachmentFormats(colour.Desc.Format, Format.Undefined), fogProgram.Name));
         }
         var p = fogProgram;
@@ -565,10 +565,10 @@ public sealed class ReflectionPass : IDisposable
         p.ApplyGlobals();   // the atmosphere's and the fog volumes' uniforms, through the frame globals
         cmd.Barrier(BarrierBatch.Full);
         cmd.BeginRendering(new RenderingDesc(PassTargets.Of(colour, null).Colour, default, width, height));
-        cmd.SetViewport(new Viewport(0, 0, width, height, 0, 1));
-        cmd.SetScissor(new Rect2D(default, new Extent2D((uint)width, (uint)height)));
-        cmd.SetRaster(CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw));
-        cmd.SetDepth(false, false, CompareOp.LessOrEqual);
+        cmd.SetViewport(new PixelViewport(0, 0, width, height, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)width, (uint)height));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Lequal);
         cmd.SetDepthBias(false, 0, 0);
         cmd.BindPipeline(fogPipeline!);
         p.Flush(cmd);
