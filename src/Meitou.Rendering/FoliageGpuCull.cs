@@ -487,18 +487,13 @@ public sealed unsafe class FoliageGpuCull : IDisposable
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;
-        var infos = stackalloc DescriptorBufferInfo[count];
-        var writes = stackalloc WriteDescriptorSet[count];
+        var list = stackalloc GpuBinding[count];
         for (int i = 0; i < count; i++)
         {
             ref readonly var bb = ref b[(int)bindings[i]];
-            infos[i] = new DescriptorBufferInfo(bb.Buffer, bb.Offset, bb.Size);
-            writes[i] = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet, DstBinding = bindings[i], DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &infos[i],
-            };
+            list[i] = GpuBinding.Storage(bindings[i], bb);
         }
-        cmd.PushDescriptors(p.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, count), PipelineBindPoint.Compute);
+        cmd.BindProgramResources(p, 0, new ReadOnlySpan<GpuBinding>(list, count));
         cmd.PushConstants(p.Layout, ShaderStageFlags.ComputeBit, in push);
         cmd.Dispatch(x, y);
     }

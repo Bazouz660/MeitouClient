@@ -107,23 +107,15 @@ public sealed unsafe partial class PostProcess
         var cube = g.Texture("uAtmoIrradiance")?.Invoke() ?? default;
         if (cube.IsNull) cube = Gpu.Dummy(FrameGlobals.Sampler2D("uAtmoIrradiance", cube: true));
         var cmd = Segment();
-        var infos = stackalloc Vk.DescriptorImageInfo[4];
-        infos[0] = new Vk.DescriptorImageInfo(Point(), shaftInjected!.Texture.View(), Vk.ImageLayout.General);
-        infos[1] = new Vk.DescriptorImageInfo(default, shaftLight!.Texture.View(), Vk.ImageLayout.General);
-        infos[2] = new Vk.DescriptorImageInfo(default, shaftScatter!.Texture.View(), Vk.ImageLayout.General);
-        infos[3] = new Vk.DescriptorImageInfo(cube.Sampler, cube.View, Vk.ImageLayout.General);
-        var buffer = new Vk.DescriptorBufferInfo(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams));
-        var writes = stackalloc Vk.WriteDescriptorSet[5];
-        for (int i = 0; i < 4; i++)
-            writes[i] = new Vk.WriteDescriptorSet
-            {
-                SType = Vk.StructureType.WriteDescriptorSet, DstBinding = (uint)i, DescriptorCount = 1, PImageInfo = &infos[i],
-                DescriptorType = i is 1 or 2 ? Vk.DescriptorType.StorageImage : Vk.DescriptorType.CombinedImageSampler,
-            };
-        writes[4] = new Vk.WriteDescriptorSet { SType = Vk.StructureType.WriteDescriptorSet, DstBinding = 4, DescriptorCount = 1, DescriptorType = Vk.DescriptorType.UniformBuffer, PBufferInfo = &buffer };
+        var bindings = stackalloc GpuBinding[5];
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View(), default));
+        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View(), default));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, shaftScatter!.Texture.View(), default));
+        bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View, default));
+        bindings[4] = GpuBinding.Uniform(4, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(shaftScanPipeline!);
-        cmd.PushDescriptors(shaftScanProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 5), Vk.PipelineBindPoint.Compute);
+        cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
         cmd.Dispatch((uint)(((int)grid.X + 7) / 8), (uint)(((int)grid.Y + 7) / 8));
         cmd.Barrier(BarrierBatch.Full);
     }

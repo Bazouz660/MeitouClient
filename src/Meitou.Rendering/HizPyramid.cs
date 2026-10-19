@@ -114,16 +114,12 @@ public sealed unsafe class HizPyramid : IDisposable
         cmd.Barrier(BarrierBatch.Full);
         {
             // Levels 0 to 4 in one dispatch (a 16 x 16 tile of level 0 per workgroup, the rest through shared memory).
-            var infos = stackalloc DescriptorImageInfo[2];
-            infos[0] = new DescriptorImageInfo(sampler, depthView, ImageLayout.General);
-            infos[1] = new DescriptorImageInfo(sampler, farView, ImageLayout.General);
-            var bufferInfo = new DescriptorBufferInfo(buffer.Handle, 0, buffer.Size);
-            var writes = stackalloc WriteDescriptorSet[3];
-            writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[0] };
-            writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[1] };
-            writes[2] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 2, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
+            var bindings = stackalloc GpuBinding[3];
+            bindings[0] = GpuBinding.Sampled(0, new SampledTexture(sampler, depthView, default));
+            bindings[1] = GpuBinding.Sampled(1, new SampledTexture(sampler, farView, default));
+            bindings[2] = GpuBinding.Storage(2, new BufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(basePipeline);
-            cmd.PushDescriptors(baseProgram.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 3), PipelineBindPoint.Compute);
+            cmd.BindProgramResources(baseProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 3));
             var push = new BasePush
             {
                 Near = nearPlanes, Far = farPlanes, Width = (uint)w, Height = (uint)h, BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, HasFar = far is null ? 0u : 1u,
@@ -136,10 +132,10 @@ public sealed unsafe class HizPyramid : IDisposable
         {
             // The rest (at most about a thousand texels a level) in one workgroup, a level at a time.
             cmd.Barrier(BarrierBatch.Full);
-            var bufferInfo = new DescriptorBufferInfo(buffer.Handle, 0, buffer.Size);
-            var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
+            var bindings = stackalloc GpuBinding[1];
+            bindings[0] = GpuBinding.Storage(0, new BufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(reducePipeline);
-            cmd.PushDescriptors(reduceProgram.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(&write, 1), PipelineBindPoint.Compute);
+            cmd.BindProgramResources(reduceProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 1));
             var push = new ReducePush { BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, Levels = (uint)levels.Count };
             for (int i = 0; i < MaxLevels; i++) push.Offsets[i] = i < levels.Count ? offsets[i] : 0;
             cmd.PushConstants(reduceProgram.Layout, ShaderStageFlags.ComputeBit, in push);

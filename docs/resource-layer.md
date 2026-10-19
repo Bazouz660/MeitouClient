@@ -7,7 +7,9 @@ replaces it. The renderers state their draws in the engine's GL vocabulary
 
 The vocabulary below is the shape the port needs. The descriptions are in the code: the draw
 state, the formats, the load op, the clear colour, the index kind, the sampler's filters and
-wrap modes. What is left is the handles, the binding list and the seam.
+wrap modes, and the binding list (the renderers state the slots and what each holds; the
+program carries the layout, the backend the image layout and the descriptor type). What is left
+is the handles, the descriptor sets and the seam.
 
 ## What the renderers would hold
 
@@ -44,15 +46,21 @@ cmd.PushDescriptors(shaftScanProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescrip
 
 // The engine's words:
 var bindings = stackalloc GpuBinding[5];
-bindings[0] = GpuBinding.Sampled(shaftInjected!.Texture, 0);
-bindings[4] = GpuBinding.Uniform(data, 4, sizeof(ShaftScanParams));
+bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View(), default));
+bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View(), default));
+bindings[4] = GpuBinding.Uniform(4, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
 cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
 ```
 
-The program's own reflection says which stage each slot wants and whether the program is compute
-or graphics, so the call carries neither. The view's range (the level, the layers) rides in the
-binding - the whole texture by default - and the backend resolves it and keeps the cache, as
-`Texture` does today.
+The kinds are a sampled texture (with its sampler), a storage image, a uniform buffer and a
+storage buffer. The program's own reflection says which stage each slot wants and whether the
+program is compute or graphics, so the call carries neither; the layout comes from the program
+too. The view's range (the level, the layers) rides in the binding - the whole texture by
+default - and the backend resolves it and keeps the cache, as `Texture` does today.
+
+Two things are still Vulkan's, on purpose: the acceleration structure (the GI's ray queries are
+Vulkan-only; Metal has no equivalent) and the descriptor *sets* - the bindless table and the
+constants block - which are the other half of the binding model.
 
 ## The seam
 

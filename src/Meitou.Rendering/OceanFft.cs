@@ -238,20 +238,15 @@ public sealed unsafe class OceanWaves : IDisposable
     static void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<BufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
-        var bindings = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
-        int count = bindings.Length;
-        var infos = stackalloc DescriptorBufferInfo[count];
-        var writes = stackalloc WriteDescriptorSet[count];
+        var slots = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
+        int count = slots.Length;
+        var bindings = stackalloc GpuBinding[count];
         for (int i = 0; i < count; i++)
         {
-            ref readonly var bb = ref b[(int)bindings[i]];
-            infos[i] = new DescriptorBufferInfo(bb.Buffer, bb.Offset, bb.Size);
-            writes[i] = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet, DstBinding = bindings[i], DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &infos[i],
-            };
+            ref readonly var bb = ref b[(int)slots[i]];
+            bindings[i] = GpuBinding.Storage(slots[i], bb);
         }
-        cmd.PushDescriptors(p.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, count), PipelineBindPoint.Compute);
+        cmd.BindProgramResources(p, 0, new ReadOnlySpan<GpuBinding>(bindings, count));
         cmd.PushConstants(p.Layout, ShaderStageFlags.ComputeBit, in push);
         cmd.Dispatch(x, y, z);
     }

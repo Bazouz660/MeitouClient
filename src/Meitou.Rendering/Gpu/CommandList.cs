@@ -324,6 +324,46 @@ public sealed unsafe class CommandList
         Stats.DescriptorPushes++;
     }
 
+    /// <summary>
+    /// Binds a program's resources: the slots of set <paramref name="set"/> and what each holds
+    /// (docs/resource-layer.md). The layout comes from the program, the image layout and the descriptor
+    /// type are the backend's business. The Vulkan path writes one descriptor per slot.
+    /// </summary>
+    public void BindProgramResources(ShaderProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
+    {
+        if (push is null) throw new InvalidOperationException("VK_KHR_push_descriptor is not available");
+        var images = stackalloc DescriptorImageInfo[bindings.Length];
+        var buffers = stackalloc DescriptorBufferInfo[bindings.Length];
+        var writes = stackalloc WriteDescriptorSet[bindings.Length];
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            var b = bindings[i];
+            writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = b.Slot, DescriptorCount = 1 };
+            switch (b.Kind)
+            {
+                case GpuBindingKind.Sampled:
+                case GpuBindingKind.StorageImage:
+                    images[i] = new DescriptorImageInfo(b.Texture.Sampler, b.Texture.View, ImageLayout.General);
+                    writes[i].DescriptorType = b.Kind == GpuBindingKind.Sampled ? DescriptorType.CombinedImageSampler : DescriptorType.StorageImage;
+                    writes[i].PImageInfo = &images[i];
+                    break;
+                case GpuBindingKind.UniformBuffer:
+                    buffers[i] = new DescriptorBufferInfo(b.Buffer.Buffer, b.Buffer.Offset, b.Buffer.Size);
+                    writes[i].DescriptorType = DescriptorType.UniformBuffer;
+                    writes[i].PBufferInfo = &buffers[i];
+                    break;
+                case GpuBindingKind.StorageBuffer:
+                    buffers[i] = new DescriptorBufferInfo(b.Buffer.Buffer, b.Buffer.Offset, b.Buffer.Size);
+                    writes[i].DescriptorType = DescriptorType.StorageBuffer;
+                    writes[i].PBufferInfo = &buffers[i];
+                    break;
+            }
+        }
+        var point = program.ComputeCode is not null ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
+        push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)bindings.Length, writes);
+        Stats.DescriptorPushes++;
+    }
+
     public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stages, in T value, uint offset = 0) where T : unmanaged
     {
         fixed (T* p = &value) cmdPushConstants(Handle, layout, stages, offset, (uint)sizeof(T), p);

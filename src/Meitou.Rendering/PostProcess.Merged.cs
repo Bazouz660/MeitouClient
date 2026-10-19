@@ -86,18 +86,15 @@ public sealed unsafe partial class PostProcess
         infos[2] = new Vk.DescriptorImageInfo(default, motionOut.Texture.View(), Vk.ImageLayout.General);
         infos[3] = new Vk.DescriptorImageInfo(default, (depthOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
         infos[4] = new Vk.DescriptorImageInfo(default, (reactiveOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
-        var buffer = new Vk.DescriptorBufferInfo(data.Handle, data.Offset, (ulong)sizeof(VelocityParams));
-        var writes = stackalloc Vk.WriteDescriptorSet[6];
+        var bindings = stackalloc GpuBinding[6];
         for (int i = 0; i < 5; i++)
-            writes[i] = new Vk.WriteDescriptorSet
-            {
-                SType = Vk.StructureType.WriteDescriptorSet, DstBinding = (uint)i, DescriptorCount = 1, PImageInfo = &infos[i],
-                DescriptorType = i < 2 ? Vk.DescriptorType.CombinedImageSampler : Vk.DescriptorType.StorageImage,
-            };
-        writes[5] = new Vk.WriteDescriptorSet { SType = Vk.StructureType.WriteDescriptorSet, DstBinding = 5, DescriptorCount = 1, DescriptorType = Vk.DescriptorType.StorageBuffer, PBufferInfo = &buffer };
+            bindings[i] = i < 2
+                ? GpuBinding.Sampled((uint)i, new SampledTexture(infos[i].Sampler, infos[i].ImageView, default))
+                : GpuBinding.StorageImage((uint)i, new SampledTexture(default, infos[i].ImageView, default));
+        bindings[5] = GpuBinding.Storage(5, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(velocityPipeline!);
-        cmd.PushDescriptors(velocityProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 6), Vk.PipelineBindPoint.Compute);
+        cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
         var size = new Vector2(width, height);
         cmd.PushConstants(velocityProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in size);
         cmd.Dispatch((uint)((width + 15) / 16), (uint)((height + 15) / 16));
@@ -133,18 +130,15 @@ public sealed unsafe partial class PostProcess
         infos[0] = new Vk.DescriptorImageInfo(scene.Sampler, scene.View, Vk.ImageLayout.General);
         infos[1] = new Vk.DescriptorImageInfo(default, adaptA!.Texture.View(), Vk.ImageLayout.General);
         infos[2] = new Vk.DescriptorImageInfo(default, adaptB!.Texture.View(), Vk.ImageLayout.General);
-        var buffer = new Vk.DescriptorBufferInfo(exposureState.Handle, 0, exposureState.Size);
-        var writes = stackalloc Vk.WriteDescriptorSet[4];
+        var bindings = stackalloc GpuBinding[4];
         for (int i = 0; i < 3; i++)
-            writes[i] = new Vk.WriteDescriptorSet
-            {
-                SType = Vk.StructureType.WriteDescriptorSet, DstBinding = (uint)i, DescriptorCount = 1, PImageInfo = &infos[i],
-                DescriptorType = i == 0 ? Vk.DescriptorType.CombinedImageSampler : Vk.DescriptorType.StorageImage,
-            };
-        writes[3] = new Vk.WriteDescriptorSet { SType = Vk.StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = Vk.DescriptorType.StorageBuffer, PBufferInfo = &buffer };
+            bindings[i] = i == 0
+                ? GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View, default))
+                : GpuBinding.StorageImage((uint)i, new SampledTexture(default, infos[i].ImageView, default));
+        bindings[3] = GpuBinding.Storage(3, new BufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(exposurePipeline!);
-        cmd.PushDescriptors(exposureProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 4), Vk.PipelineBindPoint.Compute);
+        cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
         cmd.PushConstants(exposureProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in push);
         cmd.Dispatch(16, 16);
