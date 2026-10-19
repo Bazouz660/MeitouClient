@@ -90,7 +90,7 @@ public class VolumetricCloudNativeTests
                         """;
                     using var reference = LegacyProgram.Create(ctx, PostProcessShaders.Vertex,
                         referenceFragment.Replace("in vec2 vUv;", AtmosphereShaders.Functions + "\nin vec2 vUv;"), "cloud horizon reference");
-                    var segment = new NativeSegment(ctx, reference, Vk.PrimitiveTopology.TriangleList, "cloud horizon reference");
+                    var segment = new NativeSegment(ctx, reference, PrimitiveType.Triangles, "cloud horizon reference");
                     Matrix4x4.Invert(vp, out var inverse);
                     reference.Set(reference.Uniform("uInverse"), in inverse);
                     reference.ApplyGlobals();

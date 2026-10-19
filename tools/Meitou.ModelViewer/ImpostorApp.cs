@@ -301,7 +301,7 @@ static class ImpostorApp
         cmd.BeginRendering(new RenderingDesc(
             new RenderTarget(colour.Attachment(), AttachmentLoadOp.Clear, new ClearValue(new ClearColorValue(Sky.X, Sky.Y, Sky.Z, 1f)), colour.Image),
             new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image), w, h));
-        cmd.SetScissor(new Rect2D(default, new Extent2D((uint)w, (uint)h)));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
         draw(cmd, formats);
         cmd.EndRendering();
         cmd.Barrier(BarrierBatch.Full);
@@ -356,8 +356,8 @@ static class ImpostorApp
                     var right = Vector3.Normalize(Vector3.Cross(forward, worldUp));
                     var cameraUp = Vector3.Cross(right, forward);
                     int y = (rows - 1 - row) * cell;
-                    preview.DrawMeshes(cmd, formats, new Viewport(col * 2 * cell, y, cell, cell, 0, 1), view * projection, eye, sun, one, coverage: false);
-                    preview.DrawImpostors(cmd, formats, new Viewport((col * 2 + 1) * cell, y, cell, cell, 0, 1), view * projection, eye, cameraUp, sun, one, coverage: false);
+                    preview.DrawMeshes(cmd, formats, new PixelViewport(col * 2 * cell, y, cell, cell, 0, 1), view * projection, eye, sun, one, coverage: false);
+                    preview.DrawImpostors(cmd, formats, new PixelViewport((col * 2 + 1) * cell, y, cell, cell, 0, 1), view * projection, eye, cameraUp, sun, one, coverage: false);
                 }
         });
     }
@@ -384,7 +384,7 @@ static class ImpostorApp
         var projection = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, 50 * fieldScale, 20000 * fieldScale);
         var forward = Vector3.Normalize(target - eye);
         var cameraUp = Vector3.Cross(Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY)), forward);
-        var all = new Viewport(0, 0, o.Width, o.Height, 0, 1);
+        var all = new PixelViewport(0, 0, o.Width, o.Height, 0, 1);
         Offscreen(frames, o.Width, o.Height, stem + "-mesh.png", (cmd, formats) => preview.DrawMeshes(cmd, formats, all, view * projection, eye, sun, ordered, coverage: false));
         Offscreen(frames, o.Width, o.Height, stem + "-impostor.png", (cmd, formats) => preview.DrawImpostors(cmd, formats, all, view * projection, eye, cameraUp, sun, ordered, coverage: false));
     }

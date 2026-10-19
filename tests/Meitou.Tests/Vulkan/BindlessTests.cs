@@ -58,10 +58,10 @@ public class BindlessTests
 
     static void FullTargetState(CommandList cmd, int w, int h)
     {
-        cmd.SetViewport(new Viewport(0, 0, w, h, 0, 1));
-        cmd.SetScissor(new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h)));
-        cmd.SetRaster(CullModeFlags.None, FrontFace.Clockwise);
-        cmd.SetDepth(false, false, CompareOp.Always);
+        cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Always);
         cmd.SetDepthBias(false, 0, 0);
     }
 
@@ -73,9 +73,9 @@ public class BindlessTests
     {
         var frame = ctx.Frame;
         var cmd = frame.Commands;
-        var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(program, VertexLayout.Empty, PrimitiveTopology.TriangleList,
+        var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(program, VertexLayout.Empty, PrimitiveType.Triangles,
             new AttachmentFormats(format, Format.Undefined), BlendState.Off,
-            ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, program.Name));
+            ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, program.Name));
         using (new GpuPass(frame, cmd, program.Name, [new PassUse(target, Access.ColourTarget)]))
         {
             cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), AttachmentLoadOp.DontCare, default, target.Image), default, target.Desc.Width, target.Desc.Height));
@@ -119,7 +119,7 @@ public class BindlessTests
             var s = ctx.Bindless.Register(signed, sampler);
             Assert.Equal((BindlessKind.UTexture2D, BindlessKind.UTexture2D, BindlessKind.ITexture2D), (w.Kind, c.Kind, s.Kind));
             Assert.NotEqual(w.Index, c.Index);
-            var all = new Rect2D(new Offset2D(0, 0), new Extent2D(2, 1));
+            var all = new PixelRect(0, 0, 2, 1);
             ctx.Uploads.Write(cells, 0, 0, all, [1, 2, 3, 254, 255, 0, 128, 7]);
             ctx.Uploads.Write(wide, 0, 0, all, Bytes<ushort>(1000, 65535));
             ctx.Uploads.Write(signed, 0, 0, all, Bytes<short>(-5, 32767));
@@ -159,7 +159,7 @@ public class BindlessTests
                 ctx.BeginFrame();
                 if (f == 0)
                     for (int i = 0; i < sources.Length; i++)
-                        ctx.Uploads.Write(sources[i], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), colours[i]);
+                        ctx.Uploads.Write(sources[i], 0, 0, new PixelRect(0, 0, 1, 1), colours[i]);
                 ctx.EnsureFrame();
                 ctx.Frame.Commands.Invalidate();
                 switch (f)

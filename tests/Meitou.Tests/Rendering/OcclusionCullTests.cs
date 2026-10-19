@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Rendering;
+using Meitou.Rendering.Gpu;
 
 namespace Meitou.Tests.Rendering;
 
@@ -249,7 +250,7 @@ public class HizPyramidGpuTests
                 var desc = new Meitou.Rendering.Gpu.TextureDesc(Silk.NET.Vulkan.Format.R32Sfloat, w, h, Use: Meitou.Rendering.Gpu.TextureUse.Sampled | Meitou.Rendering.Gpu.TextureUse.TransferDst, Name: "hiz test depth");
                 using var nearTexture = Meitou.Rendering.Gpu.Texture.Create(ctx, desc, ctx.Frame.PreFrame.Handle);
                 using var farTexture = Meitou.Rendering.Gpu.Texture.Create(ctx, desc, ctx.Frame.PreFrame.Handle);
-                var region = new Silk.NET.Vulkan.Rect2D(new Silk.NET.Vulkan.Offset2D(0, 0), new Silk.NET.Vulkan.Extent2D((uint)w, (uint)h));
+                var region = new PixelRect(0, 0, (uint)w, (uint)h);
                 ctx.Uploads.Write(nearTexture, 0, 0, region, System.Runtime.InteropServices.MemoryMarshal.AsBytes(near.AsSpan()));
                 ctx.Uploads.Write(farTexture, 0, 0, region, System.Runtime.InteropServices.MemoryMarshal.AsBytes(far.AsSpan()));
                 using var hiz = new HizPyramid(ctx);

@@ -57,7 +57,7 @@ public class NativeHostTests
         return (p[i], p[i + 1], p[i + 2], p[i + 3]);
     }
 
-    static Rect2D Quarter(int q) => new(new Offset2D(q * W / 4, 0), new Extent2D(W / 4, H));
+    static PixelRect Quarter(int q) => new(q * W / 4, 0, W / 4, H);
 
     [Fact]
     [Slow]
@@ -94,7 +94,7 @@ public class NativeHostTests
             Assert.Equal(Quarter(1), ta.Scissor);
             Assert.Equal(targets.Formats, ta.Formats);
             var state = ctx.CurrentState();
-            a.BindPipeline(ctx.Pipelines.Get(state.Pipeline(red.Program, red.VertexLayout([]), PrimitiveTopology.TriangleList, ta.Formats, "host red")));
+            a.BindPipeline(ctx.Pipelines.Get(state.Pipeline(red.Program, red.VertexLayout([]), PrimitiveType.Triangles, ta.Formats, "host red")));
             state.Record(a, ta);
             red.Set(colour, 1f, 0f, 0f, 1f);
             red.Flush(a);
@@ -106,7 +106,7 @@ public class NativeHostTests
             ctx.SetPassViewport(targets.Viewport, Quarter(3));
             var b = ctx.BeginGuest("guest b");
             var tb = ctx.CurrentTargets();
-            b.BindPipeline(ctx.Pipelines.Get(state.Pipeline(yellow.Program, yellow.VertexLayout([]), PrimitiveTopology.TriangleList, tb.Formats, "host yellow")));
+            b.BindPipeline(ctx.Pipelines.Get(state.Pipeline(yellow.Program, yellow.VertexLayout([]), PrimitiveType.Triangles, tb.Formats, "host yellow")));
             state.Record(b, tb);
             yellow.Flush(b);
             b.Draw(3);

@@ -55,10 +55,10 @@ public class GpuApiTests
 
     static void FullTargetState(CommandList cmd, int w, int h)
     {
-        cmd.SetViewport(new Viewport(0, 0, w, h, 0, 1));
-        cmd.SetScissor(new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h)));
-        cmd.SetRaster(CullModeFlags.None, FrontFace.Clockwise);
-        cmd.SetDepth(false, false, CompareOp.Always);
+        cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Always);
         cmd.SetDepthBias(false, 0, 0);
     }
 
@@ -87,9 +87,9 @@ public class GpuApiTests
                 new LegacyProgram.Attribute(vertices.Binding, Format.R32G32Sfloat, 20, false),
                 new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32B32Sfloat, 20, false),
             ];
-            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveTopology.TriangleList,
+            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveType.Triangles,
                 new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
-                ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false));
+                ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, W, H);
@@ -196,15 +196,15 @@ public class GpuApiTests
 
             ctx.BeginFrame();
             var frame = ctx.Frame;
-            ctx.Uploads.Write(source, 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), [40, 90, 160, 255]);
+            ctx.Uploads.Write(source, 0, 0, new PixelRect(0, 0, 1, 1), [40, 90, 160, 255]);
             ctx.Uploads.Write(indices, 0, MemoryMarshalBytes([0u, 1u, 2u]));
             // The frame's own commands first (in CPU order): an indirect draw from args, then a copy of args.
             ctx.EnsureFrame();
             var cmd = frame.Commands;
             cmd.Invalidate();
-            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveTopology.TriangleList,
+            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles,
                 new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
-                ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, "bindless"));
+                ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, 16, 8);
@@ -252,7 +252,7 @@ public class GpuApiTests
         public override void Record(CommandList cmd)
         {
             FullTargetState(cmd, W, H);
-            cmd.SetScissor(new Rect2D(new Offset2D(x, 0), new Extent2D((uint)(W - x), H)));
+            cmd.SetScissor(new PixelRect(x, 0, (uint)(W - x), H));
             cmd.BindPipeline(pipeline);
             cmd.BindSets(layout, 0, [table], []);
             cmd.PushConstants(layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, texture);
@@ -297,12 +297,12 @@ public class GpuApiTests
                     indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View(), sources[k].Image));
                 }
                 var formats = new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined);
-                var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveTopology.TriangleList, formats, BlendState.Off,
-                    ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, "bindless"));
+                var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles, formats, BlendState.Off,
+                    ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
 
                 ctx.BeginFrame();
                 var frame = ctx.Frame;
-                for (int k = 0; k < Columns; k++) ctx.Uploads.Write(sources[k], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), [(byte)(10 + 30 * k), (byte)(200 - 20 * k), (byte)(5 * k), 255]);
+                for (int k = 0; k < Columns; k++) ctx.Uploads.Write(sources[k], 0, 0, new PixelRect(0, 0, 1, 1), [(byte)(10 + 30 * k), (byte)(200 - 20 * k), (byte)(5 * k), 255]);
                 var cmd = ctx.BeginNative("columns host");
                 cmd.BeginRendering(Target(target), secondaries: true);
                 frame.Parallel.Begin(cmd, formats, 0);
