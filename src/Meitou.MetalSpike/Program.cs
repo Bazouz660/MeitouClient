@@ -100,6 +100,44 @@ samplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
 samplerDescriptor.MagFilter = MTLSamplerMinMagFilter.Linear;
 var sampler = device.NewSamplerState(samplerDescriptor);
 
+// A texture table: four layers in one texture, the layer picked at runtime by the shader. This is
+// the capability the engine's runtime-sized sampler arrays need; the table is a texture array
+// here, and on Metal the general form of it is a tier-2 argument buffer (also in SharpMetal).
+var layersDescriptor = new MTLTextureDescriptor(
+    new ObjectiveCClass(ObjectiveC.objc_getClass("MTLTextureDescriptor")).AllocInit());
+layersDescriptor.TextureType = MTLTextureType.Type2DArray;
+layersDescriptor.PixelFormat = MTLPixelFormat.RGBA8Unorm;
+layersDescriptor.Width = 4;
+layersDescriptor.Height = 4;
+layersDescriptor.ArrayLength = 4;
+layersDescriptor.StorageMode = MTLStorageMode.Shared;
+layersDescriptor.Usage = MTLTextureUsage.ShaderRead;
+var layers = device.NewTexture(layersDescriptor);
+
+var layerColors = new[]
+{
+    new byte[] { 255, 60, 40, 255 },
+    new byte[] { 40, 255, 90, 255 },
+    new byte[] { 60, 120, 255, 255 },
+    new byte[] { 255, 220, 40, 255 },
+};
+for (uint slice = 0; slice < layerColors.Length; slice++)
+{
+    var bytes = new byte[4 * 4 * 4];
+    for (int i = 0; i < 4 * 4; i++)
+        Array.Copy(layerColors[slice], 0, bytes, i * 4, 4);
+    var sliceBytes = Marshal.AllocHGlobal(bytes.Length);
+    Marshal.Copy(bytes, 0, sliceBytes, bytes.Length);
+    layers.ReplaceRegion(
+        new MTLRegion { origin = new MTLOrigin { x = 0, y = 0, z = 0 }, size = new MTLSize { width = 4, height = 4, depth = 1 } },
+        0,
+        slice,
+        sliceBytes,
+        4 * 4,
+        4 * 4);
+    Marshal.FreeHGlobal(sliceBytes);
+}
+
 // The uniform block (std140) and the storage table (std430), both CPU-writable, bound at the
 // indices the SPIR-V bindings asked for: buffer(1) for the uniform block, buffer(2) for the table.
 var globals = device.NewBuffer(32, MTLResourceOptions.ResourceStorageModeShared);
@@ -160,6 +198,8 @@ unsafe
         encoder.SetFragmentSamplerState(sampler, 0);
         encoder.SetFragmentBuffer(globals, 0, 1);
         encoder.SetFragmentBuffer(table, 0, 2);
+        encoder.SetFragmentTexture(layers, 3);
+        encoder.SetFragmentSamplerState(sampler, 3);
 
         // The uniform block, rewritten per frame: std140 puts the vec4 tint first, the float after.
         var time = (float)clock.Elapsed.TotalSeconds;
