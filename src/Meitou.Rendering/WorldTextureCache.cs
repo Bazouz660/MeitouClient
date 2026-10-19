@@ -610,7 +610,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
             var between = new BarrierBatch();
             between.Add(PipelineStageFlags2.TransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.TransferBit, AccessFlags2.TransferReadBit);
             cmd.Barrier(in between);
-            cmd.BlitLevel(texture, level - 1, level, Filter.Linear);
+            cmd.BlitLevel(texture, level - 1, level, TextureMinFilter.Linear);
         }
         cmd.Barrier(BarrierBatch.Full);
     }

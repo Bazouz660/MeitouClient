@@ -5,8 +5,9 @@ samplers, the views, the pipelines) and the commands. It is Vulkan's today; a se
 replaces it. The renderers state their draws in the engine's GL vocabulary
 ([renderer-native](renderer-native.md)); this is the same for the resources.
 
-**Proposed, not decided.** The vocabulary below is the shape the port needs; the two questions at
-the end are the author's to answer.
+The vocabulary below is the shape the port needs. The descriptions are in the code: the draw
+state, the formats, the load op, the clear colour, the index kind, the sampler's filters and
+wrap modes. What is left is the handles, the binding list and the seam.
 
 ## What the renderers would hold
 
@@ -76,30 +77,23 @@ The renderer-side cost, measured outside `Gpu/`: about 294 references to the bin
 `Image` 100, `Sampler` 70). The proof that a step changed nothing: the game's offscreen picture
 is byte for byte the same ([metal-backend](metal-backend.md) "The road to a Metal frame").
 
-## The two questions
+## The two decisions
 
-**1. The handle's shape.**
+**1. The handle's shape: opaque handles.**
 
-- *Opaque handles* - a dense index into the backend's table plus the description. The renderers
-  cannot reach the backend's objects, which is the point of the layer. The backend resolves the
-  index (an array lookup).
-- *Backend interfaces* - `IGpuImage`, `IGpuBuffer`, `IGpuSampler`; the renderers hold the
-  interface, the backend's object implements it.
+A dense index into the backend's table plus the description. The renderers cannot reach the
+backend's objects, which is the point of the layer; the backend resolves the index (an array
+lookup). The alternative - backend interfaces (`IGpuImage`, `IGpuBuffer`, `IGpuSampler`) - would
+cost a virtual call per use and a type change in every renderer signature, against a codebase that
+is value-typed and allocation-free in the frame path.
 
-*Recommendation: opaque handles.* The codebase is value-typed and allocation-free in the frame
-path; interfaces would cost a virtual call per use and a type change in every renderer signature.
-The opaque handle's cost is a resolution step in the backend.
+**2. Where the seam sits: the context is the interface.**
 
-**2. Where the seam sits.**
-
-- *The context is the interface* - the renderers say `IGpuContext`; the Vulkan class implements it
-  as it is. A type rename in about fifty files.
-- *The context stays a class* and holds a backend object; the operations forward to it. No change
-  in the renderers, but a forwarding layer that grows with every operation, and the Vulkan-only
-  parts (the allocator, the bindless journal, the swapchain) still leak.
-
-*Recommendation: the context is the interface.* The forwarding layer would be the second engine
-the port is meant to avoid, and the leak is what a second backend cannot live with.
+The renderers say `IGpuContext`; the Vulkan class implements it as it is (a type rename in about
+fifty files). The alternative - the context stays a class and forwards to a backend object - needs
+no change in the renderers, but the forwarding layer grows with every operation and the
+Vulkan-only parts (the allocator, the bindless journal, the swapchain) still leak: the second
+engine the port exists to avoid.
 
 The engine's own terms for the drawing (the state, the formats) are in
 [renderer-native](renderer-native.md); the Metal side of the port is in

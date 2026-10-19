@@ -26,7 +26,7 @@ public class UiRenderingTests
             using var target = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.ColourTarget | TextureUse.TransferSrc));
             var cmd = gpu.BeginNative("clear clipping test");
             var targets = PassTargets.Of(target, null);
-            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(0, 0, 0, 1)) } });
+            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0, 0, 0, 1) } });
             cmd.EndRendering(); gpu.EndNative(cmd);
             overlay.Target = target;
             overlay.Rect(0, 0, width, height, new Vector4(1, 0, 0, 1));

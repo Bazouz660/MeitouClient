@@ -10,7 +10,7 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>An attachment of a <see cref="RenderingDesc"/>: a view in GENERAL layout, its load op and clear value (stores always).</summary>
-public readonly record struct RenderTarget(ImageView View, AttachmentLoadOp Load = AttachmentLoadOp.Load, ClearValue Clear = default, Image Image = default)
+public readonly record struct RenderTarget(ImageView View, LoadOp Load = LoadOp.Load, ClearColour Clear = default, float DepthClear = 1f, Image Image = default)
 {
     public bool IsNull => View.Handle == 0;
 }
@@ -35,7 +35,7 @@ public sealed unsafe class CommandList
     Pipeline lastPipeline;
     PipelineBindPoint lastPoint;
     BufferBinding lastIndex;
-    IndexType lastIndexType;
+    IndexKind lastIndexType;
     readonly Buffer[] lastVertex = new Buffer[32];
     readonly ulong[] lastVertexOffset = new ulong[32];
     uint vertexValid;   // bit per binding whose last* entry is known
@@ -120,18 +120,21 @@ public sealed unsafe class CommandList
         colours[0] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo, ImageView = d.Colour.View, ImageLayout = ImageLayout.General,
-            LoadOp = d.Colour.Load, StoreOp = AttachmentStoreOp.Store, ClearValue = d.Colour.Clear,
+            LoadOp = GlConventions.VkLoadOp(d.Colour.Load), StoreOp = AttachmentStoreOp.Store,
+            ClearValue = new ClearValue(new ClearColorValue(d.Colour.Clear.R, d.Colour.Clear.G, d.Colour.Clear.B, d.Colour.Clear.A)),
         };
         colours[1] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo, ImageView = d.Extra.View, ImageLayout = ImageLayout.General,
-            LoadOp = d.Extra.Load, StoreOp = AttachmentStoreOp.Store, ClearValue = d.Extra.Clear,
+            LoadOp = GlConventions.VkLoadOp(d.Extra.Load), StoreOp = AttachmentStoreOp.Store,
+            ClearValue = new ClearValue(new ClearColorValue(d.Extra.Clear.R, d.Extra.Clear.G, d.Extra.Clear.B, d.Extra.Clear.A)),
         };
         uint colourCount = d.Colour.IsNull ? 0u : d.Extra.IsNull ? 1u : 2u;
         var depth = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo, ImageView = d.Depth.View, ImageLayout = ImageLayout.General,
-            LoadOp = d.Depth.Load, StoreOp = AttachmentStoreOp.Store, ClearValue = d.Depth.Clear,
+            LoadOp = GlConventions.VkLoadOp(d.Depth.Load), StoreOp = AttachmentStoreOp.Store,
+            ClearValue = new ClearValue(depthStencil: new ClearDepthStencilValue(d.Depth.DepthClear, 0)),
         };
         var rate = new RenderingFragmentShadingRateAttachmentInfoKHR
         {
@@ -299,10 +302,10 @@ public sealed unsafe class CommandList
         cmdBindVertexBuffers(Handle, first, (uint)n, buffers, offsets);
     }
 
-    public void BindIndexBuffer(BufferBinding binding, IndexType type)
+    public void BindIndexBuffer(BufferBinding binding, IndexKind type)
     {
         if (binding.Buffer.Handle == lastIndex.Buffer.Handle && binding.Offset == lastIndex.Offset && type == lastIndexType && lastIndex.Buffer.Handle != 0) return;
-        cmdBindIndexBuffer(Handle, binding.Buffer, binding.Offset, type);
+        cmdBindIndexBuffer(Handle, binding.Buffer, binding.Offset, GlConventions.VkIndexKind(type));
         (lastIndex, lastIndexType) = (binding, type);
     }
 
@@ -429,7 +432,7 @@ public sealed unsafe class CommandList
     }
 
     /// <summary>Scales level 0 / layer 0 of <paramref name="src"/> over level 0 of <paramref name="dst"/>.</summary>
-    public void Blit(Texture src, Texture dst, Filter filter)
+    public void Blit(Texture src, Texture dst, TextureMinFilter filter)
     {
         var blit = new ImageBlit
         {
@@ -438,7 +441,7 @@ public sealed unsafe class CommandList
         };
         blit.SrcOffsets[1] = new Offset3D(src.Desc.Width, src.Desc.Height, 1);
         blit.DstOffsets[1] = new Offset3D(dst.Desc.Width, dst.Desc.Height, 1);
-        vk.CmdBlitImage(Handle, src.Image, ImageLayout.General, dst.Image, ImageLayout.General, 1, &blit, filter);
+        vk.CmdBlitImage(Handle, src.Image, ImageLayout.General, dst.Image, ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
     }
 
     /// <summary>
@@ -474,7 +477,7 @@ public sealed unsafe class CommandList
 
     /// <summary>(Phase 8 stage 1.) Scales level <paramref name="srcLevel"/> of <paramref name="texture"/> over its level <paramref name="dstLevel"/>
     /// (all layers), as VkGl's <c>GenerateMipmap</c> does per level.</summary>
-    public void BlitLevel(Texture texture, int srcLevel, int dstLevel, Filter filter)
+    public void BlitLevel(Texture texture, int srcLevel, int dstLevel, TextureMinFilter filter)
     {
         var d = texture.Desc;
         uint layers = (uint)(d.Kind == TextureKind.Cube ? 6 * Math.Max(d.Layers, 1) : d.Layers);
@@ -485,7 +488,7 @@ public sealed unsafe class CommandList
         };
         blit.SrcOffsets[1] = new Offset3D(Math.Max(d.Width >> srcLevel, 1), Math.Max(d.Height >> srcLevel, 1), 1);
         blit.DstOffsets[1] = new Offset3D(Math.Max(d.Width >> dstLevel, 1), Math.Max(d.Height >> dstLevel, 1), 1);
-        vk.CmdBlitImage(Handle, texture.Image, ImageLayout.General, texture.Image, ImageLayout.General, 1, &blit, filter);
+        vk.CmdBlitImage(Handle, texture.Image, ImageLayout.General, texture.Image, ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
     }
 
     // ---- sync, timing, labels ----

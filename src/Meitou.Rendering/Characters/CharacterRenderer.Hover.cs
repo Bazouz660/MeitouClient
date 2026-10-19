@@ -44,8 +44,8 @@ internal sealed unsafe partial class CharacterRenderer
         var cmd = Gpu.BeginNative("hover mask");
         var target = PassTargets.Of(hoverColour, hoverDepth);
         cmd.BeginRendering(new RenderingDesc(
-            target.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(0f, 0f, 0f, 0f)) },
-            target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, target.Width, target.Height));
+            target.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0f, 0f, 0f, 0f) },
+            target.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
         portraitLive = index;
         try { DrawView(new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY }, eye, []); }

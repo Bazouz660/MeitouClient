@@ -54,6 +54,35 @@ public static class GlConventions
     /// <summary>The Vulkan format of a GL internal format, or <c>Undefined</c> for none (an attachment that is not there).</summary>
     public static Format VkFormatOrUndefined(InternalFormat f) => f == InternalFormat.None ? Format.Undefined : VkFormat(f);
 
+    /// <summary>The Vulkan load op of the engine's.</summary>
+    public static AttachmentLoadOp VkLoadOp(LoadOp op) => op switch
+    {
+        LoadOp.Load => AttachmentLoadOp.Load,
+        LoadOp.Clear => AttachmentLoadOp.Clear,
+        _ => AttachmentLoadOp.DontCare,
+    };
+
+    /// <summary>The Vulkan index type of the engine's.</summary>
+    public static IndexType VkIndexKind(IndexKind kind) => kind == IndexKind.U32 ? IndexType.Uint32 : IndexType.Uint16;
+
+    /// <summary>The Vulkan filters of a GL minification filter (the mip interpolation folded in).</summary>
+    public static (Filter Min, SamplerMipmapMode Mip) VkFilters(TextureMinFilter min) => min switch
+    {
+        TextureMinFilter.Nearest => (Filter.Nearest, SamplerMipmapMode.Nearest),
+        TextureMinFilter.Linear => (Filter.Linear, SamplerMipmapMode.Nearest),
+        TextureMinFilter.NearestMipmapNearest => (Filter.Nearest, SamplerMipmapMode.Nearest),
+        TextureMinFilter.LinearMipmapNearest => (Filter.Linear, SamplerMipmapMode.Nearest),
+        TextureMinFilter.NearestMipmapLinear => (Filter.Nearest, SamplerMipmapMode.Linear),
+        _ => (Filter.Linear, SamplerMipmapMode.Linear),
+    };
+
+    /// <summary>The Vulkan filter of a GL magnification filter.</summary>
+    public static Filter VkFilter(TextureMagFilter mag) => mag == TextureMagFilter.Nearest ? Filter.Nearest : Filter.Linear;
+
+    /// <summary>The Vulkan filter of a GL minification filter (the mip interpolation dropped).</summary>
+    public static Filter VkFilter(TextureMinFilter min) => min is TextureMinFilter.Nearest or TextureMinFilter.NearestMipmapNearest
+        or TextureMinFilter.NearestMipmapLinear ? Filter.Nearest : Filter.Linear;
+
     /// <summary>Whether the format is a depth buffer (with or without a stencil).</summary>
     public static bool IsDepthFormat(InternalFormat f) => f is InternalFormat.DepthComponent24 or InternalFormat.DepthComponent32f
         or InternalFormat.Depth24Stencil8 or InternalFormat.Depth16;
@@ -412,6 +441,24 @@ public enum PrimitiveType : int
     Triangles = 0x4,
     TriangleStrip = 0x5,
     TriangleFan = 0x6,
+}
+
+/// <summary>What a render target does with its contents when the pass begins (GL's load op).</summary>
+public enum LoadOp : int
+{
+    Load = 0,
+    Clear = 1,
+    DontCare = 2,
+}
+
+/// <summary>The colour a render target is cleared to.</summary>
+public readonly record struct ClearColour(float R, float G, float B, float A);
+
+/// <summary>The index format of a vertex index buffer (GL's index type).</summary>
+public enum IndexKind : int
+{
+    U16 = 0,
+    U32 = 1,
 }
 
 public enum TextureMagFilter : int

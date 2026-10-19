@@ -2217,7 +2217,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 if (d.SetRaster) cmd.SetRaster(d.Cull, state.Front);
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Vertices.Length > 0) cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 PushTo(cmd, layout, in d.Push, ref last, ref pushed);
                 if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, d.FirstIndex, 0, d.FirstInstance);

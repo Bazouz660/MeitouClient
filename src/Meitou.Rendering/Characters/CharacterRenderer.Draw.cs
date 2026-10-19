@@ -260,7 +260,7 @@ internal sealed unsafe partial class CharacterRenderer
                 }
                 cmd.BindPipeline(d.Pipeline);
                 cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Vk.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }
         }

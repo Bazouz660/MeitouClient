@@ -85,8 +85,8 @@ public sealed unsafe class OceanWaves : IDisposable
             displacement = batch.Create(Desc("ocean displacement"));
             slopes = batch.Create(Desc("ocean slopes"));
         }
-        sampler = ctx.Samplers.Get(new SamplerDesc(Filter.Linear, Filter.Linear, SamplerMipmapMode.Linear, true, SamplerAddressMode.Repeat,
-            SamplerAddressMode.Repeat, SamplerAddressMode.Repeat, false, DepthFunction.Always, false, false, 8, 0));
+        sampler = ctx.Samplers.Get(new SamplerDesc(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, true, TextureWrapMode.Repeat,
+            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Always, false, false, 8, 0));
     }
 
     /// <summary>Texels along a cascade's side.</summary>

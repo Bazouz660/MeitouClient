@@ -1154,7 +1154,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             refraction?.Dispose();
             refraction = Texture.Create(Gpu, new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), cmd.Handle);
         }
-        cmd.Blit(sceneColour, refraction, Silk.NET.Vulkan.Filter.Linear);
+        cmd.Blit(sceneColour, refraction, TextureMinFilter.Linear);
         Gpu.EndNative(cmd);
         refractionFrame = Gpu.Frame.Number;
     }
@@ -1237,8 +1237,8 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// the shore's breakers and foam fade (they read from much further).</summary>
     public const float WaveFadeStart = 3000, WaveFadeEnd = 5500, ShoreFadeStart = 7000, ShoreFadeEnd = 10000;
 
-    static readonly SamplerDesc ClampLinear = new(Silk.NET.Vulkan.Filter.Linear, Silk.NET.Vulkan.Filter.Linear, Silk.NET.Vulkan.SamplerMipmapMode.Nearest, false,
-        Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, Silk.NET.Vulkan.SamplerAddressMode.ClampToEdge, false,
+    static readonly SamplerDesc ClampLinear = new(TextureMinFilter.Linear, TextureMagFilter.Linear, false,
+        TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false,
         DepthFunction.Always, false, false, 1, 0);
 
     static readonly BlendState AlphaBlend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -1264,7 +1264,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         p.P.Flush(cmd);
         if (indexCount > 0)
         {
-            cmd.BindIndexBuffer(va.Elements, Silk.NET.Vulkan.IndexType.Uint32);
+            cmd.BindIndexBuffer(va.Elements, IndexKind.U32);
             cmd.DrawIndexed(indexCount);
         }
         else cmd.Draw(4);

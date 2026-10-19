@@ -91,7 +91,7 @@ sealed unsafe class GiDebugPass : IDisposable
         cmd.PushDescriptors(program.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), PipelineBindPoint.Compute);
         cmd.Dispatch((uint)((width + 7) / 8), (uint)((height + 7) / 8));
         cmd.Barrier(BarrierBatch.Full);
-        cmd.Blit(output, target, Filter.Linear);
+        cmd.Blit(output, target, TextureMinFilter.Linear);
         cmd.Barrier(BarrierBatch.Full);
         cmd.EndLabel();
         ctx.EndNative(cmd);

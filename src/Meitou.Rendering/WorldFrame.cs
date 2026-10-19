@@ -405,15 +405,15 @@ sealed class SceneHost(GpuContext ctx)
     /// <summary>Opens the host on <paramref name="targets"/> (nothing when it is open already); its jobs count towards <paramref name="stage"/>.
     /// <paramref name="clearColour"/> / <paramref name="clearDepth"/>: the attachments are cleared by the rendering's load ops (to the colour, to 1).
     /// Without secondaries (<see cref="Recording.Mode"/> 0) the guests record straight into its rendering.</summary>
-    public void Open(int stage, PassTargets targets, Vk.ClearColorValue? clearColour = null, bool clearDepth = false)
+    public void Open(int stage, PassTargets targets, ClearColour? clearColour = null, bool clearDepth = false)
     {
         if (cmd is not null) { Stage(stage); return; }
         var list = ctx.BeginNative("scene");
         bool secondaries = Recording.Secondaries;
-        var colour = clearColour is { } c ? targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(c) } : targets.Colour;
-        var depth = clearDepth ? targets.Depth with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) } : targets.Depth;
+        var colour = clearColour is { } c ? targets.Colour with { Load = LoadOp.Clear, Clear = c } : targets.Colour;
+        var depth = clearDepth ? targets.Depth with { Load = LoadOp.Clear, DepthClear = 1f } : targets.Depth;
         // The extra target (the GI resolve's albedo) is cleared to 0 with the colour: no surface there takes the probes' light in post.
-        var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } : targets.Extra;
+        var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = LoadOp.Clear, Clear = default } : targets.Extra;
         list.BeginRendering(new RenderingDesc(colour, depth, targets.Width, targets.Height, 0, 0, targets.ShadingRate, targets.ShadingRateTexel, extra), secondaries);
         this.targets = targets;
         ctx.BeginHostPass(list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb));   // alpha: the characters only (the SSAO character mask)
@@ -1134,7 +1134,7 @@ static class WorldFrame
         post.BeginNearSlice(1, 1000);
         post.SetNearSlice(1, 1000, camera.FieldOfView, aspect);
         var host = gpu.Scene ??= new SceneHost(post.Gpu);
-        host.Open(5, post.SceneTargets, new Vk.ClearColorValue(0, 0, 0, 0), clearDepth: true);
+        host.Open(5, post.SceneTargets, new ClearColour(0, 0, 0, 0), clearDepth: true);
         gpu.Sky.Draw(vp, colours);
         host.Close();
         // Motion and particle callbacks belong to the world that is being replaced.
@@ -1312,7 +1312,7 @@ static class WorldFrame
             gpu.InteriorMask.Record(view * Jitter.Apply(camera.Projection(aspect, maskSlice.Near, maskSlice.Far), jitter, rw, rh), eye, post.RenderWidth, post.RenderHeight);
         }
         else if (gpu.InteriorMask is { } unused) unused.Record(default, eye, 0, 0);
-        host.Open(5, post.WithShadingRate(post.SceneTargets), new Vk.ClearColorValue(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 0), clearDepth: true);   // alpha 0: no character (the SSAO mask)
+        host.Open(5, post.WithShadingRate(post.SceneTargets), new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 0), clearDepth: true);   // alpha 0: no character (the SSAO mask)
         if (!skyHidden) gpu.Sky.Draw(skyProjection, colours);
         StageClock.Lap(5);
         gpu.Post?.SetCamera(eye, view, camera.FieldOfView, aspect);

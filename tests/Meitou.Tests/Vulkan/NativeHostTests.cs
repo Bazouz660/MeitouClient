@@ -78,7 +78,7 @@ public class NativeHostTests
             // The host: its own segment and rendering instance (cleared green by the load op), announced with its targets and state.
             var cmd = ctx.BeginNative("host");
             var targets = PassTargets.Of(target, null);
-            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(0, 1, 0, 1)) } });
+            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0, 1, 0, 1) } });
             ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d!.DepthClamp));
             Assert.Throws<InvalidOperationException>(() => ctx.BeginNative("nested"));
             Assert.Throws<InvalidOperationException>(() => ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d.DepthClamp)));

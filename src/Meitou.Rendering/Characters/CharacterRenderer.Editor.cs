@@ -41,7 +41,7 @@ internal sealed unsafe partial class CharacterRenderer
             if (live[i].Key == r.Key) { index = i; break; }
         var cmd = Gpu.BeginNative("character stage");
         var target = PassTargets.Of(stageColour, stageDepth);
-        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, target.Width, target.Height));
+        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
         var rect = new PixelRect(0, 0, (uint)r.Width, (uint)r.Height);
         Gpu.Clear(cmd, true, default, true, 1, rect);

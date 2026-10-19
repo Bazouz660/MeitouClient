@@ -299,8 +299,8 @@ static class ImpostorApp
         var formats = new AttachmentFormats(colour.Desc.Format, depth.Desc.Format, 4);
         cmd.Barrier(BarrierBatch.Full);
         cmd.BeginRendering(new RenderingDesc(
-            new RenderTarget(colour.Attachment(), AttachmentLoadOp.Clear, new ClearValue(new ClearColorValue(Sky.X, Sky.Y, Sky.Z, 1f)), colour.Image),
-            new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image), w, h));
+            new RenderTarget(colour.Attachment(), LoadOp.Clear, new ClearColour(Sky.X, Sky.Y, Sky.Z, 1f), Image: colour.Image),
+            new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f, Image: depth.Image), w, h));
         cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
         draw(cmd, formats);
         cmd.EndRendering();

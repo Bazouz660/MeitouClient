@@ -10,8 +10,8 @@ namespace Meitou.Rendering.Gpu;
 /// "no mips" behaviour), the LOD bias applies to mipmapped samplers only, anisotropy is clamped to 16, and the compare mode is used only by
 /// shadow samplers.
 /// </summary>
-public readonly record struct SamplerDesc(Filter Min, Filter Mag, SamplerMipmapMode Mip, bool Mipmapped,
-    SamplerAddressMode U, SamplerAddressMode V, SamplerAddressMode W, bool Compare, DepthFunction Op, bool TransparentBorder,
+public readonly record struct SamplerDesc(TextureMinFilter Min, TextureMagFilter Mag, bool Mipmapped,
+    TextureWrapMode U, TextureWrapMode V, TextureWrapMode W, bool Compare, DepthFunction Op, bool TransparentBorder,
     bool IntegerFormat, float Anisotropy, float LodBias)
 {
     /// <param name="compare">The sampler is a shadow sampler and the texture's compare mode is on.</param>
@@ -19,19 +19,12 @@ public readonly record struct SamplerDesc(Filter Min, Filter Mag, SamplerMipmapM
     public static SamplerDesc FromGl(TextureMinFilter min, TextureMagFilter mag, TextureWrapMode s, TextureWrapMode t, TextureWrapMode r,
         bool compare, DepthFunction func, bool transparentBorder, float anisotropy, bool integerFormat, float lodBias)
     {
-        var (vkMin, mip, mipmapped) = min switch
-        {
-            TextureMinFilter.Nearest => (Filter.Nearest, SamplerMipmapMode.Nearest, false),
-            TextureMinFilter.Linear => (Filter.Linear, SamplerMipmapMode.Nearest, false),
-            TextureMinFilter.NearestMipmapNearest => (Filter.Nearest, SamplerMipmapMode.Nearest, true),
-            TextureMinFilter.LinearMipmapNearest => (Filter.Linear, SamplerMipmapMode.Nearest, true),
-            TextureMinFilter.NearestMipmapLinear => (Filter.Nearest, SamplerMipmapMode.Linear, true),
-            _ => (Filter.Linear, SamplerMipmapMode.Linear, true),
-        };
-        var vkMag = mag == TextureMagFilter.Nearest ? Filter.Nearest : Filter.Linear;
-        if (integerFormat) (vkMin, vkMag, mip) = (Filter.Nearest, Filter.Nearest, SamplerMipmapMode.Nearest);
-        return new SamplerDesc(vkMin, vkMag, mip, mipmapped, GlConventions.AddressMode(s), GlConventions.AddressMode(t), GlConventions.AddressMode(r),
-            compare, func, transparentBorder, integerFormat, Math.Clamp(anisotropy, 1, 16), mipmapped ? lodBias : 0);
+        var mipmapped = min is TextureMinFilter.NearestMipmapNearest or TextureMinFilter.LinearMipmapNearest
+            or TextureMinFilter.NearestMipmapLinear or TextureMinFilter.LinearMipmapLinear;
+        var filter = integerFormat ? TextureMinFilter.Nearest : min;
+        var magnification = integerFormat ? TextureMagFilter.Nearest : mag;
+        return new SamplerDesc(filter, magnification, mipmapped, s, t, r, compare, func, transparentBorder, integerFormat,
+            Math.Clamp(anisotropy, 1, 16), mipmapped ? lodBias : 0);
     }
 }
 
@@ -62,11 +55,12 @@ public sealed unsafe class SamplerCache : IDisposable
     {
         var key = device.SamplerAnisotropy ? desc with { Anisotropy = Math.Min(desc.Anisotropy, maxAnisotropy) } : desc with { Anisotropy = 1 };
         if (samplers.TryGetValue(key, out var sampler)) return sampler;
+        var vkFilters = GlConventions.VkFilters(key.Min);
         var info = new SamplerCreateInfo
         {
             SType = StructureType.SamplerCreateInfo,
-            MinFilter = key.Min, MagFilter = key.Mag, MipmapMode = key.Mip,
-            AddressModeU = key.U, AddressModeV = key.V, AddressModeW = key.W,
+            MinFilter = vkFilters.Min, MagFilter = GlConventions.VkFilter(key.Mag), MipmapMode = vkFilters.Mip,
+            AddressModeU = GlConventions.AddressMode(key.U), AddressModeV = GlConventions.AddressMode(key.V), AddressModeW = GlConventions.AddressMode(key.W),
             AnisotropyEnable = key.Anisotropy > 1, MaxAnisotropy = key.Anisotropy,
             CompareEnable = key.Compare, CompareOp = GlConventions.CompareOp(key.Op),
             MinLod = 0, MaxLod = key.Mipmapped ? Vk.LodClampNone : 0.25f,

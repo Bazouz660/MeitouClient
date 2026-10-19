@@ -330,7 +330,7 @@ public sealed unsafe partial class ShadowPass
         for (int i = 0; i < count; i++)
         {
             if (!drawn[i] && !fresh) continue;
-            var target = new RenderTarget(map.Attachment(0, i), AttachmentLoadOp.Load, default, map.Image);
+            var target = new RenderTarget(map.Attachment(0, i), LoadOp.Load, default, Image: map.Image);
             cmd.BeginRendering(new RenderingDesc(target, default, side, side));
             BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new PixelViewport(0, 0, side, side, 0, 1), whole));
             cmd.BindPipeline(pipeline);

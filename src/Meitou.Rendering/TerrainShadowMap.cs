@@ -116,7 +116,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
             sweep.Set(uDistance, step * spacing);
             sweep.Bind(sourceSlot, pass == 0 ? heightsSampled : targetsSampled[1 - write]);
             var target = targets[write];
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), Silk.NET.Vulkan.AttachmentLoadOp.Load, default, target.Image), default, size, size));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.Load, default, Image: target.Image), default, size, size));
             cmd.SetViewport(viewport);
             cmd.SetScissor(scissor);
             cmd.SetRaster(state.Cull, state.Front);

@@ -82,7 +82,7 @@ internal sealed unsafe partial class CharacterRenderer
         if (!any) return;
         var cmd = Gpu.BeginNative("portraits");
         var target = PassTargets.Of(atlas, portraitDepth);
-        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
+        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
         if (!cleared) { Gpu.Clear(cmd, true, default, false, 1, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height)); cleared = true; }

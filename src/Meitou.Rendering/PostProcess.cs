@@ -32,7 +32,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         public int Width => Texture.Desc.Width;
         public int Height => Texture.Desc.Height;
         public InternalFormat Format => Texture.Desc.Format;
-        public RenderTarget Attachment => new(Texture.Attachment(), Vk.AttachmentLoadOp.Load, default, Texture.Image);
+        public RenderTarget Attachment => new(Texture.Attachment(), LoadOp.Load, default, Image: Texture.Image);
     }
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8); ports use it instead of looking it up.</summary>
@@ -575,7 +575,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         var cmd = Gpu.BeginNative("post far slice clear");
         cmd.BeginRendering(new RenderingDesc(default, farDepth!.Attachment with
         {
-            Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)),
+            Load = LoadOp.Clear, DepthClear = 1f,
         }, width, height));
         cmd.EndRendering();
         Gpu.EndNative(cmd);
@@ -943,12 +943,12 @@ public sealed unsafe partial class PostProcess : IDisposable
         Bind(d.P, d.Depth, sceneDepth);
         d.P.Set(d.FullSize, (float)width, (float)height);
         d.P.Set(d.Div, (float)div);
-        DrawPass(d.P, default, InternalFormat.None, low.Depth!.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) },
+        DrawPass(d.P, default, InternalFormat.None, low.Depth!.Attachment with { Load = LoadOp.Clear, DepthClear = 1f },
             low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always });
         CloseSegment();
         Stamp("particle depth");
         var targets = PassTargets.Of(low.Accum.Texture, low.Depth.Texture);
-        low.Targets = targets with { Colour = targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } };
+        low.Targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
     }
 
     /// <summary>The accumulation of one size over the scene colour (<see cref="PostProcessShaders.ParticleComposite"/>), after the host drew into <see cref="ParticleTargets"/>.</summary>
@@ -1107,7 +1107,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     {
         CloseSegment();
         var targets = PassTargets.Of(target.Texture, null);
-        if (clear) targets = targets with { Colour = targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } };
+        if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
         var cmd = Gpu.BeginNative("particle coverage");
         cmd.BeginRendering(targets.Rendering);
         Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));

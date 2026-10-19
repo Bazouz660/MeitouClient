@@ -170,8 +170,8 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         var t = PassTargets.Of(msColour, msDepth).At(viewport);
         t = t with
         {
-            Colour = t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(0f, 0f, 0f, 0f)) },
-            Depth = t.Depth with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(depthStencil: new Silk.NET.Vulkan.ClearDepthStencilValue(1, 0)) },
+            Colour = t.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0f, 0f, 0f, 0f) },
+            Depth = t.Depth with { Load = LoadOp.Clear, DepthClear = 1 },
         };
         cmd.BeginRendering(t.Rendering);
         var vp = Matrix4x4.CreateTranslation(eye) * nearViewProjection;

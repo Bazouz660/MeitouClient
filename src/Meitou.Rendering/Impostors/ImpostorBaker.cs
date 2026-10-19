@@ -258,8 +258,8 @@ public sealed unsafe class ImpostorBaker : IDisposable
         {
             cmd.Barrier(BarrierBatch.Full);
             cmd.BeginRendering(new RenderingDesc(
-                new RenderTarget(large.Attachment(), AttachmentLoadOp.Clear, new ClearValue(new ClearColorValue(0f, 0f, 0f, 0f)), large.Image),
-                new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image),
+                new RenderTarget(large.Attachment(), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f), Image: large.Image),
+                new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f, Image: depth.Image),
                 width, samples));
             cmd.SetScissor(full);
             cmd.SetDepth(true, true, DepthFunction.Less);
@@ -288,7 +288,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
             }
             cmd.EndRendering();
             cmd.Barrier(BarrierBatch.Full);
-            cmd.Blit(large, small, Filter.Linear);
+            cmd.Blit(large, small, TextureMinFilter.Linear);
             cmd.Barrier(BarrierBatch.Full);
             var region = new BufferImageCopy
             {
@@ -332,7 +332,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
             pc.UseVertexColour = p.HasColours ? 1u : 0u;
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveType.Triangles, formats, "impostor bake")));
             cmd.BindVertexBuffers(0, p.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexType.Uint32);
+            cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
             cmd.PushConstants(program.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
             cmd.DrawIndexed((uint)p.Count);
         }

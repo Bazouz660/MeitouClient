@@ -146,7 +146,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         var cmd = gpu.BeginNative("interior mask");
         var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(target, null).At(viewport);
-        t = t with { Colour = t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(NoFront, 0f, 0f, 0f)) } };
+        t = t with { Colour = t.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(NoFront, 0f, 0f, 0f) } };
         cmd.BeginRendering(t.Rendering);
         // Min on the colour (the nearest face), max on the alpha (the farthest); every face drawn, no depth test (the game's target has no depth).
         var blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Min, BlendOperation.Max);

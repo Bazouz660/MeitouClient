@@ -118,7 +118,7 @@ public sealed unsafe partial class TerrainRenderer
         {
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveType.Triangles, formats, "impostor rock bake")));
             cmd.BindVertexBuffers(0, part.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexType.Uint32);
+            cmd.BindIndexBuffer(new BufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexKind.U32);
             cmd.DrawIndexed((uint)part.Count);
         }
     }

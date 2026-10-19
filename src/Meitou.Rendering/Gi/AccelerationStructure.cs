@@ -127,7 +127,7 @@ public sealed unsafe class AccelerationStructure : IDisposable
                         VertexData = new DeviceOrHostAddressConstKHR { DeviceAddress = g.VertexAddress },
                         VertexStride = g.VertexStride,
                         MaxVertex = Math.Max(g.VertexCount, 1) - 1,
-                        IndexType = IndexType.Uint32,
+                        IndexType = Silk.NET.Vulkan.IndexType.Uint32,
                         IndexData = new DeviceOrHostAddressConstKHR { DeviceAddress = g.IndexAddress },
                     },
                 },

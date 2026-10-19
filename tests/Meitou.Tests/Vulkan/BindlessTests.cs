@@ -78,7 +78,7 @@ public class BindlessTests
             ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, program.Name));
         using (new GpuPass(frame, cmd, program.Name, [new PassUse(target, Access.ColourTarget)]))
         {
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), AttachmentLoadOp.DontCare, default, target.Image), default, target.Desc.Width, target.Desc.Height));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.DontCare, default, Image: target.Image), default, target.Desc.Width, target.Desc.Height));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, target.Desc.Width, target.Desc.Height);
             cmd.BindSets(program.Layout, 0, [ctx.Bindless.Set], []);

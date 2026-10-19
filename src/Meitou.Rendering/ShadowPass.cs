@@ -191,8 +191,8 @@ public sealed unsafe partial class ShadowPass : IDisposable
         var cmd = Gpu.BeginNative(label);
         var map = target ?? atlas!;
         var t = PassTargets.Of(null, map);
-        if (layer != 0) t = t with { Depth = new RenderTarget(map.Attachment(0, layer), AttachmentLoadOp.Load, default, map.Image) };
-        var depth = clear ? t.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) } : t.Depth;
+        if (layer != 0) t = t with { Depth = new RenderTarget(map.Attachment(0, layer), LoadOp.Load, default, Image: map.Image) };
+        var depth = clear ? t.Depth with { Load = LoadOp.Clear, DepthClear = 1f } : t.Depth;
         // Wave 4 (docs/renderer-native.md 6): the cascades' segments are secondaries, recorded on the job threads when the host ends.
         bool secondaries = Recording.Secondaries;
         cmd.BeginRendering(new RenderingDesc(default, depth, t.Width, t.Height), secondaries);

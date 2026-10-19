@@ -1359,7 +1359,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Cull != cull) cmd.SetRaster(cull = d.Cull, state.Front);
                 cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 if (!pushed || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in d.Push)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in last))))
                 {
                     cmd.PushConstants(layout, stages, in d.Push);

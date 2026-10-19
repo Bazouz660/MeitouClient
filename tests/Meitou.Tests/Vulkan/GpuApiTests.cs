@@ -50,8 +50,8 @@ public class GpuApiTests
         -0.2f,  0.9f, 0, 0, 1,
     ];
 
-    static RenderingDesc Target(Texture t, AttachmentLoadOp load = AttachmentLoadOp.Clear) =>
-        new(new RenderTarget(t.Attachment(), load, new ClearValue(new ClearColorValue(0f, 0f, 0f, 1f)), t.Image), default, t.Desc.Width, t.Desc.Height);
+    static RenderingDesc Target(Texture t, LoadOp load = LoadOp.Clear) =>
+        new(new RenderTarget(t.Attachment(), load, new ClearColour(0f, 0f, 0f, 1f), Image: t.Image), default, t.Desc.Width, t.Desc.Height);
 
     static void FullTargetState(CommandList cmd, int w, int h)
     {
@@ -210,7 +210,7 @@ public class GpuApiTests
             FullTargetState(cmd, 16, 8);
             cmd.BindSets(draw.Layout, 0, [ctx.Bindless.Set], []);
             cmd.PushConstants(draw.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, index);
-            cmd.BindIndexBuffer(indices.Binding(frame), IndexType.Uint32);
+            cmd.BindIndexBuffer(indices.Binding(frame), IndexKind.U32);
             cmd.DrawIndexedIndirect(args.Handle, 0, 1);
 
             // Later on the CPU, with that rendering still open: the dispatch that writes args, into the pre-frame list.

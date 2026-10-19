@@ -133,7 +133,7 @@ internal sealed class ImpostorPreview : IDisposable
                 pc.UseVertexColour = p.HasColours ? 1u : 0u;
                 cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(meshProgram.P, p.Layout, PrimitiveType.Triangles, formats, "impostor preview meshes")));
                 cmd.BindVertexBuffers(0, p.Bindings);
-                cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexType.Uint32);
+                cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
                 cmd.PushConstants(meshProgram.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
                 cmd.DrawIndexed((uint)p.Count, (uint)instances.Length);
             }
@@ -162,7 +162,7 @@ internal sealed class ImpostorPreview : IDisposable
         };
         cmd.BindPipeline(impostors.Pipeline(ImpostorProgram.Plain, state, formats));
         cmd.BindVertexBuffers(FoliageShaders.InstanceLocation, rows);
-        cmd.BindIndexBuffer(impostors.Quad, IndexType.Uint32);
+        cmd.BindIndexBuffer(impostors.Quad, IndexKind.U32);
         cmd.PushConstants(impostors.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
         cmd.DrawIndexed(6, (uint)instances.Length);
     }

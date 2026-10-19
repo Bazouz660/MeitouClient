@@ -149,7 +149,7 @@ public sealed unsafe partial class PostProcess
             l.P.Set(l.Layers, shaftsPending ? 1 : 0, fogPending ? 1 : 0, occlusion ? 1 : 0, 0);
             l.P.ApplyGlobals();
             DrawPass(l.P, sceneColour!.Attachment, sceneColour.Format,
-                layerMask.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(0f, 0)) }, layerMask.Format,
+                layerMask.Attachment with { Load = LoadOp.Clear, DepthClear = 0f }, layerMask.Format,
                 width, height, width, height, LeanState);
             if (SsaoStamps) Stamp("layers lean");
         }

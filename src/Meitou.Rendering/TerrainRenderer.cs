@@ -700,7 +700,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             cmd.BindPipeline(Pipeline);
             cmd.BindVertexBuffers(0, new ReadOnlySpan<BufferBinding>(in Vertex));
-            cmd.BindIndexBuffer(Elements, Silk.NET.Vulkan.IndexType.Uint32);
+            cmd.BindIndexBuffer(Elements, IndexKind.U32);
             var layout = Layout;
             const Silk.NET.Vulkan.ShaderStageFlags stages = Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit;
             var (counts, firsts) = (Owner.indexCounts, Owner.firstIndices);
@@ -1071,7 +1071,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Front != front) { cmd.SetFrontFace(d.Front); front = d.Front; }
                 cmd.BindVertexBuffers(0, ((ReadOnlySpan<BufferBinding>)d.Vertices)[..d.VertexCount]);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }

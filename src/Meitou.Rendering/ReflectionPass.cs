@@ -304,8 +304,8 @@ public sealed class ReflectionPass : IDisposable
         // Wave 4 (docs/renderer-native.md 6): the guests' segments are secondaries, recorded on the job threads when the pass ends.
         bool secondaries = Recording.Secondaries;
         cmd.BeginRendering(new RenderingDesc(
-            target.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 1)) },
-            target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
+            target.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 1) },
+            target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             target.Width, target.Height), secondaries);
         // What the guests draw with: the scene's state (depth tested with less-or-equal and written, no culling, blending or clamp, every channel).
         // The sky turns the depth test off for itself.

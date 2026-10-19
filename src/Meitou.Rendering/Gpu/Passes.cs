@@ -23,7 +23,7 @@ public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, Attach
     {
         var any = colour ?? depth ?? throw new ArgumentException("a pass needs an attachment");
         int w = any.Desc.Width, h = any.Desc.Height;
-        static RenderTarget Target(Texture? t) => t is null ? default : new RenderTarget(t.Attachment(), AttachmentLoadOp.Load, default, t.Image);
+        static RenderTarget Target(Texture? t) => t is null ? default : new RenderTarget(t.Attachment(), LoadOp.Load, default, Image: t.Image);
         var formats = new AttachmentFormats(colour?.Desc.Format ?? InternalFormat.None, depth?.Desc.Format ?? InternalFormat.None, any.Desc.Samples, Extra: extra?.Desc.Format ?? InternalFormat.None);
         return new PassTargets(Target(colour), Target(depth), formats, w, h, new PixelViewport(0, 0, w, h, 0, 1), Whole(w, h), Target(extra));
     }
