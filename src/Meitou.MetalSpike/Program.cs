@@ -100,6 +100,14 @@ samplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
 samplerDescriptor.MagFilter = MTLSamplerMinMagFilter.Linear;
 var sampler = device.NewSamplerState(samplerDescriptor);
 
+// The uniform block (std140) and the storage table (std430), both CPU-writable, bound at the
+// indices the SPIR-V bindings asked for: buffer(1) for the uniform block, buffer(2) for the table.
+var globals = device.NewBuffer(32, MTLResourceOptions.ResourceStorageModeShared);
+var table = device.NewBuffer(4 * 16, MTLResourceOptions.ResourceStorageModeShared);
+var tableItems = new[] { 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 1f, 1f, 0f, 0f };
+Marshal.Copy(ToBytes(tableItems), 0, table.Contents, tableItems.Length * 4);
+table.DidModifyRange(new NSRange { location = 0, length = (ulong)(tableItems.Length * 4) });
+
 var frames = 0;
 
 unsafe
@@ -150,6 +158,15 @@ unsafe
         encoder.SetRenderPipelineState(pipeline);
         encoder.SetFragmentTexture(texture, 0);
         encoder.SetFragmentSamplerState(sampler, 0);
+        encoder.SetFragmentBuffer(globals, 0, 1);
+        encoder.SetFragmentBuffer(table, 0, 2);
+
+        // The uniform block, rewritten per frame: std140 puts the vec4 tint first, the float after.
+        var time = (float)clock.Elapsed.TotalSeconds;
+        var uniform = new[] { 1.00f, 0.95f, 0.90f, 1.00f, time, 0f, 0f, 0f };
+        Marshal.Copy(ToBytes(uniform), 0, globals.Contents, uniform.Length * 4);
+        globals.DidModifyRange(new NSRange { location = 0, length = (ulong)(uniform.Length * 4) });
+
         encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);
         encoder.EndEncoding();
         cmd.PresentDrawable(drawable);
@@ -176,15 +193,25 @@ static List<(string Name, string Msl)> TranslateShaders(string shaderDir)
 
         Run("glslangValidator", $"-V --target-env vulkan1.1 \"{source}\" -o \"{spirv}\"");
         var entry = stage == "vert" ? "vertex_main" : "fragment_main";
-        Run("spirv-cross", $"--msl --msl-version 20100 --rename-entry-point main {entry} {stage} \"{spirv}\" --output \"{metal}\"");
+        // --msl-decoration-binding keeps the MSL resource indices equal to the SPIR-V binding
+        // numbers, so a Metal backend can mirror the Vulkan binding scheme instead of carrying a
+        // per-shader mapping table (without it spirv-cross renumbers by its own traversal order).
+        Run("spirv-cross", $"--msl --msl-version 20100 --msl-decoration-binding --rename-entry-point main {entry} {stage} \"{spirv}\" --output \"{metal}\"");
 
         stages.Add((stage, File.ReadAllText(metal)));
     }
     return stages;
 }
 
-static void Run(string file, string arguments)
+static byte[] ToBytes(float[] values)
 {
+    var bytes = new byte[values.Length * 4];
+    for (int i = 0; i < values.Length; i++)
+        BitConverter.GetBytes(values[i]).CopyTo(bytes, i * 4);
+    return bytes;
+}
+
+static void Run(string file, string arguments){
     var info = new ProcessStartInfo(file, arguments) { RedirectStandardError = true, RedirectStandardOutput = true };
     using var process = Process.Start(info) ?? throw new InvalidOperationException($"{file} did not start");
     var stdout = process.StandardOutput.ReadToEnd();
