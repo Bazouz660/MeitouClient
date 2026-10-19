@@ -14,6 +14,7 @@ renderer against Metal?" is measured rather than guessed.
 | 1 | The shader chain: GLSL -> SPIR-V (glslang) -> MSL (spirv-cross) -> runtime compile, with a sampled texture | works |
 | 2 | The engine's binding pattern: uniform block (std140), storage table (std430) indexed dynamically, sampled texture | works |
 | 3 | A texture table whose layer is picked at runtime - the capability the engine's sampler arrays need | works |
+| 4 | A compute pass writing an rgba16f storage image, sampled back by the fragment stage - the ocean FFT / Hi-Z shape | works |
 
 Findings worth keeping:
 
@@ -62,6 +63,22 @@ So the port needs one **engine-side** change: the shader compiler rewrites `samp
 into `texture2D table[]` plus a shared sampler. That fits the engine's existing compiler, which
 already rewrites sources (interface locations, per-stage bindings). The alternative, a texture
 array per table, only works for tables that share a size and a format.
+
+## Compute and barriers
+
+The engine's ocean FFT, Hi-Z pyramid and fog passes are compute passes that write storage
+images. On this M1 Pro:
+
+- writing **rgba16f** storage images works, and the result reads back cleanly;
+- a compute pass and the render pass that samples it need **no explicit barrier** between them -
+  Apple silicon's automatic hazard tracking (`MTLHazardTrackingModeTracked`, the default) already
+  orders them. That is the opposite of Vulkan, where the engine records explicit barrier graphs.
+
+This matters more than it looks: the "barriers become encoder boundaries" step was the riskiest
+part of a Metal backend, and on Apple silicon most of it disappears - the engine's barrier graphs
+would mostly become "use the right encoder order", with `MemoryBarrier(MTLBarrierScope)` (in
+SharpMetal) for the cases that still need one. On other Apple GPUs (and any future non-Apple
+Metal target) the automatic tracking is not there, and this part of the work comes back.
 
 ## Not proved yet (the remaining risk)
 

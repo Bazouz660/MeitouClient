@@ -49,6 +49,27 @@ foreach (var stage in stages)
 }
 var vertexFunction = libraries[0].Library.NewFunction((NSString)"vertex_main");
 var fragmentFunction = libraries[1].Library.NewFunction((NSString)"fragment_main");
+var computeFunction = libraries[2].Library.NewFunction((NSString)"compute_main");
+
+// A compute pipeline over a storage image: the engine's ocean FFT, Hi-Z pyramid and fog passes
+// are all of this shape. The target is rgba16f, written by the compute pass and sampled back.
+var computeDescriptor = new MTLComputePipelineDescriptor(
+    new ObjectiveCClass(ObjectiveC.objc_getClass("MTLComputePipelineDescriptor")).AllocInit());
+computeDescriptor.ComputeFunction = computeFunction;
+NSError computeError = default;
+var computePipeline = device.NewComputePipelineState(computeDescriptor, MTLPipelineOption.None, IntPtr.Zero, ref computeError);
+if (computeError.NativePtr != IntPtr.Zero)
+    throw new InvalidOperationException("compute pipeline failed");
+
+var computedDescriptor = new MTLTextureDescriptor(
+    new ObjectiveCClass(ObjectiveC.objc_getClass("MTLTextureDescriptor")).AllocInit());
+computedDescriptor.TextureType = MTLTextureType.Type2D;
+computedDescriptor.PixelFormat = MTLPixelFormat.RGBA16Float;
+computedDescriptor.Width = 64;
+computedDescriptor.Height = 64;
+computedDescriptor.StorageMode = MTLStorageMode.Private;
+computedDescriptor.Usage = MTLTextureUsage.ShaderRead | MTLTextureUsage.ShaderWrite;
+var computed = device.NewTexture(computedDescriptor);
 
 var pipelineDescriptor = new MTLRenderPipelineDescriptor(
     new ObjectiveCClass(ObjectiveC.objc_getClass("MTLRenderPipelineDescriptor")).AllocInit());
@@ -178,6 +199,17 @@ unsafe
         if (drawable.DrawableID == 0) return;
 
         var cmd = queue.CommandBuffer();
+
+        // The compute pass first, into the storage image the fragment stage samples.
+        var computeEncoder = cmd.ComputeCommandEncoder();
+        computeEncoder.SetComputePipelineState(computePipeline);
+        computeEncoder.SetTexture(computed, 0);
+        computeEncoder.SetBuffer(table, 0, 1);
+        computeEncoder.DispatchThreadgroups(
+            new MTLSize { width = 8, height = 8, depth = 1 },
+            new MTLSize { width = 8, height = 8, depth = 1 });
+        computeEncoder.EndEncoding();
+
         var rpdPtr = ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor");
         var rpd = new MTLRenderPassDescriptor(rpdPtr);
         var colorAttachment = rpd.ColorAttachments.Object(0);
@@ -200,6 +232,8 @@ unsafe
         encoder.SetFragmentBuffer(table, 0, 2);
         encoder.SetFragmentTexture(layers, 3);
         encoder.SetFragmentSamplerState(sampler, 3);
+        encoder.SetFragmentTexture(computed, 4);
+        encoder.SetFragmentSamplerState(sampler, 4);
 
         // The uniform block, rewritten per frame: std140 puts the vec4 tint first, the float after.
         var time = (float)clock.Elapsed.TotalSeconds;
@@ -225,14 +259,19 @@ Console.WriteLine($"spike ok: {frames} frames presented (glsl -> spirv -> msl, s
 static List<(string Name, string Msl)> TranslateShaders(string shaderDir)
 {
     var stages = new List<(string Name, string Msl)>();
-    foreach (var stage in new[] { "vert", "frag" })
+    foreach (var stage in new[] { "vert", "frag", "comp" })
     {
         var source = Path.Combine(shaderDir, $"spike.{stage}");
         var spirv = Path.Combine(Path.GetTempPath(), $"spike.{stage}.spv");
         var metal = Path.Combine(Path.GetTempPath(), $"spike.{stage}.metal");
 
         Run("glslangValidator", $"-V --target-env vulkan1.1 \"{source}\" -o \"{spirv}\"");
-        var entry = stage == "vert" ? "vertex_main" : "fragment_main";
+        var entry = stage switch
+        {
+            "vert" => "vertex_main",
+            "frag" => "fragment_main",
+            _ => "compute_main",
+        };
         // --msl-decoration-binding keeps the MSL resource indices equal to the SPIR-V binding
         // numbers, so a Metal backend can mirror the Vulkan binding scheme instead of carrying a
         // per-shader mapping table (without it spirv-cross renumbers by its own traversal order).

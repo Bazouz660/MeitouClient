@@ -1,11 +1,12 @@
 #version 450 core
 
 // The engine's binding pattern in miniature: a uniform block (globals), a storage buffer table
-// (the bindless-ish tables the renderer indexes), a sampled texture, and a texture table whose
-// layer is picked at runtime - the capability the engine's runtime-sized sampler arrays need.
+// (the bindless-ish tables the renderer indexes), a sampled texture, a texture table whose
+// layer is picked at runtime, and the output of a compute pass.
 layout(location = 0) in vec2 vUv;
 layout(binding = 0) uniform sampler2D uTex;
 layout(binding = 3) uniform sampler2DArray uLayers;
+layout(binding = 4) uniform sampler2D uComputed;
 
 layout(std140, binding = 1) uniform Globals
 {
@@ -31,5 +32,8 @@ void main()
     // Dynamic layer of the texture table: the same shape as a bindless table, indexed at runtime.
     vec4 layer = texture(uLayers, vec3(vUv, float(index)));
 
-    oColor = vec4(base.rgb * u.tint.rgb * pulse, 1.0) + pick * 0.25 + layer * 0.5;
+    // The compute pass's output, sampled back.
+    vec4 computed = texture(uComputed, vUv);
+
+    oColor = vec4(base.rgb * u.tint.rgb * pulse, 1.0) + pick * 0.25 + layer * 0.5 + computed * 0.6;
 }
