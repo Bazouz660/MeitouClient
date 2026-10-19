@@ -13,6 +13,7 @@ renderer against Metal?" is measured rather than guessed.
 | 0 | C# -> SharpMetal -> `CAMetalLayer` on the GLFW window: device, layer, clear, present | works |
 | 1 | The shader chain: GLSL -> SPIR-V (glslang) -> MSL (spirv-cross) -> runtime compile, with a sampled texture | works |
 | 2 | The engine's binding pattern: uniform block (std140), storage table (std430) indexed dynamically, sampled texture | works |
+| 3 | A texture table whose layer is picked at runtime - the capability the engine's sampler arrays need | works |
 
 Findings worth keeping:
 
@@ -30,6 +31,37 @@ Findings worth keeping:
   function from one and the fragment function from the other.
 - The `CAMetalLayer` needs `setAutoresizingMask:` (width|height sizable) to fill the content view;
   its drawable size then follows the view's bounds times the scale factor, retina included.
+
+## The bindless tables: the one that needed real digging
+
+The engine declares its runtime-sized tables as **arrays of combined image samplers**
+(`DescriptorType.CombinedImageSampler` with an `ArrayLength`). Metal has no such thing, and
+spirv-cross walks the whole path to say so:
+
+1. a runtime-sized descriptor array needs argument buffer tier 2 ->
+   `--msl-argument-buffers --msl-argument-buffer-tier 1`
+2. a runtime-sized argument buffer must live in the device address space ->
+   `--msl-device-argument-buffer 0`
+3. mutable descriptor aliasing needs Metal 3 -> `--msl-version 30000` (macOS 13+)
+4. and then: **"Argument buffer runtime array currently not supported for combined image
+   sampler"** - the engine's exact model.
+
+The way through is to declare the table as **separate textures plus a shared sampler**
+(`uniform texture2D uTexs[]; uniform sampler uSamp;`). spirv-cross then emits
+
+```metal
+struct spvDescriptorSetBuffer0 {
+    spvDescriptor<texture2d<float>> uTexs [[id(0)]][1] /* unsized array hack */;
+};
+```
+
+- a device-side descriptor array, indexed dynamically, with the sampler folded into the
+  descriptor ("Overlapping binding: sampler uSamp [[id(0)]]").
+
+So the port needs one **engine-side** change: the shader compiler rewrites `sampler2D table[]`
+into `texture2D table[]` plus a shared sampler. That fits the engine's existing compiler, which
+already rewrites sources (interface locations, per-stage bindings). The alternative, a texture
+array per table, only works for tables that share a size and a format.
 
 ## Not proved yet (the remaining risk)
 
