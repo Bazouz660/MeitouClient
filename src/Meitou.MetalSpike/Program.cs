@@ -115,6 +115,69 @@ texture.ReplaceRegion(
     4 * 4);
 Marshal.FreeHGlobal(pixelBytes);
 
+var tableColors = new[]
+{
+    new byte[] { 255, 255, 255, 255 },
+    new byte[] { 255, 120, 0, 255 },
+    new byte[] { 0, 255, 255, 255 },
+    new byte[] { 255, 0, 255, 255 },
+};
+
+// The bindless table: separate textures and separate samplers, both indexed at runtime - the
+// engine's set 1. On Metal 3 (Apple silicon) this is the model MoltenVK uses too: a buffer of
+// resource handles, and an argument buffer that holds the address of that buffer.
+var tableTextures = new MTLTexture[tableColors.Length];
+var tableSamplers = new MTLSamplerState[tableColors.Length];
+for (int i = 0; i < tableColors.Length; i++)
+{
+    var tableTextureDescriptor = new MTLTextureDescriptor(
+        new ObjectiveCClass(ObjectiveC.objc_getClass("MTLTextureDescriptor")).AllocInit());
+    tableTextureDescriptor.TextureType = MTLTextureType.Type2D;
+    tableTextureDescriptor.PixelFormat = MTLPixelFormat.RGBA8Unorm;
+    tableTextureDescriptor.Width = 4;
+    tableTextureDescriptor.Height = 4;
+    tableTextureDescriptor.StorageMode = MTLStorageMode.Shared;
+    tableTextureDescriptor.Usage = MTLTextureUsage.ShaderRead;
+    var tableTexture = device.NewTexture(tableTextureDescriptor);
+
+    var bytes = new byte[4 * 4 * 4];
+    for (int p = 0; p < 4 * 4; p++)
+        Array.Copy(tableColors[i], 0, bytes, p * 4, 4);
+    var tablePixelBytes = Marshal.AllocHGlobal(bytes.Length);
+    Marshal.Copy(bytes, 0, tablePixelBytes, bytes.Length);
+    tableTexture.ReplaceRegion(
+        new MTLRegion { origin = new MTLOrigin { x = 0, y = 0, z = 0 }, size = new MTLSize { width = 4, height = 4, depth = 1 } },
+        0,
+        tablePixelBytes,
+        4 * 4);
+    Marshal.FreeHGlobal(tablePixelBytes);
+
+    var tableSamplerDescriptor = new MTLSamplerDescriptor(
+        new ObjectiveCClass(ObjectiveC.objc_getClass("MTLSamplerDescriptor")).AllocInit());
+    tableSamplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
+    tableSamplerDescriptor.MagFilter = MTLSamplerMinMagFilter.Linear;
+
+    tableTextures[i] = tableTexture;
+    tableSamplers[i] = device.NewSamplerState(tableSamplerDescriptor);
+}
+
+// The handles: the argument buffer holds the table's arrays and the pointers to them, the way
+// MoltenVK does it (the arrays live in the same buffer, at an offset the struct points at).
+var handleCount = tableTextures.Length;
+var tableArrayOffset = 16;
+var samplerArrayOffset = tableArrayOffset + handleCount * 8;
+var argumentBuffer = device.NewBuffer((ulong)(samplerArrayOffset + handleCount * 8), MTLResourceOptions.ResourceStorageModeShared);
+for (int i = 0; i < handleCount; i++)
+{
+    Marshal.WriteInt64(argumentBuffer.Contents + tableArrayOffset + i * 8, (long)tableTextures[i].GpuResourceID._impl);
+    Marshal.WriteInt64(argumentBuffer.Contents + samplerArrayOffset + i * 8, (long)tableSamplers[i].GpuResourceID._impl);
+}
+// The struct's two pointers: the addresses of the two arrays inside this buffer.
+Marshal.WriteInt64(argumentBuffer.Contents, (long)(argumentBuffer.GpuAddress + (ulong)tableArrayOffset));
+Marshal.WriteInt64(argumentBuffer.Contents + 8, (long)(argumentBuffer.GpuAddress + (ulong)samplerArrayOffset));
+argumentBuffer.DidModifyRange(new NSRange { location = 0, length = (ulong)(samplerArrayOffset + handleCount * 8) });
+Console.WriteLine($"addresses  arg={argumentBuffer.GpuAddress:x} table=+{tableArrayOffset} samplers=+{samplerArrayOffset} tex0={tableTextures[0].GpuResourceID._impl:x} samp0={tableSamplers[0].GpuResourceID._impl:x}");
+
 var samplerDescriptor = new MTLSamplerDescriptor(
     new ObjectiveCClass(ObjectiveC.objc_getClass("MTLSamplerDescriptor")).AllocInit());
 samplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
@@ -191,12 +254,22 @@ unsafe
     layer.PixelFormat = MTLPixelFormat.BGRA8Unorm;
     layer.FramebufferOnly = true;
 
+    // The layer's drawable size follows its bounds, which follow the view's - but the view has
+    // no bounds yet while the window is being created, so the size has to be set from the
+    // window's own size (points) times the scale factor. Without it the drawable is 1x1.
+    Console.WriteLine($"window    {window.Position.X},{window.Position.Y} {opts.Size.X}x{opts.Size.Y}");
+
+    // Bring the app to the front, so a screenshot of the screen shows the window.
+    var app = ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("NSApplication"), "sharedApplication");
+    ObjectiveC.objc_msgSend(app, "activateIgnoringOtherApps:", true);
+
     var clock = Stopwatch.StartNew();
 
     window.Render += deltaTime =>
     {
         var drawable = layer.NextDrawable;
         if (drawable.DrawableID == 0) return;
+        if (frames == 0) Console.WriteLine($"drawable  {drawable.Texture.Width}x{drawable.Texture.Height}");
 
         var cmd = queue.CommandBuffer();
 
@@ -212,7 +285,11 @@ unsafe
 
         var rpdPtr = ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor");
         var rpd = new MTLRenderPassDescriptor(rpdPtr);
-        var colorAttachment = rpd.ColorAttachments.Object(0);
+        // The attachments come back as a struct copy, so a value-type property (the clear colour)
+        // has to be written back into the array - otherwise the pass clears to whatever the
+        // descriptor's memory happened to hold.
+        var attachments = rpd.ColorAttachments;
+        var colorAttachment = attachments.Object(0);
         colorAttachment.Texture = drawable.Texture;
         colorAttachment.LoadAction = MTLLoadAction.Clear;
         colorAttachment.StoreAction = MTLStoreAction.Store;
@@ -223,6 +300,7 @@ unsafe
             blue = 0.12,
             alpha = 1.0,
         };
+        attachments.SetObject(colorAttachment, 0);
 
         var encoder = cmd.RenderCommandEncoder(rpd);
         encoder.SetRenderPipelineState(pipeline);
@@ -234,6 +312,8 @@ unsafe
         encoder.SetFragmentSamplerState(sampler, 3);
         encoder.SetFragmentTexture(computed, 4);
         encoder.SetFragmentSamplerState(sampler, 4);
+        // The bindless table's argument buffer, at the buffer index the shader declares it.
+        encoder.SetFragmentBuffer(argumentBuffer, 0, 6);
 
         // The uniform block, rewritten per frame: std140 puts the vec4 tint first, the float after.
         var time = (float)clock.Elapsed.TotalSeconds;
@@ -275,7 +355,15 @@ static List<(string Name, string Msl)> TranslateShaders(string shaderDir)
         // --msl-decoration-binding keeps the MSL resource indices equal to the SPIR-V binding
         // numbers, so a Metal backend can mirror the Vulkan binding scheme instead of carrying a
         // per-shader mapping table (without it spirv-cross renumbers by its own traversal order).
-        Run("spirv-cross", $"--msl --msl-version 20100 --msl-decoration-binding --rename-entry-point main {entry} {stage} \"{spirv}\" --output \"{metal}\"");
+        //
+        // The bindless table (set 6) goes into a tier-2 argument buffer in the device address
+        // space; set 0 stays a set of ordinary bindings (--msl-discrete-descriptor-set 0). The
+        // argument buffer takes the buffer index of its descriptor set, so the table's set must
+        // not collide with the binding numbers of set 0 (0 to 4 here).
+        var argumentBuffers = stage == "frag"
+            ? " --msl-argument-buffers --msl-argument-buffer-tier 1 --msl-device-argument-buffer 6 --msl-discrete-descriptor-set 0"
+            : "";
+        Run("spirv-cross", $"--msl --msl-version 30000 --msl-decoration-binding{argumentBuffers} --rename-entry-point main {entry} {stage} \"{spirv}\" --output \"{metal}\"");
 
         stages.Add((stage, File.ReadAllText(metal)));
     }

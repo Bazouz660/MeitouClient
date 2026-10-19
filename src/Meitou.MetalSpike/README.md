@@ -15,6 +15,7 @@ renderer against Metal?" is measured rather than guessed.
 | 2 | The engine's binding pattern: uniform block (std140), storage table (std430) indexed dynamically, sampled texture | works |
 | 3 | A texture table whose layer is picked at runtime - the capability the engine's sampler arrays need | works |
 | 4 | A compute pass writing an rgba16f storage image, sampled back by the fragment stage - the ocean FFT / Hi-Z shape | works |
+| 5 | The bindless table itself: separate textures and separate samplers, both indexed at runtime, in a tier-2 argument buffer | works |
 
 Findings worth keeping:
 
@@ -63,6 +64,51 @@ So the port needs one **engine-side** change: the shader compiler rewrites `samp
 into `texture2D table[]` plus a shared sampler. That fits the engine's existing compiler, which
 already rewrites sources (interface locations, per-stage bindings). The alternative, a texture
 array per table, only works for tables that share a size and a format.
+
+### The recipe (stage 5, working)
+
+Translation, per stage:
+
+```
+spirv-cross --msl --msl-version 30000 --msl-decoration-binding \
+  --msl-argument-buffers --msl-argument-buffer-tier 1 \
+  --msl-device-argument-buffer <set> --msl-discrete-descriptor-set 0 \
+  --rename-entry-point main <entry> <stage> in.spv --output out.metal
+```
+
+- The table's descriptor set goes into a **tier-2 argument buffer in the device address
+  space**; the other set stays a set of ordinary bindings.
+- The argument buffer **takes the buffer index of its descriptor set**, so that set's number
+  must not collide with the binding numbers of the ordinary set (the table is in set 6 here,
+  because the ordinary set uses 0 to 4).
+- The MSL that comes out declares the table as a device-side descriptor array:
+
+  ```metal
+  struct spvDescriptorSetBuffer6 {
+      spvDescriptor<texture2d<float>> uTable [[id(0)]][1] /* unsized array hack */;
+      spvDescriptor<sampler> uSamplers [[id(1)]][1] /* unsized array hack */;
+  };
+  fragment fragment_main_out fragment_main(..., const device spvDescriptorSetBuffer6& s [[buffer(6)]])
+  ```
+
+Runtime, the way MoltenVK does it on Metal 3:
+
+- one **shared** buffer holds the argument buffer: the two pointers (to the texture handle
+  array and to the sampler handle array) followed by the handles themselves;
+- a texture's handle is `MTLTexture.gpuResourceID`, a sampler's is `MTLSamplerState.gpuResourceID`
+  (both exposed by SharpMetal), and a buffer's address is `MTLBuffer.gpuAddress`;
+- the array addresses point **into the same buffer** at an offset. Keeping the arrays in
+  separate buffers faults the GPU; inside one buffer it works, which is what MoltenVK's
+  "outlined data" case does.
+
+Two sharp edges worth knowing:
+
+- `MTLRenderPassDescriptor.ColorAttachments.Object(0)` returns a **struct copy**: a
+  value-type property (the clear colour) set on the copy is lost, and the pass then clears to
+  whatever the descriptor's memory held. Write it back with `SetObject`.
+- The `CAMetalLayer`'s drawable size follows the view's bounds, and the view has no bounds yet
+  while the window is being created - set the size from the window's size times the scale
+  factor, or the drawable comes out 1x1 and the window shows one magnified pixel.
 
 ## Compute and barriers
 

@@ -1,12 +1,17 @@
 #version 450 core
+#extension GL_EXT_nonuniform_qualifier : require
 
 // The engine's binding pattern in miniature: a uniform block (globals), a storage buffer table
 // (the bindless-ish tables the renderer indexes), a sampled texture, a texture table whose
-// layer is picked at runtime, and the output of a compute pass.
+// layer is picked at runtime, the output of a compute pass, and the bindless table itself -
+// separate textures and separate samplers, indexed at runtime, the way the engine's set 1 is.
 layout(location = 0) in vec2 vUv;
 layout(binding = 0) uniform sampler2D uTex;
 layout(binding = 3) uniform sampler2DArray uLayers;
 layout(binding = 4) uniform sampler2D uComputed;
+
+layout(set = 6, binding = 0) uniform texture2D uTable[];
+layout(set = 6, binding = 1) uniform sampler uSamplers[];
 
 layout(std140, binding = 1) uniform Globals
 {
@@ -35,5 +40,8 @@ void main()
     // The compute pass's output, sampled back.
     vec4 computed = texture(uComputed, vUv);
 
-    oColor = vec4(base.rgb * u.tint.rgb * pulse, 1.0) + pick * 0.25 + layer * 0.5 + computed * 0.6;
+    // The bindless table: a texture and a sampler, both picked at runtime.
+    vec4 entry = texture(sampler2D(uTable[nonuniformEXT(index)], uSamplers[nonuniformEXT(index)]), vUv);
+
+    oColor = vec4(base.rgb * u.tint.rgb * pulse, 1.0) + pick * 0.25 + layer * 0.5 + computed * 0.4 + entry * 0.6;
 }
