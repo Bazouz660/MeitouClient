@@ -3,6 +3,8 @@
 Contact session: 2026-10-19, report compile same day. Written by an external tester working
 with the maintainer; intended to be hand-off-able to an AI agent or another person.
 
+A native Metal path next to Vulkan: [metal-backend](metal-backend.md).
+
 ## TL;DR
 
 `MeitouClient` runs on macOS / Apple Silicon today, with **25 inserted lines across 4 files**.

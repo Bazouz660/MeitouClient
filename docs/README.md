@@ -14,6 +14,8 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [character-viewer](character-viewer.md)
 - [characters](characters.md)
 - [impostors](impostors.md)
+- [macos-port](macos-port.md): the macOS port (MoltenVK), what it needed and what it cost
+- [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
 - [render-clouds](render-clouds.md)
