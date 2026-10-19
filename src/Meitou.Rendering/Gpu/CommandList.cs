@@ -10,15 +10,15 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>An attachment of a <see cref="RenderingDesc"/>: a view in GENERAL layout, its load op and clear value (stores always).</summary>
-public readonly record struct RenderTarget(ImageView View, LoadOp Load = LoadOp.Load, ClearColour Clear = default, float DepthClear = 1f, Image Image = default)
+public readonly record struct RenderTarget(GpuView View, LoadOp Load = LoadOp.Load, ClearColour Clear = default, float DepthClear = 1f, Image Image = default)
 {
-    public bool IsNull => View.Handle == 0;
+    public bool IsNull => View.IsNull;
 }
 
 /// <summary>What <see cref="CommandList.BeginRendering"/> renders into: up to one colour and one depth attachment over an area, optionally a second colour attachment
 /// (<c>Extra</c>, location 1: the GI resolve's surface target, docs/render-gi.md) and a fragment shading rate attachment (<c>ShadingRate</c>, an R8_UINT view in GENERAL
 /// layout whose texels are <c>ShadingRateTexel</c> pixels on a side; the pipelines must have been made for it, <see cref="AttachmentFormats.ShadingRate"/>).</summary>
-public readonly record struct RenderingDesc(RenderTarget Colour, RenderTarget Depth, int Width, int Height, int X = 0, int Y = 0, ImageView ShadingRate = default, int ShadingRateTexel = 0, RenderTarget Extra = default);
+public readonly record struct RenderingDesc(RenderTarget Colour, RenderTarget Depth, int Width, int Height, int X = 0, int Y = 0, GpuView ShadingRate = default, int ShadingRateTexel = 0, RenderTarget Extra = default);
 
 /// <summary>
 /// A command buffer being recorded (docs/renderer-native.md 2.7). Thin: every method records what it says. It keeps only a redundancy
@@ -119,32 +119,32 @@ public sealed unsafe class CommandList
         var colours = stackalloc RenderingAttachmentInfo[2];
         colours[0] = new RenderingAttachmentInfo
         {
-            SType = StructureType.RenderingAttachmentInfo, ImageView = d.Colour.View, ImageLayout = ImageLayout.General,
+            SType = StructureType.RenderingAttachmentInfo, ImageView = device.ViewAt(d.Colour.View.Index), ImageLayout = ImageLayout.General,
             LoadOp = GlConventions.VkLoadOp(d.Colour.Load), StoreOp = AttachmentStoreOp.Store,
             ClearValue = new ClearValue(new ClearColorValue(d.Colour.Clear.R, d.Colour.Clear.G, d.Colour.Clear.B, d.Colour.Clear.A)),
         };
         colours[1] = new RenderingAttachmentInfo
         {
-            SType = StructureType.RenderingAttachmentInfo, ImageView = d.Extra.View, ImageLayout = ImageLayout.General,
+            SType = StructureType.RenderingAttachmentInfo, ImageView = device.ViewAt(d.Extra.View.Index), ImageLayout = ImageLayout.General,
             LoadOp = GlConventions.VkLoadOp(d.Extra.Load), StoreOp = AttachmentStoreOp.Store,
             ClearValue = new ClearValue(new ClearColorValue(d.Extra.Clear.R, d.Extra.Clear.G, d.Extra.Clear.B, d.Extra.Clear.A)),
         };
         uint colourCount = d.Colour.IsNull ? 0u : d.Extra.IsNull ? 1u : 2u;
         var depth = new RenderingAttachmentInfo
         {
-            SType = StructureType.RenderingAttachmentInfo, ImageView = d.Depth.View, ImageLayout = ImageLayout.General,
+            SType = StructureType.RenderingAttachmentInfo, ImageView = device.ViewAt(d.Depth.View.Index), ImageLayout = ImageLayout.General,
             LoadOp = GlConventions.VkLoadOp(d.Depth.Load), StoreOp = AttachmentStoreOp.Store,
             ClearValue = new ClearValue(depthStencil: new ClearDepthStencilValue(d.Depth.DepthClear, 0)),
         };
         var rate = new RenderingFragmentShadingRateAttachmentInfoKHR
         {
-            SType = StructureType.RenderingFragmentShadingRateAttachmentInfoKhr, ImageView = d.ShadingRate, ImageLayout = ImageLayout.General,
+            SType = StructureType.RenderingFragmentShadingRateAttachmentInfoKhr, ImageView = device.ViewAt(d.ShadingRate.Index), ImageLayout = ImageLayout.General,
             ShadingRateAttachmentTexelSize = new Extent2D((uint)d.ShadingRateTexel, (uint)d.ShadingRateTexel),
         };
         var info = new RenderingInfo
         {
             SType = StructureType.RenderingInfo,
-            PNext = d.ShadingRate.Handle != 0 ? &rate : null,
+            PNext = !d.ShadingRate.IsNull ? &rate : null,
             Flags = secondaries ? RenderingFlags.ContentsSecondaryCommandBuffersBit : 0,
             RenderArea = new Rect2D(new Offset2D(d.X, d.Y), new Extent2D((uint)d.Width, (uint)d.Height)),
             LayerCount = 1,
@@ -343,7 +343,7 @@ public sealed unsafe class CommandList
             {
                 case GpuBindingKind.Sampled:
                 case GpuBindingKind.StorageImage:
-                    images[i] = new DescriptorImageInfo(device.SamplerAt(b.Texture.Sampler.Index), b.Texture.View, ImageLayout.General);
+                    images[i] = new DescriptorImageInfo(device.SamplerAt(b.Texture.Sampler.Index), device.ViewAt(b.Texture.View.Index), ImageLayout.General);
                     writes[i].DescriptorType = b.Kind == GpuBindingKind.Sampled ? DescriptorType.CombinedImageSampler : DescriptorType.StorageImage;
                     writes[i].PImageInfo = &images[i];
                     break;

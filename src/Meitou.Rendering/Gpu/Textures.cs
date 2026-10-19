@@ -19,13 +19,13 @@ public sealed record TextureDesc(InternalFormat Format, int Width, int Height, i
 
 /// <summary>A texture as a draw samples it: the sampler and the view (combined image sampler, GENERAL layout). <see cref="Image"/> is
 /// for logs and barriers.</summary>
-public readonly record struct SampledTexture(GpuSampler Sampler, ImageView View, Image Image)
+public readonly record struct SampledTexture(GpuSampler Sampler, GpuView View, Image Image)
 {
-    public bool IsNull => View.Handle == 0;
+    public bool IsNull => View.IsNull;
 
     // By handle: Silk.NET's handle structs are not IEquatable, so the generated equality boxed each of them (on every Bindless call).
-    public bool Equals(SampledTexture other) => Sampler == other.Sampler && View.Handle == other.View.Handle && Image.Handle == other.Image.Handle;
-    public override int GetHashCode() => HashCode.Combine(Sampler, View.Handle, Image.Handle);
+    public bool Equals(SampledTexture other) => Sampler == other.Sampler && View == other.View && Image.Handle == other.Image.Handle;
+    public override int GetHashCode() => HashCode.Combine(Sampler, View, Image.Handle);
 }
 
 /// <summary>
@@ -36,10 +36,10 @@ public sealed unsafe class Texture : IDisposable
 {
     readonly VulkanDevice device;
     readonly GpuImage? owned;
-    readonly Func<int, int, int, int, ImageView>? attachmentViews;   // borrowed: VkGl's attachment views (level, 1, layer, 1)
-    readonly Dictionary<(int, int, int, int, ImageViewType, int), ImageView> views = [];   // the last: the swizzle, packed (a ComponentMapping key was boxed twice per lookup, 130 MB in a minute of flight)
+    readonly Func<int, int, int, int, GpuView>? attachmentViews;   // borrowed: VkGl's attachment views (level, 1, layer, 1)
+    readonly Dictionary<(int, int, int, int, ImageViewType, int), int> views = [];   // the last: the swizzle, packed (a ComponentMapping key was boxed twice per lookup, 130 MB in a minute of flight)
 
-    Texture(VulkanDevice device, TextureDesc desc, Image image, GpuImage? owned, Func<int, int, int, int, ImageView>? attachmentViews)
+    Texture(VulkanDevice device, TextureDesc desc, Image image, GpuImage? owned, Func<int, int, int, int, GpuView>? attachmentViews)
     {
         this.device = device;
         Desc = desc;
@@ -82,7 +82,7 @@ public sealed unsafe class Texture : IDisposable
     }
 
     /// <summary>A non-owning texture over someone else's image (the interop's export of a GL texture).</summary>
-    public static Texture Borrow(VulkanDevice device, TextureDesc desc, Image image, Func<int, int, int, int, ImageView>? attachmentViews = null) =>
+    public static Texture Borrow(VulkanDevice device, TextureDesc desc, Image image, Func<int, int, int, int, GpuView>? attachmentViews = null) =>
         new(device, desc, image, null, attachmentViews);
 
     internal static void ToGeneral(Vk vk, CommandBuffer cb, Image image, ImageAspectFlags aspect)
@@ -101,7 +101,7 @@ public sealed unsafe class Texture : IDisposable
     }
 
     /// <summary>A view of a level and layer range with a swizzle (-1 = the rest); cached on the texture.</summary>
-    public ImageView View(int baseLevel = 0, int levels = -1, int baseLayer = 0, int layers = -1, ComponentMapping swizzle = default)
+    public GpuView View(int baseLevel = 0, int levels = -1, int baseLayer = 0, int layers = -1, ComponentMapping swizzle = default)
     {
         int levelCount = levels < 0 ? Desc.Levels - baseLevel : levels;
         int totalLayers = Desc.Kind == TextureKind.Cube ? 6 * Math.Max(Desc.Layers, 1) : Desc.Layers;
@@ -115,22 +115,26 @@ public sealed unsafe class Texture : IDisposable
         return View(baseLevel, levelCount, baseLayer, layerCount, type, swizzle);
     }
 
+    /// <summary>The native view (Vulkan's): the Streamline (DLSS) path needs the handle itself, and that path is NVIDIA's.</summary>
+    public ImageView NativeView(int level = 0, int layer = 0) => device.ViewAt(Attachment(level, layer).Index);
+
     /// <summary>A one-level, one-layer 2D view to render into.</summary>
-    public ImageView Attachment(int level = 0, int layer = 0) =>
+    public GpuView Attachment(int level = 0, int layer = 0) =>
         attachmentViews is not null ? attachmentViews(level, 1, layer, 1) : View(level, 1, layer, 1, ImageViewType.Type2D, default);
 
-    ImageView View(int baseLevel, int levels, int baseLayer, int layers, ImageViewType type, ComponentMapping swizzle)
+    GpuView View(int baseLevel, int levels, int baseLayer, int layers, ImageViewType type, ComponentMapping swizzle)
     {
         var key = (baseLevel, levels, baseLayer, layers, type, (int)swizzle.R | (int)swizzle.G << 4 | (int)swizzle.B << 8 | (int)swizzle.A << 12);
-        if (views.TryGetValue(key, out var view)) return view;
+        if (views.TryGetValue(key, out var index)) return new GpuView(index);
         var info = new ImageViewCreateInfo
         {
             SType = StructureType.ImageViewCreateInfo, Image = Image, ViewType = type, Format = GlConventions.VkFormat(Desc.Format), Components = swizzle,
             SubresourceRange = new ImageSubresourceRange(Desc.Aspect, (uint)baseLevel, (uint)levels, (uint)baseLayer, (uint)layers),
         };
-        VulkanException.Check(device.Vk.CreateImageView(device.Device, &info, null, out view), "vkCreateImageView");
-        views[key] = view;
-        return view;
+        VulkanException.Check(device.Vk.CreateImageView(device.Device, &info, null, out var view), "vkCreateImageView");
+        index = device.AddView(view);
+        views[key] = index;
+        return new GpuView(index);
     }
 
     public void Dispose()
@@ -142,7 +146,7 @@ public sealed unsafe class Texture : IDisposable
         var dev = device.Device;
         device.Frames.DeferDelete(() =>
         {
-            foreach (var v in list) vk.DestroyImageView(dev, v, null);
+            foreach (var v in list) vk.DestroyImageView(dev, device.ViewAt(v), null);
             if (image is not null) device.Allocator.Free(image);
         });
     }

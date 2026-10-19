@@ -12,11 +12,11 @@ public sealed record PassTargets(RenderTarget Colour, RenderTarget Depth, Attach
     public RenderingDesc Rendering => new(Colour, Depth, Width, Height, 0, 0, ShadingRate, ShadingRateTexel, Extra);
 
     /// <summary>The fragment shading rate attachment of the rendering (an R8_UINT view; null for none) and its texel size in pixels. Set by <see cref="WithShadingRate"/>, which also marks <see cref="Formats"/>.</summary>
-    public ImageView ShadingRate { get; init; }
+    public GpuView ShadingRate { get; init; }
     public int ShadingRateTexel { get; init; }
 
     /// <summary>These targets drawn with the shading rate image <paramref name="view"/> (texels of <paramref name="texel"/> pixels): the pipelines made for them are the ones for a rendering with that attachment.</summary>
-    public PassTargets WithShadingRate(ImageView view, int texel) => this with { ShadingRate = view, ShadingRateTexel = texel, Formats = Formats with { ShadingRate = true } };
+    public PassTargets WithShadingRate(GpuView view, int texel) => this with { ShadingRate = view, ShadingRateTexel = texel, Formats = Formats with { ShadingRate = true } };
 
     /// <summary>The targets of <paramref name="colour"/> and / or <paramref name="depth"/> (null: none), loaded, the whole area as viewport and scissor.</summary>
     public static PassTargets Of(Texture? colour, Texture? depth, Texture? extra = null)

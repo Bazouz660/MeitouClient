@@ -98,7 +98,7 @@ public sealed unsafe class DlssUpscaler : IUpscaler
         {
             StructType = Streamline.ResourceType, StructVersion = 1,
             Type = 0,   // eTex2d
-            Native = (nint)texture.Image.Handle, View = (nint)texture.Attachment().Handle, State = layout,
+            Native = (nint)texture.Image.Handle, View = (nint)texture.NativeView().Handle, State = layout,
             Width = (uint)d.Width, Height = (uint)d.Height, NativeFormat = (uint)d.Format,
             MipLevels = (uint)d.Levels, ArrayLayers = 1, Usage = (uint)(texture.Underlying?.Usage ?? 0),
         };

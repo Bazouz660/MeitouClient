@@ -278,7 +278,7 @@ public sealed unsafe class BindlessTable : IDisposable
                         continue;
                     }
                     if (!written.Add((kind, index))) continue;
-                    pi[count] = new DescriptorImageInfo(device.SamplerAt(t.Sampler.Index), t.View, ImageLayout.General);
+                    pi[count] = new DescriptorImageInfo(device.SamplerAt(t.Sampler.Index), device.ViewAt(t.View.Index), ImageLayout.General);
                     pw[count] = new WriteDescriptorSet
                     {
                         SType = StructureType.WriteDescriptorSet, DstSet = sets[slot], DstBinding = (uint)kind, DstArrayElement = index,

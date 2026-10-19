@@ -72,6 +72,11 @@ public sealed unsafe class VulkanDevice : IDisposable
     readonly List<Silk.NET.Vulkan.Sampler> samplerTable = [default];
     public Silk.NET.Vulkan.Sampler SamplerAt(int index) => samplerTable[index];
     public int AddSampler(Silk.NET.Vulkan.Sampler sampler) { samplerTable.Add(sampler); return samplerTable.Count - 1; }
+
+    /// <summary>The views the renderers hold by index (index 0 is the null view).</summary>
+    readonly List<Silk.NET.Vulkan.ImageView> viewTable = [default];
+    public Silk.NET.Vulkan.ImageView ViewAt(int index) => viewTable[index];
+    public int AddView(Silk.NET.Vulkan.ImageView view) { viewTable.Add(view); return viewTable.Count - 1; }
     public int FramesInFlight => options.FramesInFlight;
 
     public bool ValidationEnabled { get; private set; }

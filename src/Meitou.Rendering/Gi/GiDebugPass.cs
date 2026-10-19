@@ -75,8 +75,8 @@ sealed unsafe class GiDebugPass : IDisposable
         var cmd = ctx.BeginNative("gi debug");
         cmd.BeginLabel("gi debug");
         cmd.Barrier(BarrierBatch.Full);
-        var image = new DescriptorImageInfo(ctx.Device.SamplerAt(sampler.Index), depth.View(), ImageLayout.General);
-        var storage = new DescriptorImageInfo(default, output.View(), ImageLayout.General);
+        var image = new DescriptorImageInfo(ctx.Device.SamplerAt(sampler.Index), ctx.Device.ViewAt(depth.View().Index), ImageLayout.General);
+        var storage = new DescriptorImageInfo(default, ctx.Device.ViewAt(output.View().Index), ImageLayout.General);
         var top = scene.Top.Handle;
         var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &top };
         var records = new DescriptorBufferInfo(scene.Records.Buffer, scene.Records.Offset, scene.Records.Size);

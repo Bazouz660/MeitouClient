@@ -10,10 +10,12 @@ state, the formats, the load op, the clear colour, the index kind, the sampler's
 wrap modes, and the binding list (the renderers state the slots and what each holds; the
 program carries the layout, the backend the image layout and the descriptor type). The sampler's
 handle is in the code too: the renderers hold a `GpuSampler` (an index into the backend's
-samplers, 0 being the null one) and the backend resolves it where it writes a descriptor.
+samplers, 0 being the null one) and the backend resolves it where it writes a descriptor. The
+views are the same: a `GpuView` (an index into the backend's views), and the backend resolves it
+where it makes a render pass. The Streamline (DLSS) path asks for the native view itself: that
+path is NVIDIA's and stays Vulkan's.
 
-What is left: the other handles (the views, the textures, the buffers), the descriptor sets and
-the seam.
+What is left: the textures' and the buffers' handles, the descriptor sets and the seam.
 
 ## What the renderers would hold
 
@@ -21,7 +23,7 @@ the seam.
 |---|---|---|
 | `GpuImage`, `GpuBuffer` (classes around a Vulkan object) | `GpuImage`, `GpuBuffer` (handles) | the description is the engine's, the object is the backend's |
 | `Texture` (a class with a view cache) | `GpuTexture` (a handle) | the views are the backend's |
-| `ImageView` (a Vulkan handle) | `GpuView` (a handle) | |
+| `ImageView` (a Vulkan handle) | `GpuView` (a handle) | the index into the backend's views |
 | `Sampler` | `GpuSampler` (a handle) | the index into the backend's samplers; 0 is the null one |
 | `BufferBinding(Buffer, Offset, Size)` | `GpuBufferBinding(GpuBuffer, Offset, Size)` | |
 | `PipelineLayout` | none | the reflection knows the sets, the slots and the stages |

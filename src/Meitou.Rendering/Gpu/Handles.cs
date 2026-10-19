@@ -11,3 +11,15 @@ public readonly record struct GpuSampler(int Index, SamplerDesc Desc)
 
     public bool IsNull => Index == 0;
 }
+
+/// <summary>
+/// A view of a texture the renderers hold: the backend's identity (the index into the backend's
+/// views) (docs/resource-layer.md). The level and layer range it covers is the backend's.
+/// </summary>
+public readonly record struct GpuView(int Index)
+{
+    /// <summary>The null view (a backend's empty view).</summary>
+    public static GpuView Null => new(0);
+
+    public bool IsNull => Index == 0;
+}
