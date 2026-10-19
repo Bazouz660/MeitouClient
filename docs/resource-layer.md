@@ -1,0 +1,106 @@
+# The resource layer
+
+The layer between the renderers and the graphics API: the resources (the images, the buffers, the
+samplers, the views, the pipelines) and the commands. It is Vulkan's today; a second backend
+replaces it. The renderers state their draws in the engine's GL vocabulary
+([renderer-native](renderer-native.md)); this is the same for the resources.
+
+**Proposed, not decided.** The vocabulary below is the shape the port needs; the two questions at
+the end are the author's to answer.
+
+## What the renderers would hold
+
+| Today (Vulkan's words) | The engine's word | Note |
+|---|---|---|
+| `GpuImage`, `GpuBuffer` (classes around a Vulkan object) | `GpuImage`, `GpuBuffer` (handles) | the description is the engine's, the object is the backend's |
+| `Texture` (a class with a view cache) | `GpuTexture` (a handle) | the views are the backend's |
+| `ImageView` (a Vulkan handle) | `GpuView` (a handle) | |
+| `Sampler` | `GpuSampler` (a handle) | |
+| `BufferBinding(Buffer, Offset, Size)` | `GpuBufferBinding(GpuBuffer, Offset, Size)` | |
+| `PipelineLayout` | none | the reflection knows the sets, the slots and the stages |
+| `WriteDescriptorSet`, `DescriptorImageInfo`, `DescriptorType` | `GpuBinding` | a flat list per set |
+| `ImageLayout` | none | the backend's business |
+| `DescriptorSet` | the set number | the renderers bind with push descriptors (15 of 21 sites) |
+| `AttachmentLoadOp` | `LoadOp` | |
+| `ClearValue` | `ClearColour`, a depth value | |
+| `IndexType` | `IndexKind` | |
+| `SamplerDesc`'s `Filter`, `SamplerAddressMode`, `SamplerMipmapMode` | `TextureMinFilter`, `TextureMagFilter`, `TextureWrapMode` | the engine's own already exist |
+
+The sampler's compare operation and the depth function were made neutral earlier
+([renderer-native](renderer-native.md)).
+
+## The binding list
+
+One list per set, the slot in each entry, the program's own reflection for the rest:
+
+```csharp
+// Today (Vulkan's words):
+var infos = stackalloc Vk.DescriptorImageInfo[4];
+infos[0] = new Vk.DescriptorImageInfo(Point(), shaftInjected!.Texture.View(), Vk.ImageLayout.General);
+var writes = stackalloc Vk.WriteDescriptorSet[5];
+writes[0] = new Vk.WriteDescriptorSet { DstBinding = 0, DescriptorType = Vk.DescriptorType.CombinedImageSampler, PImageInfo = &infos[0] };
+cmd.PushDescriptors(shaftScanProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 5), Vk.PipelineBindPoint.Compute);
+
+// The engine's words:
+var bindings = stackalloc GpuBinding[5];
+bindings[0] = GpuBinding.Sampled(shaftInjected!.Texture, 0);
+bindings[4] = GpuBinding.Uniform(data, 4, sizeof(ShaftScanParams));
+cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
+```
+
+The program's own reflection says which stage each slot wants and whether the program is compute
+or graphics, so the call carries neither. The view's range (the level, the layers) rides in the
+binding - the whole texture by default - and the backend resolves it and keeps the cache, as
+`Texture` does today.
+
+## The seam
+
+```
+the renderers
+   |  the neutral vocabulary: the descriptions, the handles, the bindings
+   v
+IGpuContext          the operations both backends have
+   +-- the Vulkan implementation (today's GpuContext)
+   +-- the Metal implementation (the port)
+```
+
+The interface is the union of what the renderers use. The Vulkan side implements all of it from
+the start; the Metal side grows a pass at a time, and an operation it does not have yet throws.
+A pass the backend cannot do yet is skipped, so the Metal picture grows from the sky to the whole
+frame while the frame graph stays the engine's (one description, not two).
+
+The renderer-side cost, measured outside `Gpu/`: about 294 references to the binding vocabulary
+(`WriteDescriptorSet` 64, `DescriptorType` 53, `ImageLayout` 41, `DescriptorImageInfo` 38,
+`AttachmentLoadOp` 25, `ClearValue` 18, `ShaderStageFlags` 17, `DescriptorSet` 15,
+`PipelineLayout` 12, `IndexType` 11) and about 283 to the resource handles (`Buffer` 113,
+`Image` 100, `Sampler` 70). The proof that a step changed nothing: the game's offscreen picture
+is byte for byte the same ([metal-backend](metal-backend.md) "The road to a Metal frame").
+
+## The two questions
+
+**1. The handle's shape.**
+
+- *Opaque handles* - a dense index into the backend's table plus the description. The renderers
+  cannot reach the backend's objects, which is the point of the layer. The backend resolves the
+  index (an array lookup).
+- *Backend interfaces* - `IGpuImage`, `IGpuBuffer`, `IGpuSampler`; the renderers hold the
+  interface, the backend's object implements it.
+
+*Recommendation: opaque handles.* The codebase is value-typed and allocation-free in the frame
+path; interfaces would cost a virtual call per use and a type change in every renderer signature.
+The opaque handle's cost is a resolution step in the backend.
+
+**2. Where the seam sits.**
+
+- *The context is the interface* - the renderers say `IGpuContext`; the Vulkan class implements it
+  as it is. A type rename in about fifty files.
+- *The context stays a class* and holds a backend object; the operations forward to it. No change
+  in the renderers, but a forwarding layer that grows with every operation, and the Vulkan-only
+  parts (the allocator, the bindless journal, the swapchain) still leak.
+
+*Recommendation: the context is the interface.* The forwarding layer would be the second engine
+the port is meant to avoid, and the leak is what a second backend cannot live with.
+
+The engine's own terms for the drawing (the state, the formats) are in
+[renderer-native](renderer-native.md); the Metal side of the port is in
+[metal-backend](metal-backend.md).

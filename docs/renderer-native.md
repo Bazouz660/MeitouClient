@@ -37,6 +37,7 @@ DepthFunction, BlendingFactor, FrontFaceDirection, CullMode, PolygonKind, BlendO
 ColorMask, PrimitiveType, PixelViewport, PixelRect, InternalFormat. GlConventions maps them to
 Vulkan (the front face flips: GL's counter-clockwise is Vulkan's clockwise; GL's 24-bit depth is a
 32-bit float). A second backend maps them to itself.
+The resources and the commands below them are the same question: [resource-layer](resource-layer.md).
 
 BindlessTable has seven typed sampler arrays (BindlessKind bindings0..6). Per-slot descriptor
 journal replays at begin/before submission; freed indices wait for consumers. Updating an index

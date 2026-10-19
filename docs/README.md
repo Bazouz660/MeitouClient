@@ -32,6 +32,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [render-terrain](render-terrain.md)
 - [render-water](render-water.md)
 - [renderer-native](renderer-native.md)
+- [resource-layer](resource-layer.md): the resources and the commands between the renderers and the API - the proposed neutral vocabulary
 - [simulation](simulation.md)
 - [audio](audio.md): what the game sends to Wwise, Meitou's player, ambience rules
 - [viewer](viewer.md)
