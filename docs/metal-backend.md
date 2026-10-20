@@ -461,28 +461,20 @@ loop (sky + terrain + objects + foliage + composite), not the interactive game.
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
 
-### 1. The Metal operations the rest needs
+### 1. The Metal operations the rest needs — done, with two limits
 
-`MetalCommandList` still throws for what water, characters, particles and the GPU culls use:
+**Done:** `DrawIndexedIndirect` (a loop of `drawIndexedPrimitives…indirectBuffer`; Metal has no multi-draw),
+`Resolve` (a render pass whose colour attachment is the MSAA source and whose `resolveTexture` is the target),
+`CopyBufferToImage`, `Blit`/`BlitLevel` (a blit when the levels match, a sampling pass over level views when they
+scale), swizzled views (Metal texture views; every texture carries `PixelFormatView`), partial / in-pass
+`Clear`/`ClearDepth` (a scissored fullscreen triangle), and `PushConstants` offsets (the stage's block kept and the
+named range set in it). MSAA textures are `Type2DMultisample`; a clear pipeline names every attachment of the pass,
+including the GI mask at colour slot 1. The Metal.Host `--table` and the game's scene pass ran all of the above under
+`MTL_DEBUG_LAYER=1`.
 
-- **Indirect draws** — `DrawIndexedIndirect`, `DrawIndexedIndirectCount`, `DrawIndirectCount`
-  (`MetalCommandList.cs`). Metal's `MTLDrawIndexedPrimitiveArguments` is 20 bytes (indexCount, instanceCount,
-  indexStart, baseVertex, baseInstance) and `MTLDrawPrimitivesIndirectArguments` 16, the Vulkan layouts already.
-  The *count* variants have no direct Metal call: a compute expander writes the first N arguments (or a compact
-  list) into a buffer and one `draw…indirectBuffer` draws it; add it to the seam as the engine's indirect layout
-  conversion (the GPU culls then need one dispatch per view, not per draw).
-- **Resolves** — a render pass's `resolveTexture` attachment (MSAA for water/reflection/TAA); `Resolve` throws.
-- **Texture blits** — `BlitLevel` (the within-texture level copy; `Blit` is the scaled sampling pass already) and
-  `CopyBufferToImage` (route through the upload batch or the same row-stride repack as the uploads).
-- **Swizzled views** — `MetalContext.View` refuses `GpuSwizzle` (the BC4 grey cases and UI masks); decide between
-  a pixel-format view, a shader-side swizzle in the bindless entry, or a sampled shim.
-- **Partial and in-pass clears** — `ClearDepth` and the in-pass clear (shadow debug, water, UI): a scissored
-  fullscreen depth/colour write for sub-rectangles (Metal render passes clear whole attachments only).
-- **Push-constant offsets** — the engine pushes whole blocks; the offset path (`PushConstants` with `offset != 0`)
-  must bind a sliced transient.
-- **Storage images in graphics sets** (`MetalCommandList.BindSetStage` still throws): the argument-buffer entries
-  for `GpuBindingKind.StorageImage`; the compute path has them.
-- **Timestamps** — `Timestamp` is a no-op; `MTLCounterSampleBuffer` when the pass timings matter.
+**Limits:** `DrawIndexedIndirectCount`/`DrawIndirectCount` have no Metal count-buffer command. Every slot is issued;
+the arguments at and after the count must be zero (a zero index / vertex count draws nothing). The GPU grass's order
+kernel must zero its draw list when that path comes to Metal. Timestamps are still no-ops.
 
 Keep `RecordsSecondaries` false: Metal records inline into one list.
 
@@ -557,6 +549,18 @@ default.
   a depth-only pipeline skips colour slot 0; a sub-rectangle upload needs the destination level's full row stride
   (the batch repacks); disabled GL attributes use a repeating 16-byte dummy array (stride 16), not stride 0;
   non-indexed draws take `firstVertex`/`baseInstance`; BC5 is 16 bytes a block.
+- MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
+  `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
+  `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
+- Texture views: the textures carry `PixelFormatView`; a non-identity `GpuSwizzle` is
+  `newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:` (the BC4 masks' `RrrOne`). Metal's blit cannot
+  scale: `BlitLevel` copies equal-sized levels and renders a sampling pass over level views when they differ.
+- Partial clears: a fullscreen triangle under the rect's scissor (colour and/or depth outputs), then the previous
+  viewport/scissor are restored and the pipeline filter reset. Sets the depth-stencil state for the clear.
+- A Metal `drawPrimitives…indirectBuffer` is one command; `DrawIndexedIndirect` loops, and the count variants issue
+  every `maxCount` slot (the slots at/after the count must hold zero counts).
+- Metal screenshots are not byte-comparable run to run: the screenshot clock advances by the real frame time, so the
+  sun and clouds differ. Compare regions / means, or freeze the clock for a pixel comparison.
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`.
 - `MTL_DEBUG_LAYER=1` catches the above immediately; keep it on for every new pass.

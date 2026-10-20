@@ -28,6 +28,10 @@ public sealed class MetalCommandList : IGpuCommandList
     bool depthAttachment;
     GpuPipeline lastPipeline;
     PrimitiveType topology;
+    RenderingDesc renderDesc;
+    PixelViewport viewport;
+    PixelRect scissor;
+    bool hasViewport, hasScissor;
     long epoch;
 
     /// <summary>Made by the context (the frame's) or an upload batch (its own command buffer, its blit shared).</summary>
@@ -94,6 +98,8 @@ public sealed class MetalCommandList : IGpuCommandList
         }
         render = command.RenderCommandEncoder(descriptor);
         depthAttachment = !d.Depth.IsNull;
+        renderDesc = d;
+        hasViewport = hasScissor = false;
         if (name.Length > 0) render.PushDebugGroup((NSString)name);
     }
 
@@ -105,13 +111,22 @@ public sealed class MetalCommandList : IGpuCommandList
         render = default;
     }
 
-    /// <summary>Clears a depth area (a shadow tile, the depth between slices) — comes with the shadow passes.</summary>
-    public void ClearDepth(float value, PixelRect rect) =>
-        throw new NotSupportedException("the Metal backend has no partial depth clear yet (the sky pass needs none)");
+    /// <summary>Clears a depth area (a shadow tile, the depth between slices): a fullscreen triangle under the rect's scissor.</summary>
+    public void ClearDepth(float value, PixelRect rect)
+    {
+        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("ClearDepth outside a rendering");
+        Clear(false, default, true, value, rect);
+    }
 
-    /// <summary>Clears the colour and / or the depth attachment over an area — comes with the shadow passes.</summary>
-    public void Clear(bool colour, ClearColour colourValue, bool depth, float depthValue, PixelRect rect) =>
-        throw new NotSupportedException("the Metal backend has no in-pass clear yet (the sky pass needs none)");
+    /// <summary>Clears the colour and / or the depth attachment over an area; the pass's pipeline state is forgotten, so the next draw binds again.</summary>
+    public void Clear(bool colour, ClearColour colourValue, bool depth, float depthValue, PixelRect rect)
+    {
+        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("Clear outside a rendering");
+        ctx.ClearAttachments(render, renderDesc, colour, colourValue, depth, depthValue, rect);
+        lastPipeline = default;
+        if (hasViewport) render.SetViewport(new MTLViewport { originX = viewport.X, originY = viewport.Y, width = viewport.Width, height = viewport.Height, znear = viewport.MinDepth, zfar = viewport.MaxDepth });
+        if (hasScissor) render.SetScissorRect(new MTLScissorRect { x = (ulong)scissor.X, y = (ulong)scissor.Y, width = scissor.Width, height = scissor.Height });
+    }
 
     // ---- state ----
 
@@ -137,11 +152,19 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.PipelinesBound++;
     }
 
-    public void SetViewport(in PixelViewport v) =>
+    public void SetViewport(in PixelViewport v)
+    {
+        viewport = v;
+        hasViewport = true;
         render.SetViewport(new MTLViewport { originX = v.X, originY = v.Y, width = v.Width, height = v.Height, znear = v.MinDepth, zfar = v.MaxDepth });
+    }
 
-    public void SetScissor(in PixelRect r) =>
+    public void SetScissor(in PixelRect r)
+    {
+        scissor = r;
+        hasScissor = true;
         render.SetScissorRect(new MTLScissorRect { x = (ulong)r.X, y = (ulong)r.Y, width = r.Width, height = r.Height });
+    }
 
     public void SetRaster(CullMode cull, FrontFaceDirection front)
     {
@@ -398,17 +421,33 @@ public sealed class MetalCommandList : IGpuCommandList
     /// (<see cref="MslTranslator.PushConstantBinding"/>, the push blocks' own <c>[[buffer(n)]]</c>).</summary>
     public unsafe void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
-        if (offset != 0) throw new NotSupportedException("the Metal backend pushes constants whole (offset 0)");
         // The MSL block is the SPIR-V one, rounded up to its 16-byte alignment; pushing only sizeof(T) fails Metal's length check
-        // (the terrain's 24-byte block is 32 there). The tail is zeroed so nothing but the block is read.
+        // (the terrain's 24-byte block is 32 there). Vulkan's push constants keep the bytes a partial push does not name, so the
+        // list keeps the stage's last block and sets the named range in it (every draw pushes its whole block, as the renderers do).
         int raw = sizeof(T);
-        int padded = (raw + 15) & ~15;
-        byte* bytes = stackalloc byte[Math.Max(padded, 16)];
-        new Span<byte>(bytes, Math.Max(padded, 16)).Clear();
-        Buffer.MemoryCopy(Unsafe.AsPointer(ref Unsafe.AsRef(in value)), bytes, padded, raw);
-        if (stages.HasFlag(GpuStage.Compute)) ComputeEncoder().SetBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
-        if (stages.HasFlag(GpuStage.Vertex)) render.SetVertexBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
-        if (stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
+        uint end = offset + (uint)raw;
+        if (end > program.PushConstantBytes) throw new ArgumentOutOfRangeException(nameof(offset), $"{program.Name}: the push ends at {end}, the block is {program.PushConstantBytes} bytes");
+        int padded = (int)((Math.Max(program.PushConstantBytes, end) + 15u) & ~15u);
+        byte* source = (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in value));
+        if (stages.HasFlag(GpuStage.Compute)) PushStage(GpuStage.Compute, program, source, raw, (int)offset, padded, compute: true);
+        if (stages.HasFlag(GpuStage.Vertex)) PushStage(GpuStage.Vertex, program, source, raw, (int)offset, padded, compute: false);
+        if (stages.HasFlag(GpuStage.Fragment)) PushStage(GpuStage.Fragment, program, source, raw, (int)offset, padded, compute: false);
+    }
+
+    readonly Dictionary<(int Program, GpuStage Stage), byte[]> pushBlocks = [];
+
+    unsafe void PushStage(GpuStage stage, GpuProgram program, byte* source, int raw, int offset, int padded, bool compute)
+    {
+        var key = (program.Index, stage);
+        if (!pushBlocks.TryGetValue(key, out var block) || block.Length < padded)
+            pushBlocks[key] = block = new byte[Math.Max(padded, 16)];
+        fixed (byte* destination = block)
+        {
+            Buffer.MemoryCopy(source, destination + offset, block.Length - offset, raw);
+            if (compute) ComputeEncoder().SetBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
+            else if (stage == GpuStage.Vertex) render.SetVertexBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
+            else render.SetFragmentBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
+        }
     }
 
     /// <summary>Writes a timestamp into a query slot (the frame's timings). Metal records none yet (<see cref="MetalTimestamps"/>).</summary>
@@ -435,17 +474,41 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.Draws++;
     }
 
-    /// <summary>Draws indexed vertices, the arguments in a buffer — comes with the terrain and the objects.</summary>
-    public void DrawIndexedIndirect(GpuBuffer args, ulong offset, uint count, uint stride = 20) =>
-        throw new NotSupportedException("the Metal backend has no indirect draws yet");
+    /// <summary>Draws indexed vertices, the arguments in a buffer: one Metal indirect draw per command (Metal has no multi-draw).</summary>
+    public void DrawIndexedIndirect(GpuBuffer args, ulong offset, uint count, uint stride = 20)
+    {
+        if (count == 0) return;
+        if (indexBuffer.NativePtr == IntPtr.Zero) throw new InvalidOperationException("DrawIndexedIndirect with no index buffer bound");
+        var buffer = ctx.BufferAt(args);
+        for (uint i = 0; i < count; i++)
+            render.DrawIndexedPrimitives(MetalConventions.Primitive(topology), indexType, indexBuffer, indexOffset, buffer, offset + i * stride);
+        Stats.Draws += (int)count;
+    }
 
-    /// <summary>Draws indexed vertices, the arguments in a buffer and the count in another — comes with the foliage.</summary>
-    public void DrawIndexedIndirectCount(GpuBuffer args, ulong offset, GpuBuffer count, ulong countOffset, uint maxCount, uint stride = 20) =>
-        throw new NotSupportedException("the Metal backend has no indirect draws yet");
+    /// <summary>
+    /// Draws indexed vertices, the count in another buffer. Metal has no draw-count command: every slot is issued and the
+    /// arguments past the count must be zero (the caller's cull pads its list; a slot with indexCount 0 draws nothing).
+    /// </summary>
+    public void DrawIndexedIndirectCount(GpuBuffer args, ulong offset, GpuBuffer count, ulong countOffset, uint maxCount, uint stride = 20)
+    {
+        // The count buffer is the GPU's; reading it here would need a wait, so the arguments carry the decision.
+        if (maxCount == 0) return;
+        if (indexBuffer.NativePtr == IntPtr.Zero) throw new InvalidOperationException("DrawIndexedIndirectCount with no index buffer bound");
+        var buffer = ctx.BufferAt(args);
+        for (uint i = 0; i < maxCount; i++)
+            render.DrawIndexedPrimitives(MetalConventions.Primitive(topology), indexType, indexBuffer, indexOffset, buffer, offset + i * stride);
+        Stats.Draws += (int)maxCount;
+    }
 
-    /// <summary>Draws indirect, the count in a buffer — comes with the foliage.</summary>
-    public void DrawIndirectCount(GpuBuffer args, ulong offset, GpuBuffer countBuffer, ulong countOffset, uint maxCount, uint stride = 16) =>
-        throw new NotSupportedException("the Metal backend has no indirect draws yet");
+    /// <summary>Draws indirect, the count in another buffer: as <see cref="DrawIndexedIndirectCount"/>, the unused slots zero.</summary>
+    public void DrawIndirectCount(GpuBuffer args, ulong offset, GpuBuffer countBuffer, ulong countOffset, uint maxCount, uint stride = 16)
+    {
+        if (maxCount == 0) return;
+        var buffer = ctx.BufferAt(args);
+        for (uint i = 0; i < maxCount; i++)
+            render.DrawPrimitives(MetalConventions.Primitive(topology), buffer, offset + i * stride);
+        Stats.Draws += (int)maxCount;
+    }
 
     /// <summary>Dispatches a compute pass: the arguments are threadgroups, as Vulkan's <c>vkCmdDispatch</c>'s; the shader's
     /// <c>local_size_x/y/z</c> (parsed from the GLSL) is the threadgroup.</summary>
@@ -480,13 +543,41 @@ public sealed class MetalCommandList : IGpuCommandList
         blit.CopyFromBuffer(ctx.BufferAt(src), region.SourceOffset, ctx.BufferAt(dst), region.DestinationOffset, region.Size);
     }
 
-    /// <summary>Copies a range of a buffer into a texture's level and layer — the uploads' own commands do it.</summary>
-    public void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer) =>
-        throw new NotSupportedException("the Metal backend copies into textures through its upload batches only");
+    /// <summary>Copies a tightly packed level and layer of a buffer into a texture (the ocean's FFT results' upload).</summary>
+    public void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer)
+    {
+        var desc = dst.Desc;
+        int block = MetalConventions.BlockWidth(desc.Format);
+        int texel = MetalConventions.TexelBytes(desc.Format);
+        uint width = (uint)Math.Max(desc.Width >> level, 1), height = (uint)Math.Max(desc.Height >> level, 1);
+        ulong bytesPerRow = (ulong)(((width + (uint)block - 1) / (uint)block) * (uint)texel);
+        ulong blockRows = (height + (uint)block - 1) / (uint)block;
+        var blit = OpenBlit();
+        blit.CopyFromBuffer(ctx.BufferAt(src), offset, bytesPerRow, bytesPerRow * blockRows,
+            new MTLSize { width = width, height = height, depth = 1 },
+            ctx.TextureAt(dst), (ulong)layer, (ulong)level, new MTLOrigin());
+    }
 
-    /// <summary>Resolves a multisample texture into a single-sample one — comes with the reflection's passes.</summary>
-    public void Resolve(GpuTexture src, GpuTexture dst) =>
-        throw new NotSupportedException("the Metal backend has no resolves yet");
+    /// <summary>Resolves a multisample texture into a single-sample one: a render pass whose only work is its resolve attachment.</summary>
+    public void Resolve(GpuTexture src, GpuTexture dst)
+    {
+        if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("Resolve inside a rendering");
+        EndCompute();
+        EndBlit();
+        var descriptor = new MTLRenderPassDescriptor(
+            ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor"));
+        var attachments = descriptor.ColorAttachments;
+        var attachment = attachments.Object(0);
+        attachment.Texture = ctx.TextureAt(src);
+        attachment.ResolveTexture = ctx.TextureAt(dst);
+        attachment.ResolveLevel = 0;
+        attachment.ResolveSlice = 0;
+        attachment.LoadAction = MTLLoadAction.Load;
+        attachment.StoreAction = MTLStoreAction.MultisampleResolve;
+        attachments.SetObject(attachment, 0);
+        var encoder = command.RenderCommandEncoder(descriptor);
+        encoder.EndEncoding();
+    }
 
     /// <summary>Copies a texture into another (scaled: the impostor bake halves its supersampled row): a fullscreen sampling pass.</summary>
     public void Blit(GpuTexture src, GpuTexture dst, TextureMinFilter filter)
@@ -508,9 +599,14 @@ public sealed class MetalCommandList : IGpuCommandList
             ctx.BufferAt(dst), offset, bytesPerRow, bytesPerRow * region.Height);
     }
 
-    /// <summary>Blits one level of a texture into another — comes with its passes.</summary>
-    public void BlitLevel(GpuTexture texture, int srcLevel, int dstLevel, TextureMinFilter filter) =>
-        throw new NotSupportedException("the Metal backend has no texture blits yet");
+    /// <summary>Blits one level of a texture into another (Metal's blit when the sizes match, a sampling pass when they do not).</summary>
+    public void BlitLevel(GpuTexture texture, int srcLevel, int dstLevel, TextureMinFilter filter)
+    {
+        if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("BlitLevel inside a rendering");
+        EndCompute();
+        EndBlit();
+        ctx.BlitLevel(command, texture, srcLevel, dstLevel, filter);
+    }
 
     /// <summary>Generates a texture's mip chain (as GL's GenerateMipmap made it: a blit's mip generation, filter linear).</summary>
     public void GenerateMips(GpuTexture t)
