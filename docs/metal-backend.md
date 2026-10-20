@@ -450,6 +450,39 @@ makes that check noisy at times: two runs of the *same* build can differ on abou
 pixels by one level (the TAA's history), so a step's picture is compared against several runs of
 the baseline, not one.
 
+## Where the port stands (resume here)
+
+**Drawing on Metal today:** the sky, weather and atmosphere; the terrain (heights, biomes, the streamer); the
+objects and buildings; the sun's shadows (terrain, objects and foliage casters); foliage meshes, grass and the
+terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far billboards;
+the scene's HDR target, the game's tone map and its auto exposure. The Metal host is still a still-frame loop:
+`GameHost.Metal.cs` (sky + terrain + objects + foliage + composite), not the interactive game.
+
+**Remaining, in dependency order:**
+
+1. **Metal operations the next steps need.** Indirect draws (`DrawIndexedIndirect`, `DrawIndexedIndirectCount`,
+   `DrawIndirectCount`, with the Vulkan→Metal argument layouts), resolves, texture blits and `CopyBufferToImage`,
+   swizzled views, partial/in-pass clears. Timestamps are still no-ops (profiling only; the passes' times read 0).
+2. **The post chain's rest.** TAA and an upscaler (MetalFX behind `IUpscaler`; FSR stays Vulkan), the volumetric
+   fog and light shafts, the HiZ pyramid and occlusion, and the foliage/grass compute culls with the indirect draws
+   of 1. `PostProcess` itself is still Vulkan-typed; Metal has `PostComposite` (exposure and tone map) only.
+3. **Water (plan step 6).** `WaterRenderer`, `ReflectionPass` (the mirrored scene), `ShoreField` and `OceanFft`
+   are Vulkan-typed; the reflection needs resolves, blits and the object/foliage draws of 2.
+4. **Characters and skinning (plan step 7).** `CharacterRenderer` and the crowd harness are Vulkan-typed; the
+   skinning buffers, draw list and animation run through the seam.
+5. **The UI (plan step 8).** `DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer;
+   the HUD, panels and portraits need a backend-neutral painter (or a Metal path).
+6. **The remaining effects.** The Meitou volumetric clouds, `FogVolumes`, particles, lamps, the hover outline, the
+   move marker and the navmesh overlay are Vulkan-typed; the faithful sky path (the one the parity shots use) works.
+7. **The full game loop (plan step 10).** The interactive host: input, title, resize, HDR and present details, the
+   simulation-backed frame flow, and the real `GameHost` render path widened to `IGpuContext`.
+8. **Parity and the default (plan step 11).** The window comparison, tone and timing, then `--renderer metal` as the
+   macOS default; the GPU culls' performance and the memory budgets come with 2.
+
+**Decisions still open:** GI (Metal's ray tracing is a different model; the parity shots use `--no-gi`, and the
+Vulkan path on this Mac does trace GI); the volumetric clouds and fog (the parity shots use `--faithful
+clouds,cloudshadows`); MetalFX against the FSR path.
+
 ## Constraints
 
 - **GI**: the probe GI needs ray queries (`VK_KHR_ray_query`), which have no Metal
