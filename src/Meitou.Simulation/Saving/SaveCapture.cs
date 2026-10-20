@@ -108,7 +108,9 @@ public static partial class SaveCapture
         MachineSave.Write(game, world);
         GroundItemSave.Write(game, world, data.Items);
         var races = new Dictionary<string, RaceData?>(StringComparer.Ordinal);
-        var written = WritePlayerSquads(builder, world, data, loaded, options, clock, buildings, races);
+        // The players and their squads' owners, only while some player has a roster GUID (docs/formats/save.md "Multiplayer roster and owners").
+        var owners = RosterSave.Write(camera.Record, world.Player);
+        var written = WritePlayerSquads(builder, world, data, loaded, options, clock, buildings, races, owners);
         WriteSelection(game, world, written);
         WriteUniques(game, world, written);
         // The NPC platoons: the save's as they are now, and the population's own squads in the world as new platoons (docs/simulation.md "Saves").
@@ -226,7 +228,7 @@ public static partial class SaveCapture
     // ------------------------------------------------------------------ the player's platoons
 
     static Dictionary<CharacterId, SaveCharacter> WritePlayerSquads(SaveBuilder builder, World world, PopulationData data, LoadedSave? loaded, SaveCaptureOptions options, SaveClock clock,
-        IReadOnlyDictionary<string, FcsRecord> buildings, Dictionary<string, RaceData?> races)
+        IReadOnlyDictionary<string, FcsRecord> buildings, Dictionary<string, RaceData?> races, IReadOnlyDictionary<int, Guid>? owners)
     {
         var game = builder.Game;
         var table = world.Characters;
@@ -268,6 +270,8 @@ public static partial class SaveCapture
                 if (squad.Name.Length > 0) platoon.Record.Name = squad.Name;
                 platoon.Record.Ints["squad index"] = index;
             }
+            // Its owner's roster GUID; none on a squad that is not a player's or without a roster.
+            RosterSave.WriteOwner(platoon.Record, index >= 0 ? squad.Owner : -1, owners);
 
             foreach (var id in alive)
             {

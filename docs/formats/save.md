@@ -151,6 +151,7 @@ not predictable (**Verified** by code: `I` from a rotating free-slot cursor `FUN
 | bools `bl ditch eject ep feed heal help rescue share shootfirst sit sleep stay`, floats `bs cod gdm ht nnm ps rs`, `formation` | squad behaviour toggles and short-key game toggles (`FUN_1403eb710`, `FUN_1403ee910`): **Observed**; meaning of the short keys **Unknown** |
 | reference list `zones` | one entry per zone **that has a file**, written in grid order (X outer, Y inner; `FUN_140375360` loops 64 x 64): target = the list index in **hexadecimal** ("0".."9", "a", "b", "c" for 13 entries), values `(x, y, 1)` = (zone X, zone Y, has-file flag). **Verified**: the 13 entries equal the 13 files of `zone/` (probe), and the key spelling is seen in the sample |
 | `meitou seed` (string) | Meitou-only: the world seed in decimal, written on every Meitou save and restored before the world's first tick on load (so the nests it did not write roll again where they were, [Nests](#nests-town-list)); a save without it keeps the launch seed. The original's keys are read by name, so it is ignored (as the other Meitou-only keys) |
+| `meitou players` (int), `meitou player<k> id` / `name` (strings), `meitou player<k> number` (int) | Meitou-only multiplayer roster, [Multiplayer roster and owners](#multiplayer-roster-and-owners) |
 | reference list `mods` | one entry per loaded data file, target = the file's name without extension for the `.mod` files (`Newwworld`, `Dialogue`, `rebirth`) and `base` for `gamedata.base`, values `(-1, 0, 0)`; **Verified** (probe, `GameDatabase.Files`) that the four entries are in the load order of the base game (`gamedata.base`, `Newwworld.mod`, `Dialogue.mod`, `rebirth.mod`). **Unknown** whether `loadGame` compares it with the current mod list (no such string seen) |
 
 ### BIOMES (type 28, `quick.save`): weather per region
@@ -223,6 +224,19 @@ One PLATOON per player squad, `squad index` its place in the squad order (**Obse
 copies its text into the platoon's record name, `FUN_14048df00`, **Observed**; 962 PLATOON records of two saves all have name = `platoon stringID`, none
 renamed). Meitou keeps each loaded squad on its own file (`Squad.SaveName`) and writes a squad made since as a new platoon, empty squads included; a
 character that changed squads is written anew in its new platoon and leaves the old file; a removed squad's platoon is deleted.
+
+### Multiplayer roster and owners
+
+Meitou-only (engine design; the original reads keys by name and ignores them). `Saving/RosterSave`, written by `SaveCapture`, read by `SaveLoader`:
+- CAMERA `meitou players` (count) and per entry `k`: `meitou player<k> id` (roster GUID, "D" format), `meitou player<k> name`, `meitou player<k> number`
+  (player number), every session with a GUID in number order. Player PLATOON `meitou owner`: the owning player's GUID.
+- Capture removes any old roster and owner keys, then writes them only when some session has a GUID; a squad whose owner has none gets no `meitou owner`.
+  A single-player save is unchanged (no keys). The CAMERA selection stays player 0's.
+- Load with `SaveLoadOptions.LocalPlayer` empty (single-player): the keys are ignored, every squad is player 0's, no sessions are made. With a GUID (a host):
+  entries with a bad or repeated GUID or number (or a number above 65535, `RosterSave.MaxNumber`) are skipped, and the count never reads past the record's strings; that GUID becomes 0, the entry that held 0 takes its old number (one past the highest when
+  it is not in the roster), the rest keep theirs and are joined; each platoon gets its owner's number (none: 0; a GUID not in the roster: 0 and a load note).
+  Player 0's selection keeps only its own characters, its active squad is its own, and each other session's is its first squad with members (`KeepActive`).
+- **Verified** by `MultiplayerSaveTests` (synthetic game: round-trip with the remap, no keys in single-player, empty `LocalPlayer`).
 
 ### NPC platoons (Meitou mapping)
 
