@@ -98,9 +98,11 @@ the start; the Metal side grows a pass at a time, and an operation it does not h
 A pass the backend cannot do yet is skipped, so the Metal picture grows from the sky to the whole
 frame while the frame graph stays the engine's (one description, not two).
 
-The interface carries the resources for now: the textures (made, viewed, released), the buffers
-(made, released) and the view. The rest of the context's operations come with the rest of the
-port, and the renderers' own fields change from the Vulkan class to the interface then.
+The interface carries the resources (the textures made, viewed and released, the buffers made and
+released) and the services the renderers use (the frame, the pipelines, the programs, the samplers,
+the uploads, the stand-ins, the frame globals, the bindless table and the upscaler's LOD bias). The
+renderers' own fields change from the Vulkan class to the interface as the last of the Vulkan
+escapes (the copies, the queries, the vendor upscalers) move behind it.
 
 The renderers above `Gpu/` name no Vulkan object any more: the samplers, the views, the textures,
 the buffers and the sets are the engine's handles; the programs carry their layout; a draw states
