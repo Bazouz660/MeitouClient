@@ -24,11 +24,30 @@ namespace Meitou.Net.Commands;
 /// </summary>
 public static class CommandCodec
 {
-    /// <summary>Writes the tag and fields; <see cref="ArgumentException"/> (nothing written) for a type without a tag. Every command type, host-only ones included, can be written.</summary>
+    /// <summary>
+    /// Writes the tag and fields; <see cref="ArgumentException"/> for a type without a tag or an appearance beyond the <see cref="FcsRecordCodec"/> limits, in
+    /// which case nothing stays written (the writer and the string table are rolled back). Every command type, host-only ones included, can be written.
+    /// </summary>
     public static void Write(NetWriter w, StringTableWriter strings, SimCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
         ushort tag = CommandTags.TagOf(command.GetType());
+        int start = w.Length;
+        int mark = strings.Mark();
+        try
+        {
+            WriteBody(w, strings, tag, command);
+        }
+        catch
+        {
+            w.Truncate(start);
+            strings.Rollback(mark);
+            throw;
+        }
+    }
+
+    static void WriteBody(NetWriter w, StringTableWriter strings, ushort tag, SimCommand command)
+    {
         w.WriteVarUInt(tag);
         var e = new CommandWriter(w, strings);
         switch (command)

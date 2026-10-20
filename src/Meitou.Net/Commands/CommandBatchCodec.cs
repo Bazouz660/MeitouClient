@@ -21,7 +21,7 @@ public static class CommandBatchCodec
 {
     /// <summary>
     /// Writes the batch. <see cref="ArgumentException"/> when it holds more than <see cref="NetLimits.MaxCommandBatch"/> commands or would exceed
-    /// <see cref="NetLimits.MaxReliableMessage"/> bytes (the sender splits it); the writer and the string table are then left as they were.
+    /// <see cref="NetLimits.MaxReliableMessage"/> bytes with the <see cref="MessageType"/> byte the caller adds (the sender splits it); the writer and the string table are then left as they were.
     /// </summary>
     public static void Write(NetWriter w, StringTableWriter strings, CommandBatch batch)
     {
@@ -36,8 +36,8 @@ public static class CommandBatchCodec
             w.WriteVarUInt(batch.FirstSeq);
             w.WriteVarUInt((uint)batch.Commands.Count);
             foreach (var command in batch.Commands) CommandCodec.Write(w, strings, command);
-            if (w.Length - start > NetLimits.MaxReliableMessage)
-                throw new ArgumentException($"A batch of {w.Length - start} bytes exceeds the limit of {NetLimits.MaxReliableMessage}.", nameof(batch));
+            if (w.Length - start + 1 > NetLimits.MaxReliableMessage)
+                throw new ArgumentException($"A batch of {w.Length - start + 1} bytes exceeds the limit of {NetLimits.MaxReliableMessage}.", nameof(batch));
         }
         catch
         {

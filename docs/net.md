@@ -155,14 +155,14 @@ through `FcsRecordCodec`. The codec carries every field, trust fields included (
 **Refusals.** `Read` throws `NetFormatException` for a `HostOnly` tag always, a `Debug` tag unless `allowDebug`, an unknown
 tag, a non-finite float, an undefined enum value, a null where a string is required, or an over-limit count; on the Control
 channel that drops the sender (`ProtocolError`). `Write` accepts every tagged type (host-only ones included, so the layouts
-stay testable) and throws `ArgumentException` for an untagged type before writing anything.
+stay testable) and throws `ArgumentException` for an untagged type or an over-limit appearance, leaving the writer and string table as they were.
 
 **Writer-side limits.** A reader refuses what a writer must therefore never produce, so the writer clamps: strings are cut
 to `MaxName` bytes on a character boundary, id lists to `MaxIdList`, plans to `MaxPlans`, a non-finite float is sent as 0.
 
 **Batches** (`CommandBatchCodec`, bodies of messages 0x20 and 0x21, without the `MessageType` byte the caller adds):
 `CommandBatch` = epoch u16, first seq varint, count (at most `MaxCommandBatch`), the commands; command `i` is
-`FirstSeq + i`. `Write` throws `ArgumentException` for more than 64 commands or a body over `MaxReliableMessage` and leaves
+`FirstSeq + i`. `Write` throws `ArgumentException` for more than 64 commands or a message (body plus the type byte) over `MaxReliableMessage` and leaves
 the writer and string table as they were (`Truncate`, `Rollback`); the sender splits. `CommandResult` = seq varint, reason
 (UTF-8, clamped to `MaxMessageText`); the host sends it only for refusals. Both batch ends use the Control channel's string
 tables, one per direction.
