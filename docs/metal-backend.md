@@ -503,12 +503,16 @@ this order:
 
 **The faithful surface is on Metal:** `WaterRenderer` takes `IGpuContext`, and the Metal host creates it with
 `meitouWaves: false, shoreField: false` and draws the game's flat water quad in the scene pass (the sky reflection;
-no refraction, no reflection pass). The Meitou fragment reads more samplers than Metal's 16-a-stage limit (its eight
-maps + sky + ocean + shore + reflection + refraction), so its program is built only when asked and the Metal host
-asks for the faithful one. `OceanWaves`, `ShoreField`, `ReflectionPass` and the half-res refraction copy are still
-Vulkan-typed; the ocean FFT's textures and `CopyBufferToImage`/`GenerateMips` are ready when it is widened.
-Remaining: pack the Meitou maps into fewer samplers (or an array), port `OceanWaves` and `ShoreField`, then the
-reflection pass (the mirrored scene) and refraction. Ends when the coast/river views match Vulkan's water.
+no refraction, no reflection pass). It was checked at the real sea, top coast (`--at 44352,-122544 --yaw 0
+--distance 800 --pitch 15`): Metal and Vulkan with `--faithful water` show the same dark rippled sea and black
+shadowed shore (the Vulkan shot also has the HUD, still missing on Metal). The Hub (`-50979,2932`) and the river
+view (`-45060,6348`) are inland water; the sea is only at the world edge. The Meitou fragment reads more samplers
+than Metal's 16-a-stage limit (its eight maps + sky + ocean + shore + reflection + refraction), so its program is
+built only when asked and the Metal host asks for the faithful one. `OceanWaves`, `ShoreField`, `ReflectionPass`
+and the half-res refraction copy are still Vulkan-typed; the ocean FFT's textures and `CopyBufferToImage` /
+`GenerateMips` are ready when it is widened. Remaining: pack the Meitou maps into fewer samplers (or an array),
+port `OceanWaves` and `ShoreField`, then the reflection pass (the mirrored scene) and refraction. Ends when the
+coast/river views match Vulkan's water.
 
 ### 4. Characters and skinning (plan step 7)
 
@@ -575,6 +579,10 @@ default.
 - Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
+- Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
+  --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon. The
+  river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
+  shows no water at all.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
   `UpscaleShaders.Taa` (into two RGBA16F histories); the scene projection is jittered with `Jitter.Apply` and
   `PostTaa.Offset` (8 phases at 1×), the depth target is `DepthTarget | Sampled`. TAA resets on the first frame, a
