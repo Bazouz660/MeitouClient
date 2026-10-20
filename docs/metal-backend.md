@@ -458,8 +458,8 @@ terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the imp
 the scene's HDR target, the game's tone map and its auto exposure. `GameHost.Metal.cs` is still a still-frame
 loop (sky + terrain + objects + foliage + composite), not the interactive game.
 
-**The next steps, in order.** Each ends with the gates below (build 0/0, tests 424 pass / 1 known fail, the host
-table, a Metal shot under `MTL_DEBUG_LAYER=1`, and Vulkan within its own run-to-run noise).
+**The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
+`MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
 
 ### 1. The Metal operations the rest needs
 
@@ -561,21 +561,38 @@ default.
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`.
 - `MTL_DEBUG_LAYER=1` catches the above immediately; keep it on for every new pass.
 
-### Gates (run after every step)
+### Gates
+
+Vulkan is the untouched reference: do not run the Vulkan path or the full test suite on Metal-only work. What
+runs when:
+
+**Every commit (cheap, Metal-only):**
 
 ```
 dotnet build src/Meitou.Game -c Debug                                  # 0 warnings, 0 errors
-DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet test --filter "Category!=Slow&Category!=Bench"   # 424 / 1 known arm64
-DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet run --project src/Meitou.Metal.Host --no-build -c Debug -- --table --shot /tmp/x.bmp
-    # BL red, centre (127,0,128), TR blue; a .swap.bmp appears
 DYLD_LIBRARY_PATH=/opt/homebrew/lib MTL_DEBUG_LAYER=1 dotnet run --project src/Meitou.Game --no-build -c Debug -- \
     --renderer metal --screenshot /tmp/x.png --no-population --time 8 --distance 2000 --pitch 45 \
     --faithful clouds,cloudshadows --no-gi
 ```
 
-For Vulkan parity, run the same view twice on HEAD and once with the change; compare differing samples and the
-worst channel (the noise floor is roughly 350k–550k samples, max ~38–40), never bytes. The screenshot is taken at
-frame 40; `--shadow-range 0` isolates the non-shadow path.
+The host table (`--table`; BL red, centre `(127,0,128)`, TR blue, a `.swap.bmp` appears) when the change touches
+the seam, the binding tables or the Metal host.
+
+**When a step edits shared code** — a renderer widened to `IGpuContext`, a file Vulkan still compiles, the seam
+itself — run the suite and a Vulkan comparison, because the change can alter the Vulkan path even when it is meant
+to be neutral:
+
+```
+DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet test --filter "Category!=Slow&Category!=Bench"   # 424 / 1 known arm64
+```
+
+Parity: render the same view on the Vulkan path before and after (two baseline runs, since the temporal path is
+noisy), compare differing samples and the worst channel (the noise floor is roughly 350k–550k samples, max
+~38–40), never bytes. The screenshot is taken at frame 40; `--shadow-range 0` isolates the non-shadow path.
+
+**End of a plan step / before reporting:** the Metal shot at the step's view, plus a Vulkan comparison only if
+that step's picture is meant to match the Vulkan one (water, characters, UI, post). Metal-only steps (indirect
+plumbing, profiling, docs) need no Vulkan run.
 
 ## Constraints
 
