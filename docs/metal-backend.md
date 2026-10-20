@@ -661,10 +661,15 @@ default.
 - **Cube stand-ins.** A dummy cube's `TextureDesc.Layers` is 1: its six faces are the cube type's slices, not array
   layers. Passing 6 made `GpuTexture.View` ask for 36 slices and `MTL_DEBUG_LAYER=1` abort at the first cube
   sampler (the UI's first frame after the painter was added). `MetalContext.Dummy` now passes 1.
-- **UI host scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
-  portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc, F7,
-  hover/click/scroll) but not camera movement, world selection or move orders. Title/new-game/save/load/options,
-  trade, dialogue, build, editor and settings host callbacks are still unset.
+- **Window present.** The present fragment divides the drawable pixel position by the **drawable** size, not the
+  backbuffer size: on a scaled display the drawable is larger, and dividing by the backbuffer showed only its
+  top-left part in the window. `--screenshot` reads the backbuffer, so it cannot catch this; the live window is the
+  gate.
+- **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
+  portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
+  F7, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll), selection/box
+  select and right-click move orders. Title/new-game/save/load/options, trade, dialogue, build, editor and
+  settings host callbacks are still unset.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
@@ -686,7 +691,8 @@ default.
 - Character shots: `--crowd 6 --no-population --at -50000,8000 --time 12 --distance 180 --pitch 18
   --no-objects --no-foliage --no-water --faithful clouds,cloudshadows --no-gi` (the open hillside; six characters).
   `--new-game --time 12 --distance 250 --pitch 20 --faithful clouds,cloudshadows --no-gi` at the Hub (the player
-  squad and the HUD). `--new-game` starts the simulation squad; the camera/selection input is separate.
+  squad, the HUD and the interactive camera/selection/orders). Observed live window: 20 fps / 20 ms at 2560x1440;
+  `MTL_DEBUG_LAYER=1` drops it to ~2 fps, so measure without the layer.
 - Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
   --day 1 --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon.
   The river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
@@ -719,7 +725,8 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib MTL_DEBUG_LAYER=1 dotnet run --project src/M
 
 Live check: `--renderer metal --new-game --time 12 --distance 250 --pitch 20 --faithful
 clouds,cloudshadows --no-gi` (WASD/arrows, Q/E, wheel, middle drag; F11 frame list, F12 fps). `--quit-after N`
-prints the final camera and frame rate.
+prints the final camera and frame rate. Present/layer changes must also be seen in the live window: `--screenshot`
+reads the backbuffer and never exercises the drawable present.
 
 The host table (`--table`; BL red, centre `(127,0,128)`, TR blue, a `.swap.bmp` appears) when the change touches
 the seam, the binding tables or the Metal host.

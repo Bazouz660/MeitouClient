@@ -32,12 +32,14 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             return float4(xy * 2.0 - 1.0, 0.0, 1.0);
         }
 
-        fragment float4 present_fragment(float4 position [[position]], texture2d<float> source,
-            sampler source_sampler)
+        fragment float4 present_fragment(float4 position [[position]], constant float2& targetSize [[buffer(1)]],
+            texture2d<float> source, sampler source_sampler)
         {
             // No flip: the engine's GL-style shaders land right side up in the backbuffer on Metal (the NDC points up as GL's
             // does), so row for row is the picture (the Vulkan path's blit flips instead - its backbuffer is upside down).
-            float2 uv = float2(position.x / source.get_width(), position.y / source.get_height());
+            // Divide by the drawable, not the source: on a scaled display the drawable is larger than the framebuffer the
+            // scene and HUD are drawn into, and dividing by the source there showed only its top-left part.
+            float2 uv = position.xy / targetSize;
             return source.sample(source_sampler, uv);
         }
         """;
@@ -485,6 +487,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         encoder.SetFragmentTexture(TextureAt(backbuffer!), 0);
         encoder.SetFragmentSamplerState(Samplers.Backend(Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0))), 0);
+        var targetSize = stackalloc float[2] { (float)drawable.Texture.Width, (float)drawable.Texture.Height };
+        encoder.SetFragmentBytes((nint)targetSize, 8, 1);
         encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);
         encoder.EndEncoding();
         command.PresentDrawable(drawable);
