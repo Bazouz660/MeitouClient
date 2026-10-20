@@ -109,6 +109,7 @@ Used as packages (not copied into this repository); each is distributed under it
 | Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent 12.1.4 (with SkiaSharp and HarfBuzzSharp) | `launcher/Meitou.Launcher` (UI) | MIT |
 | Velopack 1.2.161 | `launcher/Meitou.Launcher` (install and self-update) | MIT |
 | Markdig 1.4.2 | `launcher/Meitou.Launcher` (news posts) | BSD-2-Clause |
+| LiteNetLib 2.1.4 | `src/Meitou.Net` (UDP transport for multiplayer; see its section below) | MIT |
 
 The DDS reader and decoder (`src/Meitou.Data/Textures/`) are written from Microsoft's public DDS and
 block-compression documentation; no code is taken from other implementations.
@@ -135,6 +136,36 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+```
+
+## LiteNetLib
+
+`src/Meitou.Net/` uses the LiteNetLib NuGet package (version 2.1.4) for its UDP transport; its library is
+distributed with the game. The package carries no licence file, so the text below is the `LICENSE.txt` of the
+repository commit the package was built from (https://github.com/RevenantX/LiteNetLib).
+
+```
+MIT License
+
+Copyright (c) 2025 Ruslan Pyrch
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## Kenshi logo

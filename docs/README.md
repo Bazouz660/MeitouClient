@@ -17,6 +17,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [launcher](launcher.md): game release installer, mod list and presets
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
+- [net](net.md): multiplayer wire format, channels, limits, sessions (`Meitou.Net`)
 - [render-clouds](render-clouds.md)
 - [render-distance-benchmark](render-distance-benchmark.md)
 - [render-foliage](render-foliage.md)
