@@ -14,7 +14,7 @@ namespace Meitou.Simulation;
 
 /// <summary>
 /// Zone activation and town residents (docs/game/game-loop.md "Zones", factions-squads-towns.md 6.4). The camera's focus (a
-/// <see cref="FocusCommand"/>) activates every zone overlapping the box of +-340 units round it, plus a ring of one more zone when
+/// <see cref="FocusCommand"/>, each player's <see cref="PlayerSession.Focus"/>) activates every zone overlapping the box of +-340 units round it, plus a ring of one more zone when
 /// <c>Fast zone hopping</c> is on (<see cref="ZoneActivation"/>). A placed town in an active zone gets its resident squads (squad
 /// factory, then characters rolled by the generator); when its zone is no longer active for <see cref="PopulationSettings.UnloadGraceSeconds"/>
 /// its characters are removed (the original turns the squads into abstract "unloaded" ones, which the AI stage will do). The
@@ -35,7 +35,6 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     readonly ConcurrentQueue<BuiltTown> built = new();
     readonly BlockingCollection<Action>? work;
     readonly Thread? worker;
-    Vector3? focus;
     // The zones active as of the last look, and the set the next look fills (swapped, so a look allocates nothing; the host reads ActiveZones within a frame only).
     HashSet<ZoneCoordinate> active = [], spareActive = [];
     readonly List<Vector3> foci = [];
@@ -93,15 +92,15 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     public SiteStatus StatusOf(int site) => states[site].Status;
     /// <summary>The zones active as of the last look.</summary>
     public IReadOnlyCollection<ZoneCoordinate> ActiveZones => active;
-    public Vector3? Focus => focus;
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         foreach (var c in commands)
         {
-            if (c is FocusCommand f) focus = f.Position;
+            if (c is FocusCommand f) world.SessionOf(f).Focus = f.Position;
             else if (c is DebugSpawn spawn) SpawnSandbox(world, spawn.Record, spawn.At, player: false, variant: ++debugSpawns);
         }
+        ApplyJoins(world, commands);
 
         var ready = new List<BuiltTown>();
         while (built.TryDequeue(out var b)) ready.Add(b);
@@ -199,7 +198,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
 
     void RefreshZones(World world)
     {
-        // The player's characters activate the zones round them (game-loop.md "Zones": the player's faction); the camera focus does only without a player.
+        // The player's characters activate the zones round them (game-loop.md "Zones": the player's faction); the camera foci (every player's, in number order) do only without one.
         foci.Clear();
         if (world.Player.Exists)
         {
@@ -207,7 +206,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             for (int i = 0; i < prev.Length; i++)
                 if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true }) foci.Add(prev[i].Position);
         }
-        if (foci.Count == 0 && focus is { } camera) foci.Add(camera);
+        if (foci.Count == 0)
+            foreach (var session in world.Player.Sessions)
+                if (session.Focus is { } camera) foci.Add(camera);
         if (foci.Count == 0) return;
         (active, spareActive) = (spareActive, active);
         active.Clear();

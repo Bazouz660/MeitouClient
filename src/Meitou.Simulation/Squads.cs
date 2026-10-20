@@ -18,6 +18,11 @@ public sealed class Squad
     public string Name { get; set; } = "";
     /// <summary>A player's squad's place in the squad order (the PLATOON's <c>squad index</c>, the original's platoon +0x1f2): the tabs and the squads screen go by it, then by id.</summary>
     public int Index { get; set; }
+    /// <summary>
+    /// The player whose squad it is (docs/simulation.md "Multiplayer (host-authoritative co-op)"): a player number, 0 for the host or the single player. Meaningless (0) for
+    /// an NPC squad. Its members are that player's to select and order.
+    /// </summary>
+    public int Owner { get; set; }
     /// <summary>The <c>platoon stringID</c> of the saved player platoon the squad was loaded from (its file); null for a squad made since, which a save writes as a new platoon.</summary>
     public string? SaveName { get; init; }
     /// <summary>The owner faction, a position in the world's faction list (-1: none).</summary>
@@ -111,6 +116,7 @@ public sealed class SquadRegistry
             hasher.Add(s.Position);
             hasher.Add(s.Leader);
             if (s.Index != 0) hasher.Add(0x51647800 + s.Index);   // nothing for a squad in the first place, so the pinned hashes stay
+            if (s.Owner != 0) hasher.Add(0x4F776E00 + s.Owner);   // nor for player 0's squads
             hasher.Add(s.Members.Count);
             foreach (var m in s.Members)
             {

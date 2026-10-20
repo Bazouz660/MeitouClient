@@ -125,7 +125,7 @@ public class FirstAidTests
             var sq = World.Squads.Find(squad);
             if (sq is null) World.Squads.Add(sq = new Squad { Id = squad, TemplateId = "t" });
             sq.Members.Add(id);
-            if (player) World.Player.Selection.Add(id);
+            if (player) World.Player.Local.Selection.Add(id);
             return id;
         }
 

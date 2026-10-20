@@ -228,11 +228,11 @@ the player has one; requests (victory/loss chains, ally help) can follow.
 ## Player
 
 `PlayerSystem` / Orders: selection, stop, move/queued move, attack, treat/rest/medic, carry/rescue,
-loot, stances and squad toggles are commands. Resolve empty-ID orders against current selection.
-New-game start data seeds squad/appearance/gear/money; the start's characters are then remade in the
-character editor while `PlayerState.InCreation` ([characters](characters.md#character-editor)); original start
+loot, stances and squad toggles are commands. Empty-ID orders resolve against the issuer's session selection when applied
+([sessions](#sessions-and-ownership)). New-game start data seeds squad/appearance/gear/money; the start's characters are then remade in the
+character editor while `PlayerSession.InCreation` ([characters](characters.md#character-editor)); original start
 relation/research semantics remain partly unknown. Picking/HUD are host responsibilities, never simulation input.
-Squads: `SquadManagement` orders the player's squads (`Squad.Index`), keeps `PlayerState.Squad` the active one and applies the squads screen's
+Squads: `SquadManagement` orders the player's squads (`Squad.Index`), keeps each session's `PlayerSession.Squad` the active one and applies the squads screen's
 commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)); the snapshot's `PlayerSquads` lists them for the UI.
 
 ### Order toggles
@@ -822,7 +822,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
 Facts: [Prospecting](game/ui-screens.md#prospecting), [Task_Prospecting](game/ai-tasks.md#prospecting). `ProductionSystem` (`ProductionSystem.Prospecting.cs`, `Production/Prospecting.cs`) owns it because it holds the `ResourceField`.
 - `ProspectOrder` names one player character (the host picks the selected one nearest the camera pivot). If it is awake, not fighting, carried, carrying, caged or swimming (water state 3) it stops and takes
   `CharacterTask.Prospect` with `CharacterCold.Prospecting` = 0 (hashed only while set, not saved). A character already prospecting is left alone; when done it is `Idle`.
-- Each tick (`SlowWorld`, before the early returns) the progress grows by the tick's game seconds. At `ProspectSeconds` = 1 (**Verified**) the task ends (`Idle`) and a `ProspectReport` is published as `World.Prospected`: the
+- Each tick (`SlowWorld`, before the early returns) the progress grows by the tick's game seconds. At `ProspectSeconds` = 1 (**Verified**) the task ends (`Idle`) and a `ProspectReport` is published to the prospector's owner's session (`PlayerSession.Prospected`; `World.Prospected` is player 0's): the
   prospector's name and science (raw stat), the spot (its position), the zone name and the crop coverages, and the five resource values from `ResourceField.Yield` at the spot. Another task (a move, an attack, a stop) or the character going down
   ends it with no report. The report is display only: nothing reads it, the state hash does not see it, a save does not hold it.
 - Animation: the `medic` clip (`AnimationSystem.HeldClip`). HUD goal text "Prospecting". **Not modelled:** the progress bar over the character, the map overlay, the state field `+0x198`.
@@ -854,7 +854,7 @@ to the next tick. A hostile target is attacked instead.
   listed in [dialogue](game/dialogue.md#meitou-design).
 - **Recruiting** ([facts](game/dialogue.md#recruiting)): at the `max faction size` cap the line "It looks like your squad is a little full." is
   posted and the conversation ends; otherwise the speaker leaves its squad (its leader passes to the first member left) and joins the player's
-  active squad (the first selected player character's, else `Player.Squad`, else the talker's), or a new "blank squad" squad when that one has
+  active squad (player 0's `PlayerSession.Squad`, else the first selected player character's, else the talker's), or a new "blank squad" squad when that one has
   `max squad size` members: player faction, role Squad1, NPC class Adventurer (as every player-faction character, `CharacterAssembly`), player
   default orders, speed mode Free (2), no AI mind, stopped, its save link dropped (a save writes it as a new member of the player's platoon).
   Its dialogue becomes the player set (`DialogueDatabase.SetFor`). DA 3 ends the conversation and opens the editor in recruit mode
@@ -961,6 +961,56 @@ and resetting camera evaluation is required for repeatable recording.
 `Meitou.Game/GameHost*.cs` adapts input to commands, drives WorldSession, navmesh upkeep,
 interpolated CharacterDrawList, HUD, loading/transitions and saves. It does not duplicate system
 order. Renderer state lives in Rendering; snapshots are the simulation-to-host boundary.
+
+## Multiplayer (host-authoritative co-op)
+
+Engine design (the original is single-player). Every human is a **player number**: 0 is the host or the single player, 1..N remote players,
+stable per roster GUID. All play the one player faction. Single-player is the case of one session and every squad owned by 0, and runs the
+same code with the same golden hashes.
+
+### Sessions and ownership
+
+- **Shared faction state** (`PlayerState`): `Faction`, `Money` (one purse), town and camp knowledge (`SeenDiscoveriesCommand` from anyone clears
+  the recent marks for everyone, engine choice), `SquadAi`; research, machines and buildings stay the faction's.
+- **Sessions** (`PlayerSession`, `PlayerState.Sessions` by ascending `Number`; `Local` is 0 and always exists): one human's selection, active
+  squad, inspected character and building, open container and the container and door walks, character creation (`InCreation`,
+  `CreationRaces`), camera `Focus`, last `Prospected`, an editor `Grant`, roster `Guid` and `Name`. `Session(n)` adds one (commands and `Join`
+  only); `Find`, `FindByGuid` and `NextNumber` (highest + 1) serve the host.
+- **Owners**: `Squad.Owner` is a player number (0 for NPC squads). `World.OwnerOf(id)` is the character's squad owner (0 without a squad), -1
+  for an NPC or a gone id. Invariant: a session's selection holds only characters it owns (a select drops the others, `Prune` re-selects only
+  an owned character, a dismiss deselects everywhere).
+- **Issuer**: `SimCommand.Player` (0 for host input and deferred commands; the host's gate stamps remote ones). Windows, focus, creation and
+  answers use the issuer's session (`World.SessionOf`); an empty character list is the issuer's selection read when the command applies
+  (`World.Actors`), so a select earlier in the same tick counts.
+- **Squads per owner** (`SquadManagement`): order and `Index`, active squad, rename, remove, reorder, move between squads, Tab and
+  `max squads` cover only the issuer's squads (engine choice: each human has a squads screen of their own); `max faction size` and the dismiss
+  head check count the whole faction. A new squad's `Nameless_n` is unique across all players' squads.
+- **Messages**: `World.Post(player, text)`, `PostOwner(id, text)` (an NPC's goes to everyone) and `Post(text)` (everyone); `TakeMessages()`
+  returns `PlayerMessage`s and a host shows those `For` its number. The answer to a command goes to its issuer, news about one player's
+  character to its owner, faction and world news to everyone.
+- **Issuer checks**: an edit needs one of the issuer's characters and, at creation, the issuer's `InCreation`; a remote player's paid surgery
+  and recruit edits need the matching `Grant`, used up by the edit (player 0's `Paid` is trusted). Bail is paid by the nearest of the
+  issuer's characters from the shared purse. A finished prospecting goes to its prospector's owner's session.
+- **Zones and campaigns**: player characters activate zones; with none, every session's focus does (number order). A campaign leader
+  announces when any session's focus is within 2500.
+- **Hash**: unchanged while session 0 is alone and every squad has owner 0; each further session adds its number, active squad and
+  selection, and each squad with `Owner != 0` adds its owner.
+
+### Dialogue and trade per player
+
+Not per player yet: one conversation and one trade; `PublishConversation(n)`, `PublishRequest(n)` and `PublishTrade(n)` answer player 0 only.
+
+### Command gate
+
+Not implemented yet: every queued command is applied as its issuer's.
+
+### Per-viewer snapshots
+
+Not implemented yet: the world publishes player 0's view; the snapshot's viewer, faction, relation, talkable, creation and owner members keep their defaults.
+
+### Joining
+
+Not implemented yet: `JoinPlayer` and `TransferSquad` (host only) are accepted and do nothing.
 
 ## Open questions and known gaps
 

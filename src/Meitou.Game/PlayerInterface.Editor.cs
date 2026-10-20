@@ -285,7 +285,7 @@ sealed partial class PlayerInterface
 
     /// <summary>The races this session offers: at creation the playable ones, limited to the start's <c>force race</c>; a surgeon offers none (race stays).</summary>
     IReadOnlyList<EditorRaceGroup> EditorRaces(GameDatabase db) =>
-        editor?.Kind == EditKind.Creation ? CharacterDraft.PlayableRaces(db, [.. session.World.Player.CreationRaces]) : [];
+        editor?.Kind == EditKind.Creation ? CharacterDraft.PlayableRaces(db, [.. session.World.Player.Local.CreationRaces]) : [];
 
     /// <summary>
     /// CONFIRM. Like the original (<c>FUN_1405e9f40</c>), a squad with characters never shown asks first ("There are other characters whose appearance haven't

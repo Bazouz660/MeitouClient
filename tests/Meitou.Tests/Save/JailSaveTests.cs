@@ -141,7 +141,7 @@ public class JailSaveTests
             using var b = new Game(data);
             var loaded = SaveLoader.Load(b.World, save, data);
             b.World.Fixtures.RegisterSite(b.World, data, 0);
-            var squadB = b.World.Squads.Find(b.World.Player.Squad)!;
+            var squadB = b.World.Squads.Find(b.World.Player.Local.Squad)!;
             var cagedB = b.World.Characters.Cold(squadB.Members[0].Slot)!;
             var cageB = b.World.Fixtures.Find($"{HouseKey}/0")!;
             Assert.True(cagedB.IsImprisoned);

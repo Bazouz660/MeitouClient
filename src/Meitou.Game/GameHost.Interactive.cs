@@ -655,14 +655,15 @@ sealed partial class GameHost
         while (clock.Elapsed.TotalSeconds < end) Thread.SpinWait(64);
     }
 
-    /// <summary>Between ticks: the world's messages for the player go to the HUD and the log, the fights hostility started to the log.</summary>
+    /// <summary>Between ticks: the world's messages for this player (player 0) go to the HUD and the log, the fights hostility started to the log.</summary>
     void WorldNews()
     {
         var world = session.World;
-        foreach (string message in world.TakeMessages())
+        foreach (var message in world.TakeMessages())
         {
-            Console.WriteLine($"relations {message}");
-            player.Notice(message);
+            if (!message.For(0)) continue;
+            Console.WriteLine($"relations {message.Text}");
+            player.Notice(message.Text);
         }
         // Stealth knock-outs: the original's floating "*Thunk*" (a hit) or "Failed!" over the attacker, here as a notice.
         if (world.Systems.OfType<Meitou.Simulation.Carrying.CarrySystem>().FirstOrDefault() is { Knockouts.Count: > 0 } carry)

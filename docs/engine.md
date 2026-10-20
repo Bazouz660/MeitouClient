@@ -13,6 +13,9 @@ WorldSession owns world, clocks, input/bindings, camera and last two snapshots. 
 6*speed budget. Control precedes simulation; interpolation uses each clock's alpha, shortest
 angle rotation and cuts on mode changes. The authoritative time/order/determinism details are
 in simulation. Host copies camera state into WorldCamera and snapshots into CharacterDrawList.
+Pause/speed input (control-tick keys, HUD buttons) is a `ClockRequest` through `WorldSession.RequestClock`:
+applied to the SimulationClock, or handed to `ClockAuthority` (net sessions) when set, which also stops modal
+screens pausing (`ModalsPause`). `SimulationTicked`/`WorldReplaced` fire after each tick/world swap.
 
 KenshiCamera follows pivot/boom/zoom/pitch/ground constraints from [camera](formats/camera.md).
 Engine choices: pivot500*clamp(boom/600,0.1,1), keys1.5rad/s, mouse0.005rad/pixel; terrain-ground

@@ -178,7 +178,7 @@ public class TradeTests
         b.World.Player.Money = 0;
         b.Say(new BuyItem(b.View.Stock[0].Token, 1) { Tick = 0 });
         b.World.RunTicks(1);
-        Assert.Contains("You can't afford that.", b.World.TakeMessages());
+        Assert.Contains("You can't afford that.", b.World.TakeMessages().Select(m => m.Text));
         Assert.Empty(b.Bag(hero).All());
 
         // Walking away closes the trade; the stock is replaced when the refresh time comes.

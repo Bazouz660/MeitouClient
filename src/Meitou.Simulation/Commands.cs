@@ -11,7 +11,18 @@ public abstract record SimCommand
 {
     /// <summary>The simulation tick the command applies at; a command for a tick already run applies at the next one.</summary>
     public required long Tick { get; init; }
+    /// <summary>
+    /// The player who issued it (docs/simulation.md "Multiplayer (host-authoritative co-op)"): 0 is the host or the single player; the host's command gate stamps a remote
+    /// player's number. Its answers, windows and empty-list fallbacks are that player's session's (<see cref="World.SessionOf"/>). Deferred commands keep 0 unless a system sets it.
+    /// </summary>
+    public int Player { get; init; }
 }
+
+/// <summary>
+/// Host only (the command gate refuses it from clients): player <see cref="SimCommand.Player"/> joins. Their start squad is made near <paramref name="Near"/>
+/// (<paramref name="StartId"/>: a NEW_GAME_STARTOFF; null: the Wanderer start), or they get their squads back when these still have living members.
+/// </summary>
+public sealed record JoinPlayer(string? StartId, Vector3 Near) : SimCommand;
 
 /// <summary>Move order: the characters walk to <see cref="Target"/> (world units; the height is taken from the ground).</summary>
 public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Target) : SimCommand
@@ -74,7 +85,7 @@ public sealed class CommandQueue
 /// </summary>
 public sealed record FocusCommand(Vector3 Position) : SimCommand;
 
-/// <summary>Selects the player's own characters. No valid targets retains the selection; otherwise non-additive replaces it and additive (shift) adds to it.</summary>
+/// <summary>Selects the issuer's own characters. No valid targets retains the selection; otherwise non-additive replaces it and additive (shift) adds to it.</summary>
 public sealed record SelectCommand(IReadOnlyList<CharacterId> Characters, bool Additive = false) : SimCommand;
 
 /// <summary>Clears order selection and shows another faction's character in the HUD panels. <see cref="CharacterId.None"/> clears inspection only.</summary>
@@ -86,7 +97,7 @@ public sealed record InspectBuildingCommand(string? Instance) : SimCommand;
 /// <summary>The map was closed: towns lose their recently-discovered mark (<see cref="TownKnowledge.Recent"/>).</summary>
 public sealed record SeenDiscoveriesCommand : SimCommand;
 
-/// <summary>Stop: the characters (the selection when the list is empty) drop their orders and stand.</summary>
+/// <summary>Stop: the characters (the issuer's selection when the list is empty) drop their orders and stand.</summary>
 public sealed record StopCommand(IReadOnlyList<CharacterId> Characters) : SimCommand;
 
 /// <summary>

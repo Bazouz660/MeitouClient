@@ -48,8 +48,8 @@ sealed partial class GameHost
     {
         var world = session.World;
         long tick = world.Tick;
-        var selected = world.Player.Selection.ToArray();
-        CharacterId[] targets = selected.Length > 0 ? selected : world.Player.Inspected.IsNone ? [] : [world.Player.Inspected];
+        var selected = world.Player.Local.Selection.ToArray();
+        CharacterId[] targets = selected.Length > 0 ? selected : world.Player.Local.Inspected.IsNone ? [] : [world.Player.Local.Inspected];
         var here = session.Camera.Current.Target;
         switch (row)
         {
@@ -129,7 +129,7 @@ sealed partial class GameHost
             }
             lines.Add(line);
         }
-        string info = $"{world.Player.Selection.Count} selected   here {here.X:0}, {here.Z:0}   money c.{world.Player.Money.ToString("N0", CultureInfo.InvariantCulture)}";
+        string info = $"{world.Player.Local.Selection.Count} selected   here {here.X:0}, {here.Z:0}   money c.{world.Player.Money.ToString("N0", CultureInfo.InvariantCulture)}";
         const string Hint = "Up/Down pick   type to edit   Enter apply   Esc/F10 close";
         var dim = new Vector4(0.7f, 0.75f, 0.8f, 1);
         float pad = 10, x0 = 16, y0 = top + 16;

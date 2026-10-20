@@ -30,7 +30,7 @@ public readonly record struct MachineSound(float Efficiency, bool Powered);
 /// <summary>A machine of a complete player building after a tick (docs/simulation.md "Production"); <see cref="Site"/> is the building's instance id.</summary>
 public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<MachineSlotView> Inputs, MachineSlotView? Output, InventoryView? Storage, FarmView? Farm, byte Status, int Operators, int MaxOperators)
 {
-    /// <summary>A container of a building's interior, open (<see cref="PlayerState.OpenContainer"/>): <see cref="Site"/> is its fixture id; no research, recipe or power.</summary>
+    /// <summary>A container of a building's interior, open (<see cref="PlayerSession.OpenContainer"/>): <see cref="Site"/> is its fixture id; no research, recipe or power.</summary>
     public bool IsContainer { get; init; }
     /// <summary>The research bench's tech level (0 for other machines).</summary>
     public int TechLevel { get; init; }

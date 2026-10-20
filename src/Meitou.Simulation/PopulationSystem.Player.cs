@@ -85,11 +85,20 @@ public sealed partial class PopulationSystem
         world.Player.Faction = data.PlayerFaction;
         world.Player.Money = start.Money;
         world.Research.Set(data.Db, Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch(data.Db, start));
-        world.Player.Squad = squad.Id;
-        world.Player.CreationRaces = [.. start.ForceRace.Select(r => r.Id)];
-        world.Player.InCreation = true;   // the character editor may remake them until it is confirmed (docs/characters.md "Character editor")
-        world.Player.Selection.Clear();
-        if (squad.Members.Count > 0) world.Player.Selection.Add(squad.Members[0]);
+        var local = world.Player.Local;
+        local.Squad = squad.Id;
+        local.CreationRaces = [.. start.ForceRace.Select(r => r.Id)];
+        local.InCreation = true;   // the character editor may remake them until it is confirmed (docs/characters.md "Character editor")
+        local.Selection.Clear();
+        if (squad.Members.Count > 0) local.Selection.Add(squad.Members[0]);
         return squad;
+    }
+
+    /// <summary>
+    /// The <see cref="JoinPlayer"/> commands due (the inputs, and the paused interface commands): each joiner's start squad or rejoin (docs/simulation.md "Multiplayer
+    /// (host-authoritative co-op)", Joining). Not handled yet: a join is a no-op.
+    /// </summary>
+    internal void ApplyJoins(World world, IReadOnlyList<SimCommand> commands)
+    {
     }
 }

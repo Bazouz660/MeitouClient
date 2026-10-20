@@ -48,19 +48,19 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             {
                 case TreatOrder order:
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
-                    foreach (var id in Who(world, order.Medics))
+                    foreach (var id in world.Actors(order, order.Medics))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
                             Begin(table, slot, order.Patient, CharacterTask.Idle);
                     break;
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
-                    foreach (var id in Who(world, splint.Medics))
+                    foreach (var id in world.Actors(splint, splint.Medics))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold)
                             && FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is not null)   // "I don't have a splint kit."
                             Begin(table, slot, splint.Patient, CharacterTask.Idle, splint: true);
                     break;
                 case RestOrder rest:
-                    foreach (var id in Who(world, rest.Characters))
+                    foreach (var id in world.Actors(rest, rest.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { } cold || !CanAct(cold)) continue;
                         MovementSystem.Stop(table, slot);
@@ -73,7 +73,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                 case MedicJobCommand job:
                 {
                     var taken = job.Job ? null : Treated(table);
-                    foreach (var id in Who(world, job.Characters))
+                    foreach (var id in world.Actors(job, job.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC));
@@ -84,8 +84,6 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             }
         }
     }
-
-    static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
     /// <summary>A character that can be ordered to treat or rest: it has a medical state, is awake and is not in a fight.</summary>
     static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat;

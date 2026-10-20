@@ -31,6 +31,7 @@
     <ProjectReference Include="../Meitou.Ui/Meitou.Ui.csproj" />
     <ProjectReference Include="..\Meitou.Engine\Meitou.Engine.csproj" />
     <ProjectReference Include="../Meitou.Navigation/Meitou.Navigation.csproj" />
+    <ProjectReference Include="../Meitou.Net/Meitou.Net.csproj" />
     <ProjectReference Include="..\Meitou.Rendering\Meitou.Rendering.csproj" />
     <ProjectReference Include="..\Meitou.Rendering.Display\Meitou.Rendering.Display.csproj" />
   </ItemGroup>

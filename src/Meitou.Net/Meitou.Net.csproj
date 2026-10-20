@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Multiplayer wire format, sessions and transport (docs/net.md). Never references Rendering, Audio, Ui or Game. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Meitou.Core\Meitou.Core.csproj" />
+    <ProjectReference Include="..\Meitou.Data\Meitou.Data.csproj" />
+    <ProjectReference Include="..\Meitou.Simulation\Meitou.Simulation.csproj" />
+    <ProjectReference Include="..\Meitou.Engine\Meitou.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Meitou.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- UDP transport; only Transport/LiteNetTransport.cs touches its types. -->
+    <PackageReference Include="LiteNetLib" Version="2.1.4" />
+  </ItemGroup>
+</Project>

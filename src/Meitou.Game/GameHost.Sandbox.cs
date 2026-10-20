@@ -63,7 +63,7 @@ sealed partial class GameHost
             float r = 25 + 15 * ring, angle = 2 * MathF.PI * placed / perRing;
             population.SpawnSandbox(world, record, new Vector2(r * MathF.Cos(angle), r * MathF.Sin(angle)), player: true, yaw: angle + MathF.PI, variant: i + 1);
         }
-        playerSquad = world.Squads.Find(world.Player.Squad);
+        playerSquad = world.Squads.Find(world.Player.Local.Squad);
         world.Commands.Enqueue(new SelectCommand([sandboxHero]) { Tick = world.Tick });
         bool patrol = false, fight = false;
         // --sandbox-mode: comma-separated walk, run or free, a fixed speed in units/s, patrol and fight.

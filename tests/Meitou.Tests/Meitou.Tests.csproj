@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Meitou.Rendering\Meitou.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Meitou.Simulation\Meitou.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Meitou.Navigation\Meitou.Navigation.csproj" />
+    <ProjectReference Include="..\..\src\Meitou.Net\Meitou.Net.csproj" />
     <ProjectReference Include="..\..\src\Meitou.Audio\Meitou.Audio.csproj" />
   </ItemGroup>
 

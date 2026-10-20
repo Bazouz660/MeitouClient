@@ -46,7 +46,7 @@ public class SaveWorldTests
     {
         using var g = NewGame();
         var clock = new SaveClock(2, 14, 30);
-        g.World.Player.Selection.Add(g.Squad.Leader);
+        g.World.Player.Local.Selection.Add(g.Squad.Leader);
         var save = SaveCapture.Capture(g.World, g.Data, clock);
 
         Assert.Equal((2, 14, 30), (save.Camera.Day, save.Camera.Hour, save.Camera.Minute));
@@ -70,7 +70,7 @@ public class SaveWorldTests
             Assert.Equal(clock, loaded.Clock);
             Assert.Equal(500, world2.Player.Money);
             Assert.Equal(g.Data.PlayerFaction, world2.Player.Faction);
-            var squad = world2.Squads.Find(world2.Player.Squad)!;
+            var squad = world2.Squads.Find(world2.Player.Local.Squad)!;
             Assert.Equal(4, squad.Members.Count);
             Assert.Equal(g.Squad.Members.Select(m => g.World.Characters.Cold(m.Slot)!.Name), squad.Members.Select(m => world2.Characters.Cold(m.Slot)!.Name));
             for (int i = 0; i < 4; i++)
@@ -82,7 +82,7 @@ public class SaveWorldTests
             }
             Assert.Equal(g.Squad.Leader.Slot, g.Squad.Members.First(m => m == g.Squad.Leader).Slot);
             Assert.Equal(world2.Characters.Cold(squad.Leader.Slot)!.Name, g.World.Characters.Cold(g.Squad.Leader.Slot)!.Name);
-            Assert.Equal([squad.Leader], world2.Player.Selection);
+            Assert.Equal([squad.Leader], world2.Player.Local.Selection);
             Assert.All(squad.Members, m => Assert.True(world2.Characters.Cold(m.Slot)!.IsPlayer));
             Assert.All(squad.Members, m => Assert.NotNull(world2.Characters.Cold(m.Slot)!.Save));
             // Relations: the table the new save holds is the data's own.
@@ -109,7 +109,7 @@ public class SaveWorldTests
             save.Write(folder);
             using var world2 = EmptyWorld();
             SaveLoader.Load(world2, SaveGame.Load(folder), g.Data);
-            var squad = world2.Squads.Find(world2.Player.Squad)!;
+            var squad = world2.Squads.Find(world2.Player.Local.Squad)!;
             var item = Assert.Single(world2.Characters.Cold(squad.Leader.Slot)!.Inventory!.Items);
             Assert.Equal(("70-t", "main", 2, 1, 3, 40f), (item.Record, item.Section, item.X, item.Y, item.Quantity, item.Charges));
             Assert.NotNull(item.Saved);

@@ -58,6 +58,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public int SquadId { get; init; } = -1;
     /// <summary>One of the player's characters, and whether it is selected.</summary>
     public bool IsPlayer { get; init; }
+    /// <summary>The player number who owns it (<see cref="World.OwnerOf"/>) for a player character; -1 for any other (docs/simulation.md "Multiplayer (host-authoritative co-op)").</summary>
+    public int Owner { get; init; } = -1;
     /// <summary>A member of a squad with a shop (right click trades).</summary>
     public bool IsTrader { get; init; }
     /// <summary>What this NPC's plastic surgery costs (its dialogue's character editor line, <see cref="Meitou.Data.Characters.SurgeonDialogues"/>); null: not a surgeon.</summary>
@@ -176,10 +178,27 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<CampView> Camps { get; init; } = [];
     /// <summary>The squad AI options (<see cref="PlayerState.SquadAi"/>).</summary>
     public SquadAi SquadAi { get; init; } = SquadAi.Defaults;
-    /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads"/>), each with its members in squad order (the first leads).</summary>
+    /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads(World)"/>), each with its members in squad order (the first leads).</summary>
     public IReadOnlyList<SquadView> PlayerSquads { get; init; } = [];
-    /// <summary>The active squad's id (<see cref="PlayerState.Squad"/>; -1 none): the squad bar shows it.</summary>
+    /// <summary>The active squad's id (<see cref="PlayerSession.Squad"/>; -1 none): the squad bar shows it.</summary>
     public int ActiveSquad { get; init; } = -1;
+    /// <summary>The player number this snapshot was published for (its selection, windows and active squad; docs/simulation.md "Multiplayer (host-authoritative co-op)").</summary>
+    public int Viewer { get; init; }
+    /// <summary>The player's faction (<see cref="PlayerState.Faction"/>; -1 before a game starts).</summary>
+    public int PlayerFaction { get; init; } = -1;
+    /// <summary>The player faction's money in cats (<see cref="PlayerState.Money"/>).</summary>
+    public long Money { get; init; }
+    /// <summary>The player faction's relation towards each faction (by faction position); empty when not published.</summary>
+    public IReadOnlyList<float> Relations { get; init; } = [];
+    /// <summary>Bumped when <see cref="Relations"/> is rebuilt with other values (world-local).</summary>
+    public long RelationsRevision { get; init; }
+    /// <summary>The NPCs near the viewer's first selected character that answer its Talk (<see cref="World.CanTalk"/>); empty when not published.</summary>
+    public IReadOnlySet<CharacterId> Talkable { get; init; } = NoIds;
+    /// <summary>The last prospecting the viewer's characters finished (<see cref="PlayerSession.Prospected"/>; null none).</summary>
+    public Production.ProspectReport? Prospected { get; init; }
+    /// <summary>The viewer's new game character editor is open (<see cref="PlayerSession.InCreation"/>), limited to <see cref="CreationRaces"/> (empty: every playable race).</summary>
+    public bool InCreation { get; init; }
+    public IReadOnlyList<string> CreationRaces { get; init; } = [];
     /// <summary>Player-built buildings and construction sites, in creation order (docs/simulation.md "Buildings").</summary>
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
@@ -211,6 +230,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     static readonly IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> NoDoors = new Dictionary<(string Building, int Door), Locks.DoorView>();
 
     static readonly IReadOnlySet<string> EmptySet = new HashSet<string>(StringComparer.Ordinal);
+
+    static readonly IReadOnlySet<CharacterId> NoIds = new HashSet<CharacterId>();
 
     // After the statics above: static initializers run in textual order, and the property defaults read them.
     public static readonly WorldSnapshot Empty = new(-1, []);

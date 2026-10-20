@@ -109,20 +109,20 @@ public static class SaveLoader
             else if (!mine && options.NpcPlatoons)
                 LoadNpcPlatoon(world, platoon, data, loaded, context, campaignPlatoons.Contains((platoon.Handle.C, platoon.Handle.CS)));
         }
-        if (loaded.PlayerPlatoons.Count > 0) world.Player.Squad = loaded.PlayerPlatoons[0].Squad.Id;
+        if (loaded.PlayerPlatoons.Count > 0) world.Player.Local.Squad = loaded.PlayerPlatoons[0].Squad.Id;
 
         // The selection.
         var selected = new List<Hand> { camera.SelectedCharacter };
         for (int k = 0; camera.Record.Ints.ContainsKey($"selected_characters{k}I"); k++) selected.Add(Hand.Read(camera.Record, $"selected_characters{k}"));
         foreach (var h in selected)
-            if (!h.IsNull && handles.Character(h) is { } c && bySource.TryGetValue(c, out var id) && !world.Player.Selection.Contains(id))
-                world.Player.Selection.Add(id);
+            if (!h.IsNull && handles.Character(h) is { } c && bySource.TryGetValue(c, out var id) && !world.Player.Local.Selection.Contains(id))
+                world.Player.Local.Selection.Add(id);
         // The squad bar shows the selected character's squad, else the first in order with members.
-        if (world.Player.Selection.Count > 0 && world.Characters.Cold(world.Player.Selection[0].Slot) is { } first && world.Squads.Find(first.SquadId) is { PlatoonId: < 0 } shown
+        if (world.Player.Local.Selection.Count > 0 && world.Characters.Cold(world.Player.Local.Selection[0].Slot) is { } first && world.Squads.Find(first.SquadId) is { PlatoonId: < 0 } shown
             && shown.Faction == playerIndex)
-            world.Player.Squad = shown.Id;
+            world.Player.Local.Squad = shown.Id;
         else if (SquadManagement.PlayerSquads(world) is { Count: > 0 } squads)
-            world.Player.Squad = (squads.FirstOrDefault(s => s.Members.Count > 0) ?? squads[0]).Id;
+            world.Player.Local.Squad = (squads.FirstOrDefault(s => s.Members.Count > 0) ?? squads[0]).Id;
         return loaded;
     }
 
