@@ -161,7 +161,28 @@ public static class SquadManagement
             case DismissCommand dismiss:
                 if (data is not null) Dismiss(world, data, dismiss);
                 break;
+            case TransferSquad transfer:
+                Transfer(world, transfer);
+                break;
         }
+    }
+
+    /// <summary>
+    /// A player squad passes to another player (host only; docs/simulation.md "Multiplayer (host-authoritative co-op)", Joining): it goes last in the new owner's order, the
+    /// old owner's squads are renumbered, its members leave every other session's selection and each session keeps an active squad of its own. Refused (nothing happens) for
+    /// a squad that is not a player squad or a player without a session.
+    /// </summary>
+    static void Transfer(World world, TransferSquad transfer)
+    {
+        if (world.Squads.Find(transfer.Squad) is not { } given || !IsPlayerSquad(world, given) || world.Player.Find(transfer.Owner) is null || given.Owner == transfer.Owner) return;
+        int from = given.Owner;
+        var order = PlayerSquads(world, transfer.Owner);
+        given.Owner = transfer.Owner;
+        given.Index = order.Count == 0 ? 0 : order[^1].Index + 1;
+        Renumber(PlayerSquads(world, from));
+        foreach (var session in world.Player.Sessions)
+            if (session.Number != transfer.Owner) session.Selection.RemoveAll(given.Members.Contains);
+        KeepActive(world);
     }
 
     /// <summary>A squad of the player's faction that is not a platoon's active half (whoever owns it).</summary>
