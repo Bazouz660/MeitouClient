@@ -139,7 +139,44 @@ Pending (package N2).
 
 ## Transport
 
-Pending (package N3).
+`Transport/` (`Meitou.Net.Transport`): `INetServerTransport` (`Listen(port)`, 0 = any free port, `Port`) and `INetClientTransport`
+(`Connect(host, port, connectData)`) share `INetTransport`: `Poll(INetListener)`, `Send(peer, channel, data)`, `Drop(peer, payload)`,
+`MaxUnreliablePayload(peer)`, `Stats(peer)` (`NetLinkStats`: round trip, loss, bytes), `Address(peer)`. `PeerSink(transport, peer)` adapts
+one peer to `IPacketSink`. All calls are made from the frame thread.
+
+- **Events** reach the `INetListener` only inside `Poll`, on the calling thread; nothing sent during a poll is delivered in it. Server:
+  `Request(address, connectData)` returns null to accept (`Connected` follows) or a refusal payload. `Received` hands one whole packet.
+  `Dropped(peer, reason, data)` comes exactly once per accepted peer and per `Connect`, also after a local `Drop` (reason `Closed`, empty
+  data, at the next poll), never after `Dispose`. `NetDropReason`: `Closed` (the remote side gets the `Drop` payload), `Timeout` (silence
+  for the disconnect timeout, an unanswered connect, a severed loopback link), `Rejected` (data = the refusal), `Error` (unknown host,
+  socket error). `Connect` never throws for network failures; they end in `Dropped`.
+- **Ids** (`NetConnectionId`) start at 1 and are never reused within a transport instance, so a late event cannot name a newer peer.
+- **Send** copies the data and is ignored for a peer that is not connected (pending, dropped or unknown); a `Snapshots` payload over
+  `MaxUnreliablePayload` throws `ArgumentException`. `MaxUnreliablePayload`, `Address` and `Stats` give 0, "" and default for an unknown peer.
+
+**`LiteNetTransport`** (one class for both sides; the only user of LiteNetLib 2.1.4): one `NetManager` with `ChannelsCount = 4`,
+`UnsyncedEvents = false`, `AutoRecycle`, `EnableStatistics`, `DisconnectTimeout = 15000` ms, `IPv6Enabled`. `Snapshots` is
+`DeliveryMethod.Sequenced` (may drop, never duplicates, a packet older than one delivered is dropped), the others `ReliableOrdered`
+(fragmented by LiteNetLib). Connect data travels raw (`Connect(IPEndPoint, ReadOnlySpan<byte>)`, `ConnectionRequest.Data`; `Accept()` /
+`Reject(bytes)`); a host name resolves through DNS (IPv4 first). `MaxUnreliablePayload` = `GetMaxSinglePacketSize(Sequenced)` (grows with
+the peer's MTU); `Drop` = `NetPeer.Disconnect(bytes)`, read back from `DisconnectInfo.AdditionalData`. `Poll` runs `PollEvents` then
+`TriggerUpdate`, so packets sent after the poll leave without waiting a whole update period. **Observed** (2.1.4 XML docs): `Start` runs
+LiteNetLib's own logic thread, which keeps links alive and resends while the frame loop is blocked (a long scene-load stage); queued events
+wait for the next `Poll`. Every member used is checked by compiling against the 2.1.4 package. **Verified** (`LiteNetTransportTests`:
+connect payload, Control, Snapshots and a 5000-byte fragmented Events packet, and a drop payload over UDP on 127.0.0.1, OS-assigned port).
+
+**`LoopbackNetwork(LoopbackOptions, INetClock)`** (tests): one `Server()`, any number of `Client()`s, `Sever(clientSideId)` (both ends time
+out at their next poll). Deterministic: one `Random(Seed)` drawn in send order, delivery by (due time, send order) from the clock (usually
+`ManualNetClock`). Each packet is due at send + `LatencyMs` (data + uniform 0..`JitterMs`). Reliable channels never lose: each lost
+transmission (`ReliableLoss`) delays the packet by one resend (2 × latency + jitter, at least 1 ms) and order per channel holds later ones
+behind it. `Snapshots` loses (`UnreliableLoss`), reorders through jitter and duplicates (`Duplicate`); the receiver drops anything sent
+before the newest packet it delivered. Data never overtakes the accept; a close is due after the reliable data sent before it. A payload
+over `Mtu` (default 1200) throws; a connect to a port nobody listens on times out one round trip later. **Verified**
+(`LoopbackTransportTests`: accept and refusal with payloads, complete per-channel order under 30 % loss and jitter, sequencing never
+delivers an older packet, drops reach both sides once).
+
+**Clocks**: `INetClock.NowMicroseconds`; `StopwatchNetClock` (monotonic, 0 at construction), `ManualNetClock` (`NowMicroseconds` settable,
+`Advance(TimeSpan)`).
 
 ## Snapshot core
 
