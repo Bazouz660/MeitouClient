@@ -351,7 +351,32 @@ views carry (for the coverage test).
 
 ## Looks
 
-Pending (package N7).
+`CharacterSnapshot.Appearance` never crosses the wire: a part carries a look id (0 = none) and the client rebuilds the
+look from the recipe of the `IAppearanceSource` call that made it (`Replication/Looks/`).
+
+- **Recording.** `RecordingAppearances` wraps the host's source (every interactive run, so looks made before hosting
+  have recipes). It forwards every member unchanged and keeps, weakly per returned look, `Rolled(recordId, factionId,
+  seed)` or `Kit(recordId, loadout)`. An animal's look is its species' shared instance, so it is always
+  `Rolled(animalId, null, 0)`. Every look in play is made through the source (population, `RefreshEquipment`, editing,
+  save loading): **Observed** by reading the callers. `AppearanceRecipe.FromLook` covers a look the recorder never saw:
+  the species for an animal, else a Kit from `look.Loadout`, else none (the client shows a marker).
+- **Ids.** `LookRegistry.IdOf` gives each look object one id on first use, never reused within the registry (one per
+  `NetHost`), and takes the recipe then (with `look.Shape` when set). Entries of collected looks are swept. Frame thread.
+- **`LookDefinition`** (`0x31`, Views): id varint (never 0), recipe kind byte (1 Rolled, 2 Kit), body, then a shape
+  presence bool. Ids go through the channel's string table, ints are zigzag. Rolled: record id, faction id (nullable),
+  seed. Kit: record id; seed; character id (nullable); race id; flags (b0 female, b1 generated); morph index; the
+  CHARACTER_APPEARANCE record (`FcsRecordCodec`); clothing (count, items); backpack (presence, item); carried (count,
+  items); crossbow (presence, weapon); weapons (count, weapons); four limbs (varint 0 natural, else state + 1, then the
+  prosthetic id?). Item: record, quality, material?. Weapon: weapon, manufacturer?, model?, level, section, row. Shape:
+  flags (female, narrow left/right thigh), muscle, starvation, leg ratio (f32), hide stump (zigzag varint), missing
+  limbs (bit mask byte), sliders (count, key and f32). `Loadout.Notes` are dropped. The writer refuses ids over `MaxName`, null required
+  ids and over-long lists, masks hide stump to its defined bits and writes non-finite shape floats as 0. **Verified** (`LookTests`: round trip of every field, twice through a reliable table).
+- **`LookCache`** (client, `ILookResolver`): kept for the connection; `Define` builds on the thread pool (synchronously
+  with `background: false`), a repeated id keeps its first recipe, `Resolve` is null until built. A recipe naming a
+  record the client lacks, or a build that throws, gives a null look (marker).
+- Rolled and Kit recipes (with stumps, a crushed limb and a prosthetic leg), the `FromLook` fallback and animals rebuild
+  the host's parts, meshes, head, hair, colours, poses, body layers and lights from a fresh `GeneratedAppearances`.
+  **Verified** (`LookTests`, [Slow], base game data).
 
 ## Events
 
