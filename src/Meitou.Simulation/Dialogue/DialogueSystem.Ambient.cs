@@ -44,7 +44,7 @@ public sealed partial class DialogueSystem
     {
         var table = world.Characters;
         if (!table.TryResolveNext(npc, out int n) || !Awake(table, n) || BubbleOf(npc)) return false;
-        var c = new Conversation { Npc = npc, Player = whom, Event = ev };
+        var c = new Conversation { Npc = npc, Player = whom, Event = ev, Owner = Math.Max(0, world.OwnerOf(whom)) };
         if (Pick(world, c, SetOf(world, n).For(ev)) is not { } picked || picked.Speaker.IsNone || picked.Speaker == whom) return false;
         c.Root = picked.Root;
         bubbles.Add(new Bubble(c, picked.Line, world.Tick, picked.Speaker));
