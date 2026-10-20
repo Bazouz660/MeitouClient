@@ -143,6 +143,17 @@ sealed partial class GameHost
             if (o.GrassDensity is { } grassDensity) foliage.GrassDensitySetting = grassDensity;
             Console.WriteLine($"metal     foliage ready ({foliage.LoadMs:0} ms)");
         }
+        // The water: the game's faithful quad first (the Meitou grid's ocean FFT and shore field are Vulkan-typed still).
+        WaterRenderer? water = null;
+        if (!o.NoWater && scene.Database is { } waterDb)
+        {
+            var messages = new List<string>();
+            water = WaterRenderer.Create(ctx, install, waterDb, assets, sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
+                meitouWaves: false, shoreField: false);
+            water.Refraction = false;
+            foreach (var m in messages.Take(20)) Console.WriteLine($"warning   {m}");
+            Console.WriteLine("metal     water ready (faithful)");
+        }
         terrain.BeginFrame();
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
@@ -203,6 +214,8 @@ sealed partial class GameHost
                 weatherSurfaces.GameTime = hour;
                 weatherSurfaces.Apply(weather?.State ?? Meitou.Data.World.WeatherState.Clear);
             }
+            var weatherState = weather?.State ?? Meitou.Data.World.WeatherState.Clear;
+            water?.Animate(session.Clock.HoursSinceStart, weatherState.WindDirection, weatherState.WindSpeed);
             sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
             sky.Eye = eye;
             sky.Clock = scene.Clock;
@@ -262,6 +275,7 @@ sealed partial class GameHost
             if (render.Objects && objects is not null)
                 objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
             foliage?.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
+            water?.Draw(worldProjection, eye, light, colours, (float)session.Clock.HoursSinceStart, camera.ViewDistance * 1.5f);
 
             ctx.EndHostPass(cmd);
             cmd.EndRendering();
@@ -287,6 +301,7 @@ sealed partial class GameHost
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
         foliage?.Dispose();
+        water?.Dispose();
         objects?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();

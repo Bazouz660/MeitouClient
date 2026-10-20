@@ -827,18 +827,21 @@ public sealed unsafe class WaterRenderer : IDisposable
         """;
 
     /// <summary>The native GPU API (phase 8 stage 2: the water makes no GL call; docs/renderer-native.md 8.6).</summary>
-    public GpuContext Gpu { get; }
-    readonly DeviceBuffer quad, grid, gridIndices;
-    readonly VertexArrayBindings quadSource, gridSource;   // the vertex inputs (the pipeline cache's key)
+    public IGpuContext Gpu { get; }
+    readonly DeviceBuffer quad;
+    readonly DeviceBuffer? grid, gridIndices;
+    readonly VertexArrayBindings quadSource;
+    readonly VertexArrayBindings? gridSource;   // the vertex inputs (the pipeline cache's key)
     readonly GpuBufferBinding[] quadVertices, gridVertices;
     readonly uint gridIndexCount;
     readonly SampledImage[] maps;   // colour, flow, normal, parameters A and B, rain ripples, foam (Meitou), in the order of WaterProgram.MapNames
     readonly Vector4 seaA, seaB;
     readonly Vector3 seaColour;
-    readonly WaterProgram faithful, meitou;
+    readonly WaterProgram faithful;
+    readonly WaterProgram? meitou;
     readonly WaveSet waves = new();
-    readonly OceanWaves ocean;
-    readonly ShoreField shore;
+    readonly OceanWaves? ocean;
+    readonly ShoreField? shore;
     readonly float gridStep;
     GpuTexture? refraction;
     long refractionFrame = -1;
@@ -862,7 +865,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         public readonly SamplerSlot[] Maps;
         public readonly SamplerSlot Reflection, OceanDisp, OceanSlope, ShoreField, Refraction;
 
-        public WaterProgram(GpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
+        public WaterProgram(IGpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
         {
             P = LegacyProgram.Create(gpu, vertex, fragment, name);
             Segment = new NativeSegment(gpu, P, topology, name);
@@ -888,16 +891,20 @@ public sealed unsafe class WaterRenderer : IDisposable
         public void Dispose() => P.Dispose();
     }
 
-    WaterRenderer(GpuContext gpu, SampledImage[] maps, Vector4 seaA, Vector4 seaB, Vector3 seaColour, int gridSegments, int oceanSize)
+    WaterRenderer(IGpuContext gpu, SampledImage[] maps, Vector4 seaA, Vector4 seaB, Vector3 seaColour, int gridSegments, int oceanSize,
+        bool meitouWaves, bool shoreField)
     {
-        ocean = new OceanWaves(gpu, oceanSize);
-        shore = new ShoreField(gpu);
+        // The ocean FFT and the shore field are Vulkan-typed: the faithful water (the quad) does not read them, so a second backend can ask for neither.
+        ocean = meitouWaves ? new OceanWaves((GpuContext)gpu, oceanSize) : null;
+        shore = shoreField ? new ShoreField((GpuContext)gpu) : null;
+        Meitou = meitouWaves;
         gridStep = (float)(2 * Math.PI / gridSegments);
         (this.seaA, this.seaB, this.seaColour) = (seaA, seaB, seaColour);
         Gpu = gpu;
         this.maps = maps;
         faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", PrimitiveType.TriangleStrip);
-        meitou = new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", PrimitiveType.Triangles);
+        // The Meitou fragment reads more samplers than Metal allows one stage; a second backend starts with the faithful quad.
+        meitou = meitouWaves ? new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", PrimitiveType.Triangles) : null;
         float[] corners = [-1, -1, -1, 1, 1, -1, 1, 1]; // triangle strip, counter-clockwise from above
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");
         using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(corners.AsSpan()));
@@ -905,18 +912,22 @@ public sealed unsafe class WaterRenderer : IDisposable
         quadSource = new VertexArrayBindings(attributes, default);
         quadVertices = faithful.P.VertexBuffers(attributes, 0, 1);
 
-        var (positions, indices) = PolarGrid(gridSegments);
-        grid = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)positions.Length, BufferUse.Vertex, "water grid");
-        gridIndices = DeviceBuffer.Create(gpu, sizeof(uint) * (ulong)indices.Length, BufferUse.Index, "water grid indices");
-        using (var batch = gpu.Uploads.Begin())
+        if (meitou is not null)
         {
-            batch.Write(grid, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(positions.AsSpan()));
-            batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
+            var (positions, indices) = PolarGrid(gridSegments);
+            grid = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)positions.Length, BufferUse.Vertex, "water grid");
+            gridIndices = DeviceBuffer.Create(gpu, sizeof(uint) * (ulong)indices.Length, BufferUse.Index, "water grid indices");
+            using (var batch = gpu.Uploads.Begin())
+            {
+                batch.Write(grid, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(positions.AsSpan()));
+                batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
+            }
+            LegacyProgram.Attribute?[] gridAttributes = [QuadAttribute(grid)];
+            gridSource = new VertexArrayBindings(gridAttributes, new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size));
+            gridVertices = meitou.P.VertexBuffers(gridAttributes, 0, 1);
+            gridIndexCount = (uint)indices.Length;
         }
-        LegacyProgram.Attribute?[] gridAttributes = [QuadAttribute(grid)];
-        gridSource = new VertexArrayBindings(gridAttributes, new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size));
-        gridVertices = meitou.P.VertexBuffers(gridAttributes, 0, 1);
-        gridIndexCount = (uint)indices.Length;
+        else gridVertices = [];
     }
 
     /// <summary>The quad's only vertex input, location 0: two floats, 8 bytes apart (the GL vertex array's
@@ -1009,8 +1020,8 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     /// <param name="sky">Unused since phase 8 stage 2: the atmosphere comes through the frame globals.</param>
     /// <param name="source">What <see cref="Prepare"/> made (made here when null).</param>
-    public static WaterRenderer Create(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, SkyRenderer? sky, List<string> messages, ushort[]? coarseHeights = null,
-        int gridSegments = DefaultGridSegments, int oceanSize = OceanWaves.DefaultSize, Source? source = null)
+    public static WaterRenderer Create(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, SkyRenderer? sky, List<string> messages, ushort[]? coarseHeights = null,
+        int gridSegments = DefaultGridSegments, int oceanSize = OceanWaves.DefaultSize, Source? source = null, bool meitouWaves = true, bool shoreField = true)
     {
         _ = sky;
         var s = source ?? Prepare(install, db, assets, coarseHeights);
@@ -1028,7 +1039,7 @@ public sealed unsafe class WaterRenderer : IDisposable
              SampledImage.Rgba32F(gpu, s.A, s.BlendWidth, s.BlendHeight, "water parameters a"), SampledImage.Rgba32F(gpu, s.B, s.BlendWidth, s.BlendHeight, "water parameters b"),
              Rgba(s.Rain, true, [0, 0, 0, 0], "water rain ripples"),
              SampledImage.Rgba8(gpu, WaterFoam.Size, WaterFoam.Size, s.Foam, repeat: true, mipmaps: true, "water foam"), riverMap],
-            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize);
+            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize, meitouWaves, shoreField);
     }
 
     /// <summary>
@@ -1071,14 +1082,14 @@ public sealed unsafe class WaterRenderer : IDisposable
     public void Animate(double gameHours, Vector2 windDirection, float windSpeed)
     {
         waves.Step(gameHours, windDirection, windSpeed);
-        if (Meitou) ocean.Update(gameHours, windDirection, windSpeed);
+        if (Meitou) ocean?.Update(gameHours, windDirection, windSpeed);
     }
 
     /// <summary>Keeps the Meitou water's shore field (<see cref="ShoreField"/>) round the eye: once a frame on the render thread, with the
     /// terrain's heights of this frame. Nothing while the water is Faithful.</summary>
     internal void Track(Vector3 eye, HeightSnapshot heights)
     {
-        if (Meitou) shore.Update(eye, heights);
+        if (Meitou) shore?.Update(eye, heights);
     }
 
     /// <summary>The Meitou water refracts what lies under it (<see cref="CaptureRefraction"/> before each of its draws); off: it blends over it as
@@ -1152,7 +1163,9 @@ public sealed unsafe class WaterRenderer : IDisposable
         if (refraction is not { } r || r.Desc.Width != w || r.Desc.Height != h || r.Desc.Format != sceneColour.Desc.Format)
         {
             refraction?.Dispose();
-            refraction = Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), ((CommandList)cmd).Handle);
+            refraction = Gpu is GpuContext vk
+                ? vk.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), ((CommandList)cmd).Handle)
+                : Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"));
         }
         cmd.Blit(sceneColour, refraction, TextureMinFilter.Linear);
         Gpu.EndNative(cmd);
@@ -1160,7 +1173,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     }
 
     /// <summary>The open waves (for the viewer's statistics and tests).</summary>
-    public OceanWaves Ocean => ocean;
+    public OceanWaves? Ocean => ocean;
 
     /// <summary>
     /// The water surface: one draw, blended, into the pass VkGl has open. Prepare sets the uniforms and the textures the shader reads (the height
@@ -1172,10 +1185,11 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// <param name="time">Animation time; the game's unit for it is Unknown (the viewer uses real hours). Meitou uses the game clock instead.</param>
     public void Draw(Matrix4x4 viewProjection, Vector3 eye, WorldLighting light, SkyColours colours, float time, float extent, ReflectionPass? reflection = null)
     {
-        var p = Meitou ? meitou : faithful;
-        if (Meitou && OceanInView) ocean.Record();   // the FFT only while water near enough to show its detail is in view
-        Prepare(p, viewProjection, eye, light, colours, Meitou ? waves.NormalTime : time, extent, reflection);
-        if (Meitou) Record(p, gridSource, gridVertices, gridIndexCount);
+        bool meitouWater = Meitou && meitou is not null;
+        var p = meitouWater ? meitou! : faithful;
+        if (meitouWater && OceanInView) ocean?.Record();   // the FFT only while water near enough to show its detail is in view
+        Prepare(p, viewProjection, eye, light, colours, meitouWater ? waves.NormalTime : time, extent, reflection);
+        if (meitouWater) Record(p, gridSource!, gridVertices, gridIndexCount);
         else Record(p, quadSource, quadVertices, 0);
     }
 
@@ -1204,14 +1218,14 @@ public sealed unsafe class WaterRenderer : IDisposable
         p.Set(h.FogDistance, light.FogDistance);
         if (h == meitou)
         {
-            p.Set(h.Ocean, ocean.Lengths.X, ocean.Lengths.Y, ocean.Lengths.Z, ocean.Ready ? ocean.Size : 0);
-            p.Set(h.ShoreRect, shore.Ready ? shore.Rect : Vector4.Zero);
+            p.Set(h.Ocean, ocean?.Lengths.X ?? 0, ocean?.Lengths.Y ?? 0, ocean?.Lengths.Z ?? 0, ocean is { Ready: true } o ? o.Size : 0);
+            p.Set(h.ShoreRect, shore is { Ready: true } s ? s.Rect : Vector4.Zero);
             p.Set(h.GridStep, gridStep);
             p.Set(h.Shore, waves.Shore);
             p.Set(h.WaveFade, WaveFadeStart, WaveFadeEnd, ShoreFadeStart, ShoreFadeEnd);
             p.Set(h.Clarity, 1f / Math.Max(Clarity, 0.01f), Math.Clamp(FarClarity, 0f, 1f), Math.Max(ClearDistance, 100f));
-            if (ocean.Ready) { p.Bind(h.OceanDisp, ocean.Displacement); p.Bind(h.OceanSlope, ocean.Slopes); }
-            if (shore.Ready) p.Bind(h.ShoreField, shore.Sampled());
+            if (ocean is { Ready: true } readyOcean) { p.Bind(h.OceanDisp, readyOcean.Displacement); p.Bind(h.OceanSlope, readyOcean.Slopes); }
+            if (shore is { Ready: true } readyShore) p.Bind(h.ShoreField, readyShore.Sampled());
             bool refract = Refraction && refraction is not null && refractionFrame == Gpu.Frame.Number;
             p.Set(h.Refract, refract ? 1f : 0f);
             if (refract)
@@ -1273,17 +1287,20 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     public void Dispose()
     {
-        if (ocean.Dispatched > 0)
+        if (ocean is { Dispatched: > 0 } waves)
             Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                $"water     ocean: {ocean.Dispatched} passes ({ocean.Size}²), gpu us per pass {(ocean.GpuTimed > 0 ? ocean.GpuMicroseconds / ocean.GpuTimed : 0):F1} ({ocean.GpuTimed} timed); shore bake {shore.LastBakeMs:F0} ms, {shore.UploadedFields} fields uploaded and {shore.UniformFields} uniform (one texel)"));
+                $"water     ocean: {waves.Dispatched} passes ({waves.Size}²), gpu us per pass {(waves.GpuTimed > 0 ? waves.GpuMicroseconds / waves.GpuTimed : 0):F1} ({waves.GpuTimed} timed)"));
+        if (shore is { } field)
+            Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"water     shore bake {field.LastBakeMs:F0} ms, {field.UploadedFields} fields uploaded and {field.UniformFields} uniform (one texel)"));
         quad.Dispose();
-        grid.Dispose();
-        gridIndices.Dispose();
+        grid?.Dispose();
+        gridIndices?.Dispose();
         foreach (var t in maps) t.Dispose();
         faithful.Dispose();
-        meitou.Dispose();
-        ocean.Dispose();
-        shore.Dispose();
+        meitou?.Dispose();
+        ocean?.Dispose();
+        shore?.Dispose();
         refraction?.Dispose();
     }
 }
