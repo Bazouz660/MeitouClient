@@ -278,7 +278,36 @@ random snapshots, smallest-three error at most 0.005 rad, ragdoll position error
 
 ## World and production views
 
-Pending (package N5).
+`ViewCodecs` (partial static class, `Replication/Views/ViewCodecs.{World,Production}.cs`) holds the item codecs and the
+host/client halves of views 5-14. Fields go in declaration order (positional, then init properties); bools are packed
+into one flags byte (the reader refuses unknown bits); floats are raw and a non-finite one is written as 0 so
+`ReadFinite` never refuses a writer's output; ids and names are interned, `ResearchOption.Description` is a literal;
+lists are a count then items. Writers clamp strings to their byte limit (`MaxName`, `MaxString` for descriptions)
+without splitting a surrogate pair, and lists to `MaxListItems`.
+
+| Kind | View | Key | Min interval | Host / client half |
+|---|---|---|---|---|
+| 5 | Buildings (`BuildingSnapshot`, `MaterialView`s, Dismantling, WallParent) | `Id` | 200 ms | `BuildingsSync` / `BuildingsDecoder` |
+| 6 | GroundItems | `Id` (int) | 0 | `GroundItemsSync` / `GroundItemsDecoder` |
+| 7 | Containers (`ContainerSpot`) | `Id` | 1 s | `ContainersSync` / `ContainersDecoder` |
+| 8 | DoorPicks | `Id` | 1 s | `DoorPicksSync` / `DoorPicksDecoder` |
+| 9 | Doors (`DoorEntry`: Building, Door, `DoorView`) | (Building, Door) | 0 | `DoorsSync` / `DoorsDecoder` (dictionary) |
+| 10 | Unlocked (record ids, sent in ordinal order) | the string | 0 | `UnlockedSync` / `UnlockedDecoder` (set) |
+| 11 | Inspected (`BuildingDetail?`: presence byte, instance, per door flags and level) | single | 0 | `InspectedSync` / `InspectedDecoder` |
+| 12 | Machines (`MachineSnapshot`: slots, storage grid, farm with `PlantGrowth`, craft, power, sound) | `Site` | 200 ms | `MachinesSync` / `MachinesDecoder` |
+| 13 | Research: header (levels, queue, rate, finished) then keyed `Available` | option `Id` | 200 ms | `ResearchSync` / `ResearchDecoder` |
+| 14 | Crafts (`CraftEntry`: site and its `CraftOptionView`s) | site | 500 ms | `CraftsSync` / `CraftsDecoder` (dictionary) |
+
+Sources that are not lists (doors, unlocked set, crafts) go through `WorldMappedSync`, which flattens them once per source
+reference so the keyed sync keeps skipping an unchanged reference; the client's `WorldMappedDecoder.Value` keeps its
+reference until a body changed something. Kind 11 uses `WorldSingleSync` (sent when its canonical bytes differ).
+`ResearchViewSync` writes the header with every body and sends a header-only body (empty keyed part) when only the header
+changed and the interval passed; a decode equal to `ResearchSnapshot.Empty` returns that instance. The callers pass
+`BuildingsRevision` and `GroundItemsRevision` changes as `structural`. A machine's storage grid and craft output use
+private inventory item codecs; kind 21 (N6) has its own.
+
+**Verified** (`WorldViewCodecTests`): every kind round-trips with populated, non-default data; the keyed delta covers
+insert, update (after the interval), remove and reorder; an equal list sends nothing and keeps the client's list reference.
 
 ## Player and detail views
 
