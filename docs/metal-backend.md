@@ -455,33 +455,127 @@ the baseline, not one.
 **Drawing on Metal today:** the sky, weather and atmosphere; the terrain (heights, biomes, the streamer); the
 objects and buildings; the sun's shadows (terrain, objects and foliage casters); foliage meshes, grass and the
 terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far billboards;
-the scene's HDR target, the game's tone map and its auto exposure. The Metal host is still a still-frame loop:
-`GameHost.Metal.cs` (sky + terrain + objects + foliage + composite), not the interactive game.
+the scene's HDR target, the game's tone map and its auto exposure. `GameHost.Metal.cs` is still a still-frame
+loop (sky + terrain + objects + foliage + composite), not the interactive game.
 
-**Remaining, in dependency order:**
+**The next steps, in order.** Each ends with the gates below (build 0/0, tests 424 pass / 1 known fail, the host
+table, a Metal shot under `MTL_DEBUG_LAYER=1`, and Vulkan within its own run-to-run noise).
 
-1. **Metal operations the next steps need.** Indirect draws (`DrawIndexedIndirect`, `DrawIndexedIndirectCount`,
-   `DrawIndirectCount`, with the Vulkan→Metal argument layouts), resolves, texture blits and `CopyBufferToImage`,
-   swizzled views, partial/in-pass clears. Timestamps are still no-ops (profiling only; the passes' times read 0).
-2. **The post chain's rest.** TAA and an upscaler (MetalFX behind `IUpscaler`; FSR stays Vulkan), the volumetric
-   fog and light shafts, the HiZ pyramid and occlusion, and the foliage/grass compute culls with the indirect draws
-   of 1. `PostProcess` itself is still Vulkan-typed; Metal has `PostComposite` (exposure and tone map) only.
-3. **Water (plan step 6).** `WaterRenderer`, `ReflectionPass` (the mirrored scene), `ShoreField` and `OceanFft`
-   are Vulkan-typed; the reflection needs resolves, blits and the object/foliage draws of 2.
-4. **Characters and skinning (plan step 7).** `CharacterRenderer` and the crowd harness are Vulkan-typed; the
-   skinning buffers, draw list and animation run through the seam.
-5. **The UI (plan step 8).** `DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer;
-   the HUD, panels and portraits need a backend-neutral painter (or a Metal path).
-6. **The remaining effects.** The Meitou volumetric clouds, `FogVolumes`, particles, lamps, the hover outline, the
-   move marker and the navmesh overlay are Vulkan-typed; the faithful sky path (the one the parity shots use) works.
-7. **The full game loop (plan step 10).** The interactive host: input, title, resize, HDR and present details, the
-   simulation-backed frame flow, and the real `GameHost` render path widened to `IGpuContext`.
-8. **Parity and the default (plan step 11).** The window comparison, tone and timing, then `--renderer metal` as the
-   macOS default; the GPU culls' performance and the memory budgets come with 2.
+### 1. The Metal operations the rest needs
 
-**Decisions still open:** GI (Metal's ray tracing is a different model; the parity shots use `--no-gi`, and the
-Vulkan path on this Mac does trace GI); the volumetric clouds and fog (the parity shots use `--faithful
-clouds,cloudshadows`); MetalFX against the FSR path.
+`MetalCommandList` still throws for what water, characters, particles and the GPU culls use:
+
+- **Indirect draws** — `DrawIndexedIndirect`, `DrawIndexedIndirectCount`, `DrawIndirectCount`
+  (`MetalCommandList.cs`). Metal's `MTLDrawIndexedPrimitiveArguments` is 20 bytes (indexCount, instanceCount,
+  indexStart, baseVertex, baseInstance) and `MTLDrawPrimitivesIndirectArguments` 16, the Vulkan layouts already.
+  The *count* variants have no direct Metal call: a compute expander writes the first N arguments (or a compact
+  list) into a buffer and one `draw…indirectBuffer` draws it; add it to the seam as the engine's indirect layout
+  conversion (the GPU culls then need one dispatch per view, not per draw).
+- **Resolves** — a render pass's `resolveTexture` attachment (MSAA for water/reflection/TAA); `Resolve` throws.
+- **Texture blits** — `BlitLevel` (the within-texture level copy; `Blit` is the scaled sampling pass already) and
+  `CopyBufferToImage` (route through the upload batch or the same row-stride repack as the uploads).
+- **Swizzled views** — `MetalContext.View` refuses `GpuSwizzle` (the BC4 grey cases and UI masks); decide between
+  a pixel-format view, a shader-side swizzle in the bindless entry, or a sampled shim.
+- **Partial and in-pass clears** — `ClearDepth` and the in-pass clear (shadow debug, water, UI): a scissored
+  fullscreen depth/colour write for sub-rectangles (Metal render passes clear whole attachments only).
+- **Push-constant offsets** — the engine pushes whole blocks; the offset path (`PushConstants` with `offset != 0`)
+  must bind a sliced transient.
+- **Storage images in graphics sets** (`MetalCommandList.BindSetStage` still throws): the argument-buffer entries
+  for `GpuBindingKind.StorageImage`; the compute path has them.
+- **Timestamps** — `Timestamp` is a no-op; `MTLCounterSampleBuffer` when the pass timings matter.
+
+Keep `RecordsSecondaries` false: Metal records inline into one list.
+
+### 2. The post chain's rest
+
+`PostComposite` (exposure + tone map) is the only post pass on Metal; `PostProcess` is still Vulkan-typed. Port,
+in this order:
+
+1. **TAA and the upscaler** (`PostProcess`, `Upscaling`, `UpscaleShaders`, `IUpscaler`): jitter, motion vectors,
+   history and the resolve; MetalFX (`MTLFXTemporalDenoisedScaler` in SharpMetal) behind `IUpscaler`, the FSR path
+   stays Vulkan. The Metal host needs the jittered projection the Vulkan path uses (`Jitter.Apply`).
+2. **Fog volumes and light shafts** (`FogVolumes`, `PostProcess.FogRate`, `PostProcess.Shafts`).
+3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
+   `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
+   variant (a per-frame bump allocator over shared buffers), and drive them with the indirect draws of step 1.
+   This is the performance gap only: the CPU cull and CPU grass already draw the same picture.
+
+### 3. Water (plan step 6)
+
+`WaterRenderer`, `ReflectionPass`, `ShoreField`, `OceanFft`, `WaterWaves`, `WaterFoam` and `RiverFlowBake` are
+Vulkan-typed. The reflection pass renders the mirrored scene (terrain + objects + foliage + sky) into its own
+target with `ReflectedProgram`, then the surface and the shore/foam passes read it. Depends on resolves, blits and
+the scene draws already on the seam. Ends when the coast/river views match Vulkan's water.
+
+### 4. Characters and skinning (plan step 7)
+
+`CharacterRenderer` (internal to `Meitou.Rendering`), `CrowdHarness`, `CharacterContent`, `CharacterMorphs` and
+the draw list are Vulkan-typed; the animation data already uses storage buffers. Widen the renderer, wire the
+skinning buffers and the character draw list, add `Characters.DrawDepth` to the cascades (the call site exists in
+`WorldFrame.DrawShadows`), and enable population in the Metal host. Ends with the town's crowd and the player
+character rendering and casting shadows.
+
+### 5. The UI (plan step 8)
+
+`DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer. Add a backend-neutral
+painter (quads, text, textures) with a Metal implementation, or a Metal `DebugOverlay`; then the HUD, panels,
+item icons and portraits (`PlayerInterface`, `PlayerUi`, `--ui` showcase). Architecturally separate from the
+scene path; a small renderer of its own is fine.
+
+### 6. The remaining effects
+
+`VolumetricCloudRenderer` (the Meitou clouds), `ParticleRenderer` (weather), `WorldLamps` (the lamps and room
+lights), `HoverOutlineRenderer`, `MoveMarkerRenderer`, `NavmeshOverlayRenderer` and `InteriorMaskRenderer` (the
+object/foliage interior-cut hooks exist but nothing renders the mask). The faithful sky path the parity shots use
+already works. Decide the default between the faithful and Meitou look.
+
+### 7. The full game loop (plan step 10)
+
+The interactive host: input and camera controls (`MetalDisplay` events), the title screen, resize, HDR/EDR and
+the present details, warm-up frames, `--screenshot`/`--ui` parity, and the real `GameHost` render flow
+(`WorldFrame`, `SceneHost`) widened to `IGpuContext` instead of the bespoke Metal loop.
+
+### 8. Parity and the default (plan step 11)
+
+Window comparison at several views, tone and timing, memory budgets, then `--renderer metal` becomes the macOS
+default.
+
+### Decisions still open
+
+- **GI**: the probe GI needs ray queries; Metal's ray tracing is a different model. The parity shots use `--no-gi`
+  and the Vulkan path on this Mac does trace GI. Either port `GiScene`/`GiProbes` to Metal ray queries (a project
+  of its own) or accept the no-GI look as the macOS baseline.
+- **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
+  step 6.
+- **Upscaler**: MetalFX vs FSR, and whether TAA alone is the first target.
+
+### Resume notes (facts already established)
+
+- Binding: one table per stage at `(kind base) + set*8 + binding`; the bindless table at `buffer(28)` both stages;
+  push at `(30)`. Argument-buffer structs lay members out by declaration; **the buffer is padded to 16 bytes**.
+- Metal facts found on the way: a new render encoder has no pipeline state (reset the filter in `BeginRendering`);
+  a depth-only pipeline skips colour slot 0; a sub-rectangle upload needs the destination level's full row stride
+  (the batch repacks); disabled GL attributes use a repeating 16-byte dummy array (stride 16), not stride 0;
+  non-indexed draws take `firstVertex`/`baseInstance`; BC5 is 16 bytes a block.
+- `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
+  `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`.
+- `MTL_DEBUG_LAYER=1` catches the above immediately; keep it on for every new pass.
+
+### Gates (run after every step)
+
+```
+dotnet build src/Meitou.Game -c Debug                                  # 0 warnings, 0 errors
+DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet test --filter "Category!=Slow&Category!=Bench"   # 424 / 1 known arm64
+DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet run --project src/Meitou.Metal.Host --no-build -c Debug -- --table --shot /tmp/x.bmp
+    # BL red, centre (127,0,128), TR blue; a .swap.bmp appears
+DYLD_LIBRARY_PATH=/opt/homebrew/lib MTL_DEBUG_LAYER=1 dotnet run --project src/Meitou.Game --no-build -c Debug -- \
+    --renderer metal --screenshot /tmp/x.png --no-population --time 8 --distance 2000 --pitch 45 \
+    --faithful clouds,cloudshadows --no-gi
+```
+
+For Vulkan parity, run the same view twice on HEAD and once with the change; compare differing samples and the
+worst channel (the noise floor is roughly 350k–550k samples, max ~38–40), never bytes. The screenshot is taken at
+frame 40; `--shadow-range 0` isolates the non-shadow path.
 
 ## Constraints
 
