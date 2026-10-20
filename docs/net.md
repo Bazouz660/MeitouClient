@@ -311,7 +311,43 @@ insert, update (after the interval), remove and reorder; an equal list sends not
 
 ## Player and detail views
 
-Pending (package N6).
+`ViewCodecs.Player.cs` / `ViewCodecs.Detail.cs` (`partial class ViewCodecs`) hold the `ItemCodec<T>` of each player view;
+the keyed kinds have factories (`CampSync`, `SquadSync`, `SpeechSync`, `StatsSync`, `HealthSync`, `InventorySync`,
+`PathSync`) and are decoded with `KeyedViewDecoder`. The single kinds are plain bodies: N10 sends one when its bytes or
+source reference changed. `PlayerCovered`/`DetailCovered` list the `WorldSnapshot`/`CharacterSnapshot` members these
+views carry (for the coverage test).
+
+| Kind | Body | Key, min interval |
+|---|---|---|
+| 1 Header | `HeaderView`: `SquadAi` byte, ActiveSquad, Viewer, PlayerFaction, Money (zigzag), InCreation, CreationRaces | single |
+| 2 Towns | count (at most `MaxViewItems`), one `TownKnowledge` byte per town | single, 1 s |
+| 3 Camps | Site, TownId, Name, FactionId, flags (Wildlife, has position), Known, Position? | Site, 1 s |
+| 4 Squads | Id, Name, member ids (cut to `MaxIdList`) | Id, 0 |
+| 15 Trade | presence, ids, TraderName, money, stock size, BuysStolen, Stock and Goods (13 positional fields, Material, Value, SellValue, Weight, flags for Stolen/Charge/FenceChance/FenceOdds) | single, nullable |
+| 16 Conversation | presence, ids, names, Text and Choices (literals), PlayerMoney, Log as `kept` + new lines | single, nullable |
+| 17 DialogueRequest | presence, Id, Kind, Player, Npc | single, nullable |
+| 18 Speech | Speaker, Text (interned), Large | Speaker, 0 |
+| 23 Relations | Revision, floats | single |
+| 24 Talkable | id set, written in slot order so equal sets are equal bytes | single |
+| 25 Prospected | presence, `ProspectReport` (Environment and Resources as name + float) | single, nullable |
+| 19 Stats | per character: Skills?, AllSkills, SkillXpMultipliers, Hud? (+ Extended?), Bounties (`HoursLeft` raw double, may be infinity) | CharacterId, 100 ms |
+| 20 Health | per character: `HealthPartView` list | CharacterId, 100 ms |
+| 21 Inventory | per character: one-line `Inventory`, `ItemGrid?` (sizes, TotalWeight, CarryCapacity?, items with Material and Charge?) | CharacterId, 0 |
+| 22 Path | per character: waypoints as `Q64` ints | CharacterId, 250 ms |
+
+- **Conversation log.** The log only grows during a conversation, so `ConversationViewWriter` (one per client) sends how
+  many leading lines equal the log last sent (`kept`) and then only the new ones; `Encode` returns false for an
+  unchanged conversation. `ConversationViewReader` keeps the log between bodies and refuses `kept` beyond it. Both
+  `Reset` at a new epoch or connection. A closed conversation (null) forgets the log.
+- **Detail views.** `Skills`, `Hud`, `Bounties`, `HealthParts`, `ItemGrid`, `Inventory` and `Path` are empty on every
+  character but the viewer's selection and the inspected one, so they leave the snapshot parts. `StatsOf`, `HealthOf`,
+  `InventoryOf` and `PathOf` list the characters that have something; each detail record has `ApplyTo(CharacterSnapshot)`
+  for the client; `HeaderView` and `RelationsView` have the same for `WorldSnapshot`.
+- **Writer limits.** Interned strings are cut to `MaxName` (a reference must fit every field that can name the string),
+  free text to `MaxString`; every list is cut to its limit; non-finite floats are written as 0. Single views are not split:
+  a trade is cut only at `MaxListItems` items per list (**Unknown**: whether a real shop's trade nears `MaxReliableMessage`).
+- **Verified** (`PlayerViewCodecTests`): every kind round-trips populated data, a second write of the decoded value gives
+  identical bytes, the conversation log is sent incrementally, keyed kinds go through `KeyedViewSync`/`KeyedViewDecoder`.
 
 ## Looks
 
