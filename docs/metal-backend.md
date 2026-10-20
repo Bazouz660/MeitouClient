@@ -20,6 +20,10 @@ brew `libglfw.3.dylib` the Vulkan path loads.
 | Compute pass writing an rgba16f storage image, sampled back | works |
 | Barriers between passes | **not needed** - Apple silicon tracks hazards itself (the engine's `Access` and `GpuDependency` say what must be ordered; the backend decides) |
 
+A picture of the sky alone, without the world, has the raw linear colours: the post chain (the tonemap and the grade the Vulkan
+path's picture goes through) is a later pass, so the two windows compare **structure** here — the gradient's shape, the sun's
+place, the clouds — not the tone. The pixel diff against Vulkan becomes the check when both draw the same passes.
+
 ## The shader chain
 
 The engine's own `GlslProgramCompiler` produces the SPIR-V; `Silk.NET.SPIRV.Cross` 2.23.0 (with
@@ -187,7 +191,8 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The frame's interface (`IGpuFrame`), the pipelines (`GpuPipeline`) and the programs (`GpuProgram`: the index and the engine's compile result — sources, SPIR-V, reflection, sets) as the engine's handles | the frame, the pipelines and the programs are backend-neutral; the Vulkan objects live in the backend's tables (the device's, the pipeline library's, the shader library's) |
 | Done | The sky path on the seam: the recording model (`BeginGuest`/`BeginNative`/`Interleave`), the device facts (`IsIntegrated`, `UniformBufferAlign`), the services behind interfaces (`IGpuShaders`/`IGpuPipelines`/`IGpuSamplers`/`IGpuUploads`), the frame's constants ring and timestamps (`WriteConstants`, `Timestamps`), the persistent sets (`CreateSet`) — and `SkyRenderer` with its helpers and the legacy program's flush holding no Vulkan type | the sky pass runs on `IGpuContext` alone; a second backend implements the seam and the sky draws |
 | Done | The Metal device: `MetalContext`, `MetalFrame`, `MetalCommandList` and the four services behind the seam ([resource-layer](resource-layer.md)), sized to the sky pass (everything else throws); the offscreen backbuffer and the flipped present pass; the host's `--shot` readback | a Metal device that can run any pass whose vocabulary the command list has; the sky runs on it (the host's window, the frame loop, the real `SkyRenderer`) |
-| Next | The game's `--renderer metal` on the device: the real `WorldFrame` sky (the host pass the scene's way), the two-window Vulkan/Metal comparison and the pixel diff (vs Vulkan's own noise floor) | the Metal check, pass by pass |
+| Done | The game's `--renderer metal` on the device: the real `SkyRenderer` with the world's sky textures and switches, the scene's host pass as `SceneHost` opens it, the session's hour and camera; `--screenshot` (one picture, then out) | the sky in the game, verified: the gradient follows the camera and the hour, the clouds and stars are the world's own; the tone is raw linear until the post chain's step |
+| Next | The passes on the road, each its own step: the vertex and index buffers, the terrain; compute and the post chain (the tone parity); the bindless table, the objects — each verified by the two windows and the pixel diff against Vulkan | the Metal check, pass by pass, until native Metal draws the whole frame |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |

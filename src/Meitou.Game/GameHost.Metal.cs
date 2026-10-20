@@ -3,22 +3,24 @@
 #pragma warning disable CA1416
 using System.Diagnostics;
 using System.Numerics;
+using Meitou.Data.Textures;
 using Meitou.Engine;
 using Meitou.Engine.Time;
 using Meitou.Metal;
 using Meitou.Rendering;
+using Meitou.Rendering.Gpu;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
-using SharpMetal.Metal;
 
 namespace Meitou.Game;
 
 sealed partial class GameHost
 {
     /// <summary>
-    /// The Metal path (macOS): the game boots without the Vulkan renderer and draws the sky with Metal. The engine's own
-    /// GLSL goes through the engine's compiler to SPIR-V and through spirv-cross to MSL in process; the uniform block is
-    /// the engine's own. The world is not drawn yet: the sky is the first pass of the port (docs/metal-backend.md).
+    /// The Metal path (macOS): the game boots without the Vulkan renderer and draws the sky with the real <see cref="SkyRenderer"/>
+    /// on the <see cref="MetalContext"/> — the seam's recording model as the Vulkan path drives it (a native segment opening the
+    /// scene's host pass, the sky a guest segment in it, the frame committed with the present). The world is not drawn yet: the
+    /// sky is the first pass of the port (docs/metal-backend.md).
     /// </summary>
     int Metal()
     {
@@ -37,8 +39,23 @@ sealed partial class GameHost
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
         });
+        using var ctx = new MetalContext(display);
         var window = display.Window;
-        var sky = new MetalSky(display.Device, SkyRenderer.SimpleShader.Vertex, SkyRenderer.SimpleShader.SimpleFragment);
+        ctx.Samplers.MaxAnisotropy = o.Anisotropy;
+
+        // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
+        var sky = new SkyRenderer(ctx, assets)
+        {
+            CloudCoverage = o.Clouds,
+            HazeStrength = o.HazeStrength,
+            NightAir = o.NightAir,
+            Planetshine = o.Planetshine,
+            PlanetshineStrength = o.PlanetshineStrength,
+            MeitouStars = o.MeitouStars,
+            LitClouds = o.MeitouClouds,
+            CloudShadows = o.CloudShadows,
+        };
+        if (scene.Database is { } skyDb) sky.LoadWorld(install, skyDb);
         display.Activate();
         Splash?.Dispose();
 
@@ -66,26 +83,59 @@ sealed partial class GameHost
             last = now;
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
-            if (!display.TryBeginFrame(out var command, out var drawable)) continue;
+            if (!ctx.BeginFrame()) continue;
 
-            // The sky: the engine's own shader and colours, the camera's own view (the translation dropped, as the Vulkan path does).
+            // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
+            // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
+            var cmd = (MetalCommandList)ctx.BeginNative("scene");
+            var backbuffer = ctx.Backbuffer;
             var size = window.FramebufferSize;
+            var targets = PassTargets.Of(backbuffer, null) with
+            {
+                Colour = new RenderTarget(backbuffer.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
+            };
+            cmd.BeginRendering(targets.Rendering);
+            ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
+
+            // The sky: the camera's own view (the translation dropped, as WorldFrame.DrawLoadingSky does), the session's hour.
+            float hour = (float)session.Clock.HourOfDay;
             var aspect = size.X / (float)Math.Max(size.Y, 1);
+            var eye = camera.Eye;
             var view = camera.View;
             var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
             var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
-            Matrix4x4.Invert(viewProjection, out var inverse);
-            var sun = scene.Clock.SunDirection((float)session.Clock.HourOfDay);
-            var colours = SkyColours.For(sun);
-            var encoder = display.BeginPass(command, drawable, new MTLClearColor { red = 0, green = 0, blue = 0, alpha = 1 });
-            sky.Render(encoder, inverse, colours);
-            encoder.EndEncoding();
-            display.Present(command, drawable);
+            sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
+            sky.Eye = eye;
+            sky.Clock = scene.Clock;
+            sky.Hour = hour;
+            sky.StarSeconds = (float)(now % 3600);
+            var (colours, _) = sky.Prepare(scene.Clock.SunDirection(hour), eye.Y, o.FogDistance);
+            sky.StepClouds((float)dt);
+            sky.Draw(viewProjection, colours);
+
+            ctx.EndHostPass(cmd);
+            cmd.EndRendering();
+            ctx.EndNative(cmd);
+            ctx.EndFrame();
             frames++;
+            if (o.Screenshot is { } shot && frames == 40) { Capture(ctx, backbuffer, shot); break; }   // one picture, as the Vulkan flow's does
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        sky.Dispose();
         Console.WriteLine($"metal     {frames} frames");
         return 0;
+    }
+
+    /// <summary>The backbuffer's picture as a PNG (the readback's rows are the picture's own: Metal draws right side up).</summary>
+    static void Capture(MetalContext ctx, GpuTexture backbuffer, string path)
+    {
+        int w = backbuffer.Desc.Width, h = backbuffer.Desc.Height;
+        var pixels = ctx.Readback(backbuffer);
+        for (int i = 3; i < pixels.Length; i += 4) pixels[i] = 255;
+        var dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (dir is not null) Directory.CreateDirectory(dir);
+        PngWriter.Write(path, w, h, pixels);
+        Console.WriteLine($"shot      {path} ({w}x{h})");
     }
 }
 #endif

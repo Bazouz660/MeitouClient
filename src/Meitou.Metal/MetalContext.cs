@@ -35,8 +35,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         fragment float4 present_fragment(float4 position [[position]], texture2d<float> source,
             sampler source_sampler)
         {
-            // Flipped: the backbuffer's row 0 (the bottom) is the drawable's last row.
-            float2 uv = float2(position.x / source.get_width(), 1.0 - position.y / source.get_height());
+            // No flip: the engine's GL-style shaders land right side up in the backbuffer on Metal (the NDC points up as GL's
+            // does), so row for row is the picture (the Vulkan path's blit flips instead - its backbuffer is upside down).
+            float2 uv = float2(position.x / source.get_width(), position.y / source.get_height());
             return source.sample(source_sampler, uv);
         }
         """;
@@ -112,6 +113,14 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>The upscaler's texture LOD bias: added to the mip level of every mipmapped fetch (set by the post-processing chain).</summary>
     public float LodBias { get; set; }
 
+    /// <summary>Upload bytes into the frame's statistics; a batch before the first frame (the sky's textures at boot) counts into the next one.</summary>
+    internal void CountUpload(int bytes)
+    {
+        if (slot >= 0) Frame.Stats.UploadBytes += bytes;
+        else pendingUploadBytes += bytes;
+    }
+    long pendingUploadBytes;
+
     /// <summary>Whether the open rendering has a depth attachment (<see cref="MetalCommandList.SetDepth"/>; Metal's validation objects to setting the state without one).</summary>
     internal bool HasDepthAttachment { get; private set; }
 
@@ -142,7 +151,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         d.Width = (ulong)desc.Width;
         d.Height = (ulong)desc.Height;
         d.MipmapLevelCount = (ulong)desc.Levels;
-        d.ArrayLength = (ulong)(desc.Kind == TextureKind.Cube ? 6 * Math.Max(desc.Layers, 1) : desc.Layers);
+        // A cube's six faces are the type's own (arrayLength 1); only a cube *array* counts layers.
+        d.ArrayLength = (ulong)(desc.Kind == TextureKind.Cube ? 1 : desc.Layers);
         d.SampleCount = (ulong)Math.Max(1, desc.Samples);
         d.StorageMode = MTLStorageMode.Shared;   // unified memory: the device's own, and CPU-writable (docs/metal-backend.md)
         MTLTextureUsage usage = 0;
@@ -300,6 +310,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         frameNumber++;
         slot = (slot + 1) % FramesInFlight;
         frames[slot].Begin(frameNumber, command, drawable);
+        if (pendingUploadBytes > 0) { frames[slot].Stats.UploadBytes = pendingUploadBytes; pendingUploadBytes = 0; }
         timestamps.Begin(slot, frameNumber);
         return true;
     }

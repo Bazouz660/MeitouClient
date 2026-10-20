@@ -2,6 +2,7 @@
 // the same recording model the Vulkan path drives (a host pass, a guest segment inside it, the present).
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Meitou.Content;
 using Meitou.Data.World;
 using Meitou.Metal;
 using Meitou.Rendering;
@@ -14,11 +15,13 @@ using SharpMetal.ObjectiveCCore;
 var hour = 12f;
 var frames = 300;
 string? shot = null;
+bool world = false;
 for (int i = 0; i < args.Length; i++)
 {
     if (args[i] == "--hour" && i + 1 < args.Length) hour = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
     else if (args[i] == "--hold") frames = 1800;
     else if (args[i] == "--shot" && i + 1 < args.Length) { shot = args[++i]; frames = 10; }
+    else if (args[i] == "--world") world = true;
 }
 
 ObjectiveC.LinkMetal();
@@ -26,8 +29,9 @@ ObjectiveC.LinkMetal();
 var options = WindowOptions.Default with { Size = new Vector2D<int>(960, 600), Title = "meitou metal sky (the seam)" };
 using var display = new MetalDisplay(options);
 using var ctx = new MetalContext(display);
-var sky = new SkyRenderer(ctx);
-display.Activate();
+var sky = world && GameInstall.Locate() is { } install
+    ? new SkyRenderer(ctx, new AssetLocator(install))
+    : new SkyRenderer(ctx);display.Activate();
 
 var camera = new WorldCamera { Target = Vector3.Zero, Yaw = 0.9f, Pitch = 0.15f, Distance = 20 };
 var sun = SkyClock.Fallback.SunDirection(hour);

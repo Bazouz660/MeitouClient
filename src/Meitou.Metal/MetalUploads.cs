@@ -57,7 +57,7 @@ public sealed class MetalUploads : IGpuUploads
                 new MTLSize { width = (ulong)region.Width, height = (ulong)region.Height, depth = 1 },
                 ctx.TextureAt(target), (ulong)layer, (ulong)level,
                 new MTLOrigin { x = (ulong)region.X, y = (ulong)region.Y, z = 0 });
-            ctx.Frame.Stats.UploadBytes += data.Length;
+            ctx.CountUpload(data.Length);
         }
 
         public void Write(DeviceBuffer target, ulong offset, ReadOnlySpan<byte> data)
@@ -67,7 +67,7 @@ public sealed class MetalUploads : IGpuUploads
             buffer.DidModifyRange(new NSRange { location = stagingOffset, length = (ulong)data.Length });
             var blit = list.OpenBlit();
             blit.CopyFromBuffer(buffer, stagingOffset, ctx.BufferAt(target.Handle), offset, (ulong)data.Length);
-            ctx.Frame.Stats.UploadBytes += data.Length;
+            ctx.CountUpload(data.Length);
         }
 
         /// <summary>The staging room for <paramref name="bytes"/> more (a grown buffer when the current is full).</summary>
