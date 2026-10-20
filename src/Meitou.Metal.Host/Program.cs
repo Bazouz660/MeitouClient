@@ -16,12 +16,14 @@ var hour = 12f;
 var frames = 300;
 string? shot = null;
 bool world = false;
+bool tri = false;
 for (int i = 0; i < args.Length; i++)
 {
     if (args[i] == "--hour" && i + 1 < args.Length) hour = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
     else if (args[i] == "--hold") frames = 1800;
     else if (args[i] == "--shot" && i + 1 < args.Length) { shot = args[++i]; frames = 10; }
     else if (args[i] == "--world") world = true;
+    else if (args[i] == "--tri") tri = true;
 }
 
 ObjectiveC.LinkMetal();
@@ -31,7 +33,69 @@ using var display = new MetalDisplay(options);
 using var ctx = new MetalContext(display);
 var sky = world && GameInstall.Locate() is { } install
     ? new SkyRenderer(ctx, new AssetLocator(install))
-    : new SkyRenderer(ctx);display.Activate();
+    : new SkyRenderer(ctx);
+display.Activate();
+
+// The vertex vocabulary's testbed (--tri): a native-model quad out of a vertex buffer, an index buffer, push constants and
+// two sets that share a binding number — the terrain's shape (its set 0 and set 2 both have a binding-0 block, so Metal's
+// one binding table per stage has to flatten them apart, docs/metal-backend.md).
+GpuProgram triProgram = default;
+VertexLayout triLayout = null!;
+GpuSet triTintSet = default;
+DeviceBuffer? triVertices = null, triIndices = null, triFrame = null, triView = null, triTint = null;
+GpuPipeline triPipeline = default;
+if (tri)
+{
+    const string vertex = """
+        #version 450 core
+        layout(location = 0) in vec2 aPos;
+        layout(location = 1) in vec4 aCol;
+        layout(std140, set = 0, binding = 4) uniform ViewConstants { mat4 uViewProjection; };
+        layout(push_constant) uniform Push { vec2 uOffset; } pc;
+        out vec4 vCol;
+        void main()
+        {
+            vCol = aCol;
+            gl_Position = uViewProjection * vec4(aPos + pc.uOffset, 0.0, 1.0);
+        }
+        """;
+    const string fragment = """
+        #version 450 core
+        layout(std140, set = 0, binding = 0) uniform FrameConstants { vec4 uTime; };
+        layout(std140, set = 2, binding = 0) uniform Tint { vec4 uTint; };
+        in vec4 vCol;
+        layout(location = 0) out vec4 colour;
+        void main()
+        {
+            colour = vCol * uTint * (1.0 - uTime.x);
+        }
+        """;
+    var set0 = GpuSetLayout.Written(
+    [
+        new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment),
+        new GpuSlot(4, GpuSlotKind.UniformBuffer, GpuStage.Vertex),
+    ]);
+    var set2 = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment, OffsetAtBind: true)]);
+    triProgram = ctx.Shaders.Native(vertex, fragment, "tri", [set0, GpuSetLayout.Fixed([]), set2], 8);
+    triLayout = new VertexLayout(
+        new VertexInput(0, InternalFormat.RG32f, 24, false),    // one interleaved buffer, each location its own binding (VkGl's)
+        new VertexInput(1, InternalFormat.Rgba32f, 24, false));
+    float[] vertices = [-1, -1, 1, 0, 0, 1,   1, -1, 0, 1, 0, 1,   1, 1, 0, 0, 1, 1,   -1, 1, 1, 1, 0, 1];
+    uint[] indices = [0, 1, 2, 0, 2, 3];
+    float[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    using var batch = ctx.Uploads.Begin();
+    triVertices = new DeviceBuffer(ctx, ctx.CreateBuffer(24 * 4, BufferUse.Vertex, "tri vertices"), true, "tri vertices");
+    triIndices = new DeviceBuffer(ctx, ctx.CreateBuffer(6 * 4, BufferUse.Index, "tri indices"), true, "tri indices");
+    triFrame = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri frame"), true, "tri frame");
+    triView = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri view"), true, "tri view");
+    triTint = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri tint"), true, "tri tint");
+    batch.Write(triVertices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(vertices)));
+    batch.Write(triIndices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(indices)));
+    batch.Write(triView, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(identity)));
+    batch.Write(triFrame, 0, new byte[16]);                    // uTime = 0: the colours pass through
+    batch.Write(triTint, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>([1, 1, 1, 1])));
+    triTintSet = ctx.CreateSet(set2, [new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triTint.Handle, 0))]);
+}
 
 var camera = new WorldCamera { Target = Vector3.Zero, Yaw = 0.9f, Pitch = 0.15f, Distance = 20 };
 var sun = SkyClock.Fallback.SunDirection(hour);
@@ -51,13 +115,35 @@ display.Window.Render += _ =>
     ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, deviceDepthClamp: false));
 
     // The sky at infinity: the view's translation is dropped, as the Vulkan path does (WorldFrame.DrawLoadingSky).
-    var size = display.Window.FramebufferSize;
-    var aspect = size.X / (float)Math.Max(size.Y, 1);
-    var view = camera.View;
-    var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
-    var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
-    var (colours, _) = sky.Prepare(sun, 0, 100000);
-    sky.Draw(viewProjection, colours);
+    if (!tri)
+    {
+        var size = display.Window.FramebufferSize;
+        var aspect = size.X / (float)Math.Max(size.Y, 1);
+        var view = camera.View;
+        var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
+        var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
+        var (colours, _) = sky.Prepare(sun, 0, 100000);
+        sky.Draw(viewProjection, colours);
+    }
+    else
+    {
+        // The quad through the native vocabulary: the set 0 blocks (the flatten's collision test), set 2's tint with its
+        // dynamic offset, the push constant, the interleaved vertex buffer and the index buffer.
+        if (triPipeline.IsNull)
+            triPipeline = ctx.Pipelines.Get(DrawState.For(targets.Formats, deviceDepthClamp: false)
+                .Pipeline(triProgram, triLayout, PrimitiveType.Triangles, targets.Formats, "tri"));
+        cmd.BindPipeline(triPipeline);
+        cmd.BindProgramResources(triProgram, 0,
+        [
+            new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triFrame!.Handle, 0)),
+            new GpuBinding(4, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triView!.Handle, 0)),
+        ]);
+        cmd.BindSets(triProgram, 2, new ReadOnlySpan<GpuSet>(in triTintSet), [0]);
+        cmd.PushConstants(triProgram, GpuStage.Vertex, Vector2.Zero);
+        cmd.BindVertexBuffers(0, [new GpuBufferBinding(triVertices!.Handle, 0), new GpuBufferBinding(triVertices.Handle, 8)]);   // the colour's offset in the binding, as GL's pointer does
+        cmd.BindIndexBuffer(new GpuBufferBinding(triIndices!.Handle, 0), IndexKind.U32);
+        cmd.DrawIndexed(6);
+    }
 
     ctx.EndHostPass(cmd);
     cmd.EndRendering();

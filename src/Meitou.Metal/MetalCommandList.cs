@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using SharpMetal.Foundation;
@@ -139,13 +140,29 @@ public sealed class MetalCommandList : IGpuCommandList
 
     // ---- resources ----
 
-    /// <summary>Binds the vertex buffers of the locations from <paramref name="first"/> — comes with the terrain (the sky draws by gl_VertexID).</summary>
-    public void BindVertexBuffers(uint first, ReadOnlySpan<GpuBufferBinding> bindings) =>
-        throw new NotSupportedException("the Metal backend binds no vertex buffers yet (the sky draws by gl_VertexID)");
+    /// <summary>Binds the vertex buffers of the locations from <paramref name="first"/>: the pipeline's slots, Vulkan's own numbers
+    /// (the MSL's indices below <see cref="MetalShaders.VertexBlockBase"/>, where the blocks go).</summary>
+    public void BindVertexBuffers(uint first, ReadOnlySpan<GpuBufferBinding> bindings)
+    {
+        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindVertexBuffers outside a rendering");
+        if (first + (uint)bindings.Length > MetalShaders.VertexBlockBase)
+            throw new NotSupportedException($"the Metal backend keeps the vertex buffers in the slots below {MetalShaders.VertexBlockBase} (docs/metal-backend.md), {first}..{first + bindings.Length - 1} asked");
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            var (buffer, offset) = ctx.Buffer(bindings[i]);
+            render.SetVertexBuffer(buffer, offset, first + (uint)i);
+        }
+    }
 
-    /// <summary>Binds the index buffer — comes with the terrain.</summary>
-    public void BindIndexBuffer(GpuBufferBinding binding, IndexKind type) =>
-        throw new NotSupportedException("the Metal backend binds no index buffers yet (the sky draws by gl_VertexID)");
+    /// <summary>Binds the index buffer, held until the next indexed draw.</summary>
+    public void BindIndexBuffer(GpuBufferBinding binding, IndexKind type)
+    {
+        (indexBuffer, indexOffset) = ctx.Buffer(binding);
+        indexType = MetalConventions.IndexType(type);
+    }
+    MTLBuffer indexBuffer;
+    ulong indexOffset;
+    MTLIndexType indexType;
 
     public void BindProgramResources(GpuProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
     {
@@ -157,15 +174,17 @@ public sealed class MetalCommandList : IGpuCommandList
             foreach (var slot in slots)
             {
                 if (slot.Binding != binding.Slot) continue;
-                if (slot.Stages.HasFlag(GpuStage.Vertex)) BindSlot(isVertex: true, slot, binding);
-                if (slot.Stages.HasFlag(GpuStage.Fragment)) BindSlot(isVertex: false, slot, binding);
+                if (slot.Stages.HasFlag(GpuStage.Vertex)) BindSlot(isVertex: true, set, slot, binding);
+                if (slot.Stages.HasFlag(GpuStage.Fragment)) BindSlot(isVertex: false, set, slot, binding);
             }
         }
         Stats.DescriptorPushes++;
     }
 
-    void BindSlot(bool isVertex, in GpuSlot slot, in GpuBinding binding)
+    void BindSlot(bool isVertex, uint set, in GpuSlot slot, in GpuBinding binding)
     {
+        // Metal's one binding table per stage: the slot's flattened index (MetalShaders.Flatten, the MSL's own numbers).
+        uint index = MetalShaders.Flatten(slot.Stages, set, slot.Binding);
         switch (binding.Kind)
         {
             case GpuBindingKind.Sampled:
@@ -173,22 +192,22 @@ public sealed class MetalCommandList : IGpuCommandList
                 float bias = MetalSamplers.LodBias(binding.Texture.Sampler);
                 if (isVertex)
                 {
-                    render.SetVertexTexture(texture, slot.Binding);
-                    render.SetVertexSamplerState(sampler, bias, 1000 + bias, slot.Binding);
+                    render.SetVertexTexture(texture, index);
+                    render.SetVertexSamplerState(sampler, bias, 1000 + bias, index);
                 }
                 else
                 {
-                    render.SetFragmentTexture(texture, slot.Binding);
-                    render.SetFragmentSamplerState(sampler, bias, 1000 + bias, slot.Binding);
+                    render.SetFragmentTexture(texture, index);
+                    render.SetFragmentSamplerState(sampler, bias, 1000 + bias, index);
                 }
                 break;
             case GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer:
                 var (buffer, offset) = ctx.Buffer(binding.Buffer);
-                if (isVertex) render.SetVertexBuffer(buffer, offset, slot.Binding);
-                else render.SetFragmentBuffer(buffer, offset, slot.Binding);
+                if (isVertex) render.SetVertexBuffer(buffer, offset, index);
+                else render.SetFragmentBuffer(buffer, offset, index);
                 break;
             default:
-                throw new NotSupportedException($"the Metal backend binds no storage images yet ({binding.Kind} at set 0, binding {binding.Slot})");
+                throw new NotSupportedException($"the Metal backend binds no storage images yet ({binding.Kind} at set {set}, binding {binding.Slot})");
         }
     }
 
@@ -200,6 +219,7 @@ public sealed class MetalCommandList : IGpuCommandList
         for (int i = 0; i < sets.Length; i++)
         {
             var set = ctx.SetAt(sets[i]);
+            uint index = first + (uint)i;
             int next = 0;
             foreach (var slot in set.Layout.Slots)
             {
@@ -207,8 +227,11 @@ public sealed class MetalCommandList : IGpuCommandList
                 // A slot whose offset comes at bind time takes the bind's dynamic offset (the default blocks' slices).
                 if (slot.OffsetAtBind) binding = new GpuBufferBinding(binding.Buffer, dynamicOffsets.IsEmpty ? 0 : dynamicOffsets[used++], binding.Size);
                 var (buffer, offset) = ctx.Buffer(binding);
-                if (slot.Stages.HasFlag(GpuStage.Vertex)) render.SetVertexBuffer(buffer, offset, slot.Binding);
-                if (slot.Stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBuffer(buffer, offset, slot.Binding);
+                // Metal's one binding table per stage: the slot's flattened index (MetalShaders.Flatten, the MSL's own numbers).
+                if (slot.Stages.HasFlag(GpuStage.Vertex))
+                    render.SetVertexBuffer(buffer, offset, MetalShaders.Flatten(GpuStage.Vertex, index, slot.Binding));
+                if (slot.Stages.HasFlag(GpuStage.Fragment))
+                    render.SetFragmentBuffer(buffer, offset, MetalShaders.Flatten(GpuStage.Fragment, index, slot.Binding));
             }
         }
         Stats.DescriptorPushes++;
@@ -218,9 +241,16 @@ public sealed class MetalCommandList : IGpuCommandList
     public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics) =>
         throw new NotSupportedException("the Metal backend has no bindless table yet (the sky pass needs none)");
 
-    /// <summary>Pushes a block of constants to a program — comes with the native-model passes (the legacy program's constants are set 1's blocks).</summary>
-    public void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged =>
-        throw new NotSupportedException("the Metal backend has no push constants yet (the sky pass needs none)");
+    /// <summary>Pushes a block of constants: the bytes both stages' encoders take inline at the stage's top index
+    /// (<see cref="MslTranslator.PushConstantBinding"/>, the push blocks' own <c>[[buffer(n)]]</c>).</summary>
+    public unsafe void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
+    {
+        if (offset != 0) throw new NotSupportedException("the Metal backend pushes constants whole (offset 0)");
+        var bytes = (nint)Unsafe.AsPointer(ref Unsafe.AsRef(in value));
+        ulong size = (ulong)sizeof(T);
+        if (stages.HasFlag(GpuStage.Vertex)) render.SetVertexBytes(bytes, size, MslTranslator.PushConstantBinding);
+        if (stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBytes(bytes, size, MslTranslator.PushConstantBinding);
+    }
 
     /// <summary>Writes a timestamp into a query slot (the frame's timings). Metal records none yet (<see cref="MetalTimestamps"/>).</summary>
     public void Timestamp(IGpuTimestamps arena, in QuerySlot slot, GpuStage stage = GpuStage.All) { }
@@ -235,9 +265,14 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.Draws++;
     }
 
-    /// <summary>Draws indexed vertices — comes with the terrain.</summary>
-    public void DrawIndexed(uint indices, uint instances = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0) =>
-        throw new NotSupportedException("the Metal backend draws no indexed draws yet (the sky draws 3 vertices)");
+    /// <summary>Draws indexed vertices out of the bound index buffer.</summary>
+    public void DrawIndexed(uint indices, uint instances = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
+    {
+        if (indexBuffer.NativePtr == IntPtr.Zero) throw new InvalidOperationException("DrawIndexed with no index buffer bound");
+        render.DrawIndexedPrimitives(MetalConventions.Primitive(topology), indices, indexType, indexBuffer,
+            indexOffset + (ulong)firstIndex * MetalConventions.IndexBytes(indexType), instances, vertexOffset, firstInstance);
+        Stats.Draws++;
+    }
 
     /// <summary>Draws indexed vertices, the arguments in a buffer — comes with the terrain and the objects.</summary>
     public void DrawIndexedIndirect(GpuBuffer args, ulong offset, uint count, uint stride = 20) =>

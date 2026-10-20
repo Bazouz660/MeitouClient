@@ -47,6 +47,36 @@ public static class SpirvPatch
         if (structId == 0 || variables.Count == 0) throw new InvalidOperationException("SPIR-V: gl_DefaultUniformBlock not found");
         return copy;
     }
+
+    /// <summary>
+    /// Flattens a module's (set, binding) pairs onto one binding table, as Metal's stages have (docs/metal-backend.md): every
+    /// resource's binding decoration becomes <paramref name="baseBinding"/> + set × <paramref name="stride"/> + binding, set
+    /// included. Metal maps a resource to its MSL index by the binding decoration alone (<c>MslEnableDecorationBinding</c>),
+    /// so two sets with the same binding number would otherwise land on one <c>[[buffer(n)]]</c>. Push constants carry no
+    /// binding and stay untouched (they take <see cref="Metal.MslTranslator.PushConstantBinding"/>).
+    /// </summary>
+    public static byte[] RemapBindings(byte[] spirv, uint baseBinding, uint stride)
+    {
+        var copy = (byte[])spirv.Clone();
+        var w = MemoryMarshal.Cast<byte, uint>(copy.AsSpan());
+        var sets = new Dictionary<uint, uint>();
+        var bindings = new List<(int At, uint Variable)>();
+        for (int i = 5; i < w.Length;)
+        {
+            uint op = w[i] & 0xFFFF, count = w[i] >> 16;
+            if (count == 0) break;
+            var a = w.Slice(i + 1, (int)count - 1);
+            if (op == 71 && count == 4)
+            {
+                if (a[1] == 34) sets[a[0]] = a[2];                // DescriptorSet
+                else if (a[1] == 33) bindings.Add((i + 3, a[0])); // Binding
+            }
+            i += (int)count;
+        }
+        foreach (var (at, variable) in bindings)
+            w[at] = baseBinding + sets.GetValueOrDefault(variable) * stride + w[at];
+        return copy;
+    }
 }
 
 /// <summary>

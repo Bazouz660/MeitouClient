@@ -120,6 +120,16 @@ public static class MetalConventions
         _ => throw new NotSupportedException($"no Metal primitive for {t}"),
     };
 
+    public static MTLIndexType IndexType(IndexKind k) => k switch
+    {
+        IndexKind.U16 => MTLIndexType.UInt16,
+        IndexKind.U32 => MTLIndexType.UInt32,
+        _ => throw new NotSupportedException($"no Metal index type for {k}"),
+    };
+
+    /// <summary>The bytes of one index of <paramref name="type"/>.</summary>
+    public static ulong IndexBytes(MTLIndexType type) => type == MTLIndexType.UInt32 ? 4ul : 2ul;
+
     public static MTLCullMode Cull(CullMode c) => c switch
     {
         CullMode.None => MTLCullMode.None,
@@ -142,6 +152,7 @@ public static class MetalConventions
         InternalFormat.RG16f => MTLVertexFormat.Half2,
         InternalFormat.R32f => MTLVertexFormat.Float,
         InternalFormat.RG32f => MTLVertexFormat.Float2,
+        InternalFormat.Rgba32f => MTLVertexFormat.Float4,
         InternalFormat.R32ui => MTLVertexFormat.UInt,
         InternalFormat.R32i => MTLVertexFormat.Int,
         _ => throw new NotSupportedException($"no Metal vertex format for {f}"),

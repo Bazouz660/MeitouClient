@@ -53,6 +53,18 @@ On Metal the stages have their own binding tables, so the Vulkan scheme (the fra
 bindings at 32, to keep them apart from the vertex stage's) is not needed: the fragment stage's
 bindings start at 0.
 
+**The one binding table per stage.** Metal maps a resource to its MSL index by the binding
+decoration alone, set ignored, so two sets with the same binding number would land on one
+`[[buffer(n)]]` (the terrain's set 0 and set 2 both have a binding-0 block; the default block sits
+at set 1). Every resource's binding therefore flattens to base + set × 8 + binding, in both places
+that must agree: the SPIR-V before the translation (`SpirvPatch.RemapBindings`) and the runtime
+binds (`MetalShaders.Flatten`, called by the command list's binds). The vertex stage's base is 15 —
+the indices below it are the vertex buffers', at Vulkan's own slot numbers (the pipeline's
+`[[stage_in]]` descriptor) — and the stage's top index, 30, belongs to the push constants (this
+spirv-cross has no option for them, so `MetalShaders` moves the block from the `[[buffer(0)]]` it
+assigns; the block is found by the engine's name for it, `Push`). Both stages' tables hold 31
+entries, so the scheme fits the engine's sets (bindings within a set stay under 8).
+
 ## The bindless table
 
 `BindlessTable` declares seven **combined** image samplers. Metal has no combined sampler, and
@@ -130,11 +142,11 @@ operation a later pass needs first throws (`InvalidOperationException` naming it
 - The backend constructs the engine's handles, so `Meitou.Rendering` grants `InternalsVisibleTo`
   `Meitou.Metal` (as it does to the viewer, the game and the tests).
 
-What the sky-sized scope does not have yet (each member throws): vertex and index buffers,
-compute, the bindless table, indirect draws, dispatches, buffer/texture copies, in-pass clears,
-swizzled views, push constants, secondary command lists. One known gap to design when the terrain
-comes: the vertex stage's [[buffer(n)]] space is shared between set 0's named blocks and set 1's
-default block - a program with both needs an index remap (MoltenVK's own table).
+What the sky-sized scope does not have yet (each member throws): compute, the bindless table,
+indirect draws, dispatches, buffer/texture copies, in-pass clears, swizzled views, secondary
+command lists. The vertex vocabulary is in: vertex and index buffers, indexed draws and push
+constants (the flatten above), with the quad testbed in the host (`--tri`) and the same per-stage
+binding scheme for the native model (`MetalShaders.Native`).
 
 The host's `--shot out.bmp` reads the backbuffer back (a blit into a host buffer; a texture is not
 CPU-mappable even in shared storage - `MetalContext.Readback`) and writes a BMP, so the sky's
@@ -192,7 +204,8 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The sky path on the seam: the recording model (`BeginGuest`/`BeginNative`/`Interleave`), the device facts (`IsIntegrated`, `UniformBufferAlign`), the services behind interfaces (`IGpuShaders`/`IGpuPipelines`/`IGpuSamplers`/`IGpuUploads`), the frame's constants ring and timestamps (`WriteConstants`, `Timestamps`), the persistent sets (`CreateSet`) — and `SkyRenderer` with its helpers and the legacy program's flush holding no Vulkan type | the sky pass runs on `IGpuContext` alone; a second backend implements the seam and the sky draws |
 | Done | The Metal device: `MetalContext`, `MetalFrame`, `MetalCommandList` and the four services behind the seam ([resource-layer](resource-layer.md)), sized to the sky pass (everything else throws); the offscreen backbuffer and the flipped present pass; the host's `--shot` readback | a Metal device that can run any pass whose vocabulary the command list has; the sky runs on it (the host's window, the frame loop, the real `SkyRenderer`) |
 | Done | The game's `--renderer metal` on the device: the real `SkyRenderer` with the world's sky textures and switches, the scene's host pass as `SceneHost` opens it, the session's hour and camera; `--screenshot` (one picture, then out) | the sky in the game, verified: the gradient follows the camera and the hour, the clouds and stars are the world's own; the tone is raw linear until the post chain's step |
-| Next | The passes on the road, each its own step: the vertex and index buffers, the terrain; compute and the post chain (the tone parity); the bindless table, the objects — each verified by the two windows and the pixel diff against Vulkan | the Metal check, pass by pass, until native Metal draws the whole frame |
+| Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
+| Next | The passes on the road, each its own step: the terrain (the native programs, the constants sets, the textures); compute and the post chain (the tone parity); the bindless table, the objects — each verified by the two windows and the pixel diff against Vulkan | the Metal check, pass by pass, until native Metal draws the whole frame |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
@@ -226,6 +239,4 @@ the baseline, not one.
 
 - Per-entry sampler state: the table's entries carry their own sampler, so the table needs a
   sampler array as well as a texture array.
-- The vertex stage's buffer index space: set 0's named blocks and set 1's default block share the
-  MSL's [[buffer(n)]] table (see "The device behind the seam"); a program with both needs a remap.
 - Metal's GPU timestamps (MTLCounterSampleBuffer), when the pass timings matter on Metal.
