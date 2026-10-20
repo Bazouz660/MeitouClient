@@ -26,7 +26,7 @@ sealed partial class PlayerInterface
     /// <summary>The characters the squad bar shows, the active squad's in order: the first atlas cells (<see cref="PortraitMembers"/>).</summary>
     public IReadOnlyList<CharacterSnapshot> SquadBarMembers()
     {
-        var byId = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).ToDictionary(c => c.Id);
+        var byId = session.CurrentSnapshot.Characters.Where(Mine).ToDictionary(c => c.Id);
         return [.. ActiveSquadMembers().Select(byId.GetValueOrDefault).OfType<CharacterSnapshot>().Take(DialogueNpcCell)];
     }
 
@@ -38,7 +38,7 @@ sealed partial class PlayerInterface
     {
         var bar = SquadBarMembers();
         if (!SquadsShown) return bar;   // the others are drawn (and posed out of range) only while the squads screen shows them
-        var byId = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).ToDictionary(c => c.Id);
+        var byId = session.CurrentSnapshot.Characters.Where(Mine).ToDictionary(c => c.Id);
         var shown = bar.Select(c => c.Id).ToHashSet();
         var rest = session.CurrentSnapshot.PlayerSquads.SelectMany(s => s.Members).Where(id => shown.Add(id)).Select(byId.GetValueOrDefault).OfType<CharacterSnapshot>();
         return [.. bar.Concat(rest).Take(DialogueNpcCell)];

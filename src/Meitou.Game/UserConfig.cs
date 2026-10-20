@@ -88,6 +88,39 @@ sealed class UserConfig
     public Dictionary<string, float> Graphics { get; set; } = [];
     public Dictionary<string, string> Bindings { get; set; } = [];
 
+    // Multiplayer (docs/meitou-ui.md "Multiplayer"): new keys only, so no version bump. Passwords are never stored.
+    /// <summary>Your name in multiplayer; null until the Multiplayer window saves one.</summary>
+    public string? PlayerName { get; set; }
+    /// <summary>Your identity to hosts, which keeps your player number and squads across sessions and saves; <see cref="Guid.Empty"/> until <see cref="EnsurePlayerId"/>.
+    /// A second instance on one machine needs its own file (<c>--config</c>, <see cref="LoadOrCreate"/>), else the host refuses the duplicate.</summary>
+    public Guid PlayerId { get; set; }
+    /// <summary>The UDP port a hosted game listens on.</summary>
+    public int HostPort { get; set; } = MultiplayerDefaults.Port;
+    /// <summary>Players in a hosted game, the host included (2 to <see cref="MultiplayerDefaults.MaxPlayersLimit"/>).</summary>
+    public int HostMaxPlayers { get; set; } = MultiplayerDefaults.MaxPlayers;
+    /// <summary>Whether joined players may pause and change the speed of a hosted game.</summary>
+    public bool HostClientsControlTime { get; set; } = true;
+    /// <summary>Whether joined players may use the F10 debug menu in a hosted game.</summary>
+    public bool HostAllowCheats { get; set; }
+    /// <summary>The games joined, newest first, at most <see cref="MaxRecentGames"/>, unique by <see cref="RecentGame.Address"/> (ignoring case); see <see cref="RememberGame"/>.</summary>
+    public List<RecentGame> RecentGames { get; set; } = [];
+    public const int MaxRecentGames = 8;
+
+    /// <summary>The <see cref="PlayerId"/>, made on first use (the caller saves).</summary>
+    public Guid EnsurePlayerId()
+    {
+        if (PlayerId == Guid.Empty) PlayerId = Guid.NewGuid();
+        return PlayerId;
+    }
+
+    /// <summary>Puts a joined game first in <see cref="RecentGames"/>, dropping an older entry of the same address and any past <see cref="MaxRecentGames"/> (the caller saves).</summary>
+    public void RememberGame(string address, string host, DateTime joinedUtc)
+    {
+        RecentGames.RemoveAll(g => string.Equals(g.Address, address, StringComparison.OrdinalIgnoreCase));
+        RecentGames.Insert(0, new RecentGame { Address = address, Host = host, LastJoinedUtc = joinedUtc });
+        if (RecentGames.Count > MaxRecentGames) RecentGames.RemoveRange(MaxRecentGames, RecentGames.Count - MaxRecentGames);
+    }
+
     [JsonIgnore]
     public string Path { get; private set; } = FileName;
 
@@ -110,6 +143,10 @@ sealed class UserConfig
         config.Path = file;
         return config;
     }
+
+    /// <summary>A settings file named on the command line (<c>--config</c>, a second instance on one machine): <see cref="Load(string)"/> when it exists, else the defaults, which <see cref="Save"/> writes there.</summary>
+    public static UserConfig LoadOrCreate(string file) =>
+        File.Exists(file) ? Load(file) : new UserConfig { Path = System.IO.Path.GetFullPath(file) };
 
     /// <summary>
     /// Reads the file key by key: a value this release cannot read (a newer release changed its type, a hand edit) is dropped and takes its
@@ -225,4 +262,12 @@ sealed class UserConfig
         catch (IOException e) { Console.Error.WriteLine($"config    could not write {Path}: {e.Message}"); }
         catch (UnauthorizedAccessException e) { Console.Error.WriteLine($"config    could not write {Path}: {e.Message}"); }
     }
+}
+
+/// <summary>A game joined (<see cref="UserConfig.RecentGames"/>): the address as typed (<see cref="JoinAddress"/> reads it), the host's name then, and when.</summary>
+sealed class RecentGame
+{
+    public string Address { get; set; } = "";
+    public string Host { get; set; } = "";
+    public DateTime LastJoinedUtc { get; set; }
 }

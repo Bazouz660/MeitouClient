@@ -349,6 +349,13 @@ Rows send `DebugCommand`s, applied in the next tick's Inputs phase: teleport the
 (own squad, first faction hostile to the player), give an item record (`name x5`) to the first selected, add or remove money (signed number),
 heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage. Heal, stats and damage fall back to the inspected character. Names match a record's string id,
 its exact name, else the shortest name containing the text. Replaces the game's F10 key list (the viewer keeps its own).
+In a multiplayer game F10 opens it only when the host allows cheats ([meitou-ui](../meitou-ui.md#multiplayer)).
+
+### Multiplayer keys
+
+Meitou only (the game has no multiplayer), rebindable: `OpenChat` Enter opens the chat line, reached only outside windows
+(no modal window open and no default button took Enter; KeypadEnter stays the cinema's); `PlayerList` P, held, shows the
+player list. Neither key is in the action table above. With `--sandbox` P stays the sandbox's (not a multiplayer mode).
 
 ## Unknowns
 

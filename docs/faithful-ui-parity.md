@@ -51,6 +51,12 @@ Engine choices that remain; the original is **Unknown** for each:
 - Save list rows carry a `[Meitou]` / `[Kenshi]` source tag; the title's version text reads "Meitou - Faithful UI" (the original's is "Kenshi 1.0.68 - x64 (Newland)"), on purpose.
 - The sandbox keeps Z X C Y P G; with `--sandbox` the faithful C (stats) and Y (craft) shortcuts give way to it.
 
+Deliberate multiplayer deviations ([meitou-ui](meitou-ui.md#multiplayer); the original has no multiplayer):
+
+- The title's `ImportGameButton` reads MULTIPLAYER and opens the Multiplayer window (both modes; Import has no backend). If Import is implemented, Multiplayer moves to a control cloned from its skin and font.
+- The Esc menu gains multiplayer rows: MULTIPLAYER in a single-player game; PLAYERS, STOP HOSTING or DISCONNECT in a session.
+- Modal windows do not pause the game while a multiplayer session runs.
+
 `FaithfulInteractionTests.EveryWidgetTheFaithfulModeFillsExistsInTheOriginalLayout` [Slow] binds the HUD and every faithful screen against the installed layouts. It
 fails on any text, action, list or progress bound to a widget the layout lacks. It also prints the absent widgets that are only hidden or styled, and the named widgets
 that keep their editor caption, which is the list of original text the mode does not fill yet. First run against the install on 2026-10-14: it

@@ -193,6 +193,9 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
 - Inspecting another faction's character (**Observed** in the original, not traced in the code): a left click on a character that is not yours fills the information and medical panels with that character (name, faction, state, stats, extended stats, medical rows). Meitou keeps this as display state, `PlayerSession.Inspected` set by `InspectCommand` (not hashed, not saved); your selection is kept (Meitou: someone is always selected, `PlayerSession.Prune` picks the first living character of yours when every selected one is gone or dead); a click on your own character or the ground clears the inspection.
 - Money panel: `MoneyLabelText` is set to "Money" (without the layout's colon; 25 % opacity when the amount would overlap it), `DayText` "Day: {1,num}", `TimeText` HH:MM (**Verified**). A "1x"
   seen next to the clock in a player's screenshot is not written by the vanilla code (**Observed**; most likely a mod).
+- Paused panel: `PausedPanel` (`Kenshi_FloatingPanelSkin`, top centre at 0.4036 0.0046, 0.1927 × 0.1019) holds TextBox `lbPaused`, caption `PAUSED`, font
+  `Kenshi_UI_Messages`, centred (**Verified**: installed `Kenshi_MainPanel.layout`). Meitou hides the panel while the clock runs; a multiplayer game adds who
+  paused under it ([meitou-ui](../meitou-ui.md#multiplayer)).
 - Squad tabs: one per player squad with members, captioned with the squad's name unchanged (**Verified**); the first player squad reads `Nameless_0`,
   its platoon's name (the faction's name and its platoon counter; **Observed**). Tab width min(header width / tabs, ButtonWidth × UI scale), in the skin's
   `HeaderPlace`. The bar shows the active squad (`FUN_1407f5520`: a cached platoon at player interface +0x2a8, else the selection's, else the faction's

@@ -36,8 +36,9 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
 
     IReadOnlyList<CharacterId> SelectedIds() => [.. Selected().Select(c => c.Id)];
 
+    /// <summary>The characters this viewer commands (<see cref="Mine"/>): every player character in single-player.</summary>
     IReadOnlyList<CharacterId> PlayerCharacters() =>
-        [.. session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).Select(c => c.Id)];
+        [.. session.CurrentSnapshot.Characters.Where(Mine).Select(c => c.Id)];
 
     /// <summary>
     /// The active squad's members in squad order, the first leading (the squad bar's; the number keys and select_all pick from them, the original's <c>UiSelectSquadMember</c> /
@@ -97,7 +98,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
             // Alt + right click on a downed or dead character: the nearest selected loots it (take all). Ctrl + right click: picks it up, or puts it down when a selected
             // character carries it. A plain right click on one of your own downed characters that needs no first aid picks it up too (the original's quick right click).
             var downed = alt || ctrl ? PickDowned(p) : null;
-            if (alt && downed is { } loot && SelectedIds() is { Count: > 0 })
+            if (alt && downed is { } loot && SelectedIds() is { Count: > 0 } && !OtherPlayers(loot))   // a teammate's downed character is never looted from the interface
                 Say(new Meitou.Simulation.Carrying.LootOrder([], loot) { Tick = session.World.Tick });
             else if (ctrl && downed is { } body && Selected().Where(c => c.Carrying == body).Select(c => c.Id).ToArray() is { Length: > 0 } carriers)
                 Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick });
@@ -177,8 +178,9 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         else
         {
             // A click on another faction's character shows it in the information and medical panels and drops the squad's selection (docs/game/ui-screens.md section 4). Shift keeps the selection, a click on your own or on the ground clears the inspection.
+            // In multiplayer a teammate's character is inspected the same way (it is not yours to select).
             var hit = Pick(p);
-            var other = hit is null && !shift ? PickWhere(p, c => !c.IsPlayer) : null;
+            var other = hit is null && !shift ? PickWhere(p, c => !Mine(c)) : null;
             // A building under the cursor (and no character) is selected and the characters keep their selection (docs/game/ui-input.md "Building picking and selection").
             if (hit is null && PickWhere(p, _ => true) is null && PickBuilding(p) is { } building)
             {

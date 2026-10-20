@@ -91,8 +91,8 @@ sealed partial class PlayerInterface
         return new Vector2((clip.X / clip.W * 0.5f + 0.5f) * Width, (0.5f - clip.Y / clip.W * 0.5f) * Height);
     }
 
-    /// <summary>The player's character under the pixel (capsule from the feet up, a little fatter with distance), if any.</summary>
-    public CharacterId? Pick(Vector2 pixel) => PickWhere(pixel, c => c.IsPlayer);
+    /// <summary>The player's character under the pixel (capsule from the feet up, a little fatter with distance), if any; in multiplayer only the viewer's own (<see cref="Mine"/>).</summary>
+    public CharacterId? Pick(Vector2 pixel) => PickWhere(pixel, Mine);
 
     /// <summary>A living character of anyone else's under the pixel: what a right click attacks (hostility is not checked yet).</summary>
     public CharacterId? PickTarget(Vector2 pixel) => PickWhere(pixel, c => !c.IsPlayer && c.Body is { Dead: false, Unconscious: false });
@@ -152,7 +152,7 @@ sealed partial class PlayerInterface
         var list = new List<CharacterId>();
         foreach (var c in session.CurrentSnapshot.Characters)
         {
-            if (!c.IsPlayer) continue;
+            if (!Mine(c)) continue;
             var p = where(c) + new Vector3(0, CharacterHeight / 2, 0);
             if (Vector3.Distance(Eye, p) > BoxSelectRange) continue;
             if (Project(p) is { } s && s.X >= x0 && s.X <= x1 && s.Y >= y0 && s.Y <= y1) list.Add(c.Id);

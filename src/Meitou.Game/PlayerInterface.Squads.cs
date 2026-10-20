@@ -79,7 +79,7 @@ sealed partial class PlayerInterface
         var cells = new Dictionary<CharacterId, int>();
         var portraits = PortraitMembers();
         for (int i = 0; i < portraits.Count; i++) cells[portraits[i].Id] = i;
-        var byId = snapshot.Characters.Where(c => c.IsPlayer).ToDictionary(c => c.Id);
+        var byId = snapshot.Characters.Where(Mine).ToDictionary(c => c.Id);
         var area = panel.Bounds;
         var clip = panel.Clip is { } outer ? area.Intersect(outer) : area;
         float boxHeight = area.Height * SquadBoxShare, boxWidth = area.Width - SquadScrollBar * InventoryScale;
@@ -142,7 +142,8 @@ sealed partial class PlayerInterface
         }
     }
 
-    /// <summary>The player's characters alive (what the faction's count and the dismiss rule count, <see cref="SquadManagement.FactionHeads"/>).</summary>
+    /// <summary>The player's characters alive (what the faction's count and the dismiss rule count, <see cref="SquadManagement.FactionHeads"/>). Every player's in
+    /// multiplayer, not only <see cref="Mine"/>: <c>max faction size</c> counts the whole shared faction.</summary>
     int LivingPlayerCharacters() => session.CurrentSnapshot.Characters.Count(c => c.IsPlayer && c.Body is not { Dead: true });
 
     static string SquadNameBox(int squad) => "squad-name-" + squad.ToString(CultureInfo.InvariantCulture);

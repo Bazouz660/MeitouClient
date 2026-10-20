@@ -111,6 +111,8 @@ sealed partial class SettingsMenu
         InputAction.QuickLoad => "Load the game from the quicksave slot.",
         InputAction.FloorUp => "View the next higher building floor.",
         InputAction.FloorDown => "View the next lower building floor.",
+        InputAction.OpenChat => "Open the chat line in a multiplayer game.",
+        InputAction.PlayerList => "Hold to show the players in a multiplayer game.",
         _ => $"Choose the control for {ActionLabel(action).ToLowerInvariant()}.",
     };
 }

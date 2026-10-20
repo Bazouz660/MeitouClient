@@ -60,3 +60,59 @@ arrows, talk, light, lock/lockpick, door/escape, house, tools, mining, lifting, 
 hand, search, use/gears, steal, knockout, scavenge and invalid. They are action cursors, not
 dedicated save/load icons. `Kenshi_SaveGamePanel.layout` uses a plain captioned Save button;
 no dedicated save image was found in these resources or by inspecting the atlas.
+
+## Multiplayer
+
+Co-op windows, keys and palette; all engine choices (the game has no multiplayer), in both UI modes. Protocol and
+sessions: [net](net.md), [simulation](simulation.md#multiplayer-host-authoritative-co-op).
+
+### Plumbing and ownership
+
+- Contract (`Meitou.Game/Multiplayer/NetUiContract.cs`): the game host sets `PlayerInterface.Net`
+  (`IMultiplayerView`: role, phase, local player, roster, rules, quality, end, paused-by, events) and handles
+  `MultiplayerRequested` (`HostGame`, `JoinGame`, `CancelJoin`, `StopHosting`, `LeaveGame`). `Net` null or role
+  `None` is single-player: every hook is inert.
+- Own characters: `Mine(c)` = `IsPlayer` and, in a session, `CharacterSnapshot.Owner == LocalPlayer`. Click and box
+  selection, the squad bar, portraits, the Squads tab, the roster text and the jobs list use it; a click on a teammate's
+  character inspects it; Alt-loot skips a teammate's downed character. Treating and carrying (`PickHurtAlly`,
+  `PickDowned`), the context menu and the `max faction size` count keep every player character (shared faction).
+- `Draw` → `PollNet` once a frame: drains `TakeEvents`, then the window, chat and status frame steps. The windows
+  (`multiplayer`, `chat`, `players`) are MyGUI layouts registered after the original ones, using installed skins and
+  fonts only; the chat history, player list and indicators are decorated controls drawn by `ArrangeUi`.
+- Title: `ImportGameButton` (the layout's column is Continue, New, Load, Import, Options, Credits, Exit: **Verified**,
+  installed `Kenshi_MainMenu.layout`) is captioned MULTIPLAYER, enabled, and opens the Multiplayer window; Import has no
+  backend. The Meitou title stack shows it only once its menu places it.
+- Keys: Enter opens the chat line, P held shows the player list ([ui-input](game/ui-input.md#multiplayer-keys)).
+- Time: modal windows never pause while a clock authority is set (`WorldSession.ModalsPause`). A HUD speed button
+  pressed without the right (`CanControlTime`: `ClockPolicy.AnyPlayer` or the host) shows "Only the host can change
+  the game speed."; the keys reach the host, which refuses with the same text.
+- F10 opens the debug menu in a session only when `Rules.Cheats`, else notice "Cheats are off in this game.".
+- Ended session: a one-button alert (OK), titled DISCONNECTED once the session reached play, else CONNECTION FAILED;
+  the text is `NetDisconnect.Reason`.
+- Palette (`PlayerColours`, index = `RosterEntry.Colour`): host 0 sky `#8DCDFF` (`MarkerPlayer`), amber `#F2C14E`,
+  orchid `#D69CF2`, mint `#7DDCB0`, rose `#F58FC0`, lime `#B9E36B`, peach `#FFAB7A`, periwinkle `#A4AAFF`; hues ~45°
+  apart, no red (enemy) or dark green (ally). Unknown or gone: grey 0.62. Selected: the host the map's
+  (0.652, 0.903, 1), others lightened 35 %. A joiner gets its preferred colour when free, else the lowest free; a name
+  always goes with the colour.
+- Settings (`meitou.user.json`, new keys, no version bump): `playerName`, `playerId` (made on first use; a second
+  instance on one machine uses `--config <file>`), `hostPort` 40120, `hostMaxPlayers` 4 (2-8),
+  `hostClientsControlTime` true, `hostAllowCheats` false, `recentGames` (address, host, last joined; newest first,
+  at most 8, unique by address ignoring case). Passwords are never stored.
+- Join address (`JoinAddress`): `host`, `host:port`, `[v6]`, `[v6]:port`, or a bare IPv6 address (host only); port
+  1-65535 in digits, default 40120.
+
+### Title entry and Multiplayer window
+
+Pending (package U2).
+
+### Chat
+
+Pending (package U3).
+
+### Player list, name tags, map markers
+
+Pending (package U4).
+
+### Status, Esc menu, players window, alerts
+
+Pending (package U5).
