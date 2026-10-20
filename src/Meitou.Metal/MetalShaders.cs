@@ -28,6 +28,9 @@ internal sealed class MetalSetLayout
         return layout;
     }
 
+    /// <summary>The empty layout (a graphics program has no compute structs).</summary>
+    public static readonly MetalSetLayout Empty = new();
+
     /// <summary>The set's member ids in declaration order (empty when the stage does not read the set).</summary>
     public uint[] Members(uint set) => members.TryGetValue(set, out var ids) ? ids : [];
 
@@ -47,30 +50,51 @@ internal sealed class MetalProgram : IDisposable
         (VertexSets, FragmentSets) = (MetalSetLayout.Parse(vertexMsl), MetalSetLayout.Parse(fragmentMsl));
     }
 
+    /// <summary>A compute program: one entry point, its set structs and the threadgroup size the MSL was compiled with.</summary>
+    public MetalProgram(ProgramInfo info, MTLLibrary computeLibrary, MTLFunction computeFunction, string computeMsl, (uint X, uint Y, uint Z) threads)
+    {
+        ArgumentBuffers = true;
+        Info = info;
+        (ComputeLibrary, ComputeFunction, ComputeMsl, Threads) = (computeLibrary, computeFunction, computeMsl, threads);
+        ComputeTable = MetalTableLayout.Parse(computeMsl);
+        ComputeSets = MetalSetLayout.Parse(computeMsl);
+    }
+
     public ProgramInfo Info { get; }
+    // A compute program has no graphics stage (the handles stay default); the graphics constructor fills them.
     public MTLLibrary VertexLibrary { get; }
     public MTLFunction VertexFunction { get; }
     /// <summary>The vertex stage's MSL (diagnostics: what SPIR-V became).</summary>
-    public string VertexMsl { get; }
+    public string VertexMsl { get; } = "";
     public MTLLibrary FragmentLibrary { get; }
     public MTLFunction FragmentFunction { get; }
-    public string FragmentMsl { get; }
+    public string FragmentMsl { get; } = "";
     /// <summary>The stage's argument buffer layout (empty for a stage that does not read the table).</summary>
-    public MetalTableLayout VertexTable { get; }
-    public MetalTableLayout FragmentTable { get; }
+    public MetalTableLayout VertexTable { get; } = MetalTableLayout.Empty;
+    public MetalTableLayout FragmentTable { get; } = MetalTableLayout.Empty;
     /// <summary>The stage's descriptor-set member ids, in declaration order (Metal lays a struct's members out by
     /// declaration, not by their <c>[[id]]</c>: the position is what the runtime writes).</summary>
-    public MetalSetLayout VertexSets { get; }
-    public MetalSetLayout FragmentSets { get; }
+    public MetalSetLayout VertexSets { get; } = MetalSetLayout.Empty;
+    public MetalSetLayout FragmentSets { get; } = MetalSetLayout.Empty;
     /// <summary>Whether the program's descriptor sets are Metal argument buffers (every native program with the bindless table).</summary>
     public bool ArgumentBuffers { get; }
+    public MTLLibrary ComputeLibrary { get; }
+    public MTLFunction ComputeFunction { get; }
+    public string ComputeMsl { get; } = "";
+    /// <summary>The threadgroup size the MSL declares (the GLSL's <c>local_size_x/y/z</c>), for a dispatch.</summary>
+    public (uint X, uint Y, uint Z) Threads { get; }
+    public MetalTableLayout ComputeTable { get; } = MetalTableLayout.Empty;
+    public MetalSetLayout ComputeSets { get; } = MetalSetLayout.Empty;
+    public bool IsCompute => ComputeFunction.NativePtr != IntPtr.Zero;
 
     public void Dispose()
     {
-        VertexFunction.Dispose();
-        VertexLibrary.Dispose();
-        FragmentFunction.Dispose();
-        FragmentLibrary.Dispose();
+        if (VertexFunction.NativePtr != IntPtr.Zero) VertexFunction.Dispose();
+        if (VertexLibrary.NativePtr != IntPtr.Zero) VertexLibrary.Dispose();
+        if (FragmentFunction.NativePtr != IntPtr.Zero) FragmentFunction.Dispose();
+        if (FragmentLibrary.NativePtr != IntPtr.Zero) FragmentLibrary.Dispose();
+        if (ComputeFunction.NativePtr != IntPtr.Zero) ComputeFunction.Dispose();
+        if (ComputeLibrary.NativePtr != IntPtr.Zero) ComputeLibrary.Dispose();
     }
 }
 
@@ -241,8 +265,43 @@ public sealed class MetalShaders : IGpuShaders
         return new GpuProgram(info.Index, info);
     }
 
-    /// <summary>Only the legacy model is translated so far; the native model's and compute programs come with their passes.</summary>
-    public GpuProgram Compute(string glsl, string name) => throw new NotSupportedException("the Metal backend has no compute programs yet (the sky pass needs none)");
+    /// <summary>
+    /// A compute program: the engine's compiler makes the SPIR-V, spirv-cross the MSL (with every set an argument buffer, as the
+    /// native model's), and the threadgroup size comes from the source's <c>local_size_x/y/z</c> (the dispatch passes it to Metal).
+    /// </summary>
+    public GpuProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets)
+    {
+        var code = Compiler.CompileCompute(glsl);
+        var r = SpirvReflection.Parse(code);
+        uint pc = (uint)(r.Blocks.FirstOrDefault(b => b.Kind == BlockKind.PushConstant)?.Size ?? 0);
+        var info = new ProgramInfo
+        {
+            Index = programs.Count, Name = name, Model = ShaderModel.Compute, ComputeCode = code, ComputeReflection = r,
+            PushConstantBytes = pc, NeutralSets = [GpuSetLayout.Written([]), .. extraSets],
+        };
+        var threads = LocalSize(glsl);
+        var msl = MslTranslator.Translate(code, "compute_main", ExecutionModel.GLCompute, argumentBufferSet: Rendering.NativeShaders.BindlessSet);
+        if (Environment.GetEnvironmentVariable("MEITOU_METAL_DUMP") is { } dump)
+        {
+            Directory.CreateDirectory(dump);
+            File.WriteAllBytes(Path.Combine(dump, $"{name}.comp.spv"), code);
+            File.WriteAllText(Path.Combine(dump, $"{name}.comp.msl"), msl);
+        }
+        var library = Library(msl, name);
+        programs.Add(new MetalProgram(info, library, Function(library, "compute_main", name), msl, threads));
+        return new GpuProgram(info.Index, info);
+    }
+
+    /// <summary>The GLSL's threadgroup size (GLSL makes it mandatory; 1 for an axis the source does not name).</summary>
+    static (uint X, uint Y, uint Z) LocalSize(string glsl)
+    {
+        static uint Of(string source, string axis)
+        {
+            var m = Regex.Match(source, axis + @"\s*=\s*(\d+)");
+            return m.Success ? uint.Parse(m.Groups[1].Value) : 1;
+        }
+        return (Of(glsl, "local_size_x"), Of(glsl, "local_size_y"), Of(glsl, "local_size_z"));
+    }
 
     /// <summary>
     /// A native-model program: strict GLSL 450, the layout given by the caller (<paramref name="setLayouts"/>, not owned) and a

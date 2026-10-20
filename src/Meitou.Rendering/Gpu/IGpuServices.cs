@@ -13,6 +13,9 @@ public interface IGpuShaders
     /// <summary>Compiles (or takes from the caches) the GLSL pair as a native-model program (docs/renderer-native.md 3.2).</summary>
     GpuProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes);
 
+    /// <summary>A compute program: set 0 from the shader's reflection, the other sets from <paramref name="extraSets"/>.</summary>
+    GpuProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets);
+
     /// <summary>Releases a program (its backend artifacts go once the frames in flight are done); the index is never reused.</summary>
     void Dispose(GpuProgram program);
 }

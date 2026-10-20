@@ -10,13 +10,14 @@ namespace Meitou.Metal;
 /// backend's object is an <c>MTLRenderPipelineState</c> made on first use. What is dynamic state on Vulkan
 /// (viewport, scissor, cull, winding, depth test/write/compare, depth bias, fill mode) is the encoder's on
 /// Metal; what is fixed state is the pipeline's: blend, colour mask, alpha to coverage, depth clamp, samples.
-/// Only graphics pipelines so far; compute comes with its passes.
+/// Compute pipelines are <c>MTLComputePipelineState</c>s, cached by the same description.
 /// </summary>
 public sealed class MetalPipelines : IGpuPipelines
 {
     readonly MTLDevice device;
     readonly MetalShaders shaders;
     readonly Dictionary<GraphicsPipelineDesc, MTLRenderPipelineState> graphics = [];
+    readonly Dictionary<ComputePipelineDesc, MTLComputePipelineState> computes = [];
 
     public MetalPipelines(MTLDevice device, MetalShaders shaders)
     {
@@ -26,6 +27,9 @@ public sealed class MetalPipelines : IGpuPipelines
 
     /// <summary>The backend's object of a pipeline handle.</summary>
     internal MTLRenderPipelineState Backend(in GpuPipeline pipeline) => graphics[pipeline.Desc];
+
+    /// <summary>The backend's object of a compute pipeline handle.</summary>
+    internal MTLComputePipelineState Backend(in GpuComputePipeline pipeline) => computes[pipeline.Desc];
 
     public GpuPipeline Get(in GraphicsPipelineDesc desc)
     {
@@ -69,14 +73,26 @@ public sealed class MetalPipelines : IGpuPipelines
         return new GpuPipeline(desc);
     }
 
-    public GpuComputePipeline Get(in ComputePipelineDesc desc) =>
-        throw new NotSupportedException("the Metal backend has no compute pipelines yet (the sky pass needs none)");
+    public GpuComputePipeline Get(in ComputePipelineDesc desc)
+    {
+        if (computes.ContainsKey(desc)) return new GpuComputePipeline(desc);
+        var program = shaders.Backend(desc.Program);
+        if (!program.IsCompute) throw new InvalidOperationException($"{desc.Program.Name}: not a compute program");
+        NSError error = default;
+        var state = device.NewComputePipelineState(program.ComputeFunction, ref error);
+        if (error.NativePtr != IntPtr.Zero)
+            throw new InvalidOperationException($"{desc.Program.Name}: the compute pipeline '{desc.Name}' failed: {error.LocalizedDescription}");
+        computes[desc] = state;
+        return new GpuComputePipeline(desc);
+    }
 
     /// <summary>Drops a program's cached pipelines (the program is going away).</summary>
     public void Forget(GpuProgram program)
     {
         foreach (var (desc, _) in graphics)
             if (desc.Program.Index == program.Index) graphics.Remove(desc);
+        foreach (var (desc, _) in computes)
+            if (desc.Program.Index == program.Index) computes.Remove(desc);
     }
 
     /// <summary>

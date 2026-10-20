@@ -22,6 +22,9 @@ internal sealed class MetalTableLayout
         return at;
     }
 
+    /// <summary>The empty layout (a program that does not read the table).</summary>
+    public static readonly MetalTableLayout Empty = new();
+
     /// <summary>The buffer's total entries.</summary>
     public int Entries { get; private set; }
 

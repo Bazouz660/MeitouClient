@@ -297,6 +297,18 @@ What the Metal picture still lacks is later steps' work, not this one's: the pos
 mapping and exposure (step 2), the shadows (step 4), the objects, foliage and water (steps 3, 5,
 6) and the UI (step 8).
 
+**Compute (step 2's backend half).** A compute program is translated like the native model's
+(every set an argument buffer, push constants at <c>buffer(30)</c>) and the GLSL's
+<code>local_size_x/y/z</code> is its threadgroup; <code>Dispatch(x, y, z)</code> therefore means
+threadgroups, as Vulkan's <code>vkCmdDispatch</code> does. The pipeline is an
+<code>MTLComputePipelineState</code>. A storage image's argument-buffer member is its texture's
+<code>gpuResourceID</code> and the encoder marks it <code>Read|Write</code>. <code>Order</code>
+ending the compute and blit encoders is the seam: a command buffer orders its encoders and Apple
+silicon tracks the hazards inside one. <code>FillBuffer</code> clears only (Metal fills with one
+byte; no caller asks for another value). Verified with an 8x8 dispatch into an RGBA8UI storage
+image through set 0's argument buffer, read back as (2, 3, 99, 255). The post chain itself still
+has to be widened to the seam (<code>PostProcess</code> is Vulkan-typed), which is the next work.
+
 ### The plan for the remaining steps (kept exact, for resuming cold)
 
 **Step D — verify the table in the host** (`--table`): the quad samples `textures2D[uIndex]` and

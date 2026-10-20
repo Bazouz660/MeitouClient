@@ -20,7 +20,10 @@ public sealed class MetalCommandList : IGpuCommandList
     readonly string name;
     MTLCommandBuffer command;
     MTLRenderCommandEncoder render;
+    MTLComputeCommandEncoder compute;
     MTLBlitCommandEncoder blit;
+    GpuProgram computeProgram;
+    GpuComputePipeline lastCompute;
     bool ownsBlit;
     bool depthAttachment;
     GpuPipeline lastPipeline;
@@ -53,6 +56,7 @@ public sealed class MetalCommandList : IGpuCommandList
     public void BeginRendering(in RenderingDesc d, bool secondaries = false)
     {
         if (secondaries) throw new NotSupportedException("the Metal backend records no secondary command lists yet");
+        EndCompute();
         EndBlit();
         var descriptor = new MTLRenderPassDescriptor(
             ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor"));
@@ -121,9 +125,16 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.PipelinesBound++;
     }
 
-    /// <summary>Binds a compute pipeline — comes with the compute passes.</summary>
-    public void BindPipeline(GpuComputePipeline pipeline) =>
-        throw new NotSupportedException("the Metal backend has no compute pipelines yet (the sky pass needs none)");
+    /// <summary>Binds a compute pipeline (the encoder's <c>setComputePipelineState</c>).</summary>
+    public void BindPipeline(GpuComputePipeline pipeline)
+    {
+        if (pipeline.Desc == lastCompute.Desc) return;
+        var encoder = ComputeEncoder();
+        encoder.SetComputePipelineState(ctx.Pipelines.Backend(pipeline));
+        computeProgram = pipeline.Desc.Program;
+        lastCompute = pipeline;
+        Stats.PipelinesBound++;
+    }
 
     public void SetViewport(in PixelViewport v) =>
         render.SetViewport(new MTLViewport { originX = v.X, originY = v.Y, width = v.Width, height = v.Height, znear = v.MinDepth, zfar = v.MaxDepth });
@@ -178,6 +189,13 @@ public sealed class MetalCommandList : IGpuCommandList
     public void BindProgramResources(GpuProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
     {
         if (set != 0) throw new NotSupportedException($"the Metal backend binds set {set} only through CreateSet and BindSets");
+        if (program.Model == ShaderModel.Compute)
+        {
+            _ = ComputeEncoder();
+            BindSetArguments(ctx.Shaders.Backend(program), set, bindings, computePass: true);
+            Stats.DescriptorPushes++;
+            return;
+        }
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindProgramResources outside a rendering");
         if (ctx.Shaders.Backend(program).ArgumentBuffers) { BindSetArguments(ctx.Shaders.Backend(program), set, bindings); return; }
         var slots = program.NeutralSets[set].Slots;
@@ -225,8 +243,9 @@ public sealed class MetalCommandList : IGpuCommandList
 
     public void BindSets(GpuProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics)
     {
-        if (point != GpuBindPoint.Graphics) throw new NotSupportedException("the Metal backend binds no compute sets yet");
-        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindSets outside a rendering");
+        bool computePass = point == GpuBindPoint.Compute;
+        if (computePass) _ = ComputeEncoder();
+        else if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindSets outside a rendering");
         if (ctx.Shaders.Backend(program).ArgumentBuffers)
         {
             int at = 0;
@@ -241,7 +260,7 @@ public sealed class MetalCommandList : IGpuCommandList
                         binding = new GpuBinding(binding.Slot, binding.Kind, Buffer: new GpuBufferBinding(binding.Buffer.Buffer, dynamicOffsets.IsEmpty ? 0 : dynamicOffsets[at++], binding.Buffer.Size));
                     bindings[b] = binding;
                 }
-                BindSetArguments(ctx.Shaders.Backend(program), first + (uint)i, bindings);
+                BindSetArguments(ctx.Shaders.Backend(program), first + (uint)i, bindings, computePass);
             }
             Stats.DescriptorPushes++;
             return;
@@ -275,15 +294,16 @@ public sealed class MetalCommandList : IGpuCommandList
     /// live in the frame's constants ring (a slice of their own per bind: a later bind of the same set must not change what an
     /// earlier draw reads).
     /// </summary>
-    unsafe void BindSetArguments(MetalProgram backend, uint set, ReadOnlySpan<GpuBinding> bindings)
+    unsafe void BindSetArguments(MetalProgram backend, uint set, ReadOnlySpan<GpuBinding> bindings, bool computePass = false)
     {
+        if (computePass) { BindSetStage(backend.ComputeSets, GpuStage.Compute, set, bindings, computePass: true); return; }
         BindSetStage(backend.VertexSets, GpuStage.Vertex, set, bindings);
         BindSetStage(backend.FragmentSets, GpuStage.Fragment, set, bindings);
     }
 
     /// <summary>One stage's set: the bindings' addresses at the positions their <c>[[id]]</c>s name in the stage's struct
     /// (Metal lays an argument buffer's members out by declaration, so the position is the entry, not the id).</summary>
-    unsafe void BindSetStage(MetalSetLayout layout, GpuStage stage, uint set, ReadOnlySpan<GpuBinding> bindings)
+    unsafe void BindSetStage(MetalSetLayout layout, GpuStage stage, uint set, ReadOnlySpan<GpuBinding> bindings, bool computePass = false)
     {
         uint[] members = layout.Members(set);
         if (members.Length == 0) return;   // the stage's shader does not read this set
@@ -292,44 +312,85 @@ public sealed class MetalCommandList : IGpuCommandList
         bool any = false;
         foreach (var binding in bindings)
         {
-            if (binding.Kind is not (GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer))
-                throw new NotSupportedException($"the Metal backend puts no {binding.Kind} in an argument buffer set yet (set {set}, binding {binding.Slot})");
-            if (binding.Buffer.Buffer.IsNull) continue;
-            var slotKind = binding.Kind == GpuBindingKind.StorageBuffer ? GpuSlotKind.StorageBuffer : GpuSlotKind.UniformBuffer;
+            GpuSlotKind slotKind = binding.Kind switch
+            {
+                GpuBindingKind.UniformBuffer => GpuSlotKind.UniformBuffer,
+                GpuBindingKind.StorageBuffer => GpuSlotKind.StorageBuffer,
+                GpuBindingKind.Sampled => GpuSlotKind.CombinedSampler,
+                GpuBindingKind.StorageImage => GpuSlotKind.CombinedSampler,   // the id is the slot; the kind only picks the table
+                _ => throw new NotSupportedException($"the Metal backend puts no {binding.Kind} in an argument buffer set (set {set}, binding {binding.Slot})"),
+            };
             int at = Array.IndexOf(members, MetalShaders.Flatten(slotKind, stage, set, binding.Slot));
             if (at < 0) continue;   // this stage's struct has no such member (its shader never reads it)
-            var (buffer, offset) = ctx.Buffer(binding.Buffer);
-            render.UseResource(buffer, MTLResourceUsage.Read);
-            entries[at] = buffer.GpuAddress + offset;
+            if (binding.Kind is GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer)
+            {
+                if (binding.Buffer.Buffer.IsNull) continue;
+                var (buffer, offset) = ctx.Buffer(binding.Buffer);
+                UseResource(buffer, MTLResourceUsage.Read, computePass);
+                entries[at] = buffer.GpuAddress + offset;
+            }
+            else
+            {
+                if (binding.Texture.IsNull) continue;
+                var image = ctx.ViewTexture(binding.Texture.View);
+                UseResource(image, binding.Kind == GpuBindingKind.StorageImage ? MTLResourceUsage.Read | MTLResourceUsage.Write : MTLResourceUsage.Read, computePass);
+                entries[at] = image.GpuResourceID._impl;
+            }
             any = true;
         }
         if (!any) return;
         var size = (ulong)members.Length * 8;
         var constants = ctx.NewSetBuffer(size);
         fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
-        if (stage == GpuStage.Vertex) render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
+        if (computePass) compute.SetBuffer(constants, 0, set);
+        else if (stage == GpuStage.Vertex) render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
         else render.SetFragmentBuffer(constants, 0, set);
+    }
+
+    /// <summary>Tells the current encoder a resource the argument buffer holds; the compute encoder needs it for its writes too.</summary>
+    void UseResource(MTLBuffer buffer, MTLResourceUsage usage, bool computePass)
+    {
+        if (computePass) compute.UseResource(buffer, usage);
+        else render.UseResource(buffer, usage);
+    }
+
+    void UseResource(MTLTexture texture, MTLResourceUsage usage, bool computePass)
+    {
+        if (computePass) compute.UseResource(texture, usage);
+        else render.UseResource(texture, usage);
     }
 
     /// <summary>Binds the bindless table: the slot's argument buffer at <see cref="MslTranslator.TableBinding"/> in both stages
     /// (the MSL's table set is moved there, so the set's number is only the layout's word for it).</summary>
     public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
     {
-        if (point != GpuBindPoint.Graphics) throw new NotSupportedException("the Metal backend binds the table in graphics passes only");
-        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindBindlessTable outside a rendering");
+        bool computePass = point == GpuBindPoint.Compute;
+        if (computePass) _ = ComputeEncoder();
+        else if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindBindlessTable outside a rendering");
         if (set != Rendering.NativeShaders.BindlessSet) throw new InvalidOperationException($"the Metal backend's table is set {Rendering.NativeShaders.BindlessSet} (asked for {set})");
         var backend = ctx.Shaders.Backend(program);
         int slot = ctx.Frame.Slot;
-        if (ctx.BindlessTable.BufferFor(backend.VertexTable, slot) is { } vertex)
-            render.SetVertexBuffer(vertex, 0, MslTranslator.TableBinding);
-        if (ctx.BindlessTable.BufferFor(backend.FragmentTable, slot) is { } fragment)
-            render.SetFragmentBuffer(fragment, 0, MslTranslator.TableBinding);
+        if (computePass)
+        {
+            if (ctx.BindlessTable.BufferFor(backend.ComputeTable, slot) is { } table) compute.SetBuffer(table, 0, MslTranslator.TableBinding);
+        }
+        else
+        {
+            if (ctx.BindlessTable.BufferFor(backend.VertexTable, slot) is { } vertex)
+                render.SetVertexBuffer(vertex, 0, MslTranslator.TableBinding);
+            if (ctx.BindlessTable.BufferFor(backend.FragmentTable, slot) is { } fragment)
+                render.SetFragmentBuffer(fragment, 0, MslTranslator.TableBinding);
+        }
         ctx.BindlessTable.UseResources(this);
         Stats.DescriptorPushes++;
     }
 
     /// <summary>Tells the encoder a resource the shaders read through the argument buffer (not through a direct binding).</summary>
-    internal void UseResource(MTLTexture texture) => render.UseResource(texture, MTLResourceUsage.Read);
+    internal void UseResource(MTLTexture texture)
+    {
+        if (render.NativePtr != IntPtr.Zero) render.UseResource(texture, MTLResourceUsage.Read);
+        else if (compute.NativePtr != IntPtr.Zero) compute.UseResource(texture, MTLResourceUsage.Read);
+    }
 
     /// <summary>Pushes a block of constants: the bytes both stages' encoders take inline at the stage's top index
     /// (<see cref="MslTranslator.PushConstantBinding"/>, the push blocks' own <c>[[buffer(n)]]</c>).</summary>
@@ -343,6 +404,7 @@ public sealed class MetalCommandList : IGpuCommandList
         byte* bytes = stackalloc byte[Math.Max(padded, 16)];
         new Span<byte>(bytes, Math.Max(padded, 16)).Clear();
         Buffer.MemoryCopy(Unsafe.AsPointer(ref Unsafe.AsRef(in value)), bytes, padded, raw);
+        if (stages.HasFlag(GpuStage.Compute)) ComputeEncoder().SetBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
         if (stages.HasFlag(GpuStage.Vertex)) render.SetVertexBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
         if (stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
     }
@@ -381,23 +443,38 @@ public sealed class MetalCommandList : IGpuCommandList
     public void DrawIndirectCount(GpuBuffer args, ulong offset, GpuBuffer countBuffer, ulong countOffset, uint maxCount, uint stride = 16) =>
         throw new NotSupportedException("the Metal backend has no indirect draws yet");
 
-    /// <summary>Dispatches a compute pass — comes with the compute passes.</summary>
-    public void Dispatch(uint x, uint y = 1, uint z = 1) =>
-        throw new NotSupportedException("the Metal backend has no compute dispatches yet (the sky pass needs none)");
+    /// <summary>Dispatches a compute pass: the arguments are threadgroups, as Vulkan's <c>vkCmdDispatch</c>'s; the shader's
+    /// <c>local_size_x/y/z</c> (parsed from the GLSL) is the threadgroup.</summary>
+    public void Dispatch(uint x, uint y = 1, uint z = 1)
+    {
+        var encoder = ComputeEncoder();
+        if (computeProgram.IsNull) throw new InvalidOperationException("Dispatch without a bound compute pipeline");
+        var threads = ctx.Shaders.Backend(computeProgram).Threads;
+        encoder.DispatchThreadgroups(new MTLSize { width = x, height = y, depth = z },
+            new MTLSize { width = threads.X, height = threads.Y, depth = threads.Z });
+        Stats.Draws++;
+    }
 
-    /// <summary>A new texture: the backend's own image, and its transition recorded into this command list — comes with the render targets' passes.</summary>
-    public GpuTexture CreateTexture(TextureDesc desc) =>
-        throw new NotSupportedException("the Metal backend makes no textures inside a command list yet");
+    /// <summary>A new texture: Metal tracks no image layouts, so the context makes it and nothing is recorded.</summary>
+    public GpuTexture CreateTexture(TextureDesc desc) => ctx.CreateTexture(desc);
 
     // ---- transfers ----
 
-    /// <summary>Fills a range of a buffer with a value — comes with its passes.</summary>
-    public void FillBuffer(GpuBuffer b, ulong offset, ulong size, uint value) =>
-        throw new NotSupportedException("the Metal backend has no buffer fills yet");
+    /// <summary>Fills a range of a buffer with a value (the blit encoder's <c>fillBuffer</c>).</summary>
+    public void FillBuffer(GpuBuffer b, ulong offset, ulong size, uint value)
+    {
+        // Metal fills with one byte; every caller so far clears (0).
+        if (value != 0) throw new NotSupportedException($"the Metal backend fills buffers with zero only ({value:x8} asked)");
+        var blit = OpenBlit();
+        blit.FillBuffer(ctx.BufferAt(b), new NSRange { location = offset, length = size }, 0);
+    }
 
-    /// <summary>Copies a range of a buffer into another — comes with its passes.</summary>
-    public void CopyBuffer(GpuBuffer src, GpuBuffer dst, in GpuBufferCopy region) =>
-        throw new NotSupportedException("the Metal backend has no buffer copies yet");
+    /// <summary>Copies a range of a buffer into another (the blit encoder's <c>copyFromBuffer</c>).</summary>
+    public void CopyBuffer(GpuBuffer src, GpuBuffer dst, in GpuBufferCopy region)
+    {
+        var blit = OpenBlit();
+        blit.CopyFromBuffer(ctx.BufferAt(src), region.SourceOffset, ctx.BufferAt(dst), region.DestinationOffset, region.Size);
+    }
 
     /// <summary>Copies a range of a buffer into a texture's level and layer — the uploads' own commands do it.</summary>
     public void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer) =>
@@ -428,8 +505,13 @@ public sealed class MetalCommandList : IGpuCommandList
     /// (docs/metal-backend.md "Barriers between passes").</summary>
     public void Barrier(ReadOnlySpan<GpuDependency> dependencies) { }
 
-    /// <summary>Orders everything recorded before against everything after it: nothing, as <see cref="Barrier"/>.</summary>
-    public void Order() { }
+    /// <summary>Orders everything recorded before against everything after it: ending the compute and transfer encoders (Metal
+    /// orders encoders in one command buffer, and Apple silicon tracks the hazards within one) is the seam.</summary>
+    public void Order()
+    {
+        EndCompute();
+        EndBlit();
+    }
 
     // ---- labels ----
 
@@ -454,6 +536,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (blit.NativePtr != IntPtr.Zero) return blit;
         if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("a transfer inside a rendering");
+        EndCompute();
         blit = command.BlitCommandEncoder();
         ownsBlit = true;
         return blit;
@@ -473,7 +556,28 @@ public sealed class MetalCommandList : IGpuCommandList
     /// <summary>Closes what is open (the upload batch's own encoder is the caller's).</summary>
     internal void Finish()
     {
+        EndCompute();
         EndBlit();
         if (render.NativePtr != IntPtr.Zero) EndRendering();
+    }
+
+    /// <summary>Opens the compute encoder, ending the transfers first (a command buffer records its encoders in order).</summary>
+    internal MTLComputeCommandEncoder ComputeEncoder()
+    {
+        if (compute.NativePtr != IntPtr.Zero) return compute;
+        EndBlit();
+        if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("a compute pass inside a rendering");
+        compute = command.ComputeCommandEncoder();
+        lastCompute = default;
+        return compute;
+    }
+
+    /// <summary>Ends the compute encoder (the next encoder sees its writes).</summary>
+    internal void EndCompute()
+    {
+        if (compute.NativePtr == IntPtr.Zero) return;
+        compute.EndEncoding();
+        compute = default;
+        lastCompute = default;
     }
 }
