@@ -32,7 +32,7 @@ internal sealed class WeatherSurfaces : IDisposable
     /// <summary>The shader's <c>rainAmount</c>.</summary>
     public static float RainAmount(float rain) => Math.Clamp(rain / 50f, 0f, 1f);
 
-    public WeatherSurfaces(GpuContext gpu, AssetLocator assets)
+    public WeatherSurfaces(IGpuContext gpu, AssetLocator assets)
     {
         if (assets.Find(NoiseFile) is { } path)
             noise = SampledImage.Rgba8(gpu, TextureLoader.LoadFile(path, allMips: false).Levels[0], repeat: true, mipmaps: true, "weather dust noise");

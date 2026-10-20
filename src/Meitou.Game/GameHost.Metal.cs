@@ -57,6 +57,21 @@ sealed partial class GameHost
             CloudShadows = o.CloudShadows,
         };
         if (scene.Database is { } skyDb) sky.LoadWorld(install, skyDb);
+        // The weather scheduler, as WorldFrame.CreateGpu makes it: its state feeds the sky's fog and colour, and the surface shaders' wetness and dust.
+        WorldWeather? weather = null;
+        if (scene.Database is { } weatherDb)
+        {
+            var world = Meitou.Data.World.WeatherWorld.Create(weatherDb, install, 1, Meitou.Data.World.WeatherTime.At(0));
+            weather = new WorldWeather(world, weatherDb) { Day = o.Day ?? 0 };
+            if (!o.AutoWeather)
+            {
+                if (!world.ForceWeather(o.Weather))
+                    throw new ArgumentException($"no weather named '{o.Weather}'; known: {string.Join(", ", Meitou.Data.World.SkyWeather.Names(weatherDb).Distinct().Take(12))} ...");
+                sky.Weather = Meitou.Data.World.SkyWeather.Find(weatherDb, o.Weather) ?? Meitou.Data.World.SkyWeather.Default;
+            }
+            Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
+        }
+        var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
         display.Activate();
         Splash?.Dispose();
 
@@ -68,9 +83,14 @@ sealed partial class GameHost
         {
             terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
             terrain.SetTextures(terrainTextures);
+            foreach (var m in terrainTextures.Messages.Take(20)) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, {terrainTextures.Capacity} biome slots");
         }
         else Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, untextured");
+        // The fine heights and the biome maps stream round the eye, as the Vulkan path's streamer does (the Metal path has no object streaming yet).
+        var streamer = scene.Heightmap is not null
+            ? new TerrainStreamer(install, terrain, terrainTextures, scene.Window.Step) { MaterialDistance = o.MaterialDistance }
+            : null;
         terrain.BeginFrame();
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
@@ -81,10 +101,13 @@ sealed partial class GameHost
             clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
             simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
             systems: systems, walkability: walkability);
-        session.Camera.Place(new Vector2((float)(o.X ?? 0), (float)(o.Z ?? 0)), (float)(o.Yaw ?? 30) * MathF.PI / 180,
+        session.Camera.Place(new Vector2((float)(o.X ?? scene.Focus.X), (float)(o.Z ?? scene.Focus.Z)), (float)(o.Yaw ?? 30) * MathF.PI / 180,
             (float)(o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180,
             (float)(o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance));
         ApplyCamera(session.Camera.Current);
+        // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
+        streamer?.Settle(camera.Eye);
+        if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
 
         var clock = Stopwatch.StartNew();
         double last = 0;
@@ -98,6 +121,7 @@ sealed partial class GameHost
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
             if (!ctx.BeginFrame()) continue;
+            streamer?.Update(camera.Eye);
 
             // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
             // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
@@ -114,23 +138,41 @@ sealed partial class GameHost
             cmd.BeginRendering(targets.Rendering);
             ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
 
-            // The sky: the camera's own view (the translation dropped, as WorldFrame.DrawLoadingSky does), the session's hour.
+            // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
+            // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
             var aspect = size.X / (float)Math.Max(size.Y, 1);
             var eye = camera.Eye;
             var view = camera.View;
             var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
             var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
+            var sun = scene.Clock.SunDirection(hour);
+            const bool held = true;   // a still picture: the weather's timers snap, as the post chain's InstantAdaptation does
+            if (weather is { } current)
+            {
+                current.Update(eye, hour, sun.Y, held);
+                current.Apply(sky);
+            }
+            if (surfaces is { } weatherSurfaces)
+            {
+                weatherSurfaces.GameTime = hour;
+                weatherSurfaces.Apply(weather?.State ?? Meitou.Data.World.WeatherState.Clear);
+            }
             sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
             sky.Eye = eye;
             sky.Clock = scene.Clock;
+            sky.Day = weather?.Day ?? 0;
             sky.Hour = hour;
+            sky.StarHours = session.Clock.HoursSinceStart;
             sky.StarSeconds = (float)(now % 3600);
-            var (colours, light) = sky.Prepare(scene.Clock.SunDirection(hour), eye.Y, o.FogDistance);
-            sky.StepClouds((float)dt);
+            var (colours, light) = sky.Prepare(sun, eye.Y, o.FogDistance + 3 * Math.Max(eye.Y, 0));
+            if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
+            // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
+            camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
             sky.Draw(viewProjection, colours);
 
-            // The terrain: the camera's own projection (near 0.5 .. the view distance), the quadtree's LOD, the sky's light.
+            // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
+            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(size.Y, camera.FieldOfView);
             var worldProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
             var frustum = WorldCamera.FrustumPlanes(worldProjection);
             terrain.BeginFrame();
@@ -145,6 +187,8 @@ sealed partial class GameHost
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
         terrain.Dispose();   // owns the textures it was given
+        streamer?.Dispose();
+        surfaces?.Dispose();
         sky.Dispose();
         Console.WriteLine($"metal     {frames} frames");
         return 0;

@@ -275,9 +275,27 @@ The patch draws were recorded but produced nothing. Metal's validation layer nam
 - A stage that does not read a set has no struct for it: the bind skips that stage rather than
   binding a buffer nothing reads.
 
-The terrain draws now (patches, culling, the depth and GI-albedo targets); its remaining work is
-the material and atmosphere inputs (the frame textures are still the stand-ins, so it is dark) and
-the camera's world framing.
+The terrain draws now (patches, culling, the depth and GI-albedo targets) with its real material
+and atmosphere (verified with the `--screenshot` comparison at the same camera and hour): the
+layer arrays, the biome maps and the physical sky's atmosphere cubes are all sampled through the
+bindless table. Three facts this step settled:
+
+- **The terrain quadtree is in world coordinates.** The Metal host placed its camera at
+  `(o.X ?? 0, o.Z ?? 0)` and looked at the world origin, not at `scene.Focus` where the region is
+  loaded; it now uses the focus (or `--at`), as the Vulkan camera rig does.
+- **The diffuse layer array is BC3 (DXT5), the normal array BC1.** `MetalConventions` mapped only
+  BC1, so the diffuse array's allocation threw, `TerrainTextures` fell back to no array, and the
+  terrain sampled the stand-in (black albedo — the picture was dark blue from the sky's ambient).
+  DXT5 now maps to `BC3RGBA` and DXT3 to `BC2RGBA`, both as 4x4 blocks of 16 bytes.
+- **The frame inputs are the Vulkan path's.** The host runs the weather scheduler
+  (`WorldWeather`) and `WeatherSurfaces`, passes the sky `fogDistance + 3*max(eyeY, 0)`, sets
+  `camera.ViewDistance` from the light's fog distance, `render.TerrainPixelScale` from the render
+  height, and streams the fine heights and biome maps with `TerrainStreamer` (without it the
+  overlay/colour windows stay at state 1 and the terrain shows only the ground colour).
+
+What the Metal picture still lacks is later steps' work, not this one's: the post chain's tone
+mapping and exposure (step 2), the shadows (step 4), the objects, foliage and water (steps 3, 5,
+6) and the UI (step 8).
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
 
