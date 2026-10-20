@@ -57,6 +57,13 @@ public interface IGpuContext
     /// <summary>Whether a disabled attribute may take GL's stride-0 constant binding (Metal's validator refuses it).</summary>
     bool ConstantVertexAttributes { get; }
 
+    /// <summary>
+    /// Whether a texture written by a render pass has its row 0 at the bottom (Vulkan's backbuffer and targets) rather than
+    /// at the top (Metal's). UI images made by the renderer (portraits, icons, the editor stage) flip their V coordinate on
+    /// a bottom-up target (<c>ImageFlipV</c>), but must be drawn as stored on Metal.
+    /// </summary>
+    bool RenderTargetsBottomUp { get; }
+
     /// <summary>The buffer a disabled attribute of <paramref name="kind"/> reads where a stride-0 binding is impossible (Metal: the value repeated at every 16-byte stride).</summary>
     GpuBuffer DummyVertexArray(ScalarKind kind);
 

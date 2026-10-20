@@ -11,6 +11,7 @@ using Meitou.Metal;
 using Meitou.Rendering;
 using Meitou.Rendering.Characters;
 using Meitou.Rendering.Gpu;
+using Meitou.Rendering.Ui;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 
@@ -87,10 +88,10 @@ sealed partial class GameHost
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         var taa = new PostTaa(ctx);
-        // The text/quad overlay: the first Metal UI slice (the game's HUD needs PlayerInterface and its painter). Hidden from
-        // parity stills unless MEITOU_METAL_OVERLAY=1.
-        bool showOverlay = o.Screenshot is null || Environment.GetEnvironmentVariable("MEITOU_METAL_OVERLAY") == "1";
-        var overlay = showOverlay ? DebugOverlay.TryCreate(ctx) : null;
+        // The text/quad painter, shared by the HUD and the optional frame-stats lines. It is created even for a screenshot:
+        // the game's HUD is part of the picture. MEITOU_METAL_OVERLAY=1 adds the stats lines to a still.
+        var overlay = DebugOverlay.TryCreate(ctx);
+        bool showFrameStats = o.Screenshot is null || Environment.GetEnvironmentVariable("MEITOU_METAL_OVERLAY") == "1";
         display.Activate();
         Splash?.Dispose();
 
@@ -200,6 +201,93 @@ sealed partial class GameHost
                 Console.WriteLine("metal     characters ready (population draw list)");
             }
         }
+        // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
+        // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
+        PlayerInterface? hud = null;
+        if (overlay is not null)
+        {
+            hud = new PlayerInterface(session, heights.HeightAt, DrawnPosition) { SpeedUnit = config.SpeedUnit };
+            hud.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
+            hud.CreateUiPainter(overlay, assets.Find);
+            if (popData is { } data)
+            {
+                hud.FactionName = faction => faction >= 0 && faction < data.Factions.Count ? data.Factions[faction].Name : null;
+                hud.MapTowns = () => data.Sites;
+                hud.MapFactionOf = id =>
+                {
+                    if (id is null || data.FactionIndex(id) is not (>= 0 and var town)) return null;
+                    var faction = data.Factions[town];
+                    if (session.World.Player.Faction is not (>= 0 and var mine))
+                        return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
+                    float relation = data.Relations.Get(mine, town);
+                    var standing = town == mine ? MapStanding.Player : data.Relations.IsAlly(mine, town) ? MapStanding.Ally
+                        : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
+                    return new MapFaction(faction.Name, relation, standing, faction.NotReal);
+                };
+                hud.MapItemTowns = record =>
+                {
+                    if (data.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
+                    return [.. Meitou.Simulation.Items.MapItems.Reveals(data, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => data.Sites[i].Town.Name)];
+                };
+            }
+            if (characters is not null)
+            {
+                var (atlas, sampled) = characters.PortraitAtlas;
+                hud.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled);
+                hud.SetItemIcons(ItemIconsOfInstall());
+                hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material)
+                    && characters.TryGetIcon(new IconKey(record, material), out var icon) ? icon : null);
+            }
+            // The Metal loop has no input yet: a still can open one of the shared layouts by name for review.
+            if (g.UiPanel is { Length: > 0 } selectedPanel)
+                hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
+            Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
+        }
+        // The Metal loop has no camera/selection input yet, but the HUD's own controls work: pointer hover/clicks and the
+        // window's panel keys go to PlayerInterface (I/C inventory/stats, M/T/Y overview tabs, Esc menus, F7 hide).
+        using var input = overlay is null || hud is null ? null : Silk.NET.Input.InputWindowExtensions.CreateInput(window);
+        bool uiPointerDown = false;
+        Meitou.Engine.Input.MouseButton? uiButton = null;
+        if (input is not null && hud is not null)
+        {
+            Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),
+                window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
+            bool Held(Silk.NET.Input.Key a, Silk.NET.Input.Key b) => input.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
+            bool Shift() => Held(Silk.NET.Input.Key.ShiftLeft, Silk.NET.Input.Key.ShiftRight);
+            foreach (var keyboard in input.Keyboards)
+            {
+                keyboard.KeyDown += (_, key, _) =>
+                {
+                    if (key == Silk.NET.Input.Key.F7) { hud.UiVisible = !hud.UiVisible; return; }
+                    if (KeyMap.Map(key) is { } mapped) hud.UiKey(mapped, Held(Silk.NET.Input.Key.ControlLeft, Silk.NET.Input.Key.ControlRight), Shift());
+                };
+                keyboard.KeyChar += (_, value) => hud.UiText(value);
+            }
+            foreach (var mouse in input.Mice)
+            {
+                mouse.MouseMove += (_, p) => hud.MouseMove(Pixels(p));
+                mouse.MouseDown += (_, button) =>
+                {
+                    var at = Pixels(mouse.Position);
+                    if (!hud.ContainsUi(at) || KeyMap.Map(button) is not { } mapped) return;
+                    uiPointerDown = true;
+                    uiButton = mapped;
+                    hud.MouseDown(mapped, at, Shift(), Held(Silk.NET.Input.Key.ControlLeft, Silk.NET.Input.Key.ControlRight),
+                        Held(Silk.NET.Input.Key.AltLeft, Silk.NET.Input.Key.AltRight));
+                };
+                mouse.MouseUp += (_, button) =>
+                {
+                    if (!uiPointerDown || KeyMap.Map(button) is not { } mapped) return;
+                    hud.MouseUp(mapped, Pixels(mouse.Position), Shift());
+                    if (mapped == uiButton) { uiPointerDown = false; uiButton = null; }
+                };
+                mouse.Scroll += (_, wheel) =>
+                {
+                    var at = Pixels(mouse.Position);
+                    if (hud.ContainsUi(at)) hud.UiScroll(at, wheel.Y);
+                };
+            }
+        }
         // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
         streamer?.Settle(camera.Eye);
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
@@ -226,7 +314,17 @@ sealed partial class GameHost
             var size = window.FramebufferSize;
             var taaJitter = PostTaa.Offset(frames + 1, size.X);
             if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
-            if (characters is not null) { characters.SetView(size.X, size.Y, camera.FieldOfView); characters.Update(camera.Eye); }
+            if (characters is not null)
+            {
+                characters.PortraitRequests.Clear();
+                if (hud is not null)
+                    foreach (var (member, cell) in hud.SquadBarMembers().Select((member, cell) => (member, cell)))
+                        characters.PortraitRequests.Add(new PortraitRequest(DrawKey(member.Id), cell, member.PortraitSerial));
+                characters.SetView(size.X, size.Y, camera.FieldOfView);
+                characters.Update(camera.Eye);
+                characters.DrawPortraits();
+                characters.DrawIcons();
+            }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
@@ -329,13 +427,27 @@ sealed partial class GameHost
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
-                overlay.Text("Meitou - Metal", 16, 16, DebugOverlay.TextColour);
-                overlay.Text($"{frames + 1} frames  {Math.Max(1, frames / Math.Max(now, 1e-3)):0} fps  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
-                overlay.Flush(size.X, size.Y);
+                if (hud is { UiVisible: true })
+                {
+                    hud.Width = size.X;
+                    hud.Height = size.Y;
+                    hud.Eye = eye;
+                    hud.ViewProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
+                    hud.DrawHud(overlay, size.X, size.Y);
+                }
+                if (showFrameStats)
+                {
+                    overlay.Text("Meitou - Metal", 16, 16, DebugOverlay.TextColour);
+                    overlay.Text($"{frames + 1} frames  {Math.Max(1, frames / Math.Max(now, 1e-3)):0} fps  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
+                    overlay.Flush(size.X, size.Y);
+                }
             }
             ctx.EndFrame();
             frames++;
-            if (o.Screenshot is { } shot && frames == 40)
+            // A panel's item icons are drawn after the frame that asks for them, and their textures stream in: let a UI still
+            // wait for them (up to a bound), while an ordinary world still keeps its 40 frames.
+            int pendingIcons = (characters?.PendingIcons ?? 0) + (hud?.PendingIconFiles ?? 0);
+            if (o.Screenshot is { } shot && frames >= 40 && (pendingIcons == 0 || frames >= 400))
             {
                 if (foliage is not null) Console.WriteLine($"metal     foliage: {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
                 Capture(ctx, backbuffer, shot);
@@ -343,6 +455,7 @@ sealed partial class GameHost
             }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        hud?.DisposeUi();
         overlay?.Dispose();
         characters?.Dispose();
         foliage?.Dispose();

@@ -586,6 +586,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     /// <inheritdoc/>
     public bool ConstantVertexAttributes => false;
+    public bool RenderTargetsBottomUp => false;
 
     /// <summary>The vertices a disabled attribute may index: the generic value repeated at every 16-byte stride (4 MB an array).</summary>
     const int DummyVertexCapacity = 1 << 18;
@@ -809,7 +810,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             ScalarKind.Int => InternalFormat.R32i,
             _ => InternalFormat.Rgba8,
         };
-        int layers = slot == 2 ? 6 : 1;
+        // A cube's six faces are its type's slices, not array layers: Layers is 1 for a plain cube (CreateTexture sets
+        // ArrayLength 1), and GpuTexture.View asks for all six slices.
+        int layers = 1;
         var texture = CreateTexture(new TextureDesc(format, 1, 1, Layers: layers, Kind: slot == 2 ? TextureKind.Cube : TextureKind.Texture2D,
             Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "dummy texture"));
         // Shared storage: the CPU writes the texel where it is (a blit would need a command buffer of its own).

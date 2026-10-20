@@ -141,8 +141,10 @@ sealed partial class GameHost
         using var overlay = DebugOverlay.TryCreate(context);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
-        string?[] panels = g.UiShowcase
-            ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"] : [null];
+        string?[] panels = g.UiPanel is { Length: > 0 } one ? [one == "hud" ? null : one]
+            : g.UiShowcase
+                ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"]
+                : [null];
         foreach (string? panelName in panels)
         {
             if (panelName == "trade" && !ShowcaseTrade()) continue;

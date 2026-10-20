@@ -120,8 +120,9 @@ public sealed class UiPainter : IDisposable
             {
                 var loaded = LoadTexture(image.Texture);
                 var source = image.Source.Width > 0 && image.Source.Height > 0 ? image.Source : new UiRect(0, 0, loaded.Texture.Desc.Width, loaded.Texture.Desc.Height);
-                // ImageFlipV: an image drawn by the renderer (bottom row first, as its targets keep it) shown the right way up.
-                bool flip = c.Properties.GetValueOrDefault("ImageFlipV") == "true";
+                // ImageFlipV: an image drawn by the renderer. Vulkan's targets are bottom-up, so sampling v must be flipped;
+                // Metal's targets keep row 0 at the top, so the stored image is already the right way up.
+                bool flip = c.Properties.GetValueOrDefault("ImageFlipV") == "true" && overlay.Gpu.RenderTargetsBottomUp;
                 float v0 = source.Y / loaded.Texture.Desc.Height, v1 = (source.Y + source.Height) / loaded.Texture.Desc.Height;
                 if (flip) (v0, v1) = (v1, v0);
                 var tint = Colour(c.Properties.GetValueOrDefault("Colour"), Vector4.One) * new Vector4(1, 1, 1, Alpha(c.Properties));

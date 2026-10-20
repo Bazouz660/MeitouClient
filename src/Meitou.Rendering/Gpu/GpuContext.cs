@@ -216,6 +216,7 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
 
     /// <inheritdoc/>
     public bool ConstantVertexAttributes => true;
+    public bool RenderTargetsBottomUp => true;
 
     /// <inheritdoc/>
     public GpuBuffer DummyVertexArray(ScalarKind kind) => DummyVertex;

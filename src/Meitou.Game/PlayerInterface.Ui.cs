@@ -290,6 +290,18 @@ sealed partial class PlayerInterface
         uiPainter?.Draw(ArrangeUi(), width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
             minimumTextPixels: TitleOpen ? 0 : StandardTextPixels * height / 1080f);
 
+    /// <summary>
+    /// Draws the HUD and open panels without the world-space overlays (selection rings, floaters, drag box), for the
+    /// Metal host, which has the simulation session and the painter but not the input interface. The host sets
+    /// <see cref="Width"/>, <see cref="Height"/>, <see cref="Eye"/> and <see cref="ViewProjection"/> first.
+    /// </summary>
+    public void DrawHud(DebugOverlay overlay, int width, int height)
+    {
+        Width = width;
+        Height = height;
+        DrawGameUi(overlay, width, height);
+    }
+
     /// <summary>For screenshot reviews: open the same panel through its registered button action.</summary>
     public void ShowUiPanel(string? panel, bool? expandInformation = null)
     {

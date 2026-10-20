@@ -2,8 +2,8 @@
 
 A second native path for the renderer, next to Vulkan. Status: **the world draws on Metal**
 (`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
-uniform block, the scene, shadows, faithful water, skinned characters and a text overlay. The
-interactive game, the HUD and the Meitou water/effects are not there yet.
+uniform block, the scene, shadows, faithful water, skinned characters, the HUD and the faithful panels. The
+interactive camera/selection, the title/save flows and the Meitou water/effects are not there yet.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
 runtime). `Silk.NET.GLFW` has no `glfwGetCocoaWindow`, so the `NSWindow*` comes from the same
@@ -430,9 +430,9 @@ screenshot unchanged, and a Metal shot compared with the Vulkan one at the same 
    2 and 3.
 7. **Characters and skinning (medium).** The skinning buffers and the character draw list through the
    seam; the animation data already uses storage buffers.
-8. **UI (small, architecturally separate).** The UI is immediate-mode Vulkan into the backbuffer
-   image; it needs a backend-neutral twin (or a Metal path of its own) before the game's HUD and the
-   panels exist on Metal.
+8. **UI (started).** The HUD, inventory, stats, overview/map and menu draw on Metal through the shared
+   `DebugOverlay`/`UiPainter`; the pointer/keyboard controls for those panels work. Title/save/new-game flows,
+   trade/dialogue/build/editor/settings and full camera/selection input remain.
 9. **The physical sky (small).** `SkyRenderer`'s uniforms come from a Vulkan `GpuContext`; the
    atmosphere model (CPU) must become something both backends build their uniforms from.
 10. **The full game loop (broad, mechanical).** The Metal game path is a minimal frame (sky +
@@ -457,28 +457,31 @@ the baseline, not one.
 objects and buildings; the sun's shadows (terrain, objects, foliage and character casters); foliage meshes, grass
 and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
-skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list); the
-`DebugOverlay` text/quad pass. `GameHost.Metal.cs` is still a still-frame loop, not the interactive game; it has
-no HUD and no input.
+skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list); the HUD
+and the faithful panels (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own
+pointer/keyboard controls. `GameHost.Metal.cs` is still a still-frame loop for the world: camera/selection input,
+the title/save/new-game flows and the full interactive loop are not wired.
 
-**What we do next.** The first task is the **HUD**, then the rest of the UI. `DebugOverlay` already runs on Metal,
-so the foundation is there:
+**What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
+host services the panels call:
 
-1. Widen `UiPainter` and `MyGuiResources` from `GpuContext` to `IGpuContext`, and make the painter's font/atlas
-   uploads use `IGpuFrame.WriteConstants`/`IGpuUploads` (the same seam work `DebugOverlay` just had).
-2. Cut the HUD at its data boundary instead of booting all of `PlayerInterface` first: it owns input, dialogues,
-   the title screen and Vulkan display assumptions. Expose the HUD's data (squad bar, floor, money/date, jobs,
-   tooltips) to a small host-neutral draw call the Metal loop can invoke with its existing session and camera.
-3. Draw the HUD over the Metal composite with the existing `OverlayPass`/`UiPainter`, then add portraits and item
-   icons (the character renderer's portrait/icon code is widened but not called yet).
-4. Acceptance: at the Hub with `--new-game`, the Metal and Vulkan windows show the same HUD elements at the same
-   positions; `--ui` renders the panels; `MTL_DEBUG_LAYER=1` is clean. Then title/menu, resize and input move to
-   the interactive-loop step.
+1. **Title, new game, save/load, options.** `PlayerInterface.ShowTitle`, the frontend layouts and their
+   `ScreenAction` callbacks need the Metal host's save/new-game/load path; the title logo/scene and the settings
+   panel are not wired yet.
+2. **Trade, dialogue, build, editor.** These need the simulation/host services `BootPlayer` supplies (trade
+   commands, building/editor hosts, item icons already connected); `--ui-panel` can open their layouts once the
+   state exists.
+3. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; camera movement,
+   world selection, move orders, tooltips over the world and the pointer sprite still need the interactive loop.
+4. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
+   sequence still needs the same loop here.
+5. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
+   need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
-**After the HUD:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
-refraction); the character motion pass and remaining portrait/icon/hover/stage host calls; the effects (weather
-particles, lamps, hover/move/navmesh overlays, interior mask, Meitou clouds); the full post chain (SSAO, light
-shafts, `FogRate`, dynamic motion, MetalFX/upscaler, GPU culls/grass); the interactive loop (input, title, resize,
+**After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
+refraction); the character motion pass and the hover/stage host calls; the effects (weather particles, lamps,
+hover/move/navmesh overlays, interior mask, Meitou clouds); the full post chain (SSAO, light shafts, `FogRate`,
+dynamic motion, MetalFX/upscaler, GPU culls/grass); the interactive loop (camera/selection input, title, resize,
 HDR/EDR, `WorldFrame`/`SceneHost` on `IGpuContext`); then the GI decision, parity, memory/tone and the macOS
 default.
 
@@ -554,23 +557,26 @@ parts, 52k triangles, 23 calls) with validation clean; `--new-game` at the Hub d
 A closer open-ground view shows the characters' cast shadows in the cascades. The Vulkan viewer's same
 `--crowd 6` view draws the same six characters (26k triangles; its LOD picks a coarser mix). The Hub's town
 residents are mostly indoors on Vulkan too (in a play test they were only in the bar and one tower), so the
-outdoor still shows only the player; the `--crowd` harness covers the outdoor crowd. Not yet: the character motion
-pass for TAA, and the portrait/icon/stage/hover passes (the renderer code is widened and compiles, but the Metal
-host does not call them). The UI is step 5.
+outdoor still shows only the player; the `--crowd` harness covers the outdoor crowd. The squad portraits and item
+icons are now drawn (the HUD and inventory shots verify them). Not yet: the character motion pass for TAA and the
+hover/stage passes.
 
 ### 5. The UI (plan step 8)
 
-`DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer. Add a backend-neutral
-painter (quads, text, textures) with a Metal implementation, or a Metal `DebugOverlay`; then the HUD, panels,
-item icons and portraits (`PlayerInterface`, `PlayerUi`, `--ui` showcase). Architecturally separate from the
-scene path; a small renderer of its own is fine.
+The UI is the shared immediate-mode `DebugOverlay`/`UiPainter` over the finished backbuffer. It was already
+backend-neutral once `DebugOverlay` took `IGpuContext` (`UiPainter` had no `GpuContext` types); the Metal host boots
+`PlayerInterface` for its presentation (`LoadUi`, `BindUi`, `ArrangeUi`, `DrawHud`) and creates the painter.
 
-**The first Metal UI slice is in:** `DebugOverlay` takes `IGpuContext` and the Metal host creates it, drawing
-"Meitou - Metal" and the frame/fps/size lines over the composite. `MEITOU_METAL_OVERLAY=1` includes it in parity
-stills; interactive frames show it by default. The text atlas, quads, scissor and alpha blending work (validation
-clean), and the Vulkan HUD still renders after the widening. **Not started:** the game's HUD and panels. The Metal
-host does not boot `PlayerInterface` (it owns the world session, input and the Vulkan `UiPainter`/`DebugOverlay`
-wiring), so the painter and the host UI wiring have to come together; it is not a small standalone pass.
+**What renders on Metal:** the faithful HUD at the Hub (information/medical, squad bar, clock, money, speed,
+orders, jobs), the inventory with item icons, the stats and overview/map windows, and the pause menu. Portraits
+are drawn into the character renderer's atlas and the item icons come from the install's files or the renderer.
+`--ui-panel inventory|stats|overview|menu` opens one in a still; `--ui-showcase` is still Vulkan-only.
+`RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal) makes the runtime images (portraits,
+icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
+
+**What is not wired:** title/new-game/save/load/options, trade, dialogue, build, editor and the settings panel need
+their host callbacks and simulation state. The panel keys and pointer hover/clicks/scroll work; camera movement,
+selection, orders and the pointer sprite belong to the interactive loop.
 
 ### 6. The remaining effects
 
@@ -630,26 +636,27 @@ default.
 - Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
-- UI shot: add `MEITOU_METAL_OVERLAY=1` to any Metal screenshot; the overlay draws at the top-left ("Meitou -
-  Metal", frame count/fps/size). Without it, parity stills stay clean. The Vulkan HUD still renders after
-  `DebugOverlay` was widened to `IGpuContext` (a fresh `--renderer vulkan --screenshot` shows it).
+- UI shots: the Metal HUD is part of every screenshot. `--new-game --ui-panel inventory|stats|overview|menu`
+  opens a panel; `MEITOU_METAL_OVERLAY=1` adds the frame-stats lines at the top-left. The Vulkan HUD/panel still
+  renders (verified with `--ui-panel inventory` after the shared changes).
 - Character shots: `--crowd 6 --no-population --at -50000,8000 --time 12 --distance 180 --pitch 18
   --no-objects --no-foliage --no-water --faithful clouds,cloudshadows --no-gi` (the open hillside; six characters).
   `--new-game --time 12 --distance 250 --pitch 20 --faithful clouds,cloudshadows --no-gi` at the Hub (the player
-  squad). The Metal host does not boot `PlayerInterface`; `--new-game` only starts the simulation squad.
+  squad and the HUD). `--new-game` starts the simulation squad; the camera/selection input is separate.
 - Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
   --day 1 --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon.
   The river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
   shows no water at all. With `--day 1` on both backends (Metal `--faithful clouds,cloudshadows`), the Metal sea
   matches Vulkan's faithful water: the water regions average RGB ~[14, 28, 32] vs [16, 30, 34], the sky ~[105, 141, 147]
-  vs [109, 143, 151]; the horizon is ~9 darker in Metal (haze/exposure). Vulkan still has the HUD, Metal not yet.
+  vs [109, 143, 151]; the horizon is ~9 darker in Metal (haze/exposure). Both paths now draw the HUD.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
   `UpscaleShaders.Taa` (into two RGBA16F histories); the scene projection is jittered with `Jitter.Apply` and
   `PostTaa.Offset` (8 phases at 1×), the depth target is `DepthTarget | Sampled`. TAA resets on the first frame, a
   resize and a camera cut (>5000 units). The velocity pass's far-slice inputs are disabled; the sun-motion term is
   zero (the sky's sun compensation comes with the full chain).
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
-  `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`.
+  `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`,
+  `RenderTargetsBottomUp`.
 - `MTL_DEBUG_LAYER=1` catches the above immediately; keep it on for every new pass.
 
 ### Gates

@@ -11,6 +11,8 @@ sealed class GameOptions
     public bool? VSync;
     public Meitou.Data.Ui.UiMode? UiMode;
     public bool UiShowcase;
+    /// <summary>With <c>--screenshot</c>: one HUD/panel to open for the picture (null: the HUD only).</summary>
+    public string? UiPanel;
     /// <summary>With <c>--screenshot</c>: control ticks (and their real time of simulation, at speed 1) run before the picture, with no input.</summary>
     public int Ticks;
     public bool NoPopulation, NewGame, ListStarts;
@@ -31,7 +33,7 @@ sealed class GameOptions
     public double? QuitAfter;
     /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
     public string? Load;
-    /// <summary>The renderer for the whole frame: <c>vulkan</c> (the default) or <c>metal</c> (macOS: the sky only so far, the port's first pass).</summary>
+    /// <summary>The renderer for the whole frame: <c>vulkan</c> (the default) or <c>metal</c> (macOS: the scene, HUD and faithful panels, the port's current slice).</summary>
     public string Renderer = "vulkan";
 
     public const string Usage = """
@@ -41,6 +43,7 @@ sealed class GameOptions
           --seed <n>                 the world seed (default 0)
           --ui <faithful|meitou>      UI mode, independent of graphics; also available in the settings (default faithful)
           --ui-showcase              with --screenshot: capture HUD, inventory, stats, map, menus, a trade with the nearest trader and a conversation in either UI mode
+          --ui-panel <name>          with --screenshot: open one HUD/panel for the picture (hud, hud-expanded, inventory, stats, overview, menu, title, ...)
           --title-preview            with --screenshot: capture the staged Meitou title scene
           --no-population            no town residents or movement (an empty world)
           --new-game [start]         a new game as the NEW_GAME_STARTOFF start (default Wanderer): the player squad at its town, camera on it
@@ -54,7 +57,7 @@ sealed class GameOptions
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
-          --renderer <vulkan|metal>  the renderer for the whole frame: vulkan (the default) or metal (macOS: the sky only so far, the port's first pass)
+          --renderer <vulkan|metal>  the renderer for the whole frame: vulkan (the default) or metal (macOS: the scene, HUD and faithful panels, the port's current slice)
           --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
           world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
         Keys: W/A/S/D or arrows move (or the pointer at a screen edge), Q/E rotate, Comma/Period tilt, wheel or Home/End zoom, PageUp/PageDown floor up/down, middle drag orbit, left click or drag selects, right click moves (shift queues), 1..9 / ` select, R stops,
@@ -77,6 +80,7 @@ sealed class GameOptions
             switch (a)
             {
                 case "--ui-showcase": g.UiShowcase = true; break;
+                case "--ui-panel": g.UiPanel = Next(); break;
                 case "--fps-limit": g.FpsLimit = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--seed": g.Seed = ulong.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--ui":
