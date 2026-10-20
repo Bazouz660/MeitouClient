@@ -122,9 +122,10 @@ the descriptor sets, the images and the buffers.
   needs `Pipelines`, `Globals`, `Samplers`, `Uploads`, `LodBias` and eight `CommandList` calls
   (`BindPipeline`, `Draw`, `SetViewport`, `SetScissor`, `SetRaster`, `SetDepth`,
   `SetDepthBias`).
-- The **bindings and the resources**: the passes still hand the Vulkan layer descriptor sets,
-  images and buffers (the `DescriptorSet`, `WriteDescriptorSet`, `ImageLayout` vocabulary of the
-  native model). That is the resource layer, and it is the part a second backend replaces.
+- The **bindings and the resources**: the passes now hold the engine's own handles (the samplers,
+  the views, the textures, the buffers, the sets) and state a draw's resources as a flat binding
+  list; the programs carry their layout. What is left in the passes is the GI's acceleration
+  structure, which is Vulkan-only on purpose.
 
 ## The road to a Metal frame
 
@@ -134,8 +135,8 @@ Each step ends with something visible; the order is the cheap one first.
 |---|---|---|
 | Done | The sky on Metal, in the game (`--renderer metal`) | the strategy: the shaders, the uniforms, the present |
 | Done | The state and the formats in the GL vocabulary | the passes state what they want in neutral words |
-| Done | The handles (the samplers, the views, the textures, the buffers) and the binding list | the renderers hold no Vulkan object |
-| Next | The context's interface, the descriptor sets and the sync model; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The handles (the samplers, the views, the textures, the buffers, the sets) and the binding list | the renderers hold no Vulkan object |
+| Next | The context's interface and the sync model; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |

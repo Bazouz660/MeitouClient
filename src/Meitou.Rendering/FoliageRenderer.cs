@@ -1974,7 +1974,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     static void Push<T>(CommandList cmd, ShaderProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
-        cmd.PushConstants(p.Layout, Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit, in value);
+        cmd.PushConstants(p, GpuStage.Vertex | GpuStage.Fragment, in value);
         last = value;
         pushed = true;
     }
@@ -2074,7 +2074,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var state = prepass ? sceneState with { ColourMask = 0 } : equal ? sceneState with { Compare = DepthFunction.Equal, DepthWrite = false } : sceneState;
         int segment = SegmentId(depth ? DepthKind : prepass ? PrepassKind : equal ? EqualKind : ColourKind, p, targets, state);
         var job = meshJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, p.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, p, 0);
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance };
         if (!depth) InteriorMaskRenderer.Apply(ref view, InteriorCut);
         job.Frame = nativeFrame.Prepare(in view);
@@ -2157,7 +2157,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             // The billboards are not in the prepass (their fragment stage has its own discard), or only the rocks' are not: their own segment, with the scene's depth test and write.
             var billboards = meshJobs.Rent();
-            (billboards.Owner, billboards.Targets, billboards.State, billboards.Layout, billboards.Count) = (this, targets, sceneState, p.Layout, 0);
+            (billboards.Owner, billboards.Targets, billboards.State, billboards.Program, billboards.Count) = (this, targets, sceneState, p, 0);
             billboards.Frame = job.Frame;
             for (int a = 0; a < 4; a++) billboards.Rows[a] = job.Rows[a];
             AddImpostorDraws(billboards, false, viewProjection, targets, sceneState, coverage, indirect, meshDraws.Count + rockDraws.Count, billboardPrepass ? ImpostorPass.RocksOnly : ImpostorPass.Scene);
@@ -2187,7 +2187,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrameBinding Frame;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
@@ -2202,12 +2202,12 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
         public override void Record(CommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(RowLocation, Rows);
             MeshPush last = default;
             bool pushed = false;
@@ -2218,7 +2218,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Vertices.Length > 0) cmd.BindVertexBuffers(0, d.Vertices);
                 cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
-                PushTo(cmd, layout, in d.Push, ref last, ref pushed);
+                PushTo(cmd, Program, in d.Push, ref last, ref pushed);
                 if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, d.FirstIndex, 0, d.FirstInstance);
             }
@@ -2233,10 +2233,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary><see cref="Push{T}"/> by layout (a job keeps the layout, not the program).</summary>
-    static void PushTo<T>(CommandList cmd, Silk.NET.Vulkan.PipelineLayout layout, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void PushTo<T>(CommandList cmd, ShaderProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
-        cmd.PushConstants(layout, Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit, in value);
+        cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, in value);
         last = value;
         pushed = true;
     }
@@ -2341,7 +2341,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance, Time = SwayPhase() };
         if (!depthPass) InteriorMaskRenderer.Apply(ref view, InteriorCut);
         var job = grassJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, p.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, p, 0);
         job.Frame = nativeFrame.Prepare(in view);
         NewTextureSegment();
         // The blades of every page are one buffer (the grass arena): one pipeline and one vertex binding for the segment, the draw's first instance finds its page.
@@ -2381,7 +2381,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrameBinding Frame;
         public GraphicsPipeline Pipeline = null!;
         public GpuBufferBinding[] Vertices = [];
@@ -2391,13 +2391,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
         public override void Record(CommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             GrassPush last = default;
             bool pushed = false;
             cmd.BindPipeline(Pipeline);
@@ -2405,7 +2405,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             for (int i = 0; i < Count; i++)
             {
                 ref readonly var d = ref Draws[i];
-                PushTo(cmd, layout, in d.Push, ref last, ref pushed);
+                PushTo(cmd, Program, in d.Push, ref last, ref pushed);
                 cmd.Draw(d.Vertices, d.Instances, 0, d.FirstInstance);
             }
         }
@@ -2521,7 +2521,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             ViewProjection = motionViewProjection, PreviousViewProjection = previous, Eye = eye, Time = time, PreviousTime = previousTime,
             NearPlanes = targets.NearPlanes, JitterNdc = targets.JitterNdc,
         };
-        nativeFrame.Bind(cmd, p.Layout, in view);
+        nativeFrame.Bind(cmd, p, in view);
         NewTextureSegment();
         uint nearDepth = NearDepthIndex(targets.NearDepth);
         GrassPush last = default;

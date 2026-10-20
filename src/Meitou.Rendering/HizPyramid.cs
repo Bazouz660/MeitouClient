@@ -125,7 +125,7 @@ public sealed unsafe class HizPyramid : IDisposable
                 Near = nearPlanes, Far = farPlanes, Width = (uint)w, Height = (uint)h, BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, HasFar = far is null ? 0u : 1u,
                 Levels = (uint)levels.Count, Offset0 = offsets[0], Offset1 = offsets[1], Offset2 = offsets[2], Offset3 = offsets[3], Offset4 = offsets[4],
             };
-            cmd.PushConstants(baseProgram.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(baseProgram, GpuStage.Compute, in push);
             cmd.Dispatch((uint)((levels[0].W + 15) / 16), (uint)((levels[0].H + 15) / 16));
         }
         if (levels.Count > FusedLevels)
@@ -138,7 +138,7 @@ public sealed unsafe class HizPyramid : IDisposable
             cmd.BindProgramResources(reduceProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 1));
             var push = new ReducePush { BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, Levels = (uint)levels.Count };
             for (int i = 0; i < MaxLevels; i++) push.Offsets[i] = i < levels.Count ? offsets[i] : 0;
-            cmd.PushConstants(reduceProgram.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(reduceProgram, GpuStage.Compute, in push);
             cmd.Dispatch(1);
         }
         // The cull reads it in the next frame's pre-frame commands.

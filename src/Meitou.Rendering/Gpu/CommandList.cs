@@ -312,29 +312,39 @@ public sealed unsafe class CommandList
         (lastIndex, lastIndexType) = (binding, type);
     }
 
-    public void BindSets(PipelineLayout layout, uint first, ReadOnlySpan<DescriptorSet> sets, ReadOnlySpan<uint> dynamicOffsets, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    /// <summary>Binds sets to a program (the layout comes from the program).</summary>
+    public void BindSets(ShaderProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, PipelineBindPoint point = PipelineBindPoint.Graphics)
     {
-        fixed (DescriptorSet* ps = sets)
+        Span<DescriptorSet> resolved = stackalloc DescriptorSet[sets.Length];
+        for (int i = 0; i < sets.Length; i++) resolved[i] = device.SetAt(sets[i].Index);
+        fixed (DescriptorSet* ps = resolved)
         fixed (uint* po = dynamicOffsets)
-            cmdBindDescriptorSets(Handle, point, layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
+            cmdBindDescriptorSets(Handle, point, program.Layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
+    }
+
+    /// <summary>Binds the bindless table to a program (the table is the context's).</summary>
+    public void BindBindlessTable(ShaderProgram program, uint set, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    {
+        var table = new GpuSet(ctx.Bindless.SetIndex);
+        BindSets(program, set, new ReadOnlySpan<GpuSet>(in table), [], point);
     }
 
     /// <summary>Pushes descriptors of set <paramref name="set"/> (legacy layout and compute; VK_KHR_push_descriptor).</summary>
-    public void PushDescriptors(PipelineLayout layout, uint set, ReadOnlySpan<WriteDescriptorSet> writes, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    public void PushDescriptors(ShaderProgram program, uint set, ReadOnlySpan<WriteDescriptorSet> writes, PipelineBindPoint point = PipelineBindPoint.Graphics)
     {
         if (push is null) throw new InvalidOperationException("VK_KHR_push_descriptor is not available");
-        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, point, layout, set, (uint)writes.Length, pw);
+        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)writes.Length, pw);
         Stats.DescriptorPushes++;
     }
 
     /// <summary>
     /// Binds a program's resources: the slots of set <paramref name="set"/> and what each holds
     /// (docs/resource-layer.md). The layout comes from the program, the image layout and the descriptor
-    /// type are the backend's business. The Vulkan path writes one descriptor per slot.
+    /// type are the backend's business. The Vulkan path writes one descriptor per slot: pushed when the
+    /// device can push, written into a set of the frame's pools otherwise.
     /// </summary>
     public void BindProgramResources(ShaderProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
     {
-        if (push is null) throw new InvalidOperationException("VK_KHR_push_descriptor is not available");
         var images = stackalloc DescriptorImageInfo[bindings.Length];
         var buffers = stackalloc DescriptorBufferInfo[bindings.Length];
         var writes = stackalloc WriteDescriptorSet[bindings.Length];
@@ -363,13 +373,33 @@ public sealed unsafe class CommandList
             }
         }
         var point = program.ComputeCode is not null ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
-        push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)bindings.Length, writes);
-        Stats.DescriptorPushes++;
+        if (push is not null)
+        {
+            push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)bindings.Length, writes);
+            Stats.DescriptorPushes++;
+            return;
+        }
+        // No push descriptors: the set is written and bound (the frame's pools free it when the slot comes round).
+        var allocated = ctx.Frame.AllocateSet(program.SetLayouts[set]);
+        var allocatedSet = new GpuSet(device.AddSet(allocated));
+        for (int i = 0; i < bindings.Length; i++) writes[i].DstSet = allocated;
+        device.Vk.UpdateDescriptorSets(device.Device, (uint)bindings.Length, writes, 0, null);
+        BindSets(program, set, new ReadOnlySpan<GpuSet>(in allocatedSet), []);
     }
 
-    public void PushConstants<T>(PipelineLayout layout, ShaderStageFlags stages, in T value, uint offset = 0) where T : unmanaged
+    /// <summary>Pushes a block of constants to a program (the layout comes from the program).</summary>
+    public void PushConstants<T>(ShaderProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
-        fixed (T* p = &value) cmdPushConstants(Handle, layout, stages, offset, (uint)sizeof(T), p);
+        fixed (T* p = &value) cmdPushConstants(Handle, program.Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
+    }
+
+    static ShaderStageFlags VkStageFlags(GpuStage stages)
+    {
+        var f = ShaderStageFlags.None;
+        if (stages.HasFlag(GpuStage.Vertex)) f |= ShaderStageFlags.VertexBit;
+        if (stages.HasFlag(GpuStage.Fragment)) f |= ShaderStageFlags.FragmentBit;
+        if (stages.HasFlag(GpuStage.Compute)) f |= ShaderStageFlags.ComputeBit;
+        return f;
     }
 
     public void Draw(uint vertices, uint instances = 1, uint firstVertex = 0, uint firstInstance = 0)

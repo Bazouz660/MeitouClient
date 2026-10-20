@@ -51,8 +51,9 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
         Samplers = new SamplerCache(device);
         Shaders = new ShaderLibrary(device);
         Pipelines = new PipelineLibrary(device);
-        Bindless = new BindlessTable(device);
-        Shaders.BindlessLayout = Bindless.Layout;
+        var bindless = new BindlessTable(device);
+        Bindless = bindless;
+        Shaders.BindlessLayout = bindless.Layout;
         Uploads = new Uploader(this);
         Frame = new GpuFrame(this);
     }
@@ -65,7 +66,7 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     public SamplerCache Samplers { get; }
     public ShaderLibrary Shaders { get; }
     public PipelineLibrary Pipelines { get; }
-    public BindlessTable Bindless { get; }
+    public IGpuBindlessTable Bindless { get; }
     public Uploader Uploads { get; }
     public GpuFrame Frame { get; }
     /// <summary>The upscaler's texture LOD bias: added to the mip level of every mipmapped fetch (set by the post-processing chain).</summary>
@@ -214,23 +215,41 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
         vk.CmdPipelineBarrier2(cb, &info);
     }
 
-    /// <summary>A descriptor set that lives as long as the context (set 1 of legacy programs: one per pair of constant chunks).</summary>
-    public DescriptorSet AllocatePersistentSet(DescriptorSetLayout layout)
+    /// <summary>A set that lives as long as the context (set 1 of legacy programs: one per pair of constant chunks).</summary>
+    public GpuSet AllocatePersistentSet(GpuSetLayout layout)
     {
+        var vkLayout = Shaders.VkLayout(layout);
         var sizes = stackalloc DescriptorPoolSize[] { new(DescriptorType.UniformBufferDynamic, 2048), new(DescriptorType.StorageBufferDynamic, 512) };
         for (int attempt = 0; attempt < 2; attempt++)
         {
             if (persistentPools.Count > 0)
             {
-                var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = persistentPools[^1], DescriptorSetCount = 1, PSetLayouts = &layout };
+                var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = persistentPools[^1], DescriptorSetCount = 1, PSetLayouts = &vkLayout };
                 DescriptorSet set;
-                if (Device.Vk.AllocateDescriptorSets(Device.Device, &ai, &set) == Result.Success) return set;
+                if (Device.Vk.AllocateDescriptorSets(Device.Device, &ai, &set) == Result.Success) return new GpuSet(Device.AddSet(set));
             }
             var pi = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1024, PoolSizeCount = 2, PPoolSizes = sizes };
             VulkanException.Check(Device.Vk.CreateDescriptorPool(Device.Device, &pi, null, out var fresh), "vkCreateDescriptorPool");
             persistentPools.Add(fresh);
         }
         throw new InvalidOperationException("descriptor set allocation failed");
+    }
+
+    /// <summary>
+    /// A set with one uniform buffer in it, whose offset into the buffer is given when the set is bound
+    /// (the constants block: the engine's per-frame constants at a chosen offset).
+    /// </summary>
+    public GpuSet AllocateConstantSet(GpuSetLayout layout, GpuBuffer buffer, ulong size)
+    {
+        var set = AllocatePersistentSet(layout);
+        var info = new DescriptorBufferInfo(Device.BufferAt(buffer.Index), 0, size);
+        var write = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet, DstSet = Device.SetAt(set.Index), DstBinding = 0, DescriptorCount = 1,
+            DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &info,
+        };
+        Device.Vk.UpdateDescriptorSets(Device.Device, 1, &write, 0, null);
+        return set;
     }
 
     /// <summary>Waits for the GPU, then copies level 0 / layer <paramref name="layer"/> of a colour texture into host memory (tests and tools; never inside a frame).</summary>
@@ -263,6 +282,7 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
         DisposeFrameLoop();
         Pipelines.Dispose();
         Bindless.Dispose();
+        Shaders.Dispose();
         foreach (var p in persistentPools) Device.Vk.DestroyDescriptorPool(Device.Device, p, null);
         persistentPools.Clear();
         foreach (var t in dummyTextures) t.Dispose();   // the stand-ins' views, before their images (Defaults) go

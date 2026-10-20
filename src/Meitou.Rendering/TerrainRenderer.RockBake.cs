@@ -19,7 +19,7 @@ public sealed unsafe partial class TerrainRenderer
     TerrainProgram RockBakeProgram()
     {
         if (rockBake is not null) return rockBake;
-        Silk.NET.Vulkan.DescriptorSetLayout[] sets = [nativeFrame.SetLayout, gpu.Bindless.Layout, constantsLayout];
+        GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         return rockBake = new TerrainProgram(gpu, sets, TerrainShaders.RockBakeVertexNative(), TerrainShaders.RockBakeFragmentNative(), "terrain rock bake");
     }
 
@@ -100,12 +100,12 @@ public sealed unsafe partial class TerrainRenderer
         var p = RockBakeProgram();
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
         var binding = nativeFrame.Prepare(in view);
-        NativeFrame.Record(cmd, p.Layout, in binding);
+        NativeFrame.Record(cmd, p.P, in binding);
         var constantsSlice = gpu.Frame.Constants.Write<TerrainConstants>([BakeConstants(row)], uniformAlign);
         ulong key = (ulong)constantsSlice.Handle.Index;
         if (!constantSets.TryGetValue(key, out var set)) constantSets[key] = set = ConstantSet(constantsSlice.Handle);
         uint offset = (uint)constantsSlice.Offset;
-        cmd.BindSets(p.Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<DescriptorSet>(in set), new ReadOnlySpan<uint>(in offset));
+        cmd.BindSets(p.P, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in set), new ReadOnlySpan<uint>(in offset));
         var rows = gpu.Frame.Constants.Allocate(64, 64);
         *(Matrix4x4*)rows.Pointer = BakePlacement(scale, row);
         Span<GpuBufferBinding> instance = stackalloc GpuBufferBinding[4];
@@ -113,7 +113,7 @@ public sealed unsafe partial class TerrainRenderer
         cmd.SetRaster(state.Cull, state.Front);
         cmd.BindVertexBuffers(TerrainShaders.MeshInstanceLocation, instance);
         var push = new TerrainBakePush { Dir = new Vector4(dir, distance), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass };
-        cmd.PushConstants(p.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in push);
+        cmd.PushConstants(p.P, GpuStage.Vertex | GpuStage.Fragment, in push);
         foreach (var part in parts)
         {
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveType.Triangles, formats, "impostor rock bake")));

@@ -88,7 +88,7 @@ sealed unsafe class GiDebugPass : IDisposable
         writes[3] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &records };
         writes[4] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 4, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &uniform };
         cmd.BindPipeline(pipeline);
-        cmd.PushDescriptors(program.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), PipelineBindPoint.Compute);
+        cmd.PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), PipelineBindPoint.Compute);
         cmd.Dispatch((uint)((width + 7) / 8), (uint)((height + 7) / 8));
         cmd.Barrier(BarrierBatch.Full);
         cmd.Blit(output, target, TextureMinFilter.Linear);

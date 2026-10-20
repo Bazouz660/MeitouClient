@@ -61,7 +61,7 @@ public sealed unsafe class ShaderProgram : IDisposable
 
     internal ShaderProgram(VulkanDevice device, string name, ShaderModel model, byte[]? vertexCode, byte[]? fragmentCode, byte[]? computeCode,
         CompiledProgram? compiled, DescriptorSetLayout[] setLayouts, DescriptorSetLayout[] ownedSetLayouts, PipelineLayout layout,
-        bool pushDescriptors, uint pushConstantBytes, ShaderStageFlags pushConstantStages)
+        bool pushDescriptors, uint pushConstantBytes, ShaderStageFlags pushConstantStages, GpuSetLayout[]? neutralSets = null)
     {
         this.device = device;
         Name = name;
@@ -71,6 +71,7 @@ public sealed unsafe class ShaderProgram : IDisposable
         ComputeCode = computeCode;
         Compiled = compiled;
         SetLayouts = setLayouts;
+        NeutralSets = neutralSets ?? [];
         this.ownedSetLayouts = ownedSetLayouts;
         Layout = layout;
         PushDescriptors = pushDescriptors;
@@ -99,6 +100,8 @@ public sealed unsafe class ShaderProgram : IDisposable
     public ShaderReflection? FragmentReflection { get; }
     public ShaderReflection? ComputeReflection { get; }
     public DescriptorSetLayout[] SetLayouts { get; }
+    /// <summary>The program's sets in the engine's words (the layout the backend made).</summary>
+    public GpuSetLayout[] NeutralSets { get; }
     public PipelineLayout Layout { get; }
     /// <summary>Set 0 is a push-descriptor set.</summary>
     public bool PushDescriptors { get; }
@@ -185,12 +188,26 @@ public sealed unsafe class ShaderLibrary
         if (c.Fragment.DefaultBlock is not null) dynamic.Add(new DescriptorSetLayoutBinding(1, DescriptorType.UniformBufferDynamic, 1, ShaderStageFlags.FragmentBit));
         var set1 = CreateSetLayout([.. dynamic], 0);
         var layout = CreateLayout([set0, set1], 0, 0);
-        return new ShaderProgram(device, name, ShaderModel.Legacy, v, f, null, c, [set0, set1], [set0, set1], layout, push, 0, 0);
+        // The engine's words for the same two sets: set 0 the named blocks and samplers, set 1 the default blocks (their offset is given when the set is bound).
+        var slots = new List<GpuSlot>();
+        void AddSlots(ShaderReflection r, GpuStage stage)
+        {
+            foreach (var b in r.Blocks)
+                if (b.Kind == BlockKind.Uniform && !b.IsDefault) slots.Add(new GpuSlot((uint)b.Binding, GpuSlotKind.UniformBuffer, stage));
+            foreach (var s in r.Samplers) slots.Add(new GpuSlot((uint)s.Binding, GpuSlotKind.CombinedSampler, stage, (uint)Math.Max(1, s.ArrayLength)));
+        }
+        AddSlots(c.Vertex, GpuStage.Vertex);
+        AddSlots(c.Fragment, GpuStage.Fragment);
+        var defaultSlots = new List<GpuSlot>();
+        if (c.Vertex.DefaultBlock is not null) defaultSlots.Add(new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Vertex, 1, OffsetAtBind: true));
+        if (c.Fragment.DefaultBlock is not null) defaultSlots.Add(new GpuSlot(1, GpuSlotKind.UniformBuffer, GpuStage.Fragment, 1, OffsetAtBind: true));
+        return new ShaderProgram(device, name, ShaderModel.Legacy, v, f, null, c, [set0, set1], [set0, set1], layout, push, 0, 0,
+            [GpuSetLayout.Written([.. slots]), GpuSetLayout.Fixed([.. defaultSlots])]);
     }
 
     /// <summary>A compute program: set 0 from the reflection (uniform and storage blocks, samplers; pushed when it fits), other sets
     /// from <paramref name="extraSets"/> (sets 1.., not owned), push constants as the shader declares them.</summary>
-    public ShaderProgram Compute(string glsl, string name, params DescriptorSetLayout[] extraSets)
+    public ShaderProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets)
     {
         var code = Compiler.CompileCompute(glsl);
         var r = SpirvReflection.Parse(code);
@@ -207,14 +224,15 @@ public sealed unsafe class ShaderLibrary
         bool push = device.HasPushDescriptor && bindings.Sum(b => (int)b.DescriptorCount) <= device.MaxPushDescriptors;
         var set0 = CreateSetLayout([.. bindings], push ? DescriptorSetLayoutCreateFlags.PushDescriptorBitKhr : 0);
         uint pc = (uint)(r.Blocks.FirstOrDefault(b => b.Kind == BlockKind.PushConstant)?.Size ?? 0);
-        DescriptorSetLayout[] sets = [set0, .. extraSets];
+        var sets = new[] { set0 }.Concat(extraSets.Select(VkLayout)).ToArray();
         var layout = CreateLayout(sets, pc, ShaderStageFlags.ComputeBit);
-        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [set0], layout, push, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0);
+        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [set0], layout, push, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0,
+            [GpuSetLayout.Written([]), .. extraSets]);
     }
 
     /// <summary>A compute program whose set 0 is given (<paramref name="set0"/>, always pushed: it needs push descriptors) instead of reflected:
     /// for descriptor types the reflection does not read (storage images, acceleration structures). Push constants as the shader declares them.</summary>
-    public ShaderProgram Compute(string glsl, string name, ReadOnlySpan<(uint Binding, DescriptorType Type)> set0, params DescriptorSetLayout[] extraSets)
+    public ShaderProgram Compute(string glsl, string name, ReadOnlySpan<(uint Binding, DescriptorType Type)> set0, params GpuSetLayout[] extraSets)
     {
         if (!device.HasPushDescriptor) throw new NotSupportedException($"{name}: needs push descriptors");
         var code = Compiler.CompileCompute(glsl);
@@ -223,14 +241,15 @@ public sealed unsafe class ShaderLibrary
         for (int i = 0; i < set0.Length; i++) bindings[i] = new DescriptorSetLayoutBinding(set0[i].Binding, set0[i].Type, 1, ShaderStageFlags.ComputeBit);
         var layout0 = CreateSetLayout(bindings, DescriptorSetLayoutCreateFlags.PushDescriptorBitKhr);
         uint pc = (uint)(r.Blocks.FirstOrDefault(b => b.Kind == BlockKind.PushConstant)?.Size ?? 0);
-        DescriptorSetLayout[] sets = [layout0, .. extraSets];
+        var sets = new[] { layout0 }.Concat(extraSets.Select(VkLayout)).ToArray();
         var layout = CreateLayout(sets, pc, ShaderStageFlags.ComputeBit);
-        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [layout0], layout, true, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0);
+        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [layout0], layout, true, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0,
+            [GpuSetLayout.Written([]), .. extraSets]);
     }
 
     /// <summary>A native-model program: strict GLSL 450, the layout given by the model (<paramref name="setLayouts"/>, not owned) and a
     /// push-constant block of <paramref name="pushConstantBytes"/> (at most 128) visible to both stages.</summary>
-    public ShaderProgram Native(string vertexGlsl, string fragmentGlsl, string name, DescriptorSetLayout[] setLayouts, uint pushConstantBytes)
+    public ShaderProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes)
     {
         if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");
         // The stages are linked by name as GL does (docs/renderer-native.md 3.4: InterfaceLocations stays for both models): varyings without
@@ -239,8 +258,9 @@ public sealed unsafe class ShaderLibrary
         var v = Compiler.CompileNative(vs, fragment: false);
         var f = Compiler.CompileNative(fs, fragment: true);
         var stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
-        var layout = CreateLayout(setLayouts, pushConstantBytes, stages);
-        var program = new ShaderProgram(device, name, ShaderModel.Native, v, f, null, null, setLayouts, [], layout, false, pushConstantBytes, pushConstantBytes > 0 ? stages : 0);
+        var layouts = setLayouts.Select(VkLayout).ToArray();
+        var layout = CreateLayout(layouts, pushConstantBytes, stages);
+        var program = new ShaderProgram(device, name, ShaderModel.Native, v, f, null, null, layouts, [], layout, false, pushConstantBytes, pushConstantBytes > 0 ? stages : 0, setLayouts);
         program.FragmentSource = fs;
         foreach (var block in program.VertexReflection!.Blocks.Concat(program.FragmentReflection!.Blocks))
             if (block.Kind == BlockKind.PushConstant && block.Size > pushConstantBytes)
@@ -249,7 +269,7 @@ public sealed unsafe class ShaderLibrary
                 throw new InvalidOperationException($"{name}: push-constant block '{block.Name}' is {block.Size} bytes, the layout's range {pushConstantBytes}");
             }
         // The samplers declared in the bindless set must be the table's arrays (a float view read through a usampler is undefined).
-        int bindless = Array.FindIndex(setLayouts, l => l.Handle != 0 && l.Handle == BindlessLayout.Handle);
+        int bindless = Array.FindIndex(setLayouts, l => l == GpuSetLayout.Bindless);
         if (bindless >= 0)
             foreach (var s in program.VertexReflection!.Samplers.Concat(program.FragmentReflection!.Samplers))
                 if (s.Set == bindless)
@@ -258,6 +278,55 @@ public sealed unsafe class ShaderLibrary
                     catch { program.Dispose(); throw; }
                 }
         return program;
+    }
+
+    /// <summary>The layouts the engine's sets were made into (one per set, shared by every program that uses it).</summary>
+    readonly Dictionary<GpuSetLayout, DescriptorSetLayout> setLayouts = [];
+
+    /// <summary>Destroys the layouts the engine's sets were made into (once every frame that could use them has finished).</summary>
+    public void Dispose()
+    {
+        var (vk, dev) = (device.Vk, device.Device);
+        var layouts = setLayouts.Values.ToArray();
+        setLayouts.Clear();
+        device.Frames.DeferDelete(() => { foreach (var l in layouts) vk.DestroyDescriptorSetLayout(dev, l, null); });
+    }
+
+    /// <summary>The Vulkan layout of a set the engine described: the bindless table's is the table's own, the rest are made here.</summary>
+    internal DescriptorSetLayout VkLayout(GpuSetLayout set)
+    {
+        if (set.IsBindless) return BindlessLayout;
+        if (setLayouts.TryGetValue(set, out var made)) return made;
+        var bindings = new DescriptorSetLayoutBinding[set.Slots.Length];
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            var s = set.Slots[i];
+            bindings[i] = new DescriptorSetLayoutBinding(s.Binding, VkDescriptorType(s), 1);
+            bindings[i].StageFlags = VkStageFlags(s.Stages);
+        }
+        var layout = CreateSetLayout(bindings, CanPush(set) ? DescriptorSetLayoutCreateFlags.PushDescriptorBitKhr : 0);
+        setLayouts[set] = layout;
+        return layout;
+    }
+
+    /// <summary>Whether the device can push this set's descriptors (the renderers write it for every draw).</summary>
+    internal bool CanPush(GpuSetLayout set) => device.HasPushDescriptor && set.PerDraw && set.Slots.Sum(s => (int)s.Count) <= device.MaxPushDescriptors;
+
+    static DescriptorType VkDescriptorType(GpuSlot slot) => slot.Kind switch
+    {
+        GpuSlotKind.UniformBuffer => slot.OffsetAtBind ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer,
+        GpuSlotKind.StorageBuffer => DescriptorType.StorageBuffer,
+        GpuSlotKind.CombinedSampler => DescriptorType.CombinedImageSampler,
+        _ => DescriptorType.StorageImage,
+    };
+
+    static ShaderStageFlags VkStageFlags(GpuStage stages)
+    {
+        var f = ShaderStageFlags.None;
+        if (stages.HasFlag(GpuStage.Vertex)) f |= ShaderStageFlags.VertexBit;
+        if (stages.HasFlag(GpuStage.Fragment)) f |= ShaderStageFlags.FragmentBit;
+        if (stages.HasFlag(GpuStage.Compute)) f |= ShaderStageFlags.ComputeBit;
+        return f;
     }
 
     /// <summary>The bindless table's set layout (set by <see cref="GpuContext"/>), so <see cref="Native"/> can check a program's

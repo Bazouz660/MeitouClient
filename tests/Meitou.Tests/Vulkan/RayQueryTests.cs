@@ -86,9 +86,9 @@ public class RayQueryTests
             writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, PNext = &asWrite, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.AccelerationStructureKhr };
             writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
             cmd.BindPipeline(pipeline);
-            cmd.PushDescriptors(program.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 2), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 2), PipelineBindPoint.Compute);
             var push = new Push { StartY = c.StartY, DirY = c.DirY, Flags = c.Flags };
-            cmd.PushConstants(program.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(program, GpuStage.Compute, in push);
             cmd.Dispatch(1, 1);
             cmd.Barrier(BarrierBatch.Full);
             cmd.CopyBuffer(results.Handle, readback.Handle, new BufferCopy(0, 0, results.Size));

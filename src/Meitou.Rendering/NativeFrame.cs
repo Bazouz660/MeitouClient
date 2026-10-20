@@ -2,7 +2,6 @@ using System.Runtime.InteropServices;
 
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Gpu.Shaders;
-using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering;
 
@@ -55,22 +54,20 @@ sealed unsafe class NativeFrame : IDisposable
         this.extraStorage = extraStorage;
         push = ctx.Device.HasPushDescriptor;
         align = Math.Max(ctx.Device.Limits.MinUniformBufferOffsetAlignment, 16);
-        var stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
-        DescriptorSetLayoutBinding[] bindings =
+        SetLayout = GpuSetLayout.Written(
         [
-            .. Enumerable.Range(0, 6).Select(b => new DescriptorSetLayoutBinding((uint)b, DescriptorType.UniformBuffer, 1, stages)),
-            .. Enumerable.Range(6, extraStorage).Select(b => new DescriptorSetLayoutBinding((uint)b, DescriptorType.StorageBuffer, 1, stages)),
-        ];
-        SetLayout = ctx.Shaders.CreateSetLayout(bindings, push ? DescriptorSetLayoutCreateFlags.PushDescriptorBitKhr : 0);
-        SetLayouts = [SetLayout, ctx.Bindless.Layout];
+            .. Enumerable.Range(0, 6).Select(b => new GpuSlot((uint)b, GpuSlotKind.UniformBuffer, GpuStage.All)),
+            .. Enumerable.Range(6, extraStorage).Select(b => new GpuSlot((uint)b, GpuSlotKind.StorageBuffer, GpuStage.All)),
+        ]);
+        SetLayouts = [SetLayout, GpuSetLayout.Bindless];
         standIns = [.. FrameConstants.Textures.Select(t => FrameGlobals.Sampler2D(t.Name, cube: t.Kind == BindlessKind.Cube,
             shadow: t.Kind is BindlessKind.Shadow2D or BindlessKind.ShadowArray, arrayed: t.Kind is BindlessKind.Texture2DArray or BindlessKind.ShadowArray))];
     }
 
     /// <summary>Set 0 of the native model (six uniform buffers; a push-descriptor set where the device has them).</summary>
-    public DescriptorSetLayout SetLayout { get; }
+    public GpuSetLayout SetLayout { get; }
     /// <summary>The native model's sets: the bindless table, then <see cref="SetLayout"/>.</summary>
-    public DescriptorSetLayout[] SetLayouts { get; }
+    public GpuSetLayout[] SetLayouts { get; }
 
     /// <summary>A native program with the model's layout and the shared push-constant range (<see cref="NativeShaders.PushBytes"/>).</summary>
     public ShaderProgram Program(string vertexGlsl, string fragmentGlsl, string name) =>
@@ -92,10 +89,10 @@ sealed unsafe class NativeFrame : IDisposable
     /// Once per native segment, before its draws: binds set 1 (the bindless table) and set 0 for <paramref name="layout"/> (any native
     /// program's: they are all compatible) with this segment's frame constants, shadow blocks and <paramref name="view"/>.
     /// </summary>
-    public void Bind(CommandList cmd, PipelineLayout layout, in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
+    public void Bind(CommandList cmd, ShaderProgram program, in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
     {
         var binding = Prepare(in view, extra);
-        Record(cmd, layout, in binding);
+        Record(cmd, program, in binding);
     }
 
     /// <summary>
@@ -138,11 +135,11 @@ sealed unsafe class NativeFrame : IDisposable
         if (bonesFrame != frame.Number) { bones = frame.Constants.Allocate(BonesBytes, align); bonesFrame = frame.Number; }
 
         int count = 6 + extraStorage;
-        var result = new FrameBinding { Count = count, Table = ctx.Bindless.Set, Push = push };
-        Span<DescriptorBufferInfo> infos = result.Infos;
-        infos[(int)NativeShaders.FrameBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(frameSlice.Handle.Index), frameSlice.Offset, (ulong)sizeof(FrameConstants));
-        infos[(int)NativeShaders.ViewBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(viewSlice.Handle.Index), viewSlice.Offset, (ulong)sizeof(ViewConstants));
-        infos[(int)NativeShaders.BonesBinding] = new DescriptorBufferInfo(ctx.Device.BufferAt(bones.Handle.Index), bones.Offset, BonesBytes);
+        var result = new FrameBinding { Count = count };
+        Span<GpuBinding> bindings = result.Bindings;
+        bindings[(int)NativeShaders.FrameBinding] = GpuBinding.Uniform(NativeShaders.FrameBinding, new GpuBufferBinding(frameSlice.Handle, frameSlice.Offset, (ulong)sizeof(FrameConstants)));
+        bindings[(int)NativeShaders.ViewBinding] = GpuBinding.Uniform(NativeShaders.ViewBinding, new GpuBufferBinding(viewSlice.Handle, viewSlice.Offset, (ulong)sizeof(ViewConstants)));
+        bindings[(int)NativeShaders.BonesBinding] = GpuBinding.Uniform(NativeShaders.BonesBinding, new GpuBufferBinding(bones.Handle, bones.Offset, BonesBytes));
         for (int i = 0; i < Blocks.Length; i++)
         {
             var (name, binding, size) = Blocks[i];
@@ -155,17 +152,9 @@ sealed unsafe class NativeFrame : IDisposable
                 value = zeros.Binding;
             }
             ulong range = value.Size == GpuBufferBinding.WholeSize ? (ulong)size : Math.Min((ulong)size, value.Size);
-            infos[(int)binding] = new DescriptorBufferInfo(ctx.Device.BufferAt(value.Buffer.Index), value.Offset, range);
+            bindings[(int)binding] = GpuBinding.Uniform(binding, new GpuBufferBinding(value.Buffer, value.Offset, range));
         }
-        for (int i = 0; i < extraStorage; i++) infos[6 + i] = new DescriptorBufferInfo(ctx.Device.BufferAt(extra[i].Buffer.Index), extra[i].Offset, extra[i].Size);
-        if (!push)
-        {
-            var set = frame.AllocateSet(SetLayout);
-            var writes = stackalloc WriteDescriptorSet[count];
-            fixed (DescriptorBufferInfo* pi = infos) FrameBinding.Writes(writes, pi, count, set);
-            ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, (uint)count, writes, 0, null);
-            result.Set = set;
-        }
+        for (int i = 0; i < extraStorage; i++) bindings[6 + i] = GpuBinding.Storage((uint)(6 + i), extra[i]);
         return result;
     }
 
@@ -173,23 +162,12 @@ sealed unsafe class NativeFrame : IDisposable
     /// The recording half of <see cref="Bind"/>: binds the bindless table (set 1) and pushes (or binds) set 0 as <paramref name="binding"/> says.
     /// Reads nothing else: safe on a recording job's thread.
     /// </summary>
-    public static void Record(CommandList cmd, PipelineLayout layout, in FrameBinding binding)
+    public static void Record(CommandList cmd, ShaderProgram program, in FrameBinding binding)
     {
-        var table = binding.Table;
-        cmd.BindSets(layout, NativeShaders.BindlessSet, new ReadOnlySpan<DescriptorSet>(in table), []);
-        if (binding.Push)
-        {
-            int count = binding.Count;
-            var copy = binding.Infos;   // on the stack: the writes point at it
-            var writes = stackalloc WriteDescriptorSet[count];
-            FrameBinding.Writes(writes, (DescriptorBufferInfo*)&copy, count, default);
-            cmd.PushDescriptors(layout, NativeShaders.FrameSet, new ReadOnlySpan<WriteDescriptorSet>(writes, count));
-        }
-        else
-        {
-            var set = binding.Set;
-            cmd.BindSets(layout, NativeShaders.FrameSet, new ReadOnlySpan<DescriptorSet>(in set), []);
-        }
+        cmd.BindBindlessTable(program, NativeShaders.BindlessSet);
+        int count = binding.Count;
+        var copy = binding.Bindings;   // on the stack: the writes point at it
+        cmd.BindProgramResources(program, NativeShaders.FrameSet, new ReadOnlySpan<GpuBinding>(&copy, count));
     }
 
     /// <summary>A frame texture's bindless index: the same while its view and sampler are, a new one (the old freed) after a change.</summary>
@@ -206,8 +184,6 @@ sealed unsafe class NativeFrame : IDisposable
     {
         for (int i = 0; i < entries.Length; i++)
             if (entries[i].Has) ctx.Bindless.Free(FrameConstants.Textures[i].Kind, entries[i].Index);
-        var (vk, dev, layout) = (ctx.Device.Vk, ctx.Device.Device, SetLayout);
-        ctx.Device.Frames.DeferDelete(() => vk.DestroyDescriptorSetLayout(dev, layout, null));
     }
 }
 
@@ -219,21 +195,8 @@ unsafe struct FrameBinding
 {
     public const int MaxBindings = 10;
     [System.Runtime.CompilerServices.InlineArray(MaxBindings)]
-    public struct InfoArray { DescriptorBufferInfo first; }
-    public InfoArray Infos;
+    public struct BindingArray { GpuBinding first; }
+    /// <summary>Set 0's bindings: the uniform buffers 0 to 5 and the storage buffers after them.</summary>
+    public BindingArray Bindings;
     public int Count;
-    public DescriptorSet Table;
-    public DescriptorSet Set;
-    public bool Push;
-
-    /// <summary>The writes of set 0 (uniform buffers 0 to 5, storage buffers after them) pointing at <paramref name="infos"/>.</summary>
-    public static void Writes(WriteDescriptorSet* writes, DescriptorBufferInfo* infos, int count, DescriptorSet set)
-    {
-        for (int b = 0; b < count; b++)
-            writes[b] = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)b, DescriptorCount = 1,
-                DescriptorType = b < 6 ? DescriptorType.UniformBuffer : DescriptorType.StorageBuffer, PBufferInfo = &infos[b],
-            };
-    }
 }

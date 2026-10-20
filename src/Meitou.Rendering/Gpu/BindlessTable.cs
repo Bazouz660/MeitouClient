@@ -28,7 +28,7 @@ public readonly record struct BindlessHandle(BindlessKind Kind, uint Index);
 /// what a draw sees part-way through a frame (as GL does when a texture's view or sampler changes between two draws), register a new index
 /// and free the old one.
 /// </remarks>
-public sealed unsafe class BindlessTable : IDisposable
+public sealed unsafe class BindlessTable : IDisposable, IGpuBindlessTable
 {
     /// <summary>The number of arrays (bindings 0 to 6 of the set).</summary>
     public const int ArrayCount = 7;
@@ -75,6 +75,7 @@ public sealed unsafe class BindlessTable : IDisposable
     readonly VulkanDevice device;
     readonly DescriptorPool pool;
     readonly DescriptorSet[] sets;
+    readonly int[] setIndices;
     readonly long[] applied;   // per slot: journal entries replayed so far
     readonly List<(BindlessKind Kind, uint Index, SampledTexture GpuTexture)> journal = [];
     long journalBase;          // number of entries dropped from the front of the journal
@@ -125,6 +126,7 @@ public sealed unsafe class BindlessTable : IDisposable
         };
         VulkanException.Check(device.Vk.CreateDescriptorPool(device.Device, &pi, null, out pool), "vkCreateDescriptorPool");
         sets = new DescriptorSet[slots];
+        setIndices = new int[slots];
         applied = new long[slots];
         for (int i = 0; i < slots; i++)
         {
@@ -132,6 +134,7 @@ public sealed unsafe class BindlessTable : IDisposable
             DescriptorSet set;
             VulkanException.Check(device.Vk.AllocateDescriptorSets(device.Device, &ai, &set), "vkAllocateDescriptorSets");
             sets[i] = set;
+            setIndices[i] = device.AddSet(set);
         }
     }
 
@@ -141,6 +144,8 @@ public sealed unsafe class BindlessTable : IDisposable
     int currentSlot;
     /// <summary>The set of the frame being recorded (bind once per command buffer).</summary>
     public DescriptorSet Set => sets[currentSlot];
+    /// <summary>The set of the frame being recorded, as the renderers' handle (the index into the backend's sets).</summary>
+    public int SetIndex => setIndices[currentSlot];
     public int Registered
     {
         get
@@ -150,7 +155,6 @@ public sealed unsafe class BindlessTable : IDisposable
             return n;
         }
     }
-
     /// <summary>The array a texture of <paramref name="format"/> and <paramref name="kind"/> belongs in: integer formats (UINT, SINT) go to
     /// <see cref="BindlessKind.UTexture2D"/> / <see cref="BindlessKind.ITexture2D"/>, a depth texture read with comparison
     /// (<paramref name="shadow"/>) to <see cref="BindlessKind.Shadow2D"/> (a 2D array one to <see cref="BindlessKind.ShadowArray"/>), the rest by kind.</summary>
@@ -232,7 +236,7 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>At the start of a frame in <paramref name="slot"/> (the slot's previous frame has finished): the journal's new entries are
     /// written into the slot's set.</summary>
-    internal void BeginFrame(int slot)
+    public void BeginFrame(int slot)
     {
         currentSlot = slot;
         Apply(slot, endOfFrame: false);
@@ -241,7 +245,7 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>At the end of the open frame, before it is submitted: what was registered or updated during the frame is written into the
     /// frame's set. Update-after-bind allows this while the set is bound in the command buffer being recorded, which is not pending yet.</summary>
-    internal void EndFrame()
+    public void EndFrame()
     {
         if (!open) return;
         open = false;

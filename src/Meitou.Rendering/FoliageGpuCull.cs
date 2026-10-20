@@ -494,7 +494,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
             list[i] = GpuBinding.Storage(bindings[i], bb);
         }
         cmd.BindProgramResources(p, 0, new ReadOnlySpan<GpuBinding>(list, count));
-        cmd.PushConstants(p.Layout, ShaderStageFlags.ComputeBit, in push);
+        cmd.PushConstants(p, GpuStage.Compute, in push);
         cmd.Dispatch(x, y);
     }
 

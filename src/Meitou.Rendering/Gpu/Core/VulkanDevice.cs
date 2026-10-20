@@ -84,6 +84,11 @@ public sealed unsafe class VulkanDevice : IDisposable
     public Silk.NET.Vulkan.ImageView ViewAt(int index) => viewTable[index];
     public int AddView(Silk.NET.Vulkan.ImageView view) { viewTable.Add(view); return viewTable.Count - 1; }
 
+    /// <summary>The sets the renderers bind by index (index 0 is the null set).</summary>
+    readonly List<Silk.NET.Vulkan.DescriptorSet> setTable = [default];
+    public Silk.NET.Vulkan.DescriptorSet SetAt(int index) => setTable[index];
+    public int AddSet(Silk.NET.Vulkan.DescriptorSet set) { setTable.Add(set); return setTable.Count - 1; }
+
     /// <summary>The textures the renderers hold by index (index 0 is the null texture).</summary>
     readonly List<TextureEntry> textureTable = [default];
     public TextureEntry TextureAt(int index) => textureTable[index];

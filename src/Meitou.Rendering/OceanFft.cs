@@ -247,7 +247,7 @@ public sealed unsafe class OceanWaves : IDisposable
             bindings[i] = GpuBinding.Storage(slots[i], bb);
         }
         cmd.BindProgramResources(p, 0, new ReadOnlySpan<GpuBinding>(bindings, count));
-        cmd.PushConstants(p.Layout, ShaderStageFlags.ComputeBit, in push);
+        cmd.PushConstants(p, GpuStage.Compute, in push);
         cmd.Dispatch(x, y, z);
     }
 

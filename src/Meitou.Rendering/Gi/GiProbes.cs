@@ -213,7 +213,7 @@ internal sealed unsafe class GiProbes : IDisposable
             (7, DescriptorType.CombinedImageSampler), (8, DescriptorType.CombinedImageSampler), (9, DescriptorType.CombinedImageSampler),
             (10, DescriptorType.CombinedImageSampler), (11, DescriptorType.CombinedImageSampler), (12, DescriptorType.CombinedImageSampler),
             (13, DescriptorType.StorageBuffer), (14, DescriptorType.StorageBuffer),
-        ], ctx.Bindless.Layout);
+        ], GpuSetLayout.Bindless);
         var blend = ctx.Shaders.Compute(GiShaders.ProbeBlend(rays), "gi probe blend " + rays,
         [
             (0, DescriptorType.StorageBuffer), (1, DescriptorType.StorageBuffer), (2, DescriptorType.UniformBuffer),
@@ -332,7 +332,7 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[2] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 2, DescriptorCount = 1, DescriptorType = DescriptorType.StorageImage, PImageInfo = &images[0] };
             writes[3] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &images[1] };
             cmd.BindPipeline(invalidatePipeline);
-            cmd.PushDescriptors(invalidateProgram.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 4), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(invalidateProgram, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 4), PipelineBindPoint.Compute);
             cmd.Dispatch((uint)(Probes / 64));
             cmd.Barrier(ComputeAfterCompute);
         }
@@ -370,10 +370,9 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[13] = Buffer(13, DescriptorType.StorageBuffer, &stateInfo);
             writes[14] = Buffer(14, DescriptorType.StorageBuffer, &listInfo);
             cmd.BindPipeline(variant.TracePipeline);
-            cmd.PushDescriptors(variant.Trace.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 15), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(variant.Trace, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 15), PipelineBindPoint.Compute);
             // Set 1: the bindless table, for the objects' diffuse maps at the hits.
-            var table = ctx.Bindless.Set;
-            cmd.BindSets(variant.Trace.Layout, 1, new ReadOnlySpan<DescriptorSet>(&table, 1), default, PipelineBindPoint.Compute);
+            cmd.BindBindlessTable(variant.Trace, 1, PipelineBindPoint.Compute);
             if (listed > 0) cmd.Dispatch((uint)listed);
         }
         cmd.Barrier(ComputeAfterCompute);
@@ -401,7 +400,7 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[5] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 5, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &images[2] };
             writes[6] = Buffer(6, DescriptorType.StorageBuffer, &listInfo);
             cmd.BindPipeline(variant.BlendPipeline);
-            cmd.PushDescriptors(variant.Blend.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 7), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(variant.Blend, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 7), PipelineBindPoint.Compute);
             if (listed > 0) cmd.Dispatch((uint)listed);
         }
         cmd.Barrier(ComputeAfterCompute);

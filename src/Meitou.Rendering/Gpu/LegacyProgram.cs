@@ -55,7 +55,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     bool vertexDirty = true, fragmentDirty = true;
     long sliceFrame = -1;
     Transient vertexSlice, fragmentSlice;
-    readonly Dictionary<(ulong, ulong), DescriptorSet> dynamicSets = [];
+    readonly Dictionary<(ulong, ulong), GpuSet> dynamicSets = [];
 
     LegacyProgram(GpuContext ctx, ShaderProgram program)
     {
@@ -215,7 +215,7 @@ public sealed unsafe class LegacyProgram : IDisposable
                 int n = 0;
                 if (VertexBlock is not null) offsets[n++] = (uint)vertexSlice.Offset;
                 if (FragmentBlock is not null) offsets[n++] = (uint)fragmentSlice.Offset;
-                cmd.BindSets(Layout, 1, new ReadOnlySpan<DescriptorSet>(in set), offsets[..n]);
+                cmd.BindSets(Program, 1, new ReadOnlySpan<GpuSet>(in set), offsets[..n]);
             }
         }
 
@@ -267,13 +267,14 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (!same)
             {
                 lastPushEpoch = cmd.Epoch;
-                if (Program.PushDescriptors) cmd.PushDescriptors(Layout, 0, all);
+                if (Program.PushDescriptors) cmd.PushDescriptors(Program, 0, all);
                 else
                 {
-                    var set0 = frame.AllocateSet(Program.SetLayouts[0]);
+                    var set0 = frame.AllocateSet(Program.NeutralSets[0]);
                     for (int i = 0; i < w; i++) writes[i].DstSet = set0;
                     ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, (uint)w, writes, 0, null);
-                    cmd.BindSets(Layout, 0, new ReadOnlySpan<DescriptorSet>(in set0), []);
+                    var set0Handle = new GpuSet(ctx.Device.AddSet(set0));
+                    cmd.BindSets(Program, 0, new ReadOnlySpan<GpuSet>(in set0Handle), []);
                 }
             }
         }
@@ -283,12 +284,12 @@ public sealed unsafe class LegacyProgram : IDisposable
         cmd.BoundProgram = this;
     }
 
-    DescriptorSet DynamicSet()
+    GpuSet DynamicSet()
     {
         var key = (VertexBlock is null ? 0 : (ulong)vertexSlice.Handle.Index, FragmentBlock is null ? 0 : (ulong)fragmentSlice.Handle.Index);
         // The chunks of the last two frames (one 8 MB chunk per frame slot, the usual case): no dictionary.
-        if (key == recentKeys[0] && recentSets[0].Handle != 0) return recentSets[0];
-        if (key == recentKeys[1] && recentSets[1].Handle != 0) return recentSets[1];
+        if (key == recentKeys[0] && !recentSets[0].IsNull) return recentSets[0];
+        if (key == recentKeys[1] && !recentSets[1].IsNull) return recentSets[1];
         if (!dynamicSets.TryGetValue(key, out var set)) set = CreateDynamicSet(key);
         (recentKeys[1], recentSets[1]) = (recentKeys[0], recentSets[0]);
         (recentKeys[0], recentSets[0]) = (key, set);
@@ -296,24 +297,24 @@ public sealed unsafe class LegacyProgram : IDisposable
     }
 
     readonly (ulong, ulong)[] recentKeys = new (ulong, ulong)[2];
-    readonly DescriptorSet[] recentSets = new DescriptorSet[2];
+    readonly GpuSet[] recentSets = new GpuSet[2];
 
-    DescriptorSet CreateDynamicSet((ulong, ulong) key)
+    GpuSet CreateDynamicSet((ulong, ulong) key)
     {
-        var set = ctx.AllocatePersistentSet(Program.SetLayouts[1]);
+        var set = ctx.AllocatePersistentSet(Program.NeutralSets[1]);
         var infos = stackalloc DescriptorBufferInfo[2];
         var writes = stackalloc WriteDescriptorSet[2];
         uint n = 0;
         if (VertexBlock is { } vb)
         {
             infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(vertexSlice.Handle.Index), 0, (ulong)vb.Size);
-            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
+            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = ctx.Device.SetAt(set.Index), DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
             n++;
         }
         if (FragmentBlock is { } fb)
         {
             infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(fragmentSlice.Handle.Index), 0, (ulong)fb.Size);
-            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
+            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = ctx.Device.SetAt(set.Index), DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
             n++;
         }
         ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, n, writes, 0, null);

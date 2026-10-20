@@ -104,7 +104,7 @@ internal sealed class ImpostorPreview : IDisposable
         cmd.SetViewport(viewport);
         cmd.SetDepth(true, true, DepthFunction.Less);
         cmd.SetDepthBias(false, 0, 0);
-        frame.Bind(cmd, meshProgram.P.Layout, in view);
+        frame.Bind(cmd, meshProgram.P, in view);
         cmd.BindVertexBuffers(FoliageShaders.InstanceLocation, rows);
         uint stand = StandIn();
         uint Index(uint key) => key == 0 ? stand : textures.Index(key, 0, stand);
@@ -134,7 +134,7 @@ internal sealed class ImpostorPreview : IDisposable
                 cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(meshProgram.P, p.Layout, PrimitiveType.Triangles, formats, "impostor preview meshes")));
                 cmd.BindVertexBuffers(0, p.Bindings);
                 cmd.BindIndexBuffer(new GpuBufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
-                cmd.PushConstants(meshProgram.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
+                cmd.PushConstants(meshProgram.P, GpuStage.Vertex | GpuStage.Fragment, in pc);
                 cmd.DrawIndexed((uint)p.Count, (uint)instances.Length);
             }
         }
@@ -152,7 +152,7 @@ internal sealed class ImpostorPreview : IDisposable
         cmd.SetRaster(state.Cull, state.Front);
         cmd.SetDepth(true, true, DepthFunction.Less);
         cmd.SetDepthBias(false, 0, 0);
-        frame.Bind(cmd, impostors.Layout, in view);
+        frame.Bind(cmd, impostors.Program, in view);
         var a = atlas.Atlas;
         var pc = new ImpostorPush
         {
@@ -163,7 +163,7 @@ internal sealed class ImpostorPreview : IDisposable
         cmd.BindPipeline(impostors.Pipeline(ImpostorProgram.Plain, state, formats));
         cmd.BindVertexBuffers(FoliageShaders.InstanceLocation, rows);
         cmd.BindIndexBuffer(impostors.Quad, IndexKind.U32);
-        cmd.PushConstants(impostors.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
+        cmd.PushConstants(impostors.Program, GpuStage.Vertex | GpuStage.Fragment, in pc);
         cmd.DrawIndexed(6, (uint)instances.Length);
     }
 

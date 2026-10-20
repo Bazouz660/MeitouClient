@@ -1281,7 +1281,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         // The fully visible draws of a colour pass use the program without a discard (own segment, own pipelines per part).
         int solidSegment = !depthPass && !wire ? SegmentId(4, solidProg.P, targets, state) : 0;
         var job = drawJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, prog.P, 0);
         job.Frame = nativeFrame.Prepare(in view);
         for (int a = 0; a < 4; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         NewTextureSegment();
@@ -1332,7 +1332,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public WorldObjectRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrameBinding Frame;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
@@ -1341,15 +1341,14 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
 
         public override void Record(CommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(RowLocation, Rows);
-            var stages = Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit;
             ObjectPush last = default;
             bool pushed = false;
             var cull = state.Cull;
@@ -1362,7 +1361,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 if (!pushed || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in d.Push)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in last))))
                 {
-                    cmd.PushConstants(layout, stages, in d.Push);
+                    cmd.PushConstants(Program, GpuStage.Vertex | GpuStage.Fragment, in d.Push);
                     last = d.Push;
                     pushed = true;
                 }

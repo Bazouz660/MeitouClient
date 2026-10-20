@@ -226,7 +226,7 @@ public sealed unsafe partial class FoliageRenderer
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance, Time = SwayPhase() };
         if (!depthPass) InteriorMaskRenderer.Apply(ref view, InteriorCut);
         var job = grassGpuJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout) = (this, targets, state, p.Layout);
+        (job.Owner, job.Targets, job.State, job.Program) = (this, targets, state, p);
         job.Frame = grassFrame!.Prepare(in view, [tables.Patches.Binding]);
         job.Pipeline = result.IsEmpty ? null : PipelineFor(ref grassMeshGpu, gp, segment, state, targets.Formats, "foliage grass gpu");
         (job.Vertices, job.Result) = (grassMeshGpu.Vertices, result);
@@ -244,7 +244,7 @@ public sealed unsafe partial class FoliageRenderer
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrameBinding Frame;
         public GraphicsPipeline? Pipeline;
         public GpuBufferBinding[] Vertices = [];
@@ -258,7 +258,7 @@ public sealed unsafe partial class FoliageRenderer
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, Layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             if (Pipeline is { } pipeline)
             {
                 var r = Result;
@@ -300,7 +300,7 @@ public sealed unsafe partial class FoliageRenderer
         var tables = BindRows(NearDepthIndex(targets.NearDepth));
         var (prefixIndex, fraction) = FoliageGrassGpu.DensityStep(Math.Min(GrassDensitySetting, MaxGrassDensity) / MaxGrassDensity);
         var result = grassStore.Dispatch(motionFrustum, new Vector2(eye.X, eye.Z), PageSize, prefixIndex, fraction, in tables, motionScale);
-        grassFrame!.Bind(cmd, p.Layout, in view, [tables.Patches.Binding]);
+        grassFrame!.Bind(cmd, p, in view, [tables.Patches.Binding]);
         if (!result.IsEmpty)
         {
             cmd.BindPipeline(PipelineFor(ref grassMeshMotionGpu, gp, segment, drawState, pass.Formats, "foliage grass motion gpu"));

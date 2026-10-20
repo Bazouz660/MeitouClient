@@ -189,7 +189,7 @@ public class GpuApiTests
             using var indices = DeviceBuffer.Create(ctx, 16, BufferUse.Index | BufferUse.TransferDst, "indices");
             using var readback = ReadbackBuffer.Create(ctx, 20, "pre-frame readback");
             using var compute = ctx.Shaders.Compute(ArgsCompute, "args");
-            using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
+            using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [GpuSetLayout.Bindless], 4);
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                 TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
             uint index = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, source.View()));
@@ -208,8 +208,8 @@ public class GpuApiTests
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, 16, 8);
-            cmd.BindSets(draw.Layout, 0, [ctx.Bindless.Set], []);
-            cmd.PushConstants(draw.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, index);
+            cmd.BindBindlessTable(draw, 0);
+            cmd.PushConstants(draw, GpuStage.Vertex | GpuStage.Fragment, index);
             cmd.BindIndexBuffer(indices.Binding(frame), IndexKind.U32);
             cmd.DrawIndexedIndirect(args.Handle, 0, 1);
 
@@ -219,8 +219,8 @@ public class GpuApiTests
             pre.BindPipeline(cp);
             var info = new DescriptorBufferInfo(ctx.Device.BufferAt(args.Handle.Index), 0, 20);
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &info };
-            pre.PushDescriptors(compute.Layout, 0, [write], PipelineBindPoint.Compute);
-            pre.PushConstants(compute.Layout, ShaderStageFlags.ComputeBit, 3u);
+            pre.PushDescriptors(compute, 0, [write], PipelineBindPoint.Compute);
+            pre.PushConstants(compute, GpuStage.Compute, 3u);
             pre.Dispatch(1);
             var after = new BarrierBatch();
             after.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.AllTransferBit,
@@ -247,15 +247,15 @@ public class GpuApiTests
     }
 
     /// <summary>A prepared segment of the test below: one fullscreen triangle through a scissor, reading one bindless texture.</summary>
-    sealed class ColumnJob(GraphicsPipeline pipeline, PipelineLayout layout, DescriptorSet table, uint texture, int x) : RecordJob
+    sealed class ColumnJob(GraphicsPipeline pipeline, ShaderProgram program, uint texture, int x) : RecordJob
     {
         public override void Record(CommandList cmd)
         {
             FullTargetState(cmd, W, H);
             cmd.SetScissor(new PixelRect(x, 0, (uint)(W - x), H));
             cmd.BindPipeline(pipeline);
-            cmd.BindSets(layout, 0, [table], []);
-            cmd.PushConstants(layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, texture);
+            cmd.BindBindlessTable(program, 0);
+            cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, texture);
             cmd.Draw(3);
         }
     }
@@ -288,7 +288,7 @@ public class GpuApiTests
                 var sources = new GpuTexture[Columns];
                 var indices = new uint[Columns];
                 using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
-                using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
+                using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [GpuSetLayout.Bindless], 4);
                 var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                     TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
                 for (int k = 0; k < Columns; k++)
@@ -309,7 +309,7 @@ public class GpuApiTests
                 ctx.BeginHostPass(cmd, PassTargets.Of(target, null), DrawState.For(formats, d!.DepthClamp));
                 for (int k = 0; k < Columns; k++)
                 {
-                    var job = new ColumnJob(pipeline, draw.Layout, ctx.Bindless.Set, indices[k], k * (W / Columns));
+                    var job = new ColumnJob(pipeline, draw, indices[k], k * (W / Columns));
                     if (k == 4)
                     {
                         // A guest that is not a job: records at once into a secondary of its own, in its place.

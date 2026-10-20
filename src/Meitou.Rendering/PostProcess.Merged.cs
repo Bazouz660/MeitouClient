@@ -91,7 +91,7 @@ public sealed unsafe partial class PostProcess
         cmd.BindPipeline(velocityPipeline!);
         cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
         var size = new Vector2(width, height);
-        cmd.PushConstants(velocityProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in size);
+        cmd.PushConstants(velocityProgram, GpuStage.Compute, in size);
         cmd.Dispatch((uint)((width + 15) / 16), (uint)((height + 15) / 16));
         cmd.Barrier(BarrierBatch.Full);
     }
@@ -130,7 +130,7 @@ public sealed unsafe partial class PostProcess
         cmd.BindPipeline(exposurePipeline!);
         cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
-        cmd.PushConstants(exposureProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in push);
+        cmd.PushConstants(exposureProgram, GpuStage.Compute, in push);
         cmd.Dispatch(16, 16);
         cmd.Barrier(BarrierBatch.Full);
     }

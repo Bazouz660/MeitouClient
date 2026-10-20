@@ -132,7 +132,7 @@ internal sealed unsafe partial class CharacterRenderer
         // The colour pass writes alpha 1 (the scene host masks it off for everything else): the SSAO character mask (PostProcess).
         if (!depthPass && !motionPass) state = state with { ColourMask = DrawState.Rgba };
         var job = drawJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, prog.P, 0);
         job.Frame = nativeFrame.Prepare(in view, [bones.Binding, materials.Binding, content.Morphs.Binding(Gpu.Frame), previousBones.Binding]);
         job.Cull = depthPass ? CullMode.None : CullMode.Back;
         for (int a = 0; a < 9; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
@@ -228,7 +228,7 @@ internal sealed unsafe partial class CharacterRenderer
         public CharacterRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Vk.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrameBinding Frame;
         public CullMode Cull;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[9];
@@ -240,15 +240,15 @@ internal sealed unsafe partial class CharacterRenderer
 
         public override void Record(CommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(CharacterShaders.InstanceLocation, Rows.AsSpan(0, RowCount));
             var push = Push;
-            cmd.PushConstants(layout, Vk.ShaderStageFlags.VertexBit | Vk.ShaderStageFlags.FragmentBit, in push);
+            cmd.PushConstants(Program, GpuStage.Vertex | GpuStage.Fragment, in push);
             bool? twoSided = null;
             for (int i = 0; i < Count; i++)
             {

@@ -281,7 +281,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
                     Sphere = new Vector4(c, r), Dir = new Vector4(d, 0), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass,
                 }], 256);
                 var constants = new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
-                frame.Bind(cmd, program.P.Layout, in constants, [block.Binding]);
+                frame.Bind(cmd, program.P, in constants, [block.Binding]);
                 Draw(cmd, mainParts, main, formats, lodBias);
                 if (leaves is not null) Draw(cmd, leavesParts, leaves, formats, lodBias);
             }
@@ -332,7 +332,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
             cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveType.Triangles, formats, "impostor bake")));
             cmd.BindVertexBuffers(0, p.Bindings);
             cmd.BindIndexBuffer(new GpuBufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
-            cmd.PushConstants(program.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
+            cmd.PushConstants(program.P, GpuStage.Vertex | GpuStage.Fragment, in pc);
             cmd.DrawIndexed((uint)p.Count);
         }
     }

@@ -42,6 +42,19 @@ public readonly record struct GpuView(int Index)
 }
 
 /// <summary>
+/// A set of resources the renderers bind to a program: the backend's identity (the index into the
+/// backend's sets) (docs/resource-layer.md). The set itself is the backend's (Vulkan: a descriptor
+/// set; Metal: the program's argument table).
+/// </summary>
+public readonly record struct GpuSet(int Index)
+{
+    /// <summary>The null set.</summary>
+    public static GpuSet Null => new(0);
+
+    public bool IsNull => Index == 0;
+}
+
+/// <summary>
 /// A buffer the renderers hold: the backend's identity (the index into the backend's buffers) and
 /// its size (docs/resource-layer.md). The buffer itself is the backend's.
 /// </summary>

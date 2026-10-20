@@ -17,7 +17,7 @@ into the backend's textures, with the description) and a `GpuBuffer` (an index i
 buffers, with the size). The Streamline (DLSS) path asks for the native image and view themselves:
 that path is NVIDIA's and stays Vulkan's.
 
-What is left: the descriptor sets and the seam.
+What is left: the seam.
 
 ## What the renderers would hold
 
@@ -31,7 +31,9 @@ What is left: the descriptor sets and the seam.
 | `PipelineLayout` | none | the reflection knows the sets, the slots and the stages |
 | `WriteDescriptorSet`, `DescriptorImageInfo`, `DescriptorType` | `GpuBinding` | a flat list per set |
 | `ImageLayout` | none | the backend's business |
-| `DescriptorSet` | the set number | the renderers bind with push descriptors (15 of 21 sites) |
+| `DescriptorSet` | `GpuSet` | the index into the backend's sets |
+| `DescriptorSetLayout` | `GpuSetLayout` | the slots of a set, in the engine's words |
+| `PipelineLayout` | none | the program carries it |
 | `AttachmentLoadOp` | `LoadOp` | |
 | `ClearValue` | `ClearColour`, a depth value | |
 | `IndexType` | `IndexKind` | |
@@ -40,6 +42,13 @@ What is left: the descriptor sets and the seam.
 
 The sampler's compare operation and the depth function were made neutral earlier
 ([renderer-native](renderer-native.md)).
+
+A set is described in the engine's words: `GpuSetLayout` says the slots it has (the binding
+number, what it holds, the stages that read it, how many entries, and whether its offset is given
+when the set is bound) and whether the renderers write it for every draw. The backend turns that
+into its own layout (Vulkan: a descriptor set layout; Metal: the program's argument table). The
+bindless table is the one set the engine does not describe slot by slot: it is a named set
+(`GpuSetLayout.Bindless`) whose seven runtime-sized arrays the backend owns.
 
 ## The binding list
 
@@ -90,6 +99,11 @@ frame while the frame graph stays the engine's (one description, not two).
 The interface carries the resources for now: the textures (made, viewed, released), the buffers
 (made, released) and the view. The rest of the context's operations come with the rest of the
 port, and the renderers' own fields change from the Vulkan class to the interface then.
+
+The renderers above `Gpu/` name no Vulkan object any more: the samplers, the views, the textures,
+the buffers and the sets are the engine's handles; the programs carry their layout; a draw states
+its resources as a flat `GpuBinding` list. What is left in the renderers is the GI's acceleration
+structure, which is Vulkan-only on purpose.
 
 The renderer-side cost, measured outside `Gpu/`: about 294 references to the binding vocabulary
 (`WriteDescriptorSet` 64, `DescriptorType` 53, `ImageLayout` 41, `DescriptorImageInfo` 38,

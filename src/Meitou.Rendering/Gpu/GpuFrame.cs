@@ -150,6 +150,9 @@ public sealed unsafe class GpuFrame : IDisposable
     }
 
     /// <summary>A descriptor set from this frame's pools (sets that cannot be pushed); freed when the slot comes round.</summary>
+    public DescriptorSet AllocateSet(GpuSetLayout layout) => AllocateSet(ctx.Shaders.VkLayout(layout));
+
+    /// <summary>As <see cref="AllocateSet(GpuSetLayout)"/>, with the backend's own layout.</summary>
     public DescriptorSet AllocateSet(DescriptorSetLayout layout)
     {
         RenderJobs.AssertNotInJob();

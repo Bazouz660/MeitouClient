@@ -97,10 +97,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         // The native programs (docs/renderer-native.md 7.1, step O), all made here so a draw never compiles.
         nativeFrame = new NativeFrame(gpu);
         uniformAlign = Math.Max(gpu.Device.Limits.MinUniformBufferOffsetAlignment, 16);
-        constantsLayout = gpu.Shaders.CreateSetLayout(
-            [new Silk.NET.Vulkan.DescriptorSetLayoutBinding(0, Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic, 1,
-                Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit)], 0);
-        Silk.NET.Vulkan.DescriptorSetLayout[] sets = [nativeFrame.SetLayout, gpu.Bindless.Layout, constantsLayout];
+        constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
+        GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         patchColour = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), "terrain");
         patchDepth = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain depth");
         patchPrepass = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), "terrain prepass");
@@ -401,7 +399,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     // group: its pipeline, buffers and draw, kept per mesh while the vertex-array stamp holds).
 
     readonly NativeFrame nativeFrame;
-    readonly Silk.NET.Vulkan.DescriptorSetLayout constantsLayout;
+    readonly GpuSetLayout constantsLayout;
     readonly TerrainProgram patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
     readonly ulong uniformAlign;
     readonly uint standIn2D, standInArray, standInUInt;
@@ -422,7 +420,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public readonly int Own;
         VertexLayout? last;
 
-        public TerrainProgram(GpuContext ctx, Silk.NET.Vulkan.DescriptorSetLayout[] sets, string vertex, string fragment, string name)
+        public TerrainProgram(GpuContext ctx, GpuSetLayout[] sets, string vertex, string fragment, string name)
         {
             this.ctx = ctx;
             P = ctx.Shaders.Native(vertex, fragment, name, sets, NativeShaders.PushBytes);
@@ -473,9 +471,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     TerrainConstants constants, written;
     long writtenFrame = -1;
     Transient constantsSlice;
-    readonly Dictionary<ulong, Silk.NET.Vulkan.DescriptorSet> constantSets = [];
+    readonly Dictionary<ulong, GpuSet> constantSets = [];
     ulong lastSetKey;
-    Silk.NET.Vulkan.DescriptorSet lastSet;
+    GpuSet lastSet;
     Vector4 lastRegion;
     Vector2 lastCellGrid;
 
@@ -564,7 +562,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <summary>Once per segment, in Prepare (wave 4): <see cref="constants"/> into the frame's constants (again only when it changed within the
     /// frame), and the set and dynamic offset the segment's job binds as set 2.</summary>
-    (Silk.NET.Vulkan.DescriptorSet Set, uint Offset) PrepareConstantsBinding()
+    (GpuSet Set, uint Offset) PrepareConstantsBinding()
     {
         var f = gpu.Frame;
         if (writtenFrame != f.Number || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in constants))
@@ -575,7 +573,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             f.Stats.ConstantBytes += sizeof(TerrainConstants);
         }
         ulong key = (ulong)constantsSlice.Handle.Index;
-        if (key != lastSetKey || lastSet.Handle == 0)
+        if (key != lastSetKey || lastSet.IsNull)
         {
             if (!constantSets.TryGetValue(key, out var made)) constantSets[key] = made = ConstantSet(constantsSlice.Handle);
             (lastSetKey, lastSet) = (key, made);
@@ -583,18 +581,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         return (lastSet, (uint)constantsSlice.Offset);
     }
 
-    Silk.NET.Vulkan.DescriptorSet ConstantSet(GpuBuffer buffer)
-    {
-        var set = gpu.AllocatePersistentSet(constantsLayout);
-        var info = new Silk.NET.Vulkan.DescriptorBufferInfo(gpu.Device.BufferAt(buffer.Index), 0, (ulong)sizeof(TerrainConstants));
-        var write = new Silk.NET.Vulkan.WriteDescriptorSet
-        {
-            SType = Silk.NET.Vulkan.StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1,
-            DescriptorType = Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic, PBufferInfo = &info,
-        };
-        gpu.Device.Vk.UpdateDescriptorSets(gpu.Device.Device, 1, &write, 0, null);
-        return set;
-    }
+    GpuSet ConstantSet(GpuBuffer buffer) => gpu.AllocateConstantSet(constantsLayout, buffer, (ulong)sizeof(TerrainConstants));
 
     // ---- the terrain patches ----
 
@@ -664,7 +651,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         var r = ResolvePatches(p, state, targets, label);
         var job = patchJobs.Rent();
         job.Owner = this;
-        (job.Targets, job.State, job.Layout, job.Pipeline, job.Vertex, job.Elements) = (targets, state, p.Layout, r.Pipeline, r.Vertex, r.Elements);
+        (job.Targets, job.State, job.Program, job.Pipeline, job.Vertex, job.Elements) = (targets, state, p.P, r.Pipeline, r.Vertex, r.Elements);
         var view = View();
         job.Frame = nativeFrame.Prepare(in view);
         (job.ConstantSet, job.ConstantOffset) = PrepareConstantsBinding();
@@ -682,11 +669,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public GraphicsPipeline Pipeline = null!;
         public GpuBufferBinding Vertex, Elements;
         public FrameBinding Frame;
-        public Silk.NET.Vulkan.DescriptorSet ConstantSet;
+        public GpuSet ConstantSet;
         public uint ConstantOffset;
         public PatchDraw[] Draws = new PatchDraw[256];
         public int Count;
@@ -695,19 +682,17 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public override void Record(CommandList cmd)
         {
             State.Record(cmd, Targets);
-            NativeFrame.Record(cmd, Layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             uint offset = ConstantOffset;
-            cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
+            cmd.BindSets(Program, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             cmd.BindPipeline(Pipeline);
             cmd.BindVertexBuffers(0, new ReadOnlySpan<GpuBufferBinding>(in Vertex));
             cmd.BindIndexBuffer(Elements, IndexKind.U32);
-            var layout = Layout;
-            const Silk.NET.Vulkan.ShaderStageFlags stages = Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit;
             var (counts, firsts) = (Owner.indexCounts, Owner.firstIndices);
             for (int i = 0; i < Count; i++)
             {
                 ref readonly var d = ref Draws[i];
-                cmd.PushConstants(layout, stages, in d.Push);
+                cmd.PushConstants(Program, GpuStage.Vertex | GpuStage.Fragment, in d.Push);
                 cmd.DrawIndexed((uint)counts[d.Part], 1, (uint)firsts[d.Part]);
             }
         }
@@ -1002,7 +987,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             Ccw = FrontFaceDirection.Ccw, Cw = FrontFaceDirection.CW,
         };
         var job = meshJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Ccw, job.Count) = (this, targets, state, p.Layout, s.Ccw, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Ccw, job.Count) = (this, targets, state, p.P, s.Ccw, 0);
         var view = View();
         job.Frame = nativeFrame.Prepare(in view);
         (job.ConstantSet, job.ConstantOffset) = PrepareConstantsBinding();
@@ -1032,10 +1017,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public ShaderProgram Program = null!;
         public FrontFaceDirection Ccw;
         public FrameBinding Frame;
-        public Silk.NET.Vulkan.DescriptorSet ConstantSet;
+        public GpuSet ConstantSet;
         public uint ConstantOffset;
         public GpuBuffer Rows;
         public ulong RowsOffset;
@@ -1057,9 +1042,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             cmd.SetRaster(CullMode.Back, Ccw);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, Layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             uint offset = ConstantOffset;
-            cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
+            cmd.BindSets(Program, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             // The placement's rows at locations the meshes' vertex arrays leave free (their other programs do not read them).
             Span<GpuBufferBinding> bindings = stackalloc GpuBufferBinding[4];
             for (int a = 0; a < 4; a++) bindings[a] = new GpuBufferBinding(Rows, RowsOffset + (ulong)(16 * a));
@@ -1181,7 +1166,5 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         gpu.Bindless.Free(BindlessKind.Texture2DArray, standInArray);
         gpu.Bindless.Free(BindlessKind.UTexture2D, standInUInt);
         nativeFrame.Dispose();
-        var (vk, device, layout) = (gpu.Device.Vk, gpu.Device.Device, constantsLayout);
-        gpu.Device.Frames.DeferDelete(() => vk.DestroyDescriptorSetLayout(device, layout, null));
     }
 }
