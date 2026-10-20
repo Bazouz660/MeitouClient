@@ -658,11 +658,11 @@ public sealed unsafe class CommandList : IGpuCommandList
         return (stages, flags, write);
     }
 
-    /// <summary>Writes a timestamp into the frame's query arena slot.</summary>
-    public void Timestamp(QueryArena arena, in QuerySlot slot, GpuStage stage = GpuStage.All)
+    /// <summary>Writes a timestamp into the frame's query arena slot (no-op on the backend's own arena without a pool behind it).</summary>
+    public void Timestamp(IGpuTimestamps arena, in QuerySlot slot, GpuStage stage = GpuStage.All)
     {
-        if (!slot.IsValid) return;
-        vk.CmdWriteTimestamp2(Handle, VkStageFlags2(stage), arena.Pool(in slot), slot.Index);
+        if (!slot.IsValid || arena is not QueryArena pools) return;
+        vk.CmdWriteTimestamp2(Handle, VkStageFlags2(stage), pools.Pool(in slot), slot.Index);
     }
 
     /// <summary>As <see cref="Timestamp(QueryArena, in QuerySlot, GpuStage)"/>, with the backend's own stage (the pipe's ends).</summary>

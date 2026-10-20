@@ -22,6 +22,7 @@
     <InternalsVisibleTo Include="meitou-viewer" />
     <InternalsVisibleTo Include="meitou" />
     <InternalsVisibleTo Include="Meitou.Tests" />
+    <InternalsVisibleTo Include="Meitou.Metal" />
   </ItemGroup>
 
 </Project>

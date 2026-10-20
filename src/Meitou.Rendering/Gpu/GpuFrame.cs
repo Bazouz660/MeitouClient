@@ -113,6 +113,8 @@ public sealed unsafe class GpuFrame : IDisposable, IGpuFrame
     public QueryArena Timestamps { get; }
     public ResourceStates States { get; }
     public GpuStats Stats { get; }
+    /// <summary>The frame's timestamps as the seam's interface (<see cref="IGpuFrame.Timestamps"/>).</summary>
+    IGpuTimestamps IGpuFrame.Timestamps => Timestamps;
     /// <summary>The command buffer the host submits ahead of this frame's own (uploads).</summary>
     internal CommandBuffer UploadCommands { get; private set; }
     /// <summary>

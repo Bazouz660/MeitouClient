@@ -83,7 +83,7 @@ Two sharp edges:
 
 - `src/Meitou.Metal/` - the backend (macOS only, outside the solution so the Windows build never
   sees it): `MslTranslator` (SPIR-V -> MSL), `MetalUniformBlock` (the engine's uniform block on
-  the CPU), `MetalSky` (the sky), `MetalDisplay` (the window, the layer, the present).
+  the CPU), `MetalSky` (the spike's hand-driven sky), `MetalDisplay` (the window, the layer, the present).
 - `src/Meitou.Metal.Host/` - the host: the sky in a window of its own.
 - The game: `--renderer metal` (macOS only). The game boots without the Vulkan renderer, the
   simulation runs, and the sky is drawn by Metal. The sky is the game's **simple** sky (the
@@ -91,6 +91,50 @@ Two sharp edges:
 
 The game reaches the Metal backend through a conditional project reference (the `MEITOU_METAL`
 constant), so the Windows build compiles the game without any of it.
+
+## The device behind the seam
+
+`MetalContext` implements `IGpuContext` (docs/resource-layer.md), sized to the sky pass: every
+operation a later pass needs first throws (`InvalidOperationException` naming it). With it:
+
+- `MetalFrame` (the `IGpuFrame`): a slot ring of three (the layer's drawable depth) - one drawable,
+  one command buffer and one constants ring per slot (a shared `MTLBuffer`, the CPU bump-allocates
+  slices; unified memory, so no staging split for the constants).
+- `MetalCommandList` (the `IGpuCommandList`): renderings (one colour + one depth attachment), the
+  dynamic draw state (Metal's encoder state maps one to one: viewport, scissor, cull, winding,
+  depth test/write/compare, depth bias, fill), `BindPipeline`, `BindProgramResources` and
+  `BindSets`, labels, `Draw`, mip generation. **The stages have their own binding tables**: a
+  set's slots bind straight onto the encoder at the SPIR-V binding numbers (the MSL is compiled
+  with `MslEnableDecorationBinding`), so no argument buffer exists yet and none is needed - a
+  texture at [[texture(n)]], its sampler at [[sampler(n)]], a block at [[buffer(n)]] per stage.
+- The services: `MetalShaders` (the engine's compiler, fragment bindings at 0; the MSL per stage),
+  `MetalPipelines` (an `MTLRenderPipelineState` per description; depth clip mode is the *encoder's*
+  on Metal, set when the pipeline binds), `MetalSamplers` (Metal's sampler has no LOD bias; the
+  description's is applied at bind, as clamps), `MetalUploads` (a batch is its own command buffer:
+  blit copies from a shared staging ring, committed in order before the frame's own).
+- Resources: textures (`MTLTextureDescriptor`, shared storage - Apple silicon's unified memory is
+  the device-local memory), views (`NewTextureView`), buffers (shared `MTLBuffer`s), persistent
+  sets (the layout and bindings recorded; the command list binds them out with dynamic offsets).
+- The frame loop and the present are the context's (as `GpuContext.BeginFrame`/`EndFrame` are the
+  Vulkan display's): the renderers draw into an offscreen Rgba8 backbuffer (the engine's format, as
+  `VulkanPresenter` has), and the present is a **flipped copy into the drawable** - Metal's blit
+  can do neither the flip nor the format, so a five-line MSL pass samples the backbuffer. The
+  host's pass model (`BeginHostPass`) mirrors `GpuContext`'s.
+- The frame's timestamps are the seam's `IGpuTimestamps` now (the Vulkan `QueryArena` implements
+  it); Metal's hands out slots and reads nothing - Metal's GPU counters are a sampling-point model
+  of their own (MTLCounterSampleBuffer, later if wanted).
+- The backend constructs the engine's handles, so `Meitou.Rendering` grants `InternalsVisibleTo`
+  `Meitou.Metal` (as it does to the viewer, the game and the tests).
+
+What the sky-sized scope does not have yet (each member throws): vertex and index buffers,
+compute, the bindless table, indirect draws, dispatches, buffer/texture copies, in-pass clears,
+swizzled views, push constants, secondary command lists. One known gap to design when the terrain
+comes: the vertex stage's [[buffer(n)]] space is shared between set 0's named blocks and set 1's
+default block - a program with both needs an index remap (MoltenVK's own table).
+
+The host's `--shot out.bmp` reads the backbuffer back (a blit into a host buffer; a texture is not
+CPU-mappable even in shared storage - `MetalContext.Readback`) and writes a BMP, so the sky's
+picture is checkable without a screen shot: night is near black, dawn warm, noon bright.
 
 ## What the passes state
 
@@ -142,7 +186,8 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The context's interface (the resources and the services) | a backend can be another one |
 | Done | The frame's interface (`IGpuFrame`), the pipelines (`GpuPipeline`) and the programs (`GpuProgram`: the index and the engine's compile result — sources, SPIR-V, reflection, sets) as the engine's handles | the frame, the pipelines and the programs are backend-neutral; the Vulkan objects live in the backend's tables (the device's, the pipeline library's, the shader library's) |
 | Done | The sky path on the seam: the recording model (`BeginGuest`/`BeginNative`/`Interleave`), the device facts (`IsIntegrated`, `UniformBufferAlign`), the services behind interfaces (`IGpuShaders`/`IGpuPipelines`/`IGpuSamplers`/`IGpuUploads`), the frame's constants ring and timestamps (`WriteConstants`, `Timestamps`), the persistent sets (`CreateSet`) — and `SkyRenderer` with its helpers and the legacy program's flush holding no Vulkan type | the sky pass runs on `IGpuContext` alone; a second backend implements the seam and the sky draws |
-| Next | The Metal device: a context, a command list and the programs behind the seam ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The Metal device: `MetalContext`, `MetalFrame`, `MetalCommandList` and the four services behind the seam ([resource-layer](resource-layer.md)), sized to the sky pass (everything else throws); the offscreen backbuffer and the flipped present pass; the host's `--shot` readback | a Metal device that can run any pass whose vocabulary the command list has; the sky runs on it (the host's window, the frame loop, the real `SkyRenderer`) |
+| Next | The game's `--renderer metal` on the device: the real `WorldFrame` sky (the host pass the scene's way), the two-window Vulkan/Metal comparison and the pixel diff (vs Vulkan's own noise floor) | the Metal check, pass by pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
@@ -174,9 +219,8 @@ the baseline, not one.
 
 ## Open questions
 
-- The shape of the seam: backend-neutral handle types, a backend interface, or a parallel Metal
-  implementation of the neutral API.
 - Per-entry sampler state: the table's entries carry their own sampler, so the table needs a
   sampler array as well as a texture array.
-- Whether a Metal path is worth a second renderer at all: the macOS Vulkan path works, and the
-  measured cost of MoltenVK is concentrated in the FSR compute passes, not in the frame.
+- The vertex stage's buffer index space: set 0's named blocks and set 1's default block share the
+  MSL's [[buffer(n)]] table (see "The device behind the seam"); a program with both needs a remap.
+- Metal's GPU timestamps (MTLCounterSampleBuffer), when the pass timings matter on Metal.

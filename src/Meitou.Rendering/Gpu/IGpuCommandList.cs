@@ -78,7 +78,7 @@ public interface IGpuCommandList
     void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged;
 
     /// <summary>Writes a timestamp into a query slot (the frame's timings).</summary>
-    void Timestamp(QueryArena arena, in QuerySlot slot, GpuStage stage = GpuStage.All);
+    void Timestamp(IGpuTimestamps arena, in QuerySlot slot, GpuStage stage = GpuStage.All);
 
     // ---- draws ----
 

@@ -30,5 +30,5 @@ public interface IGpuFrame
     Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16);
 
     /// <summary>The frame's timestamp queries (a pass's two stamps, read when the frame's slot comes round).</summary>
-    QueryArena Timestamps { get; }
+    IGpuTimestamps Timestamps { get; }
 }
