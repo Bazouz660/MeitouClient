@@ -244,7 +244,7 @@ public sealed unsafe partial class FoliageRenderer
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
         public GpuPipeline? Pipeline;
         public GpuBufferBinding[] Vertices = [];

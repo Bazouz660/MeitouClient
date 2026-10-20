@@ -314,29 +314,29 @@ public sealed unsafe class CommandList : IGpuCommandList
     }
 
     /// <summary>Binds sets to a program (the layout comes from the program).</summary>
-    public void BindSets(ShaderProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics)
+    public void BindSets(GpuProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         Span<DescriptorSet> resolved = stackalloc DescriptorSet[sets.Length];
         for (int i = 0; i < sets.Length; i++) resolved[i] = device.SetAt(sets[i].Index);
         fixed (DescriptorSet* ps = resolved)
         fixed (uint* po = dynamicOffsets)
-            cmdBindDescriptorSets(Handle, VkBindPoint(point), program.Layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
+            cmdBindDescriptorSets(Handle, VkBindPoint(point), ctx.Shaders.Backend(program).Layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
     }
 
     static PipelineBindPoint VkBindPoint(GpuBindPoint point) => point == GpuBindPoint.Compute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
 
     /// <summary>Binds the bindless table to a program (the table is the context's).</summary>
-    public void BindBindlessTable(ShaderProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
+    public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         var table = new GpuSet(ctx.Bindless.SetIndex);
         BindSets(program, set, new ReadOnlySpan<GpuSet>(in table), [], point);
     }
 
     /// <summary>Pushes descriptors of set <paramref name="set"/> (legacy layout and compute; VK_KHR_push_descriptor).</summary>
-    public void PushDescriptors(ShaderProgram program, uint set, ReadOnlySpan<WriteDescriptorSet> writes, GpuBindPoint point = GpuBindPoint.Graphics)
+    public void PushDescriptors(GpuProgram program, uint set, ReadOnlySpan<WriteDescriptorSet> writes, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         if (push is null) throw new InvalidOperationException("VK_KHR_push_descriptor is not available");
-        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, VkBindPoint(point), program.Layout, set, (uint)writes.Length, pw);
+        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, VkBindPoint(point), ctx.Shaders.Backend(program).Layout, set, (uint)writes.Length, pw);
         Stats.DescriptorPushes++;
     }
 
@@ -346,7 +346,7 @@ public sealed unsafe class CommandList : IGpuCommandList
     /// type are the backend's business. The Vulkan path writes one descriptor per slot: pushed when the
     /// device can push, written into a set of the frame's pools otherwise.
     /// </summary>
-    public void BindProgramResources(ShaderProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
+    public void BindProgramResources(GpuProgram program, uint set, ReadOnlySpan<GpuBinding> bindings)
     {
         var images = stackalloc DescriptorImageInfo[bindings.Length];
         var buffers = stackalloc DescriptorBufferInfo[bindings.Length];
@@ -375,15 +375,16 @@ public sealed unsafe class CommandList : IGpuCommandList
                     break;
             }
         }
-        var point = program.ComputeCode is not null ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
+        var vp = ctx.Shaders.Backend(program);
+        var point = vp.ComputeCode is not null ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
         if (push is not null)
         {
-            push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)bindings.Length, writes);
+            push.CmdPushDescriptorSet(Handle, point, vp.Layout, set, (uint)bindings.Length, writes);
             Stats.DescriptorPushes++;
             return;
         }
         // No push descriptors: the set is written and bound (the frame's pools free it when the slot comes round).
-        var allocated = ctx.Frame.AllocateSet(program.SetLayouts[set]);
+        var allocated = ctx.Frame.AllocateSet(vp.SetLayouts[set]);
         var allocatedSet = new GpuSet(device.AddSet(allocated));
         for (int i = 0; i < bindings.Length; i++) writes[i].DstSet = allocated;
         device.Vk.UpdateDescriptorSets(device.Device, (uint)bindings.Length, writes, 0, null);
@@ -391,9 +392,9 @@ public sealed unsafe class CommandList : IGpuCommandList
     }
 
     /// <summary>Pushes a block of constants to a program (the layout comes from the program).</summary>
-    public void PushConstants<T>(ShaderProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
+    public void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
-        fixed (T* p = &value) cmdPushConstants(Handle, program.Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
+        fixed (T* p = &value) cmdPushConstants(Handle, ctx.Shaders.Backend(program).Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
     }
 
     static PipelineStageFlags2 VkStageFlags2(GpuStage stages)

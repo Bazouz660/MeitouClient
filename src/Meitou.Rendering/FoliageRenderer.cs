@@ -1914,7 +1914,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
         PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
@@ -1923,7 +1923,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     int segmentCount;
 
     /// <summary>A stable number for a segment's pipeline state, so a mesh compares one int per draw.</summary>
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1971,7 +1971,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     (SampledTexture Texture, uint Index)? nearDepthIndex;
 
     /// <summary>Pushes <paramref name="value"/> when its bytes differ from what the segment pushed last (<paramref name="last"/>).</summary>
-    static void Push<T>(IGpuCommandList cmd, ShaderProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void Push<T>(IGpuCommandList cmd, GpuProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
         cmd.PushConstants(p, GpuStage.Vertex | GpuStage.Fragment, in value);
@@ -2187,7 +2187,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
@@ -2202,7 +2202,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
         public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Program.Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
@@ -2233,7 +2233,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary><see cref="Push{T}"/> by layout (a job keeps the layout, not the program).</summary>
-    static void PushTo<T>(IGpuCommandList cmd, ShaderProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void PushTo<T>(IGpuCommandList cmd, GpuProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
         cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, in value);
@@ -2381,7 +2381,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
         public GpuPipeline Pipeline = default;
         public GpuBufferBinding[] Vertices = [];
@@ -2391,7 +2391,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
         public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Program.Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);

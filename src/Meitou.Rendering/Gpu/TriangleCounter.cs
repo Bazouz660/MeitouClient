@@ -22,7 +22,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     readonly DeviceMemory memory;
     readonly ulong address;
     readonly ReadbackBuffer readback;
-    readonly Dictionary<ShaderProgram, ShaderModule> modules = [];
+    readonly Dictionary<GpuProgram, ShaderModule> modules = [];
     readonly List<string> skipped = [];
     readonly List<string> counted = [];
 
@@ -88,20 +88,20 @@ public sealed unsafe class TriangleCounter : IDisposable
     }
 
     // Called from the recording threads: the modules are made under a lock (once per program).
-    ShaderModule ModuleFor(ShaderProgram program)
+    ShaderModule ModuleFor(GpuProgram program)
     {
         lock (modules) return ModuleForLocked(program);
     }
 
-    ShaderModule ModuleForLocked(ShaderProgram program)
+    ShaderModule ModuleForLocked(GpuProgram program)
     {
         if (modules.TryGetValue(program, out var module)) return module;
         int category = TriangleBins.CategoryOf(program.Name);
-        if (category >= 0 && program.FragmentSource is { } source)
+        if (category >= 0 && ctx.Shaders.Backend(program).FragmentSource is { } source)
         {
             if (TriangleBins.Instrument(source, category, address) is { } text)
             {
-                module = program.CreateModule(ctx.Shaders.Compiler.CompileNative(text, fragment: true));
+                module = ctx.Shaders.Backend(program).CreateModule(ctx.Shaders.Compiler.CompileNative(text, fragment: true));
                 counted.Add(TriangleBins.EarlyTests(source, category) ? program.Name : program.Name + " (late depth test)");
             }
             else skipped.Add(program.Name);

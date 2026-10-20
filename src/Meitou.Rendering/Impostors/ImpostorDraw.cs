@@ -37,7 +37,7 @@ internal sealed class ImpostorDraw : IDisposable
     }
 
     /// <summary>Every native program's layout is compatible (the shared push range and sets).</summary>
-    public ShaderProgram Program => plain.P;
+    public GpuProgram Program => plain.P;
 
     /// <summary>The six-entry index buffer (0 to 5).</summary>
     public GpuBufferBinding Quad => new(quad.Handle, 0, quad.Size);

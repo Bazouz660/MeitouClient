@@ -28,7 +28,7 @@ public sealed unsafe partial class PostProcess
     /// <summary>The exposure kernel alone.</summary>
     public bool MergeExposure { get; set; } = true;
 
-    ShaderProgram? velocityProgram, exposureProgram;
+    GpuProgram? velocityProgram, exposureProgram;
     GpuComputePipeline? velocityPipeline, exposurePipeline;
     DeviceBuffer? exposureState;
     bool exposureStateZeroed;
@@ -63,7 +63,7 @@ public sealed unsafe partial class PostProcess
         if (velocityProgram is null)
         {
             velocityProgram = Gpu.Shaders.Compute(MergedShaders.Velocity, "post velocity merged");
-            velocityPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(velocityProgram, "post velocity merged"));
+            velocityPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(velocityProgram!.Value, "post velocity merged"));
         }
         float tanY = MathF.Tan(fovNow * 0.5f);
         var r = viewRotation;
@@ -91,9 +91,9 @@ public sealed unsafe partial class PostProcess
         bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Order();
         cmd.BindPipeline(velocityPipeline!.Value);
-        cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
+        cmd.BindProgramResources(velocityProgram!.Value, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
         var size = new Vector2(width, height);
-        cmd.PushConstants(velocityProgram, GpuStage.Compute, in size);
+        cmd.PushConstants(velocityProgram!.Value, GpuStage.Compute, in size);
         cmd.Dispatch((uint)((width + 15) / 16), (uint)((height + 15) / 16));
         cmd.Order();
     }
@@ -113,7 +113,7 @@ public sealed unsafe partial class PostProcess
         if (exposureProgram is null)
         {
             exposureProgram = Gpu.Shaders.Compute(MergedShaders.Exposure, "post exposure merged");
-            exposurePipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(exposureProgram, "post exposure merged"));
+            exposurePipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(exposureProgram!.Value, "post exposure merged"));
         }
         exposureState ??= DeviceBuffer.Create(Gpu, 16 + 256 * 4, BufferUse.Storage | BufferUse.TransferDst, "post exposure state");
         var cmd = Segment();
@@ -130,9 +130,9 @@ public sealed unsafe partial class PostProcess
         bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Order();
         cmd.BindPipeline(exposurePipeline!.Value);
-        cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
+        cmd.BindProgramResources(exposureProgram!.Value, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
-        cmd.PushConstants(exposureProgram, GpuStage.Compute, in push);
+        cmd.PushConstants(exposureProgram!.Value, GpuStage.Compute, in push);
         cmd.Dispatch(16, 16);
         cmd.Order();
     }
@@ -140,8 +140,8 @@ public sealed unsafe partial class PostProcess
     void DisposeMerged()
     {
         exposureState?.Dispose();
-        velocityProgram?.Dispose();
-        exposureProgram?.Dispose();
+        if (velocityProgram is { } vp) Gpu.Shaders.Dispose(vp);
+        if (exposureProgram is { } ep) Gpu.Shaders.Dispose(ep);
     }
 }
 

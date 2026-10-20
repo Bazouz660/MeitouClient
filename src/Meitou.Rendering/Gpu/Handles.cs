@@ -1,3 +1,4 @@
+using Meitou.Rendering.Gpu.Shaders;
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>What a view covers (the engine's words; the backend maps it to its own).</summary>
@@ -42,6 +43,60 @@ public readonly record struct GpuView(int Index)
 }
 
 /// <summary>
+/// What a program is, besides its backend's compiled objects (docs/resource-layer.md): the engine's own
+/// compile result. The GLSL it came from, the SPIR-V the engine's compiler made (the backend's input:
+/// Vulkan's modules and layouts come from it, Metal's MSL is translated from it), the SPIR-V's reflection
+/// and the program's sets in the engine's words. Created once at compile; never mutated afterwards.
+/// </summary>
+public sealed class ProgramInfo
+{
+    public int Index { get; init; }
+    public required string Name { get; init; }
+    public ShaderModel Model { get; init; }
+    public byte[]? VertexCode { get; init; }
+    public byte[]? FragmentCode { get; init; }
+    public byte[]? ComputeCode { get; init; }
+    /// <summary>The legacy compile result (reflection of both stages, default blocks), null for other models.</summary>
+    public CompiledProgram? Compiled { get; init; }
+    public Shaders.ShaderReflection? VertexReflection { get; init; }
+    public Shaders.ShaderReflection? FragmentReflection { get; init; }
+    public Shaders.ShaderReflection? ComputeReflection { get; init; }
+    /// <summary>The program's sets in the engine's words (the layout the backend made).</summary>
+    public GpuSetLayout[] NeutralSets { get; init; } = [];
+    public uint PushConstantBytes { get; init; }
+    /// <summary>The GLSL of the fragment stage as compiled, kept for the native model only (the bench's instrumented variant is made from it).</summary>
+    public string? FragmentSource { get; internal set; }
+}
+
+/// <summary>
+/// A program the renderers hold: the backend's identity (the index into the backend's programs) and the
+/// engine's own compile result (<see cref="ProgramInfo"/>) (docs/resource-layer.md). What the backend made
+/// of it (Vulkan: the shader modules and the pipeline layout; Metal: the MSL libraries) is reached through
+/// the shader library.
+/// </summary>
+public readonly record struct GpuProgram(int Index, ProgramInfo Info)
+{
+    /// <summary>The null program (no info).</summary>
+    public static GpuProgram Null => default;
+
+    public bool IsNull => Info is null;
+
+    // The engine's own surface of the program (no backend object behind these).
+    public string Name => Info.Name;
+    public ShaderModel Model => Info.Model;
+    public byte[]? VertexCode => Info.VertexCode;
+    public byte[]? FragmentCode => Info.FragmentCode;
+    public byte[]? ComputeCode => Info.ComputeCode;
+    public CompiledProgram? Compiled => Info.Compiled;
+    public Shaders.ShaderReflection? VertexReflection => Info.VertexReflection;
+    public Shaders.ShaderReflection? FragmentReflection => Info.FragmentReflection;
+    public Shaders.ShaderReflection? ComputeReflection => Info.ComputeReflection;
+    public GpuSetLayout[] NeutralSets => Info.NeutralSets;
+    public uint PushConstantBytes => Info.PushConstantBytes;
+    public string? FragmentSource => Info.FragmentSource;
+}
+
+/// <summary>
 /// A graphics pipeline the renderers hold: the description it was made from (docs/resource-layer.md)
 /// — it is the pipeline's identity (the backend caches by it). The pipeline state is the backend's
 /// (Vulkan: a VkPipeline; Metal: an MTLRenderPipelineState).
@@ -51,7 +106,7 @@ public readonly record struct GpuPipeline(GraphicsPipelineDesc Desc)
     /// <summary>The null pipeline (no program).</summary>
     public static GpuPipeline Null => default;
 
-    public bool IsNull => Desc.Program is null;
+    public bool IsNull => Desc.Program.IsNull;
 }
 
 /// <summary>
@@ -62,7 +117,7 @@ public readonly record struct GpuComputePipeline(ComputePipelineDesc Desc)
     /// <summary>The null pipeline (no program).</summary>
     public static GpuComputePipeline Null => default;
 
-    public bool IsNull => Desc.Program is null;
+    public bool IsNull => Desc.Program.IsNull;
 }
 
 /// <summary>The part of a buffer a copy covers (the source's offset, the destination's, and the size).</summary>

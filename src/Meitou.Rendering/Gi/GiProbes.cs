@@ -30,10 +30,10 @@ internal sealed unsafe class GiProbes : IDisposable
         cascade == 0 && interiorGrid ? (32, 24, Grid[0].RayLength) : Grid[cascade];
 
     readonly GpuContext ctx;
-    readonly ShaderProgram invalidateProgram;
+    readonly GpuProgram invalidateProgram;
     readonly GpuComputePipeline invalidatePipeline;
     // The trace and blend programs by the rays per probe (the workgroup size): the default, and the other one once the bench's gi-rays switch asks for it.
-    readonly Dictionary<int, (ShaderProgram Trace, ShaderProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline)> variants = [];
+    readonly Dictionary<int, (GpuProgram Trace, GpuProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline)> variants = [];
     readonly GpuTexture irradiance, distance;
     readonly GpuTexture[] bases;
     readonly DeviceBuffer rays, state;
@@ -203,7 +203,7 @@ internal sealed unsafe class GiProbes : IDisposable
     }
 
     /// <summary>The trace and blend for <paramref name="rays"/> rays a probe (the workgroup size), made on first use.</summary>
-    (ShaderProgram Trace, ShaderProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline) Variant(int rays)
+    (GpuProgram Trace, GpuProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline) Variant(int rays)
     {
         if (variants.TryGetValue(rays, out var made)) return made;
         var trace = ctx.Shaders.Compute(GiShaders.ProbeTrace(rays), "gi probe trace " + rays,
@@ -458,7 +458,7 @@ internal sealed unsafe class GiProbes : IDisposable
         foreach (var l in lists) ctx.Device.DeferFree(l);
         rays.Dispose();
         state.Dispose();
-        foreach (var v in variants.Values) { v.Trace.Dispose(); v.Blend.Dispose(); }
-        invalidateProgram.Dispose();
+        foreach (var v in variants.Values) { ctx.Shaders.Dispose(v.Trace); ctx.Shaders.Dispose(v.Blend); }
+        ctx.Shaders.Dispose(invalidateProgram);
     }
 }

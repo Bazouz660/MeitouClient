@@ -66,16 +66,16 @@ public interface IGpuCommandList
     void BindIndexBuffer(GpuBufferBinding binding, IndexKind type);
 
     /// <summary>Binds a program's resources: the slots of a set and what each holds (docs/resource-layer.md).</summary>
-    void BindProgramResources(ShaderProgram program, uint set, ReadOnlySpan<GpuBinding> bindings);
+    void BindProgramResources(GpuProgram program, uint set, ReadOnlySpan<GpuBinding> bindings);
 
     /// <summary>Binds sets to a program (the layout comes from the program).</summary>
-    void BindSets(ShaderProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics);
+    void BindSets(GpuProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics);
 
     /// <summary>Binds the bindless table to a program.</summary>
-    void BindBindlessTable(ShaderProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics);
+    void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics);
 
     /// <summary>Pushes a block of constants to a program (the layout comes from the program).</summary>
-    void PushConstants<T>(ShaderProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged;
+    void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged;
 
     /// <summary>Writes a timestamp into a query slot (the frame's timings).</summary>
     void Timestamp(QueryArena arena, in QuerySlot slot, GpuStage stage = GpuStage.All);

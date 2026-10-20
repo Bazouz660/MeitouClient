@@ -69,7 +69,7 @@ public class BindlessTests
         ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, integer, 0));
 
-    static void Draw(GpuContext ctx, ShaderProgram program, InternalFormat format, GpuTexture target, ReadOnlySpan<uint> push)
+    static void Draw(GpuContext ctx, GpuProgram program, InternalFormat format, GpuTexture target, ReadOnlySpan<uint> push)
     {
         var frame = ctx.Frame;
         var cmd = frame.Commands;
@@ -104,7 +104,7 @@ public class BindlessTests
             using var wide = ctx.CreateTexture(new TextureDesc(InternalFormat.R16ui, 2, 1, Name: "wide"));
             using var signed = ctx.CreateTexture(new TextureDesc(InternalFormat.R16i, 2, 1, Name: "signed"));
             using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba32ui, 2, 1, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "integer target"));
-            using var program = ctx.Shaders.Native(FullScreen, IntegerFragment, "bindless integer", [GpuSetLayout.Bindless], 12);
+            var program = ctx.Shaders.Native(FullScreen, IntegerFragment, "bindless integer", [GpuSetLayout.Bindless], 12);
 
             // Reflection sees the runtime arrays the shader reads, with their element types.
             var used = program.FragmentReflection!.Samplers.ToDictionary(s => s.Name);
@@ -147,7 +147,7 @@ public class BindlessTests
             const int Frames = 7;
             var targets = Enumerable.Range(0, Frames).Select(i => ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"target {i}"))).ToArray();
-            using var program = ctx.Shaders.Native(FullScreen, ColourFragment, "bindless colour", [GpuSetLayout.Bindless], 4);
+            var program = ctx.Shaders.Native(FullScreen, ColourFragment, "bindless colour", [GpuSetLayout.Bindless], 4);
             var sampler = Nearest(ctx, integer: false);
             SampledTexture Of(int i) => new(sampler, sources[i].View());
             var expected = new int[Frames];

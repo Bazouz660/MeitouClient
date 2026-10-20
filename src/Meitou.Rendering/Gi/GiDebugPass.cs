@@ -15,7 +15,7 @@ namespace Meitou.Rendering.Gi;
 sealed unsafe class GiDebugPass : IDisposable
 {
     readonly GpuContext ctx;
-    readonly ShaderProgram program;
+    readonly GpuProgram program;
     readonly GpuComputePipeline pipeline;
     readonly GpuSampler sampler;
     GpuTexture? output;
@@ -102,6 +102,6 @@ sealed unsafe class GiDebugPass : IDisposable
     public void Dispose()
     {
         output?.Dispose();
-        program.Dispose();
+        ctx.Shaders.Dispose(program);
     }
 }

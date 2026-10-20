@@ -76,7 +76,7 @@ public sealed unsafe partial class PostProcess
         public Vector4 Grid, Range, Eye, Right, Up, Back, Tan, Air, AtmoParams, AtmoSimple, AtmoHaze, AtmoAltitude, AtmoFog, AtmoSun, SunLight, AtmoMaps;
     }
 
-    ShaderProgram? shaftScanProgram;
+    GpuProgram? shaftScanProgram;
     GpuComputePipeline? shaftScanPipeline;
 
     static T ReadGlobal<T>(FrameGlobals g, string name) where T : unmanaged
@@ -92,7 +92,7 @@ public sealed unsafe partial class PostProcess
         if (shaftScanProgram is null)
         {
             shaftScanProgram = Gpu.Shaders.Compute(LightShaftShaders.Scan, "post shafts scan");
-            shaftScanPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(shaftScanProgram, "post shafts scan"));
+            shaftScanPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(shaftScanProgram!.Value, "post shafts scan"));
         }
         var g = Gpu.Globals;
         var r = viewRotation;
@@ -117,7 +117,7 @@ public sealed unsafe partial class PostProcess
         bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
         cmd.Order();
         cmd.BindPipeline(shaftScanPipeline!.Value);
-        cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
+        cmd.BindProgramResources(shaftScanProgram!.Value, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
         cmd.Dispatch((uint)(((int)grid.X + 7) / 8), (uint)(((int)grid.Y + 7) / 8));
         cmd.Order();
     }
@@ -255,7 +255,7 @@ public sealed unsafe partial class PostProcess
         shaftInject?.P.Dispose();
         shaftIntegrate?.P.Dispose();
         shaftApply?.P.Dispose();
-        shaftScanProgram?.Dispose();
+        if (shaftScanProgram is { } scan) Gpu.Shaders.Dispose(scan);
         shaftScatterPass?.P.Dispose();
     }
 }

@@ -5,7 +5,7 @@ using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering.Gpu;
 
-/// <summary>The descriptor model a <see cref="ShaderProgram"/> follows (docs/renderer-native.md 3).</summary>
+/// <summary>The descriptor model a <see cref="GpuProgram"/> follows (docs/renderer-native.md 3).</summary>
 public enum ShaderModel
 {
     /// <summary>GL-shaped: loose uniforms in default blocks (set 1, dynamic offsets), blocks and samplers at glslang's bindings in set 0.
@@ -54,62 +54,51 @@ public static class SpirvPatch
 /// blocks moved to set 1) and VkGl's layout (set 0 pushed when it fits, set 1 dynamic uniform buffers). Compute programs: set 0 from the
 /// reflection (pushed when it fits) and a push-constant range. Native programs: the layout the caller's model gives.
 /// </summary>
-public sealed unsafe class ShaderProgram : IDisposable
+internal sealed unsafe class VulkanProgram : IDisposable
 {
     readonly VulkanDevice device;
     readonly DescriptorSetLayout[] ownedSetLayouts;
 
-    internal ShaderProgram(VulkanDevice device, string name, ShaderModel model, byte[]? vertexCode, byte[]? fragmentCode, byte[]? computeCode,
-        CompiledProgram? compiled, DescriptorSetLayout[] setLayouts, DescriptorSetLayout[] ownedSetLayouts, PipelineLayout layout,
-        bool pushDescriptors, uint pushConstantBytes, ShaderStageFlags pushConstantStages, GpuSetLayout[]? neutralSets = null)
+    internal VulkanProgram(VulkanDevice device, ProgramInfo info, DescriptorSetLayout[] setLayouts, DescriptorSetLayout[] ownedSetLayouts,
+        PipelineLayout layout, bool pushDescriptors, ShaderStageFlags pushConstantStages)
     {
         this.device = device;
-        Name = name;
-        Model = model;
-        VertexCode = vertexCode;
-        FragmentCode = fragmentCode;
-        ComputeCode = computeCode;
-        Compiled = compiled;
+        Info = info;
         SetLayouts = setLayouts;
-        NeutralSets = neutralSets ?? [];
         this.ownedSetLayouts = ownedSetLayouts;
         Layout = layout;
         PushDescriptors = pushDescriptors;
-        PushConstantBytes = pushConstantBytes;
         PushConstantStages = pushConstantStages;
-        if (vertexCode is not null) VertexModule = CreateModule(vertexCode);
-        if (fragmentCode is not null) FragmentModule = CreateModule(fragmentCode);
-        if (computeCode is not null) ComputeModule = CreateModule(computeCode);
-        VertexReflection = vertexCode is null ? null : compiled?.Vertex ?? SpirvReflection.Parse(vertexCode);
-        FragmentReflection = fragmentCode is null ? null : compiled?.Fragment ?? SpirvReflection.Parse(fragmentCode);
-        ComputeReflection = computeCode is null ? null : SpirvReflection.Parse(computeCode);
+        if (info.VertexCode is not null) VertexModule = CreateModule(info.VertexCode);
+        if (info.FragmentCode is not null) FragmentModule = CreateModule(info.FragmentCode);
+        if (info.ComputeCode is not null) ComputeModule = CreateModule(info.ComputeCode);
     }
 
-    public string Name { get; }
-    public ShaderModel Model { get; }
-    /// <summary>The exact bytes given to <c>vkCreateShaderModule</c>.</summary>
-    public byte[]? VertexCode { get; }
-    public byte[]? FragmentCode { get; }
-    public byte[]? ComputeCode { get; }
+    public ProgramInfo Info { get; }
+    public int Index => Info.Index;
+    public string Name => Info.Name;
+    public ShaderModel Model => Info.Model;
+    public byte[]? VertexCode => Info.VertexCode;
+    public byte[]? FragmentCode => Info.FragmentCode;
+    public byte[]? ComputeCode => Info.ComputeCode;
     public ShaderModule VertexModule { get; }
     public ShaderModule FragmentModule { get; }
     public ShaderModule ComputeModule { get; }
-    /// <summary>The legacy compile result (reflection of both stages, default blocks), null for other models.</summary>
-    public CompiledProgram? Compiled { get; }
-    public ShaderReflection? VertexReflection { get; }
-    public ShaderReflection? FragmentReflection { get; }
-    public ShaderReflection? ComputeReflection { get; }
+    public CompiledProgram? Compiled => Info.Compiled;
+    public ShaderReflection? VertexReflection => Info.VertexReflection;
+    public ShaderReflection? FragmentReflection => Info.FragmentReflection;
+    public ShaderReflection? ComputeReflection => Info.ComputeReflection;
     public DescriptorSetLayout[] SetLayouts { get; }
     /// <summary>The program's sets in the engine's words (the layout the backend made).</summary>
-    public GpuSetLayout[] NeutralSets { get; }
+    public GpuSetLayout[] NeutralSets => Info.NeutralSets;
     public PipelineLayout Layout { get; }
     /// <summary>Set 0 is a push-descriptor set.</summary>
     public bool PushDescriptors { get; }
-    public uint PushConstantBytes { get; }
+    public uint PushConstantBytes => Info.PushConstantBytes;
     public ShaderStageFlags PushConstantStages { get; }
 
     /// <summary>The GLSL of the fragment stage as compiled, kept for the native model only (the bench's instrumented variant is made from it).</summary>
-    public string? FragmentSource { get; internal set; }
+    public string? FragmentSource { get => Info.FragmentSource; set => Info.FragmentSource = value; }
 
     /// <summary>A shader module of this device from <paramref name="spirv"/>; the caller destroys it.</summary>
     internal ShaderModule CreateModule(byte[] spirv)
@@ -144,12 +133,19 @@ public sealed unsafe class ShaderProgram : IDisposable
 public sealed unsafe class ShaderLibrary
 {
     readonly VulkanDevice device;
+    readonly List<VulkanProgram> programs = [];
 
     public ShaderLibrary(VulkanDevice device)
     {
         this.device = device;
         Compiler = new GlslProgramCompiler(new ShaderCompileOptions { RemapClipDepth = !device.HasDepthClipControl });
     }
+
+    /// <summary>The backend's identity of a program handle (the Vulkan-only internals resolve through this).</summary>
+    internal VulkanProgram Backend(GpuProgram program) => programs[program.Index];
+
+    /// <summary>Releases a program (its backend artifacts go once the frames in flight are done); the index is never reused.</summary>
+    public void Dispose(GpuProgram program) => Backend(program).Dispose();
 
     /// <summary>The compiler shared with VkGl (same options, same memory cache).</summary>
     public GlslProgramCompiler Compiler { get; }
@@ -166,7 +162,7 @@ public sealed unsafe class ShaderLibrary
 
     /// <summary>A legacy program with VkGl's layout (<c>VkGl.CreateLayouts</c>): set 0 the named blocks and samplers of both stages (pushed
     /// when the device's push-descriptor limit allows), set 1 the default blocks as dynamic uniform buffers.</summary>
-    public ShaderProgram Legacy(string vertexGlsl, string fragmentGlsl, string name)
+    public GpuProgram Legacy(string vertexGlsl, string fragmentGlsl, string name)
     {
         var (c, v, f) = LegacyCode(vertexGlsl, fragmentGlsl);
         var bindings = new List<DescriptorSetLayoutBinding>();
@@ -201,13 +197,16 @@ public sealed unsafe class ShaderLibrary
         var defaultSlots = new List<GpuSlot>();
         if (c.Vertex.DefaultBlock is not null) defaultSlots.Add(new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Vertex, 1, OffsetAtBind: true));
         if (c.Fragment.DefaultBlock is not null) defaultSlots.Add(new GpuSlot(1, GpuSlotKind.UniformBuffer, GpuStage.Fragment, 1, OffsetAtBind: true));
-        return new ShaderProgram(device, name, ShaderModel.Legacy, v, f, null, c, [set0, set1], [set0, set1], layout, push, 0, 0,
-            [GpuSetLayout.Written([.. slots]), GpuSetLayout.Fixed([.. defaultSlots])]);
+        var info = new ProgramInfo { Index = programs.Count, Name = name, Model = ShaderModel.Legacy, VertexCode = v, FragmentCode = f, Compiled = c,
+            VertexReflection = c.Vertex, FragmentReflection = c.Fragment,
+            NeutralSets = [GpuSetLayout.Written([.. slots]), GpuSetLayout.Fixed([.. defaultSlots])] };
+        programs.Add(new VulkanProgram(device, info, [set0, set1], [set0, set1], layout, push, 0));
+        return new GpuProgram(info.Index, info);
     }
 
     /// <summary>A compute program: set 0 from the reflection (uniform and storage blocks, samplers; pushed when it fits), other sets
     /// from <paramref name="extraSets"/> (sets 1.., not owned), push constants as the shader declares them.</summary>
-    public ShaderProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets)
+    public GpuProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets)
     {
         var code = Compiler.CompileCompute(glsl);
         var r = SpirvReflection.Parse(code);
@@ -226,13 +225,16 @@ public sealed unsafe class ShaderLibrary
         uint pc = (uint)(r.Blocks.FirstOrDefault(b => b.Kind == BlockKind.PushConstant)?.Size ?? 0);
         var sets = new[] { set0 }.Concat(extraSets.Select(VkLayout)).ToArray();
         var layout = CreateLayout(sets, pc, ShaderStageFlags.ComputeBit);
-        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [set0], layout, push, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0,
-            [GpuSetLayout.Written([]), .. extraSets]);
+        var info = new ProgramInfo { Index = programs.Count, Name = name, Model = ShaderModel.Compute, ComputeCode = code,
+            ComputeReflection = SpirvReflection.Parse(code), PushConstantBytes = pc,
+            NeutralSets = [GpuSetLayout.Written([]), .. extraSets] };
+        programs.Add(new VulkanProgram(device, info, sets, [set0], layout, push, pc > 0 ? ShaderStageFlags.ComputeBit : 0));
+        return new GpuProgram(info.Index, info);
     }
 
     /// <summary>A compute program whose set 0 is given (<paramref name="set0"/>, always pushed: it needs push descriptors) instead of reflected:
     /// for descriptor types the reflection does not read (storage images, acceleration structures). Push constants as the shader declares them.</summary>
-    public ShaderProgram Compute(string glsl, string name, ReadOnlySpan<(uint Binding, DescriptorType Type)> set0, params GpuSetLayout[] extraSets)
+    public GpuProgram Compute(string glsl, string name, ReadOnlySpan<(uint Binding, DescriptorType Type)> set0, params GpuSetLayout[] extraSets)
     {
         if (!device.HasPushDescriptor) throw new NotSupportedException($"{name}: needs push descriptors");
         var code = Compiler.CompileCompute(glsl);
@@ -243,13 +245,16 @@ public sealed unsafe class ShaderLibrary
         uint pc = (uint)(r.Blocks.FirstOrDefault(b => b.Kind == BlockKind.PushConstant)?.Size ?? 0);
         var sets = new[] { layout0 }.Concat(extraSets.Select(VkLayout)).ToArray();
         var layout = CreateLayout(sets, pc, ShaderStageFlags.ComputeBit);
-        return new ShaderProgram(device, name, ShaderModel.Compute, null, null, code, null, sets, [layout0], layout, true, pc, pc > 0 ? ShaderStageFlags.ComputeBit : 0,
-            [GpuSetLayout.Written([]), .. extraSets]);
+        var info = new ProgramInfo { Index = programs.Count, Name = name, Model = ShaderModel.Compute, ComputeCode = code,
+            ComputeReflection = SpirvReflection.Parse(code), PushConstantBytes = pc,
+            NeutralSets = [GpuSetLayout.Written([]), .. extraSets] };
+        programs.Add(new VulkanProgram(device, info, sets, [layout0], layout, true, pc > 0 ? ShaderStageFlags.ComputeBit : 0));
+        return new GpuProgram(info.Index, info);
     }
 
     /// <summary>A native-model program: strict GLSL 450, the layout given by the model (<paramref name="setLayouts"/>, not owned) and a
     /// push-constant block of <paramref name="pushConstantBytes"/> (at most 128) visible to both stages.</summary>
-    public ShaderProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes)
+    public GpuProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes)
     {
         if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");
         // The stages are linked by name as GL does (docs/renderer-native.md 3.4: InterfaceLocations stays for both models): varyings without
@@ -260,9 +265,14 @@ public sealed unsafe class ShaderLibrary
         var stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
         var layouts = setLayouts.Select(VkLayout).ToArray();
         var layout = CreateLayout(layouts, pushConstantBytes, stages);
-        var program = new ShaderProgram(device, name, ShaderModel.Native, v, f, null, null, layouts, [], layout, false, pushConstantBytes, pushConstantBytes > 0 ? stages : 0, setLayouts);
+        var info = new ProgramInfo { Index = programs.Count, Name = name, Model = ShaderModel.Native, VertexCode = v, FragmentCode = f,
+            VertexReflection = SpirvReflection.Parse(v), FragmentReflection = SpirvReflection.Parse(f),
+            PushConstantBytes = pushConstantBytes, NeutralSets = setLayouts };
+        var program = new VulkanProgram(device, info, layouts, [], layout, false, pushConstantBytes > 0 ? stages : 0);
+        programs.Add(program);
+        var made = new GpuProgram(info.Index, info);
         program.FragmentSource = fs;
-        foreach (var block in program.VertexReflection!.Blocks.Concat(program.FragmentReflection!.Blocks))
+        foreach (var block in info.VertexReflection!.Blocks.Concat(info.FragmentReflection!.Blocks))
             if (block.Kind == BlockKind.PushConstant && block.Size > pushConstantBytes)
             {
                 program.Dispose();
@@ -271,13 +281,13 @@ public sealed unsafe class ShaderLibrary
         // The samplers declared in the bindless set must be the table's arrays (a float view read through a usampler is undefined).
         int bindless = Array.FindIndex(setLayouts, l => l == GpuSetLayout.Bindless);
         if (bindless >= 0)
-            foreach (var s in program.VertexReflection!.Samplers.Concat(program.FragmentReflection!.Samplers))
+            foreach (var s in info.VertexReflection!.Samplers.Concat(info.FragmentReflection!.Samplers))
                 if (s.Set == bindless)
                 {
                     try { BindlessTable.Check(s, name); }
                     catch { program.Dispose(); throw; }
                 }
-        return program;
+        return made;
     }
 
     /// <summary>The layouts the engine's sets were made into (one per set, shared by every program that uses it).</summary>

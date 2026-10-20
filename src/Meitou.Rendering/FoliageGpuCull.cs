@@ -103,7 +103,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
     /// <summary>The interior masks' boxes the cull takes (<c>ViewData.interior</c>); more are merged into the last.</summary>
     public const int MaxInteriorBoxes = 32;
     readonly GpuContext ctx;
-    readonly ShaderProgram cull, scan, compact;
+    readonly GpuProgram cull, scan, compact;
     readonly GpuComputePipeline cullPipe, scanPipe, compactPipe;
     readonly uint[] cullBindings, scanBindings, compactBindings;
     BufferArena arena;
@@ -138,10 +138,11 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         occWritten = new int[ctx.Device.Frames.Count];
     }
 
-    static uint[] Bindings(ShaderProgram p)
+    uint[] Bindings(GpuProgram p)
     {
-        if (!p.PushDescriptors) throw new InvalidOperationException($"{p.Name}: the foliage cull pushes its descriptors, the device cannot");
-        return [.. p.ComputeReflection!.Blocks.Where(b => b.Kind == Gpu.Shaders.BlockKind.StorageBuffer && b.Set == 0).Select(b => (uint)b.Binding).Order()];
+        var backend = ctx.Shaders.Backend(p);
+        if (!backend.PushDescriptors) throw new InvalidOperationException($"{p.Name}: the foliage cull pushes its descriptors, the device cannot");
+        return [.. backend.ComputeReflection!.Blocks.Where(b => b.Kind == Gpu.Shaders.BlockKind.StorageBuffer && b.Set == 0).Select(b => (uint)b.Binding).Order()];
     }
 
     /// <summary>Bytes of the instance arena, and bytes in use.</summary>
@@ -483,7 +484,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         return new FoliageCullResult(rows.Buffer, rows.Offset, rowsBytes, args.Buffer, args.Offset, offsets.Buffer, offsets.Offset, n, work.DrawCount, split);
     }
 
-    void Run(IGpuCommandList cmd, ShaderProgram p, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
+    void Run(IGpuCommandList cmd, GpuProgram p, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;
@@ -524,7 +525,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         foreach (var p in new[] { cull, scan, compact })
         {
             ctx.Pipelines.Forget(p);
-            p.Dispose();
+            ctx.Shaders.Dispose(p);
         }
         arena.Dispose();
         scratch.Dispose();

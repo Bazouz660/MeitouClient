@@ -12,7 +12,7 @@ namespace Meitou.Rendering;
 sealed class ReflectedProgram : IDisposable
 {
     readonly GpuContext ctx;
-    public readonly ShaderProgram P;
+    public readonly GpuProgram P;
     readonly int[] locations;
     readonly ScalarKind[] kinds;
     /// <summary>The program's own input locations (below the instance rows): 0 .. Own − 1.</summary>
@@ -24,7 +24,7 @@ sealed class ReflectedProgram : IDisposable
     {
         this.ctx = ctx;
         P = frame.Program(vertex, fragment, name);
-        var inputs = P.VertexReflection!.Inputs;
+        var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
         locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
         kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
         Own = locations.Where(l => l < rowLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -61,7 +61,7 @@ sealed class ReflectedProgram : IDisposable
     public void Dispose()
     {
         ctx.Pipelines.Forget(P);
-        P.Dispose();
+        ctx.Shaders.Dispose(P);
     }
 }
 

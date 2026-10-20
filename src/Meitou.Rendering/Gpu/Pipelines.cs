@@ -43,19 +43,19 @@ public readonly record struct BlendState(bool Enable, BlendingFactor Src = Blend
 /// <summary>Everything a graphics pipeline is made from (docs/renderer-native.md 2.5); built at load, hashed once. Dynamic state (viewport,
 /// scissor, cull mode, front face, depth test/write/compare, depth bias enable and values) is set while recording.</summary>
 public readonly record struct GraphicsPipelineDesc(
-    ShaderProgram Program, VertexLayout Vertex, PrimitiveType Topology, AttachmentFormats Targets,
+    GpuProgram Program, VertexLayout Vertex, PrimitiveType Topology, AttachmentFormats Targets,
     BlendState Blend, ColorMask ColourMask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp, string Name = "")
 {
     // The name is for labels and logs: two descs that differ only by name are the same pipeline.
-    public bool Equals(GraphicsPipelineDesc other) => ReferenceEquals(Program, other.Program) && Vertex.Equals(other.Vertex) && Topology == other.Topology &&
+    public bool Equals(GraphicsPipelineDesc other) => Program == other.Program && Vertex.Equals(other.Vertex) && Topology == other.Topology &&
         Targets == other.Targets && Blend == other.Blend && ColourMask == other.ColourMask && Polygon == other.Polygon &&
         AlphaToCoverage == other.AlphaToCoverage && DepthClamp == other.DepthClamp;
     public override int GetHashCode() => HashCode.Combine(Program, Vertex, Topology, Targets, Blend, ColourMask, Polygon, HashCode.Combine(AlphaToCoverage, DepthClamp));
 }
 
-public readonly record struct ComputePipelineDesc(ShaderProgram Program, string Name = "")
+public readonly record struct ComputePipelineDesc(GpuProgram Program, string Name = "")
 {
-    public bool Equals(ComputePipelineDesc other) => ReferenceEquals(Program, other.Program);
+    public bool Equals(ComputePipelineDesc other) => Program == other.Program;
     public override int GetHashCode() => Program.GetHashCode();
 }
 
@@ -191,11 +191,16 @@ public static unsafe class PipelineFactory
 public sealed unsafe class PipelineLibrary : IDisposable
 {
     readonly VulkanDevice device;
+    readonly ShaderLibrary shaders;
     readonly Dictionary<GraphicsPipelineDesc, Pipeline> graphics = [];
     readonly Dictionary<ComputePipelineDesc, Pipeline> compute = [];
     readonly object gate = new();
 
-    public PipelineLibrary(VulkanDevice device) => this.device = device;
+    public PipelineLibrary(VulkanDevice device, ShaderLibrary shaders)
+    {
+        this.device = device;
+        this.shaders = shaders;
+    }
 
     /// <summary>Pipelines created by <see cref="Get"/> because nothing prepared them.</summary>
     public int LatePipelines { get; private set; }
@@ -249,7 +254,7 @@ public sealed unsafe class PipelineLibrary : IDisposable
         lock (gate)
         {
             if (compute.TryGetValue(desc, out var p)) return new GpuComputePipeline(desc);
-            p = PipelineFactory.CreateCompute(device, desc.Program.ComputeModule, desc.Program.Layout);
+            { var vp = shaders.Backend(desc.Program); p = PipelineFactory.CreateCompute(device, vp.ComputeModule, vp.Layout); }
             compute[desc] = p;
             return new GpuComputePipeline(desc);
         }
@@ -263,7 +268,7 @@ public sealed unsafe class PipelineLibrary : IDisposable
 
     Pipeline Create(in GraphicsPipelineDesc d, ShaderModule fragment = default)
     {
-        var p = d.Program;
+        var p = shaders.Backend(d.Program);
         if (p.VertexModule.Handle == 0 || p.FragmentModule.Handle == 0) throw new ArgumentException($"{p.Name}: not a graphics program");
         var handle = PipelineFactory.CreateGraphics(device, p.VertexModule, fragment.Handle != 0 ? fragment : p.FragmentModule, p.Layout, d.Vertex.Inputs, d.Topology, d.Targets, d.Blend,
             d.ColourMask, d.Polygon, d.AlphaToCoverage, d.DepthClamp,
@@ -273,14 +278,14 @@ public sealed unsafe class PipelineLibrary : IDisposable
     }
 
     /// <summary>Destroys the pipelines of <paramref name="program"/> after the frames in flight.</summary>
-    public void Forget(ShaderProgram program)
+    public void Forget(GpuProgram program)
     {
         List<Pipeline> doomed = [];
         lock (gate)
         {
-            foreach (var k in graphics.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(graphics[k]); graphics.Remove(k); }
-            foreach (var k in compute.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(compute[k]); compute.Remove(k); }
-            foreach (var k in variants.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(variants[k]); variants.Remove(k); }
+            foreach (var k in graphics.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(graphics[k]); graphics.Remove(k); }
+            foreach (var k in compute.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(compute[k]); compute.Remove(k); }
+            foreach (var k in variants.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(variants[k]); variants.Remove(k); }
         }
         var (vk, dev) = (device.Vk, device.Device);
         device.Frames.DeferDelete(() => { foreach (var p in doomed) vk.DestroyPipeline(dev, p, null); });

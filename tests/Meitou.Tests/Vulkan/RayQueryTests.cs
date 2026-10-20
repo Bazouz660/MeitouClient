@@ -60,7 +60,7 @@ public class RayQueryTests
         *(InstanceRecord*)instances.Mapped = InstanceRecord.Of(Matrix4x4.CreateTranslation(0, 2, 0), 7, 0xFF, 0, 0);
         var results = DeviceBuffer.Create(ctx, N * N * 8, BufferUse.Storage | BufferUse.TransferSrc, "test results");
         using var readback = ReadbackBuffer.Create(ctx, N * N * 8, "test results");
-        using var program = ctx.Shaders.Compute(Trace, "ray query test", [(0, DescriptorType.AccelerationStructureKhr), (1, DescriptorType.StorageBuffer)]);
+        var program = ctx.Shaders.Compute(Trace, "ray query test", [(0, DescriptorType.AccelerationStructureKhr), (1, DescriptorType.StorageBuffer)]);
         var pipeline = ctx.Pipelines.Get(new ComputePipelineDesc(program, "ray query test"));
 
         var cmd = ctx.BeginNative("ray query test");

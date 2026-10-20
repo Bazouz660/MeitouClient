@@ -228,7 +228,7 @@ internal sealed unsafe partial class CharacterRenderer
         public CharacterRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
         public CullMode Cull;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[9];
@@ -240,7 +240,7 @@ internal sealed unsafe partial class CharacterRenderer
 
         public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Program.Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);

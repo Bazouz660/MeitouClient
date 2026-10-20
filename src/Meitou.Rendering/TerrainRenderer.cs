@@ -413,7 +413,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     sealed class TerrainProgram : IDisposable
     {
         readonly GpuContext ctx;
-        public readonly ShaderProgram P;
+        public readonly GpuProgram P;
         readonly int[] locations;
         readonly ScalarKind[] kinds;
         /// <summary>The program's own input locations (below the placements' rows): 0 .. Own − 1.</summary>
@@ -424,14 +424,14 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         {
             this.ctx = ctx;
             P = ctx.Shaders.Native(vertex, fragment, name, sets, NativeShaders.PushBytes);
-            var inputs = P.VertexReflection!.Inputs;
+            var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < TerrainShaders.MeshInstanceLocation).DefaultIfEmpty(-1).Max() + 1;
             if (Own > 2) throw new NotSupportedException($"{name}: more than two own vertex inputs");
         }
 
-        public Silk.NET.Vulkan.PipelineLayout Layout => P.Layout;
+        public Silk.NET.Vulkan.PipelineLayout Layout => ctx.Shaders.Backend(P).Layout;
 
         public VertexLayout VertexLayout(ReadOnlySpan<LegacyProgram.Attribute?> byLocation)
         {
@@ -462,7 +462,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public void Dispose()
         {
             ctx.Pipelines.Forget(P);
-            P.Dispose();
+            ctx.Shaders.Dispose(P);
         }
     }
 
@@ -669,7 +669,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public GpuPipeline Pipeline = default;
         public GpuBufferBinding Vertex, Elements;
         public FrameBinding Frame;
@@ -849,7 +849,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
         PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     /// <summary>A mesh's own vertex buffers (locations 0 and 1: position, normal), bound with one call.</summary>
@@ -876,7 +876,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     readonly int[] segmentIds = new int[3];
     int segmentCount;
 
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1017,7 +1017,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrontFaceDirection Ccw;
         public FrameBinding Frame;
         public GpuSet ConstantSet;

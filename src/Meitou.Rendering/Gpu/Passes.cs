@@ -76,7 +76,7 @@ public sealed record DrawState(CullMode Cull, FrontFaceDirection Front, bool Dep
         For(targets, false, depthTest: true, depthWrite: true, compare: DepthFunction.Lequal, mask: mask);
 
     /// <summary>The pipeline for <paramref name="program"/> with this state.</summary>
-    public GraphicsPipelineDesc Pipeline(ShaderProgram program, VertexLayout vertex, PrimitiveType topology, AttachmentFormats targets, string name = "") =>
+    public GraphicsPipelineDesc Pipeline(GpuProgram program, VertexLayout vertex, PrimitiveType topology, AttachmentFormats targets, string name = "") =>
         new(program, vertex, topology, targets, Blend, ColourMask, Polygon, AlphaToCoverage, DepthClamp, name);
 
     /// <summary>Records the dynamic state: <paramref name="t"/>'s viewport and scissor, and this cull, front face, depth and bias

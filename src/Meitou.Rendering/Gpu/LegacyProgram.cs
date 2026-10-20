@@ -57,12 +57,13 @@ public sealed unsafe class LegacyProgram : IDisposable
     Transient vertexSlice, fragmentSlice;
     readonly Dictionary<(ulong, ulong), GpuSet> dynamicSets = [];
 
-    LegacyProgram(GpuContext ctx, ShaderProgram program)
+    LegacyProgram(GpuContext ctx, GpuProgram program)
     {
         this.ctx = ctx;
+        backend = ctx.Shaders.Backend(program);
         uniformAlign = Math.Max(ctx.Device.Limits.MinUniformBufferOffsetAlignment, 16);
         Program = program;
-        var c = program.Compiled!;
+        var c = backend.Compiled!;
         VertexBlock = c.Vertex.DefaultBlock;
         FragmentBlock = c.Fragment.DefaultBlock;
         VertexDefault = new byte[VertexBlock?.Size ?? 0];
@@ -86,8 +87,9 @@ public sealed unsafe class LegacyProgram : IDisposable
     public static LegacyProgram Create(GpuContext ctx, string vertexGlsl, string fragmentGlsl, string name) =>
         new(ctx, ctx.Shaders.Legacy(vertexGlsl, fragmentGlsl, name));
 
-    public ShaderProgram Program { get; }
-    public PipelineLayout Layout => Program.Layout;
+    public GpuProgram Program { get; }
+    readonly VulkanProgram backend;
+    public PipelineLayout Layout => backend.Layout;
     public string Name => Program.Name;
     public UniformBlockInfo? VertexBlock { get; }
     public UniformBlockInfo? FragmentBlock { get; }
@@ -106,7 +108,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     public UniformHandle Uniform(string glName)
     {
         if (uniformIndex.TryGetValue(glName, out int i)) return new UniformHandle(i);
-        var c = Program.Compiled!;
+        var c = backend.Compiled!;
         var v = Loose(c.Vertex.FindUniform(glName));
         var f = Loose(c.Fragment.FindUniform(glName));
         if (v is null && f is null) i = -1;
@@ -267,10 +269,10 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (!same)
             {
                 lastPushEpoch = cmd.Epoch;
-                if (Program.PushDescriptors) ((CommandList)cmd).PushDescriptors(Program, 0, all);
+                if (backend.PushDescriptors) ((CommandList)cmd).PushDescriptors(Program, 0, all);
                 else
                 {
-                    var set0 = frame.AllocateSet(Program.NeutralSets[0]);
+                    var set0 = frame.AllocateSet(backend.NeutralSets[0]);
                     for (int i = 0; i < w; i++) writes[i].DstSet = set0;
                     ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, (uint)w, writes, 0, null);
                     var set0Handle = new GpuSet(ctx.Device.AddSet(set0));
@@ -301,7 +303,7 @@ public sealed unsafe class LegacyProgram : IDisposable
 
     GpuSet CreateDynamicSet((ulong, ulong) key)
     {
-        var set = ctx.AllocatePersistentSet(Program.NeutralSets[1]);
+        var set = ctx.AllocatePersistentSet(backend.NeutralSets[1]);
         var infos = stackalloc DescriptorBufferInfo[2];
         var writes = stackalloc WriteDescriptorSet[2];
         uint n = 0;
@@ -389,6 +391,6 @@ public sealed unsafe class LegacyProgram : IDisposable
     public void Dispose()
     {
         ctx.Pipelines.Forget(Program);
-        Program.Dispose();
+        ctx.Shaders.Dispose(Program);
     }
 }

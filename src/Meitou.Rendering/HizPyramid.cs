@@ -39,7 +39,7 @@ public sealed unsafe class HizPyramid : IDisposable
     const int FusedLevels = 5;
 
     readonly GpuContext ctx;
-    readonly ShaderProgram baseProgram, reduceProgram;
+    readonly GpuProgram baseProgram, reduceProgram;
     readonly GpuComputePipeline basePipeline, reducePipeline;
     DeviceBuffer? buffer;
     readonly uint[] offsets = new uint[MaxLevels];
@@ -208,7 +208,7 @@ public sealed unsafe class HizPyramid : IDisposable
         foreach (var p in new[] { baseProgram, reduceProgram })
         {
             ctx.Pipelines.Forget(p);
-            p.Dispose();
+            ctx.Shaders.Dispose(p);
         }
         buffer?.Dispose();
     }

@@ -70,7 +70,7 @@ sealed unsafe class NativeFrame : IDisposable
     public GpuSetLayout[] SetLayouts { get; }
 
     /// <summary>A native program with the model's layout and the shared push-constant range (<see cref="NativeShaders.PushBytes"/>).</summary>
-    public ShaderProgram Program(string vertexGlsl, string fragmentGlsl, string name) =>
+    public GpuProgram Program(string vertexGlsl, string fragmentGlsl, string name) =>
         ctx.Shaders.Native(vertexGlsl, fragmentGlsl, name, SetLayouts, NativeShaders.PushBytes);
 
     /// <summary>The frame constants as the last <see cref="Bind"/> wrote them (diagnostics and tests).</summary>
@@ -89,7 +89,7 @@ sealed unsafe class NativeFrame : IDisposable
     /// Once per native segment, before its draws: binds set 1 (the bindless table) and set 0 for <paramref name="layout"/> (any native
     /// program's: they are all compatible) with this segment's frame constants, shadow blocks and <paramref name="view"/>.
     /// </summary>
-    public void Bind(IGpuCommandList cmd, ShaderProgram program, in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
+    public void Bind(IGpuCommandList cmd, GpuProgram program, in ViewConstants view, ReadOnlySpan<GpuBufferBinding> extra = default)
     {
         var binding = Prepare(in view, extra);
         Record(cmd, program, in binding);
@@ -162,7 +162,7 @@ sealed unsafe class NativeFrame : IDisposable
     /// The recording half of <see cref="Bind"/>: binds the bindless table (set 1) and pushes (or binds) set 0 as <paramref name="binding"/> says.
     /// Reads nothing else: safe on a recording job's thread.
     /// </summary>
-    public static void Record(IGpuCommandList cmd, ShaderProgram program, in FrameBinding binding)
+    public static void Record(IGpuCommandList cmd, GpuProgram program, in FrameBinding binding)
     {
         cmd.BindBindlessTable(program, NativeShaders.BindlessSet);
         int count = binding.Count;

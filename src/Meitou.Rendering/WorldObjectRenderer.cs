@@ -1062,7 +1062,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     sealed class ObjProg : IDisposable
     {
         readonly GpuContext ctx;
-        public readonly ShaderProgram P;
+        public readonly GpuProgram P;
         readonly int[] locations;
         readonly Meitou.Rendering.Gpu.Shaders.ScalarKind[] kinds;
         /// <summary>The program's own input locations (below the instance rows): 0 .. Own − 1.</summary>
@@ -1073,7 +1073,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         {
             this.ctx = ctx;
             P = frame.Program(vertex, fragment, name);
-            var inputs = P.VertexReflection!.Inputs;
+            var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < RowLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -1110,12 +1110,12 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public void Dispose()
         {
             ctx.Pipelines.Forget(P);
-            P.Dispose();
+            ctx.Shaders.Dispose(P);
         }
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
         PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
@@ -1124,7 +1124,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     int segmentCount;
 
     /// <summary>A stable number for a segment's pipeline state, so a part compares one int per draw.</summary>
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1332,7 +1332,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public WorldObjectRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public ShaderProgram Program = null!;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
         public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
@@ -1341,7 +1341,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
 
         public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Program.Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);

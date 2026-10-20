@@ -59,7 +59,7 @@ public class NativeShaderTests
             using var frame = new NativeFrame(ctx);
             foreach (var (name, v, f, pushType) in Variants())
             {
-                using var p = frame.Program(v, f, name);
+                var p = frame.Program(v, f, name);
                 foreach (var r in new[] { p.VertexReflection!, p.FragmentReflection! })
                     foreach (var b in r.Blocks)
                     {

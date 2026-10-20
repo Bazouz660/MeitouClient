@@ -34,7 +34,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     const int MaxViews = 64;
 
     readonly GpuContext ctx;
-    readonly ShaderProgram? cull, order;
+    readonly GpuProgram? cull, order;
     readonly GpuComputePipeline? cullPipe, orderPipe;
     readonly uint[] cullBindings = [], orderBindings = [];
     readonly BufferArena arena;
@@ -53,10 +53,10 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         {
             cull = ctx.Shaders.Compute(FoliageGrassShaders.CullCompute, "foliage grass cull");
             order = ctx.Shaders.Compute(FoliageGrassShaders.OrderCompute, "foliage grass order");
-            cullPipe = ctx.Pipelines.Get(new ComputePipelineDesc(cull, "foliage grass cull"));
-            orderPipe = ctx.Pipelines.Get(new ComputePipelineDesc(order, "foliage grass order"));
-            cullBindings = Bindings(cull);
-            orderBindings = Bindings(order);
+            cullPipe = ctx.Pipelines.Get(new ComputePipelineDesc(cull!.Value, "foliage grass cull"));
+            orderPipe = ctx.Pipelines.Get(new ComputePipelineDesc(order!.Value, "foliage grass order"));
+            cullBindings = Bindings(ctx, cull!.Value);
+            orderBindings = Bindings(ctx, order!.Value);
         }
         arena = new BufferArena(ctx, arenaBytes, BufferUse.Vertex | BufferUse.TransferDst, "foliage grass blades");
         slots = DeviceBuffer.Create(ctx, (ulong)slotCapacity * GrassSlot.Size, BufferUse.Storage | BufferUse.TransferDst, "foliage grass slots");
@@ -66,10 +66,11 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         countedWritten = new int[ctx.Device.Frames.Count];
     }
 
-    static uint[] Bindings(ShaderProgram p)
+    static uint[] Bindings(GpuContext ctx, GpuProgram p)
     {
-        if (!p.PushDescriptors) throw new InvalidOperationException($"{p.Name}: the grass cull pushes its descriptors, the device cannot");
-        return [.. p.ComputeReflection!.Blocks.Where(b => b.Kind == Gpu.Shaders.BlockKind.StorageBuffer && b.Set == 0).Select(b => (uint)b.Binding).Order()];
+        var backend = ctx.Shaders.Backend(p);
+        if (!backend.PushDescriptors) throw new InvalidOperationException($"{p.Name}: the grass cull pushes its descriptors, the device cannot");
+        return [.. backend.ComputeReflection!.Blocks.Where(b => b.Kind == Gpu.Shaders.BlockKind.StorageBuffer && b.Set == 0).Select(b => (uint)b.Binding).Order()];
     }
 
     /// <summary>Whether the device can run the GPU grass (push descriptors, indirect draws with a count and a first instance).</summary>
@@ -253,9 +254,9 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         Barrier(cmd, Access.TransferDst, Access.StorageRead | Access.StorageWrite);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint groups = (uint)((n + FoliageGrassShaders.Group - 1) / FoliageGrassShaders.Group);
-        Run(cmd, cull!, cullPipe!.Value, cullBindings, b, groups);
+        Run(cmd, cull!.Value, cullPipe!.Value, cullBindings, b, groups);
         Barrier(cmd, Access.StorageWrite, Access.StorageRead);
-        Run(cmd, order!, orderPipe!.Value, orderBindings, b, groups);
+        Run(cmd, order!.Value, orderPipe!.Value, orderBindings, b, groups);
         Barrier(cmd, Access.StorageWrite, Access.IndirectRead | Access.StorageRead | Access.TransferSrc);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.Compute);
         var ring = counted[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxViews * 16, $"foliage grass counters {scratchSlot}");
@@ -277,7 +278,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         return new GrassResult(draws.Buffer, draws.Offset, counters.Buffer, counters.Offset, n, tables.Patches);
     }
 
-    void Run(IGpuCommandList cmd, ShaderProgram program, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
+    void Run(IGpuCommandList cmd, GpuProgram program, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;
@@ -318,8 +319,8 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         foreach (var p in new[] { cull, order })
             if (p is not null)
             {
-                ctx.Pipelines.Forget(p);
-                p.Dispose();
+                ctx.Pipelines.Forget(p.Value);
+                ctx.Shaders.Dispose(p.Value);
             }
         arena.Dispose();
         slots.Dispose();

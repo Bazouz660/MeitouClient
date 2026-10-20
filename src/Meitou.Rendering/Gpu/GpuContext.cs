@@ -50,7 +50,7 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
         Defaults = new GpuDefaults(device);
         Samplers = new SamplerCache(device);
         Shaders = new ShaderLibrary(device);
-        Pipelines = new PipelineLibrary(device);
+        Pipelines = new PipelineLibrary(device, Shaders);
         var bindless = new BindlessTable(device);
         Bindless = bindless;
         Shaders.BindlessLayout = bindless.Layout;
