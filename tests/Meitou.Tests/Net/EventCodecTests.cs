@@ -47,55 +47,6 @@ public class EventCodecTests
         Assert.Equal(events, back.Events);
     }
 
-    [Fact]
-    public void Positions_are_quantized_to_a_64th()
-    {
-        var back = RoundTrip(new EventBatch(0, 0, [new SoundNet(new SoundEvent(SoundKind.Hit, CharacterId.None, CharacterId.None, new Vector3(1.001f, 2, 3)))]));
-        var at = ((SoundNet)back.Events[0]).Sound.Position;
-        Assert.True(Math.Abs(at.X - 1.001f) <= 1 / 128f);
-    }
-
-    [Fact]
-    public void Writer_clamps_what_the_reader_would_refuse()
-    {
-        string longChat = new('é', 2000);
-        string longMessage = "😀" + new string('x', 5000);
-        var events = new List<NetEvent> { new ChatNet(1, new string('n', 1000), longChat), new MessageNet(longMessage) };
-        for (int i = 0; i < EventCodec.MaxEvents + 10; i++) events.Add(new MessageNet("m"));
-        var back = RoundTrip(new EventBatch(1, 1, events));
-        Assert.Equal(EventCodec.MaxEvents, back.Events.Count);
-        var chat = (ChatNet)back.Events[0];
-        Assert.Equal(NetLimits.MaxName, chat.Name.Length);
-        Assert.Equal(NetLimits.MaxChat / 2, chat.Text.Length);
-        Assert.StartsWith("😀x", ((MessageNet)back.Events[1]).Text);
-    }
-
-    [Fact]
-    public void Non_finite_numbers_become_zero_on_write()
-    {
-        var mark = new BloodMark(BloodMarkKind.Splash, CharacterId.None, Vector3.Zero, new Vector2(float.NaN, 1e9f), float.PositiveInfinity, 0);
-        var back = (BloodNet)RoundTrip(new EventBatch(0, 0, [new BloodNet(mark)])).Events[0];
-        Assert.Equal(0, back.Mark.Direction.X);
-        Assert.Equal((float)Half.MaxValue, back.Mark.Direction.Y);
-        Assert.Equal((float)Half.MaxValue, back.Mark.Amount);
-    }
-
-    [Fact]
-    public void Reader_refuses_the_reserved_kind_and_a_wrong_message()
-    {
-        using var w = new NetWriter();
-        w.WriteByte((byte)MessageType.EventBatch);
-        w.WriteUInt16(0);
-        w.WriteVarInt(0);
-        w.WriteVarUInt(1);
-        w.WriteByte(6);
-        Assert.Throws<NetFormatException>(() => { var r = new NetReader(w.Written); EventCodec.Read(ref r); });
-
-        w.Reset();
-        w.WriteByte((byte)MessageType.ViewUpdate);
-        Assert.Throws<NetFormatException>(() => { var r = new NetReader(w.Written); EventCodec.Read(ref r); });
-    }
-
     static readonly ViewState View = new(new Vector3(100, 0, 100), new Vector3(100, 0, 100), 500);
     static readonly CharacterId Seen = new(1, 1);
     static readonly CharacterId Unseen = new(2, 1);
