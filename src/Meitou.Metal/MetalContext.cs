@@ -433,7 +433,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             backbuffer = CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "backbuffer"));
             depth?.Dispose();
-            depth = CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "depth"));
+            depth = CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height,
+                Use: TextureUse.DepthTarget | TextureUse.Sampled, Name: "depth"));
             albedo?.Dispose();
             albedo = CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, width, height, Use: TextureUse.ColourTarget, Name: "gi albedo"));
         }

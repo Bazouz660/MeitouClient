@@ -83,6 +83,7 @@ sealed partial class GameHost
         shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
+        var taa = new PostTaa(ctx);
         display.Activate();
         Splash?.Dispose();
 
@@ -178,6 +179,7 @@ sealed partial class GameHost
             foliage?.Update(camera.Eye);
 
             var size = window.FramebufferSize;
+            var taaJitter = PostTaa.Offset(frames + 1, size.X);
             if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
@@ -250,7 +252,7 @@ sealed partial class GameHost
 
             // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
             render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(size.Y, camera.FieldOfView);
-            var worldProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
+            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, size.X, size.Y);
             var frustum = WorldCamera.FrustumPlanes(worldProjection);
             terrain.BeginFrame();
             terrain.Draw(worldProjection, eye, frustum, render, light);
@@ -262,9 +264,14 @@ sealed partial class GameHost
             cmd.EndRendering();
             ctx.EndNative(cmd);
 
+            // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
+            var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
+            var resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter);
+            ctx.EndNative(taaCmd);
+
             // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
             var post = (MetalCommandList)ctx.BeginNative("post composite");
-            composite.Draw(post, sceneColour, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
+            composite.Draw(post, resolved, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
             ctx.EndNative(post);
             ctx.EndFrame();
             frames++;
@@ -283,6 +290,7 @@ sealed partial class GameHost
         sceneColour?.Dispose();
         shadow.Dispose();
         composite.Dispose();
+        taa.Dispose();
         surfaces?.Dispose();
         sky.Dispose();
         Console.WriteLine($"metal     {frames} frames");

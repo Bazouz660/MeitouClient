@@ -480,12 +480,15 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 
 ### 2. The post chain's rest
 
-`PostComposite` (exposure + tone map) is the only post pass on Metal; `PostProcess` is still Vulkan-typed. Port,
-in this order:
+`PostComposite` (exposure + tone map) was the only post pass on Metal; `PostProcess` is still Vulkan-typed. Port, in
+this order:
 
-1. **TAA and the upscaler** (`PostProcess`, `Upscaling`, `UpscaleShaders`, `IUpscaler`): jitter, motion vectors,
-   history and the resolve; MetalFX (`MTLFXTemporalDenoisedScaler` in SharpMetal) behind `IUpscaler`, the FSR path
-   stays Vulkan. The Metal host needs the jittered projection the Vulkan path uses (`Jitter.Apply`).
+1. **TAA and the upscaler.** The **TAA slice is done** in `PostTaa` (seam-only): the game's velocity and TAA shaders,
+   a render-size RGBA16F motion target, two RGBA16F histories, the same 8-phase `Jitter` on the scene projection and the
+   pass, `uBlend` 0.1 and a reset on the first frame/cut. The Metal host now renders the scene jittered and composites
+   the TAA output; the scene depth carries `Sampled`. Still to do: the render-scale upscaler and MetalFX behind
+   `IUpscaler` (the FSR path stays Vulkan), the sun-motion term, moving geometry's motion (grass/characters) and
+   widening the rest of `PostProcess` (SSAO, particles, FXAA, heat haze, GI resolve).
 2. **Fog volumes and light shafts** (`FogVolumes`, `PostProcess.FogRate`, `PostProcess.Shafts`).
 3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
    `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
@@ -561,6 +564,11 @@ default.
   every `maxCount` slot (the slots at/after the count must hold zero counts).
 - Metal screenshots are not byte-comparable run to run: the screenshot clock advances by the real frame time, so the
   sun and clouds differ. Compare regions / means, or freeze the clock for a pixel comparison.
+- TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
+  `UpscaleShaders.Taa` (into two RGBA16F histories); the scene projection is jittered with `Jitter.Apply` and
+  `PostTaa.Offset` (8 phases at 1×), the depth target is `DepthTarget | Sampled`. TAA resets on the first frame, a
+  resize and a camera cut (>5000 units). The velocity pass's far-slice inputs are disabled; the sun-motion term is
+  zero (the sky's sun compensation comes with the full chain).
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`.
 - `MTL_DEBUG_LAYER=1` catches the above immediately; keep it on for every new pass.
