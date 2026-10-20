@@ -20,6 +20,7 @@ sealed partial class PlayerInterface
         if (!UiVisible) return false;
         if (key == Meitou.Engine.Input.Key.Escape && CancelInventoryDrag()) return true;
         if (key == Meitou.Engine.Input.Key.Escape && CloseContextMenu()) return true;
+        if (ChatEntryKey(key, shift)) return true;
         if (key == Meitou.Engine.Input.Key.Escape)
         {
             if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) return true;
@@ -43,6 +44,7 @@ sealed partial class PlayerInterface
             } is { } listKey && faithfulScreens.ListKey(listKey)) return true;
         if (DialogueKey(key)) return true;
         if (faithfulScreens.HasModal) return true;
+        if (OpenChatKey(key)) return true;   // reached only when no window is modal and Enter found no default button
         // change_squad (Tab): the squad bar shows the next squad with members (docs/game/ui-input.md section 6).
         if (key == Meitou.Engine.Input.Key.Tab && !TitleOpen && !EditorOpen) { Say(new ActiveSquadCommand(-1) { Tick = session.World.Tick }); return true; }
         if (ReservedKeys.Contains(key)) return false;
@@ -77,6 +79,7 @@ sealed partial class PlayerInterface
         { ScrollInventoryPage(e.Screen, float.Parse(e.Action[22..], CultureInfo.InvariantCulture)); return; }
         if (e.Screen == "editor") EditorAction(e);
         else if (e.Screen == "file") FileDialogAction(e);
+        else if (e.Screen is "multiplayer" or "chat" or "players") { NetScreenAction(e); UpdateMenuPause(); }
         else if (HandleFrontendAction(e)) UpdateMenuPause();
         else if (e.Screen == "stats" && e.Action == "select") selectedStat = e.Text;
         else if (e.Screen == "stats" && e.Action.StartsWith("stat:", StringComparison.Ordinal)) selectedStat = e.Action[5..];
@@ -100,6 +103,7 @@ sealed partial class PlayerInterface
         var lead = Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
         if (BindFrontend(id, b)) return b;
+        if (id is "multiplayer" or "chat" or "players") { BindNetScreen(id, b); return b; }
         if (id == "editor") { BindEditor(b); return b; }
         if (id == "file") { BindFileDialog(b); return b; }
         else if (id == "trader") BindTraderScreen(b);
@@ -178,6 +182,7 @@ sealed partial class PlayerInterface
     };
     void AddFaithfulContent(string id, List<UiControl> controls)
     {
+        if (id is "menu" or "players") { AddNetContent(id, controls); return; }   // AddMapContent has nothing for them
         if (id == "title" && UiMode == UiMode.Meitou) { MeitouTitleMenu(controls); return; }
         if (id == "stats") { AddStatsContent(controls); return; }
         if (id == "editor") { AddEditorContent(controls); return; }
@@ -293,14 +298,14 @@ sealed partial class PlayerInterface
     {
         if (jobDrag is not { } from) return;
         jobDrag = null;
-        if (JobRowAt(ArrangeUi(), p) is { } to && to != from && (Selected().FirstOrDefault() ?? Lead()) is { IsPlayer: true } lead)
+        if (JobRowAt(ArrangeUi(), p) is { } to && to != from && (Selected().FirstOrDefault() ?? Lead()) is { } lead && Mine(lead))
             Say(new Meitou.Simulation.Production.MoveJob(lead.Id, from, to) { Tick = session.World.Tick });
     }
 
     /// <summary>Takes a job (the jobs list's row id) off the lead whose list shows it.</summary>
     void RemoveJob(string job)
     {
-        if ((Selected().FirstOrDefault() ?? Lead()) is not { IsPlayer: true } lead) return;
+        if ((Selected().FirstOrDefault() ?? Lead()) is not { } lead || !Mine(lead)) return;
         if (job.StartsWith("job:", StringComparison.Ordinal) && int.TryParse(job.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out int index))
             Say(new Meitou.Simulation.Production.RemoveJob(lead.Id, index) { Tick = session.World.Tick });
     }

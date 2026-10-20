@@ -27,6 +27,10 @@ public enum InputAction
     FloorUp, FloorDown,
     /// <summary>Held: highlight building signs in yellow.</summary>
     Highlight,
+    /// <summary>Multiplayer: opens the chat line (Meitou's; the game has no chat; docs/game/ui-input.md "Multiplayer keys").</summary>
+    OpenChat,
+    /// <summary>Multiplayer, held: the player list.</summary>
+    PlayerList,
     Quit,
 }
 
@@ -111,6 +115,8 @@ public sealed class InputBindings
         Set(InputAction.ToggleDebugMenu, Key.F10);
         Set(InputAction.ToggleStats, Key.F11);
         Set(InputAction.CycleProfiler, Key.F12);
+        Set(InputAction.OpenChat, Key.Enter);   // multiplayer (engine choice): Enter is free outside windows; P is unbound in the game's table
+        Set(InputAction.PlayerList, Key.P);
         Set(InputAction.Quit, Key.Escape);
     }
 

@@ -206,8 +206,13 @@ sealed partial class GameHost
                     }
                     return;
                 }
-                // F10 (rebindable) opens the debug menu, which then takes every key until it closes.
-                if (KeyMap.Map(k) is { } mapped && session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped))) { debugMenuOpen = !debugMenuOpen; return; }
+                // F10 (rebindable) opens the debug menu, which then takes every key until it closes. A multiplayer game opens it only when the host allows cheats.
+                if (KeyMap.Map(k) is { } mapped && session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped)))
+                {
+                    if (!debugMenuOpen && player.Net is { Role: not NetRole.None } net && !net.Rules.Cheats) { player.Notice("Cheats are off in this game.", true); return; }
+                    debugMenuOpen = !debugMenuOpen;
+                    return;
+                }
                 if (debugMenuOpen)
                 {
                     if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } menuKey) DebugMenuKey(menuKey);
@@ -331,6 +336,7 @@ sealed partial class GameHost
         double last = 0, titleTimer = 0, cpuSum = 0;
         int frames = 0, totalFrames = 0;
         bool quit = false;
+        player.Config = config;
         player.ScreenAction += e =>
         {
             if (e.Action == "save") saveRequestedFolder = Meitou.Data.Save.SaveCatalog.Folder(Meitou.Simulation.Saving.QuickSave.DefaultRoot, e.Text);
@@ -351,6 +357,7 @@ sealed partial class GameHost
         session.Ticked += actions =>
         {
             highlightHeld = actions.Held(InputAction.Highlight);
+            player.PlayerListHeld = actions.Held(InputAction.PlayerList);
             if (actions.Pressed(InputAction.Quit) && !IsDuel) quit = true;   // the duel is for filming: Esc must not close it
             // Panning (or leaving for the free camera) lets go of the character the camera follows; turning and zooming keep it.
             if (actions.Held(InputAction.MoveForward) || actions.Held(InputAction.MoveBack) || actions.Held(InputAction.MoveLeft) || actions.Held(InputAction.MoveRight) ||

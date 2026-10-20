@@ -26,7 +26,8 @@ public sealed partial class MyGuiScreenHost
     /// <summary>The focused box is read-only: it takes only the keys that read it.</summary>
     public bool FocusReadOnly => edit?.ReadOnly == true;
 
-    static bool Is(UiControl c, string key) => c.Properties.GetValueOrDefault(key) == "true";
+    static bool Is(UiControl c, string key) => Is(c.Properties, key);
+    static bool Is(IReadOnlyDictionary<string, string> properties, string key) => properties.GetValueOrDefault(key) == "true";
     static bool Visible(UiControl c) => c.Bounds.Width > 0 && c.Bounds.Height > 0 && (c.Clip is not { } clip || c.Bounds.Intersect(clip) is { Width: > 0, Height: > 0 });
     static bool IsEditStop(UiControl c) => c.Enabled && c.Type == "EditBox" && !Is(c, "Static") && !Is(c, "ReadOnly") && Visible(c);
     /// <summary>A button of the layout itself: not a window's close/pin, a scroll bar's part, a tab header or a list row (those are reached by the pointer).</summary>
@@ -34,13 +35,13 @@ public sealed partial class MyGuiScreenHost
         && !c.Properties.ContainsKey("TemplateOwner") && !c.Properties.ContainsKey("ListOwner") && Visible(c);
 
     /// <summary>A box's mode from its layout properties: <c>MaxTextLength</c>, <c>MultiLine</c> (not with <c>Password</c>), <c>WordWrap</c>, <c>Password</c> and <c>ReadOnly</c>.</summary>
-    static UiTextBuffer NewBuffer(UiControl c, string text)
+    static UiTextBuffer NewBuffer(IReadOnlyDictionary<string, string> properties, string text)
     {
-        bool password = Is(c, "Password");
+        bool password = Is(properties, "Password");
         return new(text)
         {
-            MaxLength = int.TryParse(c.Properties.GetValueOrDefault("MaxTextLength"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int max) && max > 0 ? max : DefaultMaxLength,
-            MultiLine = Is(c, "MultiLine") && !password, WordWrap = Is(c, "WordWrap"), Password = password, ReadOnly = Is(c, "ReadOnly"),
+            MaxLength = int.TryParse(properties.GetValueOrDefault("MaxTextLength"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int max) && max > 0 ? max : DefaultMaxLength,
+            MultiLine = Is(properties, "MultiLine") && !password, WordWrap = Is(properties, "WordWrap"), Password = password, ReadOnly = Is(properties, "ReadOnly"),
         };
     }
 
@@ -52,7 +53,24 @@ public sealed partial class MyGuiScreenHost
         keyButton = null;
         focus = (id, c.Name);
         if (!readOnly) s.Text.TryAdd(c.Name, c.Caption);
-        edit = NewBuffer(c, readOnly ? c.Caption : s.Text[c.Name]);
+        edit = NewBuffer(c.Properties, readOnly ? c.Caption : s.Text[c.Name]);
+    }
+
+    /// <summary>
+    /// Puts the typing focus on the editable <c>EditBox</c> <paramref name="widget"/> of the open screen <paramref name="id"/>, caret at the end, as a click would (the chat
+    /// line, an empty name box; docs/meitou-ui.md "Multiplayer"). Its mode comes from the layout's properties, not from runtime bindings. Call it after <see cref="Open"/>,
+    /// which clears the focus. False: the screen is not open, or the widget is not an editable box. Named for the box: <see cref="Focus"/> is the focus held.
+    /// </summary>
+    public bool FocusBox(string id, string widget)
+    {
+        if (!open.Contains(id) || screens[id].Layout.Find(widget) is not { Type: "EditBox" } w || Is(w.Properties, "Static") || Is(w.Properties, "ReadOnly")) return false;
+        var s = screens[id];
+        s.Text.TryAdd(widget, w.Properties.GetValueOrDefault("Caption") ?? "");
+        keyButton = null;
+        focus = (id, widget);
+        edit = NewBuffer(w.Properties, s.Text[widget]);
+        edit.Key(UiEditKey.DocumentEnd);
+        return true;
     }
 
     string? ReadClipboard()

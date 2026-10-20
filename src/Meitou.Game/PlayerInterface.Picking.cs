@@ -91,8 +91,8 @@ sealed partial class PlayerInterface
         return new Vector2((clip.X / clip.W * 0.5f + 0.5f) * Width, (0.5f - clip.Y / clip.W * 0.5f) * Height);
     }
 
-    /// <summary>The player's character under the pixel (capsule from the feet up, a little fatter with distance), if any.</summary>
-    public CharacterId? Pick(Vector2 pixel) => PickWhere(pixel, c => c.IsPlayer);
+    /// <summary>The player's character under the pixel (capsule from the feet up, a little fatter with distance), if any; in multiplayer only the viewer's own (<see cref="Mine"/>).</summary>
+    public CharacterId? Pick(Vector2 pixel) => PickWhere(pixel, Mine);
 
     /// <summary>A living character of anyone else's under the pixel: what a right click attacks (hostility is not checked yet).</summary>
     public CharacterId? PickTarget(Vector2 pixel) => PickWhere(pixel, c => !c.IsPlayer && c.Body is { Dead: false, Unconscious: false });
@@ -100,11 +100,11 @@ sealed partial class PlayerInterface
     /// <summary>A living trader under the pixel (a member of a squad with a shop): a right click trades with it, or attacks it when its faction is hostile (the world decides).</summary>
     public CharacterId? PickTrader(Vector2 pixel) => PickWhere(pixel, c => c.IsTrader && c.Body is not { Dead: true } and not { Unconscious: true });
 
-    /// <summary>A knocked-out or dead character under the pixel that nobody carries (what a pick-up or a loot is for); <paramref name="ownOnly"/> takes only the player's.</summary>
+    /// <summary>A knocked-out or dead character under the pixel that nobody carries (what a pick-up or a loot is for); <paramref name="ownOnly"/> takes only the player's. Every player's in multiplayer (<c>IsPlayer</c>, not <see cref="Mine"/>): carrying a teammate is co-op.</summary>
     public CharacterId? PickDowned(Vector2 pixel, bool ownOnly = false) =>
         PickWhere(pixel, c => c.Body is { } b && (b.Unconscious || b.Dead) && c.CarriedBy.IsNone && (!ownOnly || c.IsPlayer)) ?? (ownOnly ? null : PickWhere(pixel, c => !c.CarriedBy.IsNone));
 
-    /// <summary>One of the player's own living characters under the pixel that first aid has something to bandage on (a right click on it orders the selection to treat it).</summary>
+    /// <summary>One of the player's own living characters under the pixel that first aid has something to bandage on (a right click on it orders the selection to treat it). Every player's in multiplayer (<c>IsPlayer</c>, not <see cref="Mine"/>): treating a teammate is co-op.</summary>
     public CharacterId? PickHurtAlly(Vector2 pixel) => PickWhere(pixel, c => c.IsPlayer && c.Body is { Dead: false, NeedsAid: true });
 
     /// <summary>
@@ -152,7 +152,7 @@ sealed partial class PlayerInterface
         var list = new List<CharacterId>();
         foreach (var c in session.CurrentSnapshot.Characters)
         {
-            if (!c.IsPlayer) continue;
+            if (!Mine(c)) continue;
             var p = where(c) + new Vector3(0, CharacterHeight / 2, 0);
             if (Vector3.Distance(Eye, p) > BoxSelectRange) continue;
             if (Project(p) is { } s && s.X >= x0 && s.X <= x1 && s.Y >= y0 && s.Y <= y1) list.Add(c.Id);

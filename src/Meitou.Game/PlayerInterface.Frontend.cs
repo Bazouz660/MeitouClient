@@ -18,8 +18,11 @@ sealed partial class PlayerInterface
     string slotDetails = "", credits = "";
     bool showCredits;
     bool slotReadable;
-    /// <summary>The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it).</summary>
-    sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null);
+    /// <summary>
+    /// The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it). An
+    /// <paramref name="Alert"/> has ButtonA alone (OK), which Esc presses too.
+    /// </summary>
+    sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null, bool Alert = false);
     Confirmation? confirmation;
     public void ConfigureFrontend(GameDatabase? database, Func<IReadOnlyList<SaveSlot>> enumerate, string creditsText)
     {
@@ -27,13 +30,13 @@ sealed partial class PlayerInterface
         startIndex = Math.Max(0, starts.ToList().FindIndex(s => s.Name == NewGameStart.DefaultName));
         saveSlots = enumerate; credits = creditsText;
     }
-    public void ShowTitle() { faithfulScreens.Open("title"); RefreshSlots(); UpdateMenuPause(); }
+    public void ShowTitle() { faithfulScreens.Open("title"); RefreshSlots(); OpenPendingAlert(); UpdateMenuPause(); }
     public bool TitleOpen => faithfulScreens.IsOpen("title");
     /// <summary>After leaving a game: title controls over the original image or the live world, according to UI mode.</summary>
     public void ShowMainMenu() => ShowTitle();
     public void CloseFrontend()
     {
-        foreach (string id in new[] { "title", "menu", "new-game", "advanced", "save", "load", "message", "editor", "file" }) faithfulScreens.Close(id);
+        foreach (string id in new[] { "title", "menu", "new-game", "advanced", "save", "load", "message", "editor", "file", "multiplayer", "players", "chat" }) faithfulScreens.Close(id);
         editor = null; previews.Clear();
         confirmation = null; UpdateMenuPause();
     }
@@ -41,25 +44,30 @@ sealed partial class PlayerInterface
     {
         confirmation = new(title, text, action, yes, middle); faithfulScreens.Open("message");
     }
-    /// <summary>The cancel button of the open message box: ButtonC when it has a middle choice, else ButtonB.</summary>
-    string CancelButton => confirmation?.Middle is null ? "ButtonB" : "ButtonC";
+    /// <summary>A message box with only OK (a multiplayer session that ended, docs/meitou-ui.md "Multiplayer").</summary>
+    void Alert(string title, string text)
+    {
+        confirmation = new(title, text, () => { }, "OK", Alert: true); faithfulScreens.Open("message");
+    }
+    /// <summary>The cancel button of the open message box: ButtonA of an alert, ButtonC when it has a middle choice, else ButtonB.</summary>
+    string CancelButton => confirmation?.Alert == true ? "ButtonA" : confirmation?.Middle is null ? "ButtonB" : "ButtonC";
     void RefreshSlots()
     {
         try { slots = saveSlots(); selectedSlot = slots.FirstOrDefault(); ReadSlotDetails(); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { slots = []; selectedSlot = null; slotDetails = e.Message; }
     }
-    void ReadSlotDetails()
+    void ReadSlotDetails() => (slotDetails, slotReadable) = DescribeSlot(selectedSlot);
+    /// <summary>The info panel's text for a save slot and whether its header could be read (the load list, the Multiplayer window's games list).</summary>
+    static (string Text, bool Readable) DescribeSlot(SaveSlot? slot)
     {
-        slotReadable = false;
-        if (selectedSlot is not { } slot) { slotDetails = "No saves found."; return; }
+        if (slot is null) return ("No saves found.", false);
         try
         {
             var info = SaveCatalog.ReadInfo(slot);
-            slotReadable = true;
             // The five labels of the original info panel (FUN_14047e390 / FUN_14047e780, docs/game/ui-screens.md section 3), in their order.
-            slotDetails = $"File version: {info.Version}\nFaction name: {info.Faction}\nFunds: c.{info.Funds.ToString("N0", CultureInfo.InvariantCulture)}\nMembers size: {info.Members}\nLocation: {info.Area}";
+            return ($"File version: {info.Version}\nFaction name: {info.Faction}\nFunds: c.{info.Funds.ToString("N0", CultureInfo.InvariantCulture)}\nMembers size: {info.Members}\nLocation: {info.Area}", true);
         }
-        catch (Exception e) when (e is IOException or FormatException or ArgumentException) { slotDetails = "Unable to read save:\n" + e.Message; }
+        catch (Exception e) when (e is IOException or FormatException or ArgumentException) { return ("Unable to read save:\n" + e.Message, false); }
     }
     void OpenSlots(string id)
     {
@@ -71,9 +79,12 @@ sealed partial class PlayerInterface
     {
         if (e.Screen is "title" or "menu")
         {
+            if (e.Screen == "menu" && NetMenuAction(e)) return true;
             switch (e.Widget)
             {
                 case "ResumeButton": faithfulScreens.Close("menu"); break;
+                // The title's Import slot is Meitou's MULTIPLAYER (docs/faithful-ui-parity.md "Engine choices").
+                case "ImportGameButton": OpenMultiplayer(runningGame: false); break;
                 case "NewGameButton": faithfulScreens.Open("new-game"); break;
                 case "SaveGameButton": OpenSlots("save"); break;
                 case "LoadGameButton": OpenSlots("load"); break;
@@ -104,6 +115,7 @@ sealed partial class PlayerInterface
             else if (e.Widget == "AdvancedButton") faithfulScreens.Open("advanced");
             else if (e.Widget == "BeginButton" && starts.Count > 0)
             {
+                if (BeginHostedNewGame(starts[startIndex].Id)) return true;
                 void Start() => ScreenAction?.Invoke(new("new-game", "BeginButton", "new-game", starts[startIndex].Id));
                 if (session.World.Player.Exists) Confirm("NEW GAME", "Start a new game? Unsaved progress will be lost.", Start); else Start();
             }
@@ -146,13 +158,15 @@ sealed partial class PlayerInterface
             {
                 Enable("ExitGameButton", "ResumeButton");
                 if (session.World.Player.Exists) Enable("SaveGameButton");
+                BindNetMenu(b);
                 return true;
             }
-            Enable("ExitButton", "CreditsButton");
+            Enable("ExitButton", "CreditsButton", "ImportGameButton");
+            b.Text["ImportGameButton"] = "MULTIPLAYER";
             if (UiMode == UiMode.Meitou)
             {
-                b.Hidden.Add("ImportGameButton");
                 foreach (var (widget, at) in MenuLayout(card: slots.Count > 0 && slotReadable)) b.Positions[widget] = at;
+                if (!b.Positions.ContainsKey("ImportGameButton")) b.Hidden.Add("ImportGameButton");   // shown once the Meitou menu stack places it
             }
             // Continue is shown only when a save exists (docs/game/ui-screens.md section 3), not greyed out.
             if (slots.Count > 0 && slotReadable) Enable("ContinueButton"); else b.Hidden.Add("ContinueButton");
@@ -190,7 +204,8 @@ sealed partial class PlayerInterface
         {
             b.Text["Root"] = confirmation?.Title ?? ""; b.Text["MessageText"] = confirmation?.Text ?? "";
             b.Text["ButtonA"] = confirmation?.Yes ?? "YES";
-            if (confirmation?.Middle is { } middle) { Enable("ButtonA", "ButtonB", "ButtonC"); b.Text["ButtonB"] = middle.Caption; b.Text["ButtonC"] = "CANCEL"; }
+            if (confirmation?.Alert == true) { Enable("ButtonA"); b.Hidden.Add("ButtonB"); b.Hidden.Add("ButtonC"); }
+            else if (confirmation?.Middle is { } middle) { Enable("ButtonA", "ButtonB", "ButtonC"); b.Text["ButtonB"] = middle.Caption; b.Text["ButtonC"] = "CANCEL"; }
             else { Enable("ButtonA", "ButtonB"); b.Hidden.Add("ButtonC"); b.Text["ButtonB"] = "CANCEL"; }
             b.Properties["MessageText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true" };
             b.Properties["ButtonA"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };

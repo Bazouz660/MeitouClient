@@ -49,6 +49,7 @@ sealed partial class PlayerInterface
         foreach (var (id, file, modal) in FaithfulScreenFiles)
             faithfulScreens.Register(id, MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file)), modal,
                 centreRoot: id is "new-game" or "save" or "load" or "file");
+        RegisterNetScreens();
         faithfulScreens.Activated += FaithfulAction;
         uiHost.Diagnostic += d => Console.Error.WriteLine($"ui        {d.Extension} {d.Operation}: {d.Error.Message}");
         uiRegistration = uiHost.Register(new PlayerUiExtension(ExecuteUiAction));
@@ -114,7 +115,7 @@ sealed partial class PlayerInterface
         b.Text["bloodFraction"] = (lead?.Body?.Blood ?? 0).ToString(CultureInfo.InvariantCulture);
         b.Text["bodyFraction"] = (lead?.Body?.WorstPart ?? 0).ToString(CultureInfo.InvariantCulture);
         b.Text["hungerFraction"] = ((lead?.Body?.Hunger ?? 0) / 3).ToString(CultureInfo.InvariantCulture);
-        var roster = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).ToArray();
+        var roster = session.CurrentSnapshot.Characters.Where(Mine).ToArray();
         b.Text["squad.count"] = roster.Length.ToString(CultureInfo.InvariantCulture);
         for (int i = 0; i < Math.Min(8, roster.Length); i++) b.Text[$"squad.{i}.name"] = roster[i].Name;
         b.Text["members"] = $"{PlayerCharacters().Count} members | {Selected().Count} selected";
@@ -151,6 +152,7 @@ sealed partial class PlayerInterface
         }
         b.Actions["ExtendedStatsButton"] = "meitou:extendedstats";
         if (session.Simulation.Speed != 0) b.Hidden.Add("PausedPanel");
+        if (Multiplayer) BindNetHud(b);
         var buildingNow = BuildingFocus();
         bool buildingFocus = buildingNow is not null;
         BindMedicalBars(b, buildingFocus ? null : lead);
@@ -195,6 +197,7 @@ sealed partial class PlayerInterface
         if (controls.FirstOrDefault(c => c.Name == "SquadPanel") is { } squadPanel) AddSquadPortraits(controls, squadPanel.Bounds);
         AddHudText(controls);
         AddJobRemoveButtons(controls);
+        if (Multiplayer && !TitleOpen && !EditorOpen) { AddChatHistory(controls); AddNetStatus(controls); }
         foreach (var screen in faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent))
         {
             if (screen.Id == "editor") controls.AddRange(EditorBackdrop());
@@ -212,6 +215,7 @@ sealed partial class PlayerInterface
                     Vector4.Zero, new Vector4(0.89f, 0.84f, 0.71f, 1), TextScale: Height / 720f));
         }
         AddInventoryDrag(controls);
+        if (Multiplayer && PlayerListHeld && !TitleOpen) AddPlayerList(controls);   // drawn over the windows
         var nameTags = new List<UiControl>();   // the tags are on the original's Back layer: under every panel
         AddNameTags(nameTags);
         controls.InsertRange(0, nameTags);
@@ -303,6 +307,7 @@ sealed partial class PlayerInterface
         faithfulScreens.CloseAll();
         UpdateMenuPause();
         if (panel is null) return;
+        if (panel == "multiplayer") { OpenMultiplayer(runningGame: false); UpdateMenuPause(); return; }
         if (panel is "overview" or "menu" or "new-game" or "save" or "load" or "title")
         {
             if (panel == "title") ShowTitle();

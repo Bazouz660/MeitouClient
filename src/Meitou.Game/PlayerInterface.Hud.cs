@@ -25,8 +25,7 @@ sealed partial class PlayerInterface
     public void Notice(string text, bool error = false)
     {
         notice = text.ReplaceLineEndings(" ");
-        uiMessages.Add(notice);
-        if (uiMessages.Count > 200) uiMessages.RemoveAt(0);
+        LogMessage(notice);
         noticeIsError = error;
         noticeUntil = System.Diagnostics.Stopwatch.GetTimestamp() + (long)((error ? 6 : 2.5) * System.Diagnostics.Stopwatch.Frequency);
     }
@@ -59,7 +58,12 @@ sealed partial class PlayerInterface
 
     bool OverHud(Vector2 p) => ContainsUi(p);
 
-    void PressButton(int index) => session.RequestClock(index == 0 ? ClockRequest.TogglePause : ClockRequest.Set(ButtonSpeeds[index]));
+    /// <summary>A HUD speed button: pause, then the clock's speeds. In multiplayer a player the host's rules leave off the clock is told so here (the host would refuse it too).</summary>
+    void PressButton(int index)
+    {
+        if (Net is { Role: not NetRole.None } net && !net.CanControlTime(net.LocalPlayer)) { Notice("Only the host can change the game speed.", true); return; }
+        session.RequestClock(index == 0 ? ClockRequest.TogglePause : ClockRequest.Set(ButtonSpeeds[index]));
+    }
 
     /// <summary>The selected characters of the current snapshot, found once per snapshot (the HUD box is asked for on every hit test).</summary>
     IReadOnlyList<CharacterSnapshot> Selected()
@@ -88,6 +92,7 @@ sealed partial class PlayerInterface
     public void Draw(DebugOverlay o, int width, int height)
     {
         PollUiSounds();
+        PollNet();
         Width = width;
         Height = height;
         PollBiome();
