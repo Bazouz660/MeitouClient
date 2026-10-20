@@ -1010,7 +1010,21 @@ Not implemented yet: the world publishes player 0's view; the snapshot's viewer,
 
 ### Joining
 
-Not implemented yet: `JoinPlayer` and `TransferSquad` (host only) are accepted and do nothing.
+- **`PopulationSystem.AddPlayer(world, n, start, near)`** (n ≥ 1, a game must exist; else it throws): the start's squad built as
+  `StartPlayer` builds it (`BuildStart`; `StartPlayer` keeps its key, rolls and spawn order), owned by n, idle, at the first walkable of
+  20 seeded points within `JoinRadius` = 150 of `near` (else `near`; `ForceStartPos` ignored). Key: `Mix(PlayerStart ^ StableHash(start.Id)
+  ^ Mix(n << 32 ^ Tick))`. Named and ordered like `NewSquad` (`Nameless_k` unique over every player's squads, last in n's order). n's session
+  gets it as active squad, its first member selected, `InCreation`, the start's `force race` ids and `Focus = near`.
+- **Engine choices**: `Faction`, `Money` and research are untouched (a joiner adds no money to the shared purse) and `max faction size` is not
+  checked for a joiner's squad.
+- **Rejoin**: when n's squads still hold a living member nothing is made; n's active squad becomes one of theirs with a living member and,
+  if n's selection is empty, its first living member is selected. So `JoinPlayer` is idempotent: the host sends it at every `Ready`.
+- **`JoinPlayer(StartId, Near)`** (host only), applied by `PopulationSystem.ApplyJoins` in its Inputs (and by the paused interface path):
+  the start is the NEW_GAME_STARTOFF `StartId`, else the one named `Wanderer`, else the first; no game, player 0 or no start → a message to
+  the issuer.
+- **`TransferSquad(Squad, Owner)`** (host only, `SquadManagement`): a player squad passes to a player with a session; it goes last in the new
+  owner's order (the old owner's renumbered), its members leave every other session's selection, then each session's active squad is kept
+  valid. Anything else is ignored.
 
 ## Open questions and known gaps
 
