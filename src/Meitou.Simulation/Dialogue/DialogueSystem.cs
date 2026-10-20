@@ -388,6 +388,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     /// <summary>The player whose talk holds <paramref name="npc"/> (its approach's target or its open conversation's NPC); -1 none.</summary>
     public int HolderOf(CharacterId npc)
     {
+        if (npc.IsNone) return -1;   // an idle talk's Target is None
         foreach (var talk in talks.Values)
             if (talk.Target == npc || talk.Open?.Npc == npc) return talk.Player;
         return -1;

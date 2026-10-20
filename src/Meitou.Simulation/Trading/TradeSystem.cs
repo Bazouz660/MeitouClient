@@ -207,6 +207,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource, INpcHolder
     /// <summary>The player whose deal (open or on its way) is with <paramref name="npc"/>; -1 none.</summary>
     public int HolderOf(CharacterId npc)
     {
+        if (npc.IsNone) return -1;   // a closed deal's Trader is None
         foreach (var deal in deals.Values)
             if (deal.Trader == npc) return deal.Player;
         return -1;
