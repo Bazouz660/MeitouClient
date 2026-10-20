@@ -306,8 +306,16 @@ threadgroups, as Vulkan's <code>vkCmdDispatch</code> does. The pipeline is an
 ending the compute and blit encoders is the seam: a command buffer orders its encoders and Apple
 silicon tracks the hazards inside one. <code>FillBuffer</code> clears only (Metal fills with one
 byte; no caller asks for another value). Verified with an 8x8 dispatch into an RGBA8UI storage
-image through set 0's argument buffer, read back as (2, 3, 99, 255). The post chain itself still
-has to be widened to the seam (<code>PostProcess</code> is Vulkan-typed), which is the next work.
+image through set 0's argument buffer, read back as (2, 3, 99, 255).
+
+**The composite (the first slice of the chain).** The Metal scene draws into an RGBA16F target and
+`PostComposite` runs the game's own tone-map shader (`PostProcessShaders.Composite`, through
+`LegacyProgram`) into the backbuffer. The fullscreen pass flips `vUv.y` on Metal: Vulkan's negative
+viewport stores the scene flipped into its targets, Metal's do not (the present flips the picture
+instead). No auto exposure yet — `uAuto` is 0 and `PostOptions.Exposure` is the exposure — so the
+luminance reduction and adapt passes, the upscalers/TAA and `PostProcess`'s widening to the seam
+remain step 2's rest. On sunlit terrain the composite lands within about 10% of the Vulkan
+screenshot's channels; the large remaining differences there are the shadows (step 4).
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
 
