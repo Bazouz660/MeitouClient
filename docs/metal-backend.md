@@ -213,23 +213,13 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The game's `--renderer metal` on the device: the real `SkyRenderer` with the world's sky textures and switches, the scene's host pass as `SceneHost` opens it, the session's hour and camera; `--screenshot` (one picture, then out) | the sky in the game, verified: the gradient follows the camera and the hour, the clouds and stars are the world's own; the tone is raw linear until the post chain's step |
 | Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
 | Done | The bindless table's MSL shape, verified: tier-2 argument buffers in the device address space, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
+| Done | The flatten's kind refinement: a vertex module's buffers shift by the vertex base, its images and samplers flatten from 0 (`RemapBindings` classifies by the SPIR-V storage class, `Flatten` takes the kind) | the terrain's vertex-stage table samplers fit the stage's sampler table |
 | Next | The bindless table on Metal (the terrain's prerequisite): the GLSL rewrite, the table runtime, `BindBindlessTable` — see the plan section | the terrain's textures can bind |
 | Then | The terrain in the game (the Vulkan-free widening, the native programs, the materials, the CDLOD draws) | the world appears |
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
 
-### The plan for the next steps (kept exact, for resuming cold)
-
-**Step A — the flatten's kind refinement.** Metal's stages have one binding table per *kind*
-(`[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]`), and the per-kind tables are separate: only
-the buffer tables carry the vertex buffers. So the flatten's vertex base (15) applies to **buffers**
-only; textures and samplers flatten with base 0 in both stages. Changes, both sides of the same
-formula: `SpirvPatch.RemapBindings` becomes kind-aware (classify each decorated variable by its
-type's pointer storage: Uniform/Storage classes are buffers, UniformConstant is images/samplers;
-buffers in a vertex module shift by 15, others by 0) and `MetalShaders.Flatten` takes the slot's
-kind. The sky (no vertex samplers) and the quad (no samplers) must come out unchanged; the
-reason this matters: the stage's sampler tables hold 16 entries, and a vertex-stage table sampler
-at 15 + set × 8 + binding would run past them.
+### The plan for the remaining steps (kept exact, for resuming cold)
 
 **Step B — the GLSL rewrite for the bindless set** (in `MetalShaders.Native`, before
 `CompileNative`, only when the layout has `GpuSetLayout.Bindless`; the Vulkan path's GLSL stays
@@ -334,5 +324,5 @@ the baseline, not one.
 
 - Metal's GPU timestamps (MTLCounterSampleBuffer), when the pass timings matter on Metal.
 
-(Resolved in the plan: per-entry sampler state — sized sampler arrays in the argument buffer;
-the vertex-stage binding table — the kind-aware flatten.)
+(Resolved in the plan: per-entry sampler state — sized sampler arrays in the argument buffer.
+Resolved: the vertex-stage binding table — the kind-aware flatten, in the road table.)
