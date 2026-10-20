@@ -92,7 +92,7 @@ sealed class UserConfig
     /// <summary>Your name in multiplayer; null until the Multiplayer window saves one.</summary>
     public string? PlayerName { get; set; }
     /// <summary>Your identity to hosts, which keeps your player number and squads across sessions and saves; <see cref="Guid.Empty"/> until <see cref="EnsurePlayerId"/>.
-    /// A second instance on one machine needs its own file (<c>--config</c>, <see cref="LoadOrCreate"/>), else the host refuses the duplicate.</summary>
+    /// A second instance on one machine needs its own file (<c>--config</c>, <see cref="LoadOrCreate"/>): a host refuses its own id and drops the older connection of a repeated one.</summary>
     public Guid PlayerId { get; set; }
     /// <summary>The UDP port a hosted game listens on.</summary>
     public int HostPort { get; set; } = MultiplayerDefaults.Port;

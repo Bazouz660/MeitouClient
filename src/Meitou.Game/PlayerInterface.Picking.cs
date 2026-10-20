@@ -100,11 +100,11 @@ sealed partial class PlayerInterface
     /// <summary>A living trader under the pixel (a member of a squad with a shop): a right click trades with it, or attacks it when its faction is hostile (the world decides).</summary>
     public CharacterId? PickTrader(Vector2 pixel) => PickWhere(pixel, c => c.IsTrader && c.Body is not { Dead: true } and not { Unconscious: true });
 
-    /// <summary>A knocked-out or dead character under the pixel that nobody carries (what a pick-up or a loot is for); <paramref name="ownOnly"/> takes only the player's.</summary>
+    /// <summary>A knocked-out or dead character under the pixel that nobody carries (what a pick-up or a loot is for); <paramref name="ownOnly"/> takes only the player's. Every player's in multiplayer (<c>IsPlayer</c>, not <see cref="Mine"/>): carrying a teammate is co-op.</summary>
     public CharacterId? PickDowned(Vector2 pixel, bool ownOnly = false) =>
         PickWhere(pixel, c => c.Body is { } b && (b.Unconscious || b.Dead) && c.CarriedBy.IsNone && (!ownOnly || c.IsPlayer)) ?? (ownOnly ? null : PickWhere(pixel, c => !c.CarriedBy.IsNone));
 
-    /// <summary>One of the player's own living characters under the pixel that first aid has something to bandage on (a right click on it orders the selection to treat it).</summary>
+    /// <summary>One of the player's own living characters under the pixel that first aid has something to bandage on (a right click on it orders the selection to treat it). Every player's in multiplayer (<c>IsPlayer</c>, not <see cref="Mine"/>): treating a teammate is co-op.</summary>
     public CharacterId? PickHurtAlly(Vector2 pixel) => PickWhere(pixel, c => c.IsPlayer && c.Body is { Dead: false, NeedsAid: true });
 
     /// <summary>
