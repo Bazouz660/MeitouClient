@@ -135,7 +135,41 @@ sends even an empty list.
 
 ## Command codec
 
-Pending (package N2).
+`CommandTags` (`Commands/`) is the explicit, never reordered table of ushort tags, one per concrete `SimCommand` (81), each
+with a `CommandOrigin`: `Client`, `Debug` (tags 200-206, accepted only when the host allows cheats) or `HostOnly`
+(`SandboxMovement` 2, `RepathCommand` 9, `StartContract` 240, `JoinPlayer` 241, `TransferSquad` 242). Tags: 1-9 basics, 20-22
+orders, 30-36 squads, 40-45 carry/combat, 50-53 first aid, 60-64 dialogue/editor, 70-74 trade, 80-94 inventory/locks,
+100-116 production/construction. The abstract `SimCommand`, `DebugCommand` and `SquadCommand` have none.
+
+**Layout** (`CommandCodec`): varint tag, the constructor parameters in declaration order, then the init-only properties in
+declaration order (`MoveOrder.Queued`, `AttackOrder.Defensive`, `EditCharacter.Surgeon/Paid`, `BuyItem.Section/X/Y/Equip`,
+`SellItem.X/Y`). `Tick` and `Player` are not sent: `Read(ref r, strings, tick, player, allowDebug)` sets them (the host
+passes its own tick and the sender's number). Ints are zigzag varints, floats raw (read finite), enums by `NetWriter.WriteEnum`
+(`CharacterOrders` varint, `SquadAi`/`ShackleWork`/`EditKind` byte, `TaskType` zigzag), `byte?` and `bool?` a presence
+byte then the value, `float?` presence byte then raw, `SellItem.X` as `NullableInt`. Record, site, fixture, building and
+instance keys are interned; names (squad, character) are literals. `InventoryItemToken` is index, record, section, x, y,
+quantity, then the quality as **raw** float bits (tokens are compared by equality). `PlannedBuilding` is record, position,
+rotation (x, y, z, w), floor, parent (nullable key); at most `MaxPlans` per `PlaceBuildings`. `EditCharacter.Appearance` goes
+through `FcsRecordCodec`. The codec carries every field, trust fields included (`Defensive`, `Paid`); the gate strips them.
+
+**Refusals.** `Read` throws `NetFormatException` for a `HostOnly` tag always, a `Debug` tag unless `allowDebug`, an unknown
+tag, a non-finite float, an undefined enum value, a null where a string is required, or an over-limit count; on the Control
+channel that drops the sender (`ProtocolError`). `Write` accepts every tagged type (host-only ones included, so the layouts
+stay testable) and throws `ArgumentException` for an untagged type before writing anything.
+
+**Writer-side limits.** A reader refuses what a writer must therefore never produce, so the writer clamps: strings are cut
+to `MaxName` bytes on a character boundary, id lists to `MaxIdList`, plans to `MaxPlans`, a non-finite float is sent as 0.
+
+**Batches** (`CommandBatchCodec`, bodies of messages 0x20 and 0x21, without the `MessageType` byte the caller adds):
+`CommandBatch` = epoch u16, first seq varint, count (at most `MaxCommandBatch`), the commands; command `i` is
+`FirstSeq + i`. `Write` throws `ArgumentException` for more than 64 commands or a body over `MaxReliableMessage` and leaves
+the writer and string table as they were (`Truncate`, `Rollback`); the sender splits. `CommandResult` = seq varint, reason
+(UTF-8, clamped to `MaxMessageText`); the host sends it only for refusals. Both batch ends use the Control channel's string
+tables, one per direction.
+
+**Verified** (`CommandCodecTests`): reflection finds a tag for every concrete command and none for the abstract ones; every
+command, with every constructor parameter and init property set non-default, round-trips field by field with `Tick` and
+`Player` set; host-only and debug tags are refused as above; a batch and a result round-trip through shared string tables.
 
 ## Transport
 
