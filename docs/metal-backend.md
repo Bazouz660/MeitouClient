@@ -489,7 +489,11 @@ this order:
    the TAA output; the scene depth carries `Sampled`. Still to do: the render-scale upscaler and MetalFX behind
    `IUpscaler` (the FSR path stays Vulkan), the sun-motion term, moving geometry's motion (grass/characters) and
    widening the rest of `PostProcess` (SSAO, particles, FXAA, heat haze, GI resolve).
-2. **Fog volumes and light shafts** (`FogVolumes`, `PostProcess.FogRate`, `PostProcess.Shafts`).
+2. **Fog volumes and light shafts.** The **fog-volume data slice is done**: `FogVolumes` takes `IGpuContext`, the Metal
+   host builds the placed volumes and publishes `uFogVolumeData` / `uFogVolumeEye` / `uFogVolumeInfo` every frame (the
+   world shaders' look). The weather's effect spheres wait for the particle renderer. Still to do: the light-shaft
+   passes (`PostProcess.Shafts`) and the fog-rate target (`PostProcess.FogRate`), which the shafts and the volumetric
+   fog read.
 3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
    `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
    variant (a per-frame bump allocator over shared buffers), and drive them with the indirect draws of step 1.

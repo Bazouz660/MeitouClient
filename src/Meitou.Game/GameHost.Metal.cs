@@ -72,6 +72,8 @@ sealed partial class GameHost
             Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
         }
         var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
+        // The placed fog volumes (docs/formats/fogfeatures.md): CPU culling and the frame globals every world shader reads.
+        var fogVolumes = new FogVolumes(ctx, o.NoFogFeatures ? [] : Meitou.Data.World.FogFeatures.Load(install));
         // The sun's shadows: the game's CSM (or the Meitou cascades) into the atlas the terrain's receivers sample.
         var shadow = new ShadowPass(ctx, assets)
         {
@@ -212,6 +214,7 @@ sealed partial class GameHost
             if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
             // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
             camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
+            fogVolumes.Update(eye, camera.Forward, camera.FieldOfView, aspect, camera.ViewDistance, sun.Y, true, null, sky.FogCullDistance);
             // The casters' cascades, before the scene reads the receiver block (terrain depth only so far: no objects or foliage on Metal).
             var shadowView = new Meitou.Data.World.ShadowView(eye, camera.Forward, Vector3.Normalize(new Vector3(view.M12, view.M22, view.M32)), camera.FieldOfView,
                 aspect, camera.Near, camera.Distance);
