@@ -112,6 +112,75 @@ public class FcsRecordCodecTests
         r.ExpectEnd();
     }
 
+    /// <summary>A record's bytes laid out as <see cref="FcsRecordCodec.Write"/> does up to the bools, then what <paramref name="sections"/> writes (the bools on).</summary>
+    static byte[] Crafted(Action<NetWriter, StringTableWriter> sections)
+    {
+        var table = new StringTableWriter(confirmOnSend: false);
+        using var w = new NetWriter();
+        table.BeginPart();
+        w.WriteVarUInt(0);
+        w.WriteVarInt(0);
+        table.Write(w, "", intern: false);
+        table.Write(w, "id");
+        w.WriteVarUInt(0);
+        w.WriteVarUInt(0);
+        sections(w, table);
+        return w.Written.ToArray();
+    }
+
+    static void EmptyCounts(NetWriter w, int count)
+    {
+        for (int i = 0; i < count; i++) w.WriteVarUInt(0);
+    }
+
+    [Fact]
+    public void A_duplicate_key_on_the_wire_is_refused()
+    {
+        // Control: the same bytes with distinct keys decode (after the floats come five more maps, the reference categories and the instances).
+        byte[] distinct = Crafted((w, t) =>
+        {
+            w.WriteVarUInt(0);
+            w.WriteVarUInt(2);
+            t.Write(w, "k"); w.WriteSingle(1);
+            t.Write(w, "j"); w.WriteSingle(2);
+            EmptyCounts(w, 7);
+        });
+        var ok = new NetReader(distinct);
+        Assert.Equal(2, FcsRecordCodec.Read(ref ok, new StringTableReader()).Floats.Count);
+        ok.ExpectEnd();
+
+        byte[] floats = Crafted((w, t) =>
+        {
+            w.WriteVarUInt(0);
+            w.WriteVarUInt(2);
+            t.Write(w, "k"); w.WriteSingle(1);
+            t.Write(w, "k"); w.WriteSingle(2);
+            EmptyCounts(w, 7);
+        });
+        Assert.Throws<NetFormatException>(() => { var r = new NetReader(floats); FcsRecordCodec.Read(ref r, new StringTableReader()); });
+
+        byte[] bools = Crafted((w, t) =>
+        {
+            w.WriteVarUInt(2);
+            t.Write(w, "k");
+            t.Write(w, "k");
+            w.WriteByte(0b01);
+            EmptyCounts(w, 8);
+        });
+        Assert.Throws<NetFormatException>(() => { var r = new NetReader(bools); FcsRecordCodec.Read(ref r, new StringTableReader()); });
+
+        byte[] categories = Crafted((w, t) =>
+        {
+            w.WriteVarUInt(0);
+            EmptyCounts(w, 6);
+            w.WriteVarUInt(2);
+            t.Write(w, "c"); w.WriteVarUInt(0);
+            t.Write(w, "c"); w.WriteVarUInt(0);
+            w.WriteVarUInt(0);
+        });
+        Assert.Throws<NetFormatException>(() => { var r = new NetReader(categories); FcsRecordCodec.Read(ref r, new StringTableReader()); });
+    }
+
     [Fact]
     public void An_empty_record_round_trips()
     {

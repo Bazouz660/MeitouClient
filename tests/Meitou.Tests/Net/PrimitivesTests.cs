@@ -269,4 +269,121 @@ public class PrimitivesTests
         Assert.Equal([0], table.PartDefinitions);
         Assert.Equal(0x03, w.Written[length]);
     }
+
+    public enum Small : byte { A = 0, B = 1 }
+
+    public enum Wide { Low = -1, High = 5 }
+
+    [Flags]
+    public enum Bits : byte { One = 1, Four = 4 }
+
+    [Fact]
+    public void A_truncated_varint_is_refused()
+    {
+        byte[] open = [0x80, 0x80];
+        Assert.Throws<NetFormatException>(() => new NetReader(open).ReadVarUInt());
+        Assert.Throws<NetFormatException>(() => new NetReader(open).ReadVarUInt32());
+        Assert.Throws<NetFormatException>(() => new NetReader(open).ReadVarInt());
+        Assert.Throws<NetFormatException>(() => new NetReader([]).ReadVarUInt());
+    }
+
+    [Fact]
+    public void An_over_long_varint_is_refused()
+    {
+        // Six bytes cannot be 32 bits; the fifth byte of a 32-bit varint holds four bits only.
+        byte[] six = [0x80, 0x80, 0x80, 0x80, 0x80, 0x00];
+        Assert.Throws<NetFormatException>(() => new NetReader(six).ReadVarUInt32());
+        byte[] fifth = [0xFF, 0xFF, 0xFF, 0xFF, 0x1F];
+        Assert.Throws<NetFormatException>(() => new NetReader(fifth).ReadVarUInt32());
+        Assert.Throws<NetFormatException>(() => new NetReader(fifth).ReadVarInt32());
+        // Eleven bytes cannot be 64 bits; the tenth holds one bit only.
+        byte[] eleven = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00];
+        Assert.Throws<NetFormatException>(() => new NetReader(eleven).ReadVarUInt());
+        byte[] tenth = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x02];
+        Assert.Throws<NetFormatException>(() => new NetReader(tenth).ReadVarUInt());
+        Assert.Throws<NetFormatException>(() => new NetReader(tenth).ReadVarInt());
+    }
+
+    [Fact]
+    public void A_count_over_its_maximum_is_refused_and_one_at_it_is_read()
+    {
+        using var w = new NetWriter();
+        w.WriteVarUInt(5);
+        var bytes = w.Written.ToArray();
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes).ReadCount(4));
+        var r = new NetReader(bytes);
+        Assert.Equal(5, r.ReadCount(5));
+        r.ExpectEnd();
+    }
+
+    [Fact]
+    public void A_string_over_its_byte_limit_or_past_the_packet_is_refused()
+    {
+        using var w = new NetWriter();
+        w.WriteUtf8("hello");
+        var bytes = w.Written.ToArray();
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes).ReadUtf8(4));
+        var r = new NetReader(bytes);
+        Assert.Equal("hello", r.ReadUtf8(5));
+        // The declared length runs past the end of the packet.
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes[..^1]).ReadUtf8(5));
+        // The limit counts bytes, not characters.
+        using var wide = new NetWriter();
+        wide.WriteUtf8("üü");
+        var wideBytes = wide.Written.ToArray();
+        Assert.Throws<NetFormatException>(() => new NetReader(wideBytes).ReadUtf8(3));
+    }
+
+    [Fact]
+    public void A_string_that_is_not_valid_utf8_is_refused()
+    {
+        Assert.Throws<NetFormatException>(() => new NetReader([1, 0xFF]).ReadUtf8(8));
+        Assert.Throws<NetFormatException>(() => new NetReader([2, 0xC3, 0x28]).ReadUtf8(8));
+        // A lone surrogate encoded as UTF-8 (ED A0 80) is invalid too.
+        Assert.Throws<NetFormatException>(() => new NetReader([3, 0xED, 0xA0, 0x80]).ReadUtf8(8));
+    }
+
+    [Fact]
+    public void An_enum_value_that_is_not_defined_is_refused()
+    {
+        Assert.Throws<NetFormatException>(() => new NetReader([2]).ReadEnum<Small>());
+        using var w = new NetWriter();
+        w.WriteEnum(Wide.Low);
+        w.WriteEnum(Wide.High);
+        w.WriteVarInt(3);
+        var bytes = w.Written.ToArray();
+        var r = new NetReader(bytes);
+        Assert.Equal(Wide.Low, r.ReadEnum<Wide>());
+        Assert.Equal(Wide.High, r.ReadEnum<Wide>());
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes[^1..]).ReadEnum<Wide>());
+        // A flags enum takes any combination of its bits and refuses a bit no member uses.
+        var flags = new NetReader([5]);
+        Assert.Equal(Bits.One | Bits.Four, flags.ReadEnum<Bits>());
+        Assert.Throws<NetFormatException>(() => new NetReader([2]).ReadEnum<Bits>());
+    }
+
+    [Fact]
+    public void Trailing_bytes_after_a_message_are_refused()
+    {
+        byte[] bytes = [1, 2];
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes).ExpectEnd());
+        Assert.Throws<NetFormatException>(() => new NetReader(bytes[1..]).ExpectEnd());
+        var r = new NetReader(bytes);
+        r.ReadByte();
+        r.ReadByte();
+        r.ExpectEnd();
+    }
+
+    [Fact]
+    public void A_finite_read_refuses_nan_and_infinity_which_a_plain_read_returns()
+    {
+        foreach (float bad in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            using var w = new NetWriter();
+            w.WriteSingle(bad);
+            var bytes = w.Written.ToArray();
+            Assert.Throws<NetFormatException>(() => new NetReader(bytes).ReadFinite());
+            Assert.Equal(BitConverter.SingleToUInt32Bits(bad), BitConverter.SingleToUInt32Bits(new NetReader(bytes).ReadSingle()));
+        }
+    }
 }
