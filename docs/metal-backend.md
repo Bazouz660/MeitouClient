@@ -139,7 +139,8 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The handles (the samplers, the views, the textures, the buffers, the sets) and the binding list | the renderers hold no Vulkan object |
 | Done | The synchronization in the engine's words (the accesses and the dependencies) | the backend decides the barriers |
 | Done | The command list as the engine's interface (`IGpuCommandList`) | the renderers state commands, not Vulkan's |
-| Next | The context's interface; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The context's interface (the resources and the services) | a backend can be another one |
+| Next | The Metal device: a context, a command list and the programs behind the seam ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
