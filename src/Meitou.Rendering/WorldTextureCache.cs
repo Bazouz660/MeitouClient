@@ -104,14 +104,14 @@ public sealed unsafe class WorldTextureCache : IDisposable
     readonly Dictionary<string, WorldTexture> cache = new(StringComparer.OrdinalIgnoreCase);
     readonly List<WorldTexture> byNumber = [];
     readonly List<WorldTexture> pending = [];
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly AssetLocator assets;
     /// <summary>The images' allocation name (the F12 VRAM pie groups by it).</summary>
     readonly string allocationName;
     long lastTrim;
 
     /// <param name="name">The images' allocation name, by owner ("object textures", "foliage textures").</param>
-    public WorldTextureCache(GpuContext gpu, AssetLocator assets, string name)
+    public WorldTextureCache(IGpuContext gpu, AssetLocator assets, string name)
     {
         this.gpu = gpu;
         this.assets = assets;
@@ -228,7 +228,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     /// <summary>
     /// The bindless index (in the 2D float array) of the texture whose <see cref="WorldTexture.Key"/> is <paramref name="key"/>, sampled as the
     /// GL texture was (trilinear, 8x anisotropic, repeat or a transparent border) with the upscaler's LOD bias <paramref name="bias"/>
-    /// (<see cref="GpuContext.LodBias"/>, read where the GL code bound the texture); <paramref name="standIn"/> when it is not resident.
+    /// (<see cref="IGpuContext.LodBias"/>, read where the GL code bound the texture); <paramref name="standIn"/> when it is not resident.
     /// Render thread, in Prepare (it may register an entry).
     /// </summary>
     public uint Index(uint key, float bias, uint standIn)
@@ -509,7 +509,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     /// <summary>A new image with <paramref name="levels"/> levels in GENERAL layout (the transition in the frame's upload commands, before the copies).</summary>
     GpuTexture Create(InternalFormat format, int width, int height, int levels, bool mipmaps) =>
         gpu.CreateTexture(new TextureDesc(format, width, height, levels,
-            Use: TextureUse.Sampled | TextureUse.TransferDst | (mipmaps ? TextureUse.TransferSrc : 0), Name: allocationName), gpu.Frame.PreFrame.Handle);
+            Use: TextureUse.Sampled | TextureUse.TransferDst | (mipmaps ? TextureUse.TransferSrc : 0), Name: allocationName));
 
     /// <summary>
     /// A stored (S3TC) texture's upload: the image is made with its full chain, each level is filled whole (up to about 512 KB) or in slabs of
@@ -543,7 +543,8 @@ public sealed unsafe class WorldTextureCache : IDisposable
                 {
                     uint height = (uint)Math.Min(n * 4, s.Height - r0 * 4);
                     int bytes = Math.Min(n * rowBytes, length - r0 * rowBytes);
-                    gpu.Uploads.Write(texture!, s.Level, 0, new PixelRect(0, r0 * 4, (uint)s.Width, height),
+                    using var batch = gpu.Uploads.Begin();
+                    batch.Write(texture!, s.Level, 0, new PixelRect(0, r0 * 4, (uint)s.Width, height),
                         dds.Data.AsSpan(s.Offset + r0 * rowBytes, bytes));
                 });
             }
@@ -582,8 +583,12 @@ public sealed unsafe class WorldTextureCache : IDisposable
             for (int y = 0; y < img.Height; y += rows)
             {
                 int y0 = y, h = Math.Min(rows, img.Height - y);
-                steps.Enqueue(() => gpu.Uploads.Write(texture!, lv, 0, new PixelRect(0, y0, (uint)img.Width, (uint)h),
-                    img.Pixels.AsSpan(y0 * rowBytes, h * rowBytes)));
+                steps.Enqueue(() =>
+                {
+                    using var batch = gpu.Uploads.Begin();
+                    batch.Write(texture!, lv, 0, new PixelRect(0, y0, (uint)img.Width, (uint)h),
+                        img.Pixels.AsSpan(y0 * rowBytes, h * rowBytes));
+                });
             }
         }
         steps.Enqueue(() =>
@@ -603,18 +608,10 @@ public sealed unsafe class WorldTextureCache : IDisposable
     }
 
     /// <summary>Each level from the one above by a linear blit, in the frame's upload commands after the uploads (VkGl's <c>GenerateMipmap</c>).</summary>
-    internal static void GenerateMipmaps(GpuContext gpu, GpuTexture texture)
+    internal static void GenerateMipmaps(IGpuContext gpu, GpuTexture texture)
     {
-        var cmd = gpu.Frame.PreFrame;
-        cmd.Order();
-        for (int level = 1; level < texture.Desc.Levels; level++)
-        {
-            var between = new BarrierBatch();
-            between.Add(PipelineStageFlags2.TransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.TransferBit, AccessFlags2.TransferReadBit);
-            cmd.Barrier(in between);
-            cmd.BlitLevel(texture, level - 1, level, TextureMinFilter.Linear);
-        }
-        cmd.Order();
+        using var batch = gpu.Uploads.Begin();
+        batch.Commands.GenerateMips(texture);
     }
 
     /// <summary>A texture left the loading state: its file size is no longer counted as in flight.</summary>

@@ -120,12 +120,12 @@ sealed class ObjectMesh
 /// Loads the world's meshes: <see cref="Request"/> from anywhere on the render thread, <see cref="Pump"/> once per frame starts
 /// the nearest wanted decodes on worker threads and queues the uploads of finished ones.
 /// </summary>
-sealed unsafe class ObjectMeshCache(GpuContext gpuContext, AssetLocator assets, UploadQueue uploads) : IDisposable
+sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets, UploadQueue uploads) : IDisposable
 {
     /// <summary>The buffers' allocation name (the F12 VRAM pie groups by it).</summary>
     const string AllocationName = "object meshes";
 
-    BufferUse RayInput => gpuContext.Device.HasRayQuery ? BufferUse.RayInput : 0;
+    BufferUse RayInput => gpuContext.HasRayQuery ? BufferUse.RayInput : 0;
 
     readonly Dictionary<string, ObjectMesh> meshes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<ObjectMesh, float> wanted = [];
@@ -458,7 +458,8 @@ sealed unsafe class ObjectMeshCache(GpuContext gpuContext, AssetLocator assets, 
             uploads.Add(() =>
             {
                 gpuContext.EnsureFrame();
-                gpuContext.Uploads.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(part.Vertices.AsSpan()).Slice(start, length));
+                using var batch = gpuContext.Uploads.Begin();
+                batch.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(part.Vertices.AsSpan()).Slice(start, length));
             }, label + " (vertices)");
         }
         for (int at = 0; at < indexBytes; at += SlabBytes)
@@ -467,7 +468,8 @@ sealed unsafe class ObjectMeshCache(GpuContext gpuContext, AssetLocator assets, 
             uploads.Add(() =>
             {
                 gpuContext.EnsureFrame();
-                gpuContext.Uploads.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(prepared.All.AsSpan()).Slice(start, length));
+                using var batch = gpuContext.Uploads.Begin();
+                batch.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(prepared.All.AsSpan()).Slice(start, length));
             }, label + " (indices)");
         }
         uploads.Add(() =>
@@ -514,7 +516,8 @@ sealed unsafe class ObjectMeshCache(GpuContext gpuContext, AssetLocator assets, 
             var indices = part.LevelIndices![level];
             elements = DeviceBuffer.Create(gpuContext, (ulong)indices.Length * 4, BufferUse.Index, AllocationName);
             gpuContext.EnsureFrame();
-            gpuContext.Uploads.Write(elements, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
+            using (var batch = gpuContext.Uploads.Begin())
+                batch.Write(elements, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
             part.PlainEbo[level] = elements;
         }
         return part.PlainMesh[level] = MeshBindings.Of(VertexAttributes(part.Vertices), elements);

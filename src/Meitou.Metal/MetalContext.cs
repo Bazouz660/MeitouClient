@@ -400,7 +400,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         setBuffers.Clear();
     }
 
-    void EnsureFrame()
+    public void EnsureFrame()
     {
         if (slot < 0 || !Frame.Open) throw new InvalidOperationException("no frame is open (BeginFrame first)");
     }
@@ -481,6 +481,15 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     }
 
     // ---- the stand-ins ----
+
+    uint? standIn2D;
+
+    /// <inheritdoc/>
+    public uint StandIn2D => standIn2D ??= Bindless.Register(BindlessKind.Texture2D,
+        Dummy(new SamplerInfo("", 0, 0, SamplerDimension.Dim2D, false, false, false, ScalarKind.Float, 0)));
+
+    /// <inheritdoc/>
+    public bool HasRayQuery => false;
 
     /// <summary>The stand-in a sampler reads when nothing is bound: (0, 0, 0, 1), or depth 1 for a shadow sampler.</summary>
     public SampledTexture Dummy(SamplerInfo sampler)

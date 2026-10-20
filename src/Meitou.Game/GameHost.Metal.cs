@@ -102,6 +102,23 @@ sealed partial class GameHost
         var streamer = scene.Heightmap is not null
             ? new TerrainStreamer(install, terrain, terrainTextures, scene.Window.Step) { MaterialDistance = o.MaterialDistance }
             : null;
+        // The buildings and the world's objects, as WorldFrame.CreateGpu makes them: the same distances and LOD bias. The meshes and
+        // textures stream in round the eye on the renderer's own workers.
+        WorldObjectRenderer? objects = null;
+        if (scene.Objects is { } worldObjects)
+        {
+            objects = new WorldObjectRenderer(ctx, assets, worldObjects, landmarks: o.LandmarkDistanceFor(o.MeitouReach) > 0)
+            {
+                ObjectDistance = o.ObjectDistanceFor(o.MeitouReach),
+                LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach),
+                DistantRange = o.DistantZones * Meitou.Data.World.WorldLayout.ZoneSize,
+                NoDistant = o.DistantZones <= 0,
+                LoadBudget = 0,
+                SortNearestFirst = o.MeitouReach,
+                LodBias = 1 / o.ObjectLod,
+            };
+            Console.WriteLine("metal     objects ready");
+        }
         terrain.BeginFrame();
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
@@ -133,9 +150,13 @@ sealed partial class GameHost
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
             if (!ctx.BeginFrame()) continue;
+            // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
+            // opens its own frame; here the frame is the first one's).
+            if (frames == 0) objects?.Settle(camera.Eye);
             streamer?.Update(camera.Eye);
 
             var size = window.FramebufferSize;
+            if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
@@ -171,7 +192,10 @@ sealed partial class GameHost
             var shadowView = new Meitou.Data.World.ShadowView(eye, camera.Forward, Vector3.Normalize(new Vector3(view.M12, view.M22, view.M32)), camera.FieldOfView,
                 aspect, camera.Near, camera.Distance);
             shadow.Render(shadowView, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
-                terrain.DrawDepth(worldToClip, lodEye, planes, render));
+            {
+                terrain.DrawDepth(worldToClip, lodEye, planes, render);
+                if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain);
+            });
 
 
             // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
@@ -202,6 +226,8 @@ sealed partial class GameHost
             var frustum = WorldCamera.FrustumPlanes(worldProjection);
             terrain.BeginFrame();
             terrain.Draw(worldProjection, eye, frustum, render, light);
+            if (render.Objects && objects is not null)
+                objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
 
             ctx.EndHostPass(cmd);
             cmd.EndRendering();
@@ -216,6 +242,7 @@ sealed partial class GameHost
             if (o.Screenshot is { } shot && frames == 40) { Capture(ctx, backbuffer, shot); break; }   // one picture, as the Vulkan flow's does
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        objects?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();
         sceneColour?.Dispose();

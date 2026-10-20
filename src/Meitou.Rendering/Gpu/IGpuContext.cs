@@ -48,6 +48,9 @@ public interface IGpuContext
     /// <summary>The stand-in a sampler reads when nothing is bound (GL's default texture, by the sampler's declaration).</summary>
     SampledTexture Dummy(SamplerInfo sampler);
 
+    /// <summary>The stand-in's index in the bindless 2D float array (what a 2D sampler with nothing bound reads, <see cref="Dummy"/>), registered once.</summary>
+    uint StandIn2D { get; }
+
     /// <summary>The generic attribute value a disabled vertex input reads (GL's constant (0, 0, 0, 1), bound with stride 0).</summary>
     GpuBuffer DummyVertex { get; }
 
@@ -59,6 +62,12 @@ public interface IGpuContext
 
     /// <summary>The device limit a uniform buffer slice's offset must align to (the default blocks' slices).</summary>
     ulong UniformBufferAlign { get; }
+
+    /// <summary>The device traces ray queries (an optional buffer use, never required).</summary>
+    bool HasRayQuery { get; }
+
+    /// <summary>A frame is open for recording (the upload paths write into it; Metal's batches need nothing).</summary>
+    void EnsureFrame();
 
     /// <summary>
     /// A set that lives as long as the context, its slots written once from the bindings (the layout says what each slot holds and

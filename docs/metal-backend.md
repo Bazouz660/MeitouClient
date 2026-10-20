@@ -311,8 +311,8 @@ image through set 0's argument buffer, read back as (2, 3, 99, 255).
 **Shadows (step 4's first slice).** The seam now carries the host-pass handoff and the device capabilities
 the shadow pass needs (`BeginHostPass`/`SetPassViewport`/`EndHostPass`, `DepthClamp`, `RecordsSecondaries`), so
 `ShadowPass` and `TerrainShadowMap` run on `IGpuContext`; Metal opens no secondaries and clamps depth. The Metal
-host draws the terrain's depth into the cascades before the scene, and the receivers sample the atlas. Casters
-are terrain only (no objects or foliage yet). Two backend facts this surfaced:
+host draws the terrain's and the objects' depth into the cascades before the scene, and the receivers sample the
+atlas; foliage is not a caster yet. Two backend facts this surfaced:
 
 - **A new Metal render encoder carries no pipeline state**, so the redundancy filter must be reset in
   `BeginRendering`: the multi-pass shadow atlas otherwise drew a later pass without `setRenderPipelineState`.
@@ -320,6 +320,16 @@ are terrain only (no objects or foliage yet). Two backend facts this surfaced:
   `None`.
 
 The noise texture uploads through an upload batch (the seam's `IGpuUploads` has no direct `Write`).
+
+**Objects and buildings (step 3).** `WorldObjectRenderer` and its caches (`WorldTextureCache`, `ObjectMeshCache`) take
+`IGpuContext`. The seam gained what their uploads and draws use: `HasRayQuery`, `EnsureFrame` and `StandIn2D` on the
+context, batches from `IGpuUploads.Begin` (with `GenerateMips` on their command list) for the mesh and texture
+slabs, `IGpuFrame.WriteConstants` for the per-instance matrices, and `GpuProgram.Info` for the vertex reflection.
+The Metal host makes the renderer with the Vulkan distances and LOD bias, settles it on the first open frame (the
+still's meshes and textures all resident), calls `SetView`/`Update` per frame, draws it after the terrain, and
+draws its depth into the cascades. Metal vertex formats `Rgb32f`, `Rgba16f` and `Rgba8ui` were added for the
+building meshes. The buildings stand where Vulkan draws them; characters, foliage and the UI remain (steps 5, 7
+and 8).
 
 **The composite (the first slice of the chain).** The Metal scene draws into an RGBA16F target and
 `PostComposite` runs the game's own tone-map shader (`PostProcessShaders.Composite`, through

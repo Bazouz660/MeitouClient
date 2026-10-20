@@ -211,6 +211,9 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     /// <summary>A new texture: the Vulkan image and its transition into GENERAL layout (submitted at once).</summary>
     public GpuTexture CreateTexture(TextureDesc desc) => CreateTexture(desc, default);
 
+    /// <inheritdoc/>
+    public bool HasRayQuery => Device.HasRayQuery;
+
     /// <summary>A texture over someone else's image (the interop's export of a GL texture): the image is not ours to free.</summary>
     internal GpuTexture BorrowTexture(TextureDesc desc, Image image) => new(this, desc, Device.AddTexture(image, null, owned: false, desc));
 

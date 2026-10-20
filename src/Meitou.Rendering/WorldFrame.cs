@@ -1308,7 +1308,7 @@ static class WorldFrame
         // The interior masks with the near slice's camera, before the scene's passes (the terrain of that slice reads them).
         if (render.Objects && gpu.Objects is { } maskObjects && camera.Slices().FirstOrDefault(s => s.Near <= camera.Near) is { Far: > 0 } maskSlice)
         {
-            gpu.InteriorMask ??= new InteriorMaskRenderer(maskObjects.Gpu, maskObjects);
+            gpu.InteriorMask ??= new InteriorMaskRenderer((GpuContext)maskObjects.Gpu, maskObjects);
             gpu.InteriorMask.Record(view * Jitter.Apply(camera.Projection(aspect, maskSlice.Near, maskSlice.Far), jitter, rw, rh), eye, post.RenderWidth, post.RenderHeight);
         }
         else if (gpu.InteriorMask is { } unused) unused.Record(default, eye, 0, 0);

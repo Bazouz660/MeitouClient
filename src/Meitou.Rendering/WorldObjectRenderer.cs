@@ -24,7 +24,7 @@ namespace Meitou.Rendering;
 public sealed unsafe partial class WorldObjectRenderer : IDisposable
 {
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; since phase 8 stage 1 the only one this renderer uses).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly NativeFrame nativeFrame;
     readonly ObjProg colourProg, solidProg, depthProg;   // the colour, the colour without a discard (EarlyDepth) and the depth (shadow caster) programs, native
     readonly WorldTextureCache textureCache;
@@ -88,7 +88,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
 
     /// <param name="landmarks">Collect the world's landmarks (<see cref="LandmarkClass"/>) and keep them apart from the zones, to be drawn to <see cref="LandmarkDistance"/>.
     /// Without it (Faithful) every placement stays in its zone and the object distance rules all.</param>
-    internal WorldObjectRenderer(GpuContext gpu, AssetLocator assets, WorldObjects objects, bool landmarks = false)
+    internal WorldObjectRenderer(IGpuContext gpu, AssetLocator assets, WorldObjects objects, bool landmarks = false)
     {
         Gpu = gpu;
         this.assets = assets;
@@ -869,8 +869,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         foreach (var b in active) { b.Offset = total; total += b.Count; }
         if (total > 0)
         {
-            instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
-            var target = new Span<byte>(instances.Pointer, total * InstanceStride);
+            instances = Gpu.Frame.WriteConstants(new byte[total * InstanceStride], 16);
+            var target = instances.Bytes[..(total * InstanceStride)];
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
         }
@@ -1061,7 +1061,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// it, as VkGl feeds a GL program (<see cref="LegacyProgram.VertexLayout"/>: a disabled attribute reads GL's constant through a stride-0 binding).</summary>
     sealed class ObjProg : IDisposable
     {
-        readonly GpuContext ctx;
+        readonly IGpuContext ctx;
         public readonly GpuProgram P;
         readonly int[] locations;
         readonly Meitou.Rendering.Gpu.Shaders.ScalarKind[] kinds;
@@ -1069,11 +1069,11 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public readonly int Own;
         VertexLayout? last;
 
-        public ObjProg(GpuContext ctx, NativeFrame frame, string vertex, string fragment, string name)
+        public ObjProg(IGpuContext ctx, NativeFrame frame, string vertex, string fragment, string name)
         {
             this.ctx = ctx;
             P = frame.Program(vertex, fragment, name);
-            var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
+            var inputs = P.Info.VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < RowLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -1102,7 +1102,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
+                    : new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
             }
             return result;
         }
@@ -1158,7 +1158,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         return pipeline;
     }
 
-    /// <summary>The segment's LOD bias (the upscaler's, <see cref="GpuContext.LodBias"/>) and GL's stand-in for a texture not resident.</summary>
+    /// <summary>The segment's LOD bias (the upscaler's, <see cref="IGpuContext.LodBias"/>) and GL's stand-in for a texture not resident.</summary>
     float textureBias;
     uint textureStandIn;
 
