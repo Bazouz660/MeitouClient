@@ -275,7 +275,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>
     /// A 2D RGBA8 texture from top-first rows, as <c>WorldGl.Texture2D</c> made it: with <paramref name="mipmaps"/> the whole chain made on the
-    /// GPU as GL's GenerateMipmap made it in VkGl (<see cref="CommandList.GenerateMips"/>) and trilinear filtering, else one level, linear;
+    /// GPU as GL's GenerateMipmap made it in VkGl (<see cref="IGpuCommandList.GenerateMips"/>) and trilinear filtering, else one level, linear;
     /// clamped to the edge.
     /// </summary>
     TerrainTexture Rgba8(int width, int height, byte[] rgba, bool mipmaps, string name)

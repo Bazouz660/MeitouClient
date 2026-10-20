@@ -455,7 +455,11 @@ public enum LoadOp : int
 }
 
 /// <summary>The colour a render target is cleared to.</summary>
-public readonly record struct ClearColour(float R, float G, float B, float A);
+public readonly record struct ClearColour(float R, float G, float B, float A)
+{
+    /// <summary>The clear colour as the backend's own (Vulkan's).</summary>
+    public Silk.NET.Vulkan.ClearColorValue Vk => new(R, G, B, A);
+}
 
 /// <summary>The index format of a vertex index buffer (GL's index type).</summary>
 public enum IndexKind : int

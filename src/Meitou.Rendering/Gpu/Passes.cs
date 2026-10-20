@@ -81,7 +81,7 @@ public sealed record DrawState(CullMode Cull, FrontFaceDirection Front, bool Dep
 
     /// <summary>Records the dynamic state: <paramref name="t"/>'s viewport and scissor, and this cull, front face, depth and bias
     /// (<paramref name="front"/> overrides the front face, for a draw that turns the winding round).</summary>
-    public void Record(CommandList cmd, PassTargets t, FrontFaceDirection? front = null)
+    public void Record(IGpuCommandList cmd, PassTargets t, FrontFaceDirection? front = null)
     {
         cmd.SetViewport(t.Viewport);
         cmd.SetScissor(t.Scissor);
@@ -112,7 +112,7 @@ public sealed unsafe partial class GpuContext
     public void BeginHostPass(CommandList cmd, PassTargets targets, DrawState state)
     {
         if (passList is not null) throw new InvalidOperationException("a host pass is already open");
-        (passList, passTargets, passState) = (cmd, targets, state);
+        (passList, passTargets, passState) = ((CommandList)cmd, targets, state);
     }
 
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
@@ -129,7 +129,7 @@ public sealed unsafe partial class GpuContext
         passState = state;
     }
 
-    public void EndHostPass(CommandList cmd)
+    public void EndHostPass(IGpuCommandList cmd)
     {
         if (passList is null || !ReferenceEquals(cmd, passList)) throw new InvalidOperationException("EndHostPass without a matching BeginHostPass");
         (passList, passTargets, passState) = (null, null, null);

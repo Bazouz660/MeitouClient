@@ -324,14 +324,14 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         tallyFrame[s] = ctx.Frame.Number;
     }
 
-    void CopyTally(CommandList cmd, GpuBuffer args, ulong argsOffset, int count)
+    void CopyTally(IGpuCommandList cmd, GpuBuffer args, ulong argsOffset, int count)
     {
         if (tallyViews is null || count == 0) return;
         int s = scratchSlot;
         ulong bytes = (ulong)count * 20;
         if (tallyUsed![s] + bytes > TallyBytes) return;
         var rb = tallyBuffers![s] ??= ReadbackBuffer.Create(ctx, TallyBytes, $"foliage draw tally {s}");
-        cmd.CopyBuffer(args, rb.Handle, new BufferCopy(argsOffset, tallyUsed[s], bytes));
+        cmd.CopyBuffer(args, rb.Handle, new GpuBufferCopy(argsOffset, tallyUsed[s], bytes));
         tallyViews[s].Add((TallyView.Kind, TallyView.Rocks, TallyView.Impostors, count, tallyUsed[s]));
         tallyUsed[s] += (bytes + 15) / 16 * 16;
     }
@@ -434,19 +434,17 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         FrameProfiler.PreStamp(cmd, StageClock.Uploads);
         cmd.BeginLabel("foliage cull");
         // The arena's uploads (and anything else uploaded so far) before the reads.
-        Barrier(cmd, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, PipelineStageFlags2.ComputeShaderBit);
+        Barrier(cmd, Access.TransferDst, Access.StorageRead);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint x = (uint)Math.Min(n, 65535), y = (uint)((n + 65534) / 65535);
         Run(cmd, cull, cullPipe, cullBindings, b, push, x, y);
-        Barrier(cmd, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit);
+        Barrier(cmd, Access.StorageWrite, Access.StorageRead);
         Run(cmd, scan, scanPipe, scanBindings, b, push, 1, 1);
-        Barrier(cmd, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit);
+        Barrier(cmd, Access.StorageWrite, Access.StorageRead);
         Run(cmd, compact, compactPipe, compactBindings, b, push, x, y);
         // The draws read the arguments and the rows (the upload buffer's closing full barrier orders them too; this one says what for).
-        Barrier(cmd, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit,
-            PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.VertexAttributeInputBit | PipelineStageFlags2.AllTransferBit,
-            AccessFlags2.IndirectCommandReadBit | AccessFlags2.VertexAttributeReadBit | AccessFlags2.TransferReadBit);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, PipelineStageFlags2.ComputeShaderBit);
+        Barrier(cmd, Access.StorageWrite, Access.IndirectRead | Access.VertexRead | Access.TransferSrc);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.Compute);
         // The total for the CPU's statistics, a frame ring later (the slot's previous frame has completed: its fence was waited for).
         LateFogCulled = 0;
         if (fogCull.Length == FogVolumes.CullVectors && fogIndex < MaxFogViews)
@@ -454,7 +452,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
             var fogRead = fogTotals[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxFogViews * 4, $"foliage fog cull totals {scratchSlot}");
             if (fogIndex == 0 && fogWritten[scratchSlot] > 0)
                 foreach (uint v in MemoryMarshal.Cast<byte, uint>(fogRead.Read(0, (ulong)fogWritten[scratchSlot] * 4))) LateFogCulled += (int)v;
-            cmd.CopyBuffer(offsets.Buffer, fogRead.Handle, new BufferCopy(offsets.Offset + (ulong)(n + 1) * 4, (ulong)fogIndex * 4, 4));
+            cmd.CopyBuffer(offsets.Buffer, fogRead.Handle, new GpuBufferCopy(offsets.Offset + (ulong)(n + 1) * 4, (ulong)fogIndex * 4, 4));
             fogIndex++;
         }
         if (!occlusion.IsEmpty && occIndex < MaxFogViews)
@@ -467,14 +465,14 @@ public sealed unsafe class FoliageGpuCull : IDisposable
                 if (occWritten[scratchSlot] > 0)
                     foreach (uint v in MemoryMarshal.Cast<byte, uint>(occRead.Read(0, (ulong)occWritten[scratchSlot] * 4))) LateOccluded += (int)v;
             }
-            cmd.CopyBuffer(offsets.Buffer, occRead.Handle, new BufferCopy(offsets.Offset + (ulong)(n + 2) * 4, (ulong)occIndex * 4, 4));
+            cmd.CopyBuffer(offsets.Buffer, occRead.Handle, new GpuBufferCopy(offsets.Offset + (ulong)(n + 2) * 4, (ulong)occIndex * 4, 4));
             occIndex++;
         }
         var counter = visible[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxViews * 4, $"foliage cull totals {scratchSlot}");
         if (viewIndex < MaxViews)
         {
             LateVisible = viewIndex < visibleWritten[scratchSlot] ? (int)MemoryMarshal.Read<uint>(counter.Read((ulong)viewIndex * 4, 4)) : 0;
-            cmd.CopyBuffer(offsets.Buffer, counter.Handle, new BufferCopy(offsets.Offset + (ulong)(2 * n + 4) * 4, (ulong)viewIndex * 4, 4));   // the visible total (solid and fading)
+            cmd.CopyBuffer(offsets.Buffer, counter.Handle, new GpuBufferCopy(offsets.Offset + (ulong)(2 * n + 4) * 4, (ulong)viewIndex * 4, 4));   // the visible total (solid and fading)
             viewIndex++;
         }
         if (CountTriangles) CopyTally(cmd, args.Buffer, args.Offset, work.DrawCount);
@@ -485,7 +483,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         return new FoliageCullResult(rows.Buffer, rows.Offset, rowsBytes, args.Buffer, args.Offset, offsets.Buffer, offsets.Offset, n, work.DrawCount, split);
     }
 
-    void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
+    void Run(IGpuCommandList cmd, ShaderProgram p, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;
@@ -500,12 +498,8 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         cmd.Dispatch(x, y);
     }
 
-    static void Barrier(CommandList cmd, PipelineStageFlags2 srcStages, AccessFlags2 srcAccess, PipelineStageFlags2 dstStages, AccessFlags2 dstAccess)
-    {
-        var batch = new BarrierBatch();
-        batch.Add(srcStages, srcAccess, dstStages, dstAccess);
-        cmd.Barrier(in batch);
-    }
+    /// <summary>Orders a pass's work against the next one's (the engine's words; the backend's masks).</summary>
+    static void Barrier(IGpuCommandList cmd, Access from, Access to) => cmd.Barrier([new GpuDependency(from, to)]);
 
     /// <summary>Copies a result (offsets, arguments, rows) into <paramref name="target"/> at 0, (ChunkCount + 1) × 4 and then the arguments' end
     /// (16-aligned), after the dispatches (the tests read them back). Returns the bytes needed when <paramref name="target"/> is null.</summary>
@@ -518,11 +512,11 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         var cmd = ctx.Frame.PreFrame;
         ulong o = 0;
         ulong offsetsBytes = (ulong)(r.ChunkCount + 1) * 4, argsBytes = (ulong)r.DrawCount * 20;
-        cmd.CopyBuffer(r.Offsets, target.Handle, new BufferCopy(r.OffsetsOffset, o, offsetsBytes));
+        cmd.CopyBuffer(r.Offsets, target.Handle, new GpuBufferCopy(r.OffsetsOffset, o, offsetsBytes));
         o += Align16(offsetsBytes);
-        if (argsBytes > 0) cmd.CopyBuffer(r.Args, target.Handle, new BufferCopy(r.ArgsOffset, o, argsBytes));
+        if (argsBytes > 0) cmd.CopyBuffer(r.Args, target.Handle, new GpuBufferCopy(r.ArgsOffset, o, argsBytes));
         o += Align16(argsBytes);
-        if (r.RowsBytes > 0) cmd.CopyBuffer(r.Rows, target.Handle, new BufferCopy(r.RowsOffset, o, r.RowsBytes));
+        if (r.RowsBytes > 0) cmd.CopyBuffer(r.Rows, target.Handle, new GpuBufferCopy(r.RowsOffset, o, r.RowsBytes));
     }
 
     public void Dispose()

@@ -397,7 +397,7 @@ sealed class WorldOptions
 /// </summary>
 sealed class SceneHost(GpuContext ctx)
 {
-    CommandList? cmd;
+    IGpuCommandList? cmd;
     PassTargets? targets;
 
     public bool IsOpen => cmd is not null;
@@ -416,8 +416,8 @@ sealed class SceneHost(GpuContext ctx)
         var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = LoadOp.Clear, Clear = default } : targets.Extra;
         list.BeginRendering(new RenderingDesc(colour, depth, targets.Width, targets.Height, 0, 0, targets.ShadingRate, targets.ShadingRateTexel, extra), secondaries);
         this.targets = targets;
-        ctx.BeginHostPass(list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb));   // alpha: the characters only (the SSAO character mask)
-        if (secondaries) ctx.Frame.Parallel.Begin(list, targets.Formats, stage);
+        ctx.BeginHostPass((CommandList)list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb));   // alpha: the characters only (the SSAO character mask)
+        if (secondaries) ctx.Frame.Parallel.Begin((CommandList)list, targets.Formats, stage);
         cmd = list;
     }
 

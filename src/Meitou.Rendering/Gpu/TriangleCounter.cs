@@ -114,7 +114,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     {
         ctx.EnsureFrame();
         var list = ctx.BeginNative("triangle counters read");
-        list.CopyBuffer(handle, readback.Handle, new BufferCopy(0, 0, Bytes));
+        list.CopyBuffer(handle, readback.Handle, new GpuBufferCopy(0, 0, Bytes));
         ctx.EndNative(list);
         ctx.Finish();
         var bytes = readback.Read(0, Bytes);

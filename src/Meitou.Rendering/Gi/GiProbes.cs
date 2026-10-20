@@ -313,11 +313,11 @@ internal sealed unsafe class GiProbes : IDisposable
         constants.Albedo = new Vector4(ObjectAlbedo, ground.IsNull ? 0 : 1);
         var block = ctx.Frame.Constants.Write<Constants>(new ReadOnlySpan<Constants>(&constants, 1), 256);
 
-        var cmd = ctx.BeginNative("gi probes");
+        var cmd = (CommandList)ctx.BeginNative("gi probes");
         cmd.BeginLabel("gi probes");
         cmd.Barrier(BarrierBatch.Full);
         // With the pass meter the full barrier that starts the probe passes is timed apart (it waits for the top level's build).
-        if (StageClock.OnClose is not null) { cmd.EndLabel(); ctx.EndNative(cmd); StageClock.Sub("gi probes barrier"); cmd = ctx.BeginNative("gi probes"); cmd.BeginLabel("gi probes"); }
+        if (StageClock.OnClose is not null) { cmd.EndLabel(); ctx.EndNative(cmd); StageClock.Sub("gi probes barrier"); cmd = (CommandList)ctx.BeginNative("gi probes"); cmd.BeginLabel("gi probes"); }
         if (moved)
         {
             // The tiles whose probe moved hold another place's light until their update: hide them (GiShaders.ProbeInvalidate).
@@ -332,7 +332,7 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[2] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 2, DescriptorCount = 1, DescriptorType = DescriptorType.StorageImage, PImageInfo = &images[0] };
             writes[3] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &images[1] };
             cmd.BindPipeline(invalidatePipeline);
-            cmd.PushDescriptors(invalidateProgram, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 4), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(invalidateProgram, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 4), GpuBindPoint.Compute);
             cmd.Dispatch((uint)(Probes / 64));
             cmd.Barrier(ComputeAfterCompute);
         }
@@ -370,9 +370,9 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[13] = Buffer(13, DescriptorType.StorageBuffer, &stateInfo);
             writes[14] = Buffer(14, DescriptorType.StorageBuffer, &listInfo);
             cmd.BindPipeline(variant.TracePipeline);
-            cmd.PushDescriptors(variant.Trace, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 15), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(variant.Trace, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 15), GpuBindPoint.Compute);
             // Set 1: the bindless table, for the objects' diffuse maps at the hits.
-            cmd.BindBindlessTable(variant.Trace, 1, PipelineBindPoint.Compute);
+            cmd.BindBindlessTable(variant.Trace, 1, GpuBindPoint.Compute);
             if (listed > 0) cmd.Dispatch((uint)listed);
         }
         cmd.Barrier(ComputeAfterCompute);
@@ -380,7 +380,7 @@ internal sealed unsafe class GiProbes : IDisposable
         cmd.EndLabel();
         ctx.EndNative(cmd);
         StageClock.Sub("gi trace");
-        cmd = ctx.BeginNative("gi blend");
+        cmd = (CommandList)ctx.BeginNative("gi blend");
         cmd.BeginLabel("gi blend");
         {
             var rayInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(rays.Handle.Index), 0, rays.Size);
@@ -400,7 +400,7 @@ internal sealed unsafe class GiProbes : IDisposable
             writes[5] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 5, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &images[2] };
             writes[6] = Buffer(6, DescriptorType.StorageBuffer, &listInfo);
             cmd.BindPipeline(variant.BlendPipeline);
-            cmd.PushDescriptors(variant.Blend, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 7), PipelineBindPoint.Compute);
+            cmd.PushDescriptors(variant.Blend, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 7), GpuBindPoint.Compute);
             if (listed > 0) cmd.Dispatch((uint)listed);
         }
         cmd.Barrier(ComputeAfterCompute);

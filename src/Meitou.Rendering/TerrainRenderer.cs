@@ -679,7 +679,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             State.Record(cmd, Targets);
             NativeFrame.Record(cmd, Program, in Frame);
@@ -1034,7 +1034,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             Draws[Count++] = d;
         }
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);

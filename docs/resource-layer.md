@@ -34,6 +34,8 @@ What is left: the seam (the context as the interface).
 | `DescriptorSet` | `GpuSet` | the index into the backend's sets |
 | `DescriptorSetLayout` | `GpuSetLayout` | the slots of a set, in the engine's words |
 | `PipelineLayout` | none | the program carries it |
+| `CommandBuffer`, `CommandList` | `IGpuCommandList` | the commands the renderers state |
+| `BufferCopy`, `PipelineBindPoint` | `GpuBufferCopy`, `GpuBindPoint` |
 | `AttachmentLoadOp` | `LoadOp` | |
 | `ClearValue` | `ClearColour`, a depth value | |
 | `IndexType` | `IndexKind` | |
@@ -102,8 +104,9 @@ port, and the renderers' own fields change from the Vulkan class to the interfac
 
 The renderers above `Gpu/` name no Vulkan object any more: the samplers, the views, the textures,
 the buffers and the sets are the engine's handles; the programs carry their layout; a draw states
-its resources as a flat `GpuBinding` list. What is left in the renderers is the GI's acceleration
-structure, which is Vulkan-only on purpose.
+its resources as a flat `GpuBinding` list and records into an `IGpuCommandList` (the commands the
+renderers state, in the engine's words). What is left in the renderers is the GI's acceleration
+structure and the vendor upscalers' own command buffers, both Vulkan-only on purpose.
 
 The renderer-side cost, measured outside `Gpu/`: about 294 references to the binding vocabulary
 (`WriteDescriptorSet` 64, `DescriptorType` 53, `ImageLayout` 41, `DescriptorImageInfo` 38,

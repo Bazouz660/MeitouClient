@@ -186,7 +186,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// the guests (terrain, objects, foliage, all native) record into the returned list's rendering instance through <c>BeginNativeInPass</c>,
     /// which finds the host. <paramref name="clear"/>: the layer is cleared by the load op (else it is loaded).
     /// </summary>
-    CommandList BeginHost(string label, bool clear, GpuTexture? target = null, int layer = 0)
+    IGpuCommandList BeginHost(string label, bool clear, GpuTexture? target = null, int layer = 0)
     {
         var cmd = Gpu.BeginNative(label);
         var map = target ?? atlas!;
@@ -196,8 +196,8 @@ public sealed unsafe partial class ShadowPass : IDisposable
         // Wave 4 (docs/renderer-native.md 6): the cascades' segments are secondaries, recorded on the job threads when the host ends.
         bool secondaries = Recording.Secondaries;
         cmd.BeginRendering(new RenderingDesc(default, depth, t.Width, t.Height), secondaries);
-        Gpu.BeginHostPass(cmd, t, CasterState(t.Formats));
-        if (secondaries) Gpu.Frame.Parallel.Begin(cmd, t.Formats, ShadowStage);
+        Gpu.BeginHostPass((CommandList)cmd, t, CasterState(t.Formats));
+        if (secondaries) Gpu.Frame.Parallel.Begin((CommandList)cmd, t.Formats, ShadowStage);
         return cmd;
     }
 
@@ -215,7 +215,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// <summary>The <see cref="StageClock"/> stage of the shadow casters' jobs.</summary>
     const int ShadowStage = 12;
 
-    void EndHost(CommandList cmd)
+    void EndHost(IGpuCommandList cmd)
     {
         if (Gpu.Frame.Parallel.Open) Gpu.Frame.Parallel.End();
         cmd.EndRendering();
@@ -365,7 +365,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1),
             Extent = new Extent3D((uint)width, (uint)height, 1),
         };
-        Gpu.Device.Vk.CmdCopyImage(cmd.Handle, source, ImageLayout.General, Gpu.Device.NativeImage(sceneDepth), ImageLayout.General, 1, &region);
+        Gpu.Device.Vk.CmdCopyImage(((CommandList)cmd).Handle, source, ImageLayout.General, Gpu.Device.NativeImage(sceneDepth), ImageLayout.General, 1, &region);
         Gpu.EndNative(cmd);
     }
 
@@ -420,7 +420,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     }
 
     /// <summary>One fullscreen triangle of <paramref name="p"/> in the debug views' rendering.</summary>
-    void DrawFullscreen(CommandList cmd, LegacyProgram p, PassTargets t, DrawState state, PixelViewport viewport, string label)
+    void DrawFullscreen(IGpuCommandList cmd, LegacyProgram p, PassTargets t, DrawState state, PixelViewport viewport, string label)
     {
         state.Record(cmd, t with { Viewport = viewport });
         cmd.BindPipeline(Gpu.Pipelines.Get(state.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles, t.Formats, label)));

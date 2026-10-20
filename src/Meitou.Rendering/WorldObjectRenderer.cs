@@ -1339,7 +1339,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);

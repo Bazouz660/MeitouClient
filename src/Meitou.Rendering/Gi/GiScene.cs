@@ -245,10 +245,10 @@ internal sealed unsafe class GiScene : IDisposable
         TopReused = same;
         if (!same)
         {
-            var cmd = Open();
+            var cmd = (CommandList)Open();
             // The new bottom levels must be complete before the top level reads them.
             cmd.Barrier(AccelerationStructure.BuildToTrace);
-            if (split) { cmd.EndLabel(); ctx.EndNative(cmd); StageClock.Sub("gi scene blas"); cmd = seg = ctx.BeginNative("gi scene"); cmd.BeginLabel("gi scene"); }
+            if (split) { cmd.EndLabel(); ctx.EndNative(cmd); StageClock.Sub("gi scene blas"); cmd = seg = (CommandList)ctx.BeginNative("gi scene"); cmd.BeginLabel("gi scene"); }
             CollectionsMarshal.AsSpan(instances).CopyTo(new Span<InstanceRecord>(slot.Instances.Mapped, MaxInstances));
             var info = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = slot.Instances.Buffer };
             topSlot.Top.RebuildTop(cmd, device.Vk.GetBufferDeviceAddress(device.Device, in info), (uint)instances.Count, TopFastTrace);
@@ -279,10 +279,10 @@ internal sealed unsafe class GiScene : IDisposable
     CommandList Open()
     {
         if (seg is not null) return seg;
-        var c = ctx.BeginNative("gi scene");
+        var c = (CommandList)ctx.BeginNative("gi scene");
         c.BeginLabel("gi scene");
         c.Barrier(BarrierBatch.Full);
-        if (split) { c.EndLabel(); ctx.EndNative(c); StageClock.Sub("gi scene barrier"); c = ctx.BeginNative("gi scene"); c.BeginLabel("gi scene"); }
+        if (split) { c.EndLabel(); ctx.EndNative(c); StageClock.Sub("gi scene barrier"); c = (CommandList)ctx.BeginNative("gi scene"); c.BeginLabel("gi scene"); }
         return seg = c;
     }
 
@@ -388,7 +388,7 @@ internal sealed unsafe class GiScene : IDisposable
     MeshEntry? Build(object key, object[] sources, List<TriangleGeometry> geometries, List<GeometryRecord> recs, List<int> partOf, string name)
     {
         if (geometries.Count == 0) return null;
-        var cmd = Open();
+        var cmd = (CommandList)Open();
         var blas = AccelerationStructure.BuildBottom(device, cmd, CollectionsMarshal.AsSpan(geometries), name);
         blas.ReleaseScratch();
         BuiltThisFrame++;
@@ -467,7 +467,7 @@ internal sealed unsafe class GiScene : IDisposable
         const int MaxWait = 8;
         int waited;
 
-        public void Update(Func<CommandList> open, Vector3 eye, HeightSnapshot heights, bool install = true)
+        public void Update(Func<IGpuCommandList> open, Vector3 eye, HeightSnapshot heights, bool install = true)
         {
             Refitted = false;
             // A finished grid is installed on the scene's commit, or at once when there is none yet, or when it has waited for a commit for MaxWait frames (a camera that stopped).
@@ -477,7 +477,7 @@ internal sealed unsafe class GiScene : IDisposable
                 var (centre, positions) = job.Result;
                 job = null;
                 waited = 0;
-                Build(open(), centre, positions);
+                Build((CommandList)open(), centre, positions);
             }
             var wanted = new Vector3(MathF.Round(eye.X / spacing) * spacing, 0, MathF.Round(eye.Z / spacing) * spacing);
             bool far = !hasRequested || MathF.Max(MathF.Abs(wanted.X - requested.X), MathF.Abs(wanted.Z - requested.Z)) > Side / RequestDivisor;
@@ -491,7 +491,7 @@ internal sealed unsafe class GiScene : IDisposable
                 {
                     var (c, p) = job.Result;
                     job = null;
-                    Build(open(), c, p);
+                    Build((CommandList)open(), c, p);
                 }
             }
         }

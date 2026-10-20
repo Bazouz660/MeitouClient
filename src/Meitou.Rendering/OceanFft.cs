@@ -229,15 +229,12 @@ public sealed unsafe class OceanWaves : IDisposable
             ctx.Uploads.Write(spectrum, ((ulong)slot * Cascades + (ulong)c) * texels * 16, MemoryMarshal.AsBytes(s[c].AsSpan()));
     }
 
-    static void Compute(CommandList cmd)
+    static void Compute(IGpuCommandList cmd)
     {
-        var batch = new BarrierBatch();
-        batch.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.ComputeShaderBit,
-            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit);
-        cmd.Barrier(batch);
+        cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.StorageRead | Access.StorageWrite)]);
     }
 
-    static void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
+    static void Run(IGpuCommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
         var slots = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();

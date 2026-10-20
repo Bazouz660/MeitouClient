@@ -256,7 +256,7 @@ public class HizPyramidGpuTests
                 using var hiz = new HizPyramid(ctx);
                 hiz.Build(ctx.Frame.PreFrame, nearTexture, farTexture, nearPlanes, farPlanes, w, h, Vector3.Zero, Matrix4x4.Identity, 0.8f, 16f / 9);
                 using var readback = Meitou.Rendering.Gpu.ReadbackBuffer.Create(ctx, (ulong)total * 8, "hiz readback");
-                ctx.Frame.PreFrame.CopyBuffer(hiz.Storage!.Handle, readback.Handle, new Silk.NET.Vulkan.BufferCopy(0, 0, (ulong)total * 8));
+                ctx.Frame.PreFrame.CopyBuffer(hiz.Storage!.Handle, readback.Handle, new GpuBufferCopy(0, 0, (ulong)total * 8));
                 ctx.EndFrame();
                 d!.Frames.WaitAll();
                 var got = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(readback.Read(0, (ulong)total * 8)).ToArray();

@@ -79,11 +79,11 @@ public class NativeHostTests
             var cmd = ctx.BeginNative("host");
             var targets = PassTargets.Of(target, null);
             cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0, 1, 0, 1) } });
-            ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d!.DepthClamp));
+            ctx.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, d!.DepthClamp));
             Assert.Throws<InvalidOperationException>(() => ctx.BeginNative("nested"));
-            Assert.Throws<InvalidOperationException>(() => ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d.DepthClamp)));
+            Assert.Throws<InvalidOperationException>(() => ctx.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, d.DepthClamp)));
             // A clear of the host's targets in its place: the first quarter blue.
-            ctx.Clear(cmd, true, new ClearColorValue(0, 0, 1, 1), false, 1, Quarter(0));
+            ctx.Clear(cmd, true, new ClearColour(0, 0, 1, 1), false, 1, Quarter(0));
 
             // Guest A: the host's list, with the scissor of its quarter.
             ctx.SetPassViewport(targets.Viewport, Quarter(1));

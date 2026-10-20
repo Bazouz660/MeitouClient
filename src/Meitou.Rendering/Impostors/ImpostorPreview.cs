@@ -97,7 +97,7 @@ internal sealed class ImpostorPreview : IDisposable
         ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false);
 
     /// <summary>The instances as meshes into the open rendering of <paramref name="cmd"/> (formats <paramref name="formats"/>), in <paramref name="viewport"/>.</summary>
-    public void DrawMeshes(CommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, ReadOnlySpan<Matrix4x4> instances, bool coverage)
+    public void DrawMeshes(IGpuCommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, ReadOnlySpan<Matrix4x4> instances, bool coverage)
     {
         var rows = Rows(instances);
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogDistance = 0 };
@@ -141,7 +141,7 @@ internal sealed class ImpostorPreview : IDisposable
     }
 
     /// <summary>The instances as impostors: one billboard each, the camera's up axis for the billboards' roll.</summary>
-    public void DrawImpostors(CommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 cameraUp, Vector3 light,
+    public void DrawImpostors(IGpuCommandList cmd, AttachmentFormats formats, PixelViewport viewport, Matrix4x4 viewProjection, Vector3 eye, Vector3 cameraUp, Vector3 light,
         ReadOnlySpan<Matrix4x4> instances, bool coverage)
     {
         if (atlas is null) return;

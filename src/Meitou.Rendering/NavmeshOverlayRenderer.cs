@@ -112,7 +112,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         gpu.EndNative(cmd);
     }
 
-    void Draw(CommandList cmd, DrawState state, PassTargets t, NativeSegment segment, DeviceBuffer? buffer, int count)
+    void Draw(IGpuCommandList cmd, DrawState state, PassTargets t, NativeSegment segment, DeviceBuffer? buffer, int count)
     {
         if (buffer is null || count == 0) return;
         cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));

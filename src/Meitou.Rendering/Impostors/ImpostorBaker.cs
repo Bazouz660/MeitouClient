@@ -241,7 +241,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <paramref name="large"/> (and <paramref name="depth"/>), halved into <paramref name="small"/> by a linear blit and copied into
     /// <paramref name="readback"/> at pass × the row's bytes.
     /// </summary>
-    internal void RecordRow(CommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
+    internal void RecordRow(IGpuCommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
         GpuTexture large, GpuTexture depth, GpuTexture small, GpuBuffer readback, float lodBias, ImpostorSource? rock = null)
     {
         int grid = size.Grid, f = size.FramePixels, samples = 2 * f, width = grid * samples, smallWidth = grid * f;
@@ -297,15 +297,18 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D((uint)smallWidth, (uint)f, 1),
             };
-            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, gpu.Device.NativeImage(small), ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
+            gpu.Device.Vk.CmdCopyImageToBuffer(((CommandList)cmd).Handle, gpu.Device.NativeImage(small), ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
         }
-        var host = new BarrierBatch();
-        host.Add(PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.HostBit, AccessFlags2.HostReadBit);
-        cmd.Barrier(in host);
+        var host = new BarrierBatch
+        {
+            SrcStages = PipelineStageFlags2.AllTransferBit, SrcAccess = AccessFlags2.TransferWriteBit,
+            DstStages = PipelineStageFlags2.HostBit, DstAccess = AccessFlags2.HostReadBit,
+        };
+        ((CommandList)cmd).Barrier(in host);
     }
 
     /// <summary>The material as the GL baker set it (<c>FoliageRenderer.DrawMesh</c>'s uniforms: textures and normal maps on), one draw per part.</summary>
-    void Draw(CommandList cmd, Part[] parts, Material m, AttachmentFormats formats, float lodBias)
+    void Draw(IGpuCommandList cmd, Part[] parts, Material m, AttachmentFormats formats, float lodBias)
     {
         var s = m.Settings;
         uint stand = StandIn();
@@ -362,7 +365,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     readonly List<((int Grid, int Frame) Key, GpuTexture Large, GpuTexture Depth, GpuTexture Small)> targets = [];
 
     /// <summary>A colour target at twice the frame size, its depth and the half-size picture for the atlas size; made when none is kept.</summary>
-    internal (GpuTexture Large, GpuTexture Depth, GpuTexture Small) RentTargets(ImpostorClass size, CommandList pre)
+    internal (GpuTexture Large, GpuTexture Depth, GpuTexture Small) RentTargets(ImpostorClass size, IGpuCommandList pre)
     {
         var key = (size.Grid, size.FramePixels);
         int at = targets.FindIndex(t => t.Key == key);

@@ -69,7 +69,7 @@ public class OceanTests
                 ocean.Record();
                 var cmd = ctx.Frame.PreFrame;
                 cmd.Order();
-                cmd.CopyBuffer(ocean.Output.Handle, readback.Handle, new BufferCopy(0, 0, ocean.Output.Size));
+                cmd.CopyBuffer(ocean.Output.Handle, readback.Handle, new GpuBufferCopy(0, 0, ocean.Output.Size));
                 ctx.EndFrame();
                 d!.Frames.WaitAll();
                 var halves = MemoryMarshal.Cast<byte, Half>(readback.Read(0, ocean.Output.Size)).ToArray();

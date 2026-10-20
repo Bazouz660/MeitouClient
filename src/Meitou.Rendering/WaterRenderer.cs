@@ -1152,7 +1152,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         if (refraction is not { } r || r.Desc.Width != w || r.Desc.Height != h || r.Desc.Format != sceneColour.Desc.Format)
         {
             refraction?.Dispose();
-            refraction = Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), cmd.Handle);
+            refraction = Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), ((CommandList)cmd).Handle);
         }
         cmd.Blit(sceneColour, refraction, TextureMinFilter.Linear);
         Gpu.EndNative(cmd);

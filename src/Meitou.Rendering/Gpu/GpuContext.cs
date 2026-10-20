@@ -97,10 +97,10 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     /// guests: into <paramref name="host"/>'s rendering, or, while it takes secondaries, as a segment of its own (a primary may record nothing
     /// else inside such a rendering).
     /// </summary>
-    public void ClearDepth(CommandList host, float value, PixelRect rect) => Clear(host, false, default, true, value, rect);
+    public void ClearDepth(IGpuCommandList host, float value, PixelRect rect) => Clear(host, false, default, true, value, rect);
 
     /// <summary>As <see cref="ClearDepth"/> for the colour and / or depth attachment (<see cref="CommandList.Clear"/>).</summary>
-    public void Clear(CommandList host, bool colour, ClearColorValue colourValue, bool depth, float depthValue, PixelRect rect)
+    public void Clear(IGpuCommandList host, bool colour, ClearColour colourValue, bool depth, float depthValue, PixelRect rect)
     {
         if (!Frame.Parallel.Open) { host.Clear(colour, colourValue, depth, depthValue, rect); return; }
         var job = clearJobs.Rent();
@@ -114,10 +114,10 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     {
         public GpuContext Owner = null!;
         public bool Colour, Depth;
-        public ClearColorValue ColourValue;
+        public ClearColour ColourValue;
         public float DepthValue;
         public PixelRect Rect;
-        public override void Record(CommandList cmd) => cmd.Clear(Colour, ColourValue, Depth, DepthValue, Rect);
+        public override void Record(IGpuCommandList cmd) => cmd.Clear(Colour, ColourValue, Depth, DepthValue, Rect);
         public override void Release() => Owner.clearJobs.Return(this);
     }
 

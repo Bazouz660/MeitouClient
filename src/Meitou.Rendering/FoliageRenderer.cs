@@ -1971,7 +1971,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     (SampledTexture Texture, uint Index)? nearDepthIndex;
 
     /// <summary>Pushes <paramref name="value"/> when its bytes differ from what the segment pushed last (<paramref name="last"/>).</summary>
-    static void Push<T>(CommandList cmd, ShaderProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void Push<T>(IGpuCommandList cmd, ShaderProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
         cmd.PushConstants(p, GpuStage.Vertex | GpuStage.Fragment, in value);
@@ -2200,7 +2200,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             Draws[Count++] = d;
         }
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
@@ -2233,7 +2233,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary><see cref="Push{T}"/> by layout (a job keeps the layout, not the program).</summary>
-    static void PushTo<T>(CommandList cmd, ShaderProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void PushTo<T>(IGpuCommandList cmd, ShaderProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
         cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, in value);
@@ -2389,7 +2389,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state, layout) = (Targets, State, Program.Layout);
             cmd.SetViewport(targets.Viewport);
@@ -2547,7 +2547,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     readonly List<Timer> timers = [];
     QuerySlot timerStart, pendingStamp;
     bool timerContinuation;
-    Action<CommandList>? recordStamp;
+    Action<IGpuCommandList>? recordStamp;
     double gpuSum;
     int gpuCount;
 

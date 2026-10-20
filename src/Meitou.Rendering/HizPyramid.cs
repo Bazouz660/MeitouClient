@@ -90,7 +90,7 @@ public sealed unsafe class HizPyramid : IDisposable
     /// is the camera's view without its translation (the world to view rotation, as <c>PostProcess</c> keeps it), <paramref name="fieldOfView"/> and <paramref name="aspect"/> the
     /// projection's.
     /// </summary>
-    public void Build(CommandList cmd, GpuTexture near, GpuTexture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
+    public void Build(IGpuCommandList cmd, GpuTexture near, GpuTexture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
     {
         var levels = Levels(w, h);
         ulong texels = 0;

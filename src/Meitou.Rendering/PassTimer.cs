@@ -10,7 +10,7 @@ sealed class PassTimer(GpuContext gpu)
 {
     readonly Queue<(QuerySlot Start, QuerySlot End)> pending = new();
     QuerySlot start, stamp;
-    Action<CommandList>? write;
+    Action<IGpuCommandList>? write;
 
     /// <summary>The start stamp, in the frame's command stream now.</summary>
     public void Begin() => start = Write();

@@ -22,7 +22,7 @@ public readonly record struct GrassResult(GpuBuffer Draws, ulong DrawsOffset, Gp
 /// The GPU grass store and cull (docs/renderer-native.md 5.4 and 5.6.2). Every grass page's blades live in one arena (a vertex buffer: the
 /// instance data of the blade draws, <c>firstInstance</c> = the first blade), and every (page, patch) in a slot of a table the cull kernels read:
 /// per view <see cref="Dispatch"/> records two compute kernels into <see cref="GpuFrame.PreFrame"/> that write one indirect draw per visible
-/// slot, nearest page first, with the density's blade count. The CPU records one <see cref="CommandList.DrawIndirectCount"/>. Pages arrive and
+/// slot, nearest page first, with the density's blade count. The CPU records one <see cref="IGpuCommandList.DrawIndirectCount"/>. Pages arrive and
 /// leave as <see cref="FoliageRenderer"/> decides; their ranges and slots are freed after the frames in flight. Render thread only.
 /// </summary>
 public sealed unsafe class FoliageGrassGpu : IDisposable
@@ -125,7 +125,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         if (initialised) return;
         var cmd = ctx.Frame.PreFrame;
         cmd.FillBuffer(slots.Handle, 0, slots.Size, 0);
-        Barrier(cmd, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit | AccessFlags2.TransferWriteBit);
+        Barrier(cmd, Access.TransferDst, Access.TransferSrc);
         initialised = true;
     }
 
@@ -250,16 +250,14 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         FrameProfiler.PreStamp(cmd, StageClock.Uploads);
         cmd.BeginLabel("foliage grass");
         cmd.FillBuffer(counters.Buffer, counters.Offset, 16, 0);
-        Barrier(cmd, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, PipelineStageFlags2.ComputeShaderBit);
+        Barrier(cmd, Access.TransferDst, Access.StorageRead | Access.StorageWrite);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint groups = (uint)((n + FoliageGrassShaders.Group - 1) / FoliageGrassShaders.Group);
         Run(cmd, cull!, cullPipe!, cullBindings, b, groups);
-        Barrier(cmd, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit);
+        Barrier(cmd, Access.StorageWrite, Access.StorageRead);
         Run(cmd, order!, orderPipe!, orderBindings, b, groups);
-        Barrier(cmd, PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit,
-            PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.AllTransferBit,
-            AccessFlags2.IndirectCommandReadBit | AccessFlags2.ShaderStorageReadBit | AccessFlags2.TransferReadBit);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, PipelineStageFlags2.ComputeShaderBit);
+        Barrier(cmd, Access.StorageWrite, Access.IndirectRead | Access.StorageRead | Access.TransferSrc);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.Compute);
         var ring = counted[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxViews * 16, $"foliage grass counters {scratchSlot}");
         if (viewIndex < MaxViews)
         {
@@ -269,7 +267,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
                 (LateDraws, LateBlades) = ((int)v[0], v[1]);
             }
             else (LateDraws, LateBlades) = (0, 0);
-            cmd.CopyBuffer(counters.Buffer, ring.Handle, new BufferCopy(counters.Offset, (ulong)viewIndex * 16, 16));
+            cmd.CopyBuffer(counters.Buffer, ring.Handle, new GpuBufferCopy(counters.Offset, (ulong)viewIndex * 16, 16));
             viewIndex++;
         }
         cmd.EndLabel();
@@ -279,7 +277,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         return new GrassResult(draws.Buffer, draws.Offset, counters.Buffer, counters.Offset, n, tables.Patches);
     }
 
-    void Run(CommandList cmd, ShaderProgram program, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
+    void Run(IGpuCommandList cmd, ShaderProgram program, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;
@@ -293,12 +291,8 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         cmd.Dispatch(groups);
     }
 
-    static void Barrier(CommandList cmd, PipelineStageFlags2 srcStages, AccessFlags2 srcAccess, PipelineStageFlags2 dstStages, AccessFlags2 dstAccess)
-    {
-        var batch = new BarrierBatch();
-        batch.Add(srcStages, srcAccess, dstStages, dstAccess);
-        cmd.Barrier(in batch);
-    }
+    /// <summary>Orders a pass's work against the next one's (the engine's words; the backend's masks).</summary>
+    static void Barrier(IGpuCommandList cmd, Access from, Access to) => cmd.Barrier([new GpuDependency(from, to)]);
 
     /// <summary>The density setting as the prefix step and the fraction into it, as <see cref="FoliageGrassField.PrefixCount"/> takes them.</summary>
     public static (int Index, float Fraction) DensityStep(float fraction)
@@ -315,8 +309,8 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     public void CopyForReadback(in GrassResult r, ReadbackBuffer target)
     {
         var cmd = ctx.Frame.PreFrame;
-        cmd.CopyBuffer(r.Counters, target.Handle, new BufferCopy(r.CountersOffset, 0, 16));
-        cmd.CopyBuffer(r.Draws, target.Handle, new BufferCopy(r.DrawsOffset, 16, (ulong)r.MaxDraws * 16));
+        cmd.CopyBuffer(r.Counters, target.Handle, new GpuBufferCopy(r.CountersOffset, 0, 16));
+        cmd.CopyBuffer(r.Draws, target.Handle, new GpuBufferCopy(r.DrawsOffset, 16, (ulong)r.MaxDraws * 16));
     }
 
     public void Dispose()

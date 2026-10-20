@@ -521,7 +521,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         return (size >= QuarterPixels ? 4 : size >= HalfPixels ? 2 : 1, fill);
     }
 
-    void RecordDraws(CommandList cmd, in DrawState baseState, in PassTargets targets, bool hasDepth, bool hasColour,
+    void RecordDraws(IGpuCommandList cmd, in DrawState baseState, in PassTargets targets, bool hasDepth, bool hasColour,
         ColorMask rgb, Kind kind, int divisor = 1)
     {
         int coverage = kind == Kind.Coverage ? 1 : 0;

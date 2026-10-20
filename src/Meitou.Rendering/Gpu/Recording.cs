@@ -15,7 +15,7 @@ namespace Meitou.Rendering.Gpu;
 public abstract class RecordJob
 {
     /// <summary>Records the segment into <paramref name="cmd"/> (the host's rendering instance, or a secondary that continues it).</summary>
-    public abstract void Record(CommandList cmd);
+    public abstract void Record(IGpuCommandList cmd);
 
     /// <summary>About how many draws <see cref="Record"/> records (read on the render thread when queued): a pass with little work is recorded
     /// on the render thread rather than waking the job threads (<see cref="Recording.MinThreadedDraws"/>).</summary>

@@ -93,7 +93,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         if (!acquiredImage || Backbuffer is not { } src) { ctx.EndFrame(); return; }
         var dst = images[imageIndex];
         int w = src.Desc.Width, h = src.Desc.Height;
-        var list = ctx.BeginNative("present");
+        var list = (CommandList)ctx.BeginNative("present");
         var cb = list.Handle;
         Barrier(cb, dst, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.None,
             PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit);

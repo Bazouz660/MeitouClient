@@ -53,7 +53,7 @@ public class GpuApiTests
     static RenderingDesc Target(GpuTexture t, LoadOp load = LoadOp.Clear) =>
         new(new RenderTarget(t.Attachment(), load, new ClearColour(0f, 0f, 0f, 1f)), default, t.Desc.Width, t.Desc.Height);
 
-    static void FullTargetState(CommandList cmd, int w, int h)
+    static void FullTargetState(IGpuCommandList cmd, int w, int h)
     {
         cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
         cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
@@ -219,7 +219,7 @@ public class GpuApiTests
             pre.BindPipeline(cp);
             var info = new DescriptorBufferInfo(ctx.Device.BufferAt(args.Handle.Index), 0, 20);
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &info };
-            pre.PushDescriptors(compute, 0, [write], PipelineBindPoint.Compute);
+            pre.PushDescriptors(compute, 0, [write], GpuBindPoint.Compute);
             pre.PushConstants(compute, GpuStage.Compute, 3u);
             pre.Dispatch(1);
             var after = new BarrierBatch();
@@ -231,7 +231,7 @@ public class GpuApiTests
             var full = new BarrierBatch();
             full.Add(PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryWriteBit, PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit);
             cmd.Barrier(full);
-            cmd.CopyBuffer(args.Handle, readback.Handle, new BufferCopy(0, 0, 20));
+            cmd.CopyBuffer(args.Handle, readback.Handle, new GpuBufferCopy(0, 0, 20));
             long number = frame.Number;
             ctx.EndFrame();
             Assert.False(ReadbackBuffer.Completed(ctx, number + 1));
@@ -249,7 +249,7 @@ public class GpuApiTests
     /// <summary>A prepared segment of the test below: one fullscreen triangle through a scissor, reading one bindless texture.</summary>
     sealed class ColumnJob(GraphicsPipeline pipeline, ShaderProgram program, uint texture, int x) : RecordJob
     {
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             FullTargetState(cmd, W, H);
             cmd.SetScissor(new PixelRect(x, 0, (uint)(W - x), H));
@@ -263,7 +263,7 @@ public class GpuApiTests
     /// <summary>A job that reaches for render-thread state (docs/renderer-native.md 6.3): must throw.</summary>
     sealed class GreedyJob : RecordJob
     {
-        public override void Record(CommandList cmd) => RenderJobs.AssertNotInJob();
+        public override void Record(IGpuCommandList cmd) => RenderJobs.AssertNotInJob();
     }
 
     /// <summary>
@@ -305,8 +305,8 @@ public class GpuApiTests
                 for (int k = 0; k < Columns; k++) ctx.Uploads.Write(sources[k], 0, 0, new PixelRect(0, 0, 1, 1), [(byte)(10 + 30 * k), (byte)(200 - 20 * k), (byte)(5 * k), 255]);
                 var cmd = ctx.BeginNative("columns host");
                 cmd.BeginRendering(Target(target), secondaries: true);
-                frame.Parallel.Begin(cmd, formats, 0);
-                ctx.BeginHostPass(cmd, PassTargets.Of(target, null), DrawState.For(formats, d!.DepthClamp));
+                frame.Parallel.Begin((CommandList)cmd, formats, 0);
+                ctx.BeginHostPass((CommandList)cmd, PassTargets.Of(target, null), DrawState.For(formats, d!.DepthClamp));
                 for (int k = 0; k < Columns; k++)
                 {
                     var job = new ColumnJob(pipeline, draw, indices[k], k * (W / Columns));

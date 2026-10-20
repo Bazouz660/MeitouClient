@@ -379,7 +379,7 @@ public class FoliageGpuCullTests
                 using var readback = ReadbackBuffer.Create(ctx, FoliageGpuCull.ReadbackBytes(result), "cull readback");
                 cull.CopyForReadback(result, readback);
                 using var total = ReadbackBuffer.Create(ctx, 12, "occlusion total");
-                ctx.Frame.PreFrame.CopyBuffer(result.Offsets, total.Handle, new BufferCopy(result.OffsetsOffset + (ulong)n * 4, 0, 12));
+                ctx.Frame.PreFrame.CopyBuffer(result.Offsets, total.Handle, new GpuBufferCopy(result.OffsetsOffset + (ulong)n * 4, 0, 12));
                 ctx.EndFrame();
                 d!.Frames.WaitAll();
 

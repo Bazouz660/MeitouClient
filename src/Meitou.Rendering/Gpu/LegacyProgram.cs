@@ -196,7 +196,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     /// Before a draw: copies the default blocks that changed (or all, in a new frame) into the frame's constants and binds set 1 with their
     /// offsets, and pushes set 0 when it differs from what this program last pushed in this epoch of the command list.
     /// </summary>
-    public void Flush(CommandList cmd)
+    public void Flush(IGpuCommandList cmd)
     {
         var frame = ctx.Frame;
         if (ctx.Globals.Version != globalsVersion) ResolveGlobals();
@@ -215,7 +215,7 @@ public sealed unsafe class LegacyProgram : IDisposable
                 int n = 0;
                 if (VertexBlock is not null) offsets[n++] = (uint)vertexSlice.Offset;
                 if (FragmentBlock is not null) offsets[n++] = (uint)fragmentSlice.Offset;
-                cmd.BindSets(Program, 1, new ReadOnlySpan<GpuSet>(in set), offsets[..n]);
+                ((CommandList)cmd).BindSets(Program, 1, new ReadOnlySpan<GpuSet>(in set), offsets[..n]);
             }
         }
 
@@ -267,14 +267,14 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (!same)
             {
                 lastPushEpoch = cmd.Epoch;
-                if (Program.PushDescriptors) cmd.PushDescriptors(Program, 0, all);
+                if (Program.PushDescriptors) ((CommandList)cmd).PushDescriptors(Program, 0, all);
                 else
                 {
                     var set0 = frame.AllocateSet(Program.NeutralSets[0]);
                     for (int i = 0; i < w; i++) writes[i].DstSet = set0;
                     ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, (uint)w, writes, 0, null);
                     var set0Handle = new GpuSet(ctx.Device.AddSet(set0));
-                    cmd.BindSets(Program, 0, new ReadOnlySpan<GpuSet>(in set0Handle), []);
+                    ((CommandList)cmd).BindSets(Program, 0, new ReadOnlySpan<GpuSet>(in set0Handle), []);
                 }
             }
         }
@@ -369,7 +369,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     }
 
     /// <summary>Binds each input location's buffer (the dummy constant where null) in one call per run of consecutive locations.</summary>
-    public void BindVertices(CommandList cmd, ReadOnlySpan<Attribute?> byLocation)
+    public void BindVertices(IGpuCommandList cmd, ReadOnlySpan<Attribute?> byLocation)
     {
         Span<GpuBufferBinding> run = stackalloc GpuBufferBinding[InputLocations.Length];
         int n = 0;

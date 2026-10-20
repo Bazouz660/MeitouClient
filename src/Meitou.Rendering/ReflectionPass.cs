@@ -311,8 +311,8 @@ public sealed class ReflectionPass : IDisposable
             target.Width, target.Height), secondaries);
         // What the guests draw with: the scene's state (depth tested with less-or-equal and written, no culling, blending or clamp, every channel).
         // The sky turns the depth test off for itself.
-        Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-        if (secondaries) Gpu.Frame.Parallel.Begin(cmd, target.Formats, ReflectionStage);
+        Gpu.BeginHostPass((CommandList)cmd, target, DrawState.Scene(target.Formats));
+        if (secondaries) Gpu.Frame.Parallel.Begin((CommandList)cmd, target.Formats, ReflectionStage);
         Lap(4);
         sky.Draw(skyProjection, colours);
         Lap(0);
@@ -543,7 +543,7 @@ public sealed class ReflectionPass : IDisposable
         }
         """;
 
-    void RunFog(CommandList cmd, Matrix4x4 nearViewProjection, Matrix4x4 nearRays, Vector3 mirroredEye)
+    void RunFog(IGpuCommandList cmd, Matrix4x4 nearViewProjection, Matrix4x4 nearRays, Vector3 mirroredEye)
     {
         var depthTexture = msDepth ?? depth;
         if (depthTexture is null || colour is null || !Matrix4x4.Invert(nearViewProjection, out var inverse) || !Matrix4x4.Invert(nearRays, out var rayInverse)) return;

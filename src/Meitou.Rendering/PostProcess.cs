@@ -295,7 +295,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     readonly Queue<StampSet> pendingStamps = new();
     readonly Stack<StampSet> freeStamps = new();
     StampSet? stamps;
-    Action<CommandList>? stampWriter;
+    Action<IGpuCommandList>? stampWriter;
     QuerySlot written;
     readonly Dictionary<string, (double Sum, int Count)> costs = [];
 
@@ -597,10 +597,10 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     // ---- native passes ----
 
-    CommandList? segment;
+    IGpuCommandList? segment;
 
     /// <summary>The open native segment of the chain (one is begun when none is open: VkGl's pass ends, a full barrier is placed).</summary>
-    CommandList Segment() => segment ??= Gpu.BeginNative("post");
+    IGpuCommandList Segment() => segment ??= Gpu.BeginNative("post");
 
     /// <summary>Ends the open segment (before anything that records through VkGl: the vendor upscalers, the grass-motion guest).</summary>
     void CloseSegment()
@@ -1005,7 +1005,7 @@ public sealed unsafe partial class PostProcess : IDisposable
             var targets = PassTargets.Of(motion!.Texture, null);
             var cmd = Gpu.BeginNative("object motion");
             cmd.BeginRendering(targets.Rendering);
-            Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp,
+            Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp,
                 mask: ColorMask.R | ColorMask.G));
             objectMotion(new MotionTargets(Sampled(sceneDepth!), nearPlanes, new Vector2(2 * JitterPixels.X / width, 2 * JitterPixels.Y / height), height / (2 * MathF.Tan(fovNow * 0.5f))));
             cmd.EndRendering();
@@ -1112,7 +1112,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
         var cmd = Gpu.BeginNative("particle coverage");
         cmd.BeginRendering(targets.Rendering);
-        Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));
+        Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));
         Particles!.DrawCoverage(mask);
         cmd.EndRendering();
         Gpu.EndHostPass(cmd);

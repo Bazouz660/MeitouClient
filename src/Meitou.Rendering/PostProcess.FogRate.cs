@@ -158,7 +158,7 @@ public sealed unsafe partial class PostProcess
             ImageSubresource = new Vk.ImageSubresourceLayers(Vk.ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Vk.Extent3D((uint)image.Width, (uint)image.Height, 1),
         };
-        Gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, Gpu.Device.NativeImage(image.Texture), Vk.ImageLayout.General, Gpu.Device.BufferAt(slot.Buffer.Handle.Index), 1, &region);
+        Gpu.Device.Vk.CmdCopyImageToBuffer(((CommandList)cmd).Handle, Gpu.Device.NativeImage(image.Texture), Vk.ImageLayout.General, Gpu.Device.BufferAt(slot.Buffer.Handle.Index), 1, &region);
         cmd.Order();
         slot.Frame = Gpu.Frame.Number;
         rateReadbackNext = (rateReadbackNext + 1) % rateReadbacks.Length;

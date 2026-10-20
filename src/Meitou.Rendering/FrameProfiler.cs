@@ -152,9 +152,9 @@ public sealed class FrameProfiler : IDisposable
     /// is the frame's start) goes to <paramref name="stage"/>. So a span is closed by <c>PreStamp(cmd, StageClock.Uploads)</c> just before it (whatever was recorded since the last stamp is uploads)
     /// and <c>PreStamp(cmd, stage)</c> after it. Nothing outside a profiled frame; the time after the last stamp, up to the buffer's end, is uploads too.
     /// </summary>
-    internal static void PreStamp(CommandList cmd, int stage) => StageClock.Profiler?.RecordPre(cmd, stage);
+    internal static void PreStamp(IGpuCommandList cmd, int stage) => StageClock.Profiler?.RecordPre(cmd, stage);
 
-    void RecordPre(CommandList cmd, int stage)
+    void RecordPre(IGpuCommandList cmd, int stage)
     {
         int n = preCount[slot];
         if (n >= MaxPre) return;
@@ -247,7 +247,7 @@ public sealed class FrameProfiler : IDisposable
     }
     readonly QuerySlot[,] nativeStamps = new QuerySlot[Slots, MaxStamps];
     QuerySlot pendingStamp;
-    readonly Action<CommandList> recordStamp;
+    readonly Action<IGpuCommandList> recordStamp;
 
     bool TryStamp(int s, int i, out ulong ns) => native.Frame.Timestamps.TryRead(nativeStamps[s, i], out ns);
 

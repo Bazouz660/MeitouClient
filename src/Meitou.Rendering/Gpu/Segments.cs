@@ -20,7 +20,7 @@ public sealed unsafe partial class GpuContext
     /// The frame's command list for a segment of the caller's own (renderings, copies, dispatches): what was recorded before is complete and
     /// visible (a full barrier), nothing is assumed bound. <see cref="EndNative"/> closes it with another full barrier.
     /// </summary>
-    public CommandList BeginNative(string label)
+    public IGpuCommandList BeginNative(string label)
     {
         if (SegmentOpen) throw new InvalidOperationException("BeginNative inside a native segment");
         EnsureFrame();
@@ -34,12 +34,12 @@ public sealed unsafe partial class GpuContext
         return list;
     }
 
-    public void EndNative(CommandList cmd)
+    public void EndNative(IGpuCommandList cmd)
     {
         if (segment is null || !ReferenceEquals(cmd, segment)) throw new InvalidOperationException("EndNative without a matching BeginNative");
         if (PassOpen) throw new InvalidOperationException("EndNative with a host pass open");
         cmd.EndLabel();
-        FullBarrier(cmd.Handle);
+        FullBarrier(segment.Handle);
         segment = null;
     }
 
@@ -67,11 +67,11 @@ public sealed unsafe partial class GpuContext
         throw new InvalidOperationException("BeginGuest without a host pass");
     }
 
-    public void EndGuest(CommandList cmd)
+    public void EndGuest(IGpuCommandList cmd)
     {
         if (guest is null || !ReferenceEquals(cmd, guest)) throw new InvalidOperationException("EndGuest without a matching BeginGuest");
         guest = null;
-        if (guestKind == GuestKind.Inline) Frame.Parallel.EndInline(cmd);
+        if (guestKind == GuestKind.Inline) Frame.Parallel.EndInline((CommandList)cmd);
         else cmd.EndLabel();
     }
 

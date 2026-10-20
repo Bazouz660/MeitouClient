@@ -74,9 +74,9 @@ sealed unsafe class GiDebugPass : IDisposable
         };
         var constants = ctx.Frame.Constants.Write<Params>(new ReadOnlySpan<Params>(&parameters, 1), 256);
 
-        var cmd = ctx.BeginNative("gi debug");
+        var cmd = (CommandList)ctx.BeginNative("gi debug");
         cmd.BeginLabel("gi debug");
-        cmd.Barrier(BarrierBatch.Full);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
         var image = new DescriptorImageInfo(ctx.Device.SamplerAt(sampler.Index), ctx.Device.ViewAt(depth.View().Index), ImageLayout.General);
         var storage = new DescriptorImageInfo(default, ctx.Device.ViewAt(output.View().Index), ImageLayout.General);
         var top = scene.Top.Handle;
@@ -90,11 +90,11 @@ sealed unsafe class GiDebugPass : IDisposable
         writes[3] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &records };
         writes[4] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 4, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &uniform };
         cmd.BindPipeline(pipeline);
-        cmd.PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), PipelineBindPoint.Compute);
+        ((CommandList)cmd).PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), GpuBindPoint.Compute);
         cmd.Dispatch((uint)((width + 7) / 8), (uint)((height + 7) / 8));
-        cmd.Barrier(BarrierBatch.Full);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
         cmd.Blit(output, target, TextureMinFilter.Linear);
-        cmd.Barrier(BarrierBatch.Full);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
         cmd.EndLabel();
         ctx.EndNative(cmd);
     }

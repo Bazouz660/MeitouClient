@@ -1,12 +1,15 @@
 namespace Meitou.Rendering.Gpu;
 
-/// <summary>How a pass uses a resource (docs/renderer-native.md 2.9). The backend turns it into its own masks.</summary>
+/// <summary>How a pass uses a resource (docs/renderer-native.md 2.9). The backend turns it into its own masks; a
+/// combination says what one side of a dependency reads or writes (the stages are merged).</summary>
+[Flags]
 public enum Access
 {
-    ColourTarget, DepthTarget, DepthRead, Sampled, StorageRead, StorageWrite,
-    TransferSrc, TransferDst, IndirectRead, VertexRead, UniformRead, Present,
+    None = 0,
+    ColourTarget = 1, DepthTarget = 2, DepthRead = 4, Sampled = 8, StorageRead = 16, StorageWrite = 32,
+    TransferSrc = 64, TransferDst = 128, IndirectRead = 256, VertexRead = 512, UniformRead = 1024, Present = 2048,
     /// <summary>Everything: the seam between two passes that know nothing of each other.</summary>
-    Any,
+    Any = ~0,
 }
 
 /// <summary>The part of a texture a use covers (the levels and the layers).</summary>
@@ -56,10 +59,10 @@ public sealed class ResourceStates
     }
 
     /// <summary>Whether an access writes (the backend's own table says what it needs).</summary>
-    static bool Writes(Access a) => a is Access.ColourTarget or Access.DepthTarget or Access.StorageWrite or Access.TransferDst or Access.Any;
+    static bool Writes(Access a) => (a & (Access.ColourTarget | Access.DepthTarget | Access.StorageWrite | Access.TransferDst)) != 0;
 
     /// <summary>Plans and records the barrier for <paramref name="uses"/> (one call, nothing when no hazard).</summary>
-    public void Use(CommandList cmd, ReadOnlySpan<PassUse> uses)
+    public void Use(IGpuCommandList cmd, ReadOnlySpan<PassUse> uses)
     {
         Span<GpuDependency> dependencies = stackalloc GpuDependency[uses.Length];
         int count = Plan(uses, dependencies);
@@ -79,9 +82,9 @@ public sealed class ResourceStates
 /// </summary>
 public readonly ref struct GpuPass
 {
-    readonly CommandList cmd;
+    readonly IGpuCommandList cmd;
 
-    public GpuPass(GpuFrame frame, CommandList cmd, string label, ReadOnlySpan<PassUse> uses)
+    public GpuPass(GpuFrame frame, IGpuCommandList cmd, string label, ReadOnlySpan<PassUse> uses)
     {
         this.cmd = cmd;
         frame.States.Use(cmd, uses);

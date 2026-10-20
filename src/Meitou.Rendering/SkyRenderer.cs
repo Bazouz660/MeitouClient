@@ -1251,7 +1251,7 @@ internal sealed class SampledImage : IDisposable
 
     /// <summary>
     /// What <c>WorldGl.Texture2D</c> made: RGBA8 from top-first rows, with <paramref name="mipmaps"/> the whole chain made on the GPU as GL's
-    /// GenerateMipmap made it in VkGl (<see cref="CommandList.GenerateMips"/>) and trilinear filtering, else one level, linear; repeating or
+    /// GenerateMipmap made it in VkGl (<see cref="IGpuCommandList.GenerateMips"/>) and trilinear filtering, else one level, linear; repeating or
     /// clamped to the edge (S and T; R stays GL's default, repeat).
     /// </summary>
     public static SampledImage Rgba8(GpuContext ctx, RgbaImage image, bool repeat, bool mipmaps, string name) =>

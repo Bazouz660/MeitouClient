@@ -56,7 +56,7 @@ public class BindlessTests
         void main() { colour = texture(textures2D[nonuniformEXT(pc.texture)], vec2(0.5)); }
         """;
 
-    static void FullTargetState(CommandList cmd, int w, int h)
+    static void FullTargetState(IGpuCommandList cmd, int w, int h)
     {
         cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
         cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));

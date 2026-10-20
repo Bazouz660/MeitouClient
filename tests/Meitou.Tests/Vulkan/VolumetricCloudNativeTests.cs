@@ -39,7 +39,7 @@ public class VolumetricCloudNativeTests
                         var targets = PassTargets.Of(target, null);
                         var cmd = ctx.BeginNative("cloud test scene");
                         cmd.BeginRendering(targets.Rendering);
-                        ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
+                        ctx.BeginHostPass((CommandList)cmd, targets, DrawState.Scene(targets.Formats));
                         sky.Draw(vp, SkyColours.For(Vector3.UnitY));
                         ctx.EndHostPass(cmd); cmd.EndRendering(); ctx.EndNative(cmd);
                         ctx.Finish();

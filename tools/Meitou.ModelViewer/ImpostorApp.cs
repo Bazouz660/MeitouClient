@@ -289,7 +289,7 @@ static class ImpostorApp
     /// A 4× multisampled target of the given size cleared to the sky colour, drawn by <paramref name="draw"/> (into the open rendering of the frame's
     /// <see cref="GpuFrame.PreFrame"/>), resolved, read back and saved as a PNG (rows flipped: the images hold GL's bottom row first).
     /// </summary>
-    static void Offscreen(Frames frames, int w, int h, string path, Action<CommandList, AttachmentFormats> draw)
+    static void Offscreen(Frames frames, int w, int h, string path, Action<IGpuCommandList, AttachmentFormats> draw)
     {
         var gpu = frames.Gpu;
         frames.Open();

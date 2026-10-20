@@ -41,6 +41,12 @@ public readonly record struct GpuView(int Index)
     public bool IsNull => Index == 0;
 }
 
+/// <summary>The part of a buffer a copy covers (the source's offset, the destination's, and the size).</summary>
+public readonly record struct GpuBufferCopy(ulong SourceOffset, ulong DestinationOffset, ulong Size);
+
+/// <summary>Which pipeline a command belongs to (the stages it runs in).</summary>
+public enum GpuBindPoint { Graphics, Compute }
+
 /// <summary>
 /// A set of resources the renderers bind to a program: the backend's identity (the index into the
 /// backend's sets) (docs/resource-layer.md). The set itself is the backend's (Vulkan: a descriptor

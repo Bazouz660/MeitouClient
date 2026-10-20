@@ -250,7 +250,7 @@ public sealed unsafe partial class FoliageRenderer
         public GpuBufferBinding[] Vertices = [];
         public GrassResult Result;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);

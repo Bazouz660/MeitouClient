@@ -199,7 +199,7 @@ public sealed unsafe class FsrUpscaler : IUpscaler
             Flags = 0,
             ViewSpaceToMetersFactor = 0.1f,   // Kenshi units taken as decimetres (docs/formats/terrain.md "Unit size"; DECISIONS 16)
         };
-        var list = ctx.BeginNative("fsr upscale");
+        var list = (CommandList)ctx.BeginNative("fsr upscale");
         var cb = list.Handle;
         desc.CommandList = cb.Handle;
         nint c = context;

@@ -25,7 +25,7 @@ public readonly record struct RenderingDesc(RenderTarget Colour, RenderTarget De
 /// filter for the pipeline and the vertex and index buffers, cleared at <see cref="BeginRendering"/> and at every seam crossing
 /// (<see cref="Invalidate"/>). Not thread-safe: one per recording thread.
 /// </summary>
-public sealed unsafe class CommandList
+public sealed unsafe class CommandList : IGpuCommandList
 {
     readonly Vk vk;
     readonly GpuContext ctx;
@@ -99,7 +99,7 @@ public sealed unsafe class CommandList
     /// <summary>Counts seam crossings and new command buffers: state a caller cached (pushed descriptors, bound sets) is valid only within one epoch.</summary>
     public long Epoch { get; private set; }
     /// <summary>The legacy program whose set 0 / set 1 are bound in this epoch (<see cref="LegacyProgram.Flush"/>).</summary>
-    internal object? BoundProgram;
+    public object? BoundProgram { get; set; }
 
     /// <summary>Forgets everything the redundancy filters and callers believed was bound (after VkGl recorded into the same buffer).</summary>
     public void Invalidate()
@@ -207,11 +207,11 @@ public sealed unsafe class CommandList
 
     /// <summary>Clears the colour and / or depth attachment of the open rendering inside <paramref name="rect"/> (<c>vkCmdClearAttachments</c>,
     /// the colour first, as <c>VkGl.Clear</c> records it).</summary>
-    public void Clear(bool colour, ClearColorValue colourValue, bool depth, float depthValue, PixelRect rect)
+    public void Clear(bool colour, ClearColour colourValue, bool depth, float depthValue, PixelRect rect)
     {
         var attachments = stackalloc ClearAttachment[2];
         uint n = 0;
-        if (colour) attachments[n++] = new ClearAttachment(ImageAspectFlags.ColorBit, 0, new ClearValue(colourValue));
+        if (colour) attachments[n++] = new ClearAttachment(ImageAspectFlags.ColorBit, 0, new ClearValue(colourValue.Vk));
         if (depth) attachments[n++] = new ClearAttachment(ImageAspectFlags.DepthBit, 0, new ClearValue(depthStencil: new ClearDepthStencilValue(depthValue, 0)));
         if (n == 0) return;
         var area = new ClearRect(GlConventions.VkRect(rect), 0, 1);
@@ -313,27 +313,29 @@ public sealed unsafe class CommandList
     }
 
     /// <summary>Binds sets to a program (the layout comes from the program).</summary>
-    public void BindSets(ShaderProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    public void BindSets(ShaderProgram program, uint first, ReadOnlySpan<GpuSet> sets, ReadOnlySpan<uint> dynamicOffsets, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         Span<DescriptorSet> resolved = stackalloc DescriptorSet[sets.Length];
         for (int i = 0; i < sets.Length; i++) resolved[i] = device.SetAt(sets[i].Index);
         fixed (DescriptorSet* ps = resolved)
         fixed (uint* po = dynamicOffsets)
-            cmdBindDescriptorSets(Handle, point, program.Layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
+            cmdBindDescriptorSets(Handle, VkBindPoint(point), program.Layout, first, (uint)sets.Length, ps, (uint)dynamicOffsets.Length, po);
     }
 
+    static PipelineBindPoint VkBindPoint(GpuBindPoint point) => point == GpuBindPoint.Compute ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
+
     /// <summary>Binds the bindless table to a program (the table is the context's).</summary>
-    public void BindBindlessTable(ShaderProgram program, uint set, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    public void BindBindlessTable(ShaderProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         var table = new GpuSet(ctx.Bindless.SetIndex);
         BindSets(program, set, new ReadOnlySpan<GpuSet>(in table), [], point);
     }
 
     /// <summary>Pushes descriptors of set <paramref name="set"/> (legacy layout and compute; VK_KHR_push_descriptor).</summary>
-    public void PushDescriptors(ShaderProgram program, uint set, ReadOnlySpan<WriteDescriptorSet> writes, PipelineBindPoint point = PipelineBindPoint.Graphics)
+    public void PushDescriptors(ShaderProgram program, uint set, ReadOnlySpan<WriteDescriptorSet> writes, GpuBindPoint point = GpuBindPoint.Graphics)
     {
         if (push is null) throw new InvalidOperationException("VK_KHR_push_descriptor is not available");
-        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, point, program.Layout, set, (uint)writes.Length, pw);
+        fixed (WriteDescriptorSet* pw = writes) push.CmdPushDescriptorSet(Handle, VkBindPoint(point), program.Layout, set, (uint)writes.Length, pw);
         Stats.DescriptorPushes++;
     }
 
@@ -391,6 +393,15 @@ public sealed unsafe class CommandList
     public void PushConstants<T>(ShaderProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
         fixed (T* p = &value) cmdPushConstants(Handle, program.Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
+    }
+
+    static PipelineStageFlags2 VkStageFlags2(GpuStage stages)
+    {
+        var f = PipelineStageFlags2.None;
+        if (stages.HasFlag(GpuStage.Vertex)) f |= PipelineStageFlags2.VertexShaderBit;
+        if (stages.HasFlag(GpuStage.Fragment)) f |= PipelineStageFlags2.FragmentShaderBit;
+        if (stages.HasFlag(GpuStage.Compute)) f |= PipelineStageFlags2.ComputeShaderBit;
+        return f;
     }
 
     static ShaderStageFlags VkStageFlags(GpuStage stages)
@@ -462,9 +473,10 @@ public sealed unsafe class CommandList
 
     public void FillBuffer(GpuBuffer b, ulong offset, ulong size, uint value) => vk.CmdFillBuffer(Handle, device.BufferAt(b.Index), offset, size, value);
 
-    public void CopyBuffer(GpuBuffer src, GpuBuffer dst, in BufferCopy region)
+    public void CopyBuffer(GpuBuffer src, GpuBuffer dst, in GpuBufferCopy region)
     {
-        fixed (BufferCopy* p = &region) vk.CmdCopyBuffer(Handle, device.BufferAt(src.Index), device.BufferAt(dst.Index), 1, p);
+        var copy = new BufferCopy(region.SourceOffset, region.DestinationOffset, region.Size);
+        vk.CmdCopyBuffer(Handle, device.BufferAt(src.Index), device.BufferAt(dst.Index), 1, &copy);
     }
 
     /// <summary>
@@ -615,27 +627,43 @@ public sealed unsafe class CommandList
         AccessFlags2.TransferWriteBit | AccessFlags2.MemoryWriteBit;
 
     /// <summary>The stages and the access of an <see cref="Access"/>, and whether it writes (Vulkan's).</summary>
-    static (PipelineStageFlags2 Stages, AccessFlags2 Access, bool Write) VkAccess(Access a) => a switch
+    static (PipelineStageFlags2 Stages, AccessFlags2 Access, bool Write) VkAccess(Access a)
     {
-        Access.ColourTarget => (PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.ColorAttachmentReadBit | AccessFlags2.ColorAttachmentWriteBit, true),
-        Access.DepthTarget => (PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
-            AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit, true),
-        Access.DepthRead => (PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit, AccessFlags2.DepthStencilAttachmentReadBit, false),
-        Access.Sampled => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderSampledReadBit, false),
-        Access.StorageRead => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit, false),
-        Access.StorageWrite => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit,
-            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit, true),
-        Access.TransferSrc => (PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit, false),
-        Access.TransferDst => (PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, true),
-        Access.IndirectRead => (PipelineStageFlags2.DrawIndirectBit, AccessFlags2.IndirectCommandReadBit, false),
-        Access.VertexRead => (PipelineStageFlags2.VertexAttributeInputBit | PipelineStageFlags2.IndexInputBit, AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit, false),
-        Access.UniformRead => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.UniformReadBit, false),
-        Access.Present => (PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit, false),
-        _ => (PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit, true),
-    };
+        var stages = PipelineStageFlags2.None;
+        var flags = AccessFlags2.None;
+        bool write = false;
+        void Add(Access one, PipelineStageFlags2 s, AccessFlags2 f, bool w)
+        {
+            if ((a & one) == 0) return;
+            stages |= s; flags |= f; write |= w;
+        }
+        Add(Access.ColourTarget, PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.ColorAttachmentReadBit | AccessFlags2.ColorAttachmentWriteBit, true);
+        Add(Access.DepthTarget, PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
+            AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit, true);
+        Add(Access.DepthRead, PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit, AccessFlags2.DepthStencilAttachmentReadBit, false);
+        Add(Access.Sampled, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderSampledReadBit, false);
+        Add(Access.StorageRead, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit, false);
+        Add(Access.StorageWrite, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit,
+            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit, true);
+        Add(Access.TransferSrc, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit, false);
+        Add(Access.TransferDst, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, true);
+        Add(Access.IndirectRead, PipelineStageFlags2.DrawIndirectBit, AccessFlags2.IndirectCommandReadBit, false);
+        Add(Access.VertexRead, PipelineStageFlags2.VertexAttributeInputBit | PipelineStageFlags2.IndexInputBit, AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit, false);
+        Add(Access.UniformRead, PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.UniformReadBit, false);
+        Add(Access.Present, PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit, false);
+        if (stages == PipelineStageFlags2.None) return (PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit, true);
+        return (stages, flags, write);
+    }
 
     /// <summary>Writes a timestamp into the frame's query arena slot.</summary>
-    public void Timestamp(QueryArena arena, in QuerySlot slot, PipelineStageFlags2 stage = PipelineStageFlags2.AllCommandsBit)
+    public void Timestamp(QueryArena arena, in QuerySlot slot, GpuStage stage = GpuStage.All)
+    {
+        if (!slot.IsValid) return;
+        vk.CmdWriteTimestamp2(Handle, VkStageFlags2(stage), arena.Pool(in slot), slot.Index);
+    }
+
+    /// <summary>As <see cref="Timestamp(QueryArena, in QuerySlot, GpuStage)"/>, with the backend's own stage (the pipe's ends).</summary>
+    public void Timestamp(QueryArena arena, in QuerySlot slot, PipelineStageFlags2 stage)
     {
         if (!slot.IsValid) return;
         vk.CmdWriteTimestamp2(Handle, stage, arena.Pool(in slot), slot.Index);

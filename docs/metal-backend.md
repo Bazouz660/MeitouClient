@@ -123,9 +123,10 @@ the descriptor sets, the images and the buffers.
   (`BindPipeline`, `Draw`, `SetViewport`, `SetScissor`, `SetRaster`, `SetDepth`,
   `SetDepthBias`).
 - The **bindings and the resources**: the passes now hold the engine's own handles (the samplers,
-  the views, the textures, the buffers, the sets) and state a draw's resources as a flat binding
-  list; the programs carry their layout. What is left in the passes is the GI's acceleration
-  structure, which is Vulkan-only on purpose.
+  the views, the textures, the buffers, the sets), state a draw's resources as a flat binding list,
+  and record into an `IGpuCommandList` (the commands in the engine's words). What is left in the
+  passes is the GI's acceleration structure and the vendor upscalers' command buffers, both
+  Vulkan-only on purpose.
 
 ## The road to a Metal frame
 
@@ -137,6 +138,7 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The state and the formats in the GL vocabulary | the passes state what they want in neutral words |
 | Done | The handles (the samplers, the views, the textures, the buffers, the sets) and the binding list | the renderers hold no Vulkan object |
 | Done | The synchronization in the engine's words (the accesses and the dependencies) | the backend decides the barriers |
+| Done | The command list as the engine's interface (`IGpuCommandList`) | the renderers state commands, not Vulkan's |
 | Next | The context's interface; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
