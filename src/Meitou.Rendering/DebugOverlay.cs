@@ -63,7 +63,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         """;
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly GpuTexture atlas;
     readonly SampledTexture atlasSampled;
     readonly LegacyProgram program;
@@ -88,12 +88,12 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// <summary>What <see cref="Flush"/> draws into: the frame's final picture (the window's backbuffer, or an offscreen texture). Set by the host.</summary>
     public GpuTexture? Target { get; set; }
 
-    DebugOverlay(GpuContext gpu, byte[] font, float pixelHeight = 16) : this(gpu, font, pixelHeight, false) { }
+    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight = 16) : this(gpu, font, pixelHeight, false) { }
 
     /// <summary>Glyphs baked without oversampling and placed on whole pixels (<see cref="FromUiFont"/>).</summary>
     readonly bool snapped;
 
-    DebugOverlay(GpuContext gpu, byte[] font, float pixelHeight, bool uiFont, bool snapped = false)
+    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight, bool uiFont, bool snapped = false)
     {
         Gpu = gpu;
         this.snapped = snapped;
@@ -153,17 +153,17 @@ public sealed unsafe class DebugOverlay : IDisposable
     }
 
     /// <summary>The overlay, or null when no monospace font is found.</summary>
-    public static DebugOverlay? TryCreate(GpuContext gpu)
+    public static DebugOverlay? TryCreate(IGpuContext gpu)
     {
         var path = FontCandidates.FirstOrDefault(File.Exists);
         return path is null ? null : new DebugOverlay(gpu, File.ReadAllBytes(path));
     }
 
     /// <param name="pixelHeight">The size the glyphs are baked at: about the size the face is drawn at keeps it sharp.</param>
-    public static DebugOverlay FromFont(GpuContext gpu, string path, float pixelHeight = 16) => new(gpu, File.ReadAllBytes(path), pixelHeight);
+    public static DebugOverlay FromFont(IGpuContext gpu, string path, float pixelHeight = 16) => new(gpu, File.ReadAllBytes(path), pixelHeight);
 
     /// <summary>A UI face baked at <paramref name="pixelHeight"/> em pixels. <paramref name="snapped"/>: glyphs baked at 1x and placed on whole pixels, so each texel lands on one screen pixel (sharper; for fonts the original draws with <c>Antialias</c> false).</summary>
-    public static DebugOverlay FromUiFont(GpuContext gpu, string path, float pixelHeight, bool snapped = false) => new(gpu, File.ReadAllBytes(path), pixelHeight, true, snapped);
+    public static DebugOverlay FromUiFont(IGpuContext gpu, string path, float pixelHeight, bool snapped = false) => new(gpu, File.ReadAllBytes(path), pixelHeight, true, snapped);
 
     public float MeasureText(string text, float scale = 1)
     {
@@ -397,10 +397,10 @@ public sealed unsafe class DebugOverlay : IDisposable
         program.Set(uImage, imageBatch is null ? 0 : 1);
         program.Bind(samplerAtlas, imageBatch ?? atlasSampled);
         var floats = CollectionsMarshal.AsSpan(batch);
-        var vertices = Gpu.Frame.Constants.Allocate((ulong)(floats.Length * 4), 16);
-        MemoryMarshal.AsBytes(floats).CopyTo(new Span<byte>(vertices.Pointer, floats.Length * 4));
+        var vertices = Gpu.Frame.WriteConstants(new byte[floats.Length * 4], 16);
+        MemoryMarshal.AsBytes(floats).CopyTo(vertices.Bytes);
         // As the GL version drew: no depth test or culling, blended over by alpha.
-        var state = DrawState.For(t.Formats, Gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
+        var state = DrawState.For(t.Formats, Gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
@@ -421,7 +421,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     }
 
     /// <summary>Collects painter-ordered batches, coalescing adjacent compatible draws into one upload and rendering.</summary>
-    internal sealed class OverlayPass(GpuContext gpu, int width, int height) : IDisposable
+    internal sealed class OverlayPass(IGpuContext gpu, int width, int height) : IDisposable
     {
         readonly List<float> vertices = [];
         readonly List<Run> runs = [];
@@ -480,11 +480,11 @@ public sealed unsafe class DebugOverlay : IDisposable
             cmd.BeginRendering(targets.Rendering);
             try
             {
-                var state = DrawState.For(targets.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(targets.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, targets);
                 var data = CollectionsMarshal.AsSpan(vertices);
-                var upload = gpu.Frame.Constants.Allocate((ulong)(data.Length * 4), 16);
-                MemoryMarshal.AsBytes(data).CopyTo(new Span<byte>(upload.Pointer, data.Length * 4));
+                var upload = gpu.Frame.WriteConstants(new byte[data.Length * 4], 16);
+                MemoryMarshal.AsBytes(data).CopyTo(upload.Bytes);
                 Span<LegacyProgram.Attribute?> attributes =
                 [
                     new(new GpuBufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),

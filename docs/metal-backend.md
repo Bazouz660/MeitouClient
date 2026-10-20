@@ -537,9 +537,14 @@ code is widened and compiles, but the Metal host does not call them). The UI is 
 `DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer. Add a backend-neutral
 painter (quads, text, textures) with a Metal implementation, or a Metal `DebugOverlay`; then the HUD, panels,
 item icons and portraits (`PlayerInterface`, `PlayerUi`, `--ui` showcase). Architecturally separate from the
-scene path; a small renderer of its own is fine. **Not started:** the Metal host does not boot
-`PlayerInterface` (the interface owns the world session, input and the Vulkan `DebugOverlay`), so this needs the
-painter and the host UI wiring together; it is not a small standalone pass.
+scene path; a small renderer of its own is fine.
+
+**The first Metal UI slice is in:** `DebugOverlay` takes `IGpuContext` and the Metal host creates it, drawing
+"Meitou - Metal" and the frame/fps/size lines over the composite. `MEITOU_METAL_OVERLAY=1` includes it in parity
+stills; interactive frames show it by default. The text atlas, quads, scissor and alpha blending work (validation
+clean), and the Vulkan HUD still renders after the widening. **Not started:** the game's HUD and panels. The Metal
+host does not boot `PlayerInterface` (it owns the world session, input and the Vulkan `UiPainter`/`DebugOverlay`
+wiring), so the painter and the host UI wiring have to come together; it is not a small standalone pass.
 
 ### 6. The remaining effects
 
@@ -599,6 +604,9 @@ default.
 - Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
+- UI shot: add `MEITOU_METAL_OVERLAY=1` to any Metal screenshot; the overlay draws at the top-left ("Meitou -
+  Metal", frame count/fps/size). Without it, parity stills stay clean. The Vulkan HUD still renders after
+  `DebugOverlay` was widened to `IGpuContext` (a fresh `--renderer vulkan --screenshot` shows it).
 - Character shots: `--crowd 6 --no-population --at -50000,8000 --time 12 --distance 180 --pitch 18
   --no-objects --no-foliage --no-water --faithful clouds,cloudshadows --no-gi` (the open hillside; six characters).
   `--new-game --time 12 --distance 250 --pitch 20 --faithful clouds,cloudshadows --no-gi` at the Hub (the player

@@ -87,6 +87,10 @@ sealed partial class GameHost
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         var taa = new PostTaa(ctx);
+        // The text/quad overlay: the first Metal UI slice (the game's HUD needs PlayerInterface and its painter). Hidden from
+        // parity stills unless MEITOU_METAL_OVERLAY=1.
+        bool showOverlay = o.Screenshot is null || Environment.GetEnvironmentVariable("MEITOU_METAL_OVERLAY") == "1";
+        var overlay = showOverlay ? DebugOverlay.TryCreate(ctx) : null;
         display.Activate();
         Splash?.Dispose();
 
@@ -322,6 +326,13 @@ sealed partial class GameHost
             var post = (MetalCommandList)ctx.BeginNative("post composite");
             composite.Draw(post, resolved, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
             ctx.EndNative(post);
+            if (overlay is not null)
+            {
+                overlay.Target = backbuffer;
+                overlay.Text("Meitou - Metal", 16, 16, DebugOverlay.TextColour);
+                overlay.Text($"{frames + 1} frames  {Math.Max(1, frames / Math.Max(now, 1e-3)):0} fps  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
+                overlay.Flush(size.X, size.Y);
+            }
             ctx.EndFrame();
             frames++;
             if (o.Screenshot is { } shot && frames == 40)
@@ -332,6 +343,7 @@ sealed partial class GameHost
             }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        overlay?.Dispose();
         characters?.Dispose();
         foliage?.Dispose();
         water?.Dispose();
