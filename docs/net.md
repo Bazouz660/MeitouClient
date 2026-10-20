@@ -159,7 +159,28 @@ Pending (package N7).
 
 ## Events
 
-Pending (package N8).
+`EventBatch` (message `0x40`, Events channel) is `0x40 | Epoch u16 | Tick zigzag varint | count (at most 1024) | events`;
+`EventCodec.Write` includes the type byte and `Read` checks it. One batch per peer per frame, only when non-empty. Each event is a
+kind byte and its fields (**Verified**: `EventCodecTests`):
+
+| Kind | Type | Fields |
+|---|---|---|
+| 1 | `SoundNet` (spatial) | SoundKind, Subject, Other, Position, flags (bit 0 Heavy, 1 AttackerUnarmed, 2 AttackerRobot, 3 Armoured, 4 Fatal, 5 has Item), Item? |
+| 2 | `BloodNet` (spatial) | BloodMarkKind, Who, Position, Direction (2 halves), Amount (half), Colour (3 bytes, RGB), Race? (presence bool) |
+| 3 | `FloaterNet` (spatial) | FloaterKind, Target, Position, flags (bit 0 TargetIsPlayer, 1 SourceIsPlayer), Part, `HitDamage` (5 floats), `ArmourAbsorbed` (3 floats), Healed |
+| 4 | `MessageNet` | Text (at most 1024 B) |
+| 5 | `KnockoutNet` | Tick (zigzag), Attacker, Target, Chance, Success |
+| 6 | reserved | was the prospect report (now a snapshot field); the reader refuses it |
+| 7 | `ChatNet` | From (zigzag), Name (at most 256 B), Text (at most 1024 B; the host clamps to 200 chars) |
+| 8 | `NoticeNet` | NoticeKind (Joined, Left, TimedOut, Kicked, Banned), Player (zigzag), Name, Detail (at most 1024 B) |
+
+Ids are `CommonCodec.WriteId`; Position is three zigzag varints of `Quant.Q64` (1/64 unit). Unknown kinds, unknown flag bits and
+non-finite numbers are `NetFormatException`. The writer clamps instead: texts are cut to their byte limit on a character
+boundary, NaN/infinite floats become 0, halves saturate, and a batch is cut to 1024 events.
+
+`EventFilter` (**Verified**): kinds 1-3 are spatial; a client wants one when its Position is within the radius of `ViewState.Eye`
+(straight-line, `NetHostOptions.EventRadius`) or when its Subject, Other, Who or Target is in the client's interest set. Every other
+kind is wanted by whoever the host module sent it to.
 
 ## Protocol and handshake
 
