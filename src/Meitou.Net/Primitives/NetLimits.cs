@@ -2,7 +2,7 @@ namespace Meitou.Net;
 
 /// <summary>
 /// Hard limits every reader enforces on what the other end sends (docs/net.md, "Limits"). They are protocol constants: a writer that exceeds one
-/// produces a message the reader refuses, so the codecs check them when writing too.
+/// produces a message the reader refuses, so the codecs check the counts when writing too.
 /// </summary>
 public static class NetLimits
 {

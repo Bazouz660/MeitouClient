@@ -42,8 +42,8 @@ public static class Quant
 
     /// <summary>
     /// A rotation in 32 bits ("smallest three"): normalised, the largest component made positive and dropped (its index takes 2 bits, bits 30-31),
-    /// the other three, in index order, as signed 10-bit steps of 1/(511*sqrt 2) (bits 20-29, 10-19, 0-9). The angle error is at most about
-    /// 0.004 rad (0.23 degrees; 0.002 for a turn about one axis), and the identity encodes exactly.
+    /// the other three, in index order, as signed 10-bit steps of 1/(511*sqrt 2) (bits 20-29, 10-19, 0-9). The angle error is below 0.005 rad
+    /// (measured 0.0045 over millions of random rotations; 0.0021 for a turn about one axis), and the identity encodes exactly.
     /// </summary>
     public static uint SmallestThree(Quaternion q)
     {

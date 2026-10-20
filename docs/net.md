@@ -67,8 +67,8 @@ Anything a client sends is read with these limits; the client reads host data th
 `NetLimits` (bytes unless noted): `MaxIdList` 1024 ids, `MaxString` 4096, `MaxName` 256, `MaxMessageText` 1024,
 `MaxChat` 1024 (the host clamps chat to 200 characters), `MaxListItems` 4096, `MaxViewItems` 16384 per keyed view,
 `MaxPlans` 256, `MaxFcsMapEntries` 4096, `MaxCommandBatch` 64 commands, `MaxReliableMessage` 65536, `MaxViewBody` 16384
-(soft), `MaxParts` 64, `MaxAnimLayers` 8, `MaxBones` 512, `MaxStringTable` 16384 entries. Codecs also check them when
-writing, so a message the reader would refuse is never sent.
+(soft), `MaxParts` 64, `MaxAnimLayers` 8, `MaxBones` 512, `MaxStringTable` 16384 entries. Codecs also check list and map
+counts when writing (`ArgumentException`); a string over its byte limit is refused by the reader only.
 
 ## Quantization
 
@@ -81,7 +81,7 @@ client draws exactly what it decodes. NaN encodes as the zero value and out-of-r
 | Yaw | `Yaw16`: i16 `round(yaw / pi * 32768)`, wrapped | decodes into [-pi, pi) |
 | Unit range | `U16(v, min, max)` | clamped |
 | Signed fixed | `S12`: i16 `round(v * 4096)` | about [-8, 8) |
-| Rotation | `SmallestThree`: u32 | largest component dropped and made positive (2-bit index), others as signed 10-bit steps of 1/(511 * sqrt 2); angle error at most about 0.004 rad, 0.002 for a single-axis turn |
+| Rotation | `SmallestThree`: u32 | largest component dropped and made positive (2-bit index), others as signed 10-bit steps of 1/(511 * sqrt 2); angle error below 0.005 rad (**Observed**: 0.0045 worst over 3 million random rotations, 0.0021 for a single-axis turn) |
 | Unit direction | `Dir16`: 3 x i16 (c * 32767) | renormalised on decode |
 
 ## String tables
