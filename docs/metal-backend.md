@@ -140,7 +140,9 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The synchronization in the engine's words (the accesses and the dependencies) | the backend decides the barriers |
 | Done | The command list as the engine's interface (`IGpuCommandList`) | the renderers state commands, not Vulkan's |
 | Done | The context's interface (the resources and the services) | a backend can be another one |
-| Next | The Metal device: a context, a command list and the programs behind the seam ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The frame's interface (`IGpuFrame`), the pipelines (`GpuPipeline`) and the programs (`GpuProgram`: the index and the engine's compile result — sources, SPIR-V, reflection, sets) as the engine's handles | the frame, the pipelines and the programs are backend-neutral; the Vulkan objects live in the backend's tables (the device's, the pipeline library's, the shader library's) |
+| Next | The services onto the seam, and the sky path with them: `ShaderLibrary`/`PipelineLibrary`/`SamplerCache`/`Uploader`/`GpuDefaults`/`FrameGlobals` behind interfaces, the host's recording model (`BeginGuest`, `CurrentTargets`, `CurrentState`) on the seam, then `SkyRenderer` and its helpers on `IGpuContext` | the sky pass runs on the seam alone |
+| Then | The Metal device: a context, a command list and the programs behind the seam ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
