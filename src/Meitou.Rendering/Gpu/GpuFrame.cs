@@ -8,7 +8,7 @@ namespace Meitou.Rendering.Gpu;
 /// resource states and statistics. Begun and ended by the context's frame loop (<see cref="GpuContext.BeginFrame"/> /
 /// <see cref="GpuContext.EndFrame"/>), driven by the display or a test.
 /// </summary>
-public sealed unsafe class GpuFrame : IDisposable
+public sealed unsafe class GpuFrame : IDisposable, IGpuFrame
 {
     readonly VulkanDevice device;
     readonly LinearAllocator[] constants, staging;
@@ -101,6 +101,8 @@ public sealed unsafe class GpuFrame : IDisposable
     public int Slot { get; private set; }
     public bool Open { get; private set; }
     public CommandList Commands { get; }
+    /// <summary>The frame's primary command list, as the seam's interface (<see cref="IGpuFrame.Commands"/>).</summary>
+    IGpuCommandList IGpuFrame.Commands => Commands;
     /// <summary>Host-visible memory for this frame (constants, CPU-written instances and indirect arguments).</summary>
     public LinearAllocator Constants => constants[Slot];
     /// <summary>Host-visible staging for this frame's uploads (<see cref="Uploader"/>): copy sources only, so its reset trims it.</summary>

@@ -69,6 +69,8 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     public IGpuBindlessTable Bindless { get; }
     public Uploader Uploads { get; }
     public GpuFrame Frame { get; }
+    /// <summary>The frame as the seam's interface (<see cref="IGpuContext.Frame"/>).</summary>
+    IGpuFrame IGpuContext.Frame => Frame;
     /// <summary>The upscaler's texture LOD bias: added to the mip level of every mipmapped fetch (set by the post-processing chain).</summary>
     public float LodBias { get; set; }
 

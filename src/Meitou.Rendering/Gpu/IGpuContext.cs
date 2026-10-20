@@ -29,8 +29,8 @@ public interface IGpuContext
 
     // ---- the services ----
 
-    /// <summary>The frame being recorded (its number, its constants, its command list).</summary>
-    GpuFrame Frame { get; }
+    /// <summary>The frame being recorded (its number, its resource states, its command list).</summary>
+    IGpuFrame Frame { get; }
 
     /// <summary>The pipelines by description (the engine's own).</summary>
     PipelineLibrary Pipelines { get; }
