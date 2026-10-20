@@ -1015,7 +1015,33 @@ same code with the same golden hashes.
 
 ### Command gate
 
-Not implemented yet: every queued command is applied as its issuer's.
+`CommandGate.Admit(world, player, command, GateOptions)` (`CommandGate.cs`) is the host's trust boundary: every remote command passes it on
+the host thread, between ticks, before `Commands.Enqueue`. The host's own and deferred commands never do. The result is the command restamped
+`with { Player = player, Tick = world.Tick }` (maybe filtered or stripped), or a `Refusal` text. The gate only reads the world: it never adds a
+session or uses up a grant.
+
+- **Rules**: each concrete `SimCommand` type has one (`Ruled`; a test checks the assembly). Any other type is refused.
+- **Common checks**, in order: the player is known (`Player.Find`) and `Player.Exists`; host-only types are refused (`HostOnly`: `RepathCommand`,
+  `SandboxMovement`, `StartContract`, `JoinPlayer`, `TransferSquad`); `DebugCommand`s are refused unless `GateOptions.Cheats`. Then every
+  public field of the command, and of the records it carries (item tokens, plans), is checked by reflection: floats and vectors must be finite,
+  strings at most `MaxText` (256) and lists at most `MaxList` (256).
+- **Character lists**: an empty list stays empty, since the issuer's selection holds only its own characters. A listed character survives only
+  if `OwnerOf(id) == player`, and the command is refused when none is left. This covers orders, cheats, `SelectCommand` (an empty select, a
+  click on the ground, passes: the simulation keeps the selection) and `AttackOrder` (its list may not be empty). A single-character command
+  (inventory, jobs, prospect, dismiss, talk and trade customer, machine transfer, squad move, edit, `DebugGiveItem`) needs that character to be
+  the sender's.
+- **Targets and places**: a target, patient, prisoner, wearer, inspected character or surgeon must be alive. Talk and trade partners must not be
+  player characters. Doors must be door fixtures and containers fixtures with contents. Ground items must exist. Operate and job sites must be
+  machines or player-faction buildings; build, dismantle, cancel and pause sites must be player-faction buildings, crafting benches machines.
+  Squad commands name the sender's own player squads (`ActiveSquadCommand` may also say -1).
+- **Values**: enums are defined (`ShackleWork`, `TaskType`, `EditKind`); an edit's look has only finite floats, vectors and instance
+  transforms; `DialogueChoice.Index >= 0`; research ids are non-empty; `Buy/SellItem.Quantity >= 1`, and a buy's section is null, `main`
+  or `backpack_content`. `PlaceBuildings` holds 1..`MaxPlans` (64) plans, each with `Floor` 0..16, a `Parent` that exists and `GateOptions.Placeable` not false (the host's geometric check).
+- **Rewrites**: `AttackOrder.Defensive` is cleared (only retaliation makes defences). `SquadAiCommand.Option` is masked to the known options.
+  `QueueCraft.Count` is clamped to 1..999. A surgery's `EditCharacter.Paid` is cleared unless the session's `Grant` is exactly (Surgery,
+  Character, Surgeon); a recruit edit is refused without its grant. The grant is only peeked at, and the simulation uses it up.
+- Window, view and faction commands are only restamped (close windows, inspect, focus, creation, door toggles, research, discoveries); their
+  systems already act on the issuer's session or filter by faction.
 
 ### Per-viewer snapshots
 
