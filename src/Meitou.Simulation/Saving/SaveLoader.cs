@@ -23,11 +23,17 @@ public sealed class SaveLoadOptions
 
     /// <summary>The look of a spawned character, rolled by this source from the character's saved serial (the saved CHARACTER_APPEARANCE is not read into a drawable look yet). Null: no look.</summary>
     public IAppearanceSource? Appearances { get; init; }
+
+    /// <summary>
+    /// The roster GUID of the human loading the save, who plays player 0 (a host). <see cref="Guid.Empty"/>: a single-player load, where the save's roster and squad owners are
+    /// ignored and every squad is player 0's. Otherwise the save's roster makes the sessions and owners, remapped so this GUID is 0 (<see cref="RosterSave.Read"/>).
+    /// </summary>
+    public Guid LocalPlayer { get; init; }
 }
 
 /// <summary>
 /// Loads a <see cref="SaveGame"/> into a <see cref="World"/> (docs/simulation.md "Saves"): the clock, the factions' state and relations, the player's money and
-/// platoons with their characters (positions, stats, medical state), the camera's selection, and the other platoons as stand-ins that make their saved characters when their zone loads. Everything else a save
+/// platoons with their characters (positions, stats, medical state) and owners (a host's load, <see cref="SaveLoadOptions.LocalPlayer"/>), player 0's selection, and the other platoons as stand-ins that make their saved characters when their zone loads. Everything else a save
 /// holds (towns, war state, weather (the host restores it), research, zone buildings, items, appearance sliders) stays in <see cref="LoadedSave.Source"/> for <see cref="SaveCapture"/> to carry on.
 /// Call it on a world that has not run a tick yet and holds no characters.
 /// </summary>
@@ -101,28 +107,33 @@ public static class SaveLoader
         foreach (var f in save.Factions)
             if (f.War is { } war) context.Wars.TryAdd(f.Id, war);
         var campaignPlatoons = WarSave.PlatoonHandles(context.Wars.Values);
+        // The players and their squads' owners (docs/formats/save.md "Multiplayer roster and owners"): only for a host's load.
+        var roster = options.LocalPlayer != Guid.Empty ? RosterSave.Read(camera.Record, world, options.LocalPlayer) : null;
         foreach (var platoon in save.Platoons)
         {
             bool mine = playerFaction is not null && platoon.FactionId == playerFaction.Id;
             if (mine && platoon.IsLoaded)
-                LoadPlayerPlatoon(world, platoon, data, options, loaded, playerIndex, races, parts, bySource, assembly, context);
+                LoadPlayerPlatoon(world, platoon, data, options, loaded, playerIndex, races, parts, bySource, assembly, context, RosterSave.OwnerOf(platoon.Record, platoon.Name, roster, loaded.Notes.Add));
             else if (!mine && options.NpcPlatoons)
                 LoadNpcPlatoon(world, platoon, data, loaded, context, campaignPlatoons.Contains((platoon.Handle.C, platoon.Handle.CS)));
         }
-        if (loaded.PlayerPlatoons.Count > 0) world.Player.Local.Squad = loaded.PlayerPlatoons[0].Squad.Id;
+        if (loaded.PlayerPlatoons.FirstOrDefault(p => p.Squad.Owner == 0) is { } firstOwn) world.Player.Local.Squad = firstOwn.Squad.Id;
 
-        // The selection.
+        // The selection: player 0's (the CAMERA's), their own characters only.
         var selected = new List<Hand> { camera.SelectedCharacter };
         for (int k = 0; camera.Record.Ints.ContainsKey($"selected_characters{k}I"); k++) selected.Add(Hand.Read(camera.Record, $"selected_characters{k}"));
         foreach (var h in selected)
-            if (!h.IsNull && handles.Character(h) is { } c && bySource.TryGetValue(c, out var id) && !world.Player.Local.Selection.Contains(id))
+            if (!h.IsNull && handles.Character(h) is { } c && bySource.TryGetValue(c, out var id) && !world.Player.Local.Selection.Contains(id)
+                && world.Squads.Find(world.Characters.Cold(id.Slot)!.SquadId) is not { Owner: not 0 })
                 world.Player.Local.Selection.Add(id);
-        // The squad bar shows the selected character's squad, else the first in order with members.
-        if (world.Player.Local.Selection.Count > 0 && world.Characters.Cold(world.Player.Local.Selection[0].Slot) is { } first && world.Squads.Find(first.SquadId) is { PlatoonId: < 0 } shown
+        // The squad bar shows the selected character's squad, else player 0's first in order with members.
+        if (world.Player.Local.Selection.Count > 0 && world.Characters.Cold(world.Player.Local.Selection[0].Slot) is { } first && world.Squads.Find(first.SquadId) is { PlatoonId: < 0, Owner: 0 } shown
             && shown.Faction == playerIndex)
             world.Player.Local.Squad = shown.Id;
-        else if (SquadManagement.PlayerSquads(world) is { Count: > 0 } squads)
+        else if (SquadManagement.PlayerSquads(world, 0) is { Count: > 0 } squads)
             world.Player.Local.Squad = (squads.FirstOrDefault(s => s.Members.Count > 0) ?? squads[0]).Id;
+        // The other players' active squads (and player 0's when none of theirs is left).
+        SquadManagement.KeepActive(world);
         return loaded;
     }
 
@@ -190,7 +201,7 @@ public static class SaveLoader
 
     static void LoadPlayerPlatoon(World world, SavePlatoon platoon, PopulationData data, SaveLoadOptions options, LoadedSave loaded,
         int playerIndex, Dictionary<string, RaceData?> races, Dictionary<string, BodyPartTemplate?> parts, Dictionary<SaveCharacter, CharacterId> bySource, CharacterAssembly assembly,
-        SavedPopulation context)
+        SavedPopulation context, int owner)
     {
         var squad = new Squad
         {
@@ -199,6 +210,7 @@ public static class SaveLoader
             // The record's name is what the squad tabs show (a renamed squad's, the original's `platoon->+0x78->+0x18`, Observed); its string id names the file.
             Name = platoon.Record.Name is { Length: > 0 } shown ? shown : platoon.Name,
             Index = platoon.Record.Ints.GetValueOrDefault("squad index"),
+            Owner = owner,
             SaveName = platoon.Name,
             Faction = playerIndex,
             Position = platoon.Position,
