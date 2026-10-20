@@ -621,6 +621,16 @@ default.
   allocations (the character palettes, then materials, then instances); replacing the constants buffer on growth
   would leave those writes in the old ring and the GPU reading zeros. `MetalFrame` uses a new 1 MB shared chunk
   for each overflow and resets all chunks at the frame's begin.
+- **UI target orientation.** `IGpuContext.RenderTargetsBottomUp` is true for Vulkan and false for Metal; the UI
+  painter applies a display's `ImageFlipV` only on a bottom-up target. This is what keeps the squad portraits, item
+  icons and editor stage upright on Metal. Vulkan's behaviour is unchanged.
+- **Cube stand-ins.** A dummy cube's `TextureDesc.Layers` is 1: its six faces are the cube type's slices, not array
+  layers. Passing 6 made `GpuTexture.View` ask for 36 slices and `MTL_DEBUG_LAYER=1` abort at the first cube
+  sampler (the UI's first frame after the painter was added). `MetalContext.Dummy` now passes 1.
+- **UI host scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
+  portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc, F7,
+  hover/click/scroll) but not camera movement, world selection or move orders. Title/new-game/save/load/options,
+  trade, dialogue, build, editor and settings host callbacks are still unset.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
