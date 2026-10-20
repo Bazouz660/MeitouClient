@@ -405,7 +405,49 @@ kind is wanted by whoever the host module sent it to.
 
 ## Protocol and handshake
 
-Pending (package N9).
+`Session/ProtocolCodec.cs` writes and reads the Control messages: `Write` puts the `MessageType` byte first, the caller
+reads it (`ReadType`), and `ReadX` reads the rest and demands the end. `NetRules` and `SessionRules` overloads write
+bodies only (flag bits packed in one byte). Writers clamp texts to the reader limit at a character boundary and throw
+`ArgumentException` for a wrong-size fixed field (nonce 16 bytes, proof 0 or 32), so a reader never refuses what a writer
+produced. Doubles are read with a finite check. Limits: build 64 bytes, data set 1024 files, roster 256, weather
+regions 256. **Verified** (`ProtocolCodecTests`: every message round-trips, including `WorldReset`, `SessionRules` and
+`WeatherSync`; clamping, trailing bytes, NaN, bad type bytes).
+
+Sequence: connect payload `Magic + u16 Version` (`CheckRequest`) -> `Challenge(Nonce, HostName, NeedsPassword)` ->
+`Hello` -> `Welcome` (number, `NetRules`, roster) -> the host's `WorldReset` -> client `Ready(epoch)`. A refusal is
+`Reject(Code, Reason)`, also the payload of a drop.
+
+`Handshake` (pure, shared by host and client). Check order, with the reason texts (**Verified**, `HandshakeTests`):
+
+| Step | Code | Reason |
+|---|---|---|
+| connect magic or version | Protocol | `Incompatible network protocol (yours {c}, host's {h}). Update Meitou.` (bad magic: `Not a Meitou connection. Update Meitou.`) |
+| `connected + 1 >= maxPlayers` | Full | `The game is full ({n} players).` (`connected` = remote players in the game) |
+| address banned | Banned | `You are banned from this game.` |
+| Hello protocol, player id banned | Protocol, Banned | as above |
+| id equals the host's | Duplicate | `Your player id is already in this game.` |
+| build differs (unless allowed) | Build | `Version mismatch: you run {c}, the host runs {h}.` |
+| data set differs | Data | `Your game data differs from the host's. {Difference}` |
+| `AnimationHash` differs | Data | `... The animation library is different.` |
+| password set, proof empty / wrong | Password | `This game needs a password.` / `Wrong password.` |
+
+The host's own checks come after: no free number (`NoSlot`: `No free player slot.`), a live peer with the same id
+(`Duplicate` to the older: `Signed in from another place.`). Other drop texts: `Kicked by the host: {reason}`, `The host
+ended the game.`, `Lost connection to the host.`, `Took too long to load.`.
+
+- **Proof** = HMAC-SHA256, key SHA-256(UTF-8 password), data nonce + `Guid.ToByteArray()`; empty without a password;
+  compared with `FixedTimeEquals`. **Verified**: differs per password, nonce and player.
+- **`DataSetIdentity.Compute(LoadOrder)`**: per file the first 8 bytes of SHA-256 of the content (LE) and the length,
+  in load order (`LoadOrder.FromInstall`: core files, then `mods.cfg`); an unreadable file is (0, -1). `Combined` = first
+  8 bytes of SHA-256 over (name, hash, length). `Difference` is null when equal, else
+  `Missing: ..; extra: ..; different version: ..` (5 names per group, then `(and n more)`; names compared ignoring
+  case) or `Same mods in a different load order.` **Verified** with temp files.
+- **`AnimationHash`** = FNV-style fold of `Rng.StableHash` of every `AnimationLibrary.Definitions` id in order, then the
+  count (the wire carries library indices). Equal for two builds of the same data is **Unknown** until a game-install
+  test checks it.
+- **`SanitizeName`**: control characters dropped, trimmed, 24 characters (no split surrogate), empty -> `Player {n}`.
+- **`PlayerColourRule.Assign(taken, preferred)`**: `preferred % 8` when free, else the lowest free, -1 when all 8 are
+  taken; callers pass the player number (the host, 0, takes colour 0 first). **Verified**.
 
 ## Interest, delta, replicator and mirror
 
