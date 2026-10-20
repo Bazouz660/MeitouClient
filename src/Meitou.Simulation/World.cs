@@ -180,12 +180,65 @@ public sealed partial class World : IDisposable
         if (system is INpcHolder holder) holders.Add(holder);
     }
 
-    /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
-    public bool CanTalk(CharacterId id, CharacterId? talker = null) => dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);
+    /// <summary>
+    /// Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks
+    /// between ticks. On a replica it is the host's answer for the viewer's first selected character (<see cref="WorldSnapshot.Talkable"/>), whatever <paramref name="talker"/> is.
+    /// </summary>
+    public bool CanTalk(CharacterId id, CharacterId? talker = null) => IsReplica ? Snapshot.Talkable.Contains(id)
+        : dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);
 
-    /// <summary>Runs one simulation tick.</summary>
+    /// <summary>
+    /// A net client's world (docs/simulation.md "Per-viewer snapshots"): it has no systems and never ticks; <see cref="Present"/> shows the host's snapshots for this player and mirrors
+    /// the viewer's facts into <see cref="Player"/>. Not hashed.
+    /// </summary>
+    public bool IsReplica { get; private set; }
+
+    /// <summary>Makes this world a replica with the host's <paramref name="seed"/>; only a world without systems before its first tick.</summary>
+    public void MakeReplica(ulong seed)
+    {
+        if (systems.Count != 0 || Tick != 0) throw new InvalidOperationException("only a world without systems, before its first tick, becomes a replica");
+        Settings = Settings with { Seed = seed };
+        IsReplica = true;
+    }
+
+    /// <summary>
+    /// Shows the host's snapshots on a replica, between frames: <see cref="PreviousSnapshot"/> and <see cref="Snapshot"/>, <see cref="Tick"/> = the current one's (it may step back when
+    /// the client's presentation snaps), and the viewer's facts mirrored into <see cref="Player"/>: <see cref="PlayerState.Faction"/>, <see cref="PlayerState.Money"/> and the local
+    /// session's selection (the characters marked selected, in slot order), inspected character, active squad, creation and prospecting.
+    /// </summary>
+    public void Present(WorldSnapshot previous, WorldSnapshot current)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(current);
+        if (!IsReplica) throw new InvalidOperationException("only a replica world is presented");
+        if (Characters.Phase != TablePhase.Outside) throw new InvalidOperationException("a replica is presented at a frame boundary");
+        stateStamp++;
+        PreviousSnapshot = previous;
+        Snapshot = current;
+        Tick = current.Tick;
+        Player.Faction = current.PlayerFaction;
+        Player.Money = current.Money;
+        var local = Player.Local;
+        local.Selection.Clear();
+        local.Inspected = CharacterId.None;
+        foreach (var c in current.Characters)
+        {
+            if (c.Selected) local.Selection.Add(c.Id);
+            else if (c.Inspected) local.Inspected = c.Id;
+        }
+        local.Squad = current.ActiveSquad;
+        local.InCreation = current.InCreation;
+        local.CreationRaces = current.CreationRaces;
+        local.Prospected = current.Prospected;
+    }
+
+    static InvalidOperationException ReplicaTicks() => new("a replica world never ticks");
+
+    /// <summary>Runs one simulation tick (a replica throws: it never ticks).</summary>
     public void RunTick()
     {
+        if (IsReplica) throw ReplicaTicks();
+        stateStamp++;
         var table = Characters;
         table.BeginTick();
 

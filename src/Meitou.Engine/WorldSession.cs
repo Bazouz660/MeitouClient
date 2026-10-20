@@ -7,6 +7,12 @@ using Meitou.Simulation;
 namespace Meitou.Engine;
 
 /// <summary>
+/// What drives a <see cref="WorldSession"/>'s world: <see cref="Local"/> ticks it with the simulation clock (single-player, a net host); <see cref="Replica"/> is a net client's
+/// world, which never ticks and shows the host's snapshots (<see cref="WorldSession.Present"/>; docs/simulation.md "Per-viewer snapshots").
+/// </summary>
+public enum SessionMode : byte { Local, Replica }
+
+/// <summary>
 /// A running world: what is loaded (the region around <see cref="Focus"/>), the two clocks, the game clock, the input and the
 /// camera. The host feeds <see cref="Input"/> from its window and calls <see cref="Advance"/> once per displayed frame.
 /// <list type="bullet">
@@ -58,8 +64,19 @@ public sealed class WorldSession : IDisposable
     /// <summary>The snapshot the last simulation tick published and the one before it, for interpolating by <see cref="SimulationAlpha"/>.</summary>
     public WorldSnapshot CurrentSnapshot => World.Snapshot;
     public WorldSnapshot PreviousSnapshot => World.PreviousSnapshot;
-    /// <summary>Where the frame is between the previous and the current simulation tick (the snapshots' alpha, not the camera's).</summary>
-    public float SimulationAlpha => Simulation.Alpha;
+    /// <summary>
+    /// Where the frame is between the previous and the current snapshot, 0 to 1 (the snapshots' alpha, not the camera's): the simulation clock's in <see cref="SessionMode.Local"/>,
+    /// the presented one (<see cref="Present"/>) on a replica. Animation, weights and ragdolls interpolate by it.
+    /// </summary>
+    public float SimulationAlpha => Mode == SessionMode.Replica ? presentedAlpha : Simulation.Alpha;
+    /// <summary>
+    /// The alpha positions and facings interpolate by: <see cref="SimulationAlpha"/> in <see cref="SessionMode.Local"/>; on a replica the presented one, up to 2 when the client
+    /// extrapolates past the newest snapshot.
+    /// </summary>
+    public float MotionAlpha => Mode == SessionMode.Replica ? presentedMotion : Simulation.Alpha;
+    /// <summary>Whether the world ticks here (<see cref="SessionMode.Local"/>) or shows a host's snapshots (<see cref="SessionMode.Replica"/>); set by <see cref="ReplaceWorld"/>.</summary>
+    public SessionMode Mode { get; private set; }
+    float presentedAlpha, presentedMotion;
     public InputState Input { get; } = new();
     public InputBindings Bindings { get; }
     public CameraRig Camera { get; }
@@ -93,18 +110,19 @@ public sealed class WorldSession : IDisposable
         else request.ApplyTo(Simulation);
     }
 
-    /// <summary>Runs one frame's worth of real time: the control ticks it holds, then the simulation ticks; returns the control ticks.</summary>
+    /// <summary>Runs one frame's worth of real time: the control ticks it holds, then (<see cref="SessionMode.Local"/> only) the simulation ticks; returns the control ticks.</summary>
     public int Advance(double realSeconds)
     {
         int n = Ticks.Advance(realSeconds);
         for (int i = 0; i < n; i++) Tick();
-        AdvanceSimulation(realSeconds);
+        if (Mode == SessionMode.Local) AdvanceSimulation(realSeconds);
         return n;
     }
 
-    /// <summary>Feeds real time to the simulation clock only and runs the ticks it owes; returns how many ran.</summary>
+    /// <summary>Feeds real time to the simulation clock only and runs the ticks it owes; returns how many ran. A replica throws: its world never ticks.</summary>
     public int AdvanceSimulation(double realSeconds)
     {
+        if (Mode == SessionMode.Replica) throw new InvalidOperationException("a replica world never ticks");
         int n = Simulation.Advance(realSeconds);
         for (int i = 0; i < n; i++) SimulationTick();
         if (Simulation.IsPaused) World.ApplyPausedInterfaceCommands();
@@ -121,17 +139,37 @@ public sealed class WorldSession : IDisposable
     }
 
     /// <summary>
+    /// Shows a host's snapshots on a replica (<see cref="SessionMode.Replica"/>): <see cref="World.Present"/>, then the frame's alphas, <paramref name="alpha"/> clamped to [0, 1]
+    /// (<see cref="SimulationAlpha"/>) and <paramref name="motionAlpha"/> to [0, 2] (<see cref="MotionAlpha"/>). Between frames, on the frame thread.
+    /// </summary>
+    public void Present(WorldSnapshot previous, WorldSnapshot current, float alpha, float motionAlpha)
+    {
+        if (Mode != SessionMode.Replica) throw new InvalidOperationException("only a replica session is presented");
+        World.Present(previous, current);
+        presentedAlpha = float.IsNaN(alpha) ? 0 : Math.Clamp(alpha, 0, 1);
+        presentedMotion = float.IsNaN(motionAlpha) ? 0 : Math.Clamp(motionAlpha, 0, 2);
+    }
+
+    /// <summary>
     /// Swaps in a new world made from <paramref name="systems"/> (same settings and walkability) at a tick boundary, for a loaded save. <paramref name="setup"/>
     /// fills the new world (before its first tick, as <c>SaveLoader.Load</c> needs); when it throws the old world stays and the new one and its systems are disposed.
     /// The old world and its systems are disposed after the swap. The control tick, the camera, the input and the simulation clock carry on; the game clock is the
     /// caller's to set. Call it between frames or from a control tick's handler, never from inside a world tick. <see cref="WorldReplaced"/> is raised last.
+    /// <paramref name="mode"/> becomes <see cref="Mode"/> and the presented alphas restart at 0: a <see cref="SessionMode.Replica"/> takes no systems and a
+    /// <paramref name="setup"/> that calls <see cref="World.MakeReplica"/> (and a local world must not be one), else <see cref="ArgumentException"/> with the old world kept.
     /// </summary>
-    public World ReplaceWorld(IEnumerable<ITickSystem> systems, Action<World>? setup = null)
+    public World ReplaceWorld(IEnumerable<ITickSystem> systems, Action<World>? setup = null, SessionMode mode = SessionMode.Local)
     {
         var list = systems.ToList();
         var next = new World(worldSettings, worldWalkability, list);
         next.Floaters = World.Floaters;   // the host keeps drawing the floaters across the swap
-        try { setup?.Invoke(next); }
+        try
+        {
+            if (mode == SessionMode.Replica && list.Count != 0) throw new ArgumentException("a replica world has no systems", nameof(systems));
+            setup?.Invoke(next);
+            if (next.IsReplica != (mode == SessionMode.Replica))
+                throw new ArgumentException(mode == SessionMode.Replica ? "a replica session's setup makes its world a replica (World.MakeReplica)" : "a local session's world is not a replica", nameof(setup));
+        }
         catch
         {
             Discard(next);
@@ -139,6 +177,8 @@ public sealed class WorldSession : IDisposable
         }
         var old = World;
         World = next;
+        Mode = mode;
+        presentedAlpha = presentedMotion = 0;
         Discard(old);
         // The navmesh door table follows the new world: the old one's locked doors are forgotten, the new one's told.
         if (worldWalkability is Meitou.Simulation.Locks.IDoorGate gate) { gate.ResetDoors(); next.Fixtures.Doors = gate; }
