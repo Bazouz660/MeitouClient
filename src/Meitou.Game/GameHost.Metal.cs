@@ -193,7 +193,7 @@ sealed partial class GameHost
 
             // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
             var post = (MetalCommandList)ctx.BeginNative("post composite");
-            composite.Draw(post, sceneColour, backbuffer, o.Post);
+            composite.Draw(post, sceneColour, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
             ctx.EndNative(post);
             ctx.EndFrame();
             frames++;
