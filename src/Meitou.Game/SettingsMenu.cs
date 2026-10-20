@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Meitou.Data.Ui;
 using Meitou.Engine.Input;
+using Meitou.Net.Session;
 using Meitou.Rendering;
 using AudioSettings = Meitou.Audio.AudioSettings;
 
@@ -39,7 +40,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         new(label, 0, 1, () => get(config.Audio ??= new()), v => { config.Audio = set(config.Audio ?? new(), Math.Clamp(v, 0, 1)); AudioChanged?.Invoke(); },
             "0.00", Text: v => $"{v * 100:0}%", Faithful: 0.5f);
     Slider? attackSlotsSlider;
-    Slider AttackSlotsSlider => attackSlotsSlider ??= new("Attackers per target", 1, 5, () => config.AttackSlots, v =>
+    Slider AttackSlotsSlider => attackSlotsSlider ??= new("Attackers per target", 1, 5, () => Host?.AttackSlots ?? config.AttackSlots, v =>
     {
         config.AttackSlots = Math.Clamp((int)MathF.Round(v), 1, 5);
         AttackSlotsChanged?.Invoke(config.AttackSlots);
@@ -64,7 +65,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
 
     sealed record Choice(Func<IReadOnlyList<string>> Options, Func<int> Current, Action<int> Choose);
     sealed record Entry(string Label, string Hint = "", Slider? Slider = null, Toggle? Toggle = null, Choice? Choice = null,
-        InputAction? Binding = null, Action? Run = null, string? Picture = null);
+        InputAction? Binding = null, Action? Run = null, string? Picture = null, bool Locked = false);
     sealed record Hit(UiRect Bounds, Action Activate, Slider? Slider = null, UiRect? Track = null);
 
     public IReadOnlyList<Slider> Sliders => values.Sliders;
@@ -80,6 +81,12 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<bool>? DoorsCloseChanged { get; init; }
     /// <summary>Called when an audio slider changes (the config holds the new values); the game applies them to the running sound.</summary>
     public Action? AudioChanged { get; init; }
+    /// <summary>On a client: the host's <see cref="SessionRules"/> (null on the host and in single player). The rule rows show these values and are locked.</summary>
+    public Func<SessionRules?>? HostRules { get; init; }
+    SessionRules? Host => HostRules?.Invoke();
+
+    /// <summary>A rule row: unchanged in single player and on the host, locked with a note on a client.</summary>
+    Entry Rule(Entry entry) => Host is null ? entry : entry with { Locked = true, Hint = entry.Hint + " Set by the host." };
     public bool Visible
     {
         get => visible || menuProgress > 0;
@@ -178,9 +185,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (page == 6)
         {
             // Bugs of the game as it ships; on fixes them, off plays as the game does.
-            result.Add(new("Raids as written", "Raid and campaign data that builds on a base campaign counts the base's squads and follow-up campaigns once. "
+            result.Add(Rule(new("Raids as written", "Raid and campaign data that builds on a base campaign counts the base's squads and follow-up campaigns once. "
                 + "The game counts them twice, so inherited squads come up more often and follow-up raids are about twice as likely.",
-                Toggle: new("Raids as written", () => config.CampaignAncestorsOnce, v => { config.CampaignAncestorsOnce = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
+                Toggle: new("Raids as written", () => Host?.CampaignAncestorsOnce ?? config.CampaignAncestorsOnce, v => { config.CampaignAncestorsOnce = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
             result.Add(new("Door break sound", "Doors and gates make their breaking sound when they are bashed or broken open. "
                 + "The game never picks which breaking sound to play, so it plays none.",
                 Toggle: new("Door break sound", () => config.FixDoorBreak, v => config.FixDoorBreak = v, Remaster: true, OnOff: true)));
@@ -192,29 +199,29 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         }
         if (page == 4)
         {
-            result.Add(new(AttackSlotsSlider.Label, "How many enemies may fight one character in melee at once (the game: 1).", Slider: AttackSlotsSlider));
-            result.Add(new("Late dodges and blocks", "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, "
+            result.Add(Rule(new(AttackSlotsSlider.Label, "How many enemies may fight one character in melee at once (the game: 1).", Slider: AttackSlotsSlider)));
+            result.Add(Rule(new("Late dodges and blocks", "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, "
                 + "instead of failing as in the game. Makes skilled fighters much harder to wear down when several enemies attack at once.",
-                Toggle: new("Late dodges and blocks", () => config.LateDefences, v => { config.LateDefences = v; LateDefencesChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
-            result.Add(new("Squads keep their people", "Roaming squads keep their characters when they leave the area around your squads, and travel on as themselves. "
+                Toggle: new("Late dodges and blocks", () => Host?.LateDefences ?? config.LateDefences, v => { config.LateDefences = v; LateDefencesChanged?.Invoke(v); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Squads keep their people", "Roaming squads keep their characters when they leave the area around your squads, and travel on as themselves. "
                 + "In the game they are removed and new ones are made later.",
-                Toggle: new("Squads keep their people", () => config.KeepRoamers, v => { config.KeepRoamers = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
-            result.Add(new("Fights far away", "Hostile squads that meet far from your squads fight it out by strength; the loser is wiped out. In the game nothing happens far away.",
-                Toggle: new("Fights far away", () => config.OffscreenFights, v => { config.OffscreenFights = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
-            result.Add(new("Healing far away", "A squad coming back into the area around your squads has healed for the time it was away. In the game it comes back as it left.",
-                Toggle: new("Healing far away", () => config.OffscreenHealing, v => { config.OffscreenHealing = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
-            result.Add(new("Wild squads stay", "Animals, bandits and other wild squads keep their characters, wounds and places when the area around them unloads, and are there again when you come back. "
+                Toggle: new("Squads keep their people", () => Host?.KeepRoamers ?? config.KeepRoamers, v => { config.KeepRoamers = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Fights far away", "Hostile squads that meet far from your squads fight it out by strength; the loser is wiped out. In the game nothing happens far away.",
+                Toggle: new("Fights far away", () => Host?.OffscreenFights ?? config.OffscreenFights, v => { config.OffscreenFights = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Healing far away", "A squad coming back into the area around your squads has healed for the time it was away. In the game it comes back as it left.",
+                Toggle: new("Healing far away", () => Host?.OffscreenHealing ?? config.OffscreenHealing, v => { config.OffscreenHealing = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Wild squads stay", "Animals, bandits and other wild squads keep their characters, wounds and places when the area around them unloads, and are there again when you come back. "
                 + "In the game they are removed and new ones are made.",
-                Toggle: new("Wild squads stay", () => config.KeepWild, v => { config.KeepWild = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
-            result.Add(new("Doors close behind", "A door someone opened by walking through it closes again a few seconds after the last person went through. In the game doors stay open.",
-                Toggle: new("Doors close behind", () => config.DoorsCloseBehind, v => { config.DoorsCloseBehind = v; DoorsCloseChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
+                Toggle: new("Wild squads stay", () => Host?.KeepWild ?? config.KeepWild, v => { config.KeepWild = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Doors close behind", "A door someone opened by walking through it closes again a few seconds after the last person went through. In the game doors stay open.",
+                Toggle: new("Doors close behind", () => Host?.DoorsCloseBehind ?? config.DoorsCloseBehind, v => { config.DoorsCloseBehind = v; DoorsCloseChanged?.Invoke(v); }, Remaster: true, OnOff: true))));
             result.Add(new("Hover outline", "Outline and tint the character under the cursor, in the colour of what a right click would do.",
                 Toggle: new("Hover outline", () => config.HoverOutline, v => config.HoverOutline = v, Remaster: true, OnOff: true)));
             result.Add(new("Selection rings", "Draw the green ring on the ground under each selected character.",
                 Toggle: new("Selection rings", () => config.SelectionRings, v => config.SelectionRings = v, Remaster: true, OnOff: true)));
-            result.Add(new("luckyren Mode", "A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying everywhere. Its gear falls to the ground around the spot.",
-                Toggle: new("luckyren Mode", () => config.LuckyrenMode, v => config.LuckyrenMode = v, Remaster: true, OnOff: true),
-                Picture: SettingsMenuArt.LuckyrenImage));
+            result.Add(Rule(new("luckyren Mode", "A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying everywhere. Its gear falls to the ground around the spot.",
+                Toggle: new("luckyren Mode", () => Host?.LuckyrenMode ?? config.LuckyrenMode, v => config.LuckyrenMode = v, Remaster: true, OnOff: true),
+                Picture: SettingsMenuArt.LuckyrenImage)));
             result.Add(new("Main menu scene transitions", "Sky flight to/from the main menu (Meitou UI).",
                 Toggle: new("Main menu scene transitions", () => config.MainMenuTransitions, v => config.MainMenuTransitions = v)));
             result.Add(new(mainMenuTransitionSpeed.Label, "Higher values make the camera ascend and descend faster.", Slider: mainMenuTransitionSpeed));
@@ -437,20 +444,23 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.CharacterFlights = false;
         config.KeepTexturesAtCharacters = true;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
-        AttackSlotsSlider.Set(UserConfig.MeitouAttackSlots);
-        config.LateDefences = true;
-        LateDefencesChanged?.Invoke(true);
-        config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = true;
-        config.DoorsCloseBehind = true;
-        DoorsCloseChanged?.Invoke(true);
+        if (Host is null)   // the host decides the rule rows on a client
+        {
+            AttackSlotsSlider.Set(UserConfig.MeitouAttackSlots);
+            config.LateDefences = true;
+            LateDefencesChanged?.Invoke(true);
+            config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = true;
+            config.DoorsCloseBehind = true;
+            DoorsCloseChanged?.Invoke(true);
+            config.LuckyrenMode = false;
+        }
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
-        OffscreenChanged?.Invoke();
+        if (Host is null) OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();
         config.HardwareMouse = false;
         config.HoverOutline = true;
         config.SelectionRings = true;
-        config.LuckyrenMode = false;
         player.SetUiMode(UiMode.Meitou);
         player.SpeedUnit = config.SpeedUnit = SpeedUnit.Mph;
         player.Floaters = config.Floaters = FloaterMode.Simple;
