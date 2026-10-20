@@ -485,6 +485,36 @@ dynamic motion, MetalFX/upscaler, GPU culls/grass); the interactive loop (camera
 HDR/EDR, `WorldFrame`/`SceneHost` on `IGpuContext`); then the GI decision, parity, memory/tone and the macOS
 default.
 
+**What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
+Vulkan at default settings, the remaining scope is:
+
+1. **The real game loop (largest).** Replace the bespoke Metal still loop with the shared `WorldFrame`/`SceneHost`
+   flow widened to `IGpuContext` (or finish the duplicate host, which doubles every future feature): camera,
+   key bindings, mouse capture, strategy/free camera, selection, box select, picking, move orders, context menus,
+   building selection and hover. Wire the remaining `PlayerInterface` host services: mesh/building/surface hits,
+   build host, floor stepping, fly-to, trade/dialogue/build/editor hosts. Add title -> new game -> play, save/load/
+   quickload, options, `ScreenAction` callbacks, the new-world rebuild, audio and UI sounds, the loading screen,
+   warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
+2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu and title render; still missing the
+   title/new-game/save/load/options actions, trade, dialogue, build, editor, settings, world tooltips, the pointer
+   sprite, full selection/orders input and a Metal `--ui-showcase`.
+3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
+   `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
+   move marker, navmesh overlay, interior mask); post (SSAO, light shafts, `FogRate`, full TAA with character/grass
+   motion, MetalFX/upscaler); and the character motion/stage/hover passes.
+4. **GI decision.** The Vulkan path on this Mac traces GI; Metal has no ray queries. Either port `GiScene`/
+   `GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline and adjust the parity target.
+5. **Performance and robustness.** GPU culls and grass kernels, VRAM/texture budgets, Metal timestamps, the
+   intermittent `encoding in progress` validation assertion at the inland water view, and the known arm64
+   `GoldenHashTests` failure.
+6. **Parity and the default.** Window comparisons, tone/timing, resize/HDR, memory, then make `--renderer metal`
+   the macOS default and remove the duplicate host.
+
+**Practical order:** shared interactive host + input + UI actions + audio; Meitou water; effects; post/GI; parity
+and default; performance cleanup last. If no-GI and faithful clouds/water are accepted as the macOS look, the GI
+and Meitou water/clouds items leave the target; the upscaler and timestamps are quality/performance work, not
+correctness blockers.
+
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
 
