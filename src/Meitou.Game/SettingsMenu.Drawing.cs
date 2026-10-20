@@ -172,9 +172,16 @@ sealed partial class SettingsMenu
                 controls.Add(new("settings-picture", "ImageBox", R(212, y + row - 4, PictureWidth, PictureHeight), "", "", "", true,
                     new Dictionary<string, string> { ["ImageTexture"] = picture }, Vector4.Zero, Clip: viewport, Pickable: false));
         }
-        Text(entry.Label, R(212, y + 2, 456, entry.Hint.Length > 0 ? 20 : 32), 14, clip: viewport);
+        Text(entry.Label, R(212, y + 2, 456, entry.Hint.Length > 0 ? 20 : 32), 14, entry.Locked ? MutedInk : null, clip: viewport);
         if (HintLines(entry) is var lines and > 0)
-            Text(entry.Hint, R(212, y + 19, 456, 14 * lines + 3), 11, MutedInk, lines > 1 ? "Left Top" : "Left VCenter", viewport, wrap: lines > 1);
+            Text(entry.Hint, R(212, y + 19, 456, 14 * lines + 3), 11, MutedInk with { W = entry.Locked ? 0.7f : 1 }, lines > 1 ? "Left Top" : "Left VCenter", viewport, wrap: lines > 1);
+        if (entry.Locked)
+        {
+            // The host's value, dimmed and without a hit: nothing to click, drag or edit.
+            string value = entry.Toggle is { } locked ? (locked.Get() ? "On" : "Off") : entry.Slider?.Display ?? "";
+            Text(value, R(688, y, 412, row), 13, MutedInk, "Right VCenter", viewport);
+            return;
+        }
         if (entry.Toggle is { Remaster: true } remaster)
         {
             // A Faithful / Meitou switch: both sides as buttons, the active one marked.
