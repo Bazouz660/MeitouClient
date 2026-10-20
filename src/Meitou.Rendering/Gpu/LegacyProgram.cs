@@ -61,7 +61,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     {
         this.ctx = ctx;
         backend = ctx.Shaders.Backend(program);
-        uniformAlign = Math.Max(ctx.Device.Limits.MinUniformBufferOffsetAlignment, 16);
+        uniformAlign = Math.Max(ctx.UniformBufferAlign, 16);
         Program = program;
         var c = backend.Compiled!;
         VertexBlock = c.Vertex.DefaultBlock;
@@ -217,7 +217,7 @@ public sealed unsafe class LegacyProgram : IDisposable
                 int n = 0;
                 if (VertexBlock is not null) offsets[n++] = (uint)vertexSlice.Offset;
                 if (FragmentBlock is not null) offsets[n++] = (uint)fragmentSlice.Offset;
-                ((CommandList)cmd).BindSets(Program, 1, new ReadOnlySpan<GpuSet>(in set), offsets[..n]);
+                cmd.BindSets(Program, 1, new ReadOnlySpan<GpuSet>(in set), offsets[..n]);
             }
         }
 
@@ -227,9 +227,7 @@ public sealed unsafe class LegacyProgram : IDisposable
         bool unchanged = !programChanged && !bindingsDirty && pushedGlobals == globalsVersion;
         if (count > 0 && !unchanged)
         {
-            var writes = stackalloc WriteDescriptorSet[count];
-            var bufferInfos = stackalloc DescriptorBufferInfo[blocks.Length + 1];
-            var imageInfos = stackalloc DescriptorImageInfo[samplers.Length + 1];
+            var bindings = stackalloc GpuBinding[count];
             bool same = !programChanged;
             int w = 0;
             for (int i = 0; i < blocks.Length; i++)
@@ -240,14 +238,9 @@ public sealed unsafe class LegacyProgram : IDisposable
                 if (value.IsNull && globalBlocks[bi] is { } gb) value = gb();
                 if (value.IsNull) throw new InvalidOperationException($"{Name}: no buffer bound for uniform block {b.Name}");
                 ulong range = value.Size == GpuBufferBinding.WholeSize ? (ulong)b.Size : Math.Min((ulong)b.Size, value.Size);
-                bufferInfos[i] = new DescriptorBufferInfo(ctx.Device.BufferAt(value.Buffer.Index), value.Offset, range);
                 same &= lastPush[w * 3] == (ulong)value.Buffer.Index && lastPush[w * 3 + 1] == value.Offset && lastPush[w * 3 + 2] == range;
                 (lastPush[w * 3], lastPush[w * 3 + 1], lastPush[w * 3 + 2]) = ((ulong)value.Buffer.Index, value.Offset, range);
-                writes[w++] = new WriteDescriptorSet
-                {
-                    SType = StructureType.WriteDescriptorSet, DstBinding = b.Binding, DescriptorCount = 1,
-                    DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &bufferInfos[i],
-                };
+                bindings[w++] = GpuBinding.Uniform((uint)b.Binding, new GpuBufferBinding(value.Buffer, value.Offset, range));
             }
             for (int i = 0; i < samplers.Length; i++)
             {
@@ -256,28 +249,14 @@ public sealed unsafe class LegacyProgram : IDisposable
                 var t = samplerValues[si];
                 if (t.IsNull && globalTextures[si] is { } gt) t = gt();
                 if (t.IsNull) t = ctx.Dummy(s.Info);
-                imageInfos[i] = new DescriptorImageInfo(ctx.Device.SamplerAt(t.Sampler.Index), ctx.Device.ViewAt(t.View.Index), ImageLayout.General);
                 same &= lastPush[w * 3] == (ulong)t.Sampler.Index && lastPush[w * 3 + 1] == (ulong)t.View.Index;
                 (lastPush[w * 3], lastPush[w * 3 + 1]) = ((ulong)t.Sampler.Index, (ulong)t.View.Index);
-                writes[w++] = new WriteDescriptorSet
-                {
-                    SType = StructureType.WriteDescriptorSet, DstBinding = s.Binding, DescriptorCount = 1,
-                    DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &imageInfos[i],
-                };
+                bindings[w++] = GpuBinding.Sampled((uint)s.Binding, new SampledTexture(t.Sampler, t.View));
             }
-            var all = new ReadOnlySpan<WriteDescriptorSet>(writes, w);
             if (!same)
             {
                 lastPushEpoch = cmd.Epoch;
-                if (backend.PushDescriptors) ((CommandList)cmd).PushDescriptors(Program, 0, all);
-                else
-                {
-                    var set0 = frame.AllocateSet(backend.NeutralSets[0]);
-                    for (int i = 0; i < w; i++) writes[i].DstSet = set0;
-                    ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, (uint)w, writes, 0, null);
-                    var set0Handle = new GpuSet(ctx.Device.AddSet(set0));
-                    ((CommandList)cmd).BindSets(Program, 0, new ReadOnlySpan<GpuSet>(in set0Handle), []);
-                }
+                cmd.BindProgramResources(Program, 0, new ReadOnlySpan<GpuBinding>(bindings, w));
             }
         }
         lastPushEpoch = cmd.Epoch;
@@ -303,23 +282,11 @@ public sealed unsafe class LegacyProgram : IDisposable
 
     GpuSet CreateDynamicSet((ulong, ulong) key)
     {
-        var set = ctx.AllocatePersistentSet(backend.NeutralSets[1]);
-        var infos = stackalloc DescriptorBufferInfo[2];
-        var writes = stackalloc WriteDescriptorSet[2];
-        uint n = 0;
-        if (VertexBlock is { } vb)
-        {
-            infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(vertexSlice.Handle.Index), 0, (ulong)vb.Size);
-            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = ctx.Device.SetAt(set.Index), DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
-            n++;
-        }
-        if (FragmentBlock is { } fb)
-        {
-            infos[n] = new DescriptorBufferInfo(ctx.Device.BufferAt(fragmentSlice.Handle.Index), 0, (ulong)fb.Size);
-            writes[n] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = ctx.Device.SetAt(set.Index), DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBufferDynamic, PBufferInfo = &infos[n] };
-            n++;
-        }
-        ctx.Device.Vk.UpdateDescriptorSets(ctx.Device.Device, n, writes, 0, null);
+        Span<GpuBinding> bindings = stackalloc GpuBinding[2];
+        int n = 0;
+        if (VertexBlock is { } vb) bindings[n++] = GpuBinding.Uniform(0, new GpuBufferBinding(vertexSlice.Handle, 0, (ulong)vb.Size));
+        if (FragmentBlock is { } fb) bindings[n++] = GpuBinding.Uniform(1, new GpuBufferBinding(fragmentSlice.Handle, 0, (ulong)fb.Size));
+        var set = ctx.CreateSet(backend.NeutralSets[1], bindings[..n]);
         dynamicSets[key] = set;
         return set;
     }

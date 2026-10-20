@@ -67,6 +67,8 @@ public sealed unsafe partial class GpuContext
         throw new InvalidOperationException("BeginGuest without a host pass");
     }
 
+    IGpuCommandList IGpuContext.BeginGuest(string label) => BeginGuest(label);
+
     public void EndGuest(IGpuCommandList cmd)
     {
         if (guest is null || !ReferenceEquals(cmd, guest)) throw new InvalidOperationException("EndGuest without a matching BeginGuest");
@@ -79,7 +81,7 @@ public sealed unsafe partial class GpuContext
     /// Records something that does not disturb a pass (a timestamp, a label) where the frame's commands go now: inside a host's rendering into
     /// its list (with secondaries, a secondary of its own in its place), else into the frame's list.
     /// </summary>
-    public void Interleave(Action<CommandList> record)
+    public void Interleave(Action<IGpuCommandList> record)
     {
         if (passList is { } host && guest is null)
         {

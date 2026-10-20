@@ -53,6 +53,39 @@ public interface IGpuContext
     /// <summary>The bindless table (the arrays of textures the shaders index by number).</summary>
     IGpuBindlessTable Bindless { get; }
 
+    /// <summary>The device limit a uniform buffer slice's offset must align to (the default blocks' slices).</summary>
+    ulong UniformBufferAlign { get; }
+
+    /// <summary>
+    /// A set that lives as long as the context, its slots written once from the bindings (the layout says what each slot holds and
+    /// whether its offset comes at bind time — then the binding's offset is ignored and the bind's dynamic offset is used).
+    /// </summary>
+    GpuSet CreateSet(GpuSetLayout layout, ReadOnlySpan<GpuBinding> bindings);
+
+    // ---- the host's recording model ----
+
+    /// <summary>
+    /// A guest's segment in the open host pass: draws only (no rendering, barriers, copies or dispatches), with the host's targets and
+    /// state (<see cref="CurrentTargets"/>, <see cref="CurrentState"/>). Inside a rendering with secondaries it is a secondary of its own,
+    /// executed in its place. Without a host pass it throws. Closed by <see cref="EndGuest"/>.
+    /// </summary>
+    IGpuCommandList BeginGuest(string label);
+
+    /// <summary>Closes a guest segment (<see cref="BeginGuest"/>).</summary>
+    void EndGuest(IGpuCommandList cmd);
+
+    /// <summary>What the open pass draws into (its host's targets, viewport and scissor); throws when no pass is open.</summary>
+    PassTargets CurrentTargets();
+
+    /// <summary>The state the open pass's host hands its guests; throws when no pass is open.</summary>
+    DrawState CurrentState();
+
+    /// <summary>Records something that does not disturb a pass (a timestamp, a label) where the frame's commands go now.</summary>
+    void Interleave(Action<IGpuCommandList> record);
+
+    /// <summary>Whether the device is an integrated GPU (its budgets and star layers differ).</summary>
+    bool IsIntegrated { get; }
+
     /// <summary>The upscaler's texture LOD bias: added to the mip level of every mipmapped fetch.</summary>
     float LodBias { get; set; }
 }

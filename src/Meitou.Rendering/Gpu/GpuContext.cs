@@ -42,6 +42,58 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
 {
     readonly List<DescriptorPool> persistentPools = [];
 
+    /// <summary>Whether the device is an integrated GPU (<see cref="VulkanDevice.IsIntegrated"/>: its budgets and star layers differ).</summary>
+    public bool IsIntegrated => Device.IsIntegrated;
+
+    /// <summary>The device limit a uniform buffer slice's offset must align to (the default blocks' slices).</summary>
+    public ulong UniformBufferAlign => Device.Limits.MinUniformBufferOffsetAlignment;
+
+    /// <summary>
+    /// A set that lives as long as the context, its slots written once from the bindings (the layout says what each slot holds and
+    /// whether its offset comes at bind time — then the binding's offset is ignored and the bind's dynamic offset is used).
+    /// </summary>
+    public GpuSet CreateSet(GpuSetLayout layout, ReadOnlySpan<GpuBinding> bindings)
+    {
+        var set = AllocatePersistentSet(layout);
+        var vkSet = Device.SetAt(set.Index);
+        var writes = stackalloc WriteDescriptorSet[bindings.Length];
+        var buffers = stackalloc DescriptorBufferInfo[bindings.Length];
+        var images = stackalloc DescriptorImageInfo[bindings.Length];
+        for (int i = 0; i < bindings.Length; i++)
+        {
+            var b = bindings[i];
+            var slot = layout.Slots.First(s => s.Binding == b.Slot);
+            writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = vkSet, DstBinding = b.Slot, DescriptorCount = 1 };
+            var at = slot.OffsetAtBind ? 0UL : b.Buffer.Offset;
+            switch (slot.Kind)
+            {
+                case GpuSlotKind.UniformBuffer:
+                    buffers[i] = new DescriptorBufferInfo(Device.BufferAt(b.Buffer.Buffer.Index), at, b.Buffer.Size);
+                    writes[i].DescriptorType = slot.OffsetAtBind ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer;
+                    writes[i].PBufferInfo = &buffers[i];
+                    break;
+                case GpuSlotKind.StorageBuffer:
+                    buffers[i] = new DescriptorBufferInfo(Device.BufferAt(b.Buffer.Buffer.Index), at, b.Buffer.Size);
+                    writes[i].DescriptorType = slot.OffsetAtBind ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer;
+                    writes[i].PBufferInfo = &buffers[i];
+                    break;
+                case GpuSlotKind.CombinedSampler:
+                    images[i] = new DescriptorImageInfo(Device.SamplerAt(b.Texture.Sampler.Index), Device.ViewAt(b.Texture.View.Index), ImageLayout.General);
+                    writes[i].DescriptorType = DescriptorType.CombinedImageSampler;
+                    writes[i].PImageInfo = &images[i];
+                    break;
+                case GpuSlotKind.StorageImage:
+                    images[i] = new DescriptorImageInfo(default, Device.ViewAt(b.Texture.View.Index), ImageLayout.General);
+                    writes[i].DescriptorType = DescriptorType.StorageImage;
+                    writes[i].PImageInfo = &images[i];
+                    break;
+            }
+        }
+        Device.Vk.UpdateDescriptorSets(Device.Device, (uint)bindings.Length, writes, 0, null);
+        return set;
+    }
+
+
     public GpuContext(VulkanDevice device)
     {
         Device = device;
