@@ -114,6 +114,9 @@ public interface IGpuCommandList
     /// <summary>Copies a range of a buffer into a texture's level and layer.</summary>
     void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer);
 
+    /// <summary>Copies a tightly packed region of a texture's level and layer into a buffer (the bakes' readback).</summary>
+    void CopyTextureToBuffer(GpuTexture src, int level, int layer, in PixelRect region, GpuBuffer dst, ulong offset);
+
     /// <summary>Resolves a multisample texture into a single-sample one.</summary>
     void Resolve(GpuTexture src, GpuTexture dst);
 

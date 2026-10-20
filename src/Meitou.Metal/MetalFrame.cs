@@ -40,6 +40,8 @@ public sealed unsafe class MetalFrame : IGpuFrame
     public bool Open { get; internal set; }
     public MetalCommandList Commands { get; }
     IGpuCommandList IGpuFrame.Commands => Commands;
+    /// <summary>Metal records uploads and bakes into the frame's own list, before its passes (the seam's pre-frame).</summary>
+    IGpuCommandList IGpuFrame.PreFrame => Commands;
     public ResourceStates States { get; }
     public GpuStats Stats { get; }
     public IGpuTimestamps Timestamps => ctx.Timestamps;

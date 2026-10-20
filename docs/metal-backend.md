@@ -345,8 +345,19 @@ and adds them as cascade casters. Two backend facts this surfaced:
 - **A non-indexed draw may start at another instance.** The grass draws a blade range with `firstInstance` (the
   first blade in the arena); `Draw` passes it as Metal's `baseInstance`, and `firstVertex` is supported too.
 
-The far billboards (impostors) and the GPU culls remain the step's rest; on Metal the real mesh LODs stand in for
-the billboards.
+**The far billboards (impostors).** `ImpostorBaker`, `ImpostorTextures` and `ImpostorDraw` take `IGpuContext`; the
+seam gained `IGpuFrame.PreFrame` (Metal's frame list, recorded before its passes), `IGpuReadback` with
+`CreateReadback`/`FrameCompleted`, and `CopyTextureToBuffer`. Metal implements the bake's halving blit as a fullscreen
+sampling pass (Metal's blit cannot scale), copies the row into a shared readback buffer, and reports a frame completed
+when the drawable ring has turned. Two Metal fixes the bake surfaced:
+
+- **Argument buffers are padded to 16 bytes.** A one-member set was allocated 8 bytes and failed Metal's validation;
+  the set size is rounded up.
+- **A sub-rectangle upload still needs the destination level's full row stride.** The terrain's overlay and colour-map
+  tiles are repacked with that stride and their x offset in the upload batch; BC5's 16-byte block was also missing
+  from the texel-size table.
+
+The GPU culls remain the step's rest (Metal takes the CPU cull and the CPU grass path).
 
 **The composite (the first slice of the chain).** The Metal scene draws into an RGBA16F target and
 `PostComposite` runs the game's own tone-map shader (`PostProcessShaders.Composite`, through

@@ -53,6 +53,15 @@ public interface IGpuUploads
     IGpuUploadBatch Begin();
 }
 
+/// <summary>A host-readable buffer the GPU writes into (the bakes' and the culls' readbacks): read once the frame that wrote it has completed.</summary>
+public interface IGpuReadback : IDisposable
+{
+    GpuBuffer Handle { get; }
+    ulong Size { get; }
+    /// <summary>The bytes [<paramref name="offset"/>, +<paramref name="size"/>), once the writing frame has completed.</summary>
+    ReadOnlySpan<byte> Read(ulong offset, ulong size);
+}
+
 /// <summary>A batch of uploads (<see cref="IGpuUploads.Begin"/>): the copies it records go to the device when it is disposed.</summary>
 public interface IGpuUploadBatch : IDisposable
 {

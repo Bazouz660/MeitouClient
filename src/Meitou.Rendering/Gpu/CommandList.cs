@@ -490,6 +490,18 @@ public sealed unsafe class CommandList : IGpuCommandList
 
     /// <summary>(Added for the Meitou water's ocean.) Copies tightly packed texels from <paramref name="src"/> at <paramref name="offset"/> over a
     /// whole level and layer of <paramref name="dst"/> (GENERAL layout). The caller orders it against the writes before and the reads after.</summary>
+    public unsafe void CopyTextureToBuffer(GpuTexture src, int level, int layer, in PixelRect region, GpuBuffer dst, ulong offset)
+    {
+        var copy = new BufferImageCopy
+        {
+            BufferOffset = offset,
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(src.Desc), (uint)level, (uint)layer, 1),
+            ImageOffset = new Offset3D(region.X, region.Y, 0),
+            ImageExtent = new Extent3D(region.Width, region.Height, 1),
+        };
+        vk.CmdCopyImageToBuffer(Handle, device.NativeImage(src), ImageLayout.General, device.BufferAt(dst.Index), 1, &copy);
+    }
+
     public void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer)
     {
         var copy = new BufferImageCopy

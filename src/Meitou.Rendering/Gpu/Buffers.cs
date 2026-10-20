@@ -87,7 +87,7 @@ public sealed class DeviceBuffer : IDisposable
 /// (Added for the GPU cull's verify mode, docs/renderer-native.md 5.6.) A host-visible, cached buffer the GPU copies into (transfer
 /// destination) and the CPU reads once the frame that wrote it has completed (<see cref="Completed"/>), never waiting for it.
 /// </summary>
-public sealed unsafe class ReadbackBuffer : IDisposable
+public sealed unsafe class ReadbackBuffer : IGpuReadback
 {
     readonly VulkanDevice device;
     readonly BufferAllocation buffer;

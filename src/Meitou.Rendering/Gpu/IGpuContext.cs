@@ -87,6 +87,12 @@ public interface IGpuContext
     /// <summary>Submits what is recorded and waits for the GPU (readbacks); a frame is open again afterwards when one was before.</summary>
     void Finish();
 
+    /// <summary>A host-readable buffer the GPU writes into (the bakes' and the culls' readbacks).</summary>
+    IGpuReadback CreateReadback(ulong size, string name);
+
+    /// <summary>Whether frame <paramref name="frame"/> (a <see cref="IGpuFrame.Number"/>) has completed on the GPU.</summary>
+    bool FrameCompleted(long frame);
+
     /// <summary>
     /// A set that lives as long as the context, its slots written once from the bindings (the layout says what each slot holds and
     /// whether its offset comes at bind time — then the binding's offset is ignored and the bind's dynamic offset is used).

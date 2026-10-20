@@ -48,6 +48,7 @@ internal sealed class MetalProgram : IDisposable
         (FragmentLibrary, FragmentFunction, FragmentMsl) = (fragmentLibrary, fragmentFunction, fragmentMsl);
         (VertexTable, FragmentTable) = (MetalTableLayout.Parse(vertexMsl), MetalTableLayout.Parse(fragmentMsl));
         (VertexSets, FragmentSets) = (MetalSetLayout.Parse(vertexMsl), MetalSetLayout.Parse(fragmentMsl));
+
     }
 
     /// <summary>A compute program: one entry point, its set structs and the threadgroup size the MSL was compiled with.</summary>

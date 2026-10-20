@@ -42,6 +42,31 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
         """;
 
+    /// <summary>A scaled texture copy (the impostor bake's halving): a fullscreen sampling pass, as Metal's blit cannot scale.</summary>
+    const string BlitMsl = """
+        #include <metal_stdlib>
+        using namespace metal;
+
+        struct blit_out
+        {
+            float4 position [[position]];
+        };
+
+        vertex blit_out blit_vertex(uint id [[vertex_id]])
+        {
+            float2 xy = float2((id << 1) & 2, id & 2);
+            blit_out o;
+            o.position = float4(xy * 2.0 - 1.0, 0.0, 1.0);
+            return o;
+        }
+
+        fragment float4 blit_fragment(blit_out in [[stage_in]], constant float2& targetSize [[buffer(1)]],
+            texture2d<float> source [[texture(0)]], sampler sourceSampler [[sampler(0)]])
+        {
+            return source.sample(sourceSampler, in.position.xy / targetSize);
+        }
+        """;
+
     readonly MetalDisplay display;
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
@@ -533,6 +558,56 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         marker.WaitUntilCompleted();
     }
 
+    /// <inheritdoc/>
+    public IGpuReadback CreateReadback(ulong size, string name) => new MetalReadback(this, size, name);
+
+    /// <inheritdoc/>
+    public bool FrameCompleted(long frame) => frameNumber - frame >= FrameRingDepth;
+
+    /// <summary>A texture copied into another, scaled (the impostor bake's supersampled row halved): a sampling pass into the destination.</summary>
+    internal unsafe void BlitScaled(MTLCommandBuffer command, GpuTexture src, GpuTexture dst, TextureMinFilter filter)
+    {
+        var format = MetalConventions.Pixel(dst.Desc.Format);
+        if (!blitPipelines.TryGetValue(format, out var pipeline)) blitPipelines[format] = pipeline = MakeBlitPipeline(format);
+        var descriptor = new MTLRenderPassDescriptor(
+            ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor"));
+        var attachments = descriptor.ColorAttachments;
+        var attachment = attachments.Object(0);
+        attachment.Texture = TextureAt(dst);
+        attachment.LoadAction = MTLLoadAction.DontCare;
+        attachment.StoreAction = MTLStoreAction.Store;
+        attachments.SetObject(attachment, 0);
+        var encoder = command.RenderCommandEncoder(descriptor);
+        encoder.SetRenderPipelineState(pipeline);
+        encoder.SetFragmentTexture(TextureAt(src), 0);
+        var mag = filter == TextureMinFilter.Linear ? TextureMagFilter.Linear : TextureMagFilter.Nearest;
+        var sampler = Samplers.Backend(Samplers.Get(SamplerDesc.FromGl(filter, mag, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
+            TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)));
+        encoder.SetFragmentSamplerState(sampler, 0);
+        var size = stackalloc float[2] { dst.Desc.Width, dst.Desc.Height };
+        encoder.SetFragmentBytes((nint)size, 8, 1);
+        encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);
+        encoder.EndEncoding();
+    }
+
+    readonly Dictionary<MTLPixelFormat, MTLRenderPipelineState> blitPipelines = [];
+
+    MTLRenderPipelineState MakeBlitPipeline(MTLPixelFormat format)
+    {
+        NSError error = default;
+        var library = Device.NewLibrary((NSString)BlitMsl, new MTLCompileOptions(), ref error);
+        if (error.NativePtr != IntPtr.Zero) throw new InvalidOperationException($"the blit pass's MSL did not compile: {error.LocalizedDescription}");
+        var d = new MTLRenderPipelineDescriptor(new ObjectiveCClass(ObjectiveC.objc_getClass("MTLRenderPipelineDescriptor")).AllocInit());
+        d.VertexFunction = library.NewFunction((NSString)"blit_vertex");
+        d.FragmentFunction = library.NewFunction((NSString)"blit_fragment");
+        var attachment = d.ColorAttachments.Object(0);
+        attachment.PixelFormat = format;
+        d.ColorAttachments.SetObject(attachment, 0);
+        var pipeline = Device.NewRenderPipelineState(d, ref error);
+        if (error.NativePtr != IntPtr.Zero) throw new InvalidOperationException($"the blit pass's pipeline failed: {error.LocalizedDescription}");
+        return pipeline;
+    }
+
     /// <summary>The stand-in a sampler reads when nothing is bound: (0, 0, 0, 1), or depth 1 for a shadow sampler.</summary>
     public SampledTexture Dummy(SamplerInfo sampler)
     {
@@ -598,6 +673,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public void Dispose()
     {
+        foreach (var p in blitPipelines.Values) p.Dispose();
+        blitPipelines.Clear();
         bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();
         dummyTextures.Clear();

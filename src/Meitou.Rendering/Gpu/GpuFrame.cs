@@ -103,6 +103,8 @@ public sealed unsafe class GpuFrame : IDisposable, IGpuFrame
     public CommandList Commands { get; }
     /// <summary>The frame's primary command list, as the seam's interface (<see cref="IGpuFrame.Commands"/>).</summary>
     IGpuCommandList IGpuFrame.Commands => Commands;
+    /// <summary>The upload commands, as the seam's interface (<see cref="IGpuFrame.PreFrame"/>).</summary>
+    IGpuCommandList IGpuFrame.PreFrame => PreFrame;
     /// <summary>Host-visible memory for this frame (constants, CPU-written instances and indirect arguments).</summary>
     public LinearAllocator Constants => constants[Slot];
 

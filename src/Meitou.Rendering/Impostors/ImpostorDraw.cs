@@ -15,7 +15,7 @@ internal enum ImpostorProgram { Plain, Caster, Rock, Prepass, AfterPrepass }
 
 internal sealed class ImpostorDraw : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly NativeProg plain, caster, rock, prepass, afterPrepass;
     readonly DeviceBuffer quad;
     readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GpuPipeline> pipelines = [];
@@ -23,7 +23,7 @@ internal sealed class ImpostorDraw : IDisposable
     /// <summary>What of a <see cref="DrawState"/> is in a pipeline (the dynamic parts are not).</summary>
     readonly record struct DrawStateKey(BlendState Blend, ColorMask Mask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
-    public ImpostorDraw(GpuContext gpu, NativeFrame frame)
+    public ImpostorDraw(IGpuContext gpu, NativeFrame frame)
     {
         this.gpu = gpu;
         plain = new NativeProg(gpu, frame, ImpostorShaders.VertexNative(), ImpostorShaders.FragmentNative(), "impostors");

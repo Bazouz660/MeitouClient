@@ -106,7 +106,7 @@ public readonly record struct ImpostorBakeTimes(double Upload, double Render, do
 /// </summary>
 public sealed unsafe class ImpostorBaker : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly WorldTextureCache textures;
     readonly bool ownsTextures;
     readonly NativeFrame frame;
@@ -114,17 +114,17 @@ public sealed unsafe class ImpostorBaker : IDisposable
     uint standIn;
 
     /// <param name="assets">Where texture names are looked up; null only when no source names a texture (tests).</param>
-    public ImpostorBaker(GpuContext gpu, AssetLocator? assets)
+    public ImpostorBaker(IGpuContext gpu, AssetLocator? assets)
         : this(gpu, new WorldTextureCache(gpu, assets!, "impostor textures") { IdleSeconds = double.MaxValue, HighWaterMb = double.MaxValue }, owns: true)
     {
     }
 
     /// <summary>A baker that reads the materials' textures from <paramref name="textures"/> (the foliage's own cache: already resident).</summary>
-    public ImpostorBaker(GpuContext gpu, WorldTextureCache textures) : this(gpu, textures, owns: false)
+    public ImpostorBaker(IGpuContext gpu, WorldTextureCache textures) : this(gpu, textures, owns: false)
     {
     }
 
-    ImpostorBaker(GpuContext gpu, WorldTextureCache textures, bool owns)
+    ImpostorBaker(IGpuContext gpu, WorldTextureCache textures, bool owns)
     {
         this.gpu = gpu;
         this.textures = textures;
@@ -138,7 +138,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
 
     public List<string> Messages => textures.Messages;
     internal WorldTextureCache Textures => textures;
-    internal GpuContext Gpu => gpu;
+    internal IGpuContext Gpu => gpu;
     public ImpostorBakeTimes LastTimes { get; internal set; }
     /// <summary>Encode the maps (BC3 / BC5); false keeps them RGBA8 (debugging).</summary>
     public bool Compress { get; set; } = true;
@@ -192,8 +192,11 @@ public sealed unsafe class ImpostorBaker : IDisposable
             if (mp.Indices.Length == 0) continue;
             var vertices = DeviceBuffer.Create(gpu, (ulong)(mp.Vertices.Length * Vertex.Size), BufferUse.Vertex, "impostor bake meshes");
             var indices = DeviceBuffer.Create(gpu, (ulong)(mp.Indices.Length * sizeof(uint)), BufferUse.Index, "impostor bake meshes");
-            gpu.Uploads.Write(vertices, 0, MemoryMarshal.AsBytes(mp.Vertices.AsSpan()));
-            gpu.Uploads.Write(indices, 0, MemoryMarshal.AsBytes(mp.Indices.AsSpan()));
+            using (var batch = gpu.Uploads.Begin())
+            {
+                batch.Write(vertices, 0, MemoryMarshal.AsBytes(mp.Vertices.AsSpan()));
+                batch.Write(indices, 0, MemoryMarshal.AsBytes(mp.Indices.AsSpan()));
+            }
             if (rock)
             {
                 // A rock is drawn by the terrain's mesh program: its own vertex layout and buffers.
@@ -232,7 +235,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     {
         if (globalsPrepared) return;
         globalsPrepared = true;
-        var block = gpu.Frame.Constants.Write<ImpostorShaders.BakeBlock>([default], 256);
+        var block = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ImpostorShaders.BakeBlock[1]), 256);
         frame.Prepare(new ViewConstants { LightDir = Vector3.UnitY }, [block.Binding]);
     }
 
@@ -278,10 +281,10 @@ public sealed unsafe class ImpostorBaker : IDisposable
                     RockTerrain!.RecordRockBake(cmd, formats, BakeState, rock.RockBiome, rockScale, size.BakeDistance, view * projection, eye, d, right, up, pass, mainParts);
                     continue;
                 }
-                var block = gpu.Frame.Constants.Write<ImpostorShaders.BakeBlock>([new ImpostorShaders.BakeBlock
+                var block = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ImpostorShaders.BakeBlock[1]
                 {
-                    Sphere = new Vector4(c, r), Dir = new Vector4(d, 0), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass,
-                }], 256);
+                    new() { Sphere = new Vector4(c, r), Dir = new Vector4(d, 0), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass },
+                }), 256);
                 var constants = new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
                 frame.Bind(cmd, program.P, in constants, [block.Binding]);
                 Draw(cmd, mainParts, main, formats, lodBias);
@@ -291,20 +294,9 @@ public sealed unsafe class ImpostorBaker : IDisposable
             cmd.Order();
             cmd.Blit(large, small, TextureMinFilter.Linear);
             cmd.Order();
-            var region = new BufferImageCopy
-            {
-                BufferOffset = (ulong)pass * rowBytes,
-                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-                ImageExtent = new Extent3D((uint)smallWidth, (uint)f, 1),
-            };
-            gpu.Device.Vk.CmdCopyImageToBuffer(((CommandList)cmd).Handle, gpu.Device.NativeImage(small), ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
+            cmd.CopyTextureToBuffer(small, 0, 0, new PixelRect(0, 0, (uint)smallWidth, (uint)f), readback, (ulong)pass * rowBytes);
         }
-        var host = new BarrierBatch
-        {
-            SrcStages = PipelineStageFlags2.AllTransferBit, SrcAccess = AccessFlags2.TransferWriteBit,
-            DstStages = PipelineStageFlags2.HostBit, DstAccess = AccessFlags2.HostReadBit,
-        };
-        ((CommandList)cmd).Barrier(in host);
+        cmd.Barrier([new GpuDependency(Access.TransferDst, Access.Any)]);
     }
 
     /// <summary>The material as the GL baker set it (<c>FoliageRenderer.DrawMesh</c>'s uniforms: textures and normal maps on), one draw per part.</summary>
@@ -344,16 +336,16 @@ public sealed unsafe class ImpostorBaker : IDisposable
 
     // ---- readback buffers: a row's three pictures, reused from row to row and bake to bake (render thread, except ReturnReadback) ----
 
-    readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, System.Collections.Concurrent.ConcurrentBag<ReadbackBuffer>> readbacks = new();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, System.Collections.Concurrent.ConcurrentBag<IGpuReadback>> readbacks = new();
 
-    internal ReadbackBuffer RentReadback(ulong size)
+    internal IGpuReadback RentReadback(ulong size)
     {
         var bag = readbacks.GetOrAdd(size, _ => new());
-        return bag.TryTake(out var buffer) ? buffer : ReadbackBuffer.Create(gpu, size, "impostor bake readback");
+        return bag.TryTake(out var buffer) ? buffer : gpu.CreateReadback(size, "impostor bake readback");
     }
 
     /// <summary>Hands a buffer whose picture has been read back to the pool (any thread: the GPU is done with it).</summary>
-    internal void ReturnReadback(ReadbackBuffer buffer) => readbacks.GetOrAdd(buffer.Size, _ => new()).Add(buffer);
+    internal void ReturnReadback(IGpuReadback buffer) => readbacks.GetOrAdd(buffer.Size, _ => new()).Add(buffer);
 
     // ---- bake targets, kept from bake to bake: a bake takes a set of the atlas's size and gives it back (render thread) ----
     // Making and freeing the three images of every bake (367 bakes in a minute's fast flight) cost 0.5 to 3 ms of the render thread in a bake's first
@@ -447,7 +439,7 @@ public sealed class ImpostorBakeJob : IDisposable
     readonly Stopwatch watch = Stopwatch.StartNew();
     ImpostorBaker.Part[] mainParts = [], leavesParts = [];
     GpuTexture? large, depth, small;
-    readonly List<(int Row, long Frame, ReadbackBuffer Buffer)> rows = [];
+    readonly List<(int Row, long Frame, IGpuReadback Buffer)> rows = [];
     int recorded, assembled;
     Task? chain;
     Task<ImpostorAtlas>? finish;
@@ -524,7 +516,7 @@ public sealed class ImpostorBakeJob : IDisposable
         }
         // Rows whose frame has completed go to the assembler, in order, one after the other on a worker.
         double tRead = watch.Elapsed.TotalMilliseconds;
-        while (rows.Count > 0 && ReadbackBuffer.Completed(gpu, rows[0].Frame))
+        while (rows.Count > 0 && gpu.FrameCompleted(rows[0].Frame))
         {
             var (row, _, buffer) = rows[0];
             rows.RemoveAt(0);

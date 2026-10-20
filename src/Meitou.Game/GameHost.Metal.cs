@@ -130,7 +130,6 @@ sealed partial class GameHost
                 SwaySeconds = 0,   // a still picture: the grass holds still, so it repeats
                 MeitouRange = o.MeitouRange,
                 Lod = o.FoliageLod,
-                Impostors = false,
                 Terrain = terrain,
             };
             if (o.LargeRange is { } largeRange)

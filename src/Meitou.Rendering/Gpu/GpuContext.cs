@@ -229,6 +229,12 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     /// <inheritdoc/>
     public void DeferDelete(Action release) => Device.Frames.DeferDelete(release);
 
+    /// <inheritdoc/>
+    public IGpuReadback CreateReadback(ulong size, string name) => ReadbackBuffer.Create(this, size, name);
+
+    /// <inheritdoc/>
+    public bool FrameCompleted(long frame) => Device.Frames.CompletedFrame >= frame;
+
     /// <summary>A texture over someone else's image (the interop's export of a GL texture): the image is not ours to free.</summary>
     internal GpuTexture BorrowTexture(TextureDesc desc, Image image) => new(this, desc, Device.AddTexture(image, null, owned: false, desc));
 

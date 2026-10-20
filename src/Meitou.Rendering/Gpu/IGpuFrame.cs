@@ -20,6 +20,9 @@ public interface IGpuFrame
     /// <summary>The frame's primary command list.</summary>
     IGpuCommandList Commands { get; }
 
+    /// <summary>The commands recorded ahead of the frame's passes (uploads, bakes); Metal's are the frame's own list, recorded before its passes.</summary>
+    IGpuCommandList PreFrame { get; }
+
     /// <summary>The frame's resource states (the neutral sync model's bookkeeping).</summary>
     ResourceStates States { get; }
 

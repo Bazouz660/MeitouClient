@@ -67,7 +67,8 @@ public static class MetalConventions
         InternalFormat.R16ui or InternalFormat.R16i => 2,
         InternalFormat.Rgba8ui or InternalFormat.Rgba16ui => 4,
         InternalFormat.Rgba32ui or InternalFormat.Rgba32i => 16,
-        InternalFormat.CompressedRedRgtc1 or InternalFormat.CompressedRGRgtc2 => 8,
+        InternalFormat.CompressedRedRgtc1 => 8,
+        InternalFormat.CompressedRGRgtc2 => 16,   // BC5: two channels
         InternalFormat.Rgba8 or InternalFormat.Srgb8Alpha8 => 4,
         _ => throw new NotSupportedException($"no texel size for {f}"),
     };

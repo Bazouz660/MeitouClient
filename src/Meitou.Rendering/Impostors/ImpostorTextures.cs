@@ -13,7 +13,7 @@ namespace Meitou.Rendering.Impostors;
 /// </summary>
 public sealed class ImpostorTextures : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly GpuTexture[] maps = new GpuTexture[2];
     readonly ImpostorTexture[] sources = new ImpostorTexture[2];
     readonly uint[] indices = new uint[2];
@@ -48,7 +48,7 @@ public sealed class ImpostorTextures : IDisposable
     /// <param name="batch">Where the textures' layout transitions are recorded (<see cref="Uploader.Begin"/>).</param>
     /// <param name="skip">Top levels of the albedo to leave out; <paramref name="surfaceSkip"/> those of the normal map (at
     /// most all but the last level).</param>
-    public ImpostorTextures(GpuContext gpu, ImpostorAtlas atlas, IGpuUploadBatch batch, int skip = 0, int surfaceSkip = 0)
+    public ImpostorTextures(IGpuContext gpu, ImpostorAtlas atlas, IGpuUploadBatch batch, int skip = 0, int surfaceSkip = 0)
     {
         this.gpu = gpu;
         Atlas = atlas;

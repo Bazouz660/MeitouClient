@@ -340,7 +340,8 @@ public sealed class MetalCommandList : IGpuCommandList
             any = true;
         }
         if (!any) return;
-        var size = (ulong)members.Length * 8;
+        // The MSL struct is padded to argument-buffer alignment (16); a one-member set needs 16 bytes, not 8.
+        var size = Math.Max(16ul, (ulong)members.Length * 8 + 15 & ~15ul);
         var constants = ctx.NewSetBuffer(size);
         fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
         if (computePass) compute.SetBuffer(constants, 0, set);
@@ -487,9 +488,25 @@ public sealed class MetalCommandList : IGpuCommandList
     public void Resolve(GpuTexture src, GpuTexture dst) =>
         throw new NotSupportedException("the Metal backend has no resolves yet");
 
-    /// <summary>Copies a texture into another — comes with its passes.</summary>
-    public void Blit(GpuTexture src, GpuTexture dst, TextureMinFilter filter) =>
-        throw new NotSupportedException("the Metal backend has no texture blits yet");
+    /// <summary>Copies a texture into another (scaled: the impostor bake halves its supersampled row): a fullscreen sampling pass.</summary>
+    public void Blit(GpuTexture src, GpuTexture dst, TextureMinFilter filter)
+    {
+        EndCompute();
+        EndBlit();
+        if (render.NativePtr != IntPtr.Zero) EndRendering();
+        ctx.BlitScaled(command, src, dst, filter);
+    }
+
+    /// <summary>Copies a tightly packed region of a texture's level and layer into a buffer (the impostor bakes' readback).</summary>
+    public void CopyTextureToBuffer(GpuTexture src, int level, int layer, in PixelRect region, GpuBuffer dst, ulong offset)
+    {
+        var blit = OpenBlit();
+        ulong bytesPerRow = (ulong)region.Width * (ulong)MetalConventions.TexelBytes(src.Desc.Format);
+        blit.CopyFromTexture(ctx.TextureAt(src), (ulong)layer, (ulong)level,
+            new MTLOrigin { x = (ulong)region.X, y = (ulong)region.Y, z = 0 },
+            new MTLSize { width = (ulong)region.Width, height = (ulong)region.Height, depth = 1 },
+            ctx.BufferAt(dst), offset, bytesPerRow, bytesPerRow * region.Height);
+    }
 
     /// <summary>Blits one level of a texture into another — comes with its passes.</summary>
     public void BlitLevel(GpuTexture texture, int srcLevel, int dstLevel, TextureMinFilter filter) =>
