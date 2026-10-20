@@ -325,6 +325,16 @@ public sealed unsafe class VulkanDevice : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(o), "FramesInFlight must be 2..3");
         }
+        if (OperatingSystem.IsMacOS())
+        {
+            // macOS finds the Vulkan loader through DYLD_LIBRARY_PATH, which SIP-restricted launchers
+            // (nohup among them) silently strip; what breaks then reads like a missing OS feature -
+            // GLFW "doesn't support Vulkan", or a FileNotFoundException deep inside Silk.NET. Name
+            // the real cause here, at first touch, while the launch environment is still in question.
+            if (!NativeLibrary.TryLoad("libvulkan.1.dylib", out _))
+                throw new InvalidOperationException(
+                    $"the Vulkan loader (libvulkan.1.dylib) is not findable on this macOS: DYLD_LIBRARY_PATH='{Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH")}' - the variable is absent from the launch environment, or a restricted launcher stripped it (nohup does); export DYLD_LIBRARY_PATH=/opt/homebrew/lib and launch plainly (a script, a shell function or 'cmd &', not 'nohup cmd &')");
+        }
         var d = new VulkanDevice(o);
         try
         {
