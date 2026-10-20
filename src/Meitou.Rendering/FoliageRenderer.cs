@@ -1910,7 +1910,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public GpuBufferBinding[] Vertices;
         public GpuBufferBinding Elements;
         public int SegA, SegB;
-        public GraphicsPipeline? PipeA, PipeB;
+        public GpuPipeline? PipeA, PipeB;
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
@@ -1948,10 +1948,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref NativeMesh n, NativeProg p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref NativeMesh n, NativeProg p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegA == segment) return n.PipeA!;
-        if (n.SegB == segment) return n.PipeB!;
+        if (n.SegA == segment) return n.PipeA!.Value;
+        if (n.SegB == segment) return n.PipeB!.Value;
         var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
@@ -2132,7 +2132,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 Current(ref sn, part, solidMesh);
                 job.Add(new MeshJob.Draw
                 {
-                    SetRaster = raster, Cull = want, Pipeline = sn.SegA == solidSegment ? sn.PipeA! : PipelineFor(ref sn, solidMesh, solidSegment, state, targets.Formats, prepass ? "foliage mesh prepass solid" : "foliage meshes solid"),
+                    SetRaster = raster, Cull = want, Pipeline = sn.SegA == solidSegment ? sn.PipeA!.Value : PipelineFor(ref sn, solidMesh, solidSegment, state, targets.Formats, prepass ? "foliage mesh prepass solid" : "foliage meshes solid"),
                     Vertices = sn.Vertices, Elements = sn.Elements, Push = pc,
                     Args = gpuResult.Args, ArgsOffset = gpuResult.ArgsOffset + (ulong)(gpuResult.DrawCount + drawIndex) * 20,
                     FirstIndex = DrawFirst(part), IndexCount = DrawCount(part), Instances = d.Instances, FirstInstance = d.FirstInstance,
@@ -2141,7 +2141,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             }
             job.Add(new MeshJob.Draw
             {
-                SetRaster = raster, Cull = want, Pipeline = n.SegA == segment ? n.PipeA! : PipelineFor(ref n, mp, segment, state, targets.Formats, label),
+                SetRaster = raster, Cull = want, Pipeline = n.SegA == segment ? n.PipeA!.Value : PipelineFor(ref n, mp, segment, state, targets.Formats, label),
                 Vertices = n.Vertices, Elements = n.Elements, Push = pc,
                 Args = indirect ? gpuResult.Args : default, ArgsOffset = gpuResult.ArgsOffset + (ulong)((split ? 2 * gpuResult.DrawCount : 0) + drawIndex) * 20,
                 FirstIndex = DrawFirst(part), IndexCount = DrawCount(part), Instances = d.Instances, FirstInstance = d.FirstInstance,
@@ -2174,7 +2174,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             public bool SetRaster;
             public CullMode Cull;
-            public GraphicsPipeline Pipeline;
+            public GpuPipeline Pipeline;
             public GpuBufferBinding[] Vertices;
             public GpuBufferBinding Elements;
             public MeshPush Push;
@@ -2383,7 +2383,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public DrawState State = null!;
         public ShaderProgram Program = null!;
         public FrameBinding Frame;
-        public GraphicsPipeline Pipeline = null!;
+        public GpuPipeline Pipeline = default;
         public GpuBufferBinding[] Vertices = [];
         public Draw[] Draws = new Draw[64];
         public int Count;
@@ -2412,7 +2412,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
         public override void Release()
         {
-            Pipeline = null!;
+            Pipeline = default;
             Count = 0;
             Owner.grassJobs.Return(this);
         }

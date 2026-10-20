@@ -34,10 +34,10 @@ public interface IGpuCommandList
     // ---- state ----
 
     /// <summary>Binds a graphics pipeline.</summary>
-    void BindPipeline(GraphicsPipeline pipeline);
+    void BindPipeline(GpuPipeline pipeline);
 
     /// <summary>Binds a compute pipeline.</summary>
-    void BindPipeline(ComputePipeline pipeline);
+    void BindPipeline(GpuComputePipeline pipeline);
 
     /// <summary>Sets the viewport.</summary>
     void SetViewport(in PixelViewport v);

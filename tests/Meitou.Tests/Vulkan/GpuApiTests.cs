@@ -247,7 +247,7 @@ public class GpuApiTests
     }
 
     /// <summary>A prepared segment of the test below: one fullscreen triangle through a scissor, reading one bindless texture.</summary>
-    sealed class ColumnJob(GraphicsPipeline pipeline, ShaderProgram program, uint texture, int x) : RecordJob
+    sealed class ColumnJob(GpuPipeline pipeline, ShaderProgram program, uint texture, int x) : RecordJob
     {
         public override void Record(IGpuCommandList cmd)
         {

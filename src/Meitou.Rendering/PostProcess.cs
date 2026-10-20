@@ -612,7 +612,7 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>One full-screen triangle with <paramref name="p"/> into <paramref name="target"/> (its uniforms and samplers set before), in a
     /// rendering of its own, followed by a full barrier (VkGl barriered before every pass).</summary>
-    readonly Dictionary<(LegacyProgram, InternalFormat, InternalFormat, DrawState), GraphicsPipeline> pipelines = [];
+    readonly Dictionary<(LegacyProgram, InternalFormat, InternalFormat, DrawState), GpuPipeline> pipelines = [];
 
     void Draw(LegacyProgram p, Target2D target) => Draw(p, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height);
 

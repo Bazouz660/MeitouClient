@@ -18,7 +18,7 @@ internal sealed class ImpostorDraw : IDisposable
     readonly GpuContext gpu;
     readonly NativeProg plain, caster, rock, prepass, afterPrepass;
     readonly DeviceBuffer quad;
-    readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GraphicsPipeline> pipelines = [];
+    readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GpuPipeline> pipelines = [];
 
     /// <summary>What of a <see cref="DrawState"/> is in a pipeline (the dynamic parts are not).</summary>
     readonly record struct DrawStateKey(BlendState Blend, ColorMask Mask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
@@ -43,7 +43,7 @@ internal sealed class ImpostorDraw : IDisposable
     public GpuBufferBinding Quad => new(quad.Handle, 0, quad.Size);
 
     /// <summary>The pipeline for <paramref name="state"/>'s fixed-function part into <paramref name="formats"/>. Render thread (Prepare).</summary>
-    public GraphicsPipeline Pipeline(ImpostorProgram which, DrawState state, AttachmentFormats formats)
+    public GpuPipeline Pipeline(ImpostorProgram which, DrawState state, AttachmentFormats formats)
     {
         var key = (which, new DrawStateKey(state.Blend, state.ColourMask, state.Polygon, state.AlphaToCoverage, state.DepthClamp), formats);
         if (pipelines.TryGetValue(key, out var p)) return p;

@@ -506,7 +506,7 @@ public sealed class ReflectionPass : IDisposable
     public bool FogVolumes { get; set; }
     LegacyProgram? fogProgram;
     int fogProgramSamples = -1;
-    GraphicsPipeline? fogPipeline;
+    GpuPipeline? fogPipeline;
 
     /// <summary>The fog pass over the reflection: the fog volume functions with the texel's distance rebuilt from the reflection's depth
     /// (<paramref name="multisampled"/>: its first sample) through the inverse of the near slice's mirrored, oblique view-projection, and the ray's
@@ -573,7 +573,7 @@ public sealed class ReflectionPass : IDisposable
         cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
         cmd.SetDepth(false, false, DepthFunction.Lequal);
         cmd.SetDepthBias(false, 0, 0);
-        cmd.BindPipeline(fogPipeline!);
+        cmd.BindPipeline(fogPipeline!.Value);
         p.Flush(cmd);
         cmd.Draw(3);
         cmd.EndRendering();

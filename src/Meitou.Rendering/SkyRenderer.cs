@@ -1147,15 +1147,15 @@ internal sealed class NativeSegment(GpuContext gpu, LegacyProgram program, Primi
         bool AlphaToCoverage, bool DepthClamp);
 
     Key key0, key1;
-    GraphicsPipeline? pipeline0, pipeline1;
+    GpuPipeline? pipeline0, pipeline1;
     VertexArrayBindings? source0, source1;
 
     /// <summary>The pipeline for <paramref name="state"/> into <paramref name="formats"/>, with the vertex inputs of <paramref name="vertices"/> (null: none).</summary>
-    public GraphicsPipeline Get(DrawState state, AttachmentFormats formats, VertexArrayBindings? vertices)
+    public GpuPipeline Get(DrawState state, AttachmentFormats formats, VertexArrayBindings? vertices)
     {
         var key = new Key(formats, state.Blend, state.ColourMask, state.Polygon, state.AlphaToCoverage, state.DepthClamp);
-        if (pipeline0 is not null && key == key0 && ReferenceEquals(vertices, source0)) return pipeline0;
-        if (pipeline1 is not null && key == key1 && ReferenceEquals(vertices, source1)) return pipeline1;
+        if (pipeline0 is not null && key == key0 && ReferenceEquals(vertices, source0)) return pipeline0!.Value;
+        if (pipeline1 is not null && key == key1 && ReferenceEquals(vertices, source1)) return pipeline1!.Value;
         var made = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(vertices is null ? default : vertices.Attributes), topology, formats, label));
         (key1, pipeline1, source1) = (key0, pipeline0, source0);
         (key0, pipeline0, source0) = (key, made, vertices);

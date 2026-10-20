@@ -35,7 +35,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
 
     readonly GpuContext ctx;
     readonly ShaderProgram? cull, order;
-    readonly ComputePipeline? cullPipe, orderPipe;
+    readonly GpuComputePipeline? cullPipe, orderPipe;
     readonly uint[] cullBindings = [], orderBindings = [];
     readonly BufferArena arena;
     readonly DeviceBuffer slots, prefixes;
@@ -253,9 +253,9 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         Barrier(cmd, Access.TransferDst, Access.StorageRead | Access.StorageWrite);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint groups = (uint)((n + FoliageGrassShaders.Group - 1) / FoliageGrassShaders.Group);
-        Run(cmd, cull!, cullPipe!, cullBindings, b, groups);
+        Run(cmd, cull!, cullPipe!.Value, cullBindings, b, groups);
         Barrier(cmd, Access.StorageWrite, Access.StorageRead);
-        Run(cmd, order!, orderPipe!, orderBindings, b, groups);
+        Run(cmd, order!, orderPipe!.Value, orderBindings, b, groups);
         Barrier(cmd, Access.StorageWrite, Access.IndirectRead | Access.StorageRead | Access.TransferSrc);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.Compute);
         var ring = counted[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxViews * 16, $"foliage grass counters {scratchSlot}");
@@ -277,7 +277,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         return new GrassResult(draws.Buffer, draws.Offset, counters.Buffer, counters.Offset, n, tables.Patches);
     }
 
-    void Run(IGpuCommandList cmd, ShaderProgram program, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
+    void Run(IGpuCommandList cmd, ShaderProgram program, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, uint groups)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;

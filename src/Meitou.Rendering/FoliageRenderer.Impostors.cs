@@ -1008,7 +1008,7 @@ public sealed partial class FoliageRenderer
         var quad = impostorDraw.Quad;
         GpuBufferBinding[] none = [];
         // A TERRAIN-mode rock's colour draws fade to the ground colour with distance as the terrain's mesh shader does (its own program, the terrain's maps in the push).
-        GraphicsPipeline? rockPipeline = null;
+        GpuPipeline? rockPipeline = null;
         (Vector4 Region, uint Ground, uint WorldColour, uint Colour, float HalfWorld, float FarStart, float FarEnd, uint Flags) far = default;
         bool firstDraw = true;
         for (int k = 0; k < impostorDraws.Count; k++)
@@ -1037,7 +1037,7 @@ public sealed partial class FoliageRenderer
                     Flags = far.Flags,
                 };
                 System.Runtime.CompilerServices.Unsafe.As<MeshPush, ImpostorRockPush>(ref bytes) = rockPush;
-                drawPipeline = rockPipeline;
+                drawPipeline = rockPipeline!.Value;
             }
             else System.Runtime.CompilerServices.Unsafe.As<MeshPush, ImpostorPush>(ref bytes) = push;
             job.Add(new MeshJob.Draw

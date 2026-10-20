@@ -16,7 +16,7 @@ sealed unsafe class GiDebugPass : IDisposable
 {
     readonly GpuContext ctx;
     readonly ShaderProgram program;
-    readonly ComputePipeline pipeline;
+    readonly GpuComputePipeline pipeline;
     readonly GpuSampler sampler;
     GpuTexture? output;
     uint frame;

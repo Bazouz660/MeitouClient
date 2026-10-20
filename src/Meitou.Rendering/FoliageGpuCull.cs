@@ -104,7 +104,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
     public const int MaxInteriorBoxes = 32;
     readonly GpuContext ctx;
     readonly ShaderProgram cull, scan, compact;
-    readonly ComputePipeline cullPipe, scanPipe, compactPipe;
+    readonly GpuComputePipeline cullPipe, scanPipe, compactPipe;
     readonly uint[] cullBindings, scanBindings, compactBindings;
     BufferArena arena;
     /// <summary>Bumped whenever the arena is replaced by a larger one: a group placed in an older generation is uploaded again.</summary>
@@ -483,7 +483,7 @@ public sealed unsafe class FoliageGpuCull : IDisposable
         return new FoliageCullResult(rows.Buffer, rows.Offset, rowsBytes, args.Buffer, args.Offset, offsets.Buffer, offsets.Offset, n, work.DrawCount, split);
     }
 
-    void Run(IGpuCommandList cmd, ShaderProgram p, ComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
+    void Run(IGpuCommandList cmd, ShaderProgram p, GpuComputePipeline pipe, uint[] bindings, ReadOnlySpan<GpuBufferBinding> b, in FoliageCullPush push, uint x, uint y)
     {
         cmd.BindPipeline(pipe);
         int count = bindings.Length;

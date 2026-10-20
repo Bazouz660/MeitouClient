@@ -41,6 +41,30 @@ public readonly record struct GpuView(int Index)
     public bool IsNull => Index == 0;
 }
 
+/// <summary>
+/// A graphics pipeline the renderers hold: the description it was made from (docs/resource-layer.md)
+/// — it is the pipeline's identity (the backend caches by it). The pipeline state is the backend's
+/// (Vulkan: a VkPipeline; Metal: an MTLRenderPipelineState).
+/// </summary>
+public readonly record struct GpuPipeline(GraphicsPipelineDesc Desc)
+{
+    /// <summary>The null pipeline (no program).</summary>
+    public static GpuPipeline Null => default;
+
+    public bool IsNull => Desc.Program is null;
+}
+
+/// <summary>
+/// A compute pipeline the renderers hold: the description it was made from — the pipeline's identity.
+/// </summary>
+public readonly record struct GpuComputePipeline(ComputePipelineDesc Desc)
+{
+    /// <summary>The null pipeline (no program).</summary>
+    public static GpuComputePipeline Null => default;
+
+    public bool IsNull => Desc.Program is null;
+}
+
 /// <summary>The part of a buffer a copy covers (the source's offset, the destination's, and the size).</summary>
 public readonly record struct GpuBufferCopy(ulong SourceOffset, ulong DestinationOffset, ulong Size);
 

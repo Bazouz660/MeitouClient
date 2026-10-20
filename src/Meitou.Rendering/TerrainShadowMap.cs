@@ -73,7 +73,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
 
     readonly AttachmentFormats format;
     readonly DrawState state;
-    GraphicsPipeline? pipeline;
+    GpuPipeline? pipeline;
 
     /// <summary>The finished map with its sampler (linear, clamped); null before the first build or when the sun is too high for any terrain
     /// shadow.</summary>
@@ -124,7 +124,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            cmd.BindPipeline(pipeline);
+            cmd.BindPipeline(pipeline!.Value);
             sweep.Flush(cmd);
             cmd.Draw(3);
             cmd.EndRendering();

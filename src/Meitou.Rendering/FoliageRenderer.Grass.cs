@@ -246,7 +246,7 @@ public sealed unsafe partial class FoliageRenderer
         public DrawState State = null!;
         public ShaderProgram Program = null!;
         public FrameBinding Frame;
-        public GraphicsPipeline? Pipeline;
+        public GpuPipeline? Pipeline;
         public GpuBufferBinding[] Vertices = [];
         public GrassResult Result;
 

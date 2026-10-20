@@ -154,8 +154,8 @@ for (int i = 0; i < tableColors.Length; i++)
 
     var tableSamplerDescriptor = new MTLSamplerDescriptor(
         new ObjectiveCClass(ObjectiveC.objc_getClass("MTLSamplerDescriptor")).AllocInit());
-    tableSamplerDescriptor.MinFilter = MTLSamplerMinMagTextureMinFilter.Linear;
-    tableSamplerDescriptor.MagFilter = MTLSamplerMinMagTextureMinFilter.Linear;
+    tableSamplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
+    tableSamplerDescriptor.MagFilter = MTLSamplerMinMagFilter.Linear;
 
     tableTextures[i] = tableTexture;
     tableSamplers[i] = device.NewSamplerState(tableSamplerDescriptor);
@@ -180,8 +180,8 @@ Console.WriteLine($"addresses  arg={argumentBuffer.GpuAddress:x} table=+{tableAr
 
 var samplerDescriptor = new MTLSamplerDescriptor(
     new ObjectiveCClass(ObjectiveC.objc_getClass("MTLSamplerDescriptor")).AllocInit());
-samplerDescriptor.MinFilter = MTLSamplerMinMagTextureMinFilter.Linear;
-samplerDescriptor.MagFilter = MTLSamplerMinMagTextureMinFilter.Linear;
+samplerDescriptor.MinFilter = MTLSamplerMinMagFilter.Linear;
+samplerDescriptor.MagFilter = MTLSamplerMinMagFilter.Linear;
 var sampler = device.NewSamplerState(samplerDescriptor);
 
 // A texture table: four layers in one texture, the layer picked at runtime by the shader. This is

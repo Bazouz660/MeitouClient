@@ -219,14 +219,15 @@ public sealed unsafe class CommandList : IGpuCommandList
     }
 
     /// <summary>The bench's triangle size histogram (<c>--bench-tris</c>, <see cref="TriangleCounter"/>): while set, every pipeline bound is swapped for its counting variant. Null (a null check per bind) otherwise.</summary>
-    internal static Func<GraphicsPipeline, GraphicsPipeline>? PipelineSubstitute;
+    internal static Func<GpuPipeline, GpuPipeline>? PipelineSubstitute;
 
-    public void BindPipeline(GraphicsPipeline pipeline)
+    public void BindPipeline(GpuPipeline pipeline)
     {
         if (PipelineSubstitute is { } substitute) pipeline = substitute(pipeline);
-        if (pipeline.Handle.Handle == lastPipeline.Handle && lastPoint == PipelineBindPoint.Graphics) return;
-        cmdBindPipeline(Handle, PipelineBindPoint.Graphics, pipeline.Handle);
-        (lastPipeline, lastPoint) = (pipeline.Handle, PipelineBindPoint.Graphics);
+        var handle = ctx.Pipelines.Handle(in pipeline);
+        if (handle.Handle == lastPipeline.Handle && lastPoint == PipelineBindPoint.Graphics) return;
+        cmdBindPipeline(Handle, PipelineBindPoint.Graphics, handle);
+        (lastPipeline, lastPoint) = (handle, PipelineBindPoint.Graphics);
         Stats.PipelinesBound++;
     }
 
@@ -451,11 +452,12 @@ public sealed unsafe class CommandList : IGpuCommandList
 
     // ---- compute and transfer ----
 
-    public void BindPipeline(ComputePipeline pipeline)
+    public void BindPipeline(GpuComputePipeline pipeline)
     {
-        if (pipeline.Handle.Handle == lastPipeline.Handle && lastPoint == PipelineBindPoint.Compute) return;
-        vk.CmdBindPipeline(Handle, PipelineBindPoint.Compute, pipeline.Handle);
-        (lastPipeline, lastPoint) = (pipeline.Handle, PipelineBindPoint.Compute);
+        var handle = ctx.Pipelines.Handle(in pipeline);
+        if (handle.Handle == lastPipeline.Handle && lastPoint == PipelineBindPoint.Compute) return;
+        vk.CmdBindPipeline(Handle, PipelineBindPoint.Compute, handle);
+        (lastPipeline, lastPoint) = (handle, PipelineBindPoint.Compute);
         Stats.PipelinesBound++;
     }
 

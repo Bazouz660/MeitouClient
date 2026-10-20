@@ -1149,9 +1149,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref ObjectNativeMesh n, ObjProg p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref ObjectNativeMesh n, ObjProg p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegB == segment) return n.PipeB!;
+        if (n.SegB == segment) return n.PipeB!.Value;
         var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
@@ -1304,7 +1304,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             Current(ref n, part, drawProg);
             job.Draws[i] = new DrawJob.Draw
             {
-                Pipeline = n.SegA == drawSegment ? n.PipeA! : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
+                Pipeline = n.SegA == drawSegment ? n.PipeA!.Value : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
                 Vertices = n.Vertices, Elements = new GpuBufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
                 Push = pc, IndexCount = (uint)part.Count[d.Level], Instances = d.Instances, FirstInstance = d.FirstInstance,
                 Cull = d.BackCull ? CullMode.Back : state.Cull,
@@ -1321,7 +1321,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
+            public GpuPipeline Pipeline;
             public GpuBufferBinding[] Vertices;
             public GpuBufferBinding Elements;
             public ObjectPush Push;

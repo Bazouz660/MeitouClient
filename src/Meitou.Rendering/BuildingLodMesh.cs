@@ -65,7 +65,7 @@ struct ObjectNativeMesh
     public GpuBufferBinding[] Vertices;
     public GpuBufferBinding Elements;
     public int SegA, SegB;
-    public GraphicsPipeline? PipeA, PipeB;
+    public GpuPipeline? PipeA, PipeB;
 }
 
 sealed class GpuObjectMesh

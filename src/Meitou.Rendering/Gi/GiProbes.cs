@@ -31,9 +31,9 @@ internal sealed unsafe class GiProbes : IDisposable
 
     readonly GpuContext ctx;
     readonly ShaderProgram invalidateProgram;
-    readonly ComputePipeline invalidatePipeline;
+    readonly GpuComputePipeline invalidatePipeline;
     // The trace and blend programs by the rays per probe (the workgroup size): the default, and the other one once the bench's gi-rays switch asks for it.
-    readonly Dictionary<int, (ShaderProgram Trace, ShaderProgram Blend, ComputePipeline TracePipeline, ComputePipeline BlendPipeline)> variants = [];
+    readonly Dictionary<int, (ShaderProgram Trace, ShaderProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline)> variants = [];
     readonly GpuTexture irradiance, distance;
     readonly GpuTexture[] bases;
     readonly DeviceBuffer rays, state;
@@ -203,7 +203,7 @@ internal sealed unsafe class GiProbes : IDisposable
     }
 
     /// <summary>The trace and blend for <paramref name="rays"/> rays a probe (the workgroup size), made on first use.</summary>
-    (ShaderProgram Trace, ShaderProgram Blend, ComputePipeline TracePipeline, ComputePipeline BlendPipeline) Variant(int rays)
+    (ShaderProgram Trace, ShaderProgram Blend, GpuComputePipeline TracePipeline, GpuComputePipeline BlendPipeline) Variant(int rays)
     {
         if (variants.TryGetValue(rays, out var made)) return made;
         var trace = ctx.Shaders.Compute(GiShaders.ProbeTrace(rays), "gi probe trace " + rays,

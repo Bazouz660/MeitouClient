@@ -77,7 +77,7 @@ public sealed unsafe partial class PostProcess
     }
 
     ShaderProgram? shaftScanProgram;
-    ComputePipeline? shaftScanPipeline;
+    GpuComputePipeline? shaftScanPipeline;
 
     static T ReadGlobal<T>(FrameGlobals g, string name) where T : unmanaged
     {
@@ -116,7 +116,7 @@ public sealed unsafe partial class PostProcess
         bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View));
         bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
         cmd.Order();
-        cmd.BindPipeline(shaftScanPipeline!);
+        cmd.BindPipeline(shaftScanPipeline!.Value);
         cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
         cmd.Dispatch((uint)(((int)grid.X + 7) / 8), (uint)(((int)grid.Y + 7) / 8));
         cmd.Order();

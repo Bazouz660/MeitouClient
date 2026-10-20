@@ -599,7 +599,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     sealed class PatchPipeline
     {
         public SegmentPipeline Segment;
-        public GraphicsPipeline Pipeline = null!;
+        public GpuPipeline Pipeline = default;
         public GpuBufferBinding Vertex;
         public GpuBufferBinding Elements;
     }
@@ -670,7 +670,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public PassTargets Targets = null!;
         public DrawState State = null!;
         public ShaderProgram Program = null!;
-        public GraphicsPipeline Pipeline = null!;
+        public GpuPipeline Pipeline = default;
         public GpuBufferBinding Vertex, Elements;
         public FrameBinding Frame;
         public GpuSet ConstantSet;
@@ -867,7 +867,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public OwnVertices Vertices;
         public GpuBufferBinding Elements;
         public int SegA, SegB;
-        public GraphicsPipeline? PipeA, PipeB;
+        public GpuPipeline? PipeA, PipeB;
     }
 
     // Per program kind: the last segment state and its number; numbers are stable per state (a mesh compares one int per draw).
@@ -954,7 +954,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         {
             ref var n = ref g.Native(kind);
             if (n.Source != g.Mesh) Current(ref n, g.Mesh, p);
-            var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
+            var pipeline = n.SegA == s.Segment ? n.PipeA!.Value : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = g.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
@@ -1003,7 +1003,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
+            public GpuPipeline Pipeline;
             public FrontFaceDirection Front;
             public OwnVertices Vertices;
             public int VertexCount;
@@ -1114,7 +1114,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             if (!meshGroups.TryGetValue(key, out var g)) meshGroups[key] = g = new MeshGroup { Mesh = m.Mesh, IndexCount = m.IndexCount, Mirrored = m.Mirrored };
             ref var n = ref g.Native(kind);
             if (n.Source != g.Mesh) Current(ref n, g.Mesh, p);
-            var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
+            var pipeline = n.SegA == s.Segment ? n.PipeA!.Value : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = m.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
@@ -1142,10 +1142,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref NativeMesh n, TerrainProgram p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref NativeMesh n, TerrainProgram p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegA == segment) return n.PipeA!;
-        if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!; }
+        if (n.SegA == segment) return n.PipeA!.Value;
+        if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!.Value; }
         var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);

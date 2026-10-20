@@ -218,7 +218,7 @@ internal sealed unsafe partial class CharacterRenderer
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
+            public GpuPipeline Pipeline;
             public GpuBufferBinding[] Vertices;
             public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;

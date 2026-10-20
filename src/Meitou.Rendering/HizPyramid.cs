@@ -40,7 +40,7 @@ public sealed unsafe class HizPyramid : IDisposable
 
     readonly GpuContext ctx;
     readonly ShaderProgram baseProgram, reduceProgram;
-    readonly ComputePipeline basePipeline, reducePipeline;
+    readonly GpuComputePipeline basePipeline, reducePipeline;
     DeviceBuffer? buffer;
     readonly uint[] offsets = new uint[MaxLevels];
     int levelCount, width, height, baseWidth, baseHeight;

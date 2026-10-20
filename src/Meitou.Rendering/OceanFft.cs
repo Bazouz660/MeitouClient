@@ -43,7 +43,7 @@ public sealed unsafe class OceanWaves : IDisposable
     const int Cascades = 3;
     readonly GpuContext ctx;
     readonly ShaderProgram evolve, fft, assemble;
-    readonly ComputePipeline evolvePipe, fftPipe, assemblePipe;
+    readonly GpuComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
     readonly GpuTexture displacement, slopes;
     readonly GpuSampler sampler;
@@ -234,7 +234,7 @@ public sealed unsafe class OceanWaves : IDisposable
         cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.StorageRead | Access.StorageWrite)]);
     }
 
-    static void Run(IGpuCommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
+    static void Run(IGpuCommandList cmd, ShaderProgram p, GpuComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
         var slots = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();

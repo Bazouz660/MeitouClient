@@ -29,7 +29,7 @@ public sealed unsafe partial class PostProcess
     public bool MergeExposure { get; set; } = true;
 
     ShaderProgram? velocityProgram, exposureProgram;
-    ComputePipeline? velocityPipeline, exposurePipeline;
+    GpuComputePipeline? velocityPipeline, exposurePipeline;
     DeviceBuffer? exposureState;
     bool exposureStateZeroed;
     GpuSampler pointSampler;
@@ -90,7 +90,7 @@ public sealed unsafe partial class PostProcess
         bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View()));
         bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Order();
-        cmd.BindPipeline(velocityPipeline!);
+        cmd.BindPipeline(velocityPipeline!.Value);
         cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
         var size = new Vector2(width, height);
         cmd.PushConstants(velocityProgram, GpuStage.Compute, in size);
@@ -129,7 +129,7 @@ public sealed unsafe partial class PostProcess
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View()));
         bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Order();
-        cmd.BindPipeline(exposurePipeline!);
+        cmd.BindPipeline(exposurePipeline!.Value);
         cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
         cmd.PushConstants(exposureProgram, GpuStage.Compute, in push);
