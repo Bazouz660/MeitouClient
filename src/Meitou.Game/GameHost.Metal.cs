@@ -10,20 +10,22 @@ using Meitou.Engine.Time;
 using Meitou.Metal;
 using Meitou.Rendering;
 using Meitou.Rendering.Characters;
+using Meitou.Rendering.Display;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Ui;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
+using SilkKey = Silk.NET.Input.Key;
 
 namespace Meitou.Game;
 
 sealed partial class GameHost
 {
     /// <summary>
-    /// The Metal path (macOS): the game boots without the Vulkan renderer and draws the sky with the real <see cref="SkyRenderer"/>
-    /// on the <see cref="MetalContext"/> — the seam's recording model as the Vulkan path drives it (a native segment opening the
-    /// scene's host pass, the sky a guest segment in it, the frame committed with the present). The world is not drawn yet: the
-    /// sky is the first pass of the port (docs/metal-backend.md).
+    /// The Metal path (macOS): the game boots without the Vulkan renderer and draws the world through the seam's recording model
+    /// (native segments around the scene's host pass, guests inside it, the frame committed with the present). The loop is
+    /// interactive: the strategy camera and the HUD's selection/orders read the window's input, while the frontend, audio and the
+    /// remaining host services wait (docs/metal-backend.md).
     /// </summary>
     int Metal()
     {
@@ -238,63 +240,99 @@ sealed partial class GameHost
                 hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material)
                     && characters.TryGetIcon(new IconKey(record, material), out var icon) ? icon : null);
             }
-            // The Metal loop has no input yet: a still can open one of the shared layouts by name for review.
+            // A still or a run can open one of the shared layouts by name for review.
             if (g.UiPanel is { Length: > 0 } selectedPanel)
                 hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
+            // The picks the interface asks the host for: the drawn character meshes, the buildings' floors and their closed shells.
+            hud.MeshHit = (id, origin, direction) => characters?.RayHit(DrawKey(id), origin, direction);
+            hud.BuildingMoveHit = (origin, direction, distance) => objects?.MoveHit(origin, direction, viewedFloor, distance);
+            hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
         }
-        // The Metal loop has no camera/selection input yet, but the HUD's own controls work: pointer hover/clicks and the
-        // window's panel keys go to PlayerInterface (I/C inventory/stats, M/T/Y overview tabs, Esc menus, F7 hide).
-        using var input = overlay is null || hud is null ? null : Silk.NET.Input.InputWindowExtensions.CreateInput(window);
-        bool uiPointerDown = false;
-        Meitou.Engine.Input.MouseButton? uiButton = null;
-        if (input is not null && hud is not null)
+        // The real input path: the window's keys and pointer go to PlayerInterface first (its panels, builds and the world's
+        // selection/order clicks), then to the session's bindings so the strategy camera pans, turns and zooms.
+        using var input = Silk.NET.Input.InputWindowExtensions.CreateInput(window);
+        bool shiftDown = false, statsVisible = false, frameStatsVisible = showFrameStats, screenshotNow = false;
+        Vector2? lastMouse = null;
+        Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),
+            window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
+        bool Held(SilkKey a, SilkKey b) => input.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
+        bool Ctrl() => Held(SilkKey.ControlLeft, SilkKey.ControlRight);
+        bool Alt() => Held(SilkKey.AltLeft, SilkKey.AltRight);
+        foreach (var keyboard in input.Keyboards)
         {
-            Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),
-                window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
-            bool Held(Silk.NET.Input.Key a, Silk.NET.Input.Key b) => input.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
-            bool Shift() => Held(Silk.NET.Input.Key.ShiftLeft, Silk.NET.Input.Key.ShiftRight);
-            foreach (var keyboard in input.Keyboards)
+            keyboard.KeyDown += (_, key, _) =>
             {
-                keyboard.KeyDown += (_, key, _) =>
-                {
-                    if (key == Silk.NET.Input.Key.F7) { hud.UiVisible = !hud.UiVisible; return; }
-                    if (KeyMap.Map(key) is { } mapped) hud.UiKey(mapped, Held(Silk.NET.Input.Key.ControlLeft, Silk.NET.Input.Key.ControlRight), Shift());
-                };
-                keyboard.KeyChar += (_, value) => hud.UiText(value);
-            }
-            foreach (var mouse in input.Mice)
+                if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; if (hud is not null) hud.SlowModifier = true; }
+                if (key == SilkKey.Enter && Alt()) { BorderlessFullScreen.Toggle(window); return; }
+                // F11 lists the frame; F12 is the small frame-rate line (the profiler chart waits for Metal timestamps).
+                if (key == SilkKey.F11) { statsVisible = !statsVisible; return; }
+                if (key == SilkKey.F12) { frameStatsVisible = !frameStatsVisible; return; }
+                if (key is SilkKey.F8 or SilkKey.PrintScreen) { screenshotNow = true; return; }
+                if (key == SilkKey.F7 && hud is not null) { hud.UiVisible = !hud.UiVisible; return; }
+                if (KeyMap.Map(key) is not { } mapped) return;
+                // The interface's keys come first (I/C, M/T/Y, Esc, B), as in the Vulkan host; what it does not take reaches
+                // the session (WASD, Q/E, Space, F2..F4, PageUp/PageDown, the camera bindings).
+                if (hud is not null && (hud.UiKey(mapped, Ctrl(), shiftDown) || hud.BuildKey(mapped, shiftDown))) return;
+                session.Input.SetKey(mapped, true);
+                if (hud is not null) hud.Key(mapped, shiftDown);
+            };
+            keyboard.KeyUp += (_, key, _) =>
             {
-                mouse.MouseMove += (_, p) => hud.MouseMove(Pixels(p));
-                mouse.MouseDown += (_, button) =>
-                {
-                    var at = Pixels(mouse.Position);
-                    if (!hud.ContainsUi(at) || KeyMap.Map(button) is not { } mapped) return;
-                    uiPointerDown = true;
-                    uiButton = mapped;
-                    hud.MouseDown(mapped, at, Shift(), Held(Silk.NET.Input.Key.ControlLeft, Silk.NET.Input.Key.ControlRight),
-                        Held(Silk.NET.Input.Key.AltLeft, Silk.NET.Input.Key.AltRight));
-                };
-                mouse.MouseUp += (_, button) =>
-                {
-                    if (!uiPointerDown || KeyMap.Map(button) is not { } mapped) return;
-                    hud.MouseUp(mapped, Pixels(mouse.Position), Shift());
-                    if (mapped == uiButton) { uiPointerDown = false; uiButton = null; }
-                };
-                mouse.Scroll += (_, wheel) =>
-                {
-                    var at = Pixels(mouse.Position);
-                    if (hud.ContainsUi(at)) hud.UiScroll(at, wheel.Y);
-                };
-            }
+                if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = false; if (hud is not null) hud.SlowModifier = false; }
+                if (KeyMap.Map(key) is { } mapped) { session.Input.SetKey(mapped, false); hud?.BuildKeyUp(mapped); }
+            };
+            keyboard.KeyChar += (_, value) => hud?.UiText(value);
         }
+        foreach (var mouse in input.Mice)
+        {
+            mouse.MouseMove += (_, p) =>
+            {
+                var at = Pixels(p);
+                hud?.MouseMove(at);
+                // The panels and their drags own the pointer: the camera must not also turn under them.
+                if (hud is { UiCapturesPointer: true }) { lastMouse = p; return; }
+                if (lastMouse is { } last) session.Input.AddMouseDelta(p.X - last.X, p.Y - last.Y);
+                lastMouse = p;
+            };
+            mouse.MouseDown += (_, button) =>
+            {
+                if (KeyMap.Map(button) is not { } mapped) return;
+                // PlayerInterface sees every click: it takes the HUD's controls, selects, starts a drag box or gives a move order.
+                if (hud is not null && hud.MouseDown(mapped, Pixels(mouse.Position), shiftDown, Ctrl(), Alt())) return;
+                session.Input.SetMouseButton(mapped, true);
+            };
+            mouse.MouseUp += (_, button) =>
+            {
+                if (KeyMap.Map(button) is not { } mapped) return;
+                hud?.MouseUp(mapped, Pixels(mouse.Position), shiftDown);
+                session.Input.SetMouseButton(mapped, false);
+            };
+            mouse.Scroll += (_, wheel) =>
+            {
+                var at = Pixels(mouse.Position);
+                // A panel's own scroll wins; over any HUD rectangle the wheel does not zoom the camera, as in the Vulkan host.
+                if (hud is not null && (hud.UiScroll(at, wheel.Y) || hud.ContainsUi(at))) return;
+                session.Input.AddWheel(wheel.Y);
+            };
+        }
+        window.FocusChanged += focused =>
+        {
+            if (focused) return;
+            session.Input.ReleaseAll();
+            if (hud is not null) hud.SlowModifier = false;
+            shiftDown = false;
+            lastMouse = null;
+        };
         // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
         streamer?.Settle(camera.Eye);
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
 
         var clock = Stopwatch.StartNew();
-        double last = 0;
-        int frames = 0;
+        double last = 0, fpsWindow = 0, titleTimer = 0;
+        int frames = 0, fpsFrames = 0;
+        string fpsText = "";
+        var statsLines = new List<string>();
         GpuTexture? sceneColour = null;
         while (!window.IsClosing)
         {
@@ -302,8 +340,21 @@ sealed partial class GameHost
             if (window.IsClosing) break;
             double now = clock.Elapsed.TotalSeconds, dt = now - last;
             last = now;
+            var size = window.FramebufferSize;
+            // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
+            fpsWindow += dt;
+            fpsFrames++;
+            if (fpsWindow >= 0.25)
+            {
+                fpsText = $"{fpsFrames / fpsWindow:0} fps";
+                fpsWindow = 0;
+                fpsFrames = 0;
+            }
+            // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
+            session.Camera.Strategy.EdgePointer = hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
+            SendFocus();
             if (!ctx.BeginFrame()) continue;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
@@ -311,7 +362,6 @@ sealed partial class GameHost
             streamer?.Update(camera.Eye);
             foliage?.Update(camera.Eye);
 
-            var size = window.FramebufferSize;
             var taaJitter = PostTaa.Offset(frames + 1, size.X);
             if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             if (characters is not null)
@@ -427,23 +477,46 @@ sealed partial class GameHost
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
-                if (hud is { UiVisible: true })
+                if (hud is not null)
                 {
                     hud.Width = size.X;
                     hud.Height = size.Y;
                     hud.Eye = eye;
                     hud.ViewProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
-                    hud.Draw(overlay, size.X, size.Y);
+                    // The move order under a held right button follows the cursor once a frame, as the Vulkan host's Steer does.
+                    hud.Steer();
+                    if (hud.UiVisible) hud.Draw(overlay, size.X, size.Y);
                 }
-                if (showFrameStats)
+                bool wrote = false;
+                if (statsVisible)
+                {
+                    statsLines.Clear();
+                    statsLines.Add($"{fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}");
+                    statsLines.Add($"sim {session.Simulation.TotalTicks} ticks  {session.CurrentSnapshot.Characters.Count} characters  x{session.TimeScale:0}  {session.Clock.TimeText}");
+                    statsLines.Add($"camera {camera.Target.X:0}, {camera.Target.Y:0}, {camera.Target.Z:0}  yaw {camera.Yaw * 180 / MathF.PI:0}  pitch {camera.Pitch * 180 / MathF.PI:0}  boom {camera.Distance:0}");
+                    if (characters is not null) statsLines.Add(characters.Statistics());
+                    if (foliage is not null) statsLines.Add($"foliage {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
+                    overlay.Panel(size.X, size.Y, "Metal frame (F11 hides this)", statsLines, (hud is { UiVisible: true } ? hud.HudBottom : 0) + 8);
+                    wrote = true;
+                }
+                if (frameStatsVisible)
                 {
                     overlay.Text("Meitou - Metal", 16, 16, DebugOverlay.TextColour);
-                    overlay.Text($"{frames + 1} frames  {Math.Max(1, frames / Math.Max(now, 1e-3)):0} fps  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
-                    overlay.Flush(size.X, size.Y);
+                    overlay.Text($"{frames + 1} frames  {fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
+                    wrote = true;
                 }
+                if (wrote) overlay.Flush(size.X, size.Y);
             }
             ctx.EndFrame();
             frames++;
+            if (screenshotNow)
+            {
+                string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                if (pictures.Length == 0) pictures = Directory.GetCurrentDirectory();
+                string file = Path.Combine(Directory.CreateDirectory(pictures).FullName, $"meitou-metal-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+                Capture(ctx, backbuffer, file);
+                screenshotNow = false;
+            }
             // A panel's item icons are drawn after the frame that asks for them, and their textures stream in: let a UI still
             // wait for them (up to a bound), while an ordinary world still keeps its 40 frames.
             int pendingIcons = (characters?.PendingIcons ?? 0) + (hud?.PendingIconFiles ?? 0);
@@ -452,6 +525,14 @@ sealed partial class GameHost
                 if (foliage is not null) Console.WriteLine($"metal     foliage: {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
                 Capture(ctx, backbuffer, shot);
                 break;   // one picture, as the Vulkan flow's does
+            }
+            titleTimer += dt;
+            if (titleTimer >= 0.5)
+            {
+                var s = session.Camera.Current;
+                window.Title = $"Meitou (metal) | {fpsText} | {(session.Camera.IsFree ? "free camera" : $"boom {s.Distance:0}")} | " +
+                    $"{session.Clock.TimeText} {session.Clock.DayText} | {s.Target.X:0}, {s.Target.Z:0}";
+                titleTimer = 0;
             }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
@@ -469,7 +550,9 @@ sealed partial class GameHost
         taa.Dispose();
         surfaces?.Dispose();
         sky.Dispose();
-        Console.WriteLine($"metal     {frames} frames");
+        double elapsed = clock.Elapsed.TotalSeconds;
+        Console.WriteLine($"metal     {frames} frames in {elapsed:0.0} s: {frames / Math.Max(elapsed, 1e-3):0} fps, " +
+            $"camera {camera.Target.X:0}, {camera.Target.Z:0}, yaw {camera.Yaw * 180 / MathF.PI:0}, pitch {camera.Pitch * 180 / MathF.PI:0}, boom {camera.Distance:0}");
         return 0;
     }
 

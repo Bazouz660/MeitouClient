@@ -459,8 +459,11 @@ and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones);
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list); the HUD
 and the faithful panels (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own
-pointer/keyboard controls. `GameHost.Metal.cs` is still a still-frame loop for the world: camera/selection input,
-the title/save/new-game flows and the full interactive loop are not wired.
+pointer/keyboard controls. `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
+move the strategy camera; edge scrolling, left click/box select, right-click move orders and the HUD keys work;
+F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
+Still missing: the title/new-game/save/load/options flows, trade/dialogue/build/editor hosts, audio, the pointer
+sprite, the settings/free camera and the profiler chart.
 
 **What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
 host services the panels call:
@@ -471,8 +474,9 @@ host services the panels call:
 2. **Trade, dialogue, build, editor.** These need the simulation/host services `BootPlayer` supplies (trade
    commands, building/editor hosts, item icons already connected); `--ui-panel` can open their layouts once the
    state exists.
-3. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; camera movement,
-   world selection, move orders, tooltips over the world and the pointer sprite still need the interactive loop.
+3. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; the loop now also
+   feeds the camera, selection, box select, move orders, F8/F11/F12 and Alt+Enter. Still missing: tooltips over the
+   world, the pointer sprite, the free camera/settings panel and the frontend actions.
 4. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
    sequence still needs the same loop here.
 5. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
@@ -488,12 +492,12 @@ default.
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
 
-1. **The real game loop (largest).** Replace the bespoke Metal still loop with the shared `WorldFrame`/`SceneHost`
-   flow widened to `IGpuContext` (or finish the duplicate host, which doubles every future feature): camera,
-   key bindings, mouse capture, strategy/free camera, selection, box select, picking, move orders, context menus,
-   building selection and hover. Wire the remaining `PlayerInterface` host services: mesh/building/surface hits,
-   build host, floor stepping, fly-to, trade/dialogue/build/editor hosts. Add title -> new game -> play, save/load/
-   quickload, options, `ScreenAction` callbacks, the new-world rebuild, audio and UI sounds, the loading screen,
+1. **The rest of the real game loop (largest).** The first playable slice is in: camera bindings, edge/turn/zoom,
+   left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
+   unify the bespoke loop with `WorldFrame`/`SceneHost` on `IGpuContext` (or keep the duplicate, which doubles every
+   future feature); the free camera, context menus, building selection/hover, mesh/building/surface hits, build
+   host, floor stepping and fly-to; title -> new game -> play, save/load/quickload, options, `ScreenAction`
+   callbacks, the new-world rebuild, trade/dialogue/build/editor hosts, audio/UI sounds, the loading screen,
    warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu and title render; still missing the
    title/new-game/save/load/options actions, trade, dialogue, build, editor, settings, world tooltips, the pointer
@@ -712,6 +716,10 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib MTL_DEBUG_LAYER=1 dotnet run --project src/M
     --renderer metal --screenshot /tmp/x.png --no-population --time 8 --distance 2000 --pitch 45 \
     --faithful clouds,cloudshadows --no-gi
 ```
+
+Live check: `--renderer metal --new-game --time 12 --distance 250 --pitch 20 --faithful
+clouds,cloudshadows --no-gi` (WASD/arrows, Q/E, wheel, middle drag; F11 frame list, F12 fps). `--quit-after N`
+prints the final camera and frame rate.
 
 The host table (`--table`; BL red, centre `(127,0,128)`, TR blue, a `.swap.bmp` appears) when the change touches
 the seam, the binding tables or the Metal host.
