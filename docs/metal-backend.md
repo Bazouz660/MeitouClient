@@ -1,8 +1,9 @@
 # Metal backend
 
-A second native path for the renderer, next to Vulkan. Status: **the sky runs in the game with
-Metal** (`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the
-engine's own uniform block. The world is not drawn yet.
+A second native path for the renderer, next to Vulkan. Status: **the world draws on Metal**
+(`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
+uniform block, the scene, shadows, faithful water, skinned characters and a text overlay. The
+interactive game, the HUD and the Meitou water/effects are not there yet.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
 runtime). `Silk.NET.GLFW` has no `glfwGetCocoaWindow`, so the `NSWindow*` comes from the same
@@ -453,10 +454,33 @@ the baseline, not one.
 ## Where the port stands (resume here)
 
 **Drawing on Metal today:** the sky, weather and atmosphere; the terrain (heights, biomes, the streamer); the
-objects and buildings; the sun's shadows (terrain, objects and foliage casters); foliage meshes, grass and the
-terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far billboards;
-the scene's HDR target, the game's tone map and its auto exposure. `GameHost.Metal.cs` is still a still-frame
-loop (sky + terrain + objects + foliage + composite), not the interactive game.
+objects and buildings; the sun's shadows (terrain, objects, foliage and character casters); foliage meshes, grass
+and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
+billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
+skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list); the
+`DebugOverlay` text/quad pass. `GameHost.Metal.cs` is still a still-frame loop, not the interactive game; it has
+no HUD and no input.
+
+**What we do next.** The first task is the **HUD**, then the rest of the UI. `DebugOverlay` already runs on Metal,
+so the foundation is there:
+
+1. Widen `UiPainter` and `MyGuiResources` from `GpuContext` to `IGpuContext`, and make the painter's font/atlas
+   uploads use `IGpuFrame.WriteConstants`/`IGpuUploads` (the same seam work `DebugOverlay` just had).
+2. Cut the HUD at its data boundary instead of booting all of `PlayerInterface` first: it owns input, dialogues,
+   the title screen and Vulkan display assumptions. Expose the HUD's data (squad bar, floor, money/date, jobs,
+   tooltips) to a small host-neutral draw call the Metal loop can invoke with its existing session and camera.
+3. Draw the HUD over the Metal composite with the existing `OverlayPass`/`UiPainter`, then add portraits and item
+   icons (the character renderer's portrait/icon code is widened but not called yet).
+4. Acceptance: at the Hub with `--new-game`, the Metal and Vulkan windows show the same HUD elements at the same
+   positions; `--ui` renders the panels; `MTL_DEBUG_LAYER=1` is clean. Then title/menu, resize and input move to
+   the interactive-loop step.
+
+**After the HUD:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
+refraction); the character motion pass and remaining portrait/icon/hover/stage host calls; the effects (weather
+particles, lamps, hover/move/navmesh overlays, interior mask, Meitou clouds); the full post chain (SSAO, light
+shafts, `FogRate`, dynamic motion, MetalFX/upscaler, GPU culls/grass); the interactive loop (input, title, resize,
+HDR/EDR, `WorldFrame`/`SceneHost` on `IGpuContext`); then the GI decision, parity, memory/tone and the macOS
+default.
 
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
