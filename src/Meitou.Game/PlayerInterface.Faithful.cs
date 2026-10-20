@@ -14,7 +14,7 @@ sealed partial class PlayerInterface
     public bool UiCapturesPointer => UiVisible && (faithfulScreens.CapturesPointer || mapDrag is not null || inventoryDrag is not null || tradeDrag is not null || scrollDrag is not null);
     /// <summary>Keys the host keeps for itself (the sandbox's letters), so the faithful window shortcuts leave them alone.</summary>
     public HashSet<Key> ReservedKeys { get; } = [];
-    void UpdateMenuPause() => session.Simulation.RequestedPause = settingsOpen || faithfulScreens.HasModal;
+    void UpdateMenuPause() => session.Simulation.RequestedPause = session.ModalsPause && (settingsOpen || faithfulScreens.HasModal);
     public bool UiKey(Key key, bool ctrl = false, bool shift = false)
     {
         if (!UiVisible) return false;

@@ -59,11 +59,7 @@ sealed partial class PlayerInterface
 
     bool OverHud(Vector2 p) => ContainsUi(p);
 
-    void PressButton(int index)
-    {
-        if (index == 0) session.Simulation.TogglePause();
-        else session.Simulation.SetSpeed(ButtonSpeeds[index]);
-    }
+    void PressButton(int index) => session.RequestClock(index == 0 ? ClockRequest.TogglePause : ClockRequest.Set(ButtonSpeeds[index]));
 
     /// <summary>The selected characters of the current snapshot, found once per snapshot (the HUD box is asked for on every hit test).</summary>
     IReadOnlyList<CharacterSnapshot> Selected()

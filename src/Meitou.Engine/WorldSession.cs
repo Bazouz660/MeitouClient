@@ -68,8 +68,30 @@ public sealed class WorldSession : IDisposable
     /// <summary>The speed: 0 while paused by the player, else 1, 2 or 5.</summary>
     public double TimeScale => Simulation.Speed;
 
+    /// <summary>
+    /// Who decides the clock in a net session (docs/net.md); null in single-player. While set, <see cref="RequestClock"/> hands every request to it instead of
+    /// applying it, and modal screens stop pausing the world (<see cref="ModalsPause"/>).
+    /// </summary>
+    public IClockAuthority? ClockAuthority { get; set; }
+    /// <summary>Whether modal screens (menus, settings, windows) pause the world: only in single-player, where nobody else is playing.</summary>
+    public bool ModalsPause => ClockAuthority is null;
+
     /// <summary>Called for each control tick's actions after the session's own handling (pause, speed, camera); the host's actions (quit, screenshot...).</summary>
     public event Action<ActionState>? Ticked;
+    /// <summary>Raised after each simulation tick (the world ran its phases and the game clock moved), on the frame thread.</summary>
+    public event Action<World>? SimulationTicked;
+    /// <summary>Raised by <see cref="ReplaceWorld"/> once the new world is in place and the old one discarded; the argument is the new world.</summary>
+    public event Action<World>? WorldReplaced;
+
+    /// <summary>
+    /// A pause or speed input (key or HUD button): the <see cref="ClockAuthority"/> decides it when one is set, else it applies to <see cref="Simulation"/> at
+    /// once, as single-player always did.
+    /// </summary>
+    public void RequestClock(ClockRequest request)
+    {
+        if (ClockAuthority is { } authority) authority.Request(request);
+        else request.ApplyTo(Simulation);
+    }
 
     /// <summary>Runs one frame's worth of real time: the control ticks it holds, then the simulation ticks; returns the control ticks.</summary>
     public int Advance(double realSeconds)
@@ -95,13 +117,14 @@ public sealed class WorldSession : IDisposable
         World.GameHours = Clock.TotalHours;
         World.RunTick();
         Clock.Advance(Simulation.TickSeconds);
+        SimulationTicked?.Invoke(World);
     }
 
     /// <summary>
     /// Swaps in a new world made from <paramref name="systems"/> (same settings and walkability) at a tick boundary, for a loaded save. <paramref name="setup"/>
     /// fills the new world (before its first tick, as <c>SaveLoader.Load</c> needs); when it throws the old world stays and the new one and its systems are disposed.
     /// The old world and its systems are disposed after the swap. The control tick, the camera, the input and the simulation clock carry on; the game clock is the
-    /// caller's to set. Call it between frames or from a control tick's handler, never from inside a world tick.
+    /// caller's to set. Call it between frames or from a control tick's handler, never from inside a world tick. <see cref="WorldReplaced"/> is raised last.
     /// </summary>
     public World ReplaceWorld(IEnumerable<ITickSystem> systems, Action<World>? setup = null)
     {
@@ -119,6 +142,7 @@ public sealed class WorldSession : IDisposable
         Discard(old);
         // The navmesh door table follows the new world: the old one's locked doors are forgotten, the new one's told.
         if (worldWalkability is Meitou.Simulation.Locks.IDoorGate gate) { gate.ResetDoors(); next.Fixtures.Doors = gate; }
+        WorldReplaced?.Invoke(next);
         return next;
     }
 
@@ -135,12 +159,12 @@ public sealed class WorldSession : IDisposable
     public ActionState Tick()
     {
         var actions = Bindings.Resolve(Input.Consume());
-        if (actions.Pressed(InputAction.Pause)) Simulation.TogglePause();
-        if (actions.Pressed(InputAction.Speed1)) Simulation.SetSpeed(1);
-        if (actions.Pressed(InputAction.Speed2)) Simulation.SetSpeed(2);
-        if (actions.Pressed(InputAction.Speed3)) Simulation.SetSpeed(5);
-        if (actions.Pressed(InputAction.TimeFaster)) Simulation.Faster();
-        if (actions.Pressed(InputAction.TimeSlower)) Simulation.Slower();
+        if (actions.Pressed(InputAction.Pause)) RequestClock(ClockRequest.TogglePause);
+        if (actions.Pressed(InputAction.Speed1)) RequestClock(ClockRequest.Set(1));
+        if (actions.Pressed(InputAction.Speed2)) RequestClock(ClockRequest.Set(2));
+        if (actions.Pressed(InputAction.Speed3)) RequestClock(ClockRequest.Set(5));
+        if (actions.Pressed(InputAction.TimeFaster)) RequestClock(ClockRequest.Faster);
+        if (actions.Pressed(InputAction.TimeSlower)) RequestClock(ClockRequest.Slower);
         Camera.Update((float)Ticks.TickSeconds, actions);
         Ticked?.Invoke(actions);
         return actions;
