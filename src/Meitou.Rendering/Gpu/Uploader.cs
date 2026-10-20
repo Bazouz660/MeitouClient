@@ -7,7 +7,7 @@ namespace Meitou.Rendering.Gpu;
 /// (VkGl: <c>uploadCmd</c>, "before: uploadCmd"). An upload is therefore seen by the whole frame, and native and VkGl uploads keep their call
 /// order. Staging comes from the frame's <see cref="GpuFrame.Staging"/>. Render thread only, while a frame is open.
 /// </summary>
-public sealed unsafe class Uploader
+public sealed unsafe class Uploader : IGpuUploads
 {
     readonly GpuContext ctx;
 
@@ -56,7 +56,7 @@ public sealed unsafe class Uploader
     /// (at load, before the first frame: VkGl opened a frame for such uploads, the native API does not) into a one-shot command buffer with
     /// staging of its own, which <see cref="UploadBatch.Dispose"/> submits and waits for. Render thread only.
     /// </summary>
-    public UploadBatch Begin() => new(ctx);
+    public IGpuUploadBatch Begin() => new UploadBatch(ctx);
 
     /// <summary>Orders successive uploads (two writes to overlapping ranges must not race).</summary>
     internal static void TransferBarrier(Vk vk, CommandBuffer cmd)
@@ -79,7 +79,7 @@ public sealed unsafe class Uploader
 /// one-shot command buffer that <see cref="Dispose"/> submits and waits for. <see cref="Commands"/> takes what goes with the uploads (layout
 /// transitions, <see cref="CommandList.GenerateMips"/>); they run after the uploads recorded before them.
 /// </summary>
-public sealed unsafe class UploadBatch : IDisposable
+public sealed unsafe class UploadBatch : IGpuUploadBatch
 {
     readonly GpuContext ctx;
     readonly bool immediate;
@@ -94,6 +94,7 @@ public sealed unsafe class UploadBatch : IDisposable
 
     /// <summary>Where the batch records (the frame's <see cref="GpuFrame.PreFrame"/>, or the one-shot buffer).</summary>
     public CommandList Commands { get; }
+    IGpuCommandList IGpuUploadBatch.Commands => Commands;
 
     /// <summary>A new texture in GENERAL layout, its transition recorded into this batch.</summary>
     public GpuTexture Create(TextureDesc desc) => ctx.CreateTexture(desc, Commands.Handle);

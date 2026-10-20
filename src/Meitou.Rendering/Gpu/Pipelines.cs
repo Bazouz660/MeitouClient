@@ -188,7 +188,7 @@ public static unsafe class PipelineFactory
 /// thread-safe); <see cref="Get"/> while drawing returns a prepared one, and a miss creates it synchronously and counts it in
 /// <see cref="LatePipelines"/>, which should stay 0 after the warm-up frames.
 /// </summary>
-public sealed unsafe class PipelineLibrary : IDisposable
+public sealed unsafe class PipelineLibrary : IGpuPipelines, IDisposable
 {
     readonly VulkanDevice device;
     readonly ShaderLibrary shaders;

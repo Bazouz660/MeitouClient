@@ -11,7 +11,7 @@ namespace Meitou.Rendering;
 /// <summary>Half-resolution clouds, independent view histories and a world-space sun-transmission map.</summary>
 public sealed class VolumetricCloudRenderer : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly SampledImage noise;
     readonly LegacyProgram march, resolve, shadow;
     readonly NativeSegment marchSegment, resolveSegment, shadowSegment;
@@ -41,7 +41,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         }
     }
 
-    public VolumetricCloudRenderer(GpuContext gpu)
+    public VolumetricCloudRenderer(IGpuContext gpu)
     {
         this.gpu = gpu;
         mainTimer = new(gpu); mirrorTimer = new(gpu); shadowTimer = new(gpu);
@@ -122,7 +122,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         march.Set(march.Uniform("uInverse"), in inverse);
         march.Set(march.Uniform("uKey"), key); march.Set(march.Uniform("uLight"), light); march.Set(march.Uniform("uAmbient"), ambient);
         march.ApplyGlobals();
-        march.Set(march.Uniform("uSteps"), gpu.Device.IsIntegrated ? 64 : 96);
+        march.Set(march.Uniform("uSteps"), gpu.IsIntegrated ? 64 : 96);
         // The reach round a texel's centre: the bilinear lookup of the full-size sky reads a texel from up to one texel away, and the fog pass's
         // ray is the unjittered pixel centre (half a full-size pixel, a quarter texel, off); 1.5 texels with room to spare.
         march.Set(march.Uniform("uFogSkip"), fogSkip ? 1 : 0, FogSkipReach * 2f / w, FogSkipReach * 2f / ht, 0);

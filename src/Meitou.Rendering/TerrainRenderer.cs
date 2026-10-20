@@ -154,7 +154,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     static float BandOf(HeightWindow w) => Math.Clamp((w.Columns - 1) * w.Spacing * 0.1f, w.Spacing * 4, 3000);
 
     /// <summary>A height texture (GL's R16, one level, linear, clamped) through <paramref name="batch"/>, with <paramref name="raw"/> written when given.</summary>
-    TerrainTexture HeightTexture(UploadBatch batch, ushort[]? raw, int width, int height)
+    TerrainTexture HeightTexture(IGpuUploadBatch batch, ushort[]? raw, int width, int height)
     {
         var t = batch.Create(new TextureDesc(InternalFormat.R16, width, height, Name: "terrain heights"));
         if (raw is not null) batch.Write(t, 0, 0, Rect(0, 0, width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(raw.AsSpan(0, width * height)));
@@ -431,7 +431,6 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             if (Own > 2) throw new NotSupportedException($"{name}: more than two own vertex inputs");
         }
 
-        public Silk.NET.Vulkan.PipelineLayout Layout => ctx.Shaders.Backend(P).Layout;
 
         public VertexLayout VertexLayout(ReadOnlySpan<LegacyProgram.Attribute?> byLocation)
         {

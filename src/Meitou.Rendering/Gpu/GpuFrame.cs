@@ -105,6 +105,9 @@ public sealed unsafe class GpuFrame : IDisposable, IGpuFrame
     IGpuCommandList IGpuFrame.Commands => Commands;
     /// <summary>Host-visible memory for this frame (constants, CPU-written instances and indirect arguments).</summary>
     public LinearAllocator Constants => constants[Slot];
+
+    /// <inheritdoc cref="IGpuFrame.WriteConstants"/>
+    public Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16) => Constants.Write(data, alignment);
     /// <summary>Host-visible staging for this frame's uploads (<see cref="Uploader"/>): copy sources only, so its reset trims it.</summary>
     public LinearAllocator Staging => staging[Slot];
     public QueryArena Timestamps { get; }

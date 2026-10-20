@@ -130,7 +130,7 @@ internal sealed unsafe class VulkanProgram : IDisposable
 /// Compiles programs for the three models (docs/renderer-native.md 3). The legacy path is the one VkGl uses (VkGl compiles through
 /// <see cref="Compiler"/> too), so a legacy program's modules are byte-identical to VkGl's.
 /// </summary>
-public sealed unsafe class ShaderLibrary
+public sealed unsafe class ShaderLibrary : IGpuShaders
 {
     readonly VulkanDevice device;
     readonly List<VulkanProgram> programs = [];

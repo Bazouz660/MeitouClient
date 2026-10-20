@@ -33,7 +33,7 @@ public readonly record struct SamplerDesc(TextureMinFilter Min, TextureMagFilter
 /// has it, and on NVIDIA a −0.25 LOD bias for anisotropic samplers (its OpenGL picked mips a quarter level finer than its Vulkan driver;
 /// DECISIONS 9). Render thread only.
 /// </summary>
-public sealed unsafe class SamplerCache : IDisposable
+public sealed unsafe class SamplerCache : IGpuSamplers, IDisposable
 {
     readonly VulkanDevice device;
     readonly Dictionary<SamplerDesc, int> samplers = [];

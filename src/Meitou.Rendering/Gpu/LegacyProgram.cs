@@ -37,7 +37,7 @@ public sealed record VertexArrayBindings(LegacyProgram.Attribute?[] Attributes, 
 /// </summary>
 public sealed unsafe class LegacyProgram : IDisposable
 {
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly ulong uniformAlign;              // the default blocks' slice alignment (the device limit, at least 16)
     readonly List<(string Name, UniformLookup? Vertex, UniformLookup? Fragment)> uniforms = [];
     readonly Dictionary<string, int> uniformIndex = [];
@@ -57,13 +57,12 @@ public sealed unsafe class LegacyProgram : IDisposable
     Transient vertexSlice, fragmentSlice;
     readonly Dictionary<(ulong, ulong), GpuSet> dynamicSets = [];
 
-    LegacyProgram(GpuContext ctx, GpuProgram program)
+    LegacyProgram(IGpuContext ctx, GpuProgram program)
     {
         this.ctx = ctx;
-        backend = ctx.Shaders.Backend(program);
         uniformAlign = Math.Max(ctx.UniformBufferAlign, 16);
         Program = program;
-        var c = backend.Compiled!;
+        var c = Program.Compiled!;
         VertexBlock = c.Vertex.DefaultBlock;
         FragmentBlock = c.Fragment.DefaultBlock;
         VertexDefault = new byte[VertexBlock?.Size ?? 0];
@@ -84,12 +83,10 @@ public sealed unsafe class LegacyProgram : IDisposable
     }
 
     /// <summary>Compiles (or takes from the caches) the pair as VkGl would and builds VkGl's layout.</summary>
-    public static LegacyProgram Create(GpuContext ctx, string vertexGlsl, string fragmentGlsl, string name) =>
+    public static LegacyProgram Create(IGpuContext ctx, string vertexGlsl, string fragmentGlsl, string name) =>
         new(ctx, ctx.Shaders.Legacy(vertexGlsl, fragmentGlsl, name));
 
     public GpuProgram Program { get; }
-    readonly VulkanProgram backend;
-    public PipelineLayout Layout => backend.Layout;
     public string Name => Program.Name;
     public UniformBlockInfo? VertexBlock { get; }
     public UniformBlockInfo? FragmentBlock { get; }
@@ -108,7 +105,7 @@ public sealed unsafe class LegacyProgram : IDisposable
     public UniformHandle Uniform(string glName)
     {
         if (uniformIndex.TryGetValue(glName, out int i)) return new UniformHandle(i);
-        var c = backend.Compiled!;
+        var c = Program.Compiled!;
         var v = Loose(c.Vertex.FindUniform(glName));
         var f = Loose(c.Fragment.FindUniform(glName));
         if (v is null && f is null) i = -1;
@@ -208,8 +205,8 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (sliceFrame != frame.Number) { vertexDirty = fragmentDirty = true; sliceFrame = frame.Number; }
             bool moved = false;
             ulong align = uniformAlign;
-            if (vertexDirty && VertexDefault.Length > 0) { vertexSlice = frame.Constants.Write<byte>(VertexDefault, align); vertexDirty = false; moved = true; frame.Stats.ConstantBytes += VertexDefault.Length; }
-            if (fragmentDirty && FragmentDefault.Length > 0) { fragmentSlice = frame.Constants.Write<byte>(FragmentDefault, align); fragmentDirty = false; moved = true; frame.Stats.ConstantBytes += FragmentDefault.Length; }
+            if (vertexDirty && VertexDefault.Length > 0) { vertexSlice = frame.WriteConstants(VertexDefault, align); vertexDirty = false; moved = true; frame.Stats.ConstantBytes += VertexDefault.Length; }
+            if (fragmentDirty && FragmentDefault.Length > 0) { fragmentSlice = frame.WriteConstants(FragmentDefault, align); fragmentDirty = false; moved = true; frame.Stats.ConstantBytes += FragmentDefault.Length; }
             if (moved || programChanged)
             {
                 var set = DynamicSet();
@@ -286,7 +283,7 @@ public sealed unsafe class LegacyProgram : IDisposable
         int n = 0;
         if (VertexBlock is { } vb) bindings[n++] = GpuBinding.Uniform(0, new GpuBufferBinding(vertexSlice.Handle, 0, (ulong)vb.Size));
         if (FragmentBlock is { } fb) bindings[n++] = GpuBinding.Uniform(1, new GpuBufferBinding(fragmentSlice.Handle, 0, (ulong)fb.Size));
-        var set = ctx.CreateSet(backend.NeutralSets[1], bindings[..n]);
+        var set = ctx.CreateSet(Program.NeutralSets[1], bindings[..n]);
         dynamicSets[key] = set;
         return set;
     }
@@ -332,7 +329,7 @@ public sealed unsafe class LegacyProgram : IDisposable
             int input = Array.IndexOf(InputLocations, loc);
             result[i] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? InputKinds[input] : ScalarKind.Float));
+                : new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? InputKinds[input] : ScalarKind.Float));
         }
         return result;
     }
@@ -350,7 +347,7 @@ public sealed unsafe class LegacyProgram : IDisposable
             if (n == 0) first = (uint)loc;
             run[n++] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(InputKinds[i]));
+                : new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(InputKinds[i]));
         }
         if (n > 0) cmd.BindVertexBuffers(first, run[..n]);
     }

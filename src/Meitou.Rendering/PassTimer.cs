@@ -6,7 +6,7 @@ namespace Meitou.Rendering;
 /// GPU time of a pass from two native timestamps (the frame's <see cref="QueryArena"/>), written where the frame's commands are going
 /// (<see cref="GpuContext.Interleave"/>: an open host pass is not ended). Results arrive when the frame's slot comes round; nothing waits.
 /// </summary>
-sealed class PassTimer(GpuContext gpu)
+sealed class PassTimer(IGpuContext gpu)
 {
     readonly Queue<(QuerySlot Start, QuerySlot End)> pending = new();
     QuerySlot start, stamp;
@@ -57,10 +57,10 @@ sealed class PassTimer(GpuContext gpu)
 /// the data as it is now in a slice of the frame's constants, so a segment prepared earlier keeps what it was given (as VkGl renamed a GL
 /// buffer written after a draw had read it). It starts as zeros (shadows off, as the zero-filled GL buffers on the binding points were).
 /// </summary>
-sealed class FrameBlock(GpuContext gpu, int bytes)
+sealed class FrameBlock(IGpuContext gpu, int bytes)
 {
     readonly float[] data = new float[bytes / 4];
-    readonly ulong align = Math.Max(gpu.Device.Limits.MinUniformBufferOffsetAlignment, 16);
+    readonly ulong align = Math.Max(gpu.UniformBufferAlign, 16);
     int version = 1, written = -1;
     long frame = -1;
     GpuBufferBinding binding;
@@ -73,7 +73,7 @@ sealed class FrameBlock(GpuContext gpu, int bytes)
         var f = gpu.Frame;
         if (frame != f.Number || written != version)
         {
-            binding = f.Constants.Write<float>(data, align).Binding;
+            binding = f.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes((ReadOnlySpan<float>)data), align).Binding;
             (frame, written) = (f.Number, version);
             f.Stats.ConstantBytes += data.Length * 4;
         }

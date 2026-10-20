@@ -48,7 +48,7 @@ public sealed class ImpostorTextures : IDisposable
     /// <param name="batch">Where the textures' layout transitions are recorded (<see cref="Uploader.Begin"/>).</param>
     /// <param name="skip">Top levels of the albedo to leave out; <paramref name="surfaceSkip"/> those of the normal map (at
     /// most all but the last level).</param>
-    public ImpostorTextures(GpuContext gpu, ImpostorAtlas atlas, UploadBatch batch, int skip = 0, int surfaceSkip = 0)
+    public ImpostorTextures(GpuContext gpu, ImpostorAtlas atlas, IGpuUploadBatch batch, int skip = 0, int surfaceSkip = 0)
     {
         this.gpu = gpu;
         Atlas = atlas;
@@ -116,7 +116,7 @@ public sealed class ImpostorTextures : IDisposable
     }
 
     /// <summary>Writes the next slab of the next (map, level) through <paramref name="batch"/>; false when everything is written.</summary>
-    public bool UploadStep(UploadBatch batch)
+    public bool UploadStep(IGpuUploadBatch batch)
     {
         if (Complete) return false;
         int source = skips[map] + level;
@@ -140,7 +140,7 @@ public sealed class ImpostorTextures : IDisposable
     }
 
     /// <summary>Writes every level through <paramref name="batch"/>.</summary>
-    public void Upload(UploadBatch batch)
+    public void Upload(IGpuUploadBatch batch)
     {
         while (UploadStep(batch)) { }
     }

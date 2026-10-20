@@ -25,4 +25,10 @@ public interface IGpuFrame
 
     /// <summary>The frame's statistics (the passes', draws' and dispatches' counters).</summary>
     GpuStats Stats { get; }
+
+    /// <summary>Writes bytes into the frame's constant ring (the default blocks' slices), aligned; the slice lives for the frame.</summary>
+    Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16);
+
+    /// <summary>The frame's timestamp queries (a pass's two stamps, read when the frame's slot comes round).</summary>
+    QueryArena Timestamps { get; }
 }

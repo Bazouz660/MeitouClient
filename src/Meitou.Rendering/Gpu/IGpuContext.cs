@@ -1,3 +1,4 @@
+using Meitou.Rendering.Gpu.Shaders;
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>
@@ -33,19 +34,22 @@ public interface IGpuContext
     IGpuFrame Frame { get; }
 
     /// <summary>The pipelines by description (the engine's own).</summary>
-    PipelineLibrary Pipelines { get; }
+    IGpuPipelines Pipelines { get; }
 
     /// <summary>The programs the engine's shaders compile to.</summary>
-    ShaderLibrary Shaders { get; }
+    IGpuShaders Shaders { get; }
 
     /// <summary>The samplers by description (the backend's objects; the renderers hold the handles).</summary>
-    SamplerCache Samplers { get; }
+    IGpuSamplers Samplers { get; }
 
     /// <summary>The uploads (the staging copies into the textures and the buffers).</summary>
-    Uploader Uploads { get; }
+    IGpuUploads Uploads { get; }
 
-    /// <summary>The stand-ins the samplers read when nothing is bound.</summary>
-    GpuDefaults Defaults { get; }
+    /// <summary>The stand-in a sampler reads when nothing is bound (GL's default texture, by the sampler's declaration).</summary>
+    SampledTexture Dummy(SamplerInfo sampler);
+
+    /// <summary>The generic attribute value a disabled vertex input reads (GL's constant (0, 0, 0, 1), bound with stride 0).</summary>
+    GpuBuffer DummyVertex { get; }
 
     /// <summary>Frame-global textures, blocks and uniform values by GLSL name (docs/renderer-native.md 4.3).</summary>
     FrameGlobals Globals { get; }
@@ -73,6 +77,18 @@ public interface IGpuContext
 
     /// <summary>Closes a guest segment (<see cref="BeginGuest"/>).</summary>
     void EndGuest(IGpuCommandList cmd);
+
+    /// <summary>
+    /// A native segment of its own outside any pass (a full barrier before and after; nothing is assumed bound): copies, dispatches and
+    /// the renderers' own renderings. Closed by <see cref="EndNative"/>.
+    /// </summary>
+    IGpuCommandList BeginNative(string label);
+
+    /// <summary>Closes a native segment (<see cref="BeginNative"/>).</summary>
+    void EndNative(IGpuCommandList cmd);
+
+    /// <summary>Whether a host pass or a native segment is open (the guests check it before they draw).</summary>
+    bool PassOpen { get; }
 
     /// <summary>What the open pass draws into (its host's targets, viewport and scissor); throws when no pass is open.</summary>
     PassTargets CurrentTargets();

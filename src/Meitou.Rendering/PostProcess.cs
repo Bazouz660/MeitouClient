@@ -358,7 +358,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>A target of a GL internal format (the format VkGl made of it), with the uses VkGl's image had, one level unless asked.</summary>
-    Target2D Make(UploadBatch batch, int w, int h, InternalFormat glFormat, TextureMinFilter min, string name, int levels = 1)
+    Target2D Make(IGpuUploadBatch batch, int w, int h, InternalFormat glFormat, TextureMinFilter min, string name, int levels = 1)
     {
         var use = TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst | (GlConventions.IsDepthFormat(glFormat) ? TextureUse.DepthTarget : TextureUse.ColourTarget);
         if (glFormat is InternalFormat.Rgba16f or InternalFormat.R32f or InternalFormat.RG16f or InternalFormat.RG32f && SupportsStorage(glFormat)) use |= TextureUse.Storage;

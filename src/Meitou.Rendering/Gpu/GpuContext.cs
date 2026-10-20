@@ -123,6 +123,11 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     public GpuFrame Frame { get; }
     /// <summary>The frame as the seam's interface (<see cref="IGpuContext.Frame"/>).</summary>
     IGpuFrame IGpuContext.Frame => Frame;
+    /// <summary>The services as the seam's interfaces (<see cref="IGpuContext"/>; the renderers on the concrete context keep the backend's classes).</summary>
+    IGpuShaders IGpuContext.Shaders => Shaders;
+    IGpuPipelines IGpuContext.Pipelines => Pipelines;
+    IGpuSamplers IGpuContext.Samplers => Samplers;
+    IGpuUploads IGpuContext.Uploads => Uploads;
     /// <summary>The upscaler's texture LOD bias: added to the mip level of every mipmapped fetch (set by the post-processing chain).</summary>
     public float LodBias { get; set; }
 
@@ -183,6 +188,9 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
 
     readonly Dictionary<(int, ScalarKind, bool), SampledTexture> dummies = [];
     readonly List<GpuTexture> dummyTextures = [];
+
+    /// <summary>The generic attribute value a disabled vertex input reads (<see cref="GpuDefaults.DummyVertex"/>).</summary>
+    public GpuBuffer DummyVertex => Defaults.DummyVertex.Handle;
 
     /// <summary>The stand-in a sampler reads when nothing is bound: (0, 0, 0, 1), or depth 1 for a shadow sampler.</summary>
     public SampledTexture Dummy(SamplerInfo sampler)
