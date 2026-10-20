@@ -252,11 +252,8 @@ public static class CommandGate
         On<PutShacklesOrder>((c, x) => Targeted(c, x, x.Characters, x.Wearer, (y, l) => y with { Characters = l }));
         On<ShackleOrder>((c, x) => Enum.IsDefined(x.Work) ? Targeted(c, x, x.Characters, x.Wearer, (y, l) => y with { Characters = l }) : No(BadValue));
 
-        On<SelectCommand>((c, x) =>
-        {
-            var owned = x.Characters.Where(c.Owned).ToArray();
-            return owned.Length == 0 ? No(NotYours) : Ok(owned.Length == x.Characters.Count ? x : x with { Characters = owned });
-        });
+        // An empty select (a click on the ground) keeps the selection in the simulation, so it passes like an empty order list rather than raising a refusal at every click.
+        On<SelectCommand>((c, x) => Listed(c, x, x.Characters, (y, l) => y with { Characters = l }));
         // No selection fallback exists for an attack; a remote player's fight is never a defence (only the retaliation system makes those).
         On<AttackOrder>((c, x) => x.Attackers.Count == 0 ? No(NotYours) : Targeted(c, x with { Defensive = false }, x.Attackers, x.Target, (y, l) => y with { Attackers = l }));
 
@@ -344,6 +341,8 @@ public static class CommandGate
             if (!Finite(v.X, v.Y, v.Z)) return false;
         foreach (var (_, v) in look.Vector4s)
             if (!Finite(v.X, v.Y, v.Z, v.W)) return false;
+        foreach (var instance in look.Instances)
+            if (!Finite(instance.Position.X, instance.Position.Y, instance.Position.Z, instance.Rotation.X, instance.Rotation.Y, instance.Rotation.Z, instance.Rotation.W)) return false;
         return true;
     }
 }
