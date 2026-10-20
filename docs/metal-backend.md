@@ -527,10 +527,12 @@ harness or the simulation's population draw list; `--new-game` starts the player
 
 Verified: `--crowd 6` on open ground (`--at -50000,8000`, `--distance 180`) draws six skinned characters (30
 parts, 52k triangles, 23 calls) with validation clean; `--new-game` at the Hub draws the player (4 parts, 4 calls).
-The Vulkan viewer's same `--crowd 6` view draws the same six characters (26k triangles; its LOD picks a coarser
-mix). Not yet: the town residents (the Metal loop does not run the full population loading/zone warm-up; the
-player squad is there), the character motion pass for TAA, and the portrait/icon/stage/hover passes (the renderer
-code is widened and compiles, but the Metal host does not call them). The UI is step 5.
+A closer open-ground view shows the characters' cast shadows in the cascades. The Vulkan viewer's same
+`--crowd 6` view draws the same six characters (26k triangles; its LOD picks a coarser mix). The Hub's town
+residents are mostly indoors on Vulkan too (in a play test they were only in the bar and one tower), so the
+outdoor still shows only the player; the `--crowd` harness covers the outdoor crowd. Not yet: the character motion
+pass for TAA, and the portrait/icon/stage/hover passes (the renderer code is widened and compiles, but the Metal
+host does not call them). The UI is step 5.
 
 ### 5. The UI (plan step 8)
 
