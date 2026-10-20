@@ -21,9 +21,10 @@ public sealed partial class World
         Characters.Phase = TablePhase.Inputs;
         try
         {
+            // In system order, as a tick's Inputs phase runs them: the joins at the population system's place.
             foreach (var system in systems)
                 if (system is PlayerSystem or Trading.TradeSystem or Construction.ConstructionSystem or Dialogue.DialogueSystem) system.Inputs(this, due);
-            foreach (var population in systems.OfType<PopulationSystem>()) population.ApplyJoins(this, due);
+                else if (system is PopulationSystem population) population.ApplyJoins(this, due);
         }
         finally
         {

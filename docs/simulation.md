@@ -1027,7 +1027,7 @@ Not implemented yet: every queued command is applied as its issuer's.
   says a line, nearest first, at most `TalkableMax` 64; cached per player for `TalkableEveryTicks` 15 ticks while the talker is the same. The dry run
   puts the dialogue dice back.
 - **Paused path**: `ApplyPausedInterfaceCommands` also takes the host-only `JoinPlayer` and `TransferSquad` and calls the population's `ApplyJoins`,
-  under the same Inputs phase (they never occur in single-player).
+  under the same Inputs phase and in system order as a tick runs them (the joins at the population system's place; they never occur in single-player).
 - **Replica worlds** (a net client's): `MakeReplica(seed)` (no systems, tick 0; sets the seed) makes `IsReplica`. `RunTick` and
   `ApplyPausedInterfaceCommands` throw ("a replica world never ticks"); `PreparePopulation` returns true; `CanTalk(id, _)` is
   `Snapshot.Talkable.Contains(id)`. `Present(previous, current)` sets both snapshots and `Tick = current.Tick` (it may step back when the
