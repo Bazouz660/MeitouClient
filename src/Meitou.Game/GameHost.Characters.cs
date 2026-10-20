@@ -43,18 +43,18 @@ sealed partial class GameHost
         indexedFor = previous;
     }
 
-    /// <summary>Where a character is drawn: between the last two snapshots, by the simulation's alpha (a carried body on its carrier's left shoulder).</summary>
+    /// <summary>Where a character is drawn: between the last two snapshots, by the motion alpha (a replica may extrapolate; a carried body on its carrier's left shoulder).</summary>
     Vector3 DrawnPosition(CharacterSnapshot c)
     {
         IndexPrevious();
-        var at = previousById.TryGetValue(c.Id, out var before) ? Vector3.Lerp(before.Position, c.Position, session.SimulationAlpha) : c.Position;
+        var at = previousById.TryGetValue(c.Id, out var before) ? Vector3.Lerp(before.Position, c.Position, session.MotionAlpha) : c.Position;
         return at + CarriedOffset(c, c.Yaw);
     }
 
     /// <summary>A carried body has its carrier's position; it is drawn at <see cref="Meitou.Simulation.Carrying.CarryPose"/> from it, where its ragdoll is posed too.</summary>
     static Vector3 CarriedOffset(CharacterSnapshot c, float yaw) => c.CarriedBy.IsNone ? Vector3.Zero : Meitou.Simulation.Carrying.CarryPose.Offset(yaw);
 
-    /// <summary>Fills the renderer's list from the last two snapshots, interpolated by the simulation's alpha.</summary>
+    /// <summary>Fills the renderer's list from the last two snapshots: positions and facings by the motion alpha, animation and ragdolls by the simulation's alpha.</summary>
     void FillDrawList(CharacterDrawList list)
     {
         long f0 = Stopwatch.GetTimestamp();
@@ -90,7 +90,9 @@ sealed partial class GameHost
     {
         var current = session.CurrentSnapshot;
         IndexPrevious();
-        float alpha = session.SimulationAlpha;
+        float alpha = session.SimulationAlpha, motion = session.MotionAlpha;
+        // A replica's snapshots can be several ticks apart, so a looping clip that wrapped between them is unwrapped rather than shown at its new time.
+        bool unwrap = session.Mode == SessionMode.Replica;
         // The character editor is a scene of its own (GameHost.Editor.cs): only the character being edited is posed and drawn.
         var editing = player.EditorFocus?.Character;
         foreach (var c in current.Characters)
@@ -102,8 +104,8 @@ sealed partial class GameHost
             if (previousById.TryGetValue(c.Id, out var found))
             {
                 before = found;
-                position = Vector3.Lerp(found.Position, c.Position, alpha);
-                yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, alpha);
+                position = Vector3.Lerp(found.Position, c.Position, motion);
+                yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, motion);
             }
             position += CarriedOffset(c, yaw);
             var poses = new CharacterPose[c.Animations.Count];
@@ -111,12 +113,17 @@ sealed partial class GameHost
             {
                 var layer = c.Animations[i];
                 float time = layer.Time, weight = layer.Weight;
-                // Between ticks the clip time and weight move on from the last snapshot (a wrap of a looping clip just shows the new time).
+                // Between ticks the clip time and weight move on from the last snapshot (a wrap of a looping clip just shows the new time, but on a replica it runs on through the end).
                 if (before is not null)
                     foreach (var old in before.Animations)
                         if (old.Name == layer.Name)
                         {
                             if (layer.Time >= old.Time) time = old.Time + (layer.Time - old.Time) * alpha;
+                            else if (unwrap && layer.Length > 0)
+                            {
+                                time = old.Time + (layer.Time + layer.Length - old.Time) * alpha;
+                                if (time >= layer.Length) time -= layer.Length;
+                            }
                             weight = old.Weight + (layer.Weight - old.Weight) * alpha;
                             break;
                         }

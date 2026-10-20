@@ -1045,7 +1045,38 @@ session or uses up a grant.
 
 ### Per-viewer snapshots
 
-Not implemented yet: the world publishes player 0's view; the snapshot's viewer, faction, relation, talkable, creation and owner members keep their defaults.
+- **Core and views** (`WorldPublish.cs`): a publish builds a viewer-independent core (characters in slot order without viewer details, plus the
+  shared world: projectiles, speech, towns, camps, `SquadAi`, buildings, ground items, doors, containers, machines, research, crafts, `PlayerFaction`,
+  `Money`, `Relations`), then `ViewOf(session)` overlays one player's view. The tick's `Snapshot` is player 0's view with an empty `Talkable`;
+  only the tick's publish queues heal floaters.
+- **Character overlay**: on the viewer's selected (owned player characters) and inspected characters only, `Selected`, `Inspected`, `Skills`,
+  `Inventory`, `AllSkills`, `SkillXpMultipliers`, `Hud`, `HealthParts`, `ItemGrid`, `Bounties`, `Path`, `CarriesShackles`; `StealthKoChance` on
+  knock-outable NPCs, against the viewer's first selected character that can knock out. Everything else is core, including `Owner`
+  (`World.OwnerOf`: the squad owner for a player character, -1 otherwise).
+- **World overlay**: `Viewer`; `Trade`, `Conversation`, `DialogueRequest` of that player; `PlayerSquads` = the viewer's squads only;
+  `ActiveSquad`, `InspectedBuilding`, the open container appended to `Machines`, `Prospected`, `InCreation`, `CreationRaces` from the session.
+- **`PublishFor(n)`** (host thread, between ticks): reuses the last core while the state stamp is unchanged (bumped by `RunTick`, by
+  `ApplyPausedInterfaceCommands` when it applies commands, by `PreparePopulation` and by a replica's `Present`), else builds a core without heal
+  floaters. It never creates a session (an unknown player gets an empty overlay) and leaves `StateHash` unchanged.
+- **`Relations`**: the player faction's row (`FactionRelations.Get(PlayerFaction, f)`) from the population system's data, else the player
+  system's; rebuilt when the table's `Changes`, the table or the player faction changed; `RelationsRevision` (world-local) moves only when the
+  values differ.
+- **`Talkable`** (only from `PublishFor`; engine choices): the talker is the viewer's first selected character that resolves, is a player character
+  and is not incapacitated; the set holds NPCs within `TalkableRange` 1500 (XZ, `Previous` positions) for which the dialogue's `CanTalk(talker)` dry run
+  says a line, nearest first, at most `TalkableMax` 64; cached per player for `TalkableEveryTicks` 15 ticks while the talker is the same. The dry run
+  puts the dialogue dice back.
+- **Paused path**: `ApplyPausedInterfaceCommands` also takes the host-only `JoinPlayer` and `TransferSquad` and calls the population's `ApplyJoins`,
+  under the same Inputs phase and in system order as a tick runs them (the joins at the population system's place; they never occur in single-player).
+- **Replica worlds** (a net client's): `MakeReplica(seed)` (no systems, tick 0; sets the seed) makes `IsReplica`. `RunTick` and
+  `ApplyPausedInterfaceCommands` throw ("a replica world never ticks"); `PreparePopulation` returns true; `CanTalk(id, _)` is
+  `Snapshot.Talkable.Contains(id)`. `Present(previous, current)` sets both snapshots and `Tick = current.Tick` (it may step back when the
+  client's presentation snaps) and mirrors into `PlayerState` the faction, money and the local session's selection (characters marked selected,
+  slot order), inspected character, active squad, creation and prospecting. None of it is hashed.
+- **`WorldSession`** (`Meitou.Engine`): `Mode` is `SessionMode.Local` or `Replica`, set by `ReplaceWorld(systems, setup, mode)` (a replica takes no
+  systems and a setup that calls `MakeReplica`, else `ArgumentException`). In `Replica`, `Advance` runs control ticks only and `AdvanceSimulation`
+  throws; `Present(previous, current, alpha, motionAlpha)` presents and keeps `SimulationAlpha` (clamped 0..1: animation, weights, ragdolls) and
+  `MotionAlpha` (0..2, extrapolation: positions and yaw); in `Local` both alphas are the simulation clock's. The game host draws positions by
+  `MotionAlpha` and, on a replica, runs a looping clip that wrapped between two snapshots on through its end instead of jumping to the new time.
 
 ### Joining
 
