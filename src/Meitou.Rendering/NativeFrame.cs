@@ -20,8 +20,7 @@ namespace Meitou.Rendering;
 /// </remarks>
 sealed unsafe class NativeFrame : IDisposable
 {
-    readonly GpuContext ctx;
-    readonly bool push;
+    readonly IGpuContext ctx;
     readonly ulong align;
     FrameConstants constants;
     FrameConstants written;
@@ -48,12 +47,11 @@ sealed unsafe class NativeFrame : IDisposable
     /// <summary>Storage buffers a consumer's own programs read at set 0, bindings 6 and up (<c>readonly buffer</c> in the shader), given to <see cref="Bind"/>.</summary>
     readonly int extraStorage;
 
-    public NativeFrame(GpuContext ctx, int extraStorage = 0)
+    public NativeFrame(IGpuContext ctx, int extraStorage = 0)
     {
         this.ctx = ctx;
         this.extraStorage = extraStorage;
-        push = ctx.Device.HasPushDescriptor;
-        align = Math.Max(ctx.Device.Limits.MinUniformBufferOffsetAlignment, 16);
+        align = Math.Max(ctx.UniformBufferAlign, 16);
         SetLayout = GpuSetLayout.Written(
         [
             .. Enumerable.Range(0, 6).Select(b => new GpuSlot((uint)b, GpuSlotKind.UniformBuffer, GpuStage.All)),
@@ -125,14 +123,14 @@ sealed unsafe class NativeFrame : IDisposable
         // The frame block again only when it changed (the usual case within a frame: the same bytes, the same slice).
         if (writtenFrame != frame.Number || !bytes.SequenceEqual(MemoryMarshal.AsBytes(new Span<FrameConstants>(ref written))))
         {
-            frameSlice = frame.Constants.Write<FrameConstants>(new ReadOnlySpan<FrameConstants>(in constants), align);
+            frameSlice = frame.WriteConstants(MemoryMarshal.AsBytes(new ReadOnlySpan<FrameConstants>(in constants)), align);
             (written, writtenFrame) = (constants, frame.Number);
             frame.Stats.ConstantBytes += sizeof(FrameConstants);
         }
-        var viewSlice = frame.Constants.Write<ViewConstants>(new ReadOnlySpan<ViewConstants>(in view), align);
+        var viewSlice = frame.WriteConstants(MemoryMarshal.AsBytes(new ReadOnlySpan<ViewConstants>(in view)), align);
         frame.Stats.ConstantBytes += sizeof(ViewConstants);
         // Skinning matrices: no consumer skins yet; the block is valid memory that is never read (uSkinned is 0).
-        if (bonesFrame != frame.Number) { bones = frame.Constants.Allocate(BonesBytes, align); bonesFrame = frame.Number; }
+        if (bonesFrame != frame.Number) { bones = frame.WriteConstants(new byte[BonesBytes], align); bonesFrame = frame.Number; }
 
         int count = 6 + extraStorage;
         var result = new FrameBinding { Count = count };
@@ -147,8 +145,7 @@ sealed unsafe class NativeFrame : IDisposable
             if (value.IsNull)
             {
                 // Nothing published (no world program linked yet): zeros, as ShadowShaders.Bind's default blocks (shadows off).
-                var zeros = frame.Constants.Allocate((ulong)size, align);
-                zeros.Bytes.Clear();
+                var zeros = frame.WriteConstants(new byte[size], align);
                 value = zeros.Binding;
             }
             ulong range = value.Size == GpuBufferBinding.WholeSize ? (ulong)size : Math.Min((ulong)size, value.Size);

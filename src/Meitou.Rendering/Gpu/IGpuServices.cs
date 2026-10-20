@@ -10,6 +10,9 @@ public interface IGpuShaders
     /// <summary>Compiles (or takes from the caches) the GLSL pair as a legacy program (docs/renderer-native.md 3.2).</summary>
     GpuProgram Legacy(string vertexGlsl, string fragmentGlsl, string name);
 
+    /// <summary>Compiles (or takes from the caches) the GLSL pair as a native-model program (docs/renderer-native.md 3.2).</summary>
+    GpuProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes);
+
     /// <summary>Releases a program (its backend artifacts go once the frames in flight are done); the index is never reused.</summary>
     void Dispose(GpuProgram program);
 }
@@ -35,6 +38,9 @@ public interface IGpuSamplers
 
     /// <summary>The largest anisotropy the samplers use (the renderers' quality dial).</summary>
     int MaxAnisotropy { get; set; }
+
+    /// <summary>Bumped when the samplers' state changed (the anisotropy dial): the caches of sampler bindings compare it.</summary>
+    int Generation { get; }
 }
 
 /// <summary>The uploads (the staging copies into the textures and the buffers).</summary>

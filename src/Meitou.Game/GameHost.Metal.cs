@@ -2,6 +2,7 @@
 // Metal exists on macOS only; the file is compiled only there (the csproj's MEITOU_METAL constant).
 #pragma warning disable CA1416
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Numerics;
 using Meitou.Data.Textures;
 using Meitou.Engine;
@@ -59,6 +60,19 @@ sealed partial class GameHost
         display.Activate();
         Splash?.Dispose();
 
+        // The terrain: the whole-world heights, the quadtree's patch grid, and (unless textures are off) the biomes' layers and maps.
+        // The textures' CPU bake runs here once, as the Vulkan path's boot does before its loading frames.
+        var terrain = new TerrainRenderer(ctx, scene.Coarse, scene.CoarseSize, scene.Window);
+        TerrainTextures? terrainTextures = null;
+        if (!o.NoTextures && scene.Database is { } textureDb)
+        {
+            terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
+            terrain.SetTextures(terrainTextures);
+            Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, {terrainTextures.Capacity} biome slots");
+        }
+        else Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, untextured");
+        terrain.BeginFrame();
+
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
         var heights = new Meitou.Data.World.GroundHeights(scene.Window, scene.Coarse, scene.CoarseSize, WorldFrame.CoarseStep);
         var (walkability, systems, constants) = BootSimulation(heights, interactive: false);
@@ -89,10 +103,13 @@ sealed partial class GameHost
             // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
             var cmd = (MetalCommandList)ctx.BeginNative("scene");
             var backbuffer = ctx.Backbuffer;
+            var depth = ctx.Depth;
+            var albedo = ctx.Albedo;
             var size = window.FramebufferSize;
-            var targets = PassTargets.Of(backbuffer, null) with
+            var targets = PassTargets.Of(backbuffer, depth, albedo) with
             {
                 Colour = new RenderTarget(backbuffer.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
+                Depth = new RenderTarget(depth.Attachment(), LoadOp.Clear, default),
             };
             cmd.BeginRendering(targets.Rendering);
             ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
@@ -109,9 +126,15 @@ sealed partial class GameHost
             sky.Clock = scene.Clock;
             sky.Hour = hour;
             sky.StarSeconds = (float)(now % 3600);
-            var (colours, _) = sky.Prepare(scene.Clock.SunDirection(hour), eye.Y, o.FogDistance);
+            var (colours, light) = sky.Prepare(scene.Clock.SunDirection(hour), eye.Y, o.FogDistance);
             sky.StepClouds((float)dt);
             sky.Draw(viewProjection, colours);
+
+            // The terrain: the camera's own projection (near 0.5 .. the view distance), the quadtree's LOD, the sky's light.
+            var worldProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
+            var frustum = WorldCamera.FrustumPlanes(worldProjection);
+            terrain.BeginFrame();
+            terrain.Draw(worldProjection, eye, frustum, render, light);
 
             ctx.EndHostPass(cmd);
             cmd.EndRendering();
@@ -121,6 +144,7 @@ sealed partial class GameHost
             if (o.Screenshot is { } shot && frames == 40) { Capture(ctx, backbuffer, shot); break; }   // one picture, as the Vulkan flow's does
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        terrain.Dispose();   // owns the textures it was given
         sky.Dispose();
         Console.WriteLine($"metal     {frames} frames");
         return 0;

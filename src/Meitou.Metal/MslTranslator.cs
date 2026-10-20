@@ -79,8 +79,18 @@ public static unsafe class MslTranslator
             if (cross.CompilerCompile(compiler, &source) != Result.Success)
                 throw new InvalidOperationException($"spirv-cross could not compile the module: {Error(cross, context)}");
             var msl = Marshal.PtrToStringUTF8((nint)source) ?? "";
-            // The table's argument buffer takes the top free index (the set's own number would collide with the flattened sets).
-            if (argumentBufferSet is not null) msl = ArgumentBuffer.Replace(msl, $"$1 [[buffer({TableBinding})]]");
+            // Every descriptor set is an argument buffer in this mode: each takes its stage's flattened set index (the vertex stage's
+            // above the vertex buffers), the table's the fixed free one.
+            if (argumentBufferSet is { } table)
+                msl = ArgumentBuffer.Replace(msl, m =>
+                {
+                    uint set = uint.Parse(m.Groups[2].Value);
+                    // The vertex stage's sets start above its vertex buffers; Metal's buffer table ends at 30.
+                    uint index = set == table ? TableBinding
+                        : stage == ExecutionModel.Vertex ? MetalShaders.VertexBlockBase + set
+                        : set;
+                    return $"constant {m.Groups[1].Value} [[buffer({index})]]";
+                });
             // This spirv-cross has no binding option for push constants: the block comes out at [[buffer(0)]] — the stage's
             // low indices belong to the flattened resources and the vertex buffers (MetalShaders's numbers), the top index
             // to the push constants. The block is identifiable by the engine's name for it (NativeShaders.PushBlock's "Push").
@@ -89,7 +99,7 @@ public static unsafe class MslTranslator
     }
 
     static readonly System.Text.RegularExpressions.Regex ArgumentBuffer =
-        new(@"((?:const device |constant )spvDescriptorSet[_A-Za-z0-9]*& [^ ]+) \[\[buffer\([0-9]+\)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@"constant (spvDescriptorSetBuffer(\d+)& [^ ]+) \[\[buffer\([0-9]+\)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     static readonly System.Text.RegularExpressions.Regex PushBlock =
         new(@"constant Push& ([_A-Za-z0-9]+) \[\[buffer\([0-9]+\)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);

@@ -44,7 +44,7 @@ public sealed class DeviceBuffer : IDisposable
         Name = name;
     }
     /// <summary>A new device-local buffer of <paramref name="size"/> bytes.</summary>
-    public static DeviceBuffer Create(GpuContext ctx, ulong size, BufferUse use, string name) =>
+    public static DeviceBuffer Create(IGpuContext ctx, ulong size, BufferUse use, string name) =>
         new(ctx, ctx.CreateBuffer(size, use, name), owned: true, name);
 
     internal static BufferUsageFlags Usage(BufferUse use)

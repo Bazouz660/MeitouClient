@@ -51,10 +51,16 @@ public sealed class MetalPipelines : IGpuPipelines
         attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.B) ? attachment.WriteMask | MTLColorWriteMask.Blue : attachment.WriteMask & ~MTLColorWriteMask.Blue;
         attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.A) ? attachment.WriteMask | MTLColorWriteMask.Alpha : attachment.WriteMask & ~MTLColorWriteMask.Alpha;
         d.ColorAttachments.SetObject(attachment, 0);
+        if (desc.Targets.Extra != InternalFormat.None)
+        {
+            var extra = d.ColorAttachments.Object(1);
+            extra.PixelFormat = MetalConventions.Pixel(desc.Targets.Extra);
+            extra.WriteMask = MTLColorWriteMask.All;
+            d.ColorAttachments.SetObject(extra, 1);
+        }
 
         if (desc.Targets.Depth != InternalFormat.None) d.DepthAttachmentPixelFormat = MetalConventions.Pixel(desc.Targets.Depth);
         if (desc.Vertex.Inputs.Length > 0) d.VertexDescriptor = VertexDescriptor(desc.Vertex);
-
         NSError error = default;
         var state = device.NewRenderPipelineState(d, ref error);
         if (error.NativePtr != IntPtr.Zero)

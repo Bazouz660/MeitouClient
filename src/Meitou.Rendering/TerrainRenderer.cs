@@ -84,7 +84,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <param name="coarse">Whole-world raw heights, (<paramref name="coarseSize"/>)² samples (2^n + 1 per side).</param>
     /// <param name="fine">The loaded region at its own step.</param>
-    public TerrainRenderer(GpuContext gpu, ushort[] coarse, int coarseSize, HeightWindow fine)
+    public TerrainRenderer(IGpuContext gpu, ushort[] coarse, int coarseSize, HeightWindow fine)
     {
         this.gpu = gpu;
         this.fine = fine;
@@ -96,7 +96,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         fineBand = BandOf(fine);
         // The native programs (docs/renderer-native.md 7.1, step O), all made here so a draw never compiles.
         nativeFrame = new NativeFrame(gpu);
-        uniformAlign = Math.Max(gpu.Device.Limits.MinUniformBufferOffsetAlignment, 16);
+        uniformAlign = Math.Max(gpu.UniformBufferAlign, 16);
         constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
         GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         patchColour = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), "terrain");
@@ -412,7 +412,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// </summary>
     sealed class TerrainProgram : IDisposable
     {
-        readonly GpuContext ctx;
+        readonly IGpuContext ctx;
         public readonly GpuProgram P;
         readonly int[] locations;
         readonly ScalarKind[] kinds;
@@ -420,11 +420,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public readonly int Own;
         VertexLayout? last;
 
-        public TerrainProgram(GpuContext ctx, GpuSetLayout[] sets, string vertex, string fragment, string name)
+        public TerrainProgram(IGpuContext ctx, GpuSetLayout[] sets, string vertex, string fragment, string name)
         {
             this.ctx = ctx;
             P = ctx.Shaders.Native(vertex, fragment, name, sets, NativeShaders.PushBytes);
-            var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
+            var inputs = P.Info.VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < TerrainShaders.MeshInstanceLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -454,7 +454,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
+                    : new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
             }
         }
 
@@ -567,7 +567,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (writtenFrame != f.Number || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in constants))
                 .SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in written))))
         {
-            constantsSlice = f.Constants.Write<TerrainConstants>(new ReadOnlySpan<TerrainConstants>(in constants), uniformAlign);
+            constantsSlice = f.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in constants)), uniformAlign);
             (written, writtenFrame) = (constants, f.Number);
             f.Stats.ConstantBytes += sizeof(TerrainConstants);
         }
@@ -737,7 +737,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// had) and the <see cref="TerrainShaders.HeightFunctions"/> uniforms, read when a consumer draws or applies its globals.
     /// </summary>
     sealed class ActiveTerrain { public TerrainRenderer? Owner; }
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GpuContext, ActiveTerrain> activeTerrain = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IGpuContext, ActiveTerrain> activeTerrain = new();
 
     internal void Activate()
     {
@@ -792,7 +792,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// <summary>This call's placements (each group's contiguous, <see cref="MeshGroup.Offset"/> instances in), in the frame's constants.</summary>
     Transient placements;
     const int Colour = 0, Depth = 1, Solid = 2;
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
 
     // ---- depth only (the sun's shadow map, ShadowPass) ----
     bool depthReady;
@@ -921,7 +921,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (cursors.Length < meshGroupList.Count) cursors = new int[Math.Max(meshGroupList.Count, cursors.Length * 2)];
         for (int k = 0; k < meshGroupList.Count; k++) { var g = meshGroupList[k]; cursors[k] = g.Offset = total; total += g.Count; }
         // Pass 2: each placement straight into its group's place in the frame's (write-combined) constants, one 64-byte line each.
-        placements = gpu.Frame.Constants.Allocate((ulong)total * 64, 64);
+        placements = gpu.Frame.WriteConstants(new byte[total * 64], 64);
         var target = (Matrix4x4*)placements.Pointer;
         var t = biomes ? textures : null;
         for (int i = 0; i < items.Length; i++)

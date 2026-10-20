@@ -99,6 +99,18 @@ public interface IGpuContext
     /// <summary>Records something that does not disturb a pass (a timestamp, a label) where the frame's commands go now.</summary>
     void Interleave(Action<IGpuCommandList> record);
 
+    /// <summary>
+    /// Records a prepared guest segment into the pass being drawn now (docs/renderer-native.md 6.2): into the host's open pass as a guest
+    /// segment, or (the backend's own choosing) queued and recorded elsewhere; the job goes back to its pool afterwards.
+    /// </summary>
+    void Record(string label, RecordJob job);
+
+    /// <summary>
+    /// A set with one uniform buffer in it, whose offset into the buffer is given when the set is bound (the constants block: the engine's
+    /// per-frame constants at a chosen offset).
+    /// </summary>
+    GpuSet AllocateConstantSet(GpuSetLayout layout, GpuBuffer buffer, ulong size);
+
     /// <summary>Whether the device is an integrated GPU (its budgets and star layers differ).</summary>
     bool IsIntegrated { get; }
 

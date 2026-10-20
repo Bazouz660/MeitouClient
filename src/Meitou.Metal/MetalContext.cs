@@ -54,7 +54,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly List<GpuTexture> dummyTextures = [];
     readonly Dictionary<(bool Test, bool Write, DepthFunction Op), MTLDepthStencilState> depthStates = [];
     GpuBuffer dummyVertex;
-    GpuTexture? backbuffer;
+    GpuTexture? backbuffer, depth, albedo;
     MTLRenderPipelineState presentPipeline;
     long frameNumber;
     int slot = -1;
@@ -223,6 +223,19 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         return new GpuSet(sets.Count - 1);
     }
 
+    /// <summary>The constants block (the seam's <see cref="IGpuContext.AllocateConstantSet"/>): on Metal the set binds straight onto the
+    /// encoder and reads the offset at the bind, so it is an ordinary set holding the buffer.</summary>
+    public GpuSet AllocateConstantSet(GpuSetLayout layout, GpuBuffer buffer, ulong size) =>
+        CreateSet(layout, [new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(buffer, 0, size))]);
+
+    /// <summary>Records a prepared guest segment at once, as a guest of the host's open pass (Metal records in order on the calling thread).</summary>
+    public void Record(string label, RecordJob job)
+    {
+        var cmd = BeginGuest(label);
+        try { job.Record(cmd); }
+        finally { EndGuest(cmd); job.Release(); }
+    }
+
     // ---- the host's recording model ----
 
     public IGpuCommandList BeginGuest(string label)
@@ -312,6 +325,10 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             backbuffer?.Dispose();
             backbuffer = CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "backbuffer"));
+            depth?.Dispose();
+            depth = CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "depth"));
+            albedo?.Dispose();
+            albedo = CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, width, height, Use: TextureUse.ColourTarget, Name: "gi albedo"));
         }
         frameNumber++;
         slot = (slot + 1) % FramesInFlight;
@@ -324,6 +341,13 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     /// <summary>The offscreen target the renderers draw into (the engine's Rgba8, as the Vulkan path's backbuffer is).</summary>
     public GpuTexture Backbuffer => backbuffer ?? throw new InvalidOperationException("no frame is open");
+
+    /// <summary>The scene's depth attachment (the backbuffer's size, re-made with it): the host pass tests and writes it.</summary>
+    public GpuTexture Depth => depth ?? throw new InvalidOperationException("no frame is open");
+
+    /// <summary>The scene's second colour target (the lit fragments' GI albedo; the GI resolve is not on Metal yet, but the lit
+    /// programs write it, so the pass has the attachment they expect).</summary>
+    public GpuTexture Albedo => albedo ?? throw new InvalidOperationException("no frame is open");
 
     /// <summary>Ends the frame: the backbuffer is copied into the drawable (flipped) and the frame's commands are committed.</summary>
     public void EndFrame()
@@ -357,6 +381,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         encoder.EndEncoding();
         command.PresentDrawable(drawable);
         command.Commit();
+        foreach (var buffer in setBuffers) buffer.Dispose();
+        setBuffers.Clear();
     }
 
     void EnsureFrame()
@@ -377,10 +403,17 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>The bindless table's own object (its resources are told to the encoder at the bind).</summary>
     internal MetalBindlessTable BindlessTable => bindless;
 
-    /// <summary>The open frame slot's bindless argument buffer (the bytes the table's members read).</summary>
-    internal MTLBuffer BindlessBuffer => bindless.BufferAt(slot);
-
     internal MTLBuffer BufferAt(GpuBuffer buffer) => buffers[buffer.Index]!.Buffer;
+
+    /// <summary>A small shared buffer for a descriptor set's argument buffer; released once this frame's command buffer has
+    /// been committed (the command buffer keeps the resources it encoded).</summary>
+    internal MTLBuffer NewSetBuffer(ulong size)
+    {
+        var buffer = Device.NewBuffer(Math.Max(size, 8ul), MTLResourceOptions.ResourceStorageModeShared);
+        setBuffers.Add(buffer);
+        return buffer;
+    }
+    readonly List<MTLBuffer> setBuffers = [];
 
     internal SharedBuffer NewSharedBuffer(ulong size, string name)
     {

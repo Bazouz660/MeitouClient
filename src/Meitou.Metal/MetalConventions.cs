@@ -18,10 +18,23 @@ public static class MetalConventions
         InternalFormat.Srgb8Alpha8 => MTLPixelFormat.RGBA8UnormsRGB,
         InternalFormat.Rgba16f => MTLPixelFormat.RGBA16Float,
         InternalFormat.Rgba32f => MTLPixelFormat.RGBA32Float,
+        InternalFormat.R8 => MTLPixelFormat.R8Unorm,
+        InternalFormat.R16 => MTLPixelFormat.R16Unorm,
+        InternalFormat.Rg16 => MTLPixelFormat.RG16Unorm,
+        InternalFormat.R16f => MTLPixelFormat.R16Float,
+        InternalFormat.Rgba16 => MTLPixelFormat.RGBA16Unorm,
         InternalFormat.R32f => MTLPixelFormat.R32Float,
         InternalFormat.R8ui => MTLPixelFormat.R8Uint,
         InternalFormat.R32ui => MTLPixelFormat.R32Uint,
         InternalFormat.R32i => MTLPixelFormat.R32Sint,
+        InternalFormat.R16ui => MTLPixelFormat.R16Uint,
+        InternalFormat.R16i => MTLPixelFormat.R16Sint,
+        InternalFormat.Rgba8ui => MTLPixelFormat.RGBA8Uint,
+        InternalFormat.Rgba16ui => MTLPixelFormat.RGBA16Uint,
+        InternalFormat.Rgba32ui => MTLPixelFormat.RGBA32Uint,
+        InternalFormat.Rgba32i => MTLPixelFormat.RGBA32Sint,
+        InternalFormat.CompressedRedRgtc1 => MTLPixelFormat.BC4RUnorm,
+        InternalFormat.CompressedRGRgtc2 => MTLPixelFormat.BC5RGUnorm,
         InternalFormat.DepthComponent24 or InternalFormat.DepthComponent32f => MTLPixelFormat.Depth32Float,
         InternalFormat.Depth24Stencil8 or InternalFormat.Depth32fStencil8 => MTLPixelFormat.Depth32FloatStencil8,
         InternalFormat.CompressedRgbS3TCDxt1Ext or InternalFormat.CompressedRgbaS3TCDxt1Ext => MTLPixelFormat.BC1RGBA,
@@ -38,16 +51,23 @@ public static class MetalConventions
         InternalFormat.CompressedRgbS3TCDxt1Ext or InternalFormat.CompressedRgbaS3TCDxt1Ext => 8,  // a 4x4 block
         InternalFormat.Rgba16f => 8,
         InternalFormat.Rgba32f => 16,
+        InternalFormat.R8 => 1,
+        InternalFormat.R16 or InternalFormat.R16f => 2,
+        InternalFormat.Rg16 or InternalFormat.Rgba16 => 4,
         InternalFormat.R32f => 4,
         InternalFormat.R8ui => 1,
         InternalFormat.R32ui or InternalFormat.R32i => 4,
+        InternalFormat.R16ui or InternalFormat.R16i => 2,
+        InternalFormat.Rgba8ui or InternalFormat.Rgba16ui => 4,
+        InternalFormat.Rgba32ui or InternalFormat.Rgba32i => 16,
+        InternalFormat.CompressedRedRgtc1 or InternalFormat.CompressedRGRgtc2 => 8,
         InternalFormat.Rgba8 or InternalFormat.Srgb8Alpha8 => 4,
         _ => throw new NotSupportedException($"no texel size for {f}"),
     };
 
     /// <summary>4 for the block formats (BC1's 4x4), else 1.</summary>
     public static int BlockWidth(InternalFormat f) =>
-        f is InternalFormat.CompressedRgbS3TCDxt1Ext or InternalFormat.CompressedRgbaS3TCDxt1Ext ? 4 : 1;
+        f is InternalFormat.CompressedRgbS3TCDxt1Ext or InternalFormat.CompressedRgbaS3TCDxt1Ext or InternalFormat.CompressedRedRgtc1 or InternalFormat.CompressedRGRgtc2 ? 4 : 1;
 
     public static MTLSamplerMinMagFilter Filter(TextureMinFilter f) =>
         f is TextureMinFilter.Nearest or TextureMinFilter.NearestMipmapNearest or TextureMinFilter.NearestMipmapLinear

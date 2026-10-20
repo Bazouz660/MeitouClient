@@ -97,7 +97,20 @@ The verified model (the MSL that spirv-cross makes, the pipeline reflection, and
 - the runtime writes the handles into one shared buffer per frame slot: a texture's handle is
   `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`, at the members'
   offsets (`MetalBindlessTable`). A resource read only through the argument buffer must also be
-  told to the encoder (`useResource`), as `BindBindlessTable` does.
+  told to the encoder (`useResource`), as `BindBindlessTable` does;
+- **every** descriptor set of a program translated with argument buffers becomes one (spirv-cross's
+  `MslArgumentBuffers` is global). A set's buffer members are `constant T*` pointers, so the
+  runtime fills them with the buffers' **GPU addresses** (`MTLBuffer.gpuAddress` + offset; the CPU
+  contents pointer is a different address on Apple silicon) at the flattened ids, and binds the
+  set's buffer at the stage's set index (the vertex stage's `15 + set`, the fragment's `set`, the
+  table at 28, the push constants at 30 — Metal's buffer table ends at 30, so the sets cannot be
+  spread by 8);
+- a stage drops the arrays it never reads, so the members' offsets differ per program (they are
+  packed in declaration order): the runtime parses each stage's MSL struct and keeps one filled
+  argument buffer per (layout, frame slot) (`MetalTableLayout`, `MetalBindlessTable.BufferFor`);
+- a program whose fragment writes a second colour output (the terrain's GI albedo) needs the second
+  attachment: the scene pass carries an `Rgba8ui` target (`MetalContext.Albedo`) and the pipeline
+  declares it, or Metal drops the draws.
 
 The rewrite (`MetalShaders.RewriteBindless` + `SpirvPatch.BindlessFetchImages`), verified by the
 `--table` dump and `spirv-val` on both stages:
@@ -239,9 +252,22 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The flatten's kind refinement: a vertex module's buffers shift by the vertex base, its images and samplers flatten from 0 (`RemapBindings` classifies by the SPIR-V storage class, `Flatten` takes the kind) | the terrain's vertex-stage table samplers fit the stage's sampler table |
 | Done | The bindless table's GLSL rewrite (`--table`'s five kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds throw until the shadows step; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays | the table's MSL shape at the capacities |
 | Done | The table's runtime (`MetalBindlessTable`: the journal, a shared argument buffer per frame slot, the GPU resource ids, the sampler flag, `useResource`) and `BindBindlessTable` at buffer 28 | the terrain's textures can bind; verified by the host: red → blue across the quad, the update's swap visible |
-| Then | The terrain in the game (the Vulkan-free widening, the native programs, the materials, the CDLOD draws) | the world appears |
+| Doing | The terrain in the game: the Vulkan-free widening (`IGpuContext` through `TerrainRenderer`, `NativeFrame`, `TerrainTextures`), the programs, the textures, the pass (depth + GI-albedo attachment), the CDLOD draws at the camera. **Open:** the draws are recorded with a valid pipeline, buffers and a trivial shader, yet produce no fragments (depth and albedo both empty); the same program shape draws in the host, so the difference is still unexplained — see the note below | the world appears |
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
+
+### The terrain's missing fragments (open)
+
+The terrain's patch draws reach Metal (`BindPipeline`/`BindVertexBuffers`/`DrawIndexed` recorded,
+the grid's vertices and indices verified in the buffers, the pipeline's one input at location 0,
+stride 8) but the depth and albedo targets stay empty — even with the patch vertex shader reduced
+to `gl_Position = vec4(aGrid / 32 - 1, 0, 1)` and a magenta fragment, and with the depth test off.
+A quad drawn into the same pass with `ctx.Pipelines.Get`/`BindVertexBuffers`/`DrawIndexed` (and
+even through `BeginGuest`, and with set 0 as an argument buffer) does draw, so the pass, the guest
+model, the argument buffers and the vertex-format path are sound. What has not been isolated yet:
+the terrain's `DrawState`/`Pipeline` description path (`TerrainRenderer.ResolvePatches`), its
+`TerrainProgram` wrapper and the `gpu.Record` job. Next: draw the host's known-good quad program
+with the terrain's exact `ResolvePatches`/`PatchJob` plumbing, then bisect the two.
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
 

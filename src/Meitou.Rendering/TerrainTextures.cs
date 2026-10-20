@@ -29,7 +29,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     const byte Pending = 254, Unused = 255;
 
     /// <summary>The native GPU API every texture is made with (phase 8: no GL texture of its own).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly GameInstall install;
     readonly AssetLocator assets;
     readonly int layerSize, levelCount;
@@ -69,7 +69,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal);
 
-    TerrainTextures(GpuContext gpu, GameInstall install, AssetLocator assets, BlendInfoFile info, BiomeTerrain[] all, int layerSize, MapWindows? maps)
+    TerrainTextures(IGpuContext gpu, GameInstall install, AssetLocator assets, BlendInfoFile info, BiomeTerrain[] all, int layerSize, MapWindows? maps)
     {
         Gpu = gpu;
         this.install = install;
@@ -172,7 +172,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         return s;
     }
 
-    public static TerrainTextures Create(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, int layerSize = 512, int worldColourSize = 2048, Source? source = null)
+    public static TerrainTextures Create(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, int layerSize = 512, int worldColourSize = 2048, Source? source = null)
     {
         source ??= Prepare(install, db, worldColourSize);
         var t = new TerrainTextures(gpu, install, assets, source.Info, [.. source.All.Values], layerSize, source.Maps);
@@ -311,7 +311,7 @@ public sealed unsafe class TerrainTextures : IDisposable
             return Make(FormatOf(diffuse), layerSize, layerSize, levelCount, Math.Max(Capacity, 1), TextureMinFilter.LinearMipmapLinear,
                 TextureMagFilter.Linear, TextureWrapMode.Repeat, diffuse ? "terrain textures diffuse" : "terrain textures normal", anisotropy: 8, kind: TextureKind.Texture2DArray);
         }
-        catch (Meitou.Rendering.Gpu.Core.VulkanException e)
+        catch (Exception e)
         {
             Messages.Add($"terrain layer array allocation: {e.Message}; try a higher --texture-quality");
             return null;
@@ -821,7 +821,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 /// </summary>
 internal sealed class TerrainTexture : IDisposable
 {
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly TextureMinFilter min;
     readonly TextureMagFilter mag;
     readonly TextureWrapMode wrap;
@@ -834,7 +834,7 @@ internal sealed class TerrainTexture : IDisposable
     SampledTexture registered;
     bool hasEntry;
 
-    public TerrainTexture(GpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
+    public TerrainTexture(IGpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
     {
         this.ctx = ctx;
         Texture = texture;

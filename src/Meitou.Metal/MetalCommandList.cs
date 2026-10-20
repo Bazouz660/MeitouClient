@@ -68,6 +68,17 @@ public sealed class MetalCommandList : IGpuCommandList
             attachment.ClearColor = new MTLClearColor { red = d.Colour.Clear.R, green = d.Colour.Clear.G, blue = d.Colour.Clear.B, alpha = d.Colour.Clear.A };
             attachments.SetObject(attachment, 0);
         }
+        if (!d.Extra.IsNull)
+        {
+            // The second colour target (the lit fragments' albedo for the GI resolve).
+            var attachments = descriptor.ColorAttachments;
+            var extra = attachments.Object(1);
+            extra.Texture = ctx.ViewTexture(d.Extra.View);
+            extra.LoadAction = d.Extra.Load switch { LoadOp.Clear => MTLLoadAction.Clear, LoadOp.DontCare => MTLLoadAction.DontCare, _ => MTLLoadAction.Load };
+            extra.StoreAction = MTLStoreAction.Store;
+            extra.ClearColor = new MTLClearColor { red = d.Extra.Clear.R, green = d.Extra.Clear.G, blue = d.Extra.Clear.B, alpha = d.Extra.Clear.A };
+            attachments.SetObject(extra, 1);
+        }
         if (!d.Depth.IsNull)
         {
             var depth = descriptor.DepthAttachment;
@@ -142,7 +153,7 @@ public sealed class MetalCommandList : IGpuCommandList
 
     /// <summary>Binds the vertex buffers of the locations from <paramref name="first"/>: the pipeline's slots, Vulkan's own numbers
     /// (the MSL's indices below <see cref="MetalShaders.VertexBlockBase"/>, where the blocks go).</summary>
-    public void BindVertexBuffers(uint first, ReadOnlySpan<GpuBufferBinding> bindings)
+    public unsafe void BindVertexBuffers(uint first, ReadOnlySpan<GpuBufferBinding> bindings)
     {
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindVertexBuffers outside a rendering");
         if (first + (uint)bindings.Length > MetalShaders.VertexBlockBase)
@@ -168,6 +179,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (set != 0) throw new NotSupportedException($"the Metal backend binds set {set} only through CreateSet and BindSets");
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindProgramResources outside a rendering");
+        if (ctx.Shaders.Backend(program).ArgumentBuffers) { BindSetArguments(set, bindings); return; }
         var slots = program.NeutralSets[set].Slots;
         foreach (var binding in bindings)
         {
@@ -215,6 +227,25 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (point != GpuBindPoint.Graphics) throw new NotSupportedException("the Metal backend binds no compute sets yet");
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindSets outside a rendering");
+        if (ctx.Shaders.Backend(program).ArgumentBuffers)
+        {
+            int at = 0;
+            for (int i = 0; i < sets.Length; i++)
+            {
+                var set = ctx.SetAt(sets[i]);
+                var bindings = new GpuBinding[set.Bindings.Length];
+                for (int b = 0; b < bindings.Length; b++)
+                {
+                    var binding = set.Bindings[b];
+                    if (set.Layout.Slots[b].OffsetAtBind)
+                        binding = new GpuBinding(binding.Slot, binding.Kind, Buffer: new GpuBufferBinding(binding.Buffer.Buffer, dynamicOffsets.IsEmpty ? 0 : dynamicOffsets[at++], binding.Buffer.Size));
+                    bindings[b] = binding;
+                }
+                BindSetArguments(first + (uint)i, bindings);
+            }
+            Stats.DescriptorPushes++;
+            return;
+        }
         int used = 0;
         for (int i = 0; i < sets.Length; i++)
         {
@@ -237,6 +268,39 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.DescriptorPushes++;
     }
 
+    /// <summary>
+    /// A descriptor set as a Metal argument buffer (every set of a program translated with them): its members are 8-byte GPU
+    /// addresses at the flattened ids (<see cref="MetalShaders.Flatten"/>), the same buffer serving both stages at their own set
+    /// indices (set + 15 in the vertex stage, whose buffers take 0 to 14; set in the fragment stay as they are). The addresses
+    /// live in the frame's constants ring (a slice of their own per bind: a later bind of the same set must not change what an
+    /// earlier draw reads).
+    /// </summary>
+    unsafe void BindSetArguments(uint set, ReadOnlySpan<GpuBinding> bindings)
+    {
+        Span<ulong> entries = stackalloc ulong[32];
+        entries.Clear();
+        int max = 0;
+        foreach (var binding in bindings)
+        {
+            if (binding.Kind is not (GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer))
+                throw new NotSupportedException($"the Metal backend puts no {binding.Kind} in an argument buffer set yet (set {set}, binding {binding.Slot})");
+            if (binding.Buffer.Buffer.IsNull) continue;
+            var slotKind = binding.Kind == GpuBindingKind.StorageBuffer ? GpuSlotKind.StorageBuffer : GpuSlotKind.UniformBuffer;
+            var (buffer, offset) = ctx.Buffer(binding.Buffer);
+            render.UseResource(buffer, MTLResourceUsage.Read);
+            ulong address = buffer.GpuAddress + offset;
+            int vertex = (int)MetalShaders.Flatten(slotKind, GpuStage.Vertex, set, binding.Slot);
+            int fragment = (int)MetalShaders.Flatten(slotKind, GpuStage.Fragment, set, binding.Slot);
+            (entries[vertex], entries[fragment]) = (address, address);
+            max = Math.Max(max, Math.Max(vertex, fragment));
+        }
+        var size = (ulong)(max + 1) * 8;
+        var constants = ctx.NewSetBuffer(size);
+        fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
+        render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
+        render.SetFragmentBuffer(constants, 0, set);
+    }
+
     /// <summary>Binds the bindless table: the slot's argument buffer at <see cref="MslTranslator.TableBinding"/> in both stages
     /// (the MSL's table set is moved there, so the set's number is only the layout's word for it).</summary>
     public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
@@ -244,9 +308,12 @@ public sealed class MetalCommandList : IGpuCommandList
         if (point != GpuBindPoint.Graphics) throw new NotSupportedException("the Metal backend binds the table in graphics passes only");
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindBindlessTable outside a rendering");
         if (set != Rendering.NativeShaders.BindlessSet) throw new InvalidOperationException($"the Metal backend's table is set {Rendering.NativeShaders.BindlessSet} (asked for {set})");
-        var buffer = ctx.BindlessBuffer;
-        render.SetVertexBuffer(buffer, 0, MslTranslator.TableBinding);
-        render.SetFragmentBuffer(buffer, 0, MslTranslator.TableBinding);
+        var backend = ctx.Shaders.Backend(program);
+        int slot = ctx.Frame.Slot;
+        if (ctx.BindlessTable.BufferFor(backend.VertexTable, slot) is { } vertex)
+            render.SetVertexBuffer(vertex, 0, MslTranslator.TableBinding);
+        if (ctx.BindlessTable.BufferFor(backend.FragmentTable, slot) is { } fragment)
+            render.SetFragmentBuffer(fragment, 0, MslTranslator.TableBinding);
         ctx.BindlessTable.UseResources(this);
         Stats.DescriptorPushes++;
     }
@@ -279,7 +346,7 @@ public sealed class MetalCommandList : IGpuCommandList
     }
 
     /// <summary>Draws indexed vertices out of the bound index buffer.</summary>
-    public void DrawIndexed(uint indices, uint instances = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
+    public unsafe void DrawIndexed(uint indices, uint instances = 1, uint firstIndex = 0, int vertexOffset = 0, uint firstInstance = 0)
     {
         if (indexBuffer.NativePtr == IntPtr.Zero) throw new InvalidOperationException("DrawIndexed with no index buffer bound");
         render.DrawIndexedPrimitives(MetalConventions.Primitive(topology), indices, indexType, indexBuffer,

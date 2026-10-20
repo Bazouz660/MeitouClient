@@ -14,11 +14,13 @@ namespace Meitou.Metal;
 internal sealed class MetalProgram : IDisposable
 {
     public MetalProgram(ProgramInfo info, MTLLibrary vertexLibrary, MTLFunction vertexFunction, string vertexMsl,
-        MTLLibrary fragmentLibrary, MTLFunction fragmentFunction, string fragmentMsl)
+        MTLLibrary fragmentLibrary, MTLFunction fragmentFunction, string fragmentMsl, bool argumentBuffers)
     {
+        ArgumentBuffers = argumentBuffers;
         Info = info;
         (VertexLibrary, VertexFunction, VertexMsl) = (vertexLibrary, vertexFunction, vertexMsl);
         (FragmentLibrary, FragmentFunction, FragmentMsl) = (fragmentLibrary, fragmentFunction, fragmentMsl);
+        (VertexTable, FragmentTable) = (MetalTableLayout.Parse(vertexMsl), MetalTableLayout.Parse(fragmentMsl));
     }
 
     public ProgramInfo Info { get; }
@@ -29,6 +31,11 @@ internal sealed class MetalProgram : IDisposable
     public MTLLibrary FragmentLibrary { get; }
     public MTLFunction FragmentFunction { get; }
     public string FragmentMsl { get; }
+    /// <summary>The stage's argument buffer layout (empty for a stage that does not read the table).</summary>
+    public MetalTableLayout VertexTable { get; }
+    public MetalTableLayout FragmentTable { get; }
+    /// <summary>Whether the program's descriptor sets are Metal argument buffers (every native program with the bindless table).</summary>
+    public bool ArgumentBuffers { get; }
 
     public void Dispose()
     {
@@ -72,34 +79,26 @@ public sealed class MetalShaders : IGpuShaders
     /// mirrors them (<see cref="MetalBindlessTable"/>). 2D textures get most of the room, as the Vulkan table's shares do.</summary>
     internal static readonly uint[] TableCapacity = [2048, 512, 128, 128, 128, 128, 64];
 
-    /// <summary>The kinds the argument buffer declares today: the float kinds and the two integer ones (the shadow kinds come
-    /// with the shadows step, and the layout has no room for them until then).</summary>
-    static readonly int[] DeclaredKinds = [0, 1, 2, 4, 5];
-
-    /// <summary>The argument buffer's members' offsets, in entries (8 bytes each), by kind: the declared kinds' arrays follow
-    /// one another in binding order, the samplers after every texture. Metal lays the members out sequentially from 0 — the
+    /// <summary>The argument buffer's members' offsets, in entries (8 bytes each), by kind: the arrays follow one another in
+    /// binding order (every texture array, then every sampler array). Metal lays the members out sequentially from 0 — the
     /// <c>[[id]]</c> decorations the MSL carries do not move them (verified with the pipeline reflection).</summary>
     static readonly uint[] TablePrefix = Prefix();
 
-    /// <summary>The declared texture arrays' total: where the sampler arrays begin.</summary>
+    /// <summary>All the texture arrays' total: where the sampler arrays begin.</summary>
     internal static readonly uint TableTotal = Total();
 
     static uint[] Prefix()
     {
         var prefix = new uint[TableCapacity.Length];
         uint sum = 0;
-        for (int k = 0; k < prefix.Length; k++)
-        {
-            prefix[k] = sum;
-            if (Array.IndexOf(DeclaredKinds, k) >= 0) sum += TableCapacity[k];
-        }
+        for (int k = 0; k < prefix.Length; k++) { prefix[k] = sum; sum += TableCapacity[k]; }
         return prefix;
     }
 
     static uint Total()
     {
         uint total = 0;
-        foreach (int k in DeclaredKinds) total += TableCapacity[k];
+        foreach (uint c in TableCapacity) total += c;
         return total;
     }
 
@@ -110,52 +109,44 @@ public sealed class MetalShaders : IGpuShaders
     /// textures).</summary>
     internal static uint TableSamplerId(int kind) => TableTotal + TableTextureId(kind);
 
-    /// <summary>Whether a kind's entries have a sampler array in the MSL (only the float kinds; the integer kinds' samplers are dropped).</summary>
-    internal static bool HasSamplers(int kind) => kind is >= 0 and <= 2;
+    /// <summary>The MSL's <c>[[id]]</c> of a kind's first texture array and first sampler array (the set's base plus the binding).</summary>
+    internal static uint TableTextureBinding(int kind) => (uint)(SetStride * Rendering.NativeShaders.BindlessSet) + TablePrefix[kind];
+    internal static uint TableSamplerBinding(int kind) => TableTextureBinding(kind) + TableTotal;
 
+    /// <summary>Which array a member at an argument buffer id is: its kind and whether it is the sampler array (null: not the table's).</summary>
+    internal static (int Kind, bool Sampler)? TableKindOf(uint id)
+    {
+        for (int k = 0; k < TableCapacity.Length; k++)
+        {
+            if (id == TableTextureBinding(k)) return (k, false);
+            if (id == TableSamplerBinding(k)) return (k, true);
+        }
+        return null;
+    }
 
-    /// <summary>The separate GLSL types of the float kinds' textures: a sampler array's pair constructor takes them.</summary>
-    static readonly string[] FloatTextureTypes = ["texture2D", "texture2DArray", "textureCube"];
+    /// <summary>Whether a kind's entries have a sampler array in the MSL (every kind but the integer ones: their fetches never read one).</summary>
+    internal static bool HasSamplers(int kind) => kind != (int)BindlessKind.UTexture2D && kind != (int)BindlessKind.ITexture2D;
+
 
     /// <summary>
-    /// The Metal form of a native program's bindless set. The shared text (the prelude's <see cref="BindlessTable.Declarations"/>)
-    /// declares seven combined, runtime-sized arrays, and Metal has no place for them in an argument buffer: spirv-cross refuses
-    /// the unsized combined case outright ("runtime array not supported for combined image sampler") and crashes on the sized one.
-    /// The rewrite (Metal only; the Vulkan path's GLSL stays combined):
-    /// the float kinds (<see cref="BindlessKind.Texture2D"/>, <see cref="BindlessKind.Texture2DArray"/>, <see cref="BindlessKind.Cube"/>)
-    /// become separate sized texture arrays with parallel sized sampler arrays — GL's per-entry sampler state survives, every use
-    /// constructs the pair with the same index; the integer kinds (<see cref="BindlessKind.UTexture2D"/>, <see cref="BindlessKind.ITexture2D"/>)
-    /// stay combined and sized (their uses are fetches only, which never touch the sampler, and
-    /// <see cref="SpirvPatch.BindlessFetchImages"/> drops the sampler part in SPIR-V, as GLSL has no separate integer texture type);
-    /// the shadow kinds' declarations are dropped for now — their uses fail to compile, loudly, until the shadows step.
+    /// The Metal form of a native program's bindless set: every array the shared text declares unsized (<see cref="BindlessTable.Declarations"/>)
+    /// gets the table's capacity. spirv-cross has no place for runtime-sized combined arrays in an argument buffer, and GLSL has no
+    /// separate integer or depth texture type (so the float kinds could only be split at their uses, where GLSL's "a sampler constructor
+    /// stands at the point of use" rule breaks the functions that take one as a parameter). Instead the SPIR-V patch
+    /// (<see cref="SpirvPatch.BindlessFetchImages"/>) splits every combined array into a plain image array and a parallel sampler array
+    /// (the integer kinds have no sampler: their fetches never read one): the MSL gets separate arrays and per-entry samplers, and the
+    /// use sites — loads, compares, the functions that pass a sampler on — take the two members they need.
     /// </summary>
     static string RewriteBindless(string glsl)
     {
         uint[] cap = TableCapacity, prefix = TablePrefix;
-        uint total = TableTotal;
-        // The uses first: the declarations' empty [] never matches, and the new ones are not in the text yet. An index may
-        // be anything without a closing bracket (nonuniformEXT(...) included) — it is captured once and used for both.
-        for (int k = 0; k <= 2; k++)
-        {
-            string array = BindlessTable.GlslArrays[k];
-            string samplers = "samplers" + array["textures".Length..];
-            glsl = Regex.Replace(glsl, $@"\b{array}\[([^\]]+)\]", $"{BindlessTable.GlslTypes[k]}({array}[$1], {samplers}[$1])");
-        }
         for (int k = 0; k < cap.Length; k++)
         {
             string decl = $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {k}) uniform {BindlessTable.GlslTypes[k]} {BindlessTable.GlslArrays[k]}[];";
             // A stage that does not include the table's text (the host's test programs) has nothing to rewrite.
             if (!glsl.Contains(decl)) continue;
-            glsl = glsl.Replace(decl, k switch
-            {
-                <= 2 => $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {prefix[k]}) uniform {FloatTextureTypes[k]} {BindlessTable.GlslArrays[k]}[{cap[k]}];\n"
-                        + $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {total + prefix[k]}) uniform sampler samplers{BindlessTable.GlslArrays[k]["textures".Length..]}[{cap[k]}];",
-                4 or 5 => $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {prefix[k]}) uniform {BindlessTable.GlslTypes[k]} {BindlessTable.GlslArrays[k]}[{cap[k]}];",
-                _ => "",
-            });
+            glsl = glsl.Replace(decl, $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {prefix[k]}) uniform {BindlessTable.GlslTypes[k]} {BindlessTable.GlslArrays[k]}[{cap[k]}];");
         }
-        // The shadow kinds' uses are gone from the declarations now; what remains are real uses of dropped arrays.
-        if (Regex.IsMatch(glsl, @"\b(shadowTextures|shadowArrays)\[")) throw new NotSupportedException("the Metal backend's bindless rewrite covers no shadow kinds yet (they come with the shadows step)");
         return glsl;
     }
 
@@ -218,7 +209,7 @@ public sealed class MetalShaders : IGpuShaders
         var vertexLibrary = Library(vertexMsl, name);
         var fragmentLibrary = Library(fragmentMsl, name);
         programs.Add(new MetalProgram(info, vertexLibrary, Function(vertexLibrary, "vertex_main", name), vertexMsl,
-            fragmentLibrary, Function(fragmentLibrary, "fragment_main", name), fragmentMsl));
+            fragmentLibrary, Function(fragmentLibrary, "fragment_main", name), fragmentMsl, false));
         return new GpuProgram(info.Index, info);
     }
 
@@ -240,9 +231,9 @@ public sealed class MetalShaders : IGpuShaders
         bool bindless = Array.Exists(setLayouts, l => ReferenceEquals(l, GpuSetLayout.Bindless));
         if (bindless) { vs = RewriteBindless(vs); fs = RewriteBindless(fs); }
         var v = SpirvPatch.RemapBindings(Compiler.CompileNative(vs, fragment: false), VertexBlockBase, 0, SetStride);
-        if (bindless) v = SpirvPatch.BindlessFetchImages(v, Rendering.NativeShaders.BindlessSet);
+        if (bindless) v = SpirvPatch.BindlessFetchImages(v, Rendering.NativeShaders.BindlessSet, TableTotal);
         var f = SpirvPatch.RemapBindings(Compiler.CompileNative(fs, fragment: true), 0, 0, SetStride);
-        if (bindless) f = SpirvPatch.BindlessFetchImages(f, Rendering.NativeShaders.BindlessSet);
+        if (bindless) f = SpirvPatch.BindlessFetchImages(f, Rendering.NativeShaders.BindlessSet, TableTotal);
         if (Environment.GetEnvironmentVariable("MEITOU_METAL_DUMP") is { } dir)
         {
             Directory.CreateDirectory(dir);
@@ -272,7 +263,7 @@ public sealed class MetalShaders : IGpuShaders
         var vertexLibrary = Library(vertexMsl, name);
         var fragmentLibrary = Library(fragmentMsl, name);
         programs.Add(new MetalProgram(info, vertexLibrary, Function(vertexLibrary, "vertex_main", name), vertexMsl,
-            fragmentLibrary, Function(fragmentLibrary, "fragment_main", name), fragmentMsl));
+            fragmentLibrary, Function(fragmentLibrary, "fragment_main", name), fragmentMsl, bindless));
         return new GpuProgram(info.Index, info);
     }
 

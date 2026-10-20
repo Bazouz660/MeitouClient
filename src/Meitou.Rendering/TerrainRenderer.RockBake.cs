@@ -101,12 +101,12 @@ public sealed unsafe partial class TerrainRenderer
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
         var binding = nativeFrame.Prepare(in view);
         NativeFrame.Record(cmd, p.P, in binding);
-        var constantsSlice = gpu.Frame.Constants.Write<TerrainConstants>([BakeConstants(row)], uniformAlign);
+        var constantsSlice = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>([BakeConstants(row)])), uniformAlign);
         ulong key = (ulong)constantsSlice.Handle.Index;
         if (!constantSets.TryGetValue(key, out var set)) constantSets[key] = set = ConstantSet(constantsSlice.Handle);
         uint offset = (uint)constantsSlice.Offset;
         cmd.BindSets(p.P, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in set), new ReadOnlySpan<uint>(in offset));
-        var rows = gpu.Frame.Constants.Allocate(64, 64);
+        var rows = gpu.Frame.WriteConstants(new byte[64], 64);
         *(Matrix4x4*)rows.Pointer = BakePlacement(scale, row);
         Span<GpuBufferBinding> instance = stackalloc GpuBufferBinding[4];
         for (int a = 0; a < 4; a++) instance[a] = new GpuBufferBinding(rows.Handle, rows.Offset + (ulong)(16 * a));
