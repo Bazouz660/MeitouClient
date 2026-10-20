@@ -33,7 +33,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     const ulong Align = 256;
     const int MaxViews = 64;
 
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly GpuProgram? cull, order;
     readonly GpuComputePipeline? cullPipe, orderPipe;
     readonly uint[] cullBindings = [], orderBindings = [];
@@ -45,25 +45,26 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     /// <summary>Whether the cull kernels exist (<see cref="Supported"/>): without them the store is only the blade arena and the CPU chooses the draws.</summary>
     public bool Kernels => cull is not null;
 
-    public FoliageGrassGpu(GpuContext ctx, ulong arenaBytes, int slotCapacity)
+    public FoliageGrassGpu(IGpuContext ctx, ulong arenaBytes, int slotCapacity)
     {
         this.ctx = ctx;
         SlotCapacity = slotCapacity;
         if (Supported(ctx))
         {
+            var vk = (GpuContext)ctx;
             cull = ctx.Shaders.Compute(FoliageGrassShaders.CullCompute, "foliage grass cull");
             order = ctx.Shaders.Compute(FoliageGrassShaders.OrderCompute, "foliage grass order");
             cullPipe = ctx.Pipelines.Get(new ComputePipelineDesc(cull!.Value, "foliage grass cull"));
             orderPipe = ctx.Pipelines.Get(new ComputePipelineDesc(order!.Value, "foliage grass order"));
-            cullBindings = Bindings(ctx, cull!.Value);
-            orderBindings = Bindings(ctx, order!.Value);
+            cullBindings = Bindings(vk, cull!.Value);
+            orderBindings = Bindings(vk, order!.Value);
+            scratch = new FrameScratch(vk, "foliage grass scratch", BufferUse.Storage | BufferUse.Indirect | BufferUse.TransferSrc | BufferUse.TransferDst, 64ul << 20);
         }
         arena = new BufferArena(ctx, arenaBytes, BufferUse.Vertex | BufferUse.TransferDst, "foliage grass blades");
         slots = DeviceBuffer.Create(ctx, (ulong)slotCapacity * GrassSlot.Size, BufferUse.Storage | BufferUse.TransferDst, "foliage grass slots");
         prefixes = DeviceBuffer.Create(ctx, (ulong)slotCapacity * PrefixStride * 4, BufferUse.Storage | BufferUse.TransferDst, "foliage grass prefixes");
-        scratch = new FrameScratch(ctx, "foliage grass scratch", BufferUse.Storage | BufferUse.Indirect | BufferUse.TransferSrc | BufferUse.TransferDst, 64ul << 20);
-        counted =new ReadbackBuffer?[ctx.Device.Frames.Count];
-        countedWritten = new int[ctx.Device.Frames.Count];
+        counted = new ReadbackBuffer?[ctx.FramesInFlight];
+        countedWritten = new int[ctx.FramesInFlight];
     }
 
     static uint[] Bindings(GpuContext ctx, GpuProgram p)
@@ -74,8 +75,8 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     }
 
     /// <summary>Whether the device can run the GPU grass (push descriptors, indirect draws with a count and a first instance).</summary>
-    public static bool Supported(GpuContext ctx) =>
-        ctx.Device.HasPushDescriptor && ctx.Device.DrawIndirectCount && ctx.Device.DrawIndirectFirstInstance && ctx.Device.MultiDrawIndirect;
+    public static bool Supported(IGpuContext ctx) =>
+        ctx is GpuContext vk && vk.Device.HasPushDescriptor && vk.Device.DrawIndirectCount && vk.Device.DrawIndirectFirstInstance && vk.Device.MultiDrawIndirect;
 
     // ---- the blade arena ----
 
@@ -95,7 +96,11 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     public void FreeBlades(ArenaRange range) => arena.Free(range);
 
     /// <summary>Writes blade data at <paramref name="byteStart"/> of a range (through the frame's upload buffer; needs an open frame).</summary>
-    public void WriteBlades(ArenaRange range, int byteStart, ReadOnlySpan<byte> data) => ctx.Uploads.Write(arena.Buffer, range.Offset + (ulong)byteStart, data);
+    public void WriteBlades(ArenaRange range, int byteStart, ReadOnlySpan<byte> data)
+    {
+        using var batch = ctx.Uploads.Begin();
+        batch.Write(arena.Buffer, range.Offset + (ulong)byteStart, data);
+    }
 
     // ---- the slot table ----
 
@@ -120,11 +125,17 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
 
     bool initialised;
 
+    /// <summary>The upload commands (Vulkan's pre-frame list; Metal's main list, recorded before the pass).</summary>
+    IGpuCommandList UploadCommands => ctx is GpuContext vk ? vk.Frame.PreFrame : ctx.Frame.Commands;
+
+    /// <summary>The Vulkan context the cull kernels need (the Metal path never records them).</summary>
+    GpuContext Vk => ctx as GpuContext ?? throw new NotSupportedException("the Metal backend has no GPU grass cull");
+
     /// <summary>The slot table starts as zeros (every slot has no blades), written once by the first frame that needs it.</summary>
     void Initialise()
     {
         if (initialised) return;
-        var cmd = ctx.Frame.PreFrame;
+        var cmd = UploadCommands;
         cmd.FillBuffer(slots.Handle, 0, slots.Size, 0);
         Barrier(cmd, Access.TransferDst, Access.TransferSrc);
         initialised = true;
@@ -135,8 +146,9 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     {
         if (prefix.Length != PrefixStride) throw new ArgumentException($"{PrefixStride} prefix counts", nameof(prefix));
         Initialise();
-        ctx.Uploads.Write(slots, (ulong)slot * GrassSlot.Size, MemoryMarshal.AsBytes(new ReadOnlySpan<GrassSlot>(in record)));
-        ctx.Uploads.Write(prefixes, (ulong)slot * PrefixStride * 4, MemoryMarshal.AsBytes(prefix));
+        using var batch = ctx.Uploads.Begin();
+        batch.Write(slots, (ulong)slot * GrassSlot.Size, MemoryMarshal.AsBytes(new ReadOnlySpan<GrassSlot>(in record)));
+        batch.Write(prefixes, (ulong)slot * PrefixStride * 4, MemoryMarshal.AsBytes(prefix));
     }
 
     /// <summary>Stops a slot drawing now (its blade count written as 0, when a frame is open) and gives it back after the frames in flight.</summary>
@@ -146,9 +158,10 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         {
             uint zero = 0;
             // The count is the fifth field of the record.
-            ctx.Uploads.Write(slots, (ulong)slot * GrassSlot.Size + 16, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(in zero)));
+            using var batch = ctx.Uploads.Begin();
+            batch.Write(slots, (ulong)slot * GrassSlot.Size + 16, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(in zero)));
         }
-        ctx.Device.Frames.DeferDelete(() =>
+        ctx.DeferDelete(() =>
         {
             lock (gate) { freeSlots.Add(slot); SlotsUsed--; }
         });
@@ -160,12 +173,14 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     public GrassTables Prepare(ReadOnlySpan<GrassZoneRow> zones, ReadOnlySpan<GrassPatchRow> patches)
     {
         // A table is never empty memory (a binding must have a range).
-        Transient z = zones.IsEmpty ? ctx.Frame.Constants.Write<GrassZoneRow>(new GrassZoneRow[1], Align) : ctx.Frame.Constants.Write(zones, Align);
-        Transient p = patches.IsEmpty ? ctx.Frame.Constants.Write<GrassPatchRow>(new GrassPatchRow[1], Align) : ctx.Frame.Constants.Write(patches, Align);
+        ReadOnlySpan<GrassZoneRow> zoneRows = zones.IsEmpty ? new GrassZoneRow[1] : zones;
+        ReadOnlySpan<GrassPatchRow> patchRows = patches.IsEmpty ? new GrassPatchRow[1] : patches;
+        Transient z = ctx.Frame.WriteConstants(MemoryMarshal.AsBytes(zoneRows), Align);
+        Transient p = ctx.Frame.WriteConstants(MemoryMarshal.AsBytes(patchRows), Align);
         return new GrassTables(z, zones.Length, p, patches.Length);
     }
 
-    readonly FrameScratch scratch;
+    readonly FrameScratch? scratch;
     int scratchSlot = -1;
     long scratchFrame = -1;
     int viewIndex;
@@ -184,8 +199,8 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         (scratchFrame, scratchSlot, viewIndex) = (frame.Number, frame.Slot, 0);
     }
 
-    /// <summary>The per-view lists' memory (<see cref="FrameScratch"/>).</summary>
-    public FrameScratch Scratch => scratch;
+    /// <summary>The per-view lists' memory (<see cref="FrameScratch"/>); null without the cull kernels.</summary>
+    public FrameScratch? Scratch => scratch;
 
     readonly List<(QuerySlot Begin, QuerySlot End)> pendingTimes = [];
     public double GpuMicroseconds { get; private set; }
@@ -198,7 +213,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         for (int i = 0; i < pendingTimes.Count; i++)
         {
             var (b, e) = pendingTimes[i];
-            if (b.Frame + ctx.Device.Frames.Count + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }
+            if (b.Frame + ctx.FramesInFlight + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }
             if (!q.TryRead(b, out ulong tb) || !q.TryRead(e, out ulong te)) continue;
             GpuMicroseconds += (te - tb) / 1000.0;
             GpuTimedViews++;
@@ -218,13 +233,14 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         Initialise();
         CollectTimes();
         NewFrame();
+        var scratch = this.scratch!;
         if (!(scratch.TryAllocate((ulong)n * 16, out var keysBuffer, out var keysOffset) && scratch.TryAllocate((ulong)n * 16, out var drawsBuffer, out var drawsOffset) &&
               scratch.TryAllocate(16, out var countersBuffer, out var countersOffset)))
             return default;
         var keys = (Buffer: keysBuffer, Offset: keysOffset);
         var draws = (Buffer: drawsBuffer, Offset: drawsOffset);
         var counters = (Buffer: countersBuffer, Offset: countersOffset);
-        var viewData = ctx.Frame.Constants.Allocate(160, Align);
+        var viewData = Vk.Frame.Constants.Allocate(160, Align);
         var p = (Vector4*)viewData.Pointer;
         for (int i = 0; i < 8; i++) p[i] = i < planes.Length ? planes[i] : default;
         var rest = (uint*)(viewData.Pointer + 128);
@@ -246,7 +262,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         b[6] = new GpuBufferBinding(draws.Buffer, draws.Offset, (ulong)n * 16);
         b[7] = new GpuBufferBinding(counters.Buffer, counters.Offset, 16);
 
-        var cmd = ctx.Frame.PreFrame;
+        var cmd = UploadCommands;
         var stamps = (ctx.Frame.Timestamps.Allocate(), ctx.Frame.Timestamps.Allocate());
         FrameProfiler.PreStamp(cmd, StageClock.Uploads);
         cmd.BeginLabel("foliage grass");
@@ -259,7 +275,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         Run(cmd, order!.Value, orderPipe!.Value, orderBindings, b, groups);
         Barrier(cmd, Access.StorageWrite, Access.IndirectRead | Access.StorageRead | Access.TransferSrc);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.Compute);
-        var ring = counted[scratchSlot] ??= ReadbackBuffer.Create(ctx, MaxViews * 16, $"foliage grass counters {scratchSlot}");
+        var ring = counted[scratchSlot] ??= ReadbackBuffer.Create(Vk, MaxViews * 16, $"foliage grass counters {scratchSlot}");
         if (viewIndex < MaxViews)
         {
             if (viewIndex < countedWritten[scratchSlot])
@@ -309,7 +325,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
     /// <summary>Copies a result (counters, then every draw slot) into <paramref name="target"/>, after the kernels (the tests read them back).</summary>
     public void CopyForReadback(in GrassResult r, ReadbackBuffer target)
     {
-        var cmd = ctx.Frame.PreFrame;
+        var cmd = UploadCommands;
         cmd.CopyBuffer(r.Counters, target.Handle, new GpuBufferCopy(r.CountersOffset, 0, 16));
         cmd.CopyBuffer(r.Draws, target.Handle, new GpuBufferCopy(r.DrawsOffset, 16, (ulong)r.MaxDraws * 16));
     }
@@ -325,7 +341,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         arena.Dispose();
         slots.Dispose();
         prefixes.Dispose();
-        scratch.Dispose();
+        scratch?.Dispose();
         foreach (var c in counted) c?.Dispose();
     }
 }

@@ -214,6 +214,21 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     /// <inheritdoc/>
     public bool HasRayQuery => Device.HasRayQuery;
 
+    /// <inheritdoc/>
+    public bool ConstantVertexAttributes => true;
+
+    /// <inheritdoc/>
+    public GpuBuffer DummyVertexArray(ScalarKind kind) => DummyVertex;
+
+    /// <inheritdoc/>
+    public int FramesInFlight => Device.Frames.Count;
+
+    /// <inheritdoc/>
+    public ulong VideoMemoryBudget => Device.VideoMemory().Budget;
+
+    /// <inheritdoc/>
+    public void DeferDelete(Action release) => Device.Frames.DeferDelete(release);
+
     /// <summary>A texture over someone else's image (the interop's export of a GL texture): the image is not ours to free.</summary>
     internal GpuTexture BorrowTexture(TextureDesc desc, Image image) => new(this, desc, Device.AddTexture(image, null, owned: false, desc));
 

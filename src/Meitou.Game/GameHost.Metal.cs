@@ -119,6 +119,28 @@ sealed partial class GameHost
             };
             Console.WriteLine("metal     objects ready");
         }
+        // The world's foliage (the catalog's meshes, the grass pages and the TERRAIN-mode rocks), as WorldFrame.CreateGpu makes it. The
+        // impostor bakes and the GPU culls stay Vulkan-only for now: the CPU cull draws the meshes and the CPU grass path the blades.
+        FoliageRenderer? foliage = null;
+        if (!o.NoFoliage && scene.Database is { } foliageDb)
+        {
+            foliage = new FoliageRenderer(ctx, install, foliageDb,
+                scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install), assets)
+            {
+                SwaySeconds = 0,   // a still picture: the grass holds still, so it repeats
+                MeitouRange = o.MeitouRange,
+                Lod = o.FoliageLod,
+                Impostors = false,
+                Terrain = terrain,
+            };
+            if (o.LargeRange is { } largeRange)
+            {
+                float k = largeRange / foliage.LargeRange;
+                (foliage.SmallRange, foliage.MediumRange, foliage.LargeRange) = (foliage.SmallRange * k, foliage.MediumRange * k, largeRange);
+            }
+            if (o.GrassDensity is { } grassDensity) foliage.GrassDensitySetting = grassDensity;
+            Console.WriteLine($"metal     foliage ready ({foliage.LoadMs:0} ms)");
+        }
         terrain.BeginFrame();
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
@@ -152,8 +174,9 @@ sealed partial class GameHost
             if (!ctx.BeginFrame()) continue;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
-            if (frames == 0) objects?.Settle(camera.Eye);
+            if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
             streamer?.Update(camera.Eye);
+            foliage?.Update(camera.Eye);
 
             var size = window.FramebufferSize;
             if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
@@ -195,6 +218,12 @@ sealed partial class GameHost
             {
                 terrain.DrawDepth(worldToClip, lodEye, planes, render);
                 if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain);
+                if (foliage is not null)
+                {
+                    float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
+                    foliage.DrawDepth(worldToClip, lodEye, planes, render, terrain, maxRange: shadow.EffectiveRange * 1.2f,
+                        minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0);
+                }
             });
 
 
@@ -228,6 +257,7 @@ sealed partial class GameHost
             terrain.Draw(worldProjection, eye, frustum, render, light);
             if (render.Objects && objects is not null)
                 objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
+            foliage?.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
 
             ctx.EndHostPass(cmd);
             cmd.EndRendering();
@@ -239,9 +269,15 @@ sealed partial class GameHost
             ctx.EndNative(post);
             ctx.EndFrame();
             frames++;
-            if (o.Screenshot is { } shot && frames == 40) { Capture(ctx, backbuffer, shot); break; }   // one picture, as the Vulkan flow's does
+            if (o.Screenshot is { } shot && frames == 40)
+            {
+                if (foliage is not null) Console.WriteLine($"metal     foliage: {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
+                Capture(ctx, backbuffer, shot);
+                break;   // one picture, as the Vulkan flow's does
+            }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        foliage?.Dispose();
         objects?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();

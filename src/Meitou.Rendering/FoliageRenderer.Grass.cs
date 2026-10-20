@@ -33,7 +33,7 @@ public sealed unsafe partial class FoliageRenderer
     const ulong GrassArenaBytes = 160ul << 20;
     const int GrassSlotCapacity = 32768;
 
-    void InitGrassStore(GpuContext gpu)
+    void InitGrassStore(IGpuContext gpu)
     {
         grassStore = new FoliageGrassGpu(gpu, GrassArenaBytes, GrassSlotCapacity);
         grassMeshCpu = ArenaMesh(grassProgram);

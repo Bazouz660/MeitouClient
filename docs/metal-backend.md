@@ -331,6 +331,23 @@ draws its depth into the cascades. Metal vertex formats `Rgb32f`, `Rgba16f` and 
 building meshes. The buildings stand where Vulkan draws them; characters, foliage and the UI remain (steps 5, 7
 and 8).
 
+**Foliage, grass and rocks (step 5's first slice).** `FoliageRenderer`, `FoliageGrassGpu`, `NativeProg` and
+`BufferArena` take `IGpuContext`; the seam gained `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete` and `Finish`.
+The Vulkan-only pieces stay out of the Metal path for now: `FoliageGpuCull` (the compute cull), `FoliageGrassGpu`'s
+kernels and `ImpostorBaker`/`ImpostorDraw` (the billboard bakes). The host runs the CPU cull (A1), the CPU grass
+path and the terrain-shader rocks, settles them on the first open frame, updates and draws them after the objects,
+and adds them as cascade casters. Two backend facts this surfaced:
+
+- **Metal rejects GL's stride-0 constant vertex attribute.** A disabled attribute (the foliage shaders' bone
+  inputs) reads the generic value from a repeating 16-byte-step dummy array instead, with a stride of 16: every
+  vertex fetches the same (0, 0, 0, 1). `IGpuContext.ConstantVertexAttributes`/`DummyVertexArray` carry the
+  distinction; Vulkan keeps the stride-0 binding.
+- **A non-indexed draw may start at another instance.** The grass draws a blade range with `firstInstance` (the
+  first blade in the arena); `Draw` passes it as Metal's `baseInstance`, and `firstVertex` is supported too.
+
+The far billboards (impostors) and the GPU culls remain the step's rest; on Metal the real mesh LODs stand in for
+the billboards.
+
 **The composite (the first slice of the chain).** The Metal scene draws into an RGBA16F target and
 `PostComposite` runs the game's own tone-map shader (`PostProcessShaders.Composite`, through
 `LegacyProgram`) into the backbuffer. The fullscreen pass flips `vUv.y` on Metal: Vulkan's negative

@@ -20,7 +20,7 @@ namespace Meitou.Metal;
 public sealed unsafe class MetalContext : IGpuContext, IDisposable
 {
     /// <summary>The frames in flight: the drawable ring's depth (three, as the layer's own).</summary>
-    public const int FramesInFlight = 3;
+    public const int FrameRingDepth = 3;
 
     const string PresentMsl = """
         #include <metal_stdlib>
@@ -66,8 +66,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public MetalContext(MetalDisplay display)
     {
         this.display = display;
-        frames = new MetalFrame[FramesInFlight];
-        for (int i = 0; i < FramesInFlight; i++) frames[i] = new MetalFrame(this, i);
+        frames = new MetalFrame[FrameRingDepth];
+        for (int i = 0; i < FrameRingDepth; i++) frames[i] = new MetalFrame(this, i);
         Shaders = new MetalShaders(Device);
         Pipelines = new MetalPipelines(Device, Shaders);
         Samplers = new MetalSamplers(Device);
@@ -346,7 +346,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             albedo = CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, width, height, Use: TextureUse.ColourTarget, Name: "gi albedo"));
         }
         frameNumber++;
-        slot = (slot + 1) % FramesInFlight;
+        slot = (slot + 1) % FrameRingDepth;
         frames[slot].Begin(frameNumber, command, drawable);
         bindless.BeginFrame(slot);
         if (pendingUploadBytes > 0) { frames[slot].Stats.UploadBytes = pendingUploadBytes; pendingUploadBytes = 0; }
@@ -490,6 +490,48 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     /// <inheritdoc/>
     public bool HasRayQuery => false;
+
+    /// <inheritdoc/>
+    public bool ConstantVertexAttributes => false;
+
+    /// <summary>The vertices a disabled attribute may index: the generic value repeated at every 16-byte stride (4 MB an array).</summary>
+    const int DummyVertexCapacity = 1 << 18;
+
+    GpuBuffer? dummyFloatVertex, dummyIntVertex;
+
+    /// <inheritdoc/>
+    public GpuBuffer DummyVertexArray(ScalarKind kind)
+    {
+        if (kind == ScalarKind.Float) return dummyFloatVertex ??= MakeDummyVertexArray(0, 0, 0, 1, "dummy float vertices");
+        return dummyIntVertex ??= MakeDummyVertexArray(0, 0, 0, 1, "dummy int vertices");
+    }
+
+    GpuBuffer MakeDummyVertexArray(int x, int y, int z, int w, string name)
+    {
+        var shared = NewSharedBuffer((ulong)DummyVertexCapacity * 16, name);
+        var values = (int*)shared.Pointer;
+        for (int i = 0; i < DummyVertexCapacity; i++)
+            (values[i * 4], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]) = (x, y, z, w);
+        return RegisterBuffer(shared.Buffer, name);
+    }
+
+    /// <inheritdoc/>
+    public int FramesInFlight => FrameRingDepth;
+
+    /// <inheritdoc/>
+    public ulong VideoMemoryBudget => Device.RecommendedMaxWorkingSetSize;
+
+    /// <inheritdoc/>
+    public void DeferDelete(Action release) => release();
+
+    /// <inheritdoc/>
+    public void Finish()
+    {
+        if (Frame.Open) EndFrame();
+        var marker = Queue.CommandBuffer();
+        marker.Commit();
+        marker.WaitUntilCompleted();
+    }
 
     /// <summary>The stand-in a sampler reads when nothing is bound: (0, 0, 0, 1), or depth 1 for a shadow sampler.</summary>
     public SampledTexture Dummy(SamplerInfo sampler)

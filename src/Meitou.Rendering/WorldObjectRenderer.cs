@@ -1087,7 +1087,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 int loc = locations[i];
                 inputs[i] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? new VertexInput((uint)loc, a.Format, a.Stride, a.PerInstance)
-                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), 0, false);
+                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), ctx.ConstantVertexAttributes ? 0u : 16u, false);
             }
             if (last is { } l && inputs.SequenceEqual(l.Inputs)) return l;
             return last = new VertexLayout(inputs.ToArray());
@@ -1102,7 +1102,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
+                    : ctx.ConstantVertexAttributes
+                    ? new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float))
+                    : new GpuBufferBinding(ctx.DummyVertexArray(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float), 0);
             }
             return result;
         }

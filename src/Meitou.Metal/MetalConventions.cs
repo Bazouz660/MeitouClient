@@ -184,6 +184,8 @@ public static class MetalConventions
         InternalFormat.Rgba32f => MTLVertexFormat.Float4,
         InternalFormat.Rgba16f => MTLVertexFormat.Half4,
         InternalFormat.Rgba8ui => MTLVertexFormat.UChar4,
+        InternalFormat.Rgba32ui => MTLVertexFormat.UInt4,
+        InternalFormat.Rgba32i => MTLVertexFormat.Int4,
         InternalFormat.R32ui => MTLVertexFormat.UInt,
         InternalFormat.R32i => MTLVertexFormat.Int,
         _ => throw new NotSupportedException($"no Metal vertex format for {f}"),

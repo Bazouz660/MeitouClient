@@ -54,6 +54,12 @@ public interface IGpuContext
     /// <summary>The generic attribute value a disabled vertex input reads (GL's constant (0, 0, 0, 1), bound with stride 0).</summary>
     GpuBuffer DummyVertex { get; }
 
+    /// <summary>Whether a disabled attribute may take GL's stride-0 constant binding (Metal's validator refuses it).</summary>
+    bool ConstantVertexAttributes { get; }
+
+    /// <summary>The buffer a disabled attribute of <paramref name="kind"/> reads where a stride-0 binding is impossible (Metal: the value repeated at every 16-byte stride).</summary>
+    GpuBuffer DummyVertexArray(ScalarKind kind);
+
     /// <summary>Frame-global textures, blocks and uniform values by GLSL name (docs/renderer-native.md 4.3).</summary>
     FrameGlobals Globals { get; }
 
@@ -68,6 +74,18 @@ public interface IGpuContext
 
     /// <summary>A frame is open for recording (the upload paths write into it; Metal's batches need nothing).</summary>
     void EnsureFrame();
+
+    /// <summary>The frames in flight (the slots a resource freed now may still be used by).</summary>
+    int FramesInFlight { get; }
+
+    /// <summary>The device's video memory budget in bytes (the impostor and streaming budgets).</summary>
+    ulong VideoMemoryBudget { get; }
+
+    /// <summary>Runs <paramref name="release"/> once the frames in flight that may use the resource have finished (Metal's command buffers retain what they encode, so it runs now).</summary>
+    void DeferDelete(Action release);
+
+    /// <summary>Submits what is recorded and waits for the GPU (readbacks); a frame is open again afterwards when one was before.</summary>
+    void Finish();
 
     /// <summary>
     /// A set that lives as long as the context, its slots written once from the bindings (the layout says what each slot holds and

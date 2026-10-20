@@ -163,7 +163,7 @@ internal sealed unsafe class MetalBindlessTable : IGpuBindlessTable
         for (int i = 0; i < pendingFree.Count;)
         {
             var (frame, kind, index) = pendingFree[i];
-            if (frame + MetalContext.FramesInFlight > ctx.FrameNumber) { i++; continue; }
+            if (frame + MetalContext.FrameRingDepth > ctx.FrameNumber) { i++; continue; }
             free[(int)kind].Push(index);
             Set(kind, index, default);
             pendingFree.RemoveAt(i);

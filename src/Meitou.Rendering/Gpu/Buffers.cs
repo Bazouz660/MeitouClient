@@ -233,13 +233,13 @@ public readonly record struct ArenaRange(ulong Offset, ulong Size)
 /// </summary>
 public sealed class BufferArena : IDisposable
 {
-    readonly VulkanDevice device;
+    readonly IGpuContext ctx;
     readonly List<(ulong Offset, ulong Size)> free = [];
     readonly object gate = new();
 
-    public BufferArena(GpuContext ctx, ulong size, BufferUse use, string name)
+    public BufferArena(IGpuContext ctx, ulong size, BufferUse use, string name)
     {
-        device = ctx.Device;
+        this.ctx = ctx;
         Buffer = DeviceBuffer.Create(ctx, size, use, name);
         free.Add((0, Buffer.Size));
     }
@@ -272,7 +272,7 @@ public sealed class BufferArena : IDisposable
     public void Free(ArenaRange range)
     {
         if (range.IsEmpty) return;
-        device.Frames.DeferDelete(() => Release(range));
+        ctx.DeferDelete(() => Release(range));
     }
 
     void Release(ArenaRange range)

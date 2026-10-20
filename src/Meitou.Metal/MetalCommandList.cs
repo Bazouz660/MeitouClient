@@ -417,9 +417,11 @@ public sealed class MetalCommandList : IGpuCommandList
 
     public void Draw(uint vertices, uint instances = 1, uint firstVertex = 0, uint firstInstance = 0)
     {
-        if (firstInstance != 0 || firstVertex != 0)
-            throw new NotSupportedException("the Metal backend draws from the first vertex and instance only (the sky pass draws 3)");
-        render.DrawPrimitives(MetalConventions.Primitive(topology), 0, vertices, instances);
+        // The grass draws a blade range by firstInstance; baseInstance is Metal's own (per-instance attributes fetch from it).
+        if (firstInstance != 0)
+            render.DrawPrimitives(MetalConventions.Primitive(topology), firstVertex, vertices, instances, firstInstance);
+        else
+            render.DrawPrimitives(MetalConventions.Primitive(topology), firstVertex, vertices, instances);
         Stats.Draws++;
     }
 

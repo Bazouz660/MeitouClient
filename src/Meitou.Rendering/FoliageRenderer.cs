@@ -31,7 +31,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     const int InstanceStride = 64;
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; since phase 8 stage 1 the only one this renderer uses).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     /// <summary>The meshes' allocation name (the F12 VRAM pie groups by it).</summary>
     const string MeshAllocationName = "foliage meshes";
     readonly GameInstall install;
@@ -103,7 +103,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>Zone layouts in flight: whole ones and far-only ones, each limited to <see cref="workers"/> at a time.</summary>
     int runningWhole, runningFar;
 
-    public FoliageRenderer(GpuContext gpu, GameInstall install, GameDatabase db, WorldLevelData levels, AssetLocator assets)
+    public FoliageRenderer(IGpuContext gpu, GameInstall install, GameDatabase db, WorldLevelData levels, AssetLocator assets)
     {
         Gpu = gpu;
         this.install = install;
@@ -126,7 +126,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         grassProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassVertexNative(), FoliageShaders.GrassFragmentNative(), "foliage grass");
         grassMotionProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassMotionVertexNative(), FoliageShaders.GrassMotionFragmentNative(), "foliage grass motion");
         textures = new WorldTextureCache(gpu, assets, "foliage textures");
-        gpuCull = new FoliageGpuCull(gpu);
+        gpuCull = gpu is GpuContext vk ? new FoliageGpuCull(vk) : null;   // the Metal backend takes the CPU cull (A1) for now
         InitGrassStore(gpu);
         workers = Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
         var used = catalog.ByBiome.Values.SelectMany(l => l).Distinct().ToList();
@@ -204,7 +204,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             guard = value;
             textures.Guard = value;
-            if (gpuCull is not null) { gpuCull.MayGrow = value is null ? null : value.Allows; gpuCull.Scratch.MayGrow = value is null ? null : bytes => Gpu.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes); }
+            if (gpuCull is not null && Gpu is GpuContext vk) { gpuCull.MayGrow = value is null ? null : value.Allows; gpuCull.Scratch.MayGrow = value is null ? null : bytes => vk.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes); }
         }
     }
     VramGuard? guard;
@@ -251,7 +251,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             static string One(string name, FrameScratch s) => string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"{name} {s.AllocatedBytes / 1048576.0:0.0} MB held, need per frame mean {s.MeanNeed / 1048576.0:0.0} / peak {s.PeakNeed / 1048576.0:0.0} MB (demand peak {s.PeakDemand / 1048576.0:0.0}), cap {s.Cap / 1048576.0:0} MB per slot, {s.Overflows} refused in {s.OverflowFrames} frames, {s.Rebuilds} rebuilds ({s.KeptOnRefusal} kept for a refusal)");
-            return (gpuCull is { } g ? One("cull", g.Scratch) + $"; arena {g.ArenaUsed / 1048576.0:0.0} of {g.ArenaBytes / 1048576.0:0} MB at {FoliageInstanceRecord.GpuSize} B a record ({g.PackMismatches} not lossless)" : "no GPU cull") + "; " + One("grass", grassStore.Scratch);
+            return (gpuCull is { } g ? One("cull", g.Scratch) + $"; arena {g.ArenaUsed / 1048576.0:0.0} of {g.ArenaBytes / 1048576.0:0} MB at {FoliageInstanceRecord.GpuSize} B a record ({g.PackMismatches} not lossless)" : "no GPU cull") + "; " + (grassStore.Scratch is { } grassScratch ? One("grass", grassScratch) : "grass store (CPU)");
         }
     }
 
@@ -692,7 +692,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (gpuCull is null) return;
         foreach (var g in groups)
         {
-            gpuCull.Free(g.Arena, g.ArenaGeneration);
+            gpuCull?.Free(g.Arena, g.ArenaGeneration);
             (g.Arena, g.ArenaGeneration) = (default, 0);
         }
     }
@@ -1009,7 +1009,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 uploads.Enqueue(() =>
                 {
                     Gpu.EnsureFrame();
-                    Gpu.Uploads.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(p.Vertices.AsSpan()).Slice(start, length));
+                {
+                    using var batch = Gpu.Uploads.Begin();
+                    batch.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(p.Vertices.AsSpan()).Slice(start, length));
+                }
                 });
             }
             for (int at = 0; at < indexBytes; at += SlabBytes)
@@ -1018,7 +1021,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 uploads.Enqueue(() =>
                 {
                     Gpu.EnsureFrame();
-                    Gpu.Uploads.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(allIndices.AsSpan()).Slice(start, length));
+                {
+                    using var batch = Gpu.Uploads.Begin();
+                    batch.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(allIndices.AsSpan()).Slice(start, length));
+                }
                 });
             }
         }
@@ -1222,8 +1228,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (!gpu) foreach (var b in impostorActive) { b.Offset = total; total += b.Count; }
         if (total > 0 && !gpu)
         {
-            instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
-            var target = new Span<byte>(instances.Pointer, total * InstanceStride);
+            instances = Gpu.Frame.WriteConstants(new byte[total * InstanceStride], 16);
+            var target = instances.Bytes[..(total * InstanceStride)];
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
             foreach (var b in impostorActive)
@@ -1795,7 +1801,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var frame = Gpu.Frame;
         if (gpuChunkFrame != frame.Number)
         {
-            gpuChunkData = frame.Constants.Write<FoliageCullChunk>(gpuChunks.AsSpan(0, gpuChunkCount), 256);
+            gpuChunkData = ((GpuContext)Gpu).Frame.Constants.Write<FoliageCullChunk>(gpuChunks.AsSpan(0, gpuChunkCount), 256);
             gpuChunkFrame = frame.Number;
         }
         int meshes = meshDraws.Count, rocks = meshes + rockDraws.Count, count = rocks + impostorDraws.Count;
@@ -1815,7 +1821,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             int b = impostorDraws[k].Batch;
             gpuDraws[rocks + k] = new FoliageCullDraw { IndexCount = 6, ChunkStart = (uint)gpuBatchStart[b], ChunkEnd = (uint)gpuBatchStart[b + 1] };
         }
-        var draws = frame.Constants.Write<FoliageCullDraw>(gpuDraws.AsSpan(0, count), 256);
+        var draws = ((GpuContext)Gpu).Frame.Constants.Write<FoliageCullDraw>(gpuDraws.AsSpan(0, count), 256);
         // What the rocks' row 0 w carries, as the terrain's mesh path writes it: the biome row in colour (resident ones, now), 0 in depth.
         var rock = new FoliageRockView { BiomeRows = !depthPass };
         if (!depthPass && gpuRockOrder.Count > 0) terrain.FeatureResidentBiomes(rock.Resident);
@@ -2361,11 +2367,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>The host's state for the grass, with what the GL version set around it: no culling (GL's cull face off), alpha to coverage
     /// with a multisampled target.</summary>
-    static DrawState GrassState(GpuContext gpu, bool coverage) =>
+    static DrawState GrassState(IGpuContext gpu, bool coverage) =>
         gpu.CurrentState() with { Cull = CullMode.None, AlphaToCoverage = coverage };
 
     /// <summary>The motion pass's state (the host's: colour mask red and green, no depth test, no blending) without culling (GL's cull face off).</summary>
-    static DrawState MotionState(GpuContext gpu) => gpu.CurrentState() with { Cull = CullMode.None };
+    static DrawState MotionState(IGpuContext gpu) => gpu.CurrentState() with { Cull = CullMode.None };
 
     readonly JobPool<GrassJob> grassJobs = new();
 
@@ -2587,7 +2593,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 gpuSum += (end - start) / 1e6;
                 if (!t.Continuation) gpuCount++;
             }
-            else if (Gpu.Frame.Number - t.Start.Frame <= 2 * Gpu.Device.Frames.Count) continue;   // not collected yet
+            else if (Gpu.Frame.Number - t.Start.Frame <= 2 * Gpu.FramesInFlight) continue;   // not collected yet
             timers.RemoveAt(i--);
         }
         if (gpuCount > 0) { GpuMs = gpuSum / gpuCount; gpuSum = 0; gpuCount = 0; }

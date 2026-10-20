@@ -350,8 +350,8 @@ public sealed partial class FoliageRenderer
     /// <summary>The limit from the current budget and pressure (once a scan).</summary>
     void UpdateImpostorLimit()
     {
-        long budget = guard is { BudgetBytes: > 0 } g ? g.BudgetBytes : (long)Math.Min(Gpu.Device.VideoMemory().Budget, (ulong)long.MaxValue);
-        impostorLimitBytes = (long)(ImpostorBudget.LimitMb(ImpostorBudgetMb, budget, Gpu.Device.IsIntegrated, guard is { Pressure: true }) * 1048576);
+        long budget = guard is { BudgetBytes: > 0 } g ? g.BudgetBytes : (long)Math.Min(Gpu.VideoMemoryBudget, (ulong)long.MaxValue);
+        impostorLimitBytes = (long)(ImpostorBudget.LimitMb(ImpostorBudgetMb, budget, Gpu.IsIntegrated, guard is { Pressure: true }) * 1048576);
     }
 
     /// <summary>
@@ -561,7 +561,7 @@ public sealed partial class FoliageRenderer
                 bool finer = s.RefineSkip < s.Skip;
                 if (finer && (impostorBytes + need > impostorLimitBytes * ImpostorTransientShare || guard is { } g && !g.Allows((ulong)need))) { Abandon(s, impostorRefining, i--); continue; }   // no room beside the old textures: the plan is asked again at the next scan
                 using var first = Gpu.Uploads.Begin();
-                s.Next = new ImpostorTextures(Gpu, atlas, first, s.RefineSkip, s.RefineSkip + 1);
+                s.Next = new ImpostorTextures((GpuContext)Gpu, atlas, first, s.RefineSkip, s.RefineSkip + 1);
                 impostorBytes += s.Next.Bytes;
             }
             long budget = settling ? SettleUploadBytes : UploadBytesPerFrame;
@@ -613,10 +613,10 @@ public sealed partial class FoliageRenderer
                 // The baker's programs compile here, with the loading, not at the first bake
                 // (the first bake of a cold cache was a 60 ms frame). The drawing programs and the quad follow below.
                 Gpu.EnsureFrame();
-                impostorBaker ??= new ImpostorBaker(Gpu, textures);
+                impostorBaker ??= new ImpostorBaker((GpuContext)Gpu, textures);
                 // The drawing programs and the quad too, here in the update (a frame is open, no pass is): not at the first impostor in view
                 // (a 7 ms hitch: both programs and the quad's upload).
-                impostorDraw ??= new ImpostorDraw(Gpu, nativeFrame);
+                impostorDraw ??= new ImpostorDraw((GpuContext)Gpu, nativeFrame);
             }
             UpdateImpostorLimit();
             // The nearest any transition is: the small class's smallest (a zone ending before it has no impostor ground for any mesh).
@@ -785,7 +785,7 @@ public sealed partial class FoliageRenderer
                 return true;
             }
             using var first = Gpu.Uploads.Begin();
-            s.Textures = new ImpostorTextures(Gpu, s.Atlas!, first, levels, levels + 1);
+            s.Textures = new ImpostorTextures((GpuContext)Gpu, s.Atlas!, first, levels, levels + 1);
             s.Skip = s.Textures.SkipOf(0);   // levels, or the atlas's first level when it was read without the finer ones (the plan then refines)
             impostorBytes += s.Textures.Bytes;
         }
@@ -818,7 +818,7 @@ public sealed partial class FoliageRenderer
             var next = impostorBakes[best];
             impostorBakes.RemoveAt(best);
             var s = next.Impostor!;
-            impostorBaker ??= new ImpostorBaker(Gpu, textures);
+            impostorBaker ??= new ImpostorBaker((GpuContext)Gpu, textures);
             impostorBaker.RockTerrain = rockTerrain;
             impostorBake = impostorBaker.Begin(s.Source!, s.Meshes!, s.Class);
             impostorBakeAsset = next;
@@ -997,7 +997,7 @@ public sealed partial class FoliageRenderer
     /// lit program, or a cascade's caster facing the sun (the direction towards it from the cascade's matrix).</summary>
     void AddImpostorDraws(MeshJob job, bool depth, Matrix4x4 viewProjection, PassTargets targets, DrawState state, bool coverage, bool indirect, int argsFirst, ImpostorPass pass = ImpostorPass.Scene)
     {
-        impostorDraw ??= new ImpostorDraw(Gpu, nativeFrame);
+        impostorDraw ??= new ImpostorDraw((GpuContext)Gpu, nativeFrame);
         var drawState = state with { Cull = CullMode.None };
         var program = depth ? ImpostorProgram.Caster : pass == ImpostorPass.Prepass ? ImpostorProgram.Prepass : pass == ImpostorPass.AfterPrepass ? ImpostorProgram.AfterPrepass : ImpostorProgram.Plain;
         var pipeline = impostorDraw.Pipeline(program, drawState, targets.Formats);

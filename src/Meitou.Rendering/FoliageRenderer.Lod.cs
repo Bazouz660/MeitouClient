@@ -214,7 +214,10 @@ public sealed unsafe partial class FoliageRenderer
                 {
                     var bytesOfLevel = MemoryMarshal.AsBytes(levels[l - 1].AsSpan());
                     for (int s = 0; s < bytesOfLevel.Length; s += SlabBytes)
-                        Gpu.Uploads.Write(indices, at + (ulong)s, bytesOfLevel.Slice(s, Math.Min(SlabBytes, bytesOfLevel.Length - s)));
+                    {
+                        using var batch = Gpu.Uploads.Begin();
+                        batch.Write(indices, at + (ulong)s, bytesOfLevel.Slice(s, Math.Min(SlabBytes, bytesOfLevel.Length - s)));
+                    }
                     at += (ulong)bytesOfLevel.Length;
                 }
                 bytes += (long)total * sizeof(uint);
