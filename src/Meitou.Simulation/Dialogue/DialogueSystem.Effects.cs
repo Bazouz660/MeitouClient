@@ -10,7 +10,8 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// A line's effects (<c>FUN_140680560</c>, docs/game/dialogue.md "Effects"), run as it is said or clicked, with <paramref name="me"/> the NPC-side speaker and the player character the
     /// target, in the original's order: locks, interrupt, relation changes, then the DA effects in data order. Not built yet: crowd triggers, items given, AI changes and
-    /// contracts, arrests other than the bounty desk's hand-over, and the slavery effects other than DA 40.
+    /// contracts, arrests other than the bounty desk's hand-over, and the slavery effects other than DA 40. A Trade, an editor and a recruit serve the conversation's
+    /// <see cref="Conversation.Owner"/>; relation and payment notices go to everyone (the purse is shared).
     /// </summary>
     void RunEffects(World world, Conversation c, DialogueNode line, CharacterId me)
     {
@@ -42,7 +43,7 @@ public sealed partial class DialogueSystem
                 case DialogueActions.Trade:
                     c.Ended = true;
                     if (mc is { SquadId: >= 0 } && world.Squads.Find(mc.SquadId)?.Shop is not null)
-                        world.Defer(new Trading.OpenTrade(target, me) { Tick = world.Tick + 1 });
+                        world.Defer(new Trading.OpenTrade(target, me) { Tick = world.Tick + 1, Player = c.Owner });
                     return;
                 case DialogueActions.AffectRelations when mc is not null && tc is not null:
                     ChangeRelation(world, mc.Faction, tc.Faction, effect.Value);
@@ -62,7 +63,9 @@ public sealed partial class DialogueSystem
                     break;
                 case DialogueActions.CharacterEditor:
                     c.Ended = true;
-                    request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
+                    TalkOf(c.Owner).Request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
+                    // The paid surgery edit this editor sends is allowed for the conversation's player only (docs/simulation.md "Multiplayer (host-authoritative co-op)").
+                    world.Player.Session(c.Owner).Grant = new EditGrant(Editing.EditKind.Surgery, target, me);
                     return;
                 case DialogueActions.AssignBounty when tc is not null && mc is not null && effect.Value > 0 && data.Relations.Contains(mc.Faction):
                 {

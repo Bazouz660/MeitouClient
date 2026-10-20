@@ -998,7 +998,20 @@ same code with the same golden hashes.
 
 ### Dialogue and trade per player
 
-Not per player yet: one conversation and one trade; `PublishConversation(n)`, `PublishRequest(n)` and `PublishTrade(n)` answer player 0 only.
+- **Talks and deals**: `DialogueSystem` keeps one talk per player number (approach, open conversation, view, editor request) and
+  `TradeSystem` one deal (customer, trader, approach, open window, view). `TalkOrder`/`OpenTrade` start the issuer's; `DialogueChoice`,
+  `EndConversation`, `BuyItem`, `SellItem`, `ArrangeStock` and `CloseTrade` act on the issuer's only (none: ignored).
+  `PublishConversation(n)`, `PublishRequest(n)`, `PublishTrade(n)` return player n's; the parameterless ones player 0's.
+- **One holder per NPC**: both systems are `INpcHolder`s (a talk's target or conversation NPC, a deal's trader). A `TalkOrder` or
+  `OpenTrade` for an NPC another player holds posts "{name} is busy with someone else." to the issuer and changes nothing; the holder
+  keeps it until its window ends (engine choice). Different NPCs work at once; `one at a time` dialogues test every talk.
+- **Effects serve the conversation's owner** (the talk's player; a speech bubble's target's owner; 0 for announcements): Trade opens
+  the owner's deal; DA_CHARACTER_EDITOR and DA_JOIN_SQUAD_WITH_EDIT set the owner's request and `Grant` (surgery: patient and surgeon;
+  recruit: the recruit); a recruit joins the owner's active squad (else their selection's, else the talker's), a full one making a new
+  squad owned by them. "has nothing to say", "a little full" and every buy/sell notice go to that player; relation and payment
+  notices to everyone (one purse).
+- **Hash**: player 0's talk hashes where the single-player approach and conversation did; each other non-empty talk follows with its
+  number. Deals stay unhashed.
 
 ### Command gate
 

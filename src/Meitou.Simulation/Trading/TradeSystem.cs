@@ -89,18 +89,33 @@ public sealed class TradeSettings
 /// pending Fencing crime against the shop's faction, booked at once with the shopkeeper as the witness. The prompt that shows the chance is the UI's. The smuggling rules (8.5) are not
 /// decoded and not built.</item>
 /// </list>
-/// The shops' stock and restock times are in the state hash (through the squads); the open trade is not (it only decides what is published).
+/// The shops' stock and restock times are in the state hash (through the squads); the open trades are not (they only decide what is published). Each player has
+/// a deal of their own (docs/simulation.md "Dialogue and trade per player"); a trader another player's window holds (<see cref="World.HolderOf"/>) is refused.
 /// </summary>
-public sealed class TradeSystem : ITickSystem, ITradeSource
+public sealed class TradeSystem : ITickSystem, ITradeSource, INpcHolder
 {
     readonly PopulationData data;
     readonly CharacterAssembly assembly;
     readonly Dictionary<string, SquadTemplate?> templates = new(StringComparer.Ordinal), homeTemplates = new(StringComparer.Ordinal);
     Market? market;
-    CharacterId customer = CharacterId.None, trader = CharacterId.None;
-    bool open, traderWandered;
-    long approachUntil;
-    TradeView? view;
+    // Each player's trade, by player number.
+    readonly SortedDictionary<int, Deal> deals = [];
+
+    /// <summary>One player's trade: the customer walking up to the trader (until <see cref="ApproachUntil"/>), then the open window.</summary>
+    sealed class Deal
+    {
+        public required int Player;
+        public CharacterId Customer = CharacterId.None, Trader = CharacterId.None;
+        public bool Open, TraderWandered;
+        public long ApproachUntil;
+        public TradeView? View;
+    }
+
+    Deal DealOf(int player)
+    {
+        if (!deals.TryGetValue(player, out var deal)) deals[player] = deal = new Deal { Player = player };
+        return deal;
+    }
 
     public TradeSystem(PopulationData data, TradeSettings? settings = null)
     {
@@ -122,32 +137,41 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             switch (command)
             {
                 case OpenTrade o:
-                    Close(world);
-                    customer = o.Customer;
-                    trader = o.Trader;
-                    approachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
-                    if (!Resolve(world, out int c, out int t, out _))
+                {
+                    // Another player's window holds the trader (a trade, a conversation or its approach): the first holder keeps it.
+                    if (world.HolderOf(o.Trader) is >= 0 and var holder && holder != o.Player)
                     {
-                        // A right click on an enemy is still an attack (the UI sends the trade for any trader; only the world knows who is hostile).
-                        if (world.Characters.TryResolveNext(trader, out int who) && world.Characters.Cold(who) is { } tc && AggroSystem.IsEnemy(data.Relations, world.Player.Faction, tc.Faction))
-                            world.Defer(new Combat.AttackOrder([customer], trader) { Tick = world.Tick + 1 });
-                        Close(world);
+                        if (world.Characters.TryResolveNext(o.Trader, out int busy)) world.Post(o.Player, $"{world.Characters.Cold(busy)!.Name} is busy with someone else.");
                         break;
                     }
-                    Hold(world, t);
-                    if (!InReach(world, c, t)) world.Defer(new MoveOrder([customer], world.Characters.Next[t].Position) { Tick = world.Tick + 1 });
+                    var deal = DealOf(o.Player);
+                    Close(world, deal);
+                    deal.Customer = o.Customer;
+                    deal.Trader = o.Trader;
+                    deal.ApproachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
+                    if (!Resolve(world, deal, out int c, out int t, out _))
+                    {
+                        // A right click on an enemy is still an attack (the UI sends the trade for any trader; only the world knows who is hostile).
+                        if (world.Characters.TryResolveNext(deal.Trader, out int who) && world.Characters.Cold(who) is { } tc && AggroSystem.IsEnemy(data.Relations, world.Player.Faction, tc.Faction))
+                            world.Defer(new Combat.AttackOrder([deal.Customer], deal.Trader) { Tick = world.Tick + 1, Player = o.Player });
+                        Close(world, deal);
+                        break;
+                    }
+                    Hold(world, deal, t);
+                    if (!InReach(world, c, t)) world.Defer(new MoveOrder([deal.Customer], world.Characters.Next[t].Position) { Tick = world.Tick + 1, Player = o.Player });
                     break;
-                case CloseTrade:
-                    Close(world);
+                }
+                case CloseTrade close when deals.TryGetValue(close.Player, out var closed):
+                    Close(world, closed);
                     break;
-                case BuyItem buy when open:
-                    Buy(world, buy);
+                case BuyItem buy when deals.TryGetValue(buy.Player, out var deal) && deal.Open:
+                    Buy(world, deal, buy);
                     break;
-                case SellItem sell when open:
-                    Sell(world, sell);
+                case SellItem sell when deals.TryGetValue(sell.Player, out var deal) && deal.Open:
+                    Sell(world, deal, sell);
                     break;
-                case ArrangeStock when open:
-                    if (Resolve(world, out _, out _, out var arranged)) InventoryCommands.Arrange(arranged!.Stock);
+                case ArrangeStock arrange when deals.TryGetValue(arrange.Player, out var deal) && deal.Open:
+                    if (Resolve(world, deal, out _, out _, out var arranged)) InventoryCommands.Arrange(arranged!.Stock);
                     break;
             }
         }
@@ -156,42 +180,56 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     public void SlowWorld(World world)
     {
         if (world.Tick % Settings.CheckEveryTicks == 0) Stock(world);
-        if (!customer.IsNone)
+        foreach (var deal in deals.Values)
         {
-            if (!Resolve(world, out int c, out int t, out _)) Close(world);
+            if (deal.Customer.IsNone) continue;
+            if (!Resolve(world, deal, out int c, out int t, out _)) Close(world, deal);
             else if (InReach(world, c, t))
             {
-                open = true;
-                Hold(world, t);
+                deal.Open = true;
+                Hold(world, deal, t);
             }
-            else if (open || world.Tick >= approachUntil) Close(world);   // walked away, or never arrived
-            else Hold(world, t);
+            else if (deal.Open || world.Tick >= deal.ApproachUntil) Close(world, deal);   // walked away, or never arrived
+            else Hold(world, deal, t);
         }
         RefreshView(world);
     }
 
-    internal void RefreshView(World world) =>
-        view = open && Resolve(world, out int ci, out int ti, out var shop) ? Publish(world, ci, ti, shop!) : null;
+    internal void RefreshView(World world)
+    {
+        foreach (var deal in deals.Values)
+            deal.View = deal.Open && Resolve(world, deal, out int ci, out int ti, out var shop) ? Publish(world, deal, ci, ti, shop!) : null;
+    }
 
-    public TradeView? PublishTrade() => view;
+    public TradeView? PublishTrade() => PublishTrade(0);
+    public TradeView? PublishTrade(int player) => deals.TryGetValue(player, out var deal) ? deal.View : null;
+
+    /// <summary>The player whose deal (open or on its way) is with <paramref name="npc"/>; -1 none.</summary>
+    public int HolderOf(CharacterId npc)
+    {
+        if (npc.IsNone) return -1;   // a closed deal's Trader is None
+        foreach (var deal in deals.Values)
+            if (deal.Trader == npc) return deal.Player;
+        return -1;
+    }
 
     /// <summary>Keeps the trader standing while the customer comes and trades (residents wander; the original's shopkeepers stand at their node). Its wander resumes on close.</summary>
-    void Hold(World world, int t)
+    void Hold(World world, Deal deal, int t)
     {
         ref var n = ref world.Characters.Next[t];
         world.Characters.Cold(t)!.Engaged = true;   // the AI leaves it alone until the trade closes
-        if (n.Task == (byte)CharacterTask.Wander) traderWandered = true;
+        if (n.Task == (byte)CharacterTask.Wander) deal.TraderWandered = true;
         if (n.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) MovementSystem.Stop(world.Characters, t);
     }
 
-    void Close(World world)
+    void Close(World world, Deal deal)
     {
-        if (world.Characters.TryResolveNext(trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
-        if (traderWandered && world.Characters.TryResolveNext(trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
+        if (world.Characters.TryResolveNext(deal.Trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
+        if (deal.TraderWandered && world.Characters.TryResolveNext(deal.Trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
             world.Characters.Next[t].Task = (byte)CharacterTask.Wander;
-        customer = trader = CharacterId.None;
-        open = traderWandered = false;
-        view = null;
+        deal.Customer = deal.Trader = CharacterId.None;
+        deal.Open = deal.TraderWandered = false;
+        deal.View = null;
     }
 
     // ------------------------------------------------------------------ shops
@@ -270,12 +308,12 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     // ------------------------------------------------------------------ trading
 
-    bool Resolve(World world, out int c, out int t, out Shop? shop)
+    bool Resolve(World world, Deal deal, out int c, out int t, out Shop? shop)
     {
         var table = world.Characters;
         shop = null;
         t = -1;
-        if (!table.TryResolveNext(customer, out c) || !table.TryResolveNext(trader, out t)) return false;
+        if (!table.TryResolveNext(deal.Customer, out c) || !table.TryResolveNext(deal.Trader, out t)) return false;
         var cc = table.Cold(c)!;
         var tc = table.Cold(t)!;
         if (!cc.IsPlayer || cc.Medical is { Incapacitated: true } || tc.Medical is { Incapacitated: true } || tc.InCombat || cc.Inventory is null) return false;
@@ -299,9 +337,10 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             && item.Quality == token.Quality && item.Contents is null ? item : null;
     }
 
-    void Buy(World world, BuyItem buy)
+    /// <summary>A purchase for the deal's player (its notices go to them; the purse is the faction's).</summary>
+    void Buy(World world, Deal deal, BuyItem buy)
     {
-        if (!Resolve(world, out int c, out int t, out var shop)) return;
+        if (!Resolve(world, deal, out int c, out int t, out var shop)) return;
         var cold = world.Characters.Cold(c)!;
         var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
         if (Find(shop!.Stock, buy.Item) is not { } item) return;
@@ -309,7 +348,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         int units = Affordable(m, item, Math.Clamp(buy.Quantity, 1, item.Quantity), false, shop.Terms, squad.Faction, world.Player.Money);
         if (units == 0)
         {
-            world.Post("You can't afford that.");
+            world.Post(deal.Player, "You can't afford that.");
             return;
         }
         var bought = item.WithQuantity(units);
@@ -330,36 +369,37 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         else placed = Place(cold.Inventory!, bought, units);
         if (placed == 0)
         {
-            world.Post("No room for that item.");
+            world.Post(deal.Player, "No room for that item.");
             return;
         }
         if (placed < units) price = m.StackPrice(item.WithQuantity(placed), false, shop.Terms, squad.Faction);
         Take(shop.Stock, item, placed);
         world.Player.Money -= price;
         squad.Money += price;
-        world.Post($"{cold.Name} bought {Units(placed, item.Name)} for c.{price}");
+        world.Post(deal.Player, $"{cold.Name} bought {Units(placed, item.Name)} for c.{price}");
     }
 
-    void Sell(World world, SellItem sell)
+    /// <summary>A sale for the deal's player (its notices go to them; the purse is the faction's).</summary>
+    void Sell(World world, Deal deal, SellItem sell)
     {
-        if (!Resolve(world, out int c, out int t, out var shop)) return;
+        if (!Resolve(world, deal, out int c, out int t, out var shop)) return;
         var cold = world.Characters.Cold(c)!;
         var tc = world.Characters.Cold(t)!;
         var squad = world.Squads.Find(tc.SquadId)!;
         if (Find(cold.Inventory!, sell.Item) is not { } item || !InventoryCommands.IsMovableSection(item.Section)) return;
-        if (item.LockedOn) { world.Post("This item is locked in place and cannot be removed."); return; }
+        if (item.LockedOn) { world.Post(deal.Player, "This item is locked in place and cannot be removed."); return; }
         var m = Market(world);
         int units = Affordable(m, item, Math.Clamp(sell.Quantity, 1, item.Quantity), true, shop!.Terms, cold.Faction, squad.Money);
         if (units == 0)
         {
-            world.Post("The shopkeeper can't afford that.");
+            world.Post(deal.Player, "The shopkeeper can't afford that.");
             return;
         }
         if (item.IsStolenFor(cold.Faction) && !shop.Terms.BuysStolen && Caught(world, c, item, squad))
         {
-            world.Post("Got caught selling stolen item.");
-            if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
-                crimes.Book(world, c, squad.Faction, trader);
+            world.Post(deal.Player, "Got caught selling stolen item.");
+            if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, deal.Trader, Crime.CrimeSystem.MinTimer))
+                crimes.Book(world, c, squad.Faction, deal.Trader);
             return;
         }
         var sold = item.WithQuantity(units);
@@ -367,7 +407,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         int placed = sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
         if (placed == 0)
         {
-            world.Post("No room for that item.");
+            world.Post(deal.Player, "No room for that item.");
             return;
         }
         if (placed < units) price = m.StackPrice(item.WithQuantity(placed), true, shop.Terms, cold.Faction);
@@ -375,7 +415,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         if (InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
         squad.Money -= price;
         world.Player.Money += price;
-        world.Post($"{cold.Name} sold {Units(placed, item.Name)} for c.{price}");
+        world.Post(deal.Player, $"{cold.Name} sold {Units(placed, item.Name)} for c.{price}");
     }
 
     /// <summary>
@@ -439,7 +479,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     static string Units(int n, string name) => n == 1 ? name : $"{n} x {name}";
 
-    TradeView Publish(World world, int c, int t, Shop shop)
+    TradeView Publish(World world, Deal deal, int c, int t, Shop shop)
     {
         var m = Market(world);
         var cold = world.Characters.Cold(c)!;
@@ -460,6 +500,6 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var stock = shop.Stock.All().Select((item, index) => View(item, index, false, squad.Faction)).ToArray();
         var goods = cold.Inventory!.All().Select((item, index) => (item, index)).Where(p => InventoryCommands.IsMovableSection(p.item.Section))
             .Select(p => View(p.item, p.index, true, cold.Faction)).ToArray();
-        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen);
+        return new TradeView(deal.Customer, deal.Trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen);
     }
 }

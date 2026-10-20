@@ -125,7 +125,7 @@ public sealed partial class DialogueSystem
         // DC_HAS_TAG reads the speaker squad's memory of the target, which Meitou does not keep: with no record only lines that require nothing pass.
         if (node.MemoryRequired != 0) return false;
         if (node.IsRoot && (mc.DialogueLocks?.TryGetValue(node.StringId, out bool locked) == true ? locked : node.Locked)) return false;
-        if (node.OneAtATime && node.IsRoot && SquadOf(world, me).Any(m => m != me && open?.Npc == m && open.Root == node)) return false;
+        if (node.OneAtATime && node.IsRoot && SquadOf(world, me).Any(m => m != me && Talking(m, node))) return false;
         if (node.ChanceTemporary < 99 && Rng.Float(NextRoll(world, me)) * 100 >= node.ChanceTemporary) return false;
         if (node.InTownOf.Count > 0 && (TownFaction(world, table.Next[ms].Position) is not { } tf || !node.InTownOf.Contains(tf))) return false;
         if (node.MyFaction.Count > 0 && !node.MyFaction.Contains(FactionId(mc.Faction))) return false;
