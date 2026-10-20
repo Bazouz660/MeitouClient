@@ -143,7 +143,8 @@ public sealed partial class PopulationSystem
         var all = SquadManagement.PlayerSquads(world);
         int n = all.Count;
         while (all.Any(s => s.Name == $"{faction}_{n}")) n++;
-        var squad = SpawnSquad(world, BuildStart(world, start, key, at), null, JoinRadius, player: true, owner: player);
+        // Of the running player faction (a loaded save's may not be the data's "Nameless"), so it is one of the player squads.
+        var squad = SpawnSquad(world, BuildStart(world, start, key, at) with { Faction = world.Player.Faction }, null, JoinRadius, player: true, owner: player);
         squad.Name = $"{faction}_{n}";
         squad.Index = own.Count == 0 ? 0 : own[^1].Index + 1;
         session.Squad = squad.Id;
