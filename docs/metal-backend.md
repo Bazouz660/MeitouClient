@@ -134,7 +134,8 @@ Each step ends with something visible; the order is the cheap one first.
 |---|---|---|
 | Done | The sky on Metal, in the game (`--renderer metal`) | the strategy: the shaders, the uniforms, the present |
 | Done | The state and the formats in the GL vocabulary | the passes state what they want in neutral words |
-| Next | The resource layer behind interfaces: the handles, the binding list, the context's interface; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The handles (the samplers, the views, the textures, the buffers) and the binding list | the renderers hold no Vulkan object |
+| Next | The context's interface, the descriptor sets and the sync model; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |

@@ -32,8 +32,8 @@ public sealed unsafe class GpuFrame : IDisposable
             pools[i] = [];
         }
         Stats = new GpuStats();
-        Commands = new CommandList(device, Stats);
-        PreFrame = new CommandList(device, Stats);
+        Commands = new CommandList(ctx, Stats);
+        PreFrame = new CommandList(ctx, Stats);
         Timestamps = new QueryArena(device);
         States = new ResourceStates();
         Parallel = new ParallelPass(ctx);
@@ -45,8 +45,9 @@ public sealed unsafe class GpuFrame : IDisposable
 
     /// <summary>Per recording thread (<see cref="RenderJobs.ThreadIndex"/>): a command pool per frame slot and its secondaries, reused when the
     /// slot comes round (docs/renderer-native.md 6.3). Each thread only touches its own entry; the render thread resets them at the frame's begin.</summary>
-    sealed class ThreadPools(VulkanDevice device, int slots)
+    sealed class ThreadPools(GpuContext ctx, int slots)
     {
+        readonly VulkanDevice device = ctx.Device;
         public readonly CommandPool[] Pools = new CommandPool[slots];
         public readonly List<CommandList>[] Lists = [.. Enumerable.Range(0, slots).Select(_ => new List<CommandList>())];
         public readonly int[] Used = new int[slots];
@@ -64,7 +65,7 @@ public sealed unsafe class GpuFrame : IDisposable
             {
                 var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = Pools[slot], Level = CommandBufferLevel.Secondary, CommandBufferCount = 1 };
                 VulkanException.Check(vk.AllocateCommandBuffers(device.Device, in ai, out var cb), "vkAllocateCommandBuffers");
-                lists.Add(new CommandList(device, new GpuStats()) { Handle = cb });
+                lists.Add(new CommandList(ctx, new GpuStats()) { Handle = cb });
             }
             return lists[Used[slot]++];
         }
@@ -88,7 +89,7 @@ public sealed unsafe class GpuFrame : IDisposable
     internal CommandList BeginSecondary(in AttachmentFormats formats)
     {
         int t = RenderJobs.ThreadIndex;
-        var pools = threads[t] ??= new ThreadPools(device, device.Frames.Count);
+        var pools = threads[t] ??= new ThreadPools(ctx, device.Frames.Count);
         var list = pools.Next(Slot);
         list.Stats.Reset();
         list.BeginSecondary(formats);

@@ -24,15 +24,15 @@ public sealed unsafe partial class PostProcess : IDisposable
 {
     /// <summary>A native target with the GL sampler state its GL texture had (linear or nearest, clamped; the luminance's mipmapped
     /// minification).</summary>
-    sealed class Target2D(Texture texture, TextureMinFilter min, TextureMagFilter mag)
+    sealed class Target2D(GpuTexture texture, TextureMinFilter min, TextureMagFilter mag)
     {
-        public readonly Texture Texture = texture;
+        public readonly GpuTexture Texture = texture;
         public readonly TextureMinFilter Min = min;
         public readonly TextureMagFilter Mag = mag;
         public int Width => Texture.Desc.Width;
         public int Height => Texture.Desc.Height;
         public InternalFormat Format => Texture.Desc.Format;
-        public RenderTarget Attachment => new(Texture.Attachment(), LoadOp.Load, default, Image: Texture.Image);
+        public RenderTarget Attachment => new(Texture.Attachment(), LoadOp.Load, default);
     }
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8); ports use it instead of looking it up.</summary>
@@ -40,13 +40,13 @@ public sealed unsafe partial class PostProcess : IDisposable
     public PostOptions Options { get; }
     /// <summary>What the final image goes to: an RGBA8 colour target at least the display size (the window's backbuffer, or an offscreen
     /// texture). Set before <see cref="End"/>.</summary>
-    public Texture? Target;
+    public GpuTexture? Target;
     /// <summary>What the scene's slice is drawn into now (valid after <see cref="Begin"/>): the scene colour and the slice's depth, at the render size.</summary>
     public PassTargets SceneTargets { get; private set; } = null!;
     /// <summary>The scene's depth (the near slice's; valid after <see cref="Begin"/>).</summary>
-    public Texture SceneDepth => sceneDepth!.Texture;
+    public GpuTexture SceneDepth => sceneDepth!.Texture;
     /// <summary>The scene's colour at the render size (valid after <see cref="Begin"/>; the Meitou water copies it for its refraction).</summary>
-    public Texture SceneColour => sceneColour!.Texture;
+    public GpuTexture SceneColour => sceneColour!.Texture;
     /// <summary>The previous frame's depth pyramid for the foliage occlusion cull (<see cref="HizPyramid"/>); built at the end of each frame while <see cref="OcclusionCull"/> is on.</summary>
     public HizPyramid? Hiz { get; private set; }
     /// <summary>On (default): <see cref="End"/> builds the pyramid (<c>--no-occlusion-cull</c> turns it off).</summary>
@@ -68,7 +68,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     long frameIndex;
     Target2D? aoA, aoB;
     Target2D? ldr, ldrFxaa;   // the composite's LDR picture that FXAA or the heat haze reads, and FXAA's when the heat haze follows it
-    Texture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
+    GpuTexture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
     Target2D? luminance, adaptA, adaptB;   // Kenshi's exposure: the luminance measure (mipmapped) and the adapted value (1 × 1, ping-pong)
     bool adaptedValid;
     readonly System.Diagnostics.Stopwatch adaptClock = new();
@@ -644,9 +644,9 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// <see cref="SamplerDesc.FromGl"/>, with the bias as it is now).</summary>
     SampledTexture Sampled(Target2D t) => Sampled(t.Texture, t.Min, t.Mag, TextureWrapMode.ClampToEdge, 1);
 
-    SampledTexture Sampled(Texture t, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy) =>
+    SampledTexture Sampled(GpuTexture t, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy) =>
         new(Gpu.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, anisotropy, false, Gpu.LodBias)),
-            t.View(), t.Image);
+            t.View());
 
     /// <summary>Binds a target (null: the stand-in VkGl bound for nothing). Call where the GL code bound the unit: the sampler depends on the LOD bias then.</summary>
     void Bind(LegacyProgram p, SamplerSlot slot, Target2D? target)
@@ -840,7 +840,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// </summary>
     public int GiResolve { get; set; }
 
-    Texture? GiAlbedoTarget => GiResolve > 0 ? giAlbedo?.Texture : null;
+    GpuTexture? GiAlbedoTarget => GiResolve > 0 ? giAlbedo?.Texture : null;
 
     /// <summary>Makes the albedo and low targets for <see cref="GiResolve"/> (again when its divisor or the render size changed).</summary>
     void EnsureGi()
@@ -1219,7 +1219,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>The file's levels as they are (BC1 blocks), or decoded to RGBA8 for another format; every level the file has.</summary>
-    Texture HazeTexture(Meitou.Data.Textures.DdsFile dds, string name)
+    GpuTexture HazeTexture(Meitou.Data.Textures.DdsFile dds, string name)
     {
         bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
         var top = dds.Surface(0, 0);

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -240,7 +240,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <paramref name="readback"/> at pass × the row's bytes.
     /// </summary>
     internal void RecordRow(CommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
-        Texture large, Texture depth, Texture small, GpuBuffer readback, float lodBias, ImpostorSource? rock = null)
+        GpuTexture large, GpuTexture depth, GpuTexture small, GpuBuffer readback, float lodBias, ImpostorSource? rock = null)
     {
         int grid = size.Grid, f = size.FramePixels, samples = 2 * f, width = grid * samples, smallWidth = grid * f;
         PrepareFrameGlobals();
@@ -257,8 +257,8 @@ public sealed unsafe class ImpostorBaker : IDisposable
         {
             cmd.Barrier(BarrierBatch.Full);
             cmd.BeginRendering(new RenderingDesc(
-                new RenderTarget(large.Attachment(), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f), Image: large.Image),
-                new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f, Image: depth.Image),
+                new RenderTarget(large.Attachment(), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f)),
+                new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f),
                 width, samples));
             cmd.SetScissor(full);
             cmd.SetDepth(true, true, DepthFunction.Less);
@@ -295,7 +295,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D((uint)smallWidth, (uint)f, 1),
             };
-            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, small.Image, ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
+            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, gpu.Device.NativeImage(small), ImageLayout.General, gpu.Device.BufferAt(readback.Index), 1, &region);
         }
         var host = new BarrierBatch();
         host.Add(PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.HostBit, AccessFlags2.HostReadBit);
@@ -357,10 +357,10 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <summary>Sets kept idle at most (the largest, 6144 x 512, is 28 MB); the oldest goes when another comes back.</summary>
     const int KeptTargetSets = 3;
 
-    readonly List<((int Grid, int Frame) Key, Texture Large, Texture Depth, Texture Small)> targets = [];
+    readonly List<((int Grid, int Frame) Key, GpuTexture Large, GpuTexture Depth, GpuTexture Small)> targets = [];
 
     /// <summary>A colour target at twice the frame size, its depth and the half-size picture for the atlas size; made when none is kept.</summary>
-    internal (Texture Large, Texture Depth, Texture Small) RentTargets(ImpostorClass size, CommandBuffer pre)
+    internal (GpuTexture Large, GpuTexture Depth, GpuTexture Small) RentTargets(ImpostorClass size, CommandList pre)
     {
         var key = (size.Grid, size.FramePixels);
         int at = targets.FindIndex(t => t.Key == key);
@@ -371,13 +371,13 @@ public sealed unsafe class ImpostorBaker : IDisposable
             return (kept.Large, kept.Depth, kept.Small);
         }
         int f = size.FramePixels, samples = 2 * f, width = size.Grid * samples;
-        return (Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target"), pre));
+        return (pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target")),
+            pre.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target")),
+            pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target")));
     }
 
     /// <summary>Takes a bake's set back (the rows recorded into it are ahead of any later use in the queue).</summary>
-    internal void ReturnTargets(ImpostorClass size, Texture large, Texture depth, Texture small)
+    internal void ReturnTargets(ImpostorClass size, GpuTexture large, GpuTexture depth, GpuTexture small)
     {
         if (targetsClosed)
         {
@@ -441,7 +441,7 @@ public sealed class ImpostorBakeJob : IDisposable
     readonly ImpostorAssembler assembler;
     readonly Stopwatch watch = Stopwatch.StartNew();
     ImpostorBaker.Part[] mainParts = [], leavesParts = [];
-    Texture? large, depth, small;
+    GpuTexture? large, depth, small;
     readonly List<(int Row, long Frame, ReadbackBuffer Buffer)> rows = [];
     int recorded, assembled;
     Task? chain;
@@ -512,7 +512,7 @@ public sealed class ImpostorBakeJob : IDisposable
             mainParts = baker.Upload(meshes.Main, source.IsRock);
             leavesParts = leaves is not null ? baker.Upload(meshes.Leaves!) : [];
             double t1 = watch.Elapsed.TotalMilliseconds;
-            (large, depth, small) = baker.RentTargets(size, gpu.Frame.PreFrame.Handle);
+            (large, depth, small) = baker.RentTargets(size, gpu.Frame.PreFrame);
             started = true;
             upload += watch.Elapsed.TotalMilliseconds - t0;
             SlowNote("start", $"meshes {t1 - t0:0.0} ms, targets {watch.Elapsed.TotalMilliseconds - t1:0.0} ms", watch.Elapsed.TotalMilliseconds - t0);

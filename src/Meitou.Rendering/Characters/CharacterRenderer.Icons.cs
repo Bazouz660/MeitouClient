@@ -28,7 +28,7 @@ internal sealed unsafe partial class CharacterRenderer
         public required IconKey Key;
         public CharacterAsset? Asset;
         public ItemIconStyle Style = null!;
-        public Texture? Colour, Depth;
+        public GpuTexture? Colour, Depth;
         public SampledTexture Sampled;
         /// <summary>The asset could not be made (no mesh): the cell keeps the name.</summary>
         public bool Failed;
@@ -50,7 +50,7 @@ internal sealed unsafe partial class CharacterRenderer
     /// <summary>
     /// The drawn icon of <paramref name="key"/> as a texture (drawn upside down, as the renderer's targets are: show it flipped), once it exists; asking starts it being made. Any thread.
     /// </summary>
-    public bool TryGetIcon(IconKey key, out (Texture Texture, SampledTexture Sampled) icon)
+    public bool TryGetIcon(IconKey key, out (GpuTexture Texture, SampledTexture Sampled) icon)
     {
         if (!icons.TryGetValue(key, out var entry))
         {
@@ -145,10 +145,10 @@ internal sealed unsafe partial class CharacterRenderer
         var (w, h) = entry.Style.TextureSize;
         if (entry.Colour is null)
         {
-            entry.Colour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
-            entry.Depth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
+            entry.Colour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
+            entry.Depth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
             entry.Sampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View(), entry.Colour.Image);
+                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View());
         }
         var cmd = Gpu.BeginNative("item icon");
         var target = PassTargets.Of(entry.Colour, entry.Depth);

@@ -22,11 +22,11 @@ internal sealed unsafe partial class CharacterRenderer
     /// <summary>The character to draw into <see cref="StageTexture"/> this frame (the host sets it before <see cref="Update"/>, which also poses the character out of range); null: none.</summary>
     public EditorStageRequest? StageRequest { get; set; }
 
-    Texture? stageColour, stageDepth;
+    GpuTexture? stageColour, stageDepth;
     SampledTexture? stageSampled;
 
     /// <summary>The stage picture (sRGB, transparent where no character is, upside down as the renderer's targets are), made by <see cref="DrawStage"/>; null before the first.</summary>
-    public (Texture Texture, SampledTexture Sampled)? StageTexture => stageColour is null ? null : (stageColour, stageSampled!.Value);
+    public (GpuTexture Texture, SampledTexture Sampled)? StageTexture => stageColour is null ? null : (stageColour, stageSampled!.Value);
 
     /// <summary>
     /// Draws <see cref="StageRequest"/>'s character with its live pose (after <see cref="Update"/>, outside any pass). The light is the key light of the portraits, from the camera's
@@ -84,10 +84,10 @@ internal sealed unsafe partial class CharacterRenderer
     void MakeStage(int width, int height)
     {
         DisposeStage();
-        stageColour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
-        stageDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "character stage depth"));
+        stageColour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
+        stageDepth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "character stage depth"));
         stageSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), stageColour.View(), stageColour.Image);
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), stageColour.View());
     }
 
     void DisposeStage()

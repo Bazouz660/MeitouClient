@@ -56,7 +56,7 @@ public sealed unsafe class TriangleCounter : IDisposable
         var alloc = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = req.Size, MemoryTypeIndex = type, PNext = &flags };
         VulkanException.Check(vk.AllocateMemory(device.Device, in alloc, null, out memory), "vkAllocateMemory(triangle counters)");
         VulkanException.Check(vk.BindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory(triangle counters)");
-        handle = new GpuBuffer(device.AddBuffer(buffer), Bytes);
+        handle = new GpuBuffer(device.AddBuffer(new BufferEntry(buffer, null)), Bytes);
         var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
         address = vk.GetBufferDeviceAddress(device.Device, in addressInfo);
         readback = ReadbackBuffer.Create(ctx, Bytes, "triangle counters readback");

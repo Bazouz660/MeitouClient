@@ -24,7 +24,7 @@ internal sealed class WorldLamps : IDisposable
     readonly GpuContext ctx;
     readonly Task<WorldLight[]> loading;
     WorldLight[]? lamps;
-    readonly Texture[] cells, index, data;
+    readonly GpuTexture[] cells, index, data;
     readonly GpuSampler nearest;
     readonly float[] cellValues = new float[Cells * Cells * 2];
     readonly float[] indexValues = new float[IndexWidth * IndexRows];
@@ -47,15 +47,15 @@ internal sealed class WorldLamps : IDisposable
         this.ctx = ctx;
         loading = Task.Run(() => load().Where(l => l.Intensity > 0 && l.Radius > 0).ToArray());
         int frames = ctx.Device.Frames.Count;
-        cells = new Texture[frames];
-        index = new Texture[frames];
-        data = new Texture[frames];
+        cells = new GpuTexture[frames];
+        index = new GpuTexture[frames];
+        data = new GpuTexture[frames];
         const TextureUse use = TextureUse.Sampled | TextureUse.TransferDst;
         for (int i = 0; i < frames; i++)
         {
-            cells[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.RG32f, Cells, Cells, Use: use, Name: "lamp cells"));
-            index[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.R32f, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
-            data[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba32f, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
+            cells[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.RG32f, Cells, Cells, Use: use, Name: "lamp cells"));
+            index[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
+            data[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba32f, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
         }
         nearest = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
@@ -66,10 +66,10 @@ internal sealed class WorldLamps : IDisposable
         g.Publish("uLightData", () => Sampled(data[slot]));
     }
 
-    SampledTexture Sampled(Texture t) => new(nearest, t.View(), t.Image);
+    SampledTexture Sampled(GpuTexture t) => new(nearest, t.View());
 
     /// <summary>The textures of this frame's slot, for a compute pass that binds them itself (the probe trace).</summary>
-    internal (Texture Cells, Texture Index, Texture Data) Current => (cells[slot], index[slot], data[slot]);
+    internal (GpuTexture Cells, GpuTexture Index, GpuTexture Data) Current => (cells[slot], index[slot], data[slot]);
     internal GpuSampler NearestSampler => nearest;
     /// <summary>This frame's <c>uLightGrid</c> (w 0: no lamps).</summary>
     internal Vector4 Grid => grid;

@@ -27,23 +27,23 @@ public sealed unsafe class Uploader
         ctx.Device.Vk.CmdCopyBuffer(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.BufferAt(target.Handle.Index), 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
-        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Underlying.Name, data.Length);
+        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Name, data.Length);
     }
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
+    public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         var staging = ctx.Frame.Staging.Write(data);
         var copy = new BufferImageCopy
         {
             BufferOffset = staging.Offset,
-            ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(target.Desc), (uint)level, (uint)layer, 1),
             ImageOffset = new Offset3D(region.X, region.Y, 0),
             ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
         var cmd = Cmd;
-        ctx.Device.Vk.CmdCopyBufferToImage(cmd, ctx.Device.BufferAt(staging.Handle.Index), target.Image, ImageLayout.General, 1, &copy);
+        ctx.Device.Vk.CmdCopyBufferToImage(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.NativeImage(target), ImageLayout.General, 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
         if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Desc.Name + (level > 0 ? " mip" : ""), data.Length);
@@ -89,17 +89,17 @@ public sealed unsafe class UploadBatch : IDisposable
     {
         this.ctx = ctx;
         immediate = !ctx.Frame.Open;
-        Commands = immediate ? new CommandList(ctx.Device, new GpuStats()) { Handle = ctx.Device.BeginImmediate() } : ctx.Frame.PreFrame;
+        Commands = immediate ? new CommandList(ctx, new GpuStats()) { Handle = ctx.Device.BeginImmediate() } : ctx.Frame.PreFrame;
     }
 
     /// <summary>Where the batch records (the frame's <see cref="GpuFrame.PreFrame"/>, or the one-shot buffer).</summary>
     public CommandList Commands { get; }
 
     /// <summary>A new texture in GENERAL layout, its transition recorded into this batch.</summary>
-    public Texture Create(TextureDesc desc) => Texture.Create(ctx, desc, Commands.Handle);
+    public GpuTexture Create(TextureDesc desc) => ctx.CreateTexture(desc, Commands.Handle);
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
+    public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         if (!immediate) { ctx.Uploads.Write(target, level, layer, region, data); return; }
@@ -107,11 +107,11 @@ public sealed unsafe class UploadBatch : IDisposable
         var copy = new BufferImageCopy
         {
             BufferOffset = offset,
-            ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(target.Desc), (uint)level, (uint)layer, 1),
             ImageOffset = new Offset3D(region.X, region.Y, 0),
             ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
-        ctx.Device.Vk.CmdCopyBufferToImage(Commands.Handle, buffer, target.Image, ImageLayout.General, 1, &copy);
+        ctx.Device.Vk.CmdCopyBufferToImage(Commands.Handle, buffer, ctx.Device.NativeImage(target), ImageLayout.General, 1, &copy);
         Uploader.TransferBarrier(ctx.Device.Vk, Commands.Handle);
     }
 

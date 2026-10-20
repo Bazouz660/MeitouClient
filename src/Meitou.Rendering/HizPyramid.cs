@@ -88,7 +88,7 @@ public sealed unsafe class HizPyramid : IDisposable
     /// is the camera's view without its translation (the world to view rotation, as <c>PostProcess</c> keeps it), <paramref name="fieldOfView"/> and <paramref name="aspect"/> the
     /// projection's.
     /// </summary>
-    public void Build(CommandList cmd, Texture near, Texture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
+    public void Build(CommandList cmd, GpuTexture near, GpuTexture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
     {
         var levels = Levels(w, h);
         ulong texels = 0;
@@ -115,8 +115,8 @@ public sealed unsafe class HizPyramid : IDisposable
         {
             // Levels 0 to 4 in one dispatch (a 16 x 16 tile of level 0 per workgroup, the rest through shared memory).
             var bindings = stackalloc GpuBinding[3];
-            bindings[0] = GpuBinding.Sampled(0, new SampledTexture(sampler, depthView, default));
-            bindings[1] = GpuBinding.Sampled(1, new SampledTexture(sampler, farView, default));
+            bindings[0] = GpuBinding.Sampled(0, new SampledTexture(sampler, depthView));
+            bindings[1] = GpuBinding.Sampled(1, new SampledTexture(sampler, farView));
             bindings[2] = GpuBinding.Storage(2, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(basePipeline);
             cmd.BindProgramResources(baseProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 3));

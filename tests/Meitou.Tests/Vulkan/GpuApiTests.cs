@@ -50,8 +50,8 @@ public class GpuApiTests
         -0.2f,  0.9f, 0, 0, 1,
     ];
 
-    static RenderingDesc Target(Texture t, LoadOp load = LoadOp.Clear) =>
-        new(new RenderTarget(t.Attachment(), load, new ClearColour(0f, 0f, 0f, 1f), Image: t.Image), default, t.Desc.Width, t.Desc.Height);
+    static RenderingDesc Target(GpuTexture t, LoadOp load = LoadOp.Clear) =>
+        new(new RenderTarget(t.Attachment(), load, new ClearColour(0f, 0f, 0f, 1f)), default, t.Desc.Width, t.Desc.Height);
 
     static void FullTargetState(CommandList cmd, int w, int h)
     {
@@ -71,7 +71,7 @@ public class GpuApiTests
         using (var ctx = new GpuContext(d!))
         {
             // The sources through LegacyProgram into an RGBA8 texture (until phase 8 stage 3 compared byte for byte with VkGl's picture).
-            using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
             using var lp = LegacyProgram.Create(ctx, Vertex, Fragment, "golden triangle");
             Assert.True(lp.Uniform("uMissing") is { IsValid: false });
             lp.Set(lp.Uniform("uOffset"), 0.1f, -0.05f);
@@ -183,8 +183,8 @@ public class GpuApiTests
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         using (var ctx = new GpuContext(d!))
         {
-            using var source = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: "pre-frame source"));
-            using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
+            using var source = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: "pre-frame source"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
             using var args = DeviceBuffer.Create(ctx, 20, BufferUse.Storage | BufferUse.Indirect | BufferUse.TransferSrc, "pre-frame args");
             using var indices = DeviceBuffer.Create(ctx, 16, BufferUse.Index | BufferUse.TransferDst, "indices");
             using var readback = ReadbackBuffer.Create(ctx, 20, "pre-frame readback");
@@ -192,7 +192,7 @@ public class GpuApiTests
             using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                 TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-            uint index = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, source.View(), source.Image));
+            uint index = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, source.View()));
 
             ctx.BeginFrame();
             var frame = ctx.Frame;
@@ -285,16 +285,16 @@ public class GpuApiTests
             using (var ctx = new GpuContext(d!))
             {
                 const int Columns = 8;
-                var sources = new Texture[Columns];
+                var sources = new GpuTexture[Columns];
                 var indices = new uint[Columns];
-                using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
+                using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
                 using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
                 var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                     TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
                 for (int k = 0; k < Columns; k++)
                 {
-                    sources[k] = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"column {k}"));
-                    indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View(), sources[k].Image));
+                    sources[k] = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"column {k}"));
+                    indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View()));
                 }
                 var formats = new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None);
                 var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles, formats, BlendState.Off,

@@ -75,7 +75,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     readonly NativeSegment compositeSegment;
     readonly SamplerSlot markerImage;
     // The marker drawn multisampled with a depth of its own, at the picture's size, and resolved.
-    Texture? msColour, msDepth, resolved;
+    GpuTexture? msColour, msDepth, resolved;
     int samples;
     readonly int count;
 
@@ -154,16 +154,16 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     /// (<paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used). The marker is drawn multisampled into targets of its own (its
     /// own depth hides its far side), resolved, and blended over the picture. Depth is clamped, so a marker beyond the near slice is drawn whole.
     /// </summary>
-    public void Record(Texture picture, int width, int height, Texture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye, Vector3 sunDirection)
+    public void Record(GpuTexture picture, int width, int height, GpuTexture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye, Vector3 sunDirection)
     {
         if (Strength <= 0 || width <= 0 || height <= 0) return;
         if (msColour is null || msColour.Desc.Width != width || msColour.Desc.Height != height)
         {
             msColour?.Dispose(); msDepth?.Dispose(); resolved?.Dispose();
             var sampled = samples > 1 ? TextureUse.TransferSrc : TextureUse.Sampled;
-            msColour = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "move marker colour"));
-            msDepth = Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "move marker depth"));
-            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
+            msColour = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "move marker colour"));
+            msDepth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "move marker depth"));
+            resolved = samples > 1 ? gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
         }
         var cmd = gpu.BeginNative("move marker");
         var viewport = new PixelViewport(0, 0, width, height, 0, 1);
@@ -179,7 +179,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         program.Set(offset, At - eye);
         program.Set(sun, sunDirection);
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
-        program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View(), nearDepth.Image));
+        program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View()));
         var premultiplied = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
         for (int pass = 0; pass < 2; pass++)
         {
@@ -206,7 +206,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         }
         var over = PassTargets.Of(picture, null).At(viewport);
         cmd.BeginRendering(over.Rendering);
-        composite.Bind(markerImage, new SampledTexture(Nearest(), resolved!.View(), resolved.Image));
+        composite.Bind(markerImage, new SampledTexture(Nearest(), resolved!.View()));
         var overState = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: premultiplied);
         overState.Record(cmd, over);
         cmd.BindPipeline(compositeSegment.Get(overState, over.Formats, null));

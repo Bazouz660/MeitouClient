@@ -91,7 +91,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     }
 
     /// <summary>Draws over the finished <paramref name="picture"/>, each fragment sorted against the near slice's <paramref name="nearDepth"/> (<paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used).</summary>
-    public void Record(Texture picture, int width, int height, Texture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye)
+    public void Record(GpuTexture picture, int width, int height, GpuTexture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye)
     {
         if (!Visible || fillCount + edgeCount == 0 || width <= 0 || height <= 0) return;
         var cmd = gpu.BeginNative("navmesh overlay");
@@ -102,7 +102,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         program.Set(offset, origin - eye);
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Bind(sceneDepth, new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), nearDepth.View(), nearDepth.Image));
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), nearDepth.View()));
         var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha),
             depthClamp: gpu.Device.DepthClamp);
         state.Record(cmd, t);

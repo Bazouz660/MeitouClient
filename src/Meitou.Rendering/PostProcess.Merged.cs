@@ -81,11 +81,11 @@ public sealed unsafe partial class PostProcess
         var near = Sampled(sceneDepth!);
         var far = Sampled(farDepth!);
         var bindings = stackalloc GpuBinding[6];
-        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), near.View, default));
-        bindings[1] = GpuBinding.Sampled(1, new SampledTexture(Point(), far.View, default));
-        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, motionOut.Texture.View(), default));
-        bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View(), default));
-        bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View(), default));
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), near.View));
+        bindings[1] = GpuBinding.Sampled(1, new SampledTexture(Point(), far.View));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, motionOut.Texture.View()));
+        bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View()));
+        bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View()));
         bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(velocityPipeline!);
@@ -122,9 +122,9 @@ public sealed unsafe partial class PostProcess
         }
         var scene = Sampled(postColour);
         var bindings = stackalloc GpuBinding[4];
-        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View, default));
-        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View(), default));
-        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View(), default));
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View));
+        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View()));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View()));
         bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(exposurePipeline!);

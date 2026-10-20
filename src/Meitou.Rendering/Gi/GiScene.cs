@@ -310,7 +310,7 @@ internal sealed unsafe class GiScene : IDisposable
             if (part.Count.Length <= sourceLevel) continue;
             int count = part.Count[sourceLevel];
             if (count < 3) continue;
-            ulong vertices = part.Vertices.Address, indices = part.Indices.Address + (ulong)part.Offset[sourceLevel] * 4;
+            ulong vertices = ctx.Device.Address(part.Vertices.Handle), indices = ctx.Device.Address(part.Indices.Handle) + (ulong)part.Offset[sourceLevel] * 4;
             geometries.Add(new TriangleGeometry(vertices, (uint)Vertex.Size, (uint)(part.Vertices.Size / (ulong)Vertex.Size), indices, (uint)(count / 3)));
             recs.Add(new GeometryRecord { Vertices = vertices, Indices = indices, Stride = (uint)Vertex.Size, Kind = GeometryRecord.Object });
             partOf.Add(p);
@@ -330,7 +330,7 @@ internal sealed unsafe class GiScene : IDisposable
         {
             var part = mesh.Parts[p];
             if (part.IndexCount < 3) continue;
-            ulong vertices = part.Vertices.Address, indices = part.Indices.Address;
+            ulong vertices = ctx.Device.Address(part.Vertices.Handle), indices = ctx.Device.Address(part.Indices.Handle);
             // Cut-out parts (leaves) are not opaque: the trace tests their alpha at each candidate hit.
             geometries.Add(new TriangleGeometry(vertices, (uint)Vertex.Size, (uint)(part.Vertices.Size / (ulong)Vertex.Size), indices, (uint)(part.IndexCount / 3), part.AlphaThreshold <= 0));
             recs.Add(new GeometryRecord
@@ -533,7 +533,7 @@ internal sealed unsafe class GiScene : IDisposable
                 // frames that traced the old ones; the vertex buffer's address, and so the geometry record, stay.
                 ctx.Uploads.Write(vertices, 0, MemoryMarshal.AsBytes(positions.AsSpan()));
                 cmd.Barrier(BarrierBatch.Full);
-                Blas.RefitBottom(cmd, [new TriangleGeometry(vertices.Address, 12, (uint)positions.Length, indices.Address, (uint)(cells * cells * 2))]);
+                Blas.RefitBottom(cmd, [new TriangleGeometry(ctx.Device.Address(vertices.Handle), 12, (uint)positions.Length, ctx.Device.Address(indices.Handle), (uint)(cells * cells * 2))]);
                 refitsSinceBuild++;
                 Refitted = true;
                 Centre = new Vector3(centre.X, 0, centre.Z);
@@ -547,10 +547,10 @@ internal sealed unsafe class GiScene : IDisposable
             Blas?.Dispose();
             updatable = Refit;
             refitsSinceBuild = 0;
-            Blas = AccelerationStructure.BuildBottom(ctx.Device, cmd, [new TriangleGeometry(vertices.Address, 12, (uint)positions.Length, indices.Address, (uint)(cells * cells * 2))], name, updatable);
+            Blas = AccelerationStructure.BuildBottom(ctx.Device, cmd, [new TriangleGeometry(ctx.Device.Address(vertices.Handle), 12, (uint)positions.Length, ctx.Device.Address(indices.Handle), (uint)(cells * cells * 2))], name, updatable);
             if (!updatable) Blas.ReleaseScratch();
             Centre = new Vector3(centre.X, 0, centre.Z);
-            Record = new GeometryRecord { Vertices = vertices.Address, Indices = indices.Address, Stride = 12, Kind = GeometryRecord.Terrain };
+            Record = new GeometryRecord { Vertices = ctx.Device.Address(vertices.Handle), Indices = ctx.Device.Address(indices.Handle), Stride = 12, Kind = GeometryRecord.Terrain };
         }
 
         public string Describe() => Blas is null ? "none" : $"{cells}² × {spacing:0}";

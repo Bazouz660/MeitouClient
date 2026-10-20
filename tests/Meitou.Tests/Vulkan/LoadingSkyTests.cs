@@ -33,7 +33,7 @@ public class LoadingSkyTests
                 Sky = new SkyRenderer(context) { MeitouStars = true },
                 Post = new PostProcess(context, options) { InstantAdaptation = true },
             };
-            using var target = Texture.Create(context, new TextureDesc(Meitou.Rendering.Gpu.InternalFormat.Rgba8, 320, 180,
+            using var target = context.CreateTexture(new TextureDesc(Meitou.Rendering.Gpu.InternalFormat.Rgba8, 320, 180,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.Sampled, Name: "loading sky test"));
             gpu.Post.Target = target;
             int worldCallbacks = 0;

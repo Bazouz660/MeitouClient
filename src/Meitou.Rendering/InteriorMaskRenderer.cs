@@ -58,8 +58,8 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
     readonly Dictionary<string, MaskMesh> meshes = new(StringComparer.OrdinalIgnoreCase);
     readonly List<InteriorVolume> near = [];
     readonly List<(Vector2 Min, Vector2 Max)> boxes = [];
-    Texture? target;
-    (Texture Texture, uint Index)? bindless;
+    GpuTexture? target;
+    (GpuTexture Texture, uint Index)? bindless;
 
     internal InteriorMaskRenderer(GpuContext gpu, WorldObjectRenderer objects)
     {
@@ -141,7 +141,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             if (bindless is { } old) gpu.Bindless.Free(BindlessKind.Texture2D, old.Index);
             bindless = null;
             target?.Dispose();
-            target = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
+            target = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
         }
         var cmd = gpu.BeginNative("interior mask");
         var viewport = new PixelViewport(0, 0, width, height, 0, 1);
@@ -187,7 +187,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         gpu.EndNative(cmd);
         if (Drawn == 0) return;
         if (bindless is not { } known || known.Texture != target)
-            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(Nearest(), target.View(), target.Image)));
+            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(Nearest(), target.View())));
         Active = true;
     }
 

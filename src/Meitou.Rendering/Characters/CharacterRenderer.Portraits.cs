@@ -25,21 +25,21 @@ internal sealed unsafe partial class CharacterRenderer
     readonly HashSet<long> portraitKeys = [];
     readonly Dictionary<long, int> liveByKey = [];
     int portraitLive = -1;
-    Texture? portraitColour, portraitDepth;
+    GpuTexture? portraitColour, portraitDepth;
     SampledTexture? portraitSampled;
 
     /// <summary>The atlas (sRGB, transparent where no character is), made on first use. Render thread.</summary>
-    public (Texture Texture, SampledTexture Sampled) PortraitAtlas
+    public (GpuTexture Texture, SampledTexture Sampled) PortraitAtlas
     {
         get
         {
             if (portraitColour is null)
             {
                 int w = PortraitSize * PortraitColumns, h = PortraitSize * PortraitRows;
-                portraitColour = Texture.Create(Gpu, new TextureDesc(InternalFormat.Srgb8Alpha8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
-                portraitDepth = Texture.Create(Gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
+                portraitColour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Srgb8Alpha8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
+                portraitDepth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
                 portraitSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-                    TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), portraitColour.View(), portraitColour.Image);
+                    TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), portraitColour.View());
                 cleared = false;
                 portraitShown.Clear();
             }
@@ -58,7 +58,7 @@ internal sealed unsafe partial class CharacterRenderer
     }
 
     sealed record ShownPortrait(long Key, uint Serial, CharacterAsset Asset, float Radius,
-        (Texture? Image, bool Swizzled)[] Textures);
+        (GpuTexture? Image, bool Swizzled)[] Textures);
     /// <summary>The character, appearance and streamed texture images each cell last showed.</summary>
     readonly Dictionary<int, ShownPortrait> portraitShown = [];
     Matrix4x4[] portraitBones = [], portraitAttach = [];

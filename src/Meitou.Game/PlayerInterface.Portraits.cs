@@ -47,7 +47,7 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>Gives the interface a texture drawn at run time (the portrait atlas) under <paramref name="name"/>.</summary>
-    public void SetUiTexture(string name, Texture texture, SampledTexture sampled) => uiPainter?.SetTexture(name, texture, sampled);
+    public void SetUiTexture(string name, GpuTexture texture, SampledTexture sampled) => uiPainter?.SetTexture(name, texture, sampled);
 
     void AddSquadPortraits(List<UiControl> controls, UiRect panel)
     {

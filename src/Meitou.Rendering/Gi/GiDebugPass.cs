@@ -16,7 +16,7 @@ sealed unsafe class GiDebugPass : IDisposable
     readonly ShaderProgram program;
     readonly ComputePipeline pipeline;
     readonly GpuSampler sampler;
-    Texture? output;
+    GpuTexture? output;
     uint frame;
 
     /// <summary>Bounce rays per pixel in mode 2, their length, the exposure of the picture and the grey of every surface.</summary>
@@ -51,13 +51,13 @@ sealed unsafe class GiDebugPass : IDisposable
     /// Traces <paramref name="mode"/> over <paramref name="depth"/> (the near slice's, <paramref name="width"/> × <paramref name="height"/>) and scales the
     /// result over <paramref name="target"/>. <paramref name="inverse"/>: NDC to the position relative to the eye; <paramref name="eye"/> in world space.
     /// </summary>
-    public void Run(int mode, GiScene scene, Texture depth, Texture target, int width, int height, Matrix4x4 inverse, Vector3 eye, WorldLighting light)
+    public void Run(int mode, GiScene scene, GpuTexture depth, GpuTexture target, int width, int height, Matrix4x4 inverse, Vector3 eye, WorldLighting light)
     {
         if (scene.Top is null) return;
         if (output is null || output.Desc.Width != width || output.Desc.Height != height)
         {
             output?.Dispose();
-            output = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
+            output = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
         }
         var parameters = new Params
         {

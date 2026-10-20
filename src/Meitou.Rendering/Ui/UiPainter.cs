@@ -36,9 +36,9 @@ public sealed class UiPainter : IDisposable
     /// <summary>The standard and painted faces baked at <see cref="LargePixels"/>: lettering scaled well past the 16 px atlases is drawn from these, so it stays sharp.</summary>
     DebugOverlay? standardLarge, paintedLarge;
     const float LargePixels = 48;
-    readonly Dictionary<string, (Texture Texture, SampledTexture Sampled)> textures = new(StringComparer.Ordinal);
+    readonly Dictionary<string, (GpuTexture Texture, SampledTexture Sampled)> textures = new(StringComparer.Ordinal);
     /// <summary>Textures the host draws at run time (the squad portraits), shown by an ImageBox's <c>ImageTexture</c> under their name; not owned.</summary>
-    readonly Dictionary<string, (Texture Texture, SampledTexture Sampled)> external = new(StringComparer.Ordinal);
+    readonly Dictionary<string, (GpuTexture Texture, SampledTexture Sampled)> external = new(StringComparer.Ordinal);
     /// <summary>Which texels of each uploaded texture are fully opaque, by name (<see cref="OpaqueCoverage"/>); textures given on the GPU have none and never count.</summary>
     readonly Dictionary<string, OpacityMask> masks = new(StringComparer.Ordinal);
     readonly List<UiRect> opaqueRects = new();
@@ -54,7 +54,7 @@ public sealed class UiPainter : IDisposable
     public float OpaqueCoverage { get; private set; }
 
     /// <summary>Makes <paramref name="texture"/> the image an ImageBox shows for <c>ImageTexture</c> <paramref name="name"/> (the caller keeps and frees it).</summary>
-    public void SetTexture(string name, Texture texture, SampledTexture sampled) => external[name] = (texture, sampled);
+    public void SetTexture(string name, GpuTexture texture, SampledTexture sampled) => external[name] = (texture, sampled);
 
     /// <summary>
     /// Uploads <paramref name="image"/> (made by the host) as <c>ImageTexture</c> <paramref name="name"/>, between frames; the painter owns the copy. <paramref name="srgb"/>
@@ -458,7 +458,7 @@ public sealed class UiPainter : IDisposable
     }
 
     /// <summary>Looks up the texture of a <see cref="RenderedIconTexture"/> name, asking for it to be made when it is not (the host sets this; null: no icons are drawn).</summary>
-    public Func<string, (Texture Texture, SampledTexture Sampled)?>? RenderedIcons { get; set; }
+    public Func<string, (GpuTexture Texture, SampledTexture Sampled)?>? RenderedIcons { get; set; }
 
     /// <summary>Whether the rendered icon <paramref name="name"/> can be drawn now (this asks for it too).</summary>
     public bool RenderedIconReady(string name) => RenderedIcons?.Invoke(name) is not null;
@@ -490,7 +490,7 @@ public sealed class UiPainter : IDisposable
         overlay.Flush(width, height);
     }
 
-    (Texture Texture, SampledTexture Sampled) LoadTexture(string name)
+    (GpuTexture Texture, SampledTexture Sampled) LoadTexture(string name)
     {
         if (external.TryGetValue(name, out var given) || textures.TryGetValue(name, out given)) return given;
         if (name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
@@ -498,13 +498,13 @@ public sealed class UiPainter : IDisposable
         return Upload(name, TextureLoader.LoadFile(path, allMips: false).Levels[0]);
     }
 
-    (Texture Texture, SampledTexture Sampled) Upload(string name, RgbaImage image, bool srgb = false)
+    (GpuTexture Texture, SampledTexture Sampled) Upload(string name, RgbaImage image, bool srgb = false)
     {
         var gpu = overlay.Gpu;
         using var upload = gpu.Uploads.Begin();
         var texture = upload.Create(new TextureDesc(srgb ? InternalFormat.Srgb8Alpha8 : InternalFormat.Rgba8, image.Width, image.Height, Name: $"UI {name}"));
         var sampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), texture.View(), texture.Image);
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), texture.View());
         upload.Write(texture, 0, 0, new PixelRect(0, 0, (uint)image.Width, (uint)image.Height), image.Pixels);
         masks[name] = new OpacityMask(image);
         return textures[name] = (texture, sampled);

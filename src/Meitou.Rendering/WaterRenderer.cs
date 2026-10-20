@@ -840,7 +840,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     readonly OceanWaves ocean;
     readonly ShoreField shore;
     readonly float gridStep;
-    Texture? refraction;
+    GpuTexture? refraction;
     long refractionFrame = -1;
 
     /// <summary>The Enhancements switch <c>water</c>: the game's flat water (Faithful) or Meitou's waves, breakers and foam (the default).</summary>
@@ -1144,7 +1144,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// Copies the scene drawn so far (the slice's opaque geometry, with no pass open) at half the size into the texture the Meitou water refracts:
     /// the floor and whatever stands in the water, seen through the waves. One native segment (a full barrier on each side) and one blit.
     /// </summary>
-    public void CaptureRefraction(Texture sceneColour)
+    public void CaptureRefraction(GpuTexture sceneColour)
     {
         if (!Meitou || !Refraction) return;
         var cmd = Gpu.BeginNative("water refraction");
@@ -1152,7 +1152,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         if (refraction is not { } r || r.Desc.Width != w || r.Desc.Height != h || r.Desc.Format != sceneColour.Desc.Format)
         {
             refraction?.Dispose();
-            refraction = Texture.Create(Gpu, new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), cmd.Handle);
+            refraction = Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), cmd.Handle);
         }
         cmd.Blit(sceneColour, refraction, TextureMinFilter.Linear);
         Gpu.EndNative(cmd);
@@ -1218,7 +1218,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             {
                 var t = Gpu.CurrentTargets();
                 p.Set(h.Screen, 1f / t.Width, 1f / t.Height);
-                p.Bind(h.Refraction, new SampledTexture(Gpu.Samplers.Get(ClampLinear), refraction!.View(), refraction.Image));
+                p.Bind(h.Refraction, new SampledTexture(Gpu.Samplers.Get(ClampLinear), refraction!.View()));
             }
         }
         h.Sky.Set(p, colours);

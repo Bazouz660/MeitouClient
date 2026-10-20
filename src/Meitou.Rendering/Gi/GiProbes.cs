@@ -34,8 +34,8 @@ internal sealed unsafe class GiProbes : IDisposable
     readonly ComputePipeline invalidatePipeline;
     // The trace and blend programs by the rays per probe (the workgroup size): the default, and the other one once the bench's gi-rays switch asks for it.
     readonly Dictionary<int, (ShaderProgram Trace, ShaderProgram Blend, ComputePipeline TracePipeline, ComputePipeline BlendPipeline)> variants = [];
-    readonly Texture irradiance, distance;
-    readonly Texture[] bases;
+    readonly GpuTexture irradiance, distance;
+    readonly GpuTexture[] bases;
     readonly DeviceBuffer rays, state;
     // Per frame slot: the probes this frame traces and blends, written by the CPU (GiFogHide): the probe index, bit 31 a hidden probe's slow update.
     readonly BufferAllocation[] lists;
@@ -117,14 +117,14 @@ internal sealed unsafe class GiProbes : IDisposable
         invalidatePipeline = ctx.Pipelines.Get(new ComputePipelineDesc(invalidateProgram, "gi probe invalidate"));
         Variant(Rays);
         int rows = Cascades * Columns * Layers;
-        irradiance = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba16f, Columns * (IrradianceTexels + 2), rows * (IrradianceTexels + 2),
+        irradiance = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, Columns * (IrradianceTexels + 2), rows * (IrradianceTexels + 2),
             Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "gi probe irradiance"));
-        distance = Texture.Create(ctx, new TextureDesc(InternalFormat.RG16f, Columns * (DistanceTexels + 2), rows * (DistanceTexels + 2),
+        distance = ctx.CreateTexture(new TextureDesc(InternalFormat.RG16f, Columns * (DistanceTexels + 2), rows * (DistanceTexels + 2),
             Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe distance"));
         // One per frame slot: the CPU writes the base heights of the frame being recorded while the one before may still read its own.
-        bases = new Texture[ctx.Device.Frames.Count];
+        bases = new GpuTexture[ctx.Device.Frames.Count];
         for (int i = 0; i < bases.Length; i++)
-            bases[i] = Texture.Create(ctx, new TextureDesc(InternalFormat.R32f, Columns, Columns * Cascades, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe bases"));
+            bases[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, Columns, Columns * Cascades, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "gi probe bases"));
         rays = DeviceBuffer.Create(ctx, (ulong)Probes * MaxRays * 16, BufferUse.Storage, "gi probe rays");
         state = DeviceBuffer.Create(ctx, (ulong)Probes * 16, BufferUse.Storage | BufferUse.TransferDst, "gi probe state");
         lists = new BufferAllocation[ctx.Device.Frames.Count];
@@ -135,8 +135,8 @@ internal sealed unsafe class GiProbes : IDisposable
         ctx.Device.Vk.CmdFillBuffer(cmd, ctx.Device.BufferAt(state.Handle.Index), 0, state.Size, 0);
         var clear = new ClearColorValue(0f, 0f, 0f, 0f);
         var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
-        ctx.Device.Vk.CmdClearColorImage(cmd, irradiance.Image, ImageLayout.General, &clear, 1, &range);
-        ctx.Device.Vk.CmdClearColorImage(cmd, distance.Image, ImageLayout.General, &clear, 1, &range);
+        ctx.Device.Vk.CmdClearColorImage(cmd, ctx.Device.NativeImage(irradiance), ImageLayout.General, &clear, 1, &range);
+        ctx.Device.Vk.CmdClearColorImage(cmd, ctx.Device.NativeImage(distance), ImageLayout.General, &clear, 1, &range);
         ctx.Device.EndImmediate(cmd);
         linear = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
@@ -146,9 +146,9 @@ internal sealed unsafe class GiProbes : IDisposable
         var g = ctx.Globals;
         g.PublishUniform("uGiParams", () => Params);
         g.PublishUniformArray("uGiGrid", grid, () => grid.Length);
-        g.Publish("uGiIrradiance", () => new SampledTexture(linear, irradiance.View(), irradiance.Image));
-        g.Publish("uGiDistance", () => new SampledTexture(linear, distance.View(), distance.Image));
-        g.Publish("uGiBase", () => new SampledTexture(nearest, bases[slot].View(), bases[slot].Image));
+        g.Publish("uGiIrradiance", () => new SampledTexture(linear, irradiance.View()));
+        g.Publish("uGiDistance", () => new SampledTexture(linear, distance.View()));
+        g.Publish("uGiBase", () => new SampledTexture(nearest, bases[slot].View()));
     }
 
     /// <summary>

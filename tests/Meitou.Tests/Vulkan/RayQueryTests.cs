@@ -65,7 +65,7 @@ public class RayQueryTests
 
         var cmd = ctx.BeginNative("ray query test");
         cmd.Barrier(BarrierBatch.Full);
-        var blas = AccelerationStructure.BuildBottom(device, cmd, [new TriangleGeometry(vertices.Address, 12, 3, index.Address, 1)], "test bottom");
+        var blas = AccelerationStructure.BuildBottom(device, cmd, [new TriangleGeometry(device.Address(vertices.Handle), 12, 3, device.Address(index.Handle), 1)], "test bottom");
         ((InstanceRecord*)instances.Mapped)->Reference = blas.Address;
         cmd.Barrier(AccelerationStructure.BuildToTrace);
         var tlas = AccelerationStructure.CreateTop(device, 4, "test top");

@@ -703,7 +703,8 @@ public sealed unsafe class GpuAllocator : IDisposable
             Free(alloc);
             throw new VulkanException($"vkBindBufferMemory failed: {r}", r);
         }
-        var gb = new BufferAllocation { Buffer = buffer, Allocation = alloc, Size = size, Usage = usage, Name = name ?? "", Kind = kind, Index = dev.AddBuffer(buffer) };
+        var gb = new BufferAllocation { Buffer = buffer, Allocation = alloc, Size = size, Usage = usage, Name = name ?? "", Kind = kind };
+        gb.Index = dev.AddBuffer(new BufferEntry(buffer, gb));
         lock (gate)
         {
             liveBuffers.Add(gb);

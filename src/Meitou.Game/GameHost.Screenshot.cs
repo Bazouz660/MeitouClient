@@ -131,7 +131,7 @@ sealed partial class GameHost
         WorldFrame.FinishLoading(display.Context);
         var context = display.Context;
         int w = o.Width, h = o.Height;
-        using var target = Meitou.Rendering.Gpu.Texture.Create(context, new TextureDesc(InternalFormat.Rgba8, w, h,
+        using var target = context.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h,
             Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.Sampled, Name: "offscreen picture"));
         gpu.Post!.Target = target;
         gpu.Post.InstantAdaptation = true;

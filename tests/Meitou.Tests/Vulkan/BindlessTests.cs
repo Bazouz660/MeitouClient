@@ -69,7 +69,7 @@ public class BindlessTests
         ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, integer, 0));
 
-    static void Draw(GpuContext ctx, ShaderProgram program, InternalFormat format, Texture target, ReadOnlySpan<uint> push)
+    static void Draw(GpuContext ctx, ShaderProgram program, InternalFormat format, GpuTexture target, ReadOnlySpan<uint> push)
     {
         var frame = ctx.Frame;
         var cmd = frame.Commands;
@@ -78,7 +78,7 @@ public class BindlessTests
             ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, program.Name));
         using (new GpuPass(frame, cmd, program.Name, [new PassUse(target, Access.ColourTarget)]))
         {
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.DontCare, default, Image: target.Image), default, target.Desc.Width, target.Desc.Height));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.DontCare, default), default, target.Desc.Width, target.Desc.Height));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, target.Desc.Width, target.Desc.Height);
             cmd.BindSets(program.Layout, 0, [ctx.Bindless.Set], []);
@@ -100,10 +100,10 @@ public class BindlessTests
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         using (var ctx = new GpuContext(d!))
         {
-            using var cells = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8ui, 2, 1, Name: "cells"));
-            using var wide = Texture.Create(ctx, new TextureDesc(InternalFormat.R16ui, 2, 1, Name: "wide"));
-            using var signed = Texture.Create(ctx, new TextureDesc(InternalFormat.R16i, 2, 1, Name: "signed"));
-            using var target = Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba32ui, 2, 1, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "integer target"));
+            using var cells = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, 2, 1, Name: "cells"));
+            using var wide = ctx.CreateTexture(new TextureDesc(InternalFormat.R16ui, 2, 1, Name: "wide"));
+            using var signed = ctx.CreateTexture(new TextureDesc(InternalFormat.R16i, 2, 1, Name: "signed"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba32ui, 2, 1, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "integer target"));
             using var program = ctx.Shaders.Native(FullScreen, IntegerFragment, "bindless integer", [ctx.Bindless.Layout], 12);
 
             // Reflection sees the runtime arrays the shader reads, with their element types.
@@ -143,13 +143,13 @@ public class BindlessTests
         using (var ctx = new GpuContext(d!))
         {
             byte[][] colours = [[200, 10, 20, 255], [30, 210, 40, 255], [50, 60, 220, 255], [255, 255, 255, 255]];
-            var sources = colours.Select((_, i) => Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"source {i}"))).ToArray();
+            var sources = colours.Select((_, i) => ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"source {i}"))).ToArray();
             const int Frames = 7;
-            var targets = Enumerable.Range(0, Frames).Select(i => Texture.Create(ctx, new TextureDesc(InternalFormat.Rgba8, 1, 1,
+            var targets = Enumerable.Range(0, Frames).Select(i => ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"target {i}"))).ToArray();
             using var program = ctx.Shaders.Native(FullScreen, ColourFragment, "bindless colour", [ctx.Bindless.Layout], 4);
             var sampler = Nearest(ctx, integer: false);
-            SampledTexture Of(int i) => new(sampler, sources[i].View(), sources[i].Image);
+            SampledTexture Of(int i) => new(sampler, sources[i].View());
             var expected = new int[Frames];
             BindlessHandle h = default, h2 = default;
 

@@ -19,13 +19,13 @@ public sealed class VolumetricCloudRenderer : IDisposable
     public double ReflectionGpuMs { get; private set; }
     public double ShadowGpuMs { get; private set; }
     readonly ViewHistory main = new(), mirror = new();
-    Texture? shadowMap;
+    GpuTexture? shadowMap;
     public Vector2 ShadowOrigin { get; private set; }
     public SampledTexture ShadowMap => shadowMap is null ? default : Sample(shadowMap);
 
     sealed class ViewHistory : IDisposable
     {
-        public Texture? Current, Distance, A, B;
+        public GpuTexture? Current, Distance, A, B;
         public Matrix4x4 Previous;
         public Vector3 Eye, Key, Light, Ambient, Forward;
         public Vector2 Wind;
@@ -52,17 +52,17 @@ public sealed class VolumetricCloudRenderer : IDisposable
         shadowSegment = new(gpu, shadow, PrimitiveType.Triangles, "cloud shadow map");
     }
 
-    Texture Make(int width, int height, InternalFormat format, string name)
+    GpuTexture Make(int width, int height, InternalFormat format, string name)
     {
         using var upload = gpu.Uploads.Begin();
         return upload.Create(new TextureDesc(format, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: name));
     }
 
-    SampledTexture Sample(Texture t)
+    SampledTexture Sample(GpuTexture t)
     {
         var sampler = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-        return new(sampler, t.View(), t.Image);
+        return new(sampler, t.View());
     }
 
     void Common(LegacyProgram p, float coverage, Vector2 wind, Vector3 eye)
@@ -72,7 +72,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         p.Set(p.Uniform("uEye"), eye);
     }
 
-    void Draw(LegacyProgram p, NativeSegment segment, Texture target, Texture? extra = null)
+    void Draw(LegacyProgram p, NativeSegment segment, GpuTexture target, GpuTexture? extra = null)
     {
         var targets = PassTargets.Of(target, null, extra);
         var state = DrawState.For(targets.Formats, false);

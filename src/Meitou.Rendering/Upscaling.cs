@@ -95,8 +95,8 @@ public static class Jitter
 /// </summary>
 public sealed record UpscaleInputs
 {
-    public required Gpu.Texture Colour, Depth, Motion, Output;
-    public Gpu.Texture? Reactive;
+    public required Gpu.GpuTexture Colour, Depth, Motion, Output;
+    public Gpu.GpuTexture? Reactive;
     public required int RenderWidth, RenderHeight, DisplayWidth, DisplayHeight;
     public required Vector2 JitterPixels;
     public required float Near, Far, FieldOfView, DeltaSeconds, Sharpness;

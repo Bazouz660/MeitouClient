@@ -12,10 +12,12 @@ program carries the layout, the backend the image layout and the descriptor type
 handle is in the code too: the renderers hold a `GpuSampler` (an index into the backend's
 samplers, 0 being the null one) and the backend resolves it where it writes a descriptor. The
 views are the same: a `GpuView` (an index into the backend's views), and the backend resolves it
-where it makes a render pass. The Streamline (DLSS) path asks for the native view itself: that
-path is NVIDIA's and stays Vulkan's.
+where it makes a render pass. The textures and the buffers are the same: a `GpuTexture` (an index
+into the backend's textures, with the description) and a `GpuBuffer` (an index into the backend's
+buffers, with the size). The Streamline (DLSS) path asks for the native image and view themselves:
+that path is NVIDIA's and stays Vulkan's.
 
-What is left: the textures' and the buffers' handles, the descriptor sets and the seam.
+What is left: the descriptor sets and the seam.
 
 ## What the renderers would hold
 
@@ -34,6 +36,7 @@ What is left: the textures' and the buffers' handles, the descriptor sets and th
 | `ClearValue` | `ClearColour`, a depth value | |
 | `IndexType` | `IndexKind` | |
 | `SamplerDesc`'s `Filter`, `SamplerAddressMode`, `SamplerMipmapMode` | `TextureMinFilter`, `TextureMagFilter`, `TextureWrapMode` | the engine's own already exist |
+| `ComponentMapping` | `GpuSwizzle` | the default is the identity, as `default(ComponentMapping)` was |
 
 The sampler's compare operation and the depth function were made neutral earlier
 ([renderer-native](renderer-native.md)).
@@ -52,9 +55,9 @@ cmd.PushDescriptors(shaftScanProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescrip
 
 // The engine's words:
 var bindings = stackalloc GpuBinding[5];
-bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View(), default));
-bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View(), default));
-bindings[4] = GpuBinding.Uniform(4, new BufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
+bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View()));
+bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View()));
+bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
 cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
 ```
 
@@ -62,7 +65,7 @@ The kinds are a sampled texture (with its sampler), a storage image, a uniform b
 storage buffer. The program's own reflection says which stage each slot wants and whether the
 program is compute or graphics, so the call carries neither; the layout comes from the program
 too. The view's range (the level, the layers) rides in the binding - the whole texture by
-default - and the backend resolves it and keeps the cache, as `Texture` does today.
+default - and the backend resolves it and keeps the cache, as the texture's own cache did.
 
 Two things are still Vulkan's, on purpose: the acceleration structure (the GI's ray queries are
 Vulkan-only; Metal has no equivalent) and the descriptor *sets* - the bindless table and the
@@ -84,12 +87,19 @@ the start; the Metal side grows a pass at a time, and an operation it does not h
 A pass the backend cannot do yet is skipped, so the Metal picture grows from the sky to the whole
 frame while the frame graph stays the engine's (one description, not two).
 
+The interface carries the resources for now: the textures (made, viewed, released), the buffers
+(made, released) and the view. The rest of the context's operations come with the rest of the
+port, and the renderers' own fields change from the Vulkan class to the interface then.
+
 The renderer-side cost, measured outside `Gpu/`: about 294 references to the binding vocabulary
 (`WriteDescriptorSet` 64, `DescriptorType` 53, `ImageLayout` 41, `DescriptorImageInfo` 38,
 `AttachmentLoadOp` 25, `ClearValue` 18, `ShaderStageFlags` 17, `DescriptorSet` 15,
 `PipelineLayout` 12, `IndexType` 11) and about 283 to the resource handles (`Buffer` 113,
 `Image` 100, `Sampler` 70). The proof that a step changed nothing: the game's offscreen picture
 is byte for byte the same ([metal-backend](metal-backend.md) "The road to a Metal frame").
+
+Two things the neutral words must keep: a description's default is the *identity* (the swizzle
+of a sampled view, as `default(ComponentMapping)` was), and a handle's index 0 is the null one.
 
 ## The two decisions
 

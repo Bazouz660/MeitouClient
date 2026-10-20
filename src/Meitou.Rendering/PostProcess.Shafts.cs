@@ -108,10 +108,10 @@ public sealed unsafe partial class PostProcess
         if (cube.IsNull) cube = Gpu.Dummy(FrameGlobals.Sampler2D("uAtmoIrradiance", cube: true));
         var cmd = Segment();
         var bindings = stackalloc GpuBinding[5];
-        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View(), default));
-        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View(), default));
-        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, shaftScatter!.Texture.View(), default));
-        bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View, default));
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), shaftInjected!.Texture.View()));
+        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, shaftLight!.Texture.View()));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, shaftScatter!.Texture.View()));
+        bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View));
         bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
         cmd.Barrier(BarrierBatch.Full);
         cmd.BindPipeline(shaftScanPipeline!);

@@ -33,21 +33,19 @@ public readonly record struct GpuBufferBinding(GpuBuffer Buffer, ulong Offset, u
 /// </summary>
 public sealed class DeviceBuffer : IDisposable
 {
-    readonly VulkanDevice device;
+    readonly IGpuContext ctx;
     readonly bool owned;
 
-    internal DeviceBuffer(VulkanDevice device, BufferAllocation buffer, bool owned)
+    internal DeviceBuffer(IGpuContext ctx, GpuBuffer buffer, bool owned, string name)
     {
-        this.device = device;
-        Underlying = buffer;
+        this.ctx = ctx;
+        Handle = buffer;
         this.owned = owned;
+        Name = name;
     }
     /// <summary>A new device-local buffer of <paramref name="size"/> bytes.</summary>
-    public static DeviceBuffer Create(GpuContext ctx, ulong size, BufferUse use, string name)
-    {
-        var buffer = ctx.Device.Allocator.CreateBuffer(Math.Max(size, 4), Usage(use) | BufferUsageFlags.TransferDstBit, MemoryKind.DeviceLocal, name);
-        return new DeviceBuffer(ctx.Device, buffer, owned: true);
-    }
+    public static DeviceBuffer Create(GpuContext ctx, ulong size, BufferUse use, string name) =>
+        new(ctx, ctx.CreateBuffer(size, use, name), owned: true, name);
 
     internal static BufferUsageFlags Usage(BufferUse use)
     {
@@ -63,20 +61,11 @@ public sealed class DeviceBuffer : IDisposable
         return f;
     }
 
-    /// <summary>The buffer's device address (it must have been made with <see cref="BufferUse.RayInput"/>).</summary>
-    public unsafe ulong Address
-    {
-        get
-        {
-            var info = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = device.BufferAt(Handle.Index) };
-            return device.Vk.GetBufferDeviceAddress(device.Device, in info);
-        }
-    }
-
-    public BufferAllocation Underlying { get; }
     /// <summary>The handle the renderers hold: the backend's identity and the size.</summary>
-    public GpuBuffer Handle => Underlying.Handle;
-    public ulong Size => Underlying.Size;
+    public GpuBuffer Handle { get; }
+    /// <summary>The name the buffer was made with (diagnostics).</summary>
+    public string Name { get; }
+    public ulong Size => Handle.Size;
     /// <summary>The last frame that bound it (<see cref="Binding"/>); 0 when never.</summary>
     public long UsedFrame { get; internal set; }
 
@@ -90,7 +79,7 @@ public sealed class DeviceBuffer : IDisposable
 
     public void Dispose()
     {
-        if (owned) device.DeferFree(Underlying);
+        if (owned) ctx.ReleaseBuffer(Handle);
     }
 }
 

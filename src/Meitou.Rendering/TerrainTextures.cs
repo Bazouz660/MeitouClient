@@ -834,7 +834,7 @@ internal sealed class TerrainTexture : IDisposable
     SampledTexture registered;
     bool hasEntry;
 
-    public TerrainTexture(GpuContext ctx, Texture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
+    public TerrainTexture(GpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
     {
         this.ctx = ctx;
         Texture = texture;
@@ -842,7 +842,7 @@ internal sealed class TerrainTexture : IDisposable
         integer = GlConventions.IsIntegerFormat(texture.Desc.Format);
     }
 
-    public Texture Texture { get; }
+    public GpuTexture Texture { get; }
 
     /// <summary>The sampler and view a draw samples it with now (what VkGl's <c>Sampled</c> gave for the GL texture).</summary>
     public SampledTexture Sampled()
@@ -851,7 +851,7 @@ internal sealed class TerrainTexture : IDisposable
         if (!(bias == cachedBias) || cachedGeneration != ctx.Samplers.Generation)
         {
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, anisotropy, integer, bias));
-            (cached, cachedBias, cachedGeneration) = (new SampledTexture(sampler, Texture.View(), Texture.Image), bias, ctx.Samplers.Generation);
+            (cached, cachedBias, cachedGeneration) = (new SampledTexture(sampler, Texture.View()), bias, ctx.Samplers.Generation);
         }
         return cached;
     }

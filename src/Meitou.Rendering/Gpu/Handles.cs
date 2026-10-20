@@ -1,5 +1,22 @@
 namespace Meitou.Rendering.Gpu;
 
+/// <summary>What a view covers (the engine's words; the backend maps it to its own).</summary>
+public enum GpuViewType { Texture2D, Texture2DArray, Cube }
+
+/// <summary>Which component a texel reads (the swizzle of a sampled view). The default is the identity.</summary>
+public enum GpuSwizzleComponent { Identity, R, G, B, A, One, Zero }
+
+/// <summary>The swizzle of a sampled view (the engine's words; the backend maps it). The default is the identity.</summary>
+public readonly record struct GpuSwizzle(GpuSwizzleComponent R = GpuSwizzleComponent.Identity, GpuSwizzleComponent G = GpuSwizzleComponent.Identity,
+    GpuSwizzleComponent B = GpuSwizzleComponent.Identity, GpuSwizzleComponent A = GpuSwizzleComponent.Identity)
+{
+    /// <summary>The identity swizzle.</summary>
+    public static GpuSwizzle Identity => default;
+
+    /// <summary>The red channel in all three, alpha one (a single-channel format).</summary>
+    public static GpuSwizzle RrrOne => new(GpuSwizzleComponent.R, GpuSwizzleComponent.R, GpuSwizzleComponent.R, GpuSwizzleComponent.One);
+}
+
 /// <summary>
 /// A sampler the renderers hold: the backend's identity and the description it was made from
 /// (docs/resource-layer.md). The Vulkan sampler itself is the backend's; index 0 is the null one.

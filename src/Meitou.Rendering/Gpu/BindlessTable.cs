@@ -76,7 +76,7 @@ public sealed unsafe class BindlessTable : IDisposable
     readonly DescriptorPool pool;
     readonly DescriptorSet[] sets;
     readonly long[] applied;   // per slot: journal entries replayed so far
-    readonly List<(BindlessKind Kind, uint Index, SampledTexture Texture)> journal = [];
+    readonly List<(BindlessKind Kind, uint Index, SampledTexture GpuTexture)> journal = [];
     long journalBase;          // number of entries dropped from the front of the journal
     readonly Stack<uint>[] free = new Stack<uint>[ArrayCount];
     readonly uint[] next = new uint[ArrayCount];
@@ -201,10 +201,10 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>Adds <paramref name="texture"/>'s full view with <paramref name="sampler"/> to the array its format and kind select
     /// (<see cref="KindFor"/>; <paramref name="shadow"/> for a depth texture read with comparison).</summary>
-    public BindlessHandle Register(Texture texture, GpuSampler sampler, bool shadow = false)
+    public BindlessHandle Register(GpuTexture texture, GpuSampler sampler, bool shadow = false)
     {
         var kind = KindFor(texture.Desc.Format, texture.Desc.Kind, shadow);
-        return new BindlessHandle(kind, Register(kind, new SampledTexture(sampler, texture.View(), texture.Image)));
+        return new BindlessHandle(kind, Register(kind, new SampledTexture(sampler, texture.View())));
     }
 
     /// <summary>Replaces an entry's sampler or view (the upscaler's LOD bias changed, a texture was re-created). Takes effect in the frame

@@ -802,7 +802,7 @@ static class PostProcessShaders
     /// (0.1, 0.3) and (0.4, 0.7)) scroll along it over phases <c>fract(gameTime · 100 + 0, 0.33, 0.66)</c>, each weighted by a
     /// triangle that is 0 at the ends of its cycle; their summed red and green make a direction only (normalised), moved by
     /// 0.002 · heatHaze · saturate(6 · distance / farClip) in screen units. The picture is the mean of the taps at 1 and 0.7 of
-    /// that offset. Texture lookups run in the game's screen coordinates (v from the top), the offset is turned back into ours.
+    /// that offset. GpuTexture lookups run in the game's screen coordinates (v from the top), the offset is turned back into ours.
     /// </summary>
     public const string HeatHaze = """
         #version 330 core

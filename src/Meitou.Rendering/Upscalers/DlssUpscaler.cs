@@ -91,16 +91,16 @@ public sealed unsafe class DlssUpscaler : IUpscaler
     /// <summary>Flips y of a clip space: our clip y = +1 is image row H (bottom-up), DLSS's is row 0.</summary>
     static readonly Matrix4x4 FlipY = Matrix4x4.CreateScale(1, -1, 1);
 
-    static SlResource Resource(Meitou.Rendering.Gpu.Texture texture, uint layout)
+    SlResource Resource(Meitou.Rendering.Gpu.GpuTexture texture, uint layout)
     {
         var d = texture.Desc;
         return new SlResource
         {
             StructType = Streamline.ResourceType, StructVersion = 1,
             Type = 0,   // eTex2d
-            Native = (nint)texture.Image.Handle, View = (nint)texture.NativeView().Handle, State = layout,
+            Native = (nint)ctx.Device.NativeImage(texture).Handle, View = (nint)ctx.Device.NativeView(texture).Handle, State = layout,
             Width = (uint)d.Width, Height = (uint)d.Height, NativeFormat = (uint)d.Format,
-            MipLevels = (uint)d.Levels, ArrayLayers = 1, Usage = (uint)(texture.Underlying?.Usage ?? 0),
+            MipLevels = (uint)d.Levels, ArrayLayers = 1, Usage = (uint)ctx.Device.NativeUsage(texture),
         };
     }
 

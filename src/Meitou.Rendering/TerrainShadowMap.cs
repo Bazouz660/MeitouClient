@@ -24,12 +24,12 @@ sealed unsafe class TerrainShadowMap : IDisposable
     public GpuContext Gpu { get; }
     readonly int size;
     readonly float spacing;
-    readonly Texture heights;
+    readonly GpuTexture heights;
     readonly SampledTexture heightsSampled;
     readonly LegacyProgram sweep;
     readonly SamplerSlot sourceSlot;
     readonly UniformHandle uSize, uFirst, uStep, uDrop, uDistance;
-    readonly Texture[] targets = new Texture[2];
+    readonly GpuTexture[] targets = new GpuTexture[2];
     readonly SampledTexture[] targetsSampled = new SampledTexture[2];
 
     Vector3 builtFor;
@@ -56,8 +56,8 @@ sealed unsafe class TerrainShadowMap : IDisposable
                 targets[i] = batch.Create(new TextureDesc(InternalFormat.RG32f, size, size,
                     Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "terrain shadow map"));
         }
-        heightsSampled = new SampledTexture(linear, heights.View(), heights.Image);
-        for (int i = 0; i < 2; i++) targetsSampled[i] = new SampledTexture(linear, targets[i].View(), targets[i].Image);
+        heightsSampled = new SampledTexture(linear, heights.View());
+        for (int i = 0; i < 2; i++) targetsSampled[i] = new SampledTexture(linear, targets[i].View());
         // Native (docs/renderer-native.md 7.1, wave 3 agent B, step P): VkGl's SPIR-V and layout, made once, never inside a draw.
         sweep = LegacyProgram.Create(gpu, ShadowShaders.FullscreenVertex, MeitouShadowShaders.SweepFragment, "terrain shadow sweep");
         (sourceSlot, uSize, uFirst, uStep, uDrop, uDistance) = (sweep.Sampler("uSource"), sweep.Uniform("uSize"), sweep.Uniform("uFirst"),
@@ -116,7 +116,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
             sweep.Set(uDistance, step * spacing);
             sweep.Bind(sourceSlot, pass == 0 ? heightsSampled : targetsSampled[1 - write]);
             var target = targets[write];
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.Load, default, Image: target.Image), default, size, size));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.Load, default), default, size, size));
             cmd.SetViewport(viewport);
             cmd.SetScissor(scissor);
             cmd.SetRaster(state.Cull, state.Front);

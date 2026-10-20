@@ -26,7 +26,7 @@ public class VolumetricCloudNativeTests
                     sky.CloudDensityInput = 0.5f;
                     sky.Eye = new Vector3(-50000, 2000, 3000);
                     sky.Prepare(Vector3.Normalize(new Vector3(0.3f, 0.8f, 0.2f)), sky.Eye.Y, 50000);
-                    using var target = Texture.Create(ctx, new TextureDesc(Meitou.Rendering.Gpu.InternalFormat.Rgba8, 96, 64,
+                    using var target = ctx.CreateTexture(new TextureDesc(Meitou.Rendering.Gpu.InternalFormat.Rgba8, 96, 64,
                         Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "cloud test picture"));
                     var view = Matrix4x4.CreateLookAt(Vector3.Zero, Vector3.Normalize(new Vector3(0, 0.4f, -1)), Vector3.UnitY);
                     var vp = view * Matrix4x4.CreatePerspectiveFieldOfView(1.0f, 1.5f, 1, 1000);

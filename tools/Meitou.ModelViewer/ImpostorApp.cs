@@ -10,7 +10,7 @@ using Meitou.Rendering.Display;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Impostors;
 using Silk.NET.Vulkan;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 namespace Meitou.ModelViewer;
 
@@ -293,14 +293,14 @@ static class ImpostorApp
         frames.Open();
         var cmd = gpu.Frame.PreFrame;
         var pre = cmd.Handle;
-        using var colour = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
-        using var depth = Texture.Create(gpu, new TextureDesc(InternalFormat.DepthComponent24, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
-        using var resolved = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var colour = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var depth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
+        using var resolved = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
         var formats = new AttachmentFormats(colour.Desc.Format, depth.Desc.Format, 4);
         cmd.Barrier(BarrierBatch.Full);
         cmd.BeginRendering(new RenderingDesc(
-            new RenderTarget(colour.Attachment(), LoadOp.Clear, new ClearColour(Sky.X, Sky.Y, Sky.Z, 1f), Image: colour.Image),
-            new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f, Image: depth.Image), w, h));
+            new RenderTarget(colour.Attachment(), LoadOp.Clear, new ClearColour(Sky.X, Sky.Y, Sky.Z, 1f)),
+            new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f), w, h));
         cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
         draw(cmd, formats);
         cmd.EndRendering();

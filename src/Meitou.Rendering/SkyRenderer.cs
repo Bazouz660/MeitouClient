@@ -1226,14 +1226,14 @@ internal sealed class SampledImage : IDisposable
     float cachedBias = float.NaN;
     SampledTexture cached;
 
-    SampledImage(GpuContext ctx, Texture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, TextureWrapMode wrapR)
+    SampledImage(GpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, TextureWrapMode wrapR)
     {
         this.ctx = ctx;
         Texture = texture;
         (this.min, this.mag, this.wrap, this.wrapR) = (min, mag, wrap, wrapR);
     }
 
-    public Texture Texture { get; }
+    public GpuTexture Texture { get; }
 
     /// <summary>The sampler and view a draw samples it with now (what VkGl's <c>Sampled</c> gave for the GL texture).</summary>
     public SampledTexture Sampled()
@@ -1242,7 +1242,7 @@ internal sealed class SampledImage : IDisposable
         if (!(bias == cachedBias))
         {
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, wrapR, false, DepthFunction.Lequal, false, 1, false, bias));
-            (cached, cachedBias) = (new SampledTexture(sampler, Texture.View(), Texture.Image), bias);
+            (cached, cachedBias) = (new SampledTexture(sampler, Texture.View()), bias);
         }
         return cached;
     }

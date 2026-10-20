@@ -12,7 +12,7 @@ static partial class TerrainShaders
     /// <summary>Rows of the per-biome parameter texture (RGBA32F, one row per biome).</summary>
     public const int ParamTexels = 13;
 
-    /// <summary>Texture units of the world-wide maps (TerrainTextures binds units 0..6 for the region).</summary>
+    /// <summary>GpuTexture units of the world-wide maps (TerrainTextures binds units 0..6 for the region).</summary>
     public const int HeightCoarseUnit = 7, HeightFineUnit = 8, GroundUnit = 9, WorldColourUnit = 10;
 
     /// <summary>

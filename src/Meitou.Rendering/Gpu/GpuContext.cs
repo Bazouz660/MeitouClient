@@ -38,7 +38,7 @@ public sealed record GpuFeatures(bool Bindless, bool MultiDrawIndirect, bool Dra
 /// The native renderer API for one device (docs/renderer-native.md 2.2): what every renderer shares. The display (or a test) makes it
 /// from the device and drives its frames (<see cref="BeginFrame"/>, <see cref="EndFrame"/>).
 /// </summary>
-public sealed unsafe partial class GpuContext : IDisposable
+public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
 {
     readonly List<DescriptorPool> persistentPools = [];
 
@@ -127,7 +127,7 @@ public sealed unsafe partial class GpuContext : IDisposable
         Dummy(new SamplerInfo("", 0, 0, SamplerDimension.Dim2D, false, false, false, ScalarKind.Float, 0)));
 
     readonly Dictionary<(int, ScalarKind, bool), SampledTexture> dummies = [];
-    readonly List<Texture> dummyTextures = [];
+    readonly List<GpuTexture> dummyTextures = [];
 
     /// <summary>The stand-in a sampler reads when nothing is bound: (0, 0, 0, 1), or depth 1 for a shadow sampler.</summary>
     public SampledTexture Dummy(SamplerInfo sampler)
@@ -137,12 +137,81 @@ public sealed unsafe partial class GpuContext : IDisposable
         if (dummies.TryGetValue(key, out var s)) return s;
         var d = Defaults.Texture(slot, sampler.SampledKind, sampler.Depth);
         var desc = new TextureDesc(d.Format, 1, 1, 1, slot == 2 ? 1 : d.Layers, Kind: slot == 2 ? TextureKind.Cube : slot == 1 ? TextureKind.Texture2DArray : TextureKind.Texture2D);
-        var t = Texture.Borrow(Device, desc, d.Image.Image);
+        var t = BorrowTexture(desc, d.Image.Image);
         var sampled = new SampledTexture(Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.Repeat, TextureWrapMode.Repeat,
-            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, GlConventions.IsIntegerFormat(d.Format) || d.Format == InternalFormat.R32i, 0)), t.View(), d.Image.Image);
+            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, GlConventions.IsIntegerFormat(d.Format) || d.Format == InternalFormat.R32i, 0)), t.View());
         dummies[key] = sampled;
         dummyTextures.Add(t);   // borrowed image, but the view cut on it is ours to destroy
         return sampled;
+    }
+
+    /// <summary>A new texture: the Vulkan image and its transition into GENERAL layout (submitted at once).</summary>
+    public GpuTexture CreateTexture(TextureDesc desc) => CreateTexture(desc, default);
+
+    /// <summary>A texture over someone else's image (the interop's export of a GL texture): the image is not ours to free.</summary>
+    internal GpuTexture BorrowTexture(TextureDesc desc, Image image) => new(this, desc, Device.AddTexture(image, null, owned: false, desc));
+
+    /// <summary>A view of a texture's level and layer range (the device cuts it and keeps it).</summary>
+    public GpuView View(GpuTexture texture, int baseLevel, int levels, int baseLayer, int layers, GpuViewType type, GpuSwizzle swizzle) =>
+        Device.View(texture, baseLevel, levels, baseLayer, layers, type, swizzle);
+
+    /// <summary>Releases a texture: the views cut on it, then the image.</summary>
+    public void ReleaseTexture(GpuTexture texture) => Device.ReleaseTexture(texture.Index);
+
+    /// <summary>A new device-local buffer.</summary>
+    public GpuBuffer CreateBuffer(ulong size, BufferUse use, string name)
+    {
+        var buffer = Device.Allocator.CreateBuffer(Math.Max(size, 4), DeviceBuffer.Usage(use) | BufferUsageFlags.TransferDstBit, MemoryKind.DeviceLocal, name);
+        return buffer.Handle;
+    }
+
+    /// <summary>Releases a device-local buffer (once every frame that could use it has finished).</summary>
+    public void ReleaseBuffer(GpuBuffer buffer)
+    {
+        var entry = Device.BufferEntryAt(buffer.Index);
+        if (entry.Allocation is { } allocation) Device.DeferFree(allocation);
+    }
+
+    /// <summary>A new texture whose transition is recorded into <paramref name="cmd"/> (the frame's own command buffer) instead of submitted at once.</summary>
+    internal GpuTexture CreateTexture(TextureDesc desc, CommandBuffer cmd)
+    {
+        var usage = (ImageUsageFlags)0;
+        if (desc.Use.HasFlag(TextureUse.Sampled)) usage |= ImageUsageFlags.SampledBit;
+        if (desc.Use.HasFlag(TextureUse.Storage)) usage |= ImageUsageFlags.StorageBit;
+        if (desc.Use.HasFlag(TextureUse.ColourTarget)) usage |= ImageUsageFlags.ColorAttachmentBit;
+        if (desc.Use.HasFlag(TextureUse.DepthTarget)) usage |= ImageUsageFlags.DepthStencilAttachmentBit;
+        if (desc.Use.HasFlag(TextureUse.TransferSrc)) usage |= ImageUsageFlags.TransferSrcBit;
+        if (desc.Use.HasFlag(TextureUse.TransferDst)) usage |= ImageUsageFlags.TransferDstBit;
+        if (desc.Use.HasFlag(TextureUse.ShadingRate)) usage |= ImageUsageFlags.FragmentShadingRateAttachmentBitKhr;
+        int layers = desc.Kind == TextureKind.Cube ? 6 * Math.Max(desc.Layers, 1) : desc.Layers;
+        var info = new ImageCreateInfo
+        {
+            SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = GlConventions.VkFormat(desc.Format),
+            Extent = new Extent3D((uint)desc.Width, (uint)desc.Height, 1), MipLevels = (uint)desc.Levels, ArrayLayers = (uint)layers,
+            Samples = (SampleCountFlags)desc.Samples, Tiling = ImageTiling.Optimal, Usage = usage, SharingMode = SharingMode.Exclusive,
+            InitialLayout = ImageLayout.Undefined, Flags = desc.Kind == TextureKind.Cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0,
+        };
+        var image = Device.Allocator.CreateImage(in info, MemoryKind.DeviceLocal, desc.Name.Length > 0 ? desc.Name : "native texture");
+        bool immediate = cmd.Handle == 0;
+        var cb = immediate ? Device.BeginImmediate() : cmd;
+        ToGeneral(Device.Vk, cb, image.Image, GlConventions.VkAspect(desc));
+        if (immediate) Device.EndImmediate(cb);
+        return new GpuTexture(this, desc, Device.AddTexture(image.Image, image, owned: true, desc));
+    }
+
+    internal static void ToGeneral(Vk vk, CommandBuffer cb, Image image, ImageAspectFlags aspect)
+    {
+        var barrier = new ImageMemoryBarrier2
+        {
+            SType = StructureType.ImageMemoryBarrier2,
+            SrcStageMask = PipelineStageFlags2.None, SrcAccessMask = AccessFlags2.None,
+            DstStageMask = PipelineStageFlags2.AllCommandsBit, DstAccessMask = AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit,
+            OldLayout = ImageLayout.Undefined, NewLayout = ImageLayout.General,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = image, SubresourceRange = new ImageSubresourceRange(aspect, 0, Vk.RemainingMipLevels, 0, Vk.RemainingArrayLayers),
+        };
+        var info = new DependencyInfo { SType = StructureType.DependencyInfo, ImageMemoryBarrierCount = 1, PImageMemoryBarriers = &barrier };
+        vk.CmdPipelineBarrier2(cb, &info);
     }
 
     /// <summary>A descriptor set that lives as long as the context (set 1 of legacy programs: one per pair of constant chunks).</summary>
@@ -165,7 +234,7 @@ public sealed unsafe partial class GpuContext : IDisposable
     }
 
     /// <summary>Waits for the GPU, then copies level 0 / layer <paramref name="layer"/> of a colour texture into host memory (tests and tools; never inside a frame).</summary>
-    public byte[] ReadBack(Texture texture, int bytesPerTexel, int layer = 0)
+    public byte[] ReadBack(GpuTexture texture, int bytesPerTexel, int layer = 0)
     {
         Device.Frames.WaitAll();
         int w = texture.Desc.Width, h = texture.Desc.Height;
@@ -176,10 +245,10 @@ public sealed unsafe partial class GpuContext : IDisposable
             var cb = Device.BeginImmediate();
             var region = new BufferImageCopy
             {
-                ImageSubresource = new ImageSubresourceLayers(texture.Desc.Aspect, 0, (uint)layer, 1),
+                ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(texture.Desc), 0, (uint)layer, 1),
                 ImageExtent = new Extent3D((uint)w, (uint)h, 1),
             };
-            Device.Vk.CmdCopyImageToBuffer(cb, texture.Image, ImageLayout.General, buffer.Buffer, 1, &region);
+            Device.Vk.CmdCopyImageToBuffer(cb, Device.NativeImage(texture), ImageLayout.General, buffer.Buffer, 1, &region);
             Device.EndImmediate(cb);
             Device.Allocator.Invalidate(buffer.Allocation);
             return new ReadOnlySpan<byte>(buffer.Mapped, (int)size).ToArray();

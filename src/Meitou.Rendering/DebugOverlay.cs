@@ -64,7 +64,7 @@ public sealed unsafe class DebugOverlay : IDisposable
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8).</summary>
     public GpuContext Gpu { get; }
-    readonly Texture atlas;
+    readonly GpuTexture atlas;
     readonly SampledTexture atlasSampled;
     readonly LegacyProgram program;
     readonly UniformHandle uScreen;
@@ -86,7 +86,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     public bool Visible { get; set; }
 
     /// <summary>What <see cref="Flush"/> draws into: the frame's final picture (the window's backbuffer, or an offscreen texture). Set by the host.</summary>
-    public Texture? Target { get; set; }
+    public GpuTexture? Target { get; set; }
 
     DebugOverlay(GpuContext gpu, byte[] font, float pixelHeight = 16) : this(gpu, font, pixelHeight, false) { }
 
@@ -144,7 +144,7 @@ public sealed unsafe class DebugOverlay : IDisposable
             upload.Write(atlas, 0, 0, new PixelRect(0, 0, (uint)AtlasSize, (uint)AtlasSize), pixels);
         }
         atlasSampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat,
-            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas.View(), atlas.Image);
+            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas.View());
 
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "debug overlay");
         uScreen = program.Uniform("uScreen");
@@ -426,7 +426,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         readonly List<float> vertices = [];
         readonly List<Run> runs = [];
         DebugOverlay? renderer;
-        Texture? target;
+        GpuTexture? target;
         readonly record struct Run(SampledTexture Texture, bool Image, PixelRect Scissor, int First, int Count);
 
         public OverlayPass Reset(int newWidth, int newHeight)

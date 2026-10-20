@@ -154,12 +154,12 @@ public sealed unsafe class FsrUpscaler : IUpscaler
         _ => 0,
     };
 
-    static ApiResource Resource(Meitou.Rendering.Gpu.Texture texture, bool output)
+    ApiResource Resource(Meitou.Rendering.Gpu.GpuTexture texture, bool output)
     {
         var d = texture.Desc;
         return new ApiResource
         {
-            Handle = (nint)texture.Image.Handle,
+            Handle = (nint)ctx.Device.NativeImage(texture).Handle,
             Description = new ResourceDescription
             {
                 Type = TypeTexture2D, Format = SurfaceFormat(d.Format), Width = (uint)d.Width, Height = (uint)d.Height,

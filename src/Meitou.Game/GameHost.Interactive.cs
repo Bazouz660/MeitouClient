@@ -621,7 +621,7 @@ sealed partial class GameHost
         a.Held(InputAction.PitchUp) || a.Held(InputAction.PitchDown) || a.Held(InputAction.ZoomIn) || a.Held(InputAction.ZoomOut) ||
         a.Held(InputAction.Orbit) && a.MouseDelta != Vector2.Zero || a.Wheel != 0 || a.Pressed(InputAction.ToggleFreeCamera);
 
-    static void SaveScreenshot(GpuContext context, Texture backbuffer, int width, int height)
+    static void SaveScreenshot(GpuContext context, GpuTexture backbuffer, int width, int height)
     {
         var file = Path.Combine(Directory.CreateDirectory(@"C:\Temp").FullName, $"meitou-{DateTime.Now:yyyyMMdd-HHmmss}.png");
         FramebufferCapture.SavePng(context, backbuffer, file, width, height);

@@ -23,7 +23,7 @@ public class UiRenderingTests
             using var overlay = DebugOverlay.TryCreate(gpu);
             Assert.SkipWhen(overlay is null, "No font available");
             const int width = 64, height = 32;
-            using var target = Texture.Create(gpu, new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.ColourTarget | TextureUse.TransferSrc));
+            using var target = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.ColourTarget | TextureUse.TransferSrc));
             var cmd = gpu.BeginNative("clear clipping test");
             var targets = PassTargets.Of(target, null);
             cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0, 0, 0, 1) } });

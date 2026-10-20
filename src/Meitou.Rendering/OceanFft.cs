@@ -43,7 +43,7 @@ public sealed unsafe class OceanWaves : IDisposable
     readonly ShaderProgram evolve, fft, assemble;
     readonly ComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
-    readonly Texture displacement, slopes;
+    readonly GpuTexture displacement, slopes;
     readonly GpuSampler sampler;
     readonly ulong texels;
 
@@ -97,9 +97,9 @@ public sealed unsafe class OceanWaves : IDisposable
     public Vector4 Lengths => new(OceanSpectrum.Lengths[0], OceanSpectrum.Lengths[1], OceanSpectrum.Lengths[2], 0);
     /// <summary>Per cascade (layer): displacement x, y, z (units; the horizontal ones times the choppiness) and the foam (0..1): where the crests
     /// fold it is renewed, elsewhere it fades over <see cref="FoamSeconds"/>, so foam lingers behind a crest.</summary>
-    public SampledTexture Displacement => new(sampler, displacement.View(), displacement.Image);
+    public SampledTexture Displacement => new(sampler, displacement.View());
     /// <summary>Per cascade (layer): ∂Dy/∂x, ∂Dy/∂z, ∂Dx/∂x, ∂Dz/∂z (the last two times the choppiness).</summary>
-    public SampledTexture Slopes => new(sampler, slopes.View(), slopes.Image);
+    public SampledTexture Slopes => new(sampler, slopes.View());
     /// <summary>Compute passes recorded so far (a paused game records none).</summary>
     public long Dispatched { get; private set; }
     /// <summary>GPU time of the timed passes (microseconds, summed) and their count, read a few frames late.</summary>

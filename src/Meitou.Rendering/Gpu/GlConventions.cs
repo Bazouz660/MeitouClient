@@ -87,6 +87,9 @@ public static class GlConventions
     public static bool IsDepthFormat(InternalFormat f) => f is InternalFormat.DepthComponent24 or InternalFormat.DepthComponent32f
         or InternalFormat.Depth24Stencil8 or InternalFormat.Depth16;
 
+    /// <summary>The Vulkan aspect of a texture (the depth bit for a depth format, the colour bit otherwise).</summary>
+    public static ImageAspectFlags VkAspect(TextureDesc desc) => desc.IsDepth ? ImageAspectFlags.DepthBit : ImageAspectFlags.ColorBit;
+
     /// <summary>Formats sampled with nearest filtering and integer border colours.</summary>
     public static bool IsIntegerFormat(InternalFormat f) => f is InternalFormat.Rgba8ui or InternalFormat.R32ui or InternalFormat.R16ui or InternalFormat.R8ui;
 

@@ -5,7 +5,7 @@ using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using GpuTexture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 namespace Meitou.Rendering;
 
@@ -177,7 +177,7 @@ public sealed class ReflectionPass : IDisposable
     /// </summary>
     public SampledTexture Sampled => colour is null ? default
         : new(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View(), colour.Image);
+            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View());
     public int Width => width;
     public int Height => height;
     /// <summary>Time the CPU spent recording the last reflection pass, and what the GPU spent on it (a few frames late).</summary>
@@ -193,14 +193,14 @@ public sealed class ReflectionPass : IDisposable
         if (w == width && h == height && colour is not null && builtFor == Samples) return;
         Free();
         (width, height, builtFor) = (w, h, Samples);
-        colour = GpuTexture.Create(Gpu, new TextureDesc(InternalFormat.Rgba16f, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
+        colour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
 
         // The picture is drawn multisampled and resolved: the mirrored shoreline, fences and rooflines are hard edges, and
         // without it each texel of the half-resolution image is a visible stair step that the wave distortion then smears.
         samples = Math.Min(Samples, MaxSamples());
         if (samples <= 1) samples = 0;
         GpuTexture Target(InternalFormat format, TextureUse use, int count, string name) =>
-            GpuTexture.Create(Gpu, new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name));
+            Gpu.CreateTexture(new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name));
         if (samples == 0)
         {
             depth = Target(InternalFormat.DepthComponent24, TextureUse.DepthTarget | TextureUse.Sampled, 1, "reflection depth");
@@ -558,7 +558,7 @@ public sealed class ReflectionPass : IDisposable
         }
         var p = fogProgram;
         p.Bind(p.Sampler("uDepth"), new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), depthTexture.View(), depthTexture.Image));
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), depthTexture.View()));
         p.Set(p.Uniform("uInverse"), in inverse);
         p.Set(p.Uniform("uRayInverse"), in rayInverse);
         p.Set(p.Uniform("uMirroredEye"), mirroredEye.X, mirroredEye.Y, mirroredEye.Z);

@@ -1,7 +1,7 @@
 using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -14,7 +14,7 @@ namespace Meitou.Rendering.Impostors;
 public sealed class ImpostorTextures : IDisposable
 {
     readonly GpuContext gpu;
-    readonly Texture[] maps = new Texture[2];
+    readonly GpuTexture[] maps = new GpuTexture[2];
     readonly ImpostorTexture[] sources = new ImpostorTexture[2];
     readonly uint[] indices = new uint[2];
     float indexBias;
@@ -29,8 +29,8 @@ public sealed class ImpostorTextures : IDisposable
     public int LevelsOf(int map) => Atlas.Levels - skips[map];
     /// <summary>The GPU bytes: the levels kept, of the maps.</summary>
     public long Bytes { get; }
-    public Texture Albedo => maps[0];
-    public Texture Normal => maps[1];
+    public GpuTexture Albedo => maps[0];
+    public GpuTexture Normal => maps[1];
     /// <summary>Every level written (<see cref="UploadStep"/> ran <see cref="StepCount"/> times).</summary>
     public bool Complete => map >= 2;
     int map, level, row;
@@ -159,7 +159,7 @@ public sealed class ImpostorTextures : IDisposable
             var sampler = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
                 TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, transparentBorder: false, anisotropy: 1, integerFormat: false, bias));
             for (int i = 0; i < 2; i++)
-                indices[i] = gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, maps[i].View(0, LevelsOf(i)), maps[i].Image));
+                indices[i] = gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, maps[i].View(0, LevelsOf(i))));
             (registered, indexBias) = (true, bias);
         }
         return indices[map];

@@ -10,7 +10,7 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>An attachment of a <see cref="RenderingDesc"/>: a view in GENERAL layout, its load op and clear value (stores always).</summary>
-public readonly record struct RenderTarget(GpuView View, LoadOp Load = LoadOp.Load, ClearColour Clear = default, float DepthClear = 1f, Image Image = default)
+public readonly record struct RenderTarget(GpuView View, LoadOp Load = LoadOp.Load, ClearColour Clear = default, float DepthClear = 1f)
 {
     public bool IsNull => View.IsNull;
 }
@@ -28,6 +28,7 @@ public readonly record struct RenderingDesc(RenderTarget Colour, RenderTarget De
 public sealed unsafe class CommandList
 {
     readonly Vk vk;
+    readonly GpuContext ctx;
     readonly VulkanDevice device;
     readonly KhrPushDescriptor? push;
     readonly ExtDebugUtils? debug;
@@ -59,9 +60,10 @@ public sealed unsafe class CommandList
     readonly delegate* unmanaged<CommandBuffer, uint, uint, uint, int, uint, void> cmdDrawIndexed;
     readonly delegate* unmanaged<CommandBuffer, Buffer, ulong, uint, uint, void> cmdDrawIndexedIndirect;
 
-    internal CommandList(VulkanDevice device, GpuStats stats)
+    internal CommandList(GpuContext ctx, GpuStats stats)
     {
-        this.device = device;
+        this.ctx = ctx;
+        device = ctx.Device;
         vk = device.Vk;
         Stats = stats;
         if (device.HasPushDescriptor) vk.TryGetDeviceExtension(device.Instance, device.Device, out push);
@@ -435,21 +437,27 @@ public sealed unsafe class CommandList
         fixed (BufferCopy* p = &region) vk.CmdCopyBuffer(Handle, device.BufferAt(src.Index), device.BufferAt(dst.Index), 1, p);
     }
 
+    /// <summary>
+    /// A new texture: the backend's own image, and its transition into the layout the backend uses,
+    /// recorded into this command list (so the frame's own work sees it in order).
+    /// </summary>
+    public GpuTexture CreateTexture(TextureDesc desc) => ctx.CreateTexture(desc, Handle);
+
     /// <summary>(Added for the Meitou water's ocean.) Copies tightly packed texels from <paramref name="src"/> at <paramref name="offset"/> over a
     /// whole level and layer of <paramref name="dst"/> (GENERAL layout). The caller orders it against the writes before and the reads after.</summary>
-    public void CopyBufferToImage(GpuBuffer src, ulong offset, Texture dst, int level, int layer)
+    public void CopyBufferToImage(GpuBuffer src, ulong offset, GpuTexture dst, int level, int layer)
     {
         var copy = new BufferImageCopy
         {
             BufferOffset = offset,
-            ImageSubresource = new ImageSubresourceLayers(dst.Desc.Aspect, (uint)level, (uint)layer, 1),
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(dst.Desc), (uint)level, (uint)layer, 1),
             ImageExtent = new Extent3D((uint)Math.Max(dst.Desc.Width >> level, 1), (uint)Math.Max(dst.Desc.Height >> level, 1), 1),
         };
-        vk.CmdCopyBufferToImage(Handle, device.BufferAt(src.Index), dst.Image, ImageLayout.General, 1, &copy);
+        vk.CmdCopyBufferToImage(Handle, device.BufferAt(src.Index), device.NativeImage(dst), ImageLayout.General, 1, &copy);
     }
 
     /// <summary>Resolves level 0 / layer 0 of a multisampled colour texture into a single-sampled one (the reflection's 4× target).</summary>
-    public void Resolve(Texture src, Texture dst)
+    public void Resolve(GpuTexture src, GpuTexture dst)
     {
         var region = new ImageResolve
         {
@@ -457,7 +465,7 @@ public sealed unsafe class CommandList
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             Extent = new Extent3D((uint)src.Desc.Width, (uint)src.Desc.Height, 1),
         };
-        vk.CmdResolveImage(Handle, src.Image, ImageLayout.General, dst.Image, ImageLayout.General, 1, &region);
+        vk.CmdResolveImage(Handle, device.NativeImage(src), ImageLayout.General, device.NativeImage(dst), ImageLayout.General, 1, &region);
     }
 
     /// <summary>As <see cref="Resolve(Texture, Texture)"/> for two images in GENERAL layout (a render target taken from <see cref="PassTargets"/>), <paramref name="width"/> × <paramref name="height"/> from the origin.</summary>
@@ -473,16 +481,16 @@ public sealed unsafe class CommandList
     }
 
     /// <summary>Scales level 0 / layer 0 of <paramref name="src"/> over level 0 of <paramref name="dst"/>.</summary>
-    public void Blit(Texture src, Texture dst, TextureMinFilter filter)
+    public void Blit(GpuTexture src, GpuTexture dst, TextureMinFilter filter)
     {
         var blit = new ImageBlit
         {
-            SrcSubresource = new ImageSubresourceLayers(src.Desc.Aspect, 0, 0, 1),
-            DstSubresource = new ImageSubresourceLayers(dst.Desc.Aspect, 0, 0, 1),
+            SrcSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(src.Desc), 0, 0, 1),
+            DstSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(dst.Desc), 0, 0, 1),
         };
         blit.SrcOffsets[1] = new Offset3D(src.Desc.Width, src.Desc.Height, 1);
         blit.DstOffsets[1] = new Offset3D(dst.Desc.Width, dst.Desc.Height, 1);
-        vk.CmdBlitImage(Handle, src.Image, ImageLayout.General, dst.Image, ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
+        vk.CmdBlitImage(Handle, device.NativeImage(src), ImageLayout.General, device.NativeImage(dst), ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
     }
 
     /// <summary>
@@ -490,7 +498,7 @@ public sealed unsafe class CommandList
     /// <c>GenerateMipmap</c>: a full barrier, then per level a transfer barrier and a linear blit from the level above (GENERAL layout), then a
     /// full barrier. Outside any rendering.
     /// </summary>
-    public void GenerateMips(Texture t)
+    public void GenerateMips(GpuTexture t)
     {
         var d = t.Desc;
         if (d.Levels < 2) return;
@@ -511,25 +519,25 @@ public sealed unsafe class CommandList
             };
             blit.SrcOffsets[1] = new Offset3D(Math.Max(d.Width >> (level - 1), 1), Math.Max(d.Height >> (level - 1), 1), 1);
             blit.DstOffsets[1] = new Offset3D(Math.Max(d.Width >> level, 1), Math.Max(d.Height >> level, 1), 1);
-            vk.CmdBlitImage(Handle, t.Image, ImageLayout.General, t.Image, ImageLayout.General, 1, &blit, Filter.Linear);
+            vk.CmdBlitImage(Handle, device.NativeImage(t), ImageLayout.General, device.NativeImage(t), ImageLayout.General, 1, &blit, Filter.Linear);
         }
         Barrier(BarrierBatch.Full);
     }
 
     /// <summary>(Phase 8 stage 1.) Scales level <paramref name="srcLevel"/> of <paramref name="texture"/> over its level <paramref name="dstLevel"/>
     /// (all layers), as VkGl's <c>GenerateMipmap</c> does per level.</summary>
-    public void BlitLevel(Texture texture, int srcLevel, int dstLevel, TextureMinFilter filter)
+    public void BlitLevel(GpuTexture texture, int srcLevel, int dstLevel, TextureMinFilter filter)
     {
         var d = texture.Desc;
         uint layers = (uint)(d.Kind == TextureKind.Cube ? 6 * Math.Max(d.Layers, 1) : d.Layers);
         var blit = new ImageBlit
         {
-            SrcSubresource = new ImageSubresourceLayers(d.Aspect, (uint)srcLevel, 0, layers),
-            DstSubresource = new ImageSubresourceLayers(d.Aspect, (uint)dstLevel, 0, layers),
+            SrcSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(d), (uint)srcLevel, 0, layers),
+            DstSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(d), (uint)dstLevel, 0, layers),
         };
         blit.SrcOffsets[1] = new Offset3D(Math.Max(d.Width >> srcLevel, 1), Math.Max(d.Height >> srcLevel, 1), 1);
         blit.DstOffsets[1] = new Offset3D(Math.Max(d.Width >> dstLevel, 1), Math.Max(d.Height >> dstLevel, 1), 1);
-        vk.CmdBlitImage(Handle, texture.Image, ImageLayout.General, texture.Image, ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
+        vk.CmdBlitImage(Handle, device.NativeImage(texture), ImageLayout.General, device.NativeImage(texture), ImageLayout.General, 1, &blit, GlConventions.VkFilter(filter));
     }
 
     // ---- sync, timing, labels ----

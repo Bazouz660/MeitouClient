@@ -40,7 +40,7 @@ public class ShadowPassNativeTests
 
             // The receivers' globals are the native ones: the atlas through a compare sampler, the three blocks.
             var map = ctx.Globals.Texture("uShadowMap")!();
-            Assert.Equal(shadows.AtlasTexture!.Image.Handle, map.Image.Handle);
+            Assert.Equal(ctx.Device.ViewAt(shadows.AtlasTexture!.View().Index).Handle, ctx.Device.ViewAt(map.View.Index).Handle);
             Assert.False(ctx.Globals.Block(ShadowShaders.ReceiverBlock)!().IsNull);
             Assert.False(ctx.Globals.Block(ShadowShaders.CasterBlock)!().IsNull);
             Assert.False(ctx.Globals.Block("MeitouShadowReceiver")!().IsNull);
@@ -49,7 +49,7 @@ public class ShadowPassNativeTests
 
             ctx.Finish();
             // The blocker map (half a layer, R32F, a layer per cascade): the nearest depth of each 2 × 2 texels of layers cleared to 1.
-            Assert.Equal(shadows.BlockerMap!.Image.Handle, blocker.Image.Handle);
+            Assert.Equal(ctx.Device.ViewAt(shadows.BlockerMap!.View().Index).Handle, ctx.Device.ViewAt(blocker.View.Index).Handle);
             Assert.Equal(MeitouShadowFit.DefaultCascades, shadows.BlockerMap.Desc.Layers);
             for (int layer = 0; layer < MeitouShadowFit.DefaultCascades; layer++)
             {

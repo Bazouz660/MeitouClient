@@ -90,8 +90,8 @@ public sealed class HoverOutlineRenderer
     /// character's projected bounding sphere (<paramref name="viewProjection"/>, unjittered) widened by the outline. <paramref name="nearDepth"/> is the scene's near slice
     /// (<paramref name="sceneNear"/>..<paramref name="sceneFar"/>), <paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used.
     /// </summary>
-    internal void Record(Texture picture, int width, int height, (Texture Colour, Texture Depth, float Near, float Far, Vector3 Centre, float Radius) hover,
-        Texture nearDepth, int renderWidth, int renderHeight, float sceneNear, float sceneFar, Matrix4x4 viewProjection)
+    internal void Record(GpuTexture picture, int width, int height, (GpuTexture Colour, GpuTexture Depth, float Near, float Far, Vector3 Centre, float Radius) hover,
+        GpuTexture nearDepth, int renderWidth, int renderHeight, float sceneNear, float sceneFar, Matrix4x4 viewProjection)
     {
         int outline = Math.Clamp((int)MathF.Round(2.5f * height / 1080f), 1, 6);
         if (Bounds(hover.Centre, hover.Radius, viewProjection, width, height, outline + 1) is not { } scissor) return;
@@ -101,9 +101,9 @@ public sealed class HoverOutlineRenderer
         cmd.BeginRendering(over.Rendering);
         var nearest = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-        program.Bind(mask, new SampledTexture(nearest, hover.Colour.View(), hover.Colour.Image));
-        program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View(), hover.Depth.Image));
-        program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View(), nearDepth.Image));
+        program.Bind(mask, new SampledTexture(nearest, hover.Colour.View()));
+        program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View()));
+        program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View()));
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Set(maskPlanes, hover.Near, hover.Far);
         program.Set(scenePlanes, sceneNear, sceneFar);
