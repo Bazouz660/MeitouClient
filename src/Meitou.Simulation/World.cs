@@ -71,13 +71,14 @@ public sealed partial class World : IDisposable
     // Per system, built once when it is added: which parallel phases it implements and the delegates that run them (no closure per tick).
     readonly List<SystemPhases> phases = [];
     readonly List<SimCommand> deferred = [];
-    readonly List<string> messages = [];
+    readonly List<PlayerMessage> messages = [];
     IAnimationSource? animations;
     IProjectileSource? projectiles;
     Trading.ITradeSource? trades;
     Production.ProductionSystem? production;
     Dialogue.IDialogueSource? dialogues;
     Ragdolls.IRagdollSource? ragdolls;
+    readonly List<INpcHolder> holders = [];
 
     public World(WorldSettings settings, IWalkability walkability, IEnumerable<ITickSystem>? systems = null, CharacterTable? characters = null)
     {
@@ -94,6 +95,7 @@ public sealed partial class World : IDisposable
         production = this.systems.OfType<Production.ProductionSystem>().FirstOrDefault();
         dialogues = this.systems.OfType<Dialogue.IDialogueSource>().FirstOrDefault();
         ragdolls = this.systems.OfType<Ragdolls.IRagdollSource>().FirstOrDefault();
+        holders.AddRange(this.systems.OfType<INpcHolder>());
         Characters = characters ?? new CharacterTable();
         Grid = new SpatialGrid(settings.GridCellSize);
         pool = new WorkerPool(settings.Threads);
@@ -122,7 +124,7 @@ public sealed partial class World : IDisposable
     public PlatoonRegistry Platoons { get; } = new();
     /// <summary>The NPC platoons of the save this world was loaded from, made when their zones load (null: a world that started new). Not hashed: the platoons carry what matters.</summary>
     public Saving.SavedPopulation? Saved { get; set; }
-    /// <summary>The player: faction, money, selection.</summary>
+    /// <summary>The player: faction, money, and each human's session (selection, active squad, windows).</summary>
     public PlayerState Player { get; } = new();
     /// <summary>Doors, lockable containers, cages and beds of the registered towns, with their occupants (docs/simulation.md "Cages, beds and locks").</summary>
     public Locks.FixtureRegistry Fixtures { get; } = new();
@@ -175,6 +177,7 @@ public sealed partial class World : IDisposable
         trades ??= system as Trading.ITradeSource;
         dialogues ??= system as Dialogue.IDialogueSource;
         ragdolls ??= system as Ragdolls.IRagdollSource;
+        if (system is INpcHolder holder) holders.Add(holder);
     }
 
     /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
@@ -224,7 +227,7 @@ public sealed partial class World : IDisposable
 
         // 8. Publish.
         Squads.Refresh(table);
-        Player.Prune(table);
+        Player.Prune(this);
         table.Phase = TablePhase.Outside;
         table.EndTick();
         Tick++;
@@ -264,22 +267,65 @@ public sealed partial class World : IDisposable
         return due;
     }
 
-    /// <summary>Posts a message for the player (a relation crossing a threshold...); serial phases only. The host shows them.</summary>
-    public void Post(string message)
+    /// <summary>Posts a message for every player (faction or world news: a relation crossing a threshold...); serial phases only. The host shows them.</summary>
+    public void Post(string message) => Post(PlayerMessage.Everyone, message);
+
+    /// <summary>
+    /// Posts a message for player <paramref name="player"/> (the answer to a command goes to its issuer; docs/simulation.md "Multiplayer (host-authoritative co-op)");
+    /// a negative player means everyone. Serial phases only.
+    /// </summary>
+    public void Post(int player, string message)
     {
-        lock (messages) messages.Add(message);
+        lock (messages) messages.Add(new PlayerMessage(player < 0 ? PlayerMessage.Everyone : player, message));
     }
 
-    /// <summary>Takes the messages posted since the last call (the host, between ticks).</summary>
-    public IReadOnlyList<string> TakeMessages()
+    /// <summary>Posts news about <paramref name="who"/> for the player who owns it (<see cref="OwnerOf"/>); an NPC's goes to everyone.</summary>
+    public void PostOwner(CharacterId who, string message) => Post(OwnerOf(who), message);
+
+    /// <summary><see cref="PostOwner"/> for the character in <paramref name="slot"/> (a system's walk over the slots).</summary>
+    internal void PostOwnerOfSlot(int slot, string message) => Post(OwnerOfSlot(slot), message);
+
+    /// <summary>Takes the messages posted since the last call (the host, between ticks; it shows those <see cref="PlayerMessage.For"/> its player).</summary>
+    public IReadOnlyList<PlayerMessage> TakeMessages()
     {
         lock (messages)
         {
             if (messages.Count == 0) return [];
-            string[] all = [.. messages];
+            PlayerMessage[] all = [.. messages];
             messages.Clear();
             return all;
         }
+    }
+
+    /// <summary>The issuer's session (<see cref="SimCommand.Player"/>), added when there is none.</summary>
+    public PlayerSession SessionOf(SimCommand command) => Player.Session(command.Player);
+
+    /// <summary>
+    /// The player who owns the character: its squad's <see cref="Squad.Owner"/> (0 when it has no squad); -1 for an NPC or a gone id. In a tick it reads the state being
+    /// computed, between ticks the last tick's.
+    /// </summary>
+    public int OwnerOf(CharacterId id)
+    {
+        bool alive = Characters.Phase == TablePhase.Outside ? Characters.IsAlive(id) : Characters.TryResolveNext(id, out _);
+        return alive ? OwnerOfSlot(id.Slot) : -1;
+    }
+
+    /// <summary>The owner of the character in <paramref name="slot"/> (<see cref="OwnerOf"/>): -1 unless it is a player character.</summary>
+    internal int OwnerOfSlot(int slot) => Characters.Cold(slot) is { IsPlayer: true } cold ? Squads.Find(cold.SquadId)?.Owner ?? 0 : -1;
+
+    /// <summary>
+    /// Who an order with a character list acts on: the listed characters, or the issuer's selection when the list is empty (the UI's "the selected characters";
+    /// docs/simulation.md "Player"). The selection is read now, so a select earlier in the same tick counts.
+    /// </summary>
+    public IReadOnlyList<CharacterId> Actors(SimCommand command, IReadOnlyList<CharacterId> listed) =>
+        listed.Count > 0 ? listed : Player.Find(command.Player)?.Selection.ToArray() ?? [];
+
+    /// <summary>The player whose window holds <paramref name="npc"/> (a conversation or its approach, a trade; <see cref="INpcHolder"/>); -1 none.</summary>
+    internal int HolderOf(CharacterId npc)
+    {
+        foreach (var holder in holders)
+            if (holder.HolderOf(npc) is >= 0 and var player) return player;
+        return -1;
     }
 
     /// <summary>Runs <paramref name="ticks"/> ticks.</summary>

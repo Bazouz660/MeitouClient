@@ -162,7 +162,7 @@ public static class Orders
         switch (command)
         {
             case OrdersCommand set:
-                foreach (var id in set.Characters.Count > 0 ? set.Characters : world.Player.Selection.ToArray())
+                foreach (var id in world.Actors(set, set.Characters))
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                     bool on = set.On ?? (cold.Orders & set.Order) == 0;
@@ -171,7 +171,7 @@ public static class Orders
                 break;
             case RunSpeedCommand speed:
                 int? mode = null;
-                foreach (var id in speed.Characters.Count > 0 ? speed.Characters : world.Player.Selection.ToArray())
+                foreach (var id in world.Actors(speed, speed.Characters))
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                     mode ??= ((cold.RunSpeed + speed.Step) % SpeedMode.Count + SpeedMode.Count) % SpeedMode.Count;

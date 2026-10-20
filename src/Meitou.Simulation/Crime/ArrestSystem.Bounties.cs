@@ -52,9 +52,9 @@ public sealed partial class ArrestSystem
         {
             switch (command)
             {
-                case PayBailOrder bail: PayBail(world, bail.Prisoner); break;
+                case PayBailOrder bail: PayBail(world, bail); break;
                 case PutInCageOrder put:
-                    foreach (var id in put.Carriers.Count > 0 ? put.Carriers : world.Player.Selection.ToArray()) StartCaging(world, id);
+                    foreach (var id in world.Actors(put, put.Carriers)) StartCaging(world, put.Player, id);
                     break;
             }
         }
@@ -78,31 +78,33 @@ public sealed partial class ArrestSystem
 
     /// <summary>
     /// Pays a prisoner's bail (the original's <c>FUN_1406ae170</c>, economy.md 11.5): a free, awake player character within <see cref="ArrestSettings.BailRange"/> of the cage (<b>engine</b>: the
-    /// original pays at a law NPC's dialogue in that town) and money for it; the jail's entry is erased and the prisoner freed (no escape).
+    /// original pays at a law NPC's dialogue in that town) and money for it; the jail's entry is erased and the prisoner freed (no escape). The payer is one of the issuer's characters;
+    /// the money is the faction's.
     /// </summary>
-    void PayBail(World world, CharacterId prisoner)
+    void PayBail(World world, PayBailOrder order)
     {
         var table = world.Characters;
+        var prisoner = order.Prisoner;
         if (!table.TryResolveNext(prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } pc || world.Fixtures.Find(where) is not { } cage) return;
-        if (BailFor(world, pc) is not { } price) { world.Post("Nobody here takes bail."); return; }
+        if (BailFor(world, pc) is not { } price) { world.Post(order.Player, "Nobody here takes bail."); return; }
         int payer = -1;
         float best = Settings.BailRange * Settings.BailRange;
         for (int s = 0; s < table.HighWater; s++)
         {
-            if (s == p || !table.Next[s].Alive || table.Cold(s) is not { IsPlayer: true, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true }) continue;
+            if (s == p || !table.Next[s].Alive || table.Cold(s) is not { IsPlayer: true, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } || world.OwnerOfSlot(s) != order.Player) continue;
             var at = table.Next[s].Position;
             float d2 = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(cage.Position.X, cage.Position.Z));
             if (d2 <= best) (payer, best) = (s, d2);
         }
-        if (payer < 0) { world.Post("Nobody is near enough to the jail to pay the bail."); return; }
-        if (world.Player.Money < price) { world.Post($"Not enough money: the bail is c.{price}."); return; }
+        if (payer < 0) { world.Post(order.Player, "Nobody is near enough to the jail to pay the bail."); return; }
+        if (world.Player.Money < price) { world.Post(order.Player, $"Not enough money: the bail is c.{price}."); return; }
         world.Player.Money -= price;
         if (pc.Bounties is { } ledger && ledger.Of(cage.Owner) is { } entry)
         {
             ledger.Remove(entry);
             if (ledger.Count == 0) pc.Bounties = null;
         }
-        world.Post($"{table.Cold(payer)!.Name} paid a bail of c.{price} for {pc.Name}");
+        world.Post(order.Player, $"{table.Cold(payer)!.Name} paid a bail of c.{price} for {pc.Name}");
         world.Fixtures.Release(world, prisoner);
         pc.Recognition = 0;
         Note(world, ArrestEventKind.Bailed, table.IdOf(payer), prisoner, cage.Owner, price);
@@ -110,13 +112,13 @@ public sealed partial class ArrestSystem
 
     // ------------------------------------------------------------------ putting a captive in a cage, and the claim
 
-    void StartCaging(World world, CharacterId carrier)
+    void StartCaging(World world, int player, CharacterId carrier)
     {
         var table = world.Characters;
         if (Carry is null || !table.TryResolveNext(carrier, out int s) || table.Cold(s) is not { IsPlayer: true, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: false } c) return;
         cagings.RemoveAll(k => k.Carrier == carrier);
         var cage = FindCageFor(world, s, c, null);
-        if (cage is null) { world.Post($"{c.Name}: no free cage nearby"); return; }
+        if (cage is null) { world.Post(player, $"{c.Name}: no free cage nearby"); return; }
         cagings.Add(new Caging { Carrier = carrier, Captive = c.Carrying, Cage = cage.Id });
         MovementSystem.GoTo(table, s, new Vector2(cage.Position.X, cage.Position.Z), c.RunSpeed);
     }
@@ -139,7 +141,7 @@ public sealed partial class ArrestSystem
         var cage = world.Fixtures.Find(k.Cage);
         if (cage is null || !FixtureRegistry.IsFree(table, cage))
         {
-            if (FindCageFor(world, s, c, k) is not { } other) { world.Post($"{c.Name}: no free cage nearby"); return false; }
+            if (FindCageFor(world, s, c, k) is not { } other) { world.PostOwnerOfSlot(s, $"{c.Name}: no free cage nearby"); return false; }
             k.Cage = other.Id;
             MovementSystem.GoTo(table, s, new Vector2(other.Position.X, other.Position.Z), c.RunSpeed);
             return true;
@@ -152,7 +154,7 @@ public sealed partial class ArrestSystem
         {
             if (walking) MovementSystem.Stop(table, s);
             Carry!.LetGo(world, s);
-            if (!world.Fixtures.Imprison(world, k.Captive, cage, constants.PrisonTime)) { world.Post($"{c.Name} could not put the captive in the cage"); return false; }
+            if (!world.Fixtures.Imprison(world, k.Captive, cage, constants.PrisonTime)) { world.PostOwnerOfSlot(s, $"{c.Name} could not put the captive in the cage"); return false; }
             Claim(world, s, k.Captive, cage);
             return false;
         }

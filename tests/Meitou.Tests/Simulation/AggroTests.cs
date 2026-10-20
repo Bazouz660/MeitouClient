@@ -162,7 +162,7 @@ public class AggroTests
         a.World.Commands.Enqueue(new AttackOrder([me], town.Members[1]) { Tick = a.World.Tick });
         a.World.RunTick();
         Assert.Equal(-30, a.Relations.Get(Townsfolk, Player));
-        Assert.Equal(["townsfolk are now hostile towards you"], a.World.TakeMessages());
+        Assert.Equal(["townsfolk are now hostile towards you"], a.World.TakeMessages().Select(m => m.Text));
         // Now another squad of theirs, which nobody attacked (the victims' mates join them anyway), picks the fight with the player by itself.
         a.World.RunTicks(30);
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);

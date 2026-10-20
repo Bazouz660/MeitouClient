@@ -146,7 +146,7 @@ public class CrimeTests
         var entry = t.Cold(me).Bounties!.Of(City)!;
         Assert.Equal(1 << (int)CrimeCode.Assault, entry.Crimes);
         Assert.Equal("city", entry.FactionName);
-        Assert.Contains(t.World.TakeMessages(), m => m.Contains("wanted by city for Assault: bounty c.500"));
+        Assert.Contains(t.World.TakeMessages().Select(m => m.Text), m => m.Contains("wanted by city for Assault: bounty c.500"));
         // Booked once: more sweeps while the same crime is pending add nothing.
         t.World.RunTicks(60);
         Assert.Single(t.Events(CrimeEventKind.Booked));

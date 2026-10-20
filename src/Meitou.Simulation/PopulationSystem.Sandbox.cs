@@ -46,8 +46,8 @@ public sealed partial class PopulationSystem
         if (playerSquad)
         {
             world.Player.Faction = data.PlayerFaction;
-            world.Player.Squad = squad.Id;
-            world.Player.Selection.Clear();
+            world.Player.Local.Squad = squad.Id;
+            world.Player.Local.Selection.Clear();
         }
         return id;
     }

@@ -157,7 +157,7 @@ public class ConstructionTests
         var site = Assert.Single(rig.World.Buildings.All);
         Assert.Equal(SiteId(1, HutAt), site.Id);
         Assert.Equal(5, site.Target);
-        Assert.Contains(rig.World.TakeMessages(), m => m == PlacementRules.Message(PlacementFailure.NotAvailable));
+        Assert.Contains(rig.World.TakeMessages().Select(m => m.Text), m => m == PlacementRules.Message(PlacementFailure.NotAvailable));
         var published = Assert.Single(rig.World.Snapshot.Buildings);
         Assert.False(published.Complete);
         Assert.Equal(3, published.Materials[0].Required);
@@ -175,7 +175,7 @@ public class ConstructionTests
         Assert.Equal(5, site.Progress);
         Assert.All(site.Materials, m => Assert.Equal(m.Required, m.Delivered));
         Assert.Equal(0, rig.Carried(builder, Plank) + rig.Carried(builder, Iron));
-        Assert.Contains(rig.World.TakeMessages(), m => m == "Building 'Test Hut' construction complete.");
+        Assert.Contains(rig.World.TakeMessages().Select(m => m.Text), m => m == "Building 'Test Hut' construction complete.");
         Assert.True(rig.World.Snapshot.Buildings[0].Complete);
         Assert.True(rig.Cold(builder).Stats![StatsEnumerated.Engineering] > Unit);   // building trains engineering
 

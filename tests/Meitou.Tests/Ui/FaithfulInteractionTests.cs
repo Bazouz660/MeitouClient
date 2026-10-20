@@ -83,7 +83,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         var item = new ItemInstance { Record = "item", Name = "Test item", Width = 1, Height = 1 };
         inventory.Items.Add(item);
         var character = session.World.Characters.Spawn(new(), new() { Name = "Player", IsPlayer = true, Inventory = inventory }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(character); session.World.RunTick();
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(character); session.World.RunTick();
         var ui = Ui(session);
         try
         {
@@ -113,7 +113,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         inventory.Items.Add(new() { Record = "bag", Name = "Thieves Backpack", Section = "backpack_attach", Width = 4, Height = 4, Contents = new Inventory(10, 14) });
         inventory.Items.Add(new() { Record = "sword", Name = "Sword", Section = "back", Width = 7, Height = 1 });
         var character = session.World.Characters.Spawn(new(), new() { Name = "Wolf", IsPlayer = true, Inventory = inventory }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(character); session.World.RunTick();
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(character); session.World.RunTick();
         var ui = Ui(session);
         try
         {
@@ -145,7 +145,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
         var own = session.World.Characters.Spawn(new() { Position = new(-3, 0, 0) }, new() { Name = "Player", IsPlayer = true }, 0);
         var other = session.World.Characters.Spawn(new() { Position = new(3, 0, 0) }, new() { Name = "Stranger" }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(own); session.World.RunTick();
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(own); session.World.RunTick();
         var ui = Ui(session);
         try
         {
@@ -173,7 +173,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
         var first = session.World.Characters.Spawn(new() { Position = new(-3, 0, 0) }, new() { Name = "First", IsPlayer = true }, 0);
         var second = session.World.Characters.Spawn(new() { Position = new(3, 0, 0) }, new() { Name = "Second", IsPlayer = true }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(first); session.World.RunTick();
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(first); session.World.RunTick();
         var ui = Ui(session);
         try
         {
@@ -186,7 +186,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             Assert.Contains(frame, c => c.Name == "portrait-name-1" && c.Caption == "Second");
             Click(ui, "member-1");
             session.World.RunTick();
-            Assert.Equal([second], session.World.Player.Selection);
+            Assert.Equal([second], session.World.Player.Local.Selection);
         }
         finally { ui.DisposeUi(); }
     }
@@ -237,7 +237,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
         var character = session.World.Characters.Spawn(new(), new() { Name = "Player", IsPlayer = true, Inventory = new Inventory(8, 6) }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(character); session.World.RunTick();
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(character); session.World.RunTick();
         var ui = Ui(session);
         var missing = new List<string>();
         try

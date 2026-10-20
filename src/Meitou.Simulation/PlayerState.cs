@@ -1,40 +1,75 @@
 namespace Meitou.Simulation;
 
 /// <summary>
-/// The player in the world (docs/game/ui-input.md section 7, economy.md): the faction that is theirs, their money and the characters
-/// selected. Selection is world state, changed by <see cref="SelectCommand"/>, so a scripted game of selects and orders replays the
-/// same. There is no player until a new game starts (<see cref="Exists"/>).
+/// The player faction in the world (docs/game/ui-input.md section 7, economy.md): the faction that is theirs, their money, map knowledge and squad AI options, shared by
+/// every human playing it; and the humans' <see cref="Sessions"/> (selection, active squad, windows; docs/simulation.md "Multiplayer (host-authoritative co-op)"). Selection
+/// is world state, changed by <see cref="SelectCommand"/>, so a scripted game of selects and orders replays the same. There is no player until a new game starts
+/// (<see cref="Exists"/>).
 /// </summary>
 public sealed class PlayerState
 {
+    // Ascending Number; [0] is always player 0.
+    readonly List<PlayerSession> sessions = [new PlayerSession(0)];
+
     /// <summary>The player's faction, a position in the world's faction list (-1 before a game starts).</summary>
     public int Faction { get; set; } = -1;
     public bool Exists => Faction >= 0;
-    /// <summary>Money in cats (NEW_GAME_STARTOFF <c>money</c>; how it is spent is the economy stage).</summary>
+    /// <summary>Money in cats (NEW_GAME_STARTOFF <c>money</c>; how it is spent is the economy stage). One purse for every human.</summary>
     public long Money { get; set; }
-    /// <summary>The selected characters, in the order they were selected.</summary>
-    public List<CharacterId> Selection { get; } = [];
-    /// <summary>
-    /// The active squad (the original's cached squad, <c>FUN_1407f5520</c>): the one the squad bar shows and recruits join. The start's squad at first; the squad tabs, Tab
-    /// (<see cref="ActiveSquadCommand"/>) and selecting a character of another squad change it (<see cref="SquadManagement"/>).
-    /// </summary>
-    public int Squad { get; set; } = -1;
-    /// <summary>The new game's character editor is open: the start's characters may still be remade, race and gender too (<see cref="Editing.EditCharacter"/>). Not saved.</summary>
-    public bool InCreation { get; set; }
-    /// <summary>The start's <c>force race</c> RACE ids the creation is limited to (empty: every playable race).</summary>
-    public IReadOnlyList<string> CreationRaces { get; set; } = [];
-    /// <summary>The character of another faction the HUD shows (<see cref="InspectCommand"/>), or <see cref="CharacterId.None"/>. Display only: not hashed and not saved.</summary>
-    public CharacterId Inspected { get; set; } = CharacterId.None;
-    /// <summary>The instance id of the building the HUD shows (<see cref="InspectBuildingCommand"/>), or null. Display only: not hashed and not saved.</summary>
-    public string? InspectedBuilding { get; set; }
-    /// <summary>The container (<see cref="Locks.Fixture.Id"/>) whose window is open and the character who opened it (<see cref="Items.OpenContainerOrder"/>), and the one a character is still walking to. Display only: not hashed and not saved.</summary>
-    public string? OpenContainer { get; set; }
-    public CharacterId ContainerOpener { get; set; } = CharacterId.None;
-    public string? OpeningContainer { get; set; }
-    public CharacterId ContainerWalker { get; set; } = CharacterId.None;
-    /// <summary>The door (<see cref="Locks.Fixture.Id"/>) a character is walking to open or close (<see cref="Locks.DoorOrder"/>), and who. Not hashed and not saved, as the container walk.</summary>
-    public string? DoorTarget { get; set; }
-    public CharacterId DoorWalker { get; set; } = CharacterId.None;
+    /// <summary>Player 0's session: the host's, or the single player's. Always there.</summary>
+    public PlayerSession Local => sessions[0];
+    /// <summary>Every human's session, by ascending <see cref="PlayerSession.Number"/> (the first is <see cref="Local"/>).</summary>
+    public IReadOnlyList<PlayerSession> Sessions => sessions;
+
+    /// <summary>Player <paramref name="player"/>'s session; null when there is none.</summary>
+    public PlayerSession? Find(int player)
+    {
+        foreach (var s in sessions)
+            if (s.Number == player) return s;
+        return null;
+    }
+
+    /// <summary>Player <paramref name="player"/>'s session, added when there is none (commands and <see cref="Join"/> only: a session beyond 0 is hashed).</summary>
+    public PlayerSession Session(int player)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(player);
+        int at = 0;
+        while (at < sessions.Count && sessions[at].Number < player) at++;
+        if (at < sessions.Count && sessions[at].Number == player) return sessions[at];
+        var added = new PlayerSession(player);
+        sessions.Insert(at, added);
+        return added;
+    }
+
+    /// <summary>Adds player <paramref name="player"/>'s session, or updates its roster entry (<see cref="PlayerSession.Guid"/>, <see cref="PlayerSession.Name"/>).</summary>
+    public PlayerSession Join(int player, Guid guid, string name)
+    {
+        var s = Session(player);
+        s.Guid = guid;
+        s.Name = name;
+        return s;
+    }
+
+    /// <summary>The session of the player with roster id <paramref name="guid"/>; null when none (or <see cref="Guid.Empty"/>).</summary>
+    public PlayerSession? FindByGuid(Guid guid)
+    {
+        if (guid == Guid.Empty) return null;
+        foreach (var s in sessions)
+            if (s.Guid == guid) return s;
+        return null;
+    }
+
+    /// <summary>The number a new player gets: one more than the highest.</summary>
+    public int NextNumber() => sessions[^1].Number + 1;
+
+    /// <summary>Whether some session's HUD inspects <paramref name="id"/> (read by the parallel body pass).</summary>
+    public bool Inspects(CharacterId id)
+    {
+        if (id.IsNone) return false;
+        foreach (var s in sessions)
+            if (s.Inspected == id) return true;
+        return false;
+    }
     /// <summary>
     /// What the player knows of each placed town (<see cref="PopulationData.Sites"/> order): discovered, explored, recently discovered (docs/game/ui-screens.md "Map").
     /// Replaced, never changed in place, so a snapshot may hold it. Not hashed: it follows from positions and nothing in the simulation reads it.
@@ -78,38 +113,32 @@ public sealed class PlayerState
         if (Camps.Any(c => (c.Known & TownKnowledge.Recent) != 0)) Camps = [.. Camps.Select(c => c with { Known = c.Known & ~TownKnowledge.Recent })];
     }
 
-    /// <summary>Drops characters that are gone (serial phases, after the commit).</summary>
-    internal void Prune(CharacterTable table)
+    /// <summary>Drops characters that are gone from every session (serial phases, after the commit; <see cref="PlayerSession.Prune"/>).</summary>
+    internal void Prune(World world)
     {
-        bool hadSelection = Selection.Count > 0;
-        Selection.RemoveAll(c => !table.TryResolveNext(c, out _));
-        // Somebody stays selected (the original keeps one of the player's characters selected): when every selected one is gone or dead, the first living one is.
-        if (hadSelection && Exists && !Selection.Any(c => table.TryResolveNext(c, out int slot) && table.Cold(slot) is { DiedTick: < 0 }))
-            for (int i = 0; i < table.HighWater; i++)
-                if (table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, DiedTick: < 0 })
-                {
-                    Selection.Clear();
-                    Selection.Add(new CharacterId(i, table.Next[i].Generation));
-                    break;
-                }
-        if (!Inspected.IsNone && !table.TryResolveNext(Inspected, out _)) Inspected = CharacterId.None;
+        foreach (var s in sessions) s.Prune(world);
     }
 
     internal void Hash(ref StateHasher h)
     {
+        var local = Local;
         h.Add(Faction);
         h.Add(Money);
-        h.Add(Squad);
+        h.Add(local.Squad);
         if (SquadAi != SquadAi.Defaults) h.Add(0x53714169 + (int)SquadAi);
-        h.Add(Selection.Count);
-        foreach (var c in Selection)
+        h.Add(local.Selection.Count);
+        foreach (var c in local.Selection)
         {
             h.Add(c);
         }
+        for (int k = 1; k < sessions.Count; k++) sessions[k].Hash(ref h);   // nothing while player 0 is alone, so the pinned hashes stay
     }
 }
 
-/// <summary>Applies the player's selection and stop commands (step 1 of the tick). Move orders are the movement system's.</summary>
+/// <summary>
+/// Applies the player's selection and stop commands (step 1 of the tick), each to its issuer's session (<see cref="World.SessionOf"/>). Move orders are the movement
+/// system's.
+/// </summary>
 public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSystem
 {
     readonly CharacterAssembly? assembly = data is null ? null : new(data);
@@ -123,38 +152,41 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
             switch (command)
             {
                 case SelectCommand select:
+                    // Only the issuer's own characters: a session's selection never holds another human's.
                     var selectable = select.Characters.Where(id =>
-                        table.TryResolveNext(id, out int slot) && table.Cold(slot)!.IsPlayer).ToArray();
+                        table.TryResolveNext(id, out int slot) && table.Cold(slot)!.IsPlayer && world.OwnerOfSlot(slot) == select.Player).ToArray();
                     if (selectable.Length == 0) break;
+                    var session = world.SessionOf(select);
                     // Picking one of your own shows them: the inspected character of another faction no longer takes the HUD.
-                    player.Inspected = CharacterId.None;
-                    if (!select.Additive) player.Selection.Clear();
+                    session.Inspected = CharacterId.None;
+                    if (!select.Additive) session.Selection.Clear();
                     foreach (var id in selectable)
-                        if (!player.Selection.Contains(id)) player.Selection.Add(id);
+                        if (!session.Selection.Contains(id)) session.Selection.Add(id);
                     // Selecting someone of another squad shows that squad (engine reading of the original's cached squad).
                     if (!select.Additive && table.TryResolveNext(selectable[0], out int first) && world.Squads.Find(table.Cold(first)!.SquadId) is { } theirs
-                        && theirs.Faction == player.Faction) player.Squad = theirs.Id;
+                        && theirs.Faction == player.Faction && theirs.Owner == session.Number) session.Squad = theirs.Id;
                     break;
                 case SquadCommand squadCommand:
                     SquadManagement.Apply(world, data, squadCommand);
                     break;
                 case SeenDiscoveriesCommand:
-                    player.SeeDiscoveries();
+                    player.SeeDiscoveries();   // shared map knowledge: one player closing the map clears the marks for everyone
                     break;
                 case InspectCommand inspect:
-                    player.Inspected = inspect.Target;
+                    world.SessionOf(inspect).Inspected = inspect.Target;
                     break;
                 case Items.OpenContainerOrder open:
                     OpenContainerInput(world, open);
                     break;
-                case Items.CloseContainer:
-                    player.OpenContainer = player.OpeningContainer = null;
+                case Items.CloseContainer close:
+                    var closing = world.SessionOf(close);
+                    closing.OpenContainer = closing.OpeningContainer = null;
                     break;
                 case InspectBuildingCommand building:
-                    player.InspectedBuilding = building.Instance;
+                    world.SessionOf(building).InspectedBuilding = building.Instance;
                     break;
                 case StopCommand stop:
-                    foreach (var id in stop.Characters.Count > 0 ? stop.Characters : player.Selection.ToArray())
+                    foreach (var id in world.Actors(stop, stop.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || !table.Cold(slot)!.IsPlayer) continue;
                         MovementSystem.Stop(table, slot);
@@ -168,12 +200,12 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     {
                         if (Items.InventoryCommands.IsLimbSection(move.Item.Section) || Items.InventoryCommands.IsLimbSection(move.Section))
                         {
-                            if (!MoveLimb(cold, inventory, move)) world.Post("Cannot fit or remove that limb: it needs a missing limb of its side, or the slot changed.");
+                            if (!MoveLimb(cold, inventory, move)) world.Post(move.Player, "Cannot fit or remove that limb: it needs a missing limb of its side, or the slot changed.");
                         }
                         else if (inventory.All().ElementAtOrDefault(move.Item.Index) is { LockedOn: true } && move.Section != move.Item.Section)
-                            world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
+                            world.Post(move.Player, "This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
                         else if (!Items.InventoryCommands.Move(inventory, move.Item, move.Section, move.X, move.Y))
-                            world.Post("Cannot move that item: the slot is occupied, incompatible or the inventory changed.");
+                            world.Post(move.Player, "Cannot move that item: the slot is occupied, incompatible or the inventory changed.");
                         else if (Items.InventoryCommands.IsEquipmentSection(move.Item.Section) || Items.InventoryCommands.IsEquipmentSection(move.Section))
                             assembly?.RefreshEquipment(cold);
                     }
@@ -190,15 +222,15 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case DebugCommand debug:
                     DebugCheats.Apply(world, data, debug);
                     break;
-                case Editing.FinishCreation:
-                    player.InCreation = false;
+                case Editing.FinishCreation finish:
+                    world.SessionOf(finish).InCreation = false;
                     break;
                 case Items.PickUpItemOrder pick:
                     PickUpInput(world, pick);
                     break;
                 case Items.ArrangeInventory arrange:
                     if (table.TryResolveNext(arrange.Character, out int character) && table.Cold(character) is { IsPlayer: true, Inventory: { } carried } &&
-                        !Items.InventoryCommands.Arrange(carried)) world.Post("Cannot arrange inventory: the items do not fit.");
+                        !Items.InventoryCommands.Arrange(carried)) world.Post(arrange.Player, "Cannot arrange inventory: the items do not fit.");
                     break;
             }
         }
@@ -206,7 +238,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
 
     public void SlowWorld(World world)
     {
-        world.Player.Prune(world.Characters);
+        world.Player.Prune(world);
         SquadManagement.KeepActive(world);
         PickUpWorkers(world);
         ContainerWorkers(world);
@@ -250,10 +282,10 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
         if (item is null || item.Record != t.Record || item.Section != t.Section || item.X != t.X || item.Y != t.Y || item.Type != Meitou.Data.Fcs.FcsRecordType.MAP_ITEM
             || data.Db.Find(item.Record) is not { } record) return;
         var sites = Items.MapItems.Reveals(data, record, world.Player.Towns, world.Seed);
-        if (sites.Count == 0) { world.Post("You already know all these locations, no new information can be learned."); return; }
+        if (sites.Count == 0) { world.Post(read.Player, "You already know all these locations, no new information can be learned."); return; }
         foreach (int site in sites) world.Player.Know(site, TownKnowledge.Discovered | TownKnowledge.Recent);
         inventory.RemoveOne(item);
-        world.Post($"{sites.Count} location(s) added to the map.");
+        world.Post(read.Player, $"{sites.Count} location(s) added to the map.");
     }
 }
 

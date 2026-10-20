@@ -104,8 +104,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         return MathF.Sqrt(dx * dx + dz * dz);
     }
 
-    static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
-
     // ------------------------------------------------------------------ orders
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
@@ -117,19 +115,19 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             {
                 case PickUpOrder order:
                     if (!table.TryResolveNext(order.Target, out int body) || !CanBeLifted(world, table.Cold(body)!)) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!)) is int carrier)
+                    if (Nearest(table, world.Actors(order, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!)) is int carrier)
                         Begin(table, carrier, order.Target, CharacterTask.PickUp, CharacterTask.Idle);
                     break;
                 case LootOrder loot:
                     if (!table.TryResolveNext(loot.Target, out int victim) || !CanBeLooted(table.Cold(victim)!)) break;
-                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null, InCombat: false } c && c.CarriedBy.IsNone) is int looter)
+                    if (Nearest(table, world.Actors(loot, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null, InCombat: false } c && c.CarriedBy.IsNone) is int looter)
                         Begin(table, looter, loot.Target, CharacterTask.Loot, CharacterTask.Idle);
                     break;
                 case StealthKoOrder ko:
                     BeginKnockOut(world, ko);
                     break;
                 case PutDownOrder put:
-                    foreach (var id in Who(world, put.Carriers))
+                    foreach (var id in world.Actors(put, put.Carriers))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold) continue;
                         if (table.Next[slot].Task == (byte)CharacterTask.PutDown) continue;
@@ -144,7 +142,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 case RescueJobCommand job:
                 {
                     var taken = job.Job ? null : Lifting(table);
-                    foreach (var id in Who(world, job.Characters))
+                    foreach (var id in world.Actors(job, job.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
@@ -444,7 +442,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         loots.Add(new LootEntry(world.Tick, table.IdOf(i), table.IdOf(t), taken, left, seen));
         if (cold.IsPlayer)
         {
-            world.Post(left > 0 ? $"{cold.Name} took {taken} items from {victim.Name}; {left} did not fit" : $"{cold.Name} took {taken} items from {victim.Name}");
+            world.PostOwnerOfSlot(i, left > 0 ? $"{cold.Name} took {taken} items from {victim.Name}; {left} did not fit" : $"{cold.Name} took {taken} items from {victim.Name}");
             if (seen) world.Post($"{cold.Name} was seen looting {victim.Name}");
         }
         End(table, i);

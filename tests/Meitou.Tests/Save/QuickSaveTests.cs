@@ -88,14 +88,14 @@ public class QuickSaveTests
         woundedCold.Stats.Gain(StatsEnumerated.Strength, 3.5f);
         a.World.RunTicks(30);
         a.World.Player.Money = 1234;
-        a.World.Player.Selection.Remove(a.Squad.Members[0]);
+        a.World.Player.Local.Selection.Remove(a.Squad.Members[0]);
 
         var (clock, folder, save) = Quicksave(a, "quick");
         try
         {
             using var b = new Game(NewWorld(data, 1), data, null!);
             var loaded = SaveLoader.Load(b.World, save, data);
-            var squadB = b.World.Squads.Find(b.World.Player.Squad)!;
+            var squadB = b.World.Squads.Find(b.World.Player.Local.Squad)!;
 
             Assert.Equal(clock, loaded.Clock);
             Assert.Equal(1234, b.World.Player.Money);
@@ -129,8 +129,8 @@ public class QuickSaveTests
                 Assert.Equal(ca.Inventory!.Items.Count, cb.Inventory!.Items.Count);
             }
             // The selection comes back as saved (CAMERA selected_character / selected_characters<k>).
-            Assert.Equal(a.World.Player.Selection.Select(m => a.World.Characters.Cold(m.Slot)!.Name), b.World.Player.Selection.Select(m => b.World.Characters.Cold(m.Slot)!.Name));
-            Assert.Single(b.World.Player.Selection);
+            Assert.Equal(a.World.Player.Local.Selection.Select(m => a.World.Characters.Cold(m.Slot)!.Name), b.World.Player.Local.Selection.Select(m => b.World.Characters.Cold(m.Slot)!.Name));
+            Assert.Single(b.World.Player.Local.Selection);
 
             // What is not carried, stated exactly: the world starts at tick 0 with no paths, orders or animation, and its state hash is not the original's.
             Assert.Equal(0, b.World.Tick);
@@ -157,7 +157,7 @@ public class QuickSaveTests
                 using var b = new Game(NewWorld(data, threads), data, null!);
                 var loaded = SaveLoader.Load(b.World, save, data);
                 b.World.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = 0 });
-                b.World.Commands.Enqueue(new SelectCommand(b.World.Squads.Find(b.World.Player.Squad)!.Members.ToList()) { Tick = 0 });
+                b.World.Commands.Enqueue(new SelectCommand(b.World.Squads.Find(b.World.Player.Local.Squad)!.Members.ToList()) { Tick = 0 });
                 b.World.Commands.Enqueue(new MoveOrder([], new Vector3(1300, 300, 2400)) { Tick = 2 });
                 var seen = new List<ulong>();
                 for (int i = 0; i < 6; i++)
@@ -205,7 +205,7 @@ public class QuickSaveTests
 
             using var b = Make(5);
             var loaded = SaveLoader.Load(b, SaveGame.Load(folder), data, new SaveLoadOptions { Appearances = data.Appearances });
-            var squadB = b.Squads.Find(b.Player.Squad)!;
+            var squadB = b.Squads.Find(b.Player.Local.Squad)!;
             Assert.Equal(squadA.Members.Count, squadB.Members.Count);
             for (int i = 0; i < squadA.Members.Count; i++)
             {

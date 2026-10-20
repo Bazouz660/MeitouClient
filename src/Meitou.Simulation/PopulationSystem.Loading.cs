@@ -8,7 +8,7 @@ public sealed partial class PopulationSystem
     /// <summary>Queues nearby population and applies completed builds during loading, without moving squads or advancing their timers.</summary>
     internal bool PrepareLoading(World world, Vector3 cameraFocus)
     {
-        focus = cameraFocus;
+        world.Player.Local.Focus = cameraFocus;
         world.Uniques.SeedPrisoners(data.Db);
         RefreshStates(world);
         Inputs(world, []);

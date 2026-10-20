@@ -81,8 +81,8 @@ static class DebugCheats
                 break;
             case DebugGiveItem give when data is not null:
                 if (!table.TryResolveNext(give.Character, out int owner) || table.Cold(owner)?.Inventory is not { } inventory) break;
-                if (data.Items.Create(give.Record, give.Quantity) is not { } item) { world.Post($"No item record {give.Record}."); break; }
-                if (!inventory.Add(item)) world.Post($"{item.Quantity} x {item.Name} did not fit.");
+                if (data.Items.Create(give.Record, give.Quantity) is not { } item) { world.Post(give.Player, $"No item record {give.Record}."); break; }
+                if (!inventory.Add(item)) world.Post(give.Player, $"{item.Quantity} x {item.Name} did not fit.");
                 break;
         }
     }

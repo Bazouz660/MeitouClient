@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace Meitou.Simulation.Items
 {
-    /// <summary>Pick up a ground item (<see cref="GroundItems"/> id): the nearest of the characters (the selection when empty) who may walks to it and puts it in its inventory.</summary>
+    /// <summary>Pick up a ground item (<see cref="GroundItems"/> id): the nearest of the characters (the issuer's selection when empty) who may walks to it and puts it in its inventory.</summary>
     public sealed record PickUpItemOrder(IReadOnlyList<CharacterId> Characters, int Item) : SimCommand;
 }
 
@@ -22,7 +22,7 @@ namespace Meitou.Simulation
             var table = world.Characters;
             int best = -1;
             float bestDistance = float.MaxValue;
-            foreach (var id in order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray())
+            foreach (var id in world.Actors(order, order.Characters))
             {
                 if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
                 float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(item.Position));
@@ -64,7 +64,7 @@ namespace Meitou.Simulation
                 {
                     // Task_Pickup sounds when any of the stack went in.
                     if (item.Item.Quantity < before) world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
-                    world.Post($"{c.Name}: Not enough room in my inventory");
+                    world.PostOwnerOfSlot(s, $"{c.Name}: Not enough room in my inventory");
                 }
             }
         }

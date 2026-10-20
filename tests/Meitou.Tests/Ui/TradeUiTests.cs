@@ -39,7 +39,7 @@ public class TradeUiTests
         var stock = new StockSource();
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem(), stock]);
         var hero = session.World.Characters.Spawn(new(), new() { Name = "Hero", IsPlayer = true, Inventory = new Inventory() }, 0);
-        session.World.Player.Faction = 0; session.World.Player.Selection.Add(hero);
+        session.World.Player.Faction = 0; session.World.Player.Local.Selection.Add(hero);
         stock.Trade = new(hero, new CharacterId(1, 0), "Armour King", 1000, 1000, 20, 100,
             [new(0, "top", "Top", "main", 0, 0, 1, 1, 1, 1, 1, 1, false), new(1, "bottom", "Bottom", "main", 0, 99, 1, 1, 1, 1, 1, 1, false)], [], false);
         session.World.RunTick();
@@ -88,7 +88,7 @@ public class TradeUiTests
         var keeper = Spawn("keeper", 10, data.FactionIndex("f-t"), false, "shop-t");
         world.Player.Faction = data.PlayerFaction;
         world.Player.Money = 100_000;
-        world.Player.Selection.Add(hero);
+        world.Player.Local.Selection.Add(hero);
         world.RunTick();   // the shop opens on the first look at the squads
         world.Commands.Enqueue(new OpenTrade(hero, keeper) { Tick = world.Tick });
         world.RunTicks(2);

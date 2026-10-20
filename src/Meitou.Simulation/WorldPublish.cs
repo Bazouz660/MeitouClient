@@ -27,7 +27,7 @@ public sealed partial class World
         var state = table.Previous;
         // The selection's first member that could knock someone out from behind: the stealth KO chances are against it.
         int koSlot = -1;
-        foreach (var s in Player.Selection)
+        foreach (var s in Player.Local.Selection)
             if (table.TryResolveNext(s, out int k) && table.Cold(k) is { } c && Carrying.CarrySystem.CanKnockOut(c)) { koSlot = k; break; }
         var aggro = koSlot >= 0 ? systems.OfType<AggroSystem>().FirstOrDefault() : null;
         var arrest = systems.OfType<Crime.ArrestSystem>().FirstOrDefault();
@@ -39,7 +39,7 @@ public sealed partial class World
             var id = new CharacterId(i, state[i].Generation);
             var cold = table.Cold(i);
             // The details only the selection shows: asked once per character, the selection is a list.
-            bool selected = cold is { IsPlayer: true } && Player.Selection.Contains(id), inspected = !selected && id == Player.Inspected, detailed = selected || inspected;
+            bool selected = cold is { IsPlayer: true } && Player.Local.Selection.Contains(id), inspected = !selected && id == Player.Local.Inspected, detailed = selected || inspected;
             bool sneaking = cold is { IsPlayer: true } && (cold.Orders & CharacterOrders.Sneak) != 0;
             var watchers = sneaking ? WatchersOf(cold!) : [];
             if (floaters is { } healQueue && cold is { IsPlayer: true, Medical: { } healer }) PublishHeal(healQueue, i, cold, healer, state[i].Position);
@@ -98,19 +98,19 @@ public sealed partial class World
             });
         }
         PreviousSnapshot = Snapshot;
-        Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), Speech = dialogues?.PublishSpeech() ?? [], DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Squad,
-            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, DoorPicks = Fixtures.DoorPicks, InspectedBuilding = Fixtures.DetailOf(Player.InspectedBuilding),
+        Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), Speech = dialogues?.PublishSpeech() ?? [], DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Local.Squad,
+            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, DoorPicks = Fixtures.DoorPicks, InspectedBuilding = Fixtures.DetailOf(Player.Local.InspectedBuilding),
             Machines = OpenContainerView() is { } container ? [.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty,
             Crafts = production?.CraftsView(this) ?? Snapshot.Crafts };
     }
 
     /// <summary>
-    /// The open container (<see cref="PlayerState.OpenContainer"/>) shaped as a machine with a storage grid, so the host shows it in the storage window the research bench uses.
+    /// The open container (<see cref="PlayerSession.OpenContainer"/>) shaped as a machine with a storage grid, so the host shows it in the storage window the research bench uses.
     /// <c>Site</c> is the fixture id, <c>Record</c> its BUILDING record. Null when none is open.
     /// </summary>
     Production.MachineSnapshot? OpenContainerView()
     {
-        if (Player.OpenContainer is not { } id || Fixtures.Find(id) is not { Contents: { } grid } f) return null;
+        if (Player.Local.OpenContainer is not { } id || Fixtures.Find(id) is not { Contents: { } grid } f) return null;
         var storage = new InventoryView(grid.Width, grid.Height, 0, 0,
             Array.AsReadOnly(grid.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
                 { Material = item.MaterialId, Charge = item.ChargeFraction }).ToArray()));

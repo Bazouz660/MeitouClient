@@ -128,7 +128,6 @@ public sealed class ConstructionSystem : ITickSystem
 
     // ------------------------------------------------------------------ orders
 
-    static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
@@ -142,7 +141,7 @@ public sealed class ConstructionSystem : ITickSystem
                 {
                     var placed = new List<BuildSite>(place.Plans.Count);
                     foreach (var plan in place.Plans)
-                        if (Place(world, plan) is { } site) placed.Add(site);
+                        if (Place(world, place.Player, plan) is { } site) placed.Add(site);
                     TownForWalls(world, placed);
                     AttachWalls(world.Buildings, Data, placed);
                     break;
@@ -151,7 +150,7 @@ public sealed class ConstructionSystem : ITickSystem
                 {
                     // A complete building has nothing to build; repairing one (order 95) needs the building health, which is not modelled.
                     if (Root(reg, reg.Find(order.Site)) is not { Complete: false } site) break;
-                    foreach (var id in Who(world, order.Characters))
+                    foreach (var id in world.Actors(order, order.Characters))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
                             Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
                     break;
@@ -161,17 +160,17 @@ public sealed class ConstructionSystem : ITickSystem
                     if (Root(reg, reg.Find(order.Site)) is not { } site) break;
                     if (Blocker(reg, site) is { } text)
                     {
-                        world.Post(text);
+                        world.Post(order.Player, text);
                         break;
                     }
-                    foreach (var id in Who(world, order.Characters))
+                    foreach (var id in world.Actors(order, order.Characters))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
                             Begin(world, slot, site, CharacterTask.Dismantle, CharacterTask.Idle);
                     break;
                 }
                 case CancelSite cancel:
                     if (Root(reg, reg.Find(cancel.Site)) is not { Complete: false } cancelled) break;
-                    if (cancelled.Deliverable > 0) world.Post("Dismantle it to get the materials back.");
+                    if (cancelled.Deliverable > 0) world.Post(cancel.Player, "Dismantle it to get the materials back.");
                     else Remove(world, cancelled);
                     break;
                 case PauseSite pause:
@@ -202,18 +201,19 @@ public sealed class ConstructionSystem : ITickSystem
         return text;
     }
 
-    BuildSite? Place(World world, PlannedBuilding plan)
+    /// <summary>A site for <paramref name="plan"/>, or null with the refusal posted to <paramref name="player"/>, the issuer.</summary>
+    BuildSite? Place(World world, int player, PlannedBuilding plan)
     {
         var data = Data(plan.Record);
         if (data is null || !Unlocked(world, plan.Record))
         {
-            world.Post(PlacementRules.Message(PlacementFailure.NotAvailable));
+            world.Post(player, PlacementRules.Message(PlacementFailure.NotAvailable));
             return null;
         }
         var fail = PlacementRules.TownBlock(data, new Vector2(plan.Position.X, plan.Position.Z), towns, playerFactionId);
         if (fail != PlacementFailure.None)
         {
-            world.Post(PlacementRules.Message(fail));
+            world.Post(player, PlacementRules.Message(fail));
             return null;
         }
         var reg = world.Buildings;
@@ -720,9 +720,9 @@ public sealed class ConstructionSystem : ITickSystem
         SyncChildren(world, site);
         if (cold.Stats is { } stats && cold.Race is { } race) xp.Engineering(stats, race, dt);
         if (site.Progress > 0) return;
-        Refund(world, cold, site);
+        Refund(world, slot, cold, site);
         foreach (var c in world.Buildings.All)
-            if (c.WallParent == site.Id) Refund(world, cold, c);   // nothing unless a save from before the link gave it materials
+            if (c.WallParent == site.Id) Refund(world, slot, cold, c);   // nothing unless a save from before the link gave it materials
         world.EmitSound(SoundKind.DismantleDone, slot, world.Characters.Next[slot].Position);
         Remove(world, site);
     }
@@ -731,7 +731,7 @@ public sealed class ConstructionSystem : ITickSystem
     /// The refund (<b>Verified</b>, <c>FUN_14029dc10</c>): each entry with something delivered gives <c>max(1, trunc(U[m, 1) x delivered))</c> items, m = CONSTANTS <c>min dismantle materials percentage</c> / 100.
     /// The original drops them on the ground; Meitou has no ground items yet, so they go into the dismantler's inventory (then its backpack) and what does not fit is lost with a message.
     /// </summary>
-    void Refund(World world, CharacterCold dismantler, BuildSite site)
+    void Refund(World world, int slot, CharacterCold dismantler, BuildSite site)
     {
         float m = constants.MinDismantleMaterialsFraction;
         ulong key = Rng.StableHash(site.Id);
@@ -743,7 +743,7 @@ public sealed class ConstructionSystem : ITickSystem
             int count = Math.Max(1, (int)(u * material.Delivered));
             if (items.Create(material.Item, count) is not { } item) continue;
             if (dismantler.Inventory is { } inventory && inventory.Add(item)) continue;
-            if (dismantler.IsPlayer) world.Post($"{dismantler.Name}: no room for {item.Quantity} {item.Name}; lost");
+            if (dismantler.IsPlayer) world.PostOwnerOfSlot(slot, $"{dismantler.Name}: no room for {item.Quantity} {item.Name}; lost");
         }
     }
 

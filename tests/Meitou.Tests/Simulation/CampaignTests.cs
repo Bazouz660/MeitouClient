@@ -85,7 +85,7 @@ public class CampaignTests(ITestOutputHelper output)
         Assert.Equal(CampaignTown.OfPlayer(outpost.Number), inst.Target);
         Assert.True(inst.Men > inst.Required && inst.Platoons.Count > 0);
         Assert.All(inst.Platoons, id => Assert.Same(inst, world.Platoons.Find(id)!.Campaign));
-        var messages = world.TakeMessages();
+        var messages = world.TakeMessages().Select(m => m.Text);
         Assert.Contains(messages, m => m.StartsWith("Warning: ") && m.EndsWith(" moving towards " + outpost.Name));
         Assert.NotEqual(0, war.Known.Single(k => k.Id == inst.CampaignId).LastStart);
 
@@ -114,7 +114,7 @@ public class CampaignTests(ITestOutputHelper output)
 
         // Unloaded, nobody fights: the assault wins after 4 h, then is removed 3 h later and its squads go home.
         Assert.True(RunUntil(() => inst.Phase == 2, 4 * 3300));
-        Assert.Contains(world.TakeMessages(), m => m.EndsWith(" against " + outpost.Name + " has ended"));
+        Assert.Contains(world.TakeMessages().Select(m => m.Text), m => m.EndsWith(" against " + outpost.Name + " has ended"));
         var squads = inst.Platoons.ToList();
         Assert.True(RunUntil(() => war.Actives.Count == 0, 3 * 3300));
         Assert.All(squads, id => Assert.Null(world.Platoons.Find(id)?.Campaign));

@@ -26,6 +26,9 @@ public interface IDialogueSource
 {
     ConversationView? PublishConversation();
     DialogueRequest? PublishRequest();
+    /// <summary>Player <paramref name="player"/>'s conversation and editor request (docs/simulation.md "Multiplayer (host-authoritative co-op)"); the parameterless ones are player 0's.</summary>
+    ConversationView? PublishConversation(int player) => player == 0 ? PublishConversation() : null;
+    DialogueRequest? PublishRequest(int player) => player == 0 ? PublishRequest() : null;
     /// <summary>The character answers the player's Talk (it has event-1 dialogue, and with <paramref name="talker"/> given, a line of it passes now).</summary>
     bool CanTalk(World world, int slot, CharacterId? talker = null);
     /// <summary>The lines on show over characters' heads (speech bubbles).</summary>

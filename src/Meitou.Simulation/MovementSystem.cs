@@ -107,8 +107,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 continue;
             }
             if (command is not MoveOrder order) continue;
-            // An empty list orders the selection (the UI sends orders for whatever is selected when the click happens).
-            var who = order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray();
+            // An empty list orders the issuer's selection (the UI sends orders for whatever is selected when the click happens).
+            var who = world.Actors(order, order.Characters);
             var slots = new List<int>();
             foreach (var id in who)
             {

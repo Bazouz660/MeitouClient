@@ -242,7 +242,7 @@ public class ProductionTests
         float seconds = (rig.World.Tick - started) * rig.World.TickSeconds;
         Assert.True(rig.World.Research.IsDone(Study));
         Assert.InRange(seconds, 0.3f * MachineData.DaySeconds / 24, 0.3f * MachineData.DaySeconds / 24 * 1.15f);
-        Assert.Contains(rig.World.TakeMessages(), m => m == "Research complete: Test Study");
+        Assert.Contains(rig.World.TakeMessages().Select(m => m.Text), m => m == "Research complete: Test Study");
     }
 
     // ------------------------------------------------------------------ crafting
@@ -412,7 +412,7 @@ public class ProductionTests
         rig.Put(farmer, Crop, 2, -1);
         rig.World.RunTick();
         Assert.Equal((1, 0), (rig.Count(farmer, Crop), tank.Items.Count));
-        Assert.Contains(rig.World.TakeMessages(), m => m == "Test Tank does not take Crop.");
+        Assert.Contains(rig.World.TakeMessages().Select(m => m.Text), m => m == "Test Tank does not take Crop.");
 
         // The well makes nothing more, so the 10 water only move.
         well.Output.Count = 10;

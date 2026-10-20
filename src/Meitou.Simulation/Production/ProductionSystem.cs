@@ -157,8 +157,6 @@ public sealed partial class ProductionSystem : ITickSystem
 
     // ------------------------------------------------------------------ orders
 
-    static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
-
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         foreach (var command in commands)
@@ -170,13 +168,13 @@ public sealed partial class ProductionSystem : ITickSystem
                     var site = world.Buildings.Find(order.Site);
                     if (site is not { Complete: true } || (Ensure(world, site) is not { Data.Operable: true } machine)) break;
                     var table = world.Characters;
-                    foreach (var id in Who(world, order.Characters))
+                    foreach (var id in world.Actors(order, order.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold)) continue;
                         if (cold.OperateSite == site.Id) continue;
                         if (OperatorsOf(world, site.Id) >= machine.Data.MaxOperators)
                         {
-                            world.Post($"{site.Name} is already in use.");
+                            world.Post(order.Player, $"{site.Name} is already in use.");
                             break;
                         }
                         Begin(world, slot, site, machine);
@@ -189,7 +187,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case MoveJob move: MoveJobTo(world, move); break;
                 case PutInMachine put: Put(world, put); break;
                 case TakeFromMachine take: Take(world, take); break;
-                case QueueResearch queue: Queue(world, queue.Research); break;
+                case QueueResearch queue: Queue(world, queue.Player, queue.Research); break;
                 case CancelResearch cancel: world.Research.Dequeue(cancel.Research); break;
                 case QueueCraft craft: QueueCraft(world, craft); break;
                 case CancelCraft cancel: CancelCraft(world, cancel); break;
@@ -669,17 +667,18 @@ public sealed partial class ProductionSystem : ITickSystem
         return true;
     }
 
-    void Queue(World world, string id)
+    /// <summary>Queues research <paramref name="id"/> for the faction, paying it from the benches; a refusal is posted to <paramref name="player"/>, the issuer.</summary>
+    void Queue(World world, int player, string id)
     {
         if (Research(id) is not { } r || !Available(world, r)) return;
         if (r.Level > world.Research.BenchLevel)
         {
-            world.Post(world.Research.BenchLevel == 0 ? "Research needs a research bench." : $"{r.Name} needs a level {r.Level} research bench.");
+            world.Post(player, world.Research.BenchLevel == 0 ? "Research needs a research bench." : $"{r.Name} needs a level {r.Level} research bench.");
             return;
         }
         if (!Affordable(world, r))
         {
-            world.Post($"Not enough materials in the research benches for {r.Name}.");
+            world.Post(player, $"Not enough materials in the research benches for {r.Name}.");
             return;
         }
         if (!world.Research.Paid.Contains(id, StringComparer.Ordinal))
@@ -721,14 +720,15 @@ public sealed partial class ProductionSystem : ITickSystem
 
     // ------------------------------------------------------------------ items in and out
 
-    bool Near(World world, CharacterId who, BuildSite site, out CharacterCold cold)
+    /// <summary>Whether <paramref name="who"/>, a player character with an inventory, is within reach of <paramref name="site"/>; "too far" is posted to <paramref name="player"/>.</summary>
+    bool Near(World world, int player, CharacterId who, BuildSite site, out CharacterCold cold)
     {
         cold = null!;
         var table = world.Characters;
         if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true } c || c.Inventory is null) return false;
         cold = c;
         if (Gap(table.Next[slot].Position, site.Position) <= Settings.TransferReach + (Settings.Footprint?.Invoke(site.Record) ?? 0)) return true;
-        world.Post($"{c.Name} is too far away.");
+        world.Post(player, $"{c.Name} is too far away.");
         return false;
     }
 
@@ -764,12 +764,12 @@ public sealed partial class ProductionSystem : ITickSystem
 
     void Put(World world, PutInMachine put)
     {
-        if (PlayerSystem.ContainerFor(world, put.Site, put.Character, out var holder) is { } container)
+        if (PlayerSystem.ContainerFor(world, put.Player, put.Site, put.Character, out var holder) is { } container)
         {
             if (holder is not null && put.Slot == -1) PutInContainer(world, container, holder, put);
             return;
         }
-        if (world.Buildings.Find(put.Site) is not { Complete: true } site || Ensure(world, site) is not { } m || !Near(world, put.Character, site, out var cold)) return;
+        if (world.Buildings.Find(put.Site) is not { Complete: true } site || Ensure(world, site) is not { } m || !Near(world, put.Player, put.Character, site, out var cold)) return;
         var root = cold.Inventory!;
         var item = root.All().ElementAtOrDefault(put.Item.Index);
         var token = put.Item;
@@ -792,7 +792,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (m.Storage is not { } storage || item.Contents is not null && item.Section == "backpack_attach") return;
             if (m.Data.IsStorage && !m.Data.Accepts(item.Record, item.Type))
             {
-                world.Post($"{m.Data.Name} does not take {item.Name}.");
+                world.Post(put.Player, $"{m.Data.Name} does not take {item.Name}.");
                 return;
             }
             if (put.X < 0 || put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
@@ -807,12 +807,12 @@ public sealed partial class ProductionSystem : ITickSystem
 
     void Take(World world, TakeFromMachine take)
     {
-        if (PlayerSystem.ContainerFor(world, take.Site, take.Character, out var holder) is { } container)
+        if (PlayerSystem.ContainerFor(world, take.Player, take.Site, take.Character, out var holder) is { } container)
         {
             if (holder is not null && take.Slot == -1) TakeFromContainer(world, container, holder, take);
             return;
         }
-        if (world.Buildings.Find(take.Site) is not { Complete: true } site || world.Machines.Find(take.Site) is not { } m || !Near(world, take.Character, site, out var cold)) return;
+        if (world.Buildings.Find(take.Site) is not { Complete: true } site || world.Machines.Find(take.Site) is not { } m || !Near(world, take.Player, take.Character, site, out var cold)) return;
         var root = cold.Inventory!;
         if (take.Slot == -1)
         {

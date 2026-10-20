@@ -669,7 +669,7 @@ public static partial class SaveCapture
             foreach (var part in new[] { "TYPE", "C", "CS", "I", "S" })
                 record.Ints.Remove($"selected_characters{k}{part}");
         int n = 0;
-        foreach (var id in world.Player.Selection)
+        foreach (var id in world.Player.Local.Selection)
         {
             if (!written.TryGetValue(id, out var sc) || sc.Handle.IsNull) continue;
             if (n == 0) camera.SelectedCharacter = sc.Handle;

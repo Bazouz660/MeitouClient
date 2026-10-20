@@ -18,7 +18,7 @@ public sealed partial class ProductionSystem
     {
         if (world.Buildings.Find(add.Site) is null) return;
         var table = world.Characters;
-        foreach (var id in Who(world, add.Characters))
+        foreach (var id in world.Actors(add, add.Characters))
             if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold) PermaJobs.Add(cold, add.Type, new PermaJob(add.Type, add.Site));
     }
 

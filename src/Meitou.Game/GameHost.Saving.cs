@@ -206,10 +206,10 @@ sealed partial class GameHost
             session.ReplaceWorld(built.Systems, world =>
             {
                 loaded = SaveLoader.Load(world, read.Result, data, new SaveLoadOptions { Appearances = data.Appearances });
-                if (world.Squads.Find(world.Player.Squad) is { Members.Count: > 0 } squad)
+                if (world.Squads.Find(world.Player.Local.Squad) is { Members.Count: > 0 } squad)
                 {
-                    world.Player.Selection.Clear();
-                    world.Player.Selection.Add(squad.Members[0]);
+                    world.Player.Local.Selection.Clear();
+                    world.Player.Local.Selection.Add(squad.Members[0]);
                 }
             });
         }
@@ -233,7 +233,7 @@ sealed partial class GameHost
             weather.Restore(regions, loaded.Clock.Day, loaded.Clock.HourOfDay);
             Console.WriteLine($"load      weather of {regions.Count} region(s) from the save");
         }
-        playerSquad = world.Squads.Find(world.Player.Squad);
+        playerSquad = world.Squads.Find(world.Player.Local.Squad);
         foreach (var note in loaded.Notes) Console.WriteLine($"load      {note}");
 
         // The saved camera (FUN_1407ade60, docs/formats/camera.md "Saved camera"): pivot, orientation and boom, a pivot out of bounds moved to the loader's fallback. A save

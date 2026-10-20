@@ -93,7 +93,7 @@ public sealed partial class LockSystem
         var table = world.Characters;
         int best = -1;
         float bestDistance = float.MaxValue;
-        foreach (var id in Who(world, order.Characters))
+        foreach (var id in world.Actors(order, order.Characters))
         {
             if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
             float d = Vector2.Distance(Flat(table.Next[s].Position), WorkSpot(world, door, Flat(table.Next[s].Position)).At);
@@ -101,7 +101,7 @@ public sealed partial class LockSystem
         }
         if (best < 0) return;
         var walker = table.Cold(best)!;
-        var player = world.Player;
+        var player = world.SessionOf(order);
         var (at, _) = WorkSpot(world, door, Flat(table.Next[best].Position));
         walker.Shackles = null;
         walker.PickingLock = null;
@@ -109,16 +109,20 @@ public sealed partial class LockSystem
         if (door.Lock is { EffectivelyLocked: true } && door.Motion == DoorMotion.Closed && door.Owner != world.Player.Faction)
         {
             if (order.PickLock) walker.PickingLock = door.Id;
-            else world.Post("Hold down the ALT key to pick the lock.");
+            else world.Post(order.Player, "Hold down the ALT key to pick the lock.");
         }
         else (player.DoorTarget, player.DoorWalker) = (door.Id, table.IdOf(best));
         MovementSystem.GoTo(table, best, at, walker.RunSpeed);
     }
 
-    /// <summary>Each tick: the door walker in reach opens or closes its door; one given another order, downed or gone gives up.</summary>
+    /// <summary>Each tick, for each session: the door walker in reach opens or closes its door; one given another order, downed or gone gives up.</summary>
     static void DoorWalkers(World world)
     {
-        var player = world.Player;
+        foreach (var session in world.Player.Sessions) DoorWalkers(world, session);
+    }
+
+    static void DoorWalkers(World world, PlayerSession player)
+    {
         if (player.DoorTarget is not { } wanted) return;
         var table = world.Characters;
         if (world.Fixtures.Find(wanted) is not { DoorBroken: false } door || !table.TryResolveNext(player.DoorWalker, out int s) || table.Cold(s) is not { Medical.Incapacitated: false } c || !c.CarriedBy.IsNone)
@@ -136,7 +140,7 @@ public sealed partial class LockSystem
         if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
         player.DoorTarget = null;
         if (door.Motion is DoorMotion.Open or DoorMotion.Opening) { if (door.Motion == DoorMotion.Open) FixtureRegistry.CloseDoor(door); }
-        else if (door.Lock is { EffectivelyLocked: true }) world.Post($"{c.Name}: It's locked.");
+        else if (door.Lock is { EffectivelyLocked: true }) world.PostOwnerOfSlot(s, $"{c.Name}: It's locked.");
         else FixtureRegistry.OpenDoor(door);
     }
 
@@ -217,7 +221,7 @@ public sealed partial class LockSystem
                     // Task_OpenDoor fails at a locked door for anyone, the owner too (docs/game/locks.md "Doors").
                     if (away > LockedReach || !Crosses(n.Position, c.Path, n.PathCursor, s.Spot, legs: 1)) return;
                     MovementSystem.Stop(table, slot);
-                    if (c.IsPlayer) s.World.Post($"{c.Name}: It's locked.");
+                    if (c.IsPlayer) s.World.PostOwnerOfSlot(slot, $"{c.Name}: It's locked.");
                     return;
                 }
                 if (!Crosses(n.Position, c.Path, n.PathCursor, s.Spot, legs: 2)) return;

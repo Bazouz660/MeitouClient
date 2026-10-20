@@ -61,6 +61,8 @@ public sealed record TradeView(CharacterId Customer, CharacterId Trader, string 
 public interface ITradeSource
 {
     TradeView? PublishTrade();
+    /// <summary>Player <paramref name="player"/>'s open trade (docs/simulation.md "Multiplayer (host-authoritative co-op)"); the parameterless one is player 0's.</summary>
+    TradeView? PublishTrade(int player) => player == 0 ? PublishTrade() : null;
 }
 
 public sealed class TradeSettings

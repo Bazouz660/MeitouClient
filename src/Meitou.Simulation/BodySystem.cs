@@ -79,7 +79,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 var exposure = cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
                 xp.Sneaking(stats, race, exposure, world.TickSeconds);
             }
-            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting);
+            if (cold.IsPlayer || world.Player.Inspects(table.IdOf(i))) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
             foreach (var e in events)
             {

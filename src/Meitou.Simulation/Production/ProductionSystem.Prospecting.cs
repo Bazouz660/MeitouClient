@@ -33,7 +33,8 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>
-    /// Once a tick (serial): each prospector adds the tick's game seconds; at <see cref="ProspectSeconds"/> the task ends and the results are published (<see cref="World.Prospected"/>). Another
+    /// Once a tick (serial): each prospector adds the tick's game seconds; at <see cref="ProspectSeconds"/> the task ends and the results are published to its owner's session
+    /// (<see cref="PlayerSession.Prospected"/>; an unowned prospector's to player 0's). Another
     /// order (a changed task) or a downed, fighting or carried character ends it without a result.
     /// </summary>
     void ProspectStep(World world)
@@ -60,13 +61,13 @@ public sealed partial class ProductionSystem
             }
             cold.Prospecting = null;
             n.Task = (byte)CharacterTask.Idle;
-            PublishProspect(world, cold, n.Position);
+            PublishProspect(world, i, cold, n.Position);
         }
         prospectors = found;
     }
 
     /// <summary>The window's content for a finished prospecting (<b>Verified</b>/<b>Observed</b> per docs/game/ui-screens.md "Prospecting"), read from the ground at the prospector's feet.</summary>
-    void PublishProspect(World world, CharacterCold prospector, System.Numerics.Vector3 at)
+    void PublishProspect(World world, int slot, CharacterCold prospector, System.Numerics.Vector3 at)
     {
         float skill = prospector.Stats?[StatsEnumerated.Science] ?? 0;
         var environment = new List<ProspectLine>(3);
@@ -76,7 +77,8 @@ public sealed partial class ProductionSystem
         if (swamp > 0) environment.Add(new("Swamp", swamp));
         var found = new ProspectLine[ProspectResources.Length];
         for (int k = 0; k < found.Length; k++) found[k] = new(ProspectResources[k].Name, resources.Yield(ProspectResources[k].Resource, at));
-        world.Prospected = new ProspectReport((world.Prospected?.Serial ?? 0) + 1, at, prospector.Name, (int)skill, resources.ZoneName(at.X, at.Z) ?? "", (int)at.Y,
+        var session = world.Player.Session(Math.Max(0, world.OwnerOfSlot(slot)));
+        session.Prospected = new ProspectReport((session.Prospected?.Serial ?? 0) + 1, at, prospector.Name, (int)skill, resources.ZoneName(at.X, at.Z) ?? "", (int)at.Y,
             (int)((skill * 0.01f * 6000 + 2000) * 0.2f), environment, found);
     }
 }

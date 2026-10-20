@@ -23,8 +23,6 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
     public Lockpicking Picking { get; } = new(constants, options);
     public Crime.CrimeSystem? Crimes { get; set; }
 
-    static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
-
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         var table = world.Characters;
@@ -35,7 +33,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 case PickLockOrder pick:
                 {
                     if (!table.TryResolveNext(pick.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } || world.Fixtures.Find(where) is not { } cage) break;
-                    foreach (var id in Who(world, pick.Characters))
+                    foreach (var id in world.Actors(pick, pick.Characters))
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
                         if (c.IsImprisoned && c.InWhat != cage.Id) continue;   // a prisoner reaches only its own cage
@@ -47,11 +45,11 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                     break;
                 }
                 case GetOutOrder getOut:
-                    foreach (var id in Who(world, getOut.Characters))
+                    foreach (var id in world.Actors(getOut, getOut.Characters))
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsImprisoned: true, Medical.Incapacitated: false } c) continue;
-                        if (world.Fixtures.GetOut(world, id, Crimes)) { c.PickingLock = null; if (c.IsPlayer) world.Post($"{c.Name} got out of the cage"); }
-                        else if (c.IsPlayer) world.Post("It's locked.");
+                        if (world.Fixtures.GetOut(world, id, Crimes)) { c.PickingLock = null; if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name} got out of the cage"); }
+                        else if (c.IsPlayer) world.Post(getOut.Player, "It's locked.");
                     }
                     break;
                 case ShackleOrder shackles:
@@ -97,9 +95,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
             switch (Picking.Step(world, s, f, world.TickSeconds, Crimes))
             {
                 case PickOutcome.Open: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); break;
-                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.Post($"{c.Name}: Pick success!"); break;
-                case PickOutcome.Failed: if (c.IsPlayer) world.Post($"{c.Name}: Pick failed"); break;
-                case PickOutcome.NotAllowed: c.PickingLock = null; if (c.IsPlayer) world.Post($"{c.Name}: I'm not skilled enough..."); break;
+                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick success!"); break;
+                case PickOutcome.Failed: if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick failed"); break;
+                case PickOutcome.NotAllowed: c.PickingLock = null; if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: I'm not skilled enough..."); break;
             }
         }
     }

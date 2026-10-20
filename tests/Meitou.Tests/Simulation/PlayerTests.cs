@@ -70,10 +70,10 @@ public class PlayerTests
         using var g = Start();
         var first = g.Squad.Members[0];
         g.World.RunTicks(2);
-        Assert.Equal([first], g.World.Player.Selection);
+        Assert.Equal([first], g.World.Player.Local.Selection);
         g.World.Characters.Cold(first.Slot)!.DiedTick = g.World.Tick;
         g.World.RunTicks(2);
-        var chosen = Assert.Single(g.World.Player.Selection);
+        var chosen = Assert.Single(g.World.Player.Local.Selection);
         Assert.NotEqual(first, chosen);
         Assert.True(g.World.Characters.Cold(chosen.Slot) is { IsPlayer: true, DiedTick: < 0 });
     }

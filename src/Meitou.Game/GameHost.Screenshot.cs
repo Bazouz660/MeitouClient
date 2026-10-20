@@ -71,10 +71,11 @@ sealed partial class GameHost
                 session.Tick();
                 session.AdvanceSimulation(session.Ticks.TickSeconds);
                 UpdateNav(wait: true);
-                foreach (string message in session.World.TakeMessages())
+                foreach (var message in session.World.TakeMessages())
                 {
-                    Console.WriteLine($"message   {message}");
-                    silent |= message.EndsWith("has nothing to say.", StringComparison.Ordinal);
+                    if (!message.For(0)) continue;
+                    Console.WriteLine($"message   {message.Text}");
+                    silent |= message.Text.EndsWith("has nothing to say.", StringComparison.Ordinal);
                 }
             }
             if (session.CurrentSnapshot.Conversation is not null) { npc = candidate; break; }
