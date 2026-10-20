@@ -507,8 +507,10 @@ no refraction, no reflection pass). It was checked at the real sea, top coast (`
 --distance 800 --pitch 15`): Metal and Vulkan with `--faithful water` show the same dark rippled sea and black
 shadowed shore (the Vulkan shot also has the HUD, still missing on Metal). The Hub (`-50979,2932`) and the river
 view (`-45060,6348`) are inland water; the sea is only at the world edge. The Meitou fragment reads more samplers
-than Metal's 16-a-stage limit (its eight maps + sky + ocean + shore + reflection + refraction), so its program is
-built only when asked and the Metal host asks for the faithful one. `OceanWaves`, `ShoreField`, `ReflectionPass`
+than Metal's 16-a-stage limit (its eight maps + `SkyRenderer.SkyFunctions`' nine + ocean + shore +
+reflection + refraction), so its program is built only when asked and the Metal host asks for the faithful one.
+Packing the maps alone will not fit: the sky functions are the larger half; a Metal Meitou water needs a sky /
+environment texture (or a reduced sky function) as well as packed maps. `OceanWaves`, `ShoreField`, `ReflectionPass`
 and the half-res refraction copy are still Vulkan-typed; the ocean FFT's textures and `CopyBufferToImage` /
 `GenerateMips` are ready when it is widened. Remaining: pack the Meitou maps into fewer samplers (or an array),
 port `OceanWaves` and `ShoreField`, then the reflection pass (the mirrored scene) and refraction. Ends when the
@@ -580,9 +582,11 @@ default.
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
 - Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
-  --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon. The
-  river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
-  shows no water at all.
+  --day 1 --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon.
+  The river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
+  shows no water at all. With `--day 1` on both backends (Metal `--faithful clouds,cloudshadows`), the Metal sea
+  matches Vulkan's faithful water: the water regions average RGB ~[14, 28, 32] vs [16, 30, 34], the sky ~[105, 141, 147]
+  vs [109, 143, 151]; the horizon is ~9 darker in Metal (haze/exposure). Vulkan still has the HUD, Metal not yet.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
   `UpscaleShaders.Taa` (into two RGBA16F histories); the scene projection is jittered with `Jitter.Apply` and
   `PostTaa.Offset` (8 phases at 1×), the depth target is `DepthTarget | Sampled`. TAA resets on the first frame, a
