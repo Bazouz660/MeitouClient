@@ -433,7 +433,7 @@ sealed partial class GameHost
                     hud.Height = size.Y;
                     hud.Eye = eye;
                     hud.ViewProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
-                    hud.DrawHud(overlay, size.X, size.Y);
+                    hud.Draw(overlay, size.X, size.Y);
                 }
                 if (showFrameStats)
                 {

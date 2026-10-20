@@ -565,7 +565,7 @@ hover/stage passes.
 
 The UI is the shared immediate-mode `DebugOverlay`/`UiPainter` over the finished backbuffer. It was already
 backend-neutral once `DebugOverlay` took `IGpuContext` (`UiPainter` had no `GpuContext` types); the Metal host boots
-`PlayerInterface` for its presentation (`LoadUi`, `BindUi`, `ArrangeUi`, `DrawHud`) and creates the painter.
+`PlayerInterface` for its presentation (`LoadUi`, `BindUi`, `ArrangeUi`, `Draw`) and creates the painter.
 
 **What renders on Metal:** the faithful HUD at the Hub (information/medical, squad bar, clock, money, speed,
 orders, jobs), the inventory with item icons, the stats and overview/map windows, and the pause menu. Portraits
