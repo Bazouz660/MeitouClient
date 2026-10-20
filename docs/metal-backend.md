@@ -312,17 +312,42 @@ the camera's world framing.
    1 known fail, the Vulkan screenshot 0 differing pixels (warm runs; a cold first run may show
    the ~40 ±1 TAA edge pixels), the Metal game's sky shot unchanged.
 
-**Step F — after the terrain.** Compute (the post chain's passes; `MTLComputePipelineState` +
-`MTLComputeCommandEncoder` dispatches, the compute sets as argument buffers too) → the tone
-parity; then the objects and characters (the table's per-entry samplers are already the model),
-indirect draws, shadows, foliage, water, impostors, UI; then `--renderer metal` becomes the
-macOS default.
+**Step F — the remaining steps, in dependency order.** The terrain draws; what follows is breadth, not
+research. Each step ends with the same gates: build 0/0, tests 424 pass / 1 known fail, the Vulkan
+screenshot unchanged, and a Metal shot compared with the Vulkan one at the same view.
 
-Two things the passes cannot give a second backend as they are:
-
-- The **physical** sky's uniforms come from `SkyRenderer`, which needs a Vulkan `GpuContext` to
-  exist. The atmosphere's model (CPU) has to become something both backends consume.
-- The **UI** is drawn in Vulkan's immediate mode into the backbuffer image; it needs a twin.
+1. **The frame's inputs (small).** Give the Metal path the real `WorldFrame`/`FrameGlobals`: the
+   atmosphere LUTs and textures, the sun and light, fog, and the camera's world framing. Today the
+   terrain's frame textures are stand-ins, so it is dark. Ends when the terrain's colours and relief
+   match Vulkan's at the same hour and camera.
+2. **Compute (large).** `MTLComputePipelineState` and `MTLComputeCommandEncoder`, dispatches, compute
+   sets as argument buffers, storage images/textures, then the post chain's passes: tone mapping,
+   TAA, fog volumes, the HiZ pyramid, the GPU culls. `MetalCommandList.Dispatch` and the compute
+   pipeline path throw today; they become the first work. Ends when the offscreen picture matches
+   Vulkan's before the present.
+3. **Indirect draws and the objects (medium).** `DrawIndexedIndirect(Count)` and
+   `DrawIndirectCount`, buffer fills/copies, and the conversion between Vulkan's indirect argument
+   layout and Metal's. The material and program path is already in place. Ends with the buildings
+   and objects standing where Vulkan draws them.
+4. **Shadows (medium).** The depth-only passes and the cascades; set 0's receiver and caster blocks
+   already exist and hold zeros. Ends with the terrain's and objects' shadows.
+5. **Foliage, grass, impostors (medium-large).** The GPU culls of step 2 feed the indirect draws of
+   step 3; add the card masks, grass, LOD and the impostor bakes. Ends with the vegetation matching
+   Vulkan's at the same view.
+6. **Water (medium).** The reflection and refraction passes and the surface's compute, reusing steps
+   2 and 3.
+7. **Characters and skinning (medium).** The skinning buffers and the character draw list through the
+   seam; the animation data already uses storage buffers.
+8. **UI (small, architecturally separate).** The UI is immediate-mode Vulkan into the backbuffer
+   image; it needs a backend-neutral twin (or a Metal path of its own) before the game's HUD and the
+   panels exist on Metal.
+9. **The physical sky (small).** `SkyRenderer`'s uniforms come from a Vulkan `GpuContext`; the
+   atmosphere model (CPU) must become something both backends build their uniforms from.
+10. **The full game loop (broad, mechanical).** The Metal game path is a minimal frame (sky +
+    terrain). A full game widens the real `GameHost` render flow — objects, population, overlays,
+    UI — to `IGpuContext`. Much of it is type-changing; the surface is large.
+11. **Parity and the default.** The window comparison, tone and timing, resize and HDR, then
+    `--renderer metal` becomes the macOS default.
 
 Two names collide with Silk.NET.Vulkan's and are qualified where the file still imports it:
 `InternalFormat` and `PrimitiveType`. Both collisions go away when the file sheds its Vulkan
