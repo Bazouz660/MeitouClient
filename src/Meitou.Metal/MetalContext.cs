@@ -45,6 +45,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly MetalDisplay display;
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
+    readonly MetalBindlessTable bindless;
     readonly List<MetalTexture?> textures = [null];
     readonly List<MetalTextureView?> views = [null];
     readonly List<MetalBuffer?> buffers = [null];
@@ -71,6 +72,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         Pipelines = new MetalPipelines(Device, Shaders);
         Samplers = new MetalSamplers(Device);
         Uploads = new MetalUploads(this);
+        bindless = new MetalBindlessTable(this);
         var shared = NewSharedBuffer(16, "dummy vertex");
         new Span<float>(shared.Pointer, 4)[3] = 1;   // GL's disabled-attribute constant (0, 0, 0, 1)
         dummyVertex = RegisterBuffer(shared.Buffer, "dummy vertex");
@@ -98,8 +100,12 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     IGpuSamplers IGpuContext.Samplers => Samplers;
     IGpuUploads IGpuContext.Uploads => Uploads;
 
-    /// <summary>The bindless table — comes with the terrain (the table as a Metal 3 argument buffer, docs/metal-backend.md).</summary>
-    public IGpuBindlessTable Bindless => throw new NotSupportedException("the Metal backend has no bindless table yet (the sky pass needs none)");
+    /// <summary>The bindless table (docs/metal-backend.md, "The bindless table"): the bindless set as a Metal 3 tier-2
+    /// argument buffer, one per frame slot.</summary>
+    public IGpuBindlessTable Bindless => bindless;
+
+    /// <summary>The frame's number (the bindless table releases freed entries once the frames that could read them are done).</summary>
+    internal long FrameNumber => frameNumber;
 
     /// <summary>The device limit a uniform buffer slice's offset must align to (Metal's constant buffer alignment).</summary>
     public ulong UniformBufferAlign => 256;
@@ -310,6 +316,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         frameNumber++;
         slot = (slot + 1) % FramesInFlight;
         frames[slot].Begin(frameNumber, command, drawable);
+        bindless.BeginFrame(slot);
         if (pendingUploadBytes > 0) { frames[slot].Stats.UploadBytes = pendingUploadBytes; pendingUploadBytes = 0; }
         timestamps.Begin(slot, frameNumber);
         return true;
@@ -322,6 +329,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public void EndFrame()
     {
         var frame = frames[slot];
+        bindless.EndFrame();
         frame.End();
         timestamps.End();
         Present(frame);
@@ -365,6 +373,12 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     internal MetalSet SetAt(GpuSet set) => sets[set.Index]!;
 
     internal (MTLBuffer Buffer, ulong Offset) Buffer(GpuBufferBinding binding) => (buffers[binding.Buffer.Index]!.Buffer, binding.Offset);
+
+    /// <summary>The bindless table's own object (its resources are told to the encoder at the bind).</summary>
+    internal MetalBindlessTable BindlessTable => bindless;
+
+    /// <summary>The open frame slot's bindless argument buffer (the bytes the table's members read).</summary>
+    internal MTLBuffer BindlessBuffer => bindless.BufferAt(slot);
 
     internal MTLBuffer BufferAt(GpuBuffer buffer) => buffers[buffer.Index]!.Buffer;
 
@@ -485,6 +499,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public void Dispose()
     {
+        bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();
         dummyTextures.Clear();
         foreach (var b in buffers) b?.Release();

@@ -237,9 +237,22 @@ public sealed class MetalCommandList : IGpuCommandList
         Stats.DescriptorPushes++;
     }
 
-    /// <summary>Binds the bindless table to a program — comes with the terrain (the table as a Metal 3 argument buffer, docs/metal-backend.md).</summary>
-    public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics) =>
-        throw new NotSupportedException("the Metal backend has no bindless table yet (the sky pass needs none)");
+    /// <summary>Binds the bindless table: the slot's argument buffer at <see cref="MslTranslator.TableBinding"/> in both stages
+    /// (the MSL's table set is moved there, so the set's number is only the layout's word for it).</summary>
+    public void BindBindlessTable(GpuProgram program, uint set, GpuBindPoint point = GpuBindPoint.Graphics)
+    {
+        if (point != GpuBindPoint.Graphics) throw new NotSupportedException("the Metal backend binds the table in graphics passes only");
+        if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindBindlessTable outside a rendering");
+        if (set != Rendering.NativeShaders.BindlessSet) throw new InvalidOperationException($"the Metal backend's table is set {Rendering.NativeShaders.BindlessSet} (asked for {set})");
+        var buffer = ctx.BindlessBuffer;
+        render.SetVertexBuffer(buffer, 0, MslTranslator.TableBinding);
+        render.SetFragmentBuffer(buffer, 0, MslTranslator.TableBinding);
+        ctx.BindlessTable.UseResources(this);
+        Stats.DescriptorPushes++;
+    }
+
+    /// <summary>Tells the encoder a resource the shaders read through the argument buffer (not through a direct binding).</summary>
+    internal void UseResource(MTLTexture texture) => render.UseResource(texture, MTLResourceUsage.Read);
 
     /// <summary>Pushes a block of constants: the bytes both stages' encoders take inline at the stage's top index
     /// (<see cref="MslTranslator.PushConstantBinding"/>, the push blocks' own <c>[[buffer(n)]]</c>).</summary>

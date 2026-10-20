@@ -46,6 +46,7 @@ VertexLayout triLayout = null!;
 GpuSet triTintSet = default;
 DeviceBuffer? triVertices = null, triIndices = null, triFrame = null, triView = null, triTint = null;
 GpuPipeline triPipeline = default;
+SampledImage? tableRed = null, tableBlue = null;
 if (tri)
 {
     const string vertex = """
@@ -102,11 +103,13 @@ if (tri)
             layout(location = 0) out vec4 colour;
             void main()
             {
-                colour = texture(textures2D[pc.uIndex], vUv);
+                vec4 a = texture(textures2D[pc.uIndex], vUv);
+                vec4 b = texture(textures2D[pc.uIndex + 1u], vUv);
+                colour = mix(a, b, vUv.x);
                 colour *= 1.0 - texture(textures2DArray[pc.uIndex], vec3(vUv, 0.0)).a;
                 colour.r += textureLod(texturesCube[pc.uIndex], vec3(vUv, 0.5), 0.0).r;
-                colour.g += texelFetch(utextures2D[pc.uIndex], ivec2(0), 0).r / 255.0;
-                colour.b += texelFetch(itextures2D[pc.uIndex], ivec2(1, 0), 0).r / 255.0;
+                colour.g += texelFetch(utextures2D[pc.uIndex], ivec2(0), 0).r;
+                colour.b += texelFetch(itextures2D[pc.uIndex], ivec2(1, 0), 0).r;
             }
             """;
         var bindless = GpuSetLayout.Bindless;
@@ -123,33 +126,57 @@ if (tri)
         tableBatch.Write(triIndices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(tableIndices)));
         var red = SampledImage.Rgba8(ctx, 2, 2, [255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255], false, false, "table red");
         var blue = SampledImage.Rgba8(ctx, 2, 2, [0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255], false, false, "table blue");
-        // The table's registration comes when the Metal table exists (BindBindlessTable); until then the quad does not draw.
+        tableRed = red;
+        tableBlue = blue;
+        // The other kinds' index 0: black dummies, so the quad's extra terms add nothing (the rewrite's five kinds run).
+        byte[] black = [0, 0, 0, 0];
+        var bindlessTable = ctx.Bindless;
+        var sampler = red.Sampled().Sampler;
+        var array = tableBatch.Create(new TextureDesc(InternalFormat.Rgba8, 1, 1, Layers: 1, Kind: TextureKind.Texture2DArray,
+            Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "table array"));
+        tableBatch.Write(array, 0, 0, new PixelRect(0, 0, 1, 1), black);
+        var cube = tableBatch.Create(new TextureDesc(InternalFormat.Rgba8, 1, 1, Kind: TextureKind.Cube,
+            Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "table cube"));
+        for (int face = 0; face < 6; face++) tableBatch.Write(cube, 0, face, new PixelRect(0, 0, 1, 1), black);
+        var uint2D = tableBatch.Create(new TextureDesc(InternalFormat.R32ui, 1, 1, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "table uint"));
+        tableBatch.Write(uint2D, 0, 0, new PixelRect(0, 0, 1, 1), black);
+        var int2D = tableBatch.Create(new TextureDesc(InternalFormat.R32i, 1, 1, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "table int"));
+        tableBatch.Write(int2D, 0, 0, new PixelRect(0, 0, 1, 1), black);
+        bindlessTable.Register(red.Texture, sampler);                                        // index 0
+        bindlessTable.Register(blue.Texture, sampler);                                       // index 1
+        bindlessTable.Register(BindlessKind.Texture2DArray, new SampledTexture(sampler, array.View()));
+        bindlessTable.Register(BindlessKind.Cube, new SampledTexture(sampler, cube.View()));
+        bindlessTable.Register(BindlessKind.UTexture2D, new SampledTexture(sampler, uint2D.View()));
+        bindlessTable.Register(BindlessKind.ITexture2D, new SampledTexture(sampler, int2D.View()));
     }
-    var set0 = GpuSetLayout.Written(
-    [
-        new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment),
-        new GpuSlot(4, GpuSlotKind.UniformBuffer, GpuStage.Vertex),
-    ]);
-    var set2 = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment, OffsetAtBind: true)]);
-    triProgram = ctx.Shaders.Native(vertex, fragment, "tri", [set0, GpuSetLayout.Fixed([]), set2], 8);
-    triLayout = new VertexLayout(
-        new VertexInput(0, InternalFormat.RG32f, 24, false),    // one interleaved buffer, each location its own binding (VkGl's)
-        new VertexInput(1, InternalFormat.Rgba32f, 24, false));
-    float[] vertices = [-1, -1, 1, 0, 0, 1,   1, -1, 0, 1, 0, 1,   1, 1, 0, 0, 1, 1,   -1, 1, 1, 1, 0, 1];
-    uint[] indices = [0, 1, 2, 0, 2, 3];
-    float[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    using var batch = ctx.Uploads.Begin();
-    triVertices = new DeviceBuffer(ctx, ctx.CreateBuffer(24 * 4, BufferUse.Vertex, "tri vertices"), true, "tri vertices");
-    triIndices = new DeviceBuffer(ctx, ctx.CreateBuffer(6 * 4, BufferUse.Index, "tri indices"), true, "tri indices");
-    triFrame = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri frame"), true, "tri frame");
-    triView = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri view"), true, "tri view");
-    triTint = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri tint"), true, "tri tint");
-    batch.Write(triVertices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(vertices)));
-    batch.Write(triIndices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(indices)));
-    batch.Write(triView, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(identity)));
-    batch.Write(triFrame, 0, new byte[16]);                    // uTime = 0: the colours pass through
-    batch.Write(triTint, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>([1, 1, 1, 1])));
-    triTintSet = ctx.CreateSet(set2, [new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triTint.Handle, 0))]);
+    else
+    {
+        var set0 = GpuSetLayout.Written(
+        [
+            new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment),
+            new GpuSlot(4, GpuSlotKind.UniformBuffer, GpuStage.Vertex),
+        ]);
+        var set2 = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment, OffsetAtBind: true)]);
+        triProgram = ctx.Shaders.Native(vertex, fragment, "tri", [set0, GpuSetLayout.Fixed([]), set2], 8);
+        triLayout = new VertexLayout(
+            new VertexInput(0, InternalFormat.RG32f, 24, false),    // one interleaved buffer, each location its own binding (VkGl's)
+            new VertexInput(1, InternalFormat.Rgba32f, 24, false));
+        float[] vertices = [-1, -1, 1, 0, 0, 1,   1, -1, 0, 1, 0, 1,   1, 1, 0, 0, 1, 1,   -1, 1, 1, 1, 0, 1];
+        uint[] indices = [0, 1, 2, 0, 2, 3];
+        float[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        using var batch = ctx.Uploads.Begin();
+        triVertices = new DeviceBuffer(ctx, ctx.CreateBuffer(24 * 4, BufferUse.Vertex, "tri vertices"), true, "tri vertices");
+        triIndices = new DeviceBuffer(ctx, ctx.CreateBuffer(6 * 4, BufferUse.Index, "tri indices"), true, "tri indices");
+        triFrame = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri frame"), true, "tri frame");
+        triView = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri view"), true, "tri view");
+        triTint = new DeviceBuffer(ctx, ctx.CreateBuffer(256, BufferUse.Uniform, "tri tint"), true, "tri tint");
+        batch.Write(triVertices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(vertices)));
+        batch.Write(triIndices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(indices)));
+        batch.Write(triView, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(identity)));
+        batch.Write(triFrame, 0, new byte[16]);                    // uTime = 0: the colours pass through
+        batch.Write(triTint, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>([1, 1, 1, 1])));
+        triTintSet = ctx.CreateSet(set2, [new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triTint.Handle, 0))]);
+    }
 }
 
 var camera = new WorldCamera { Target = Vector3.Zero, Yaw = 0.9f, Pitch = 0.15f, Distance = 20 };
@@ -187,19 +214,30 @@ display.Window.Render += _ =>
         if (triPipeline.IsNull)
             triPipeline = ctx.Pipelines.Get(DrawState.For(targets.Formats, deviceDepthClamp: false)
                 .Pipeline(triProgram, triLayout, PrimitiveType.Triangles, targets.Formats, "tri"));
+        // The swap: an entry updated in the open frame is seen by the frame's draws (the table's contract).
+        if (table && drawn == 3)
+        {
+            ctx.Bindless.Update(BindlessKind.Texture2D, 0, tableBlue!.Sampled());
+            ctx.Bindless.Update(BindlessKind.Texture2D, 1, tableRed!.Sampled());
+        }
         cmd.BindPipeline(triPipeline);
-        cmd.BindProgramResources(triProgram, 0,
-        [
-            new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triFrame!.Handle, 0)),
-            new GpuBinding(4, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triView!.Handle, 0)),
-        ]);
-        cmd.BindSets(triProgram, 2, new ReadOnlySpan<GpuSet>(in triTintSet), [0]);
         if (table)
         {
-            // The table's draw waits for the Metal table (the registration and the bind); the translation is checked by the dump.
+            // The table: the two 2D entries by index, the other kinds' black dummies at 0 (the rewrite's five kinds).
+            cmd.PushConstants(triProgram, GpuStage.Fragment, 0u);
+            cmd.BindBindlessTable(triProgram, NativeShaders.BindlessSet);
+            cmd.BindVertexBuffers(0, [new GpuBufferBinding(triVertices!.Handle, 0), new GpuBufferBinding(triVertices.Handle, 8)]);
+            cmd.BindIndexBuffer(new GpuBufferBinding(triIndices!.Handle, 0), IndexKind.U32);
+            cmd.DrawIndexed(6);
         }
         else
         {
+            cmd.BindProgramResources(triProgram, 0,
+            [
+                new GpuBinding(0, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triFrame!.Handle, 0)),
+                new GpuBinding(4, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triView!.Handle, 0)),
+            ]);
+            cmd.BindSets(triProgram, 2, new ReadOnlySpan<GpuSet>(in triTintSet), [0]);
             cmd.PushConstants(triProgram, GpuStage.Vertex, Vector2.Zero);
             cmd.BindVertexBuffers(0, [new GpuBufferBinding(triVertices!.Handle, 0), new GpuBufferBinding(triVertices.Handle, 8)]);   // the colour's offset in the binding, as GL's pointer does
             cmd.BindIndexBuffer(new GpuBufferBinding(triIndices!.Handle, 0), IndexKind.U32);
@@ -210,7 +248,12 @@ display.Window.Render += _ =>
     ctx.EndHostPass(cmd);
     cmd.EndRendering();
     ctx.EndFrame();
-    if (shot is { } path && drawn == 4) SaveBmp(ctx, path);
+    if (shot is { } path)
+    {
+        if (table && drawn == 2) SaveBmp(ctx, path);
+        else if (table && drawn == 4) SaveBmp(ctx, (Path.ChangeExtension(path, null)) + ".swap.bmp");
+        else if (!table && drawn == 4) SaveBmp(ctx, path);
+    }
     if (++drawn >= frames) display.Window.Close();
 };
 

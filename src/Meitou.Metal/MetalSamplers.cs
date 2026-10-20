@@ -45,6 +45,8 @@ public sealed class MetalSamplers : IGpuSamplers
         d.TAddressMode = MetalConventions.AddressMode(key.V);
         d.RAddressMode = MetalConventions.AddressMode(key.W);
         d.CompareFunction = key.Compare ? MetalConventions.Compare(key.Op) : MTLCompareFunction.Never;
+        // A sampler in an argument buffer needs the descriptor's permission (the table's members are such samplers).
+        d.SupportArgumentBuffers = true;
         d.LodMinClamp = 0;
         d.LodMaxClamp = key.Mipmapped ? 1000f : 0.25f;   // Vulkan's LodClampNone, and GL's "no mips" clamp
         if (key.Anisotropy > 1) d.MaxAnisotropy = (ulong)key.Anisotropy;

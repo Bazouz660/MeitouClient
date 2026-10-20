@@ -21,6 +21,14 @@ public static unsafe class MslTranslator
     public const uint PushConstantBinding = 30;
 
     /// <summary>
+    /// The buffer index the bindless table's argument buffer takes in both stages (the MSL's
+    /// <c>const device spvDescriptorSetN&amp; [[buffer(n)]]</c>, moved from the set's number): the top of the buffer
+    /// table, above the flattened sets and below nothing else. The runtime binds the slot's buffer there
+    /// (<c>MetalCommandList.BindBindlessTable</c>).
+    /// </summary>
+    public const uint TableBinding = 28;
+
+    /// <summary>
     /// The MSL for one SPIR-V module, with its entry point renamed (the MSL entry point names have to be unique per stage:
     /// spirv-cross names the stages' entry points the same).
     /// </summary>
@@ -53,14 +61,15 @@ public static unsafe class MslTranslator
             cross.CompilerOptionsSetBool(options, CompilerOption.MslEnableDecorationBinding, 1);
             // Push constants: this spirv-cross has no binding option for them, so the block takes whatever the compiler
             // assigns (buffer 0); MetalShaders moves it to the stage's top index after the translation.
-            if (argumentBufferSet is { } set)
+            if (argumentBufferSet is not null)
             {
-                // The runtime-sized descriptor arrays (the bindless table) are Metal 3 tier-2 argument buffers in the
-                // device address space; the ordinary sets stay discrete (bound as plain buffers), as MoltenVK marks them.
+                // The runtime-sized descriptor arrays (the bindless table) are Metal 3 tier-2 argument buffers; the ordinary
+                // sets stay discrete (bound as plain buffers), as MoltenVK marks them. The buffer itself stays in the
+                // constant address space (the default): the runtime fills its members with GPU resource ids (the layout is
+                // sequential from 0 — the MSL's [[id]] decorations do not move the members; verified with the reflection).
                 cross.CompilerOptionsSetUint(options, CompilerOption.MslArgumentBuffers, 1);
                 cross.CompilerOptionsSetUint(options, CompilerOption.MslArgumentBuffersTier, 2);
                 cross.CompilerInstallCompilerOptions(compiler, options);
-                cross.CompilerMslSetArgumentBufferDeviceAddressSpace(compiler, set, 1);
             }
             else
                 cross.CompilerInstallCompilerOptions(compiler, options);
@@ -70,12 +79,17 @@ public static unsafe class MslTranslator
             if (cross.CompilerCompile(compiler, &source) != Result.Success)
                 throw new InvalidOperationException($"spirv-cross could not compile the module: {Error(cross, context)}");
             var msl = Marshal.PtrToStringUTF8((nint)source) ?? "";
+            // The table's argument buffer takes the top free index (the set's own number would collide with the flattened sets).
+            if (argumentBufferSet is not null) msl = ArgumentBuffer.Replace(msl, $"$1 [[buffer({TableBinding})]]");
             // This spirv-cross has no binding option for push constants: the block comes out at [[buffer(0)]] — the stage's
             // low indices belong to the flattened resources and the vertex buffers (MetalShaders's numbers), the top index
             // to the push constants. The block is identifiable by the engine's name for it (NativeShaders.PushBlock's "Push").
             return PushBlock.Replace(msl, $"constant Push& $1 [[buffer({PushConstantBinding})]]");
         }
     }
+
+    static readonly System.Text.RegularExpressions.Regex ArgumentBuffer =
+        new(@"((?:const device |constant )spvDescriptorSet[_A-Za-z0-9]*& [^ ]+) \[\[buffer\([0-9]+\)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     static readonly System.Text.RegularExpressions.Regex PushBlock =
         new(@"constant Push& ([_A-Za-z0-9]+) \[\[buffer\([0-9]+\)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);

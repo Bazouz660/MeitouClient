@@ -72,35 +72,41 @@ spirv-cross refuses the case outright ("Argument buffer runtime array currently 
 combined image sampler"). The way through is **separate textures and separate samplers**, which the
 backend rewrites into the GLSL before compiling (the engine's compiler already rewrites sources).
 
-The verified model (the MSL that spirv-cross makes and Metal accepts, checked with the host's
-`--table` dump), on Metal 3:
+The verified model (the MSL that spirv-cross makes, the pipeline reflection, and the host's
+`--table` draw), on Metal 3:
 
-- the table's set becomes a **tier-2 argument buffer in the device address space**
-  (`MslArgumentBuffers` + `MslArgumentBuffersTier` 2 + `CompilerMslSetArgumentBufferDeviceAddressSpace`);
-  the shader takes it as `const device spvDescriptorSetN& [[buffer(n)]]` — n is the set's number,
-  and the backend moves it to a fixed free index (28) so it cannot collide with the ordinary
-  bindings, in both stages;
+- the table's set becomes a **tier-2 argument buffer** (`MslArgumentBuffers` +
+  `MslArgumentBuffersTier` 2, in the **constant** address space); the shader takes it as
+  `constant spvDescriptorSetN& [[buffer(n)]]` — n is the set's number, and the backend moves it to
+  a fixed free index (28) so it cannot collide with the ordinary bindings, in both stages. The
+  device-address-space variant (`CompilerMslSetArgumentBufferDeviceAddressSpace`) samples nothing
+  that is put in by hand; the constant one does;
 - the set's arrays are **sized** (the table's capacities): a sized array is a real member
-  (`array<texture2d<float>, 256> [[id(i)]]`) with a real offset in the buffer. spirv-cross's
-  *unsized* arrays are a trap: they come out as one-element members aliased onto each other
-  ("Overlapping binding"), which cannot hold distinct texture and sampler handles;
+  (`array<texture2d<float>, 2048>`) with a real offset in the buffer. spirv-cross's *unsized*
+  arrays are a trap: they come out as one-element members aliased onto each other ("Overlapping
+  binding"), which cannot hold distinct texture and sampler handles;
+- **the members' offsets are sequential from 0, one entry (8 bytes) per element**; the `[[id]]`
+  decorations in the MSL do not move them (the pipeline reflection reports `textures2D` at 0).
+  The order is the members' declaration order: the texture arrays in kind order, then the
+  sampler arrays. Gaps that are not declared (the shadow kinds today) close up;
 - **per-entry samplers work**: the rewrite declares a parallel sampler array per kind
   (`sampler samplers2D[capacity]`), and every use constructs the pair with the same index —
-  `sampler2D(textures2D[i], samplers2D[i])` — so GL's per-texture sampler state survives. The
-  ids inside the argument buffer must not overlap: an array element consumes an id, so a kind's
-  sampler array is declared at a binding beyond all the arrays' consumption;
-- the runtime writes the handles into one device buffer per frame slot (shared storage): a
-  texture's handle is `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`,
-  at the members' natural offsets (members in id order, 8 bytes each, 8-aligned).
+  `sampler2D(textures2D[i], samplers2D[i])` — so GL's per-texture sampler state survives. A
+  sampler only has a `gpuResourceID` valid in an argument buffer if its descriptor sets
+  `SupportArgumentBuffers` (Metal's default is no), or sampling reads nothing;
+- the runtime writes the handles into one shared buffer per frame slot: a texture's handle is
+  `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`, at the members'
+  offsets (`MetalBindlessTable`). A resource read only through the argument buffer must also be
+  told to the encoder (`useResource`), as `BindBindlessTable` does.
 
 The rewrite (`MetalShaders.RewriteBindless` + `SpirvPatch.BindlessFetchImages`), verified by the
 `--table` dump and `spirv-val` on both stages:
 
 - capacities, in `BindlessKind` order: `[2048, 512, 128, 128, 128, 128, 64]` (index 3, shadow 2D,
-  is unused today; index 6 is the shadow array). T(k) = set base + Σ capacities before k,
-  S(k) = T(0) + Σ all capacities + Σ capacities before k; with set 1's base of 8 the 2D textures
-  sit at id 8, the arrays at 2056, the cubes at 2568, `utextures2D` at 2824, `itextures2D` at
-  2952, `samplers2D` at 3144, `samplers2DArray` at 5192, `samplersCube` at 5704;
+  and index 6, the shadow array, are not declared today: their capacities do not count). The
+  declared texture arrays' entries run 0 to 2943 — `textures2D`, `textures2DArray`,
+  `texturesCube`, `utextures2D`, `itextures2D` — then `samplers2D`, `samplers2DArray`,
+  `samplersCube` to 5631 (the buffer 45056 bytes);
 - the float kinds are the separate arrays + sampler pairs above; the integer kinds have no
   separate type in GLSL, so they stay combined and sized (`usampler2D utextures2D[128]`) and the
   SPIR-V patch drops the sampler part: the variable's, the array's, each chain's and each load's
@@ -229,39 +235,22 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The Metal device: `MetalContext`, `MetalFrame`, `MetalCommandList` and the four services behind the seam ([resource-layer](resource-layer.md)), sized to the sky pass (everything else throws); the offscreen backbuffer and the flipped present pass; the host's `--shot` readback | a Metal device that can run any pass whose vocabulary the command list has; the sky runs on it (the host's window, the frame loop, the real `SkyRenderer`) |
 | Done | The game's `--renderer metal` on the device: the real `SkyRenderer` with the world's sky textures and switches, the scene's host pass as `SceneHost` opens it, the session's hour and camera; `--screenshot` (one picture, then out) | the sky in the game, verified: the gradient follows the camera and the hour, the clouds and stars are the world's own; the tone is raw linear until the post chain's step |
 | Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
-| Done | The bindless table's MSL shape, verified: tier-2 argument buffers in the device address space, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
+| Done | The bindless table's MSL shape, verified: tier-2 argument buffers, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
 | Done | The flatten's kind refinement: a vertex module's buffers shift by the vertex base, its images and samplers flatten from 0 (`RemapBindings` classifies by the SPIR-V storage class, `Flatten` takes the kind) | the terrain's vertex-stage table samplers fit the stage's sampler table |
-| Done | The bindless table's GLSL rewrite (`--table`'s five kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds throw until the shadows step; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays at non-overlapping ids | the table's MSL shape at the capacities |
-| Next | The Metal table runtime (`IGpuBindlessTable`) and `BindBindlessTable` — see the plan section | the terrain's textures can bind |
+| Done | The bindless table's GLSL rewrite (`--table`'s five kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds throw until the shadows step; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays | the table's MSL shape at the capacities |
+| Done | The table's runtime (`MetalBindlessTable`: the journal, a shared argument buffer per frame slot, the GPU resource ids, the sampler flag, `useResource`) and `BindBindlessTable` at buffer 28 | the terrain's textures can bind; verified by the host: red → blue across the quad, the update's swap visible |
 | Then | The terrain in the game (the Vulkan-free widening, the native programs, the materials, the CDLOD draws) | the world appears |
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
 
-**Step C — the Metal table runtime** (`MetalContext.Bindless` returns it today as a throw).
-Read `BindlessTable`'s implementation first and mirror its contract:
-
-- the state: per-kind free lists and high-water marks, a journal of registrations and updates,
-  one device buffer **per frame slot** (the ring's `FramesInFlight`, shared storage), the argument
-  buffer's members at their computed offsets (the arrays in id order, then the sampler arrays);
-- `Register(kind, SampledTexture)`: hand out an index, write the view's `MTLTexture.gpuResourceID`
-  and the sampler's `MTLSamplerState.gpuResourceID` into the **open slot's** buffer, journal it;
-  `Update` likewise (journal + open-slot write); at `BeginFrame` the journal replays into the new
-  slot's buffer. An index registered while a frame is open is valid in that frame, as the
-  Vulkan contract states;
-- `Free(kind, index)`: reusable once the frames that could read it have finished (mirror the
-  Vulkan table's epoch/frame tracking);
-- `BindBindlessTable(program, set)` on the command list: bind the open slot's argument buffer at
-  index 28 in both stages; `MslTranslator` patches `spvDescriptorSetN& ... [[buffer(N)]]` to
-  `[[buffer(28)]]` (the parameter name pattern is distinctive; the push patch to 30 is the same
-  shape and already works inside argument-buffer modules — verified by the `--table` dump).
-
-**Step D — verify the table in the host** (`--table`, already stubbed): register a red and a blue
-2×2 texture into `textures2D`, bind the table, push index 0, draw the quad. Expect: bottom-left
-red, top-right blue, centre (127, 0, 127); then push index 1 and expect the swap. Also drive the
-index through a set-0 block member (the terrain's real shape: the indices live in the frame
-constants) once the push form works.
+**Step D — verify the table in the host** (`--table`): the quad samples `textures2D[uIndex]` and
+`textures2D[uIndex + 1]`, mixed by u across the quad, with the other kinds' index 0 black dummies
+(the rewrite's five kinds run). Verified shots: bottom-left red, top-right blue, centre
+(127, 0, 128); after `Update` swaps the two entries at frame 3, the picture swaps. The runtime is
+`MetalBindlessTable` (the Vulkan table's journal contract, one shared buffer per frame slot, ids by
+`TableTextureId`/`TableSamplerId`).
 
 **Step E — the terrain in the game.**
 

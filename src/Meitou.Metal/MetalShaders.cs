@@ -69,8 +69,50 @@ public sealed class MetalShaders : IGpuShaders
 
     /// <summary>The Metal table's capacities per kind (<see cref="BindlessKind"/> order). The rewrite sizes the argument
     /// buffer's arrays with them so the ids stay in order and within the argument buffer's limits; the runtime's table
-    /// mirrors them (<see cref="MetalContext"/>). 2D textures get most of the room, as the Vulkan table's shares do.</summary>
+    /// mirrors them (<see cref="MetalBindlessTable"/>). 2D textures get most of the room, as the Vulkan table's shares do.</summary>
     internal static readonly uint[] TableCapacity = [2048, 512, 128, 128, 128, 128, 64];
+
+    /// <summary>The kinds the argument buffer declares today: the float kinds and the two integer ones (the shadow kinds come
+    /// with the shadows step, and the layout has no room for them until then).</summary>
+    static readonly int[] DeclaredKinds = [0, 1, 2, 4, 5];
+
+    /// <summary>The argument buffer's members' offsets, in entries (8 bytes each), by kind: the declared kinds' arrays follow
+    /// one another in binding order, the samplers after every texture. Metal lays the members out sequentially from 0 — the
+    /// <c>[[id]]</c> decorations the MSL carries do not move them (verified with the pipeline reflection).</summary>
+    static readonly uint[] TablePrefix = Prefix();
+
+    /// <summary>The declared texture arrays' total: where the sampler arrays begin.</summary>
+    internal static readonly uint TableTotal = Total();
+
+    static uint[] Prefix()
+    {
+        var prefix = new uint[TableCapacity.Length];
+        uint sum = 0;
+        for (int k = 0; k < prefix.Length; k++)
+        {
+            prefix[k] = sum;
+            if (Array.IndexOf(DeclaredKinds, k) >= 0) sum += TableCapacity[k];
+        }
+        return prefix;
+    }
+
+    static uint Total()
+    {
+        uint total = 0;
+        foreach (int k in DeclaredKinds) total += TableCapacity[k];
+        return total;
+    }
+
+    /// <summary>The argument buffer entry of kind <paramref name="kind"/>'s first texture (an entry is 8 bytes).</summary>
+    internal static uint TableTextureId(int kind) => TablePrefix[kind];
+
+    /// <summary>The argument buffer's id of kind <paramref name="kind"/>'s first sampler (the sampler arrays come after all the
+    /// textures).</summary>
+    internal static uint TableSamplerId(int kind) => TableTotal + TableTextureId(kind);
+
+    /// <summary>Whether a kind's entries have a sampler array in the MSL (only the float kinds; the integer kinds' samplers are dropped).</summary>
+    internal static bool HasSamplers(int kind) => kind is >= 0 and <= 2;
+
 
     /// <summary>The separate GLSL types of the float kinds' textures: a sampler array's pair constructor takes them.</summary>
     static readonly string[] FloatTextureTypes = ["texture2D", "texture2DArray", "textureCube"];
@@ -89,12 +131,8 @@ public sealed class MetalShaders : IGpuShaders
     /// </summary>
     static string RewriteBindless(string glsl)
     {
-        uint[] cap = TableCapacity;
-        uint total = 0;
-        foreach (uint c in cap) total += c;
-        var prefix = new uint[cap.Length];
-        uint sum = 0;
-        for (int k = 0; k < cap.Length; k++) { prefix[k] = sum; sum += cap[k]; }
+        uint[] cap = TableCapacity, prefix = TablePrefix;
+        uint total = TableTotal;
         // The uses first: the declarations' empty [] never matches, and the new ones are not in the text yet. An index may
         // be anything without a closing bracket (nonuniformEXT(...) included) — it is captured once and used for both.
         for (int k = 0; k <= 2; k++)
