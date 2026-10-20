@@ -69,21 +69,29 @@ entries, so the scheme fits the engine's sets (bindings within a set stay under 
 
 `BindlessTable` declares seven **combined** image samplers. Metal has no combined sampler, and
 spirv-cross refuses the case outright ("Argument buffer runtime array currently not supported for
-combined image sampler"). The way through is **separate textures and separate samplers**
-(`uniform texture2D table[]; uniform sampler samp;`), which the engine's shader compiler can
-rewrite - it already rewrites sources (interface locations, per-stage bindings).
+combined image sampler"). The way through is **separate textures and separate samplers**, which the
+backend rewrites into the GLSL before compiling (the engine's compiler already rewrites sources).
 
-The runtime model is MoltenVK's, on Metal 3:
+The verified model (the MSL that spirv-cross makes and Metal accepts, checked with the host's
+`--table` dump), on Metal 3:
 
-- the table's descriptor set becomes a tier-2 argument buffer in the device address space;
-  the argument buffer takes the buffer index of its descriptor set, so that set's number must
-  not collide with the binding numbers of the ordinary set;
-- one shared buffer holds the argument buffer: the two pointers (to the texture handle array and
-  to the sampler handle array) followed by the handles themselves; a texture's handle is
-  `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`, a buffer's address
-  is `MTLBuffer.gpuAddress`;
-- the arrays live **inside that buffer** and the pointers address them by offset. Keeping them
-  in separate buffers faults the GPU.
+- the table's set becomes a **tier-2 argument buffer in the device address space**
+  (`MslArgumentBuffers` + `MslArgumentBuffersTier` 2 + `CompilerMslSetArgumentBufferDeviceAddressSpace`);
+  the shader takes it as `const device spvDescriptorSetN& [[buffer(n)]]` — n is the set's number,
+  and the backend moves it to a fixed free index (28) so it cannot collide with the ordinary
+  bindings, in both stages;
+- the set's arrays are **sized** (the table's capacities): a sized array is a real member
+  (`array<texture2d<float>, 256> [[id(i)]]`) with a real offset in the buffer. spirv-cross's
+  *unsized* arrays are a trap: they come out as one-element members aliased onto each other
+  ("Overlapping binding"), which cannot hold distinct texture and sampler handles;
+- **per-entry samplers work**: the rewrite declares a parallel sampler array per kind
+  (`sampler samplers2D[capacity]`), and every use constructs the pair with the same index —
+  `sampler2D(textures2D[i], samplers2D[i])` — so GL's per-texture sampler state survives. The
+  ids inside the argument buffer must not overlap: an array element consumes an id, so a kind's
+  sampler array is declared at a binding beyond all the arrays' consumption;
+- the runtime writes the handles into one device buffer per frame slot (shared storage): a
+  texture's handle is `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`,
+  at the members' natural offsets (members in id order, 8 bytes each, 8-aligned).
 
 Two sharp edges:
 
@@ -189,7 +197,6 @@ the descriptor sets, the images and the buffers.
   Vulkan-only on purpose.
 
 ## The road to a Metal frame
-
 Each step ends with something visible; the order is the cheap one first.
 
 | Step | Work | What it gives |
@@ -205,10 +212,98 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The Metal device: `MetalContext`, `MetalFrame`, `MetalCommandList` and the four services behind the seam ([resource-layer](resource-layer.md)), sized to the sky pass (everything else throws); the offscreen backbuffer and the flipped present pass; the host's `--shot` readback | a Metal device that can run any pass whose vocabulary the command list has; the sky runs on it (the host's window, the frame loop, the real `SkyRenderer`) |
 | Done | The game's `--renderer metal` on the device: the real `SkyRenderer` with the world's sky textures and switches, the scene's host pass as `SceneHost` opens it, the session's hour and camera; `--screenshot` (one picture, then out) | the sky in the game, verified: the gradient follows the camera and the hour, the clouds and stars are the world's own; the tone is raw linear until the post chain's step |
 | Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
-| Next | The passes on the road, each its own step: the terrain (the native programs, the constants sets, the textures); compute and the post chain (the tone parity); the bindless table, the objects — each verified by the two windows and the pixel diff against Vulkan | the Metal check, pass by pass, until native Metal draws the whole frame |
-| Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
-| Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
-| Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |
+| Done | The bindless table's MSL shape, verified: tier-2 argument buffers in the device address space, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
+| Next | The bindless table on Metal (the terrain's prerequisite): the GLSL rewrite, the table runtime, `BindBindlessTable` — see the plan section | the terrain's textures can bind |
+| Then | The terrain in the game (the Vulkan-free widening, the native programs, the materials, the CDLOD draws) | the world appears |
+| Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
+| Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
+
+### The plan for the next steps (kept exact, for resuming cold)
+
+**Step A — the flatten's kind refinement.** Metal's stages have one binding table per *kind*
+(`[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]`), and the per-kind tables are separate: only
+the buffer tables carry the vertex buffers. So the flatten's vertex base (15) applies to **buffers**
+only; textures and samplers flatten with base 0 in both stages. Changes, both sides of the same
+formula: `SpirvPatch.RemapBindings` becomes kind-aware (classify each decorated variable by its
+type's pointer storage: Uniform/Storage classes are buffers, UniformConstant is images/samplers;
+buffers in a vertex module shift by 15, others by 0) and `MetalShaders.Flatten` takes the slot's
+kind. The sky (no vertex samplers) and the quad (no samplers) must come out unchanged; the
+reason this matters: the stage's sampler tables hold 16 entries, and a vertex-stage table sampler
+at 15 + set × 8 + binding would run past them.
+
+**Step B — the GLSL rewrite for the bindless set** (in `MetalShaders.Native`, before
+`CompileNative`, only when the layout has `GpuSetLayout.Bindless`; the Vulkan path's GLSL stays
+combined):
+
+1. Replace `BindlessTable.Declarations(set)`'s seven lines: kind *k*'s combined declaration
+   (`layout(set = 1, binding = k) uniform sampler2D textures2D[];`) becomes two lines — a sized
+   texture array and a sized sampler array: `layout(set = 1, binding = T(k)) uniform texture2D
+   textures2D[cap(k)];` and `layout(set = 1, binding = S(k)) uniform sampler samplers2D[cap(k)];`
+   with T(k) = Σ capacities of kinds before k, S(k) = Σ all capacities + T(k), cap(k) = the
+   table's capacity for the kind (read `BindlessTable`'s; mirror it in the Metal table). The id
+   arithmetic then stays under the argument buffer's limits (tier 2: ids well into the thousands
+   are fine; keep Σcap ≤ 4096).
+2. Rewrite every use: `textures2D[expr]` → `sampler2D(textures2D[expr], samplers2D[expr])`, and
+   the same for each kind's type (`sampler2DArray`, `samplerCube`, `sampler2DShadow`,
+   `usampler2D`, `isampler2D`, `sampler2DArrayShadow`). First check glslang accepts the combined
+   constructor for Vulkan targets with the *separate* arrays (it should; verify with the host's
+   `--table` program before writing the general rewrite).
+3. The depth kinds' textures are depth formats; their sampler arrays need comparison sampler
+   states (a fixed compare function per kind — the game's shadow compare is uniform).
+
+**Step C — the Metal table runtime** (`MetalContext.Bindless` returns it today as a throw).
+Read `BindlessTable`'s implementation first and mirror its contract:
+
+- the state: per-kind free lists and high-water marks, a journal of registrations and updates,
+  one device buffer **per frame slot** (the ring's `FramesInFlight`, shared storage), the argument
+  buffer's members at their computed offsets (the arrays in id order, then the sampler arrays);
+- `Register(kind, SampledTexture)`: hand out an index, write the view's `MTLTexture.gpuResourceID`
+  and the sampler's `MTLSamplerState.gpuResourceID` into the **open slot's** buffer, journal it;
+  `Update` likewise (journal + open-slot write); at `BeginFrame` the journal replays into the new
+  slot's buffer. An index registered while a frame is open is valid in that frame, as the
+  Vulkan contract states;
+- `Free(kind, index)`: reusable once the frames that could read it have finished (mirror the
+  Vulkan table's epoch/frame tracking);
+- `BindBindlessTable(program, set)` on the command list: bind the open slot's argument buffer at
+  index 28 in both stages; `MslTranslator` patches `spvDescriptorSetN& ... [[buffer(N)]]` to
+  `[[buffer(28)]]` (the parameter name pattern is distinctive; the push patch to 30 is the same
+  shape and already works inside argument-buffer modules — verified by the `--table` dump).
+
+**Step D — verify the table in the host** (`--table`, already stubbed): register a red and a blue
+2×2 texture into `textures2D`, bind the table, push index 0, draw the quad. Expect: bottom-left
+red, top-right blue, centre (127, 0, 127); then push index 1 and expect the swap. Also drive the
+index through a set-0 block member (the terrain's real shape: the indices live in the frame
+constants) once the push form works.
+
+**Step E — the terrain in the game.**
+
+1. The Vulkan-free widening (as `SkyRenderer` got in step 2): `TerrainRenderer(GpuContext` →
+   `IGpuContext`, same for `NativeFrame` and whatever `TerrainProgram` wraps;
+   `DeviceBuffer.Create` gets an `IGpuContext` path (it already wraps `ctx.CreateBuffer`);
+   `gpu.Device.Limits.MinUniformBufferOffsetAlignment` → the seam's device fact
+   (`UniformBufferAlign` exists on `IGpuContext`). Keep the Vulkan parity byte-for-byte: the
+   widening must not change the Vulkan path's code paths, only their parameter types.
+2. The game's Metal path (`GameHost.Metal.cs`): give the host pass a **depth attachment** (a
+   per-slot depth texture at the backbuffer's size — the context owns it, resized with the
+   backbuffer); the pass's state becomes `DrawState.Scene` (depth tested); the sky draws, then
+   `terrain.Draw(viewProjection, eye, frustum, options, light)` with the light from
+   `sky.Prepare`'s second return and a minimal `WorldRenderOptions`.
+3. The terrain's boot in the Metal path: `TerrainTextures.Prepare(install, db)` (the CPU bakes),
+   the heights (already in the ctor), the material's texture setup (find where the layers'
+   arrays are created and bound — `TerrainRenderer`'s texture part), the constants set (set 2).
+4. The patch draws (CDLOD) are the scope; the TERRAIN-mode meshes' indirect draws
+   (`DrawIndexedIndirect`) come after — implement them then, or defer the meshes with a line in
+   the doc.
+5. Verification: the two-window comparison (the terrain's relief and layer colours, same
+   `--time`/`--pitch`/`--distance`); the recipes all stay green: build 0/0, tests 424 pass /
+   1 known fail, the Vulkan screenshot 0 differing pixels (warm runs; a cold first run may show
+   the ~40 ±1 TAA edge pixels), the Metal game's sky shot unchanged.
+
+**Step F — after the terrain.** Compute (the post chain's passes; `MTLComputePipelineState` +
+`MTLComputeCommandEncoder` dispatches, the compute sets as argument buffers too) → the tone
+parity; then the objects and characters (the table's per-entry samplers are already the model),
+indirect draws, shadows, foliage, water, impostors, UI; then `--renderer metal` becomes the
+macOS default.
 
 Two things the passes cannot give a second backend as they are:
 
@@ -237,6 +332,7 @@ the baseline, not one.
 
 ## Open questions
 
-- Per-entry sampler state: the table's entries carry their own sampler, so the table needs a
-  sampler array as well as a texture array.
 - Metal's GPU timestamps (MTLCounterSampleBuffer), when the pass timings matter on Metal.
+
+(Resolved in the plan: per-entry sampler state — sized sampler arrays in the argument buffer;
+the vertex-stage binding table — the kind-aware flatten.)
