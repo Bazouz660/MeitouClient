@@ -854,7 +854,7 @@ to the next tick. A hostile target is attacked instead.
   listed in [dialogue](game/dialogue.md#meitou-design).
 - **Recruiting** ([facts](game/dialogue.md#recruiting)): at the `max faction size` cap the line "It looks like your squad is a little full." is
   posted and the conversation ends; otherwise the speaker leaves its squad (its leader passes to the first member left) and joins the player's
-  active squad (the first selected player character's, else `Player.Squad`, else the talker's), or a new "blank squad" squad when that one has
+  active squad (player 0's `PlayerSession.Squad`, else the first selected player character's, else the talker's), or a new "blank squad" squad when that one has
   `max squad size` members: player faction, role Squad1, NPC class Adventurer (as every player-faction character, `CharacterAssembly`), player
   default orders, speed mode Free (2), no AI mind, stopped, its save link dropped (a save writes it as a new member of the player's platoon).
   Its dialogue becomes the player set (`DialogueDatabase.SetFor`). DA 3 ends the conversation and opens the editor in recruit mode

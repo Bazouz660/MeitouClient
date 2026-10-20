@@ -178,7 +178,7 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<CampView> Camps { get; init; } = [];
     /// <summary>The squad AI options (<see cref="PlayerState.SquadAi"/>).</summary>
     public SquadAi SquadAi { get; init; } = SquadAi.Defaults;
-    /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads"/>), each with its members in squad order (the first leads).</summary>
+    /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads(World)"/>), each with its members in squad order (the first leads).</summary>
     public IReadOnlyList<SquadView> PlayerSquads { get; init; } = [];
     /// <summary>The active squad's id (<see cref="PlayerSession.Squad"/>; -1 none): the squad bar shows it.</summary>
     public int ActiveSquad { get; init; } = -1;

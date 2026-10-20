@@ -70,6 +70,7 @@ public sealed class PlayerState
             if (s.Inspected == id) return true;
         return false;
     }
+
     /// <summary>
     /// What the player knows of each placed town (<see cref="PopulationData.Sites"/> order): discovered, explored, recently discovered (docs/game/ui-screens.md "Map").
     /// Replaced, never changed in place, so a snapshot may hold it. Not hashed: it follows from positions and nothing in the simulation reads it.

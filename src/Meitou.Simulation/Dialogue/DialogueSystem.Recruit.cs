@@ -7,7 +7,7 @@ public sealed partial class DialogueSystem
 {
     /// <summary>
     /// DA_JOIN_SQUAD_WITH_EDIT (3) / DA_JOIN_SQUAD_FAST (18) with the player character as the target (docs/game/dialogue.md "Recruiting"): the speaker leaves its squad and joins the
-    /// player's active squad (<see cref="PlayerState.Squad"/>, else the selection's, else the talker's) as a player character; when that squad already holds CONSTANTS <c>max squad size</c>
+    /// player's active squad (player 0's <see cref="PlayerSession.Squad"/>, else the selection's, else the talker's) as a player character; when that squad already holds CONSTANTS <c>max squad size</c>
     /// members, a new squad of the "blank squad" template takes it. At the faction's head cap (<c>max faction size</c>) the conversation ends with "It looks like your squad is a
     /// little full." and the line's remaining effects are skipped (false). DA 3 then opens the character editor on the recruit (engine: the conversation ends for it).
     /// </summary>

@@ -128,7 +128,6 @@ public sealed class ConstructionSystem : ITickSystem
 
     // ------------------------------------------------------------------ orders
 
-
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         var table = world.Characters;
