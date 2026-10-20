@@ -29,6 +29,7 @@ public sealed class LookCache(IAppearanceSource source, GameDatabase db, bool ba
         public readonly AppearanceRecipe Recipe = recipe;
         public volatile CharacterAppearance? Look;
         public volatile bool Ready;
+        // Set before the entry is published, so a WhenBuilt on another thread never sees a placeholder.
         public Task Built = Task.CompletedTask;
     }
 
@@ -41,8 +42,10 @@ public sealed class LookCache(IAppearanceSource source, GameDatabase db, bool ba
     {
         if (lookId == 0) throw new NetFormatException("Look 0 cannot be defined.");
         var entry = new Entry(recipe);
+        var build = background ? new Task(() => Build(entry)) : null;
+        if (build is not null) entry.Built = build;
         if (!entries.TryAdd(lookId, entry)) return;
-        if (background) entry.Built = Task.Run(() => Build(entry));
+        if (build is not null) build.Start(TaskScheduler.Default);
         else Build(entry);
     }
 

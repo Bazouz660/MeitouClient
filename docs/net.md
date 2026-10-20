@@ -171,10 +171,10 @@ look from the recipe of the `IAppearanceSource` call that made it (`Replication/
   seed. Kit: record id; seed; character id (nullable); race id; flags (b0 female, b1 generated); morph index; the
   CHARACTER_APPEARANCE record (`FcsRecordCodec`); clothing (count, items); backpack (presence, item); carried (count,
   items); crossbow (presence, weapon); weapons (count, weapons); four limbs (varint 0 natural, else state + 1, then the
-  prosthetic id). Item: record, quality, material?. Weapon: weapon, manufacturer?, model?, level, section, row. Shape:
-  flags (female, narrow left/right thigh), muscle, starvation, leg ratio (f32), hide stump (byte), missing limbs (bit
-  mask byte), sliders (count, key and f32). `Loadout.Notes` are dropped. The writer refuses ids over `MaxName` and writes
-  non-finite shape floats as 0. **Verified** (`LookTests`: round trip of every field, twice through a reliable table).
+  prosthetic id?). Item: record, quality, material?. Weapon: weapon, manufacturer?, model?, level, section, row. Shape:
+  flags (female, narrow left/right thigh), muscle, starvation, leg ratio (f32), hide stump (zigzag varint), missing
+  limbs (bit mask byte), sliders (count, key and f32). `Loadout.Notes` are dropped. The writer refuses ids over `MaxName`, null required
+  ids and over-long lists, masks hide stump to its defined bits and writes non-finite shape floats as 0. **Verified** (`LookTests`: round trip of every field, twice through a reliable table).
 - **`LookCache`** (client, `ILookResolver`): kept for the connection; `Define` builds on the thread pool (synchronously
   with `background: false`), a repeated id keeps its first recipe, `Resolve` is null until built. A recipe naming a
   record the client lacks, or a build that throws, gives a null look (marker).

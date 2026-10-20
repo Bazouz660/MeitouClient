@@ -81,7 +81,8 @@ public sealed record LoadoutLimbWire(int State, string? Prosthetic);
 /// <summary>
 /// A <see cref="Loadout"/> as it crosses the wire (docs/net.md, "Looks"): every record is a string id, the appearance is the whole CHARACTER_APPEARANCE record,
 /// <see cref="Loadout.Notes"/> are dropped. The lists are copied when the look is made, so a later change to the host's loadout lists cannot change a recipe;
-/// the CHARACTER_APPEARANCE record is shared (no code edits one in place: an edit makes a new record).
+/// the CHARACTER_APPEARANCE record is shared, not copied. Committed edits make a new record (<c>EditCharacter</c> carries a copy); only the editor's draft
+/// is changed in place, and its preview looks stay on the host.
 /// </summary>
 public sealed record LoadoutWire(
     int Seed, string? Character, string Race, bool Female, FcsRecord Appearance, bool Generated, int MorphIndex,

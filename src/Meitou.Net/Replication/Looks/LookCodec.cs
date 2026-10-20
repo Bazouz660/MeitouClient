@@ -5,8 +5,8 @@ namespace Meitou.Net.Replication;
 
 /// <summary>
 /// The <c>LookDefinition</c> message (<c>0x31</c>, Views) and the recipe body (docs/net.md, "Looks"). Ids go through the channel's string table; ints are zigzag
-/// varints; the appearance record is <see cref="FcsRecordCodec"/>. The writer checks what the reader limits (id lengths, list counts) and writes a non-finite
-/// shape float as 0, so a reader never refuses what a writer produced.
+/// varints; the appearance record is <see cref="FcsRecordCodec"/>. The writer checks what the reader limits (id lengths, required ids, list counts, hide-stump
+/// bits) and writes a non-finite shape float as 0, so a reader never refuses what a writer produced.
 /// </summary>
 public static class LookCodec
 {
@@ -38,12 +38,12 @@ public static class LookCodec
         switch (recipe)
         {
             case AppearanceRecipe.Rolled rolled:
-                WriteId(w, strings, rolled.RecordId);
+                WriteRequiredId(w, strings, rolled.RecordId);
                 WriteId(w, strings, rolled.FactionId);
                 w.WriteVarInt(rolled.Seed);
                 break;
             case AppearanceRecipe.Kit kit:
-                WriteId(w, strings, kit.RecordId);
+                WriteRequiredId(w, strings, kit.RecordId);
                 WriteLoadout(w, strings, kit.Loadout);
                 break;
             default:
@@ -71,7 +71,7 @@ public static class LookCodec
     {
         w.WriteVarInt(l.Seed);
         WriteId(w, strings, l.Character);
-        WriteId(w, strings, l.Race);
+        WriteRequiredId(w, strings, l.Race);
         w.WriteVarUInt((l.Female ? 1u : 0) | (l.Generated ? 2u : 0));
         w.WriteVarInt(l.MorphIndex);
         FcsRecordCodec.Write(w, strings, l.Appearance);
@@ -123,7 +123,7 @@ public static class LookCodec
 
     static void WriteItem(NetWriter w, StringTableWriter strings, LoadoutItemWire i)
     {
-        WriteId(w, strings, i.Record);
+        WriteRequiredId(w, strings, i.Record);
         w.WriteVarInt(i.Quality);
         WriteId(w, strings, i.Material);
     }
@@ -132,11 +132,11 @@ public static class LookCodec
 
     static void WriteWeapon(NetWriter w, StringTableWriter strings, LoadoutWeaponWire x)
     {
-        WriteId(w, strings, x.Weapon);
+        WriteRequiredId(w, strings, x.Weapon);
         WriteId(w, strings, x.Manufacturer);
         WriteId(w, strings, x.Model);
         w.WriteVarInt(x.Level);
-        WriteId(w, strings, x.Section);
+        WriteRequiredId(w, strings, x.Section);
         w.WriteVarInt(x.Row);
     }
 
@@ -151,7 +151,7 @@ public static class LookCodec
         w.WriteSingle(Finite(s.Muscle));
         w.WriteSingle(Finite(s.Starvation));
         w.WriteSingle(Finite(s.LegRatio));
-        w.WriteEnum(s.HideStump);
+        w.WriteEnum(s.HideStump & HideStump.BothArms);   // only the defined bits: the reader refuses others
         int missing = 0;
         foreach (var limb in s.Missing)
             if ((uint)limb < LoadoutWire.LimbCount) missing |= 1 << (int)limb;
@@ -214,6 +214,10 @@ public static class LookCodec
             throw new ArgumentException($"The id \"{id}\" is longer than {NetLimits.MaxName} bytes.", nameof(id));
         strings.Write(w, id);
     }
+
+    /// <summary>An id the reader requires (<see cref="ReadId"/>): null is refused here, as the reader would.</summary>
+    static void WriteRequiredId(NetWriter w, StringTableWriter strings, string? id) =>
+        WriteId(w, strings, id ?? throw new ArgumentNullException(nameof(id), "A required look id is null."));
 
     static string? ReadNullableId(ref NetReader r, StringTableReader strings) => strings.Read(ref r, NetLimits.MaxName);
 
