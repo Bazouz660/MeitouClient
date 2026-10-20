@@ -233,7 +233,7 @@ Meitou-only (engine design; the original reads keys by name and ignores them). `
 - Capture removes any old roster and owner keys, then writes them only when some session has a GUID; a squad whose owner has none gets no `meitou owner`.
   A single-player save is unchanged (no keys). The CAMERA selection stays player 0's.
 - Load with `SaveLoadOptions.LocalPlayer` empty (single-player): the keys are ignored, every squad is player 0's, no sessions are made. With a GUID (a host):
-  entries with a bad or repeated GUID or number are skipped; that GUID becomes 0, the entry that held 0 takes its old number (one past the highest when
+  entries with a bad or repeated GUID or number (or a number above 65535, `RosterSave.MaxNumber`) are skipped, and the count never reads past the record's strings; that GUID becomes 0, the entry that held 0 takes its old number (one past the highest when
   it is not in the roster), the rest keep theirs and are joined; each platoon gets its owner's number (none: 0; a GUID not in the roster: 0 and a load note).
   Player 0's selection keeps only its own characters, its active squad is its own, and each other session's is its first squad with members (`KeepActive`).
 - **Verified** by `MultiplayerSaveTests` (synthetic game: round-trip with the remap, no keys in single-player, empty `LocalPlayer`).

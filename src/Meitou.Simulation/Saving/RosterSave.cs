@@ -13,6 +13,9 @@ public static class RosterSave
     public const string CountKey = "meitou players", OwnerKey = "meitou owner";
     const string EntryPrefix = "meitou player";
 
+    /// <summary>The highest player number in a save's roster (engine guard against a damaged one: a bigger number is neither written nor read, so a remap or a later number never overflows).</summary>
+    public const int MaxNumber = ushort.MaxValue;
+
     static string IdKey(int k) => $"{EntryPrefix}{k} id";
     static string NameKey(int k) => $"{EntryPrefix}{k} name";
     static string NumberKey(int k) => $"{EntryPrefix}{k} number";
@@ -27,12 +30,12 @@ public static class RosterSave
         ArgumentNullException.ThrowIfNull(player);
         foreach (var key in camera.Ints.Keys.Where(k => k.StartsWith(EntryPrefix, StringComparison.Ordinal)).ToList()) camera.Ints.Remove(key);
         foreach (var key in camera.Strings.Keys.Where(k => k.StartsWith(EntryPrefix, StringComparison.Ordinal)).ToList()) camera.Strings.Remove(key);
-        if (!player.Sessions.Any(s => s.Guid != Guid.Empty)) return null;
+        if (!player.Sessions.Any(s => s.Guid != Guid.Empty && s.Number <= MaxNumber)) return null;
         var owners = new Dictionary<int, Guid>();
         int n = 0;
         foreach (var s in player.Sessions)
         {
-            if (s.Guid == Guid.Empty) continue;
+            if (s.Guid == Guid.Empty || s.Number > MaxNumber) continue;   // what Read skips is not written
             camera.Strings[IdKey(n)] = s.Guid.ToString("D", CultureInfo.InvariantCulture);
             camera.Strings[NameKey(n)] = s.Name;
             camera.Ints[NumberKey(n)] = s.Number;
@@ -61,11 +64,12 @@ public static class RosterSave
         ArgumentNullException.ThrowIfNull(camera);
         ArgumentNullException.ThrowIfNull(world);
         var entries = new List<(Guid Guid, string Name, int Number)>();
-        int count = camera.Ints.GetValueOrDefault(CountKey);
+        // Each entry needs its id string, so a damaged count never runs past the record's strings.
+        int count = Math.Min(camera.Ints.GetValueOrDefault(CountKey), camera.Strings.Count);
         for (int k = 0; k < count; k++)
         {
             if (!Guid.TryParseExact(camera.Strings.GetValueOrDefault(IdKey(k), ""), "D", out var guid) || guid == Guid.Empty) continue;
-            if (!camera.Ints.TryGetValue(NumberKey(k), out int number) || number < 0) continue;
+            if (!camera.Ints.TryGetValue(NumberKey(k), out int number) || number is < 0 or > MaxNumber) continue;
             if (entries.Any(e => e.Guid == guid || e.Number == number)) continue;
             entries.Add((guid, camera.Strings.GetValueOrDefault(NameKey(k), ""), number));
         }
