@@ -34,7 +34,11 @@ internal sealed class MetalTableLayout
     public static MetalTableLayout Parse(string msl)
     {
         var layout = new MetalTableLayout();
-        var buffer = Regex.Match(msl, @"struct\s+spvDescriptorSetBuffer\d+\s*\{(?<body>[^}]*)\}");
+        // The table's set is the parameter moved to [[buffer(TableBinding)]]; programs with other sets carry their structs too
+        // (the terrain has sets 0 and 2), and the first struct in the file is not the table's.
+        var parameter = Regex.Match(msl, @"constant\s+spvDescriptorSetBuffer(?<set>\d+)&[^,\n]*\[\[buffer\(" + MslTranslator.TableBinding + @"\)\]\]");
+        if (!parameter.Success) return layout;
+        var buffer = Regex.Match(msl, @"struct\s+spvDescriptorSetBuffer" + parameter.Groups["set"].Value + @"\s*\{(?<body>[^}]*)\}");
         if (!buffer.Success) return layout;
         int at = 0;
         foreach (Match member in Regex.Matches(buffer.Groups["body"].Value, @"array<[^,]+(?:<[^>]*>)?,\s*(?<count>\d+)>\s+\w+\s+\[\[id\((?<id>\d+)\)\]\]"))

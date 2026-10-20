@@ -256,18 +256,28 @@ Each step ends with something visible; the order is the cheap one first.
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
 
-### The terrain's missing fragments (open)
+### What kept the terrain's fragments away (fixed)
 
-The terrain's patch draws reach Metal (`BindPipeline`/`BindVertexBuffers`/`DrawIndexed` recorded,
-the grid's vertices and indices verified in the buffers, the pipeline's one input at location 0,
-stride 8) but the depth and albedo targets stay empty — even with the patch vertex shader reduced
-to `gl_Position = vec4(aGrid / 32 - 1, 0, 1)` and a magenta fragment, and with the depth test off.
-A quad drawn into the same pass with `ctx.Pipelines.Get`/`BindVertexBuffers`/`DrawIndexed` (and
-even through `BeginGuest`, and with set 0 as an argument buffer) does draw, so the pass, the guest
-model, the argument buffers and the vertex-format path are sound. What has not been isolated yet:
-the terrain's `DrawState`/`Pipeline` description path (`TerrainRenderer.ResolvePatches`), its
-`TerrainProgram` wrapper and the `gpu.Record` job. Next: draw the host's known-good quad program
-with the terrain's exact `ResolvePatches`/`PatchJob` plumbing, then bisect the two.
+The patch draws were recorded but produced nothing. Metal's validation layer names the causes
+(`MTL_DEBUG_LAYER=1`):
+
+- **An argument buffer struct's members are laid out by declaration order, not by `[[id]]`.** The
+  id names the binding (the flattened index), but the entry a member reads is its position in the
+  struct. The table's layout already followed that rule; the descriptor sets did not — the runtime
+  wrote set 0's view block at entry 19 (its id) while the shader read entry 0 (the frame block),
+  so the view matrix was garbage and every patch vertex landed outside the clip volume. Sets are
+  now filled per stage by the position parsed from the stage's MSL (`MetalSetLayout`), one
+  argument buffer per stage and set, at the stage's set index.
+- **Metal checks the pushed bytes against the MSL block's size.** The terrain's push block is 24
+  bytes of members, 32 in the shader (std430 rounds the struct to 16), so `PushConstants` now
+  pads to the 16-byte alignment before `SetVertexBytes`/`SetFragmentBytes`; a short push fails the
+  draw's length check.
+- A stage that does not read a set has no struct for it: the bind skips that stage rather than
+  binding a buffer nothing reads.
+
+The terrain draws now (patches, culling, the depth and GI-albedo targets); its remaining work is
+the material and atmosphere inputs (the frame textures are still the stand-ins, so it is dark) and
+the camera's world framing.
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
 

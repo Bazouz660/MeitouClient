@@ -50,7 +50,6 @@ public sealed class MetalUploads : IGpuUploads
             if ((ulong)data.Length < bytesPerImage) throw new ArgumentException($"the upload has {data.Length} bytes, the region needs {bytesPerImage}");
             var buffer = Reserve(data.Length, out ulong offset);
             data.CopyTo(new Span<byte>((void*)(buffer.Contents + (nint)offset), data.Length));
-            buffer.DidModifyRange(new NSRange { location = offset, length = (ulong)data.Length });
 
             var blit = list.OpenBlit();
             blit.CopyFromBuffer(buffer, offset, bytesPerRow, bytesPerImage,
@@ -64,7 +63,6 @@ public sealed class MetalUploads : IGpuUploads
         {
             var buffer = Reserve(data.Length, out ulong stagingOffset);
             data.CopyTo(new Span<byte>((void*)(buffer.Contents + (nint)stagingOffset), data.Length));
-            buffer.DidModifyRange(new NSRange { location = stagingOffset, length = (ulong)data.Length });
             var blit = list.OpenBlit();
             blit.CopyFromBuffer(buffer, stagingOffset, ctx.BufferAt(target.Handle), offset, (ulong)data.Length);
             ctx.CountUpload(data.Length);

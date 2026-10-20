@@ -179,7 +179,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (set != 0) throw new NotSupportedException($"the Metal backend binds set {set} only through CreateSet and BindSets");
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("BindProgramResources outside a rendering");
-        if (ctx.Shaders.Backend(program).ArgumentBuffers) { BindSetArguments(set, bindings); return; }
+        if (ctx.Shaders.Backend(program).ArgumentBuffers) { BindSetArguments(ctx.Shaders.Backend(program), set, bindings); return; }
         var slots = program.NeutralSets[set].Slots;
         foreach (var binding in bindings)
         {
@@ -241,7 +241,7 @@ public sealed class MetalCommandList : IGpuCommandList
                         binding = new GpuBinding(binding.Slot, binding.Kind, Buffer: new GpuBufferBinding(binding.Buffer.Buffer, dynamicOffsets.IsEmpty ? 0 : dynamicOffsets[at++], binding.Buffer.Size));
                     bindings[b] = binding;
                 }
-                BindSetArguments(first + (uint)i, bindings);
+                BindSetArguments(ctx.Shaders.Backend(program), first + (uint)i, bindings);
             }
             Stats.DescriptorPushes++;
             return;
@@ -275,30 +275,40 @@ public sealed class MetalCommandList : IGpuCommandList
     /// live in the frame's constants ring (a slice of their own per bind: a later bind of the same set must not change what an
     /// earlier draw reads).
     /// </summary>
-    unsafe void BindSetArguments(uint set, ReadOnlySpan<GpuBinding> bindings)
+    unsafe void BindSetArguments(MetalProgram backend, uint set, ReadOnlySpan<GpuBinding> bindings)
     {
-        Span<ulong> entries = stackalloc ulong[32];
+        BindSetStage(backend.VertexSets, GpuStage.Vertex, set, bindings);
+        BindSetStage(backend.FragmentSets, GpuStage.Fragment, set, bindings);
+    }
+
+    /// <summary>One stage's set: the bindings' addresses at the positions their <c>[[id]]</c>s name in the stage's struct
+    /// (Metal lays an argument buffer's members out by declaration, so the position is the entry, not the id).</summary>
+    unsafe void BindSetStage(MetalSetLayout layout, GpuStage stage, uint set, ReadOnlySpan<GpuBinding> bindings)
+    {
+        uint[] members = layout.Members(set);
+        if (members.Length == 0) return;   // the stage's shader does not read this set
+        Span<ulong> entries = stackalloc ulong[members.Length];
         entries.Clear();
-        int max = 0;
+        bool any = false;
         foreach (var binding in bindings)
         {
             if (binding.Kind is not (GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer))
                 throw new NotSupportedException($"the Metal backend puts no {binding.Kind} in an argument buffer set yet (set {set}, binding {binding.Slot})");
             if (binding.Buffer.Buffer.IsNull) continue;
             var slotKind = binding.Kind == GpuBindingKind.StorageBuffer ? GpuSlotKind.StorageBuffer : GpuSlotKind.UniformBuffer;
+            int at = Array.IndexOf(members, MetalShaders.Flatten(slotKind, stage, set, binding.Slot));
+            if (at < 0) continue;   // this stage's struct has no such member (its shader never reads it)
             var (buffer, offset) = ctx.Buffer(binding.Buffer);
             render.UseResource(buffer, MTLResourceUsage.Read);
-            ulong address = buffer.GpuAddress + offset;
-            int vertex = (int)MetalShaders.Flatten(slotKind, GpuStage.Vertex, set, binding.Slot);
-            int fragment = (int)MetalShaders.Flatten(slotKind, GpuStage.Fragment, set, binding.Slot);
-            (entries[vertex], entries[fragment]) = (address, address);
-            max = Math.Max(max, Math.Max(vertex, fragment));
+            entries[at] = buffer.GpuAddress + offset;
+            any = true;
         }
-        var size = (ulong)(max + 1) * 8;
+        if (!any) return;
+        var size = (ulong)members.Length * 8;
         var constants = ctx.NewSetBuffer(size);
         fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
-        render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
-        render.SetFragmentBuffer(constants, 0, set);
+        if (stage == GpuStage.Vertex) render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
+        else render.SetFragmentBuffer(constants, 0, set);
     }
 
     /// <summary>Binds the bindless table: the slot's argument buffer at <see cref="MslTranslator.TableBinding"/> in both stages
@@ -326,10 +336,15 @@ public sealed class MetalCommandList : IGpuCommandList
     public unsafe void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
         if (offset != 0) throw new NotSupportedException("the Metal backend pushes constants whole (offset 0)");
-        var bytes = (nint)Unsafe.AsPointer(ref Unsafe.AsRef(in value));
-        ulong size = (ulong)sizeof(T);
-        if (stages.HasFlag(GpuStage.Vertex)) render.SetVertexBytes(bytes, size, MslTranslator.PushConstantBinding);
-        if (stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBytes(bytes, size, MslTranslator.PushConstantBinding);
+        // The MSL block is the SPIR-V one, rounded up to its 16-byte alignment; pushing only sizeof(T) fails Metal's length check
+        // (the terrain's 24-byte block is 32 there). The tail is zeroed so nothing but the block is read.
+        int raw = sizeof(T);
+        int padded = (raw + 15) & ~15;
+        byte* bytes = stackalloc byte[Math.Max(padded, 16)];
+        new Span<byte>(bytes, Math.Max(padded, 16)).Clear();
+        Buffer.MemoryCopy(Unsafe.AsPointer(ref Unsafe.AsRef(in value)), bytes, padded, raw);
+        if (stages.HasFlag(GpuStage.Vertex)) render.SetVertexBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
+        if (stages.HasFlag(GpuStage.Fragment)) render.SetFragmentBytes((nint)bytes, (ulong)Math.Max(padded, 16), MslTranslator.PushConstantBinding);
     }
 
     /// <summary>Writes a timestamp into a query slot (the frame's timings). Metal records none yet (<see cref="MetalTimestamps"/>).</summary>

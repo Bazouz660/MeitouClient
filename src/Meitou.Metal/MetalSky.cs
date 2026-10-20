@@ -63,7 +63,6 @@ public sealed class MetalSky
         block.Set("uSkySunColour", colours.SunColour);
         block.Set("uSkyTwilight", colours.Twilight);
         Marshal.Copy(block.Bytes, 0, uniforms.Contents, block.Size);
-        uniforms.DidModifyRange(new NSRange { location = 0, length = (ulong)block.Size });
         encoder.SetRenderPipelineState(pipeline);
         encoder.SetFragmentBuffer(uniforms, 0, (ulong)binding);
         encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);

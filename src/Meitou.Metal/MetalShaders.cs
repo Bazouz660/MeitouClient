@@ -11,6 +11,29 @@ namespace Meitou.Metal;
 /// The backend's own artifacts of a program (the twin of <c>VulkanProgram</c>): the MSL libraries and
 /// functions. The engine's compile result (<see cref="ProgramInfo"/>) lives on the handle.
 /// </summary>
+/// <summary>The MSL of one stage's descriptor set as a Metal argument buffer: one struct per set, its members in
+/// declaration order (a member's <c>[[id(N)]]</c> names its binding, the position is its entry).</summary>
+internal sealed class MetalSetLayout
+{
+    readonly Dictionary<uint, uint[]> members = [];
+
+    public static MetalSetLayout Parse(string msl)
+    {
+        var layout = new MetalSetLayout();
+        foreach (Match set in Regex.Matches(msl, @"struct\s+spvDescriptorSetBuffer(?<set>\d+)\s*\{(?<body>[^}]*)\}"))
+            layout.members[uint.Parse(set.Groups["set"].Value)] =
+            [
+                .. Regex.Matches(set.Groups["body"].Value, @"\[\[id\((?<id>\d+)\)\]\]").Select(m => uint.Parse(m.Groups["id"].Value)),
+            ];
+        return layout;
+    }
+
+    /// <summary>The set's member ids in declaration order (empty when the stage does not read the set).</summary>
+    public uint[] Members(uint set) => members.TryGetValue(set, out var ids) ? ids : [];
+
+    public override string ToString() => string.Join("; ", members.OrderBy(m => m.Key).Select(m => $"{m.Key}: [{string.Join(",", m.Value)}]"));
+}
+
 internal sealed class MetalProgram : IDisposable
 {
     public MetalProgram(ProgramInfo info, MTLLibrary vertexLibrary, MTLFunction vertexFunction, string vertexMsl,
@@ -21,6 +44,7 @@ internal sealed class MetalProgram : IDisposable
         (VertexLibrary, VertexFunction, VertexMsl) = (vertexLibrary, vertexFunction, vertexMsl);
         (FragmentLibrary, FragmentFunction, FragmentMsl) = (fragmentLibrary, fragmentFunction, fragmentMsl);
         (VertexTable, FragmentTable) = (MetalTableLayout.Parse(vertexMsl), MetalTableLayout.Parse(fragmentMsl));
+        (VertexSets, FragmentSets) = (MetalSetLayout.Parse(vertexMsl), MetalSetLayout.Parse(fragmentMsl));
     }
 
     public ProgramInfo Info { get; }
@@ -34,6 +58,10 @@ internal sealed class MetalProgram : IDisposable
     /// <summary>The stage's argument buffer layout (empty for a stage that does not read the table).</summary>
     public MetalTableLayout VertexTable { get; }
     public MetalTableLayout FragmentTable { get; }
+    /// <summary>The stage's descriptor-set member ids, in declaration order (Metal lays a struct's members out by
+    /// declaration, not by their <c>[[id]]</c>: the position is what the runtime writes).</summary>
+    public MetalSetLayout VertexSets { get; }
+    public MetalSetLayout FragmentSets { get; }
     /// <summary>Whether the program's descriptor sets are Metal argument buffers (every native program with the bindless table).</summary>
     public bool ArgumentBuffers { get; }
 
