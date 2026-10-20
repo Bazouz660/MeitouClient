@@ -50,17 +50,23 @@ public static class SpirvPatch
 
     /// <summary>
     /// Flattens a module's (set, binding) pairs onto one binding table, as Metal's stages have (docs/metal-backend.md): every
-    /// resource's binding decoration becomes <paramref name="baseBinding"/> + set × <paramref name="stride"/> + binding, set
-    /// included. Metal maps a resource to its MSL index by the binding decoration alone (<c>MslEnableDecorationBinding</c>),
-    /// so two sets with the same binding number would otherwise land on one <c>[[buffer(n)]]</c>. Push constants carry no
-    /// binding and stay untouched (they take <see cref="Metal.MslTranslator.PushConstantBinding"/>).
+    /// resource's binding decoration becomes its base + set × <paramref name="stride"/> + binding, set included. Metal maps a
+    /// resource to its MSL index by the binding decoration alone (<c>MslEnableDecorationBinding</c>), so two sets with the same
+    /// binding number would otherwise land on one <c>[[buffer(n)]]</c>. The bases are per kind: Metal's stages have one table per
+    /// kind (<c>[[buffer]]</c>, <c>[[texture]]</c>, <c>[[sampler]]</c>), and only the buffer tables carry the vertex buffers — so a
+    /// vertex module's buffer bindings shift by <paramref name="bufferBase"/> while its images and samplers stay at
+    /// <paramref name="otherBase"/> (0). Push constants carry no binding and stay untouched (they take
+    /// <see cref="Metal.MslTranslator.PushConstantBinding"/>).
     /// </summary>
-    public static byte[] RemapBindings(byte[] spirv, uint baseBinding, uint stride)
+    public static byte[] RemapBindings(byte[] spirv, uint bufferBase, uint otherBase, uint stride)
     {
         var copy = (byte[])spirv.Clone();
         var w = MemoryMarshal.Cast<byte, uint>(copy.AsSpan());
         var sets = new Dictionary<uint, uint>();
+        var storage = new Dictionary<uint, uint>();
         var bindings = new List<(int At, uint Variable)>();
+        // Two passes: SPIR-V's annotations (the decorations) come before the global variables in the binary, so the
+        // variables' storage classes must be known before the first decoration is remapped.
         for (int i = 5; i < w.Length;)
         {
             uint op = w[i] & 0xFFFF, count = w[i] >> 16;
@@ -71,10 +77,16 @@ public static class SpirvPatch
                 if (a[1] == 34) sets[a[0]] = a[2];                // DescriptorSet
                 else if (a[1] == 33) bindings.Add((i + 3, a[0])); // Binding
             }
+            else if (op == 59 && count >= 4) storage[a[1]] = a[2]; // Variable: result type, id, storage class
             i += (int)count;
         }
         foreach (var (at, variable) in bindings)
+        {
+            // A decorated variable is Uniform (2) or StorageBuffer (11) for buffers, UniformConstant (0) for images and samplers.
+            uint sc = storage.GetValueOrDefault(variable);
+            uint baseBinding = sc is 2 or 11 ? bufferBase : otherBase;
             w[at] = baseBinding + sets.GetValueOrDefault(variable) * stride + w[at];
+        }
         return copy;
     }
 }

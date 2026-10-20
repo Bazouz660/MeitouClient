@@ -57,9 +57,12 @@ public sealed class MetalShaders : IGpuShaders
     internal const uint SetStride = 8;
     internal const uint VertexBlockBase = 15;
 
-    /// <summary>A slot's index in its stage's MSL table.</summary>
-    internal static uint Flatten(GpuStage stages, uint set, uint binding) =>
-        (stages.HasFlag(GpuStage.Vertex) ? VertexBlockBase : 0) + set * SetStride + binding;
+    /// <summary>A slot's index in its stage's MSL table. The bases are per kind (Metal has one table per kind and only the
+    /// buffer tables carry the vertex buffers): a vertex module's buffers shift by <see cref="VertexBlockBase"/>, its images
+    /// and samplers — and the fragment stage's everything — flatten from 0.</summary>
+    internal static uint Flatten(GpuSlotKind kind, GpuStage stages, uint set, uint binding) =>
+        (stages.HasFlag(GpuStage.Vertex) && kind is GpuSlotKind.UniformBuffer or GpuSlotKind.StorageBuffer ? VertexBlockBase : 0)
+        + set * SetStride + binding;
 
     readonly MTLDevice device;
     readonly List<MetalProgram> programs = [];
@@ -77,8 +80,8 @@ public sealed class MetalShaders : IGpuShaders
         var c = Compiler.Compile(vertexGlsl, fragmentGlsl);
         // The default blocks move to set 1 (vertex binding 0, fragment binding 1), as the Vulkan path's do (SpirvPatch, VkGl's step);
         // then both stages' bindings flatten onto Metal's one table per stage (the vertex stage's blocks above the vertex buffers).
-        byte[] v = SpirvPatch.RemapBindings(c.Vertex.DefaultBlock is null ? c.VertexSpirv : SpirvPatch.MoveDefaultBlock(c.VertexSpirv, 0), VertexBlockBase, SetStride);
-        byte[] f = SpirvPatch.RemapBindings(c.Fragment.DefaultBlock is null ? c.FragmentSpirv : SpirvPatch.MoveDefaultBlock(c.FragmentSpirv, 1), 0, SetStride);
+        byte[] v = SpirvPatch.RemapBindings(c.Vertex.DefaultBlock is null ? c.VertexSpirv : SpirvPatch.MoveDefaultBlock(c.VertexSpirv, 0), VertexBlockBase, 0, SetStride);
+        byte[] f = SpirvPatch.RemapBindings(c.Fragment.DefaultBlock is null ? c.FragmentSpirv : SpirvPatch.MoveDefaultBlock(c.FragmentSpirv, 1), 0, 0, SetStride);
 
         if (Environment.GetEnvironmentVariable("MEITOU_METAL_DUMP") is { } dir)
         {
@@ -137,8 +140,8 @@ public sealed class MetalShaders : IGpuShaders
     {
         if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");
         var (vs, fs) = InterfaceLocations.Apply(vertexGlsl, fragmentGlsl);
-        var v = SpirvPatch.RemapBindings(Compiler.CompileNative(vs, fragment: false), VertexBlockBase, SetStride);
-        var f = SpirvPatch.RemapBindings(Compiler.CompileNative(fs, fragment: true), 0, SetStride);
+        var v = SpirvPatch.RemapBindings(Compiler.CompileNative(vs, fragment: false), VertexBlockBase, 0, SetStride);
+        var f = SpirvPatch.RemapBindings(Compiler.CompileNative(fs, fragment: true), 0, 0, SetStride);
         var rv = SpirvReflection.Parse(v);
         var rf = SpirvReflection.Parse(f);
         foreach (var block in rv.Blocks.Concat(rf.Blocks))

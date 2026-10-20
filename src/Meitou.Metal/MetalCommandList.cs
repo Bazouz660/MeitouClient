@@ -184,7 +184,7 @@ public sealed class MetalCommandList : IGpuCommandList
     void BindSlot(bool isVertex, uint set, in GpuSlot slot, in GpuBinding binding)
     {
         // Metal's one binding table per stage: the slot's flattened index (MetalShaders.Flatten, the MSL's own numbers).
-        uint index = MetalShaders.Flatten(slot.Stages, set, slot.Binding);
+        uint index = MetalShaders.Flatten(slot.Kind, slot.Stages, set, slot.Binding);
         switch (binding.Kind)
         {
             case GpuBindingKind.Sampled:
@@ -229,9 +229,9 @@ public sealed class MetalCommandList : IGpuCommandList
                 var (buffer, offset) = ctx.Buffer(binding);
                 // Metal's one binding table per stage: the slot's flattened index (MetalShaders.Flatten, the MSL's own numbers).
                 if (slot.Stages.HasFlag(GpuStage.Vertex))
-                    render.SetVertexBuffer(buffer, offset, MetalShaders.Flatten(GpuStage.Vertex, index, slot.Binding));
+                    render.SetVertexBuffer(buffer, offset, MetalShaders.Flatten(slot.Kind, GpuStage.Vertex, index, slot.Binding));
                 if (slot.Stages.HasFlag(GpuStage.Fragment))
-                    render.SetFragmentBuffer(buffer, offset, MetalShaders.Flatten(GpuStage.Fragment, index, slot.Binding));
+                    render.SetFragmentBuffer(buffer, offset, MetalShaders.Flatten(slot.Kind, GpuStage.Fragment, index, slot.Binding));
             }
         }
         Stats.DescriptorPushes++;
