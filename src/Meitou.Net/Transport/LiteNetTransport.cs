@@ -18,6 +18,9 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
 
     const int ChannelCount = 4;
 
+    /// <summary>Payload bytes per fragment of a reliable packet at LiteNetLib's initial MTU.</summary>
+    static readonly int FragmentPayload = NetConstants.InitialMtu - NetConstants.FragmentedHeaderTotalSize;
+
     readonly NetManager manager;
     readonly Dictionary<int, Link> links = [];
     readonly List<(int Id, NetDropReason Reason)> pendingDrops = [];
@@ -35,6 +38,9 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
             EnableStatistics = true,
             DisconnectTimeout = DisconnectTimeoutMs,
             IPv6Enabled = true,
+            // Bounds what a peer can make us reassemble (and allocate per fragmented packet) to one NetLimits.MaxReliableMessage at the
+            // initial MTU, which stays put because MTU discovery is off.
+            MaxFragmentsCount = (ushort)((NetLimits.MaxReliableMessage + FragmentPayload - 1) / FragmentPayload),
         };
     }
 
@@ -83,7 +89,7 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
         }
         if (peer.Tag is Link { Live: true } existing)
             return new NetConnectionId(existing.Id);
-        var link = new Link(id, peer, peer.ToString());
+        var link = new Link(id, peer, AddressText(peer.Address));
         peer.Tag = link;
         links.Add(id, link);
         return new NetConnectionId(id);
@@ -105,6 +111,9 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
         }
     }
 
+    /// <summary>The IP address without the port (an IPv4-mapped IPv6 address as IPv4), so an address ban also matches the next connection.</summary>
+    static string AddressText(IPAddress address) => (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
+
     public void Poll(INetListener listener)
     {
         ArgumentNullException.ThrowIfNull(listener);
@@ -119,13 +128,16 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
                 pendingDrops.Clear();
                 foreach (var (id, reason) in due)
                 {
+                    if (disposed)
+                        return;
                     listener.Dropped(new NetConnectionId(id), reason, []);
                     links.Remove(id);
                 }
             }
             manager.PollEvents();
-            // Wakes the logic thread so what this frame sends after the poll leaves without waiting a whole update period.
-            manager.TriggerUpdate();
+            // Wakes the logic thread so what was queued since the last poll (including by the callbacks) leaves without waiting for its next update.
+            if (!disposed)
+                manager.TriggerUpdate();
         }
         finally
         {
@@ -146,11 +158,14 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
             if (data.Length > max)
                 throw new ArgumentException($"A {data.Length}-byte snapshot packet exceeds the link's {max}-byte limit.", nameof(data));
         }
+        else if (data.Length > NetLimits.MaxReliableMessage)
+            throw new ArgumentException($"A {data.Length}-byte reliable packet exceeds {NetLimits.MaxReliableMessage} bytes.", nameof(data));
         link.Peer.Send(data, (byte)channel, method);
     }
 
     public void Drop(NetConnectionId peer, ReadOnlySpan<byte> payload)
     {
+        INetTransport.CheckDropPayload(payload.Length);
         if (!links.TryGetValue(peer.Value, out var link) || !link.Live)
             return;
         link.Live = false;
@@ -195,15 +210,16 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
         public void OnConnectionRequest(ConnectionRequest request)
         {
             var listener = owner.current;
-            if (listener is null)
+            if (listener is null || owner.disposed)
             {
                 request.Reject();
                 return;
             }
-            string address = request.RemoteEndPoint.ToString();
+            string address = AddressText(request.RemoteEndPoint.Address);
             var refusal = listener.Request(address, request.Data.GetRemainingBytesSpan());
             if (refusal is not null)
             {
+                INetTransport.CheckDropPayload(refusal.Length);
                 request.Reject(refusal);
                 return;
             }
@@ -217,7 +233,7 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
 
         public void OnPeerConnected(NetPeer peer)
         {
-            if (peer.Tag is not Link { Live: true } link || owner.current is not { } listener)
+            if (peer.Tag is not Link { Live: true } link || owner.current is not { } listener || owner.disposed)
                 return;
             link.Connected = true;
             listener.Connected(new NetConnectionId(link.Id));
@@ -225,7 +241,7 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
 
         public void OnPeerDisconnected(NetPeer peer, DisconnectInfo info)
         {
-            if (peer.Tag is not Link { Live: true } link || owner.current is not { } listener)
+            if (peer.Tag is not Link { Live: true } link || owner.current is not { } listener || owner.disposed)
                 return;
             link.Live = false;
             var data = info.AdditionalData is { IsNull: false } extra ? extra.GetRemainingBytesSpan() : default;
@@ -235,7 +251,8 @@ public sealed class LiteNetTransport : INetServerTransport, INetClientTransport
 
         public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
         {
-            if (peer.Tag is not Link { Live: true, Connected: true } link || owner.current is not { } listener || channel >= ChannelCount)
+            if (peer.Tag is not Link { Live: true, Connected: true } link || owner.current is not { } listener || owner.disposed
+                || channel >= ChannelCount)
                 return;
             listener.Received(new NetConnectionId(link.Id), (NetChannel)channel, reader.GetRemainingBytesSpan());
         }

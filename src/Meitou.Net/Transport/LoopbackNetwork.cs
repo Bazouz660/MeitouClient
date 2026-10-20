@@ -32,8 +32,9 @@ public sealed record LoopbackOptions
 /// An in-memory network of one server and any number of clients for tests: deterministic delivery driven by an <see cref="INetClock"/> (usually a
 /// <see cref="ManualNetClock"/>), with simulated latency, jitter, loss, reordering and duplication (docs/net.md, "Transport"). Each packet is due at
 /// send time + latency (+ jitter for data); <see cref="INetTransport.Poll"/> delivers what is due, ordered by (due time, send order), and never
-/// anything sent during the same poll. Reliable channels never lose and keep order per channel; <see cref="NetChannel.Snapshots"/> may lose,
-/// reorder and duplicate, and the receiver drops a packet sent before the newest one it already delivered (LiteNetLib's <c>Sequenced</c>).
+/// anything sent during the same poll. Reliable channels never lose on an open link and keep order per channel; <see cref="NetChannel.Snapshots"/>
+/// may lose, reorder and duplicate, and the receiver drops a packet sent before the newest one it already delivered (LiteNetLib's <c>Sequenced</c>).
+/// Data still in flight when its sender drops, disposes or is severed is lost, as LiteNetLib discards queued reliable packets on a disconnect.
 /// </summary>
 public sealed class LoopbackNetwork
 {
@@ -191,7 +192,7 @@ public sealed class LoopbackNetwork
                     Ends.Remove(end.Id);
                     break;
                 case DeliveryKind.Data:
-                    if (end.Closed || !end.Open)
+                    if (end.Closed || !end.Open || end.Remote is not { Closed: false })
                         break;
                     if (d.Channel == NetChannel.Snapshots)
                     {
@@ -224,17 +225,20 @@ public sealed class LoopbackNetwork
                 return;
             if (channel == NetChannel.Snapshots && data.Length > Network.options.Mtu)
                 throw new ArgumentException($"A {data.Length}-byte snapshot packet exceeds the {Network.options.Mtu}-byte MTU.", nameof(data));
+            if (channel != NetChannel.Snapshots && data.Length > NetLimits.MaxReliableMessage)
+                throw new ArgumentException($"A {data.Length}-byte reliable packet exceeds {NetLimits.MaxReliableMessage} bytes.", nameof(data));
             end.BytesSent += data.Length;
             Network.Transmit(end, remote, channel, data.ToArray());
         }
 
         public void Drop(NetConnectionId peer, ReadOnlySpan<byte> payload)
         {
+            INetTransport.CheckDropPayload(payload.Length);
             if (!Ends.TryGetValue(peer.Value, out var end) || end.Closed)
                 return;
             end.Closed = true;
             if (end.Remote is { } remote)
-                Network.Close(remote, payload.ToArray(), end);
+                Network.Close(remote, payload.ToArray());
             Network.Schedule(this, Network.Now, new Delivery(DeliveryKind.LocalDrop, end, NetChannel.Control, [], NetDropReason.Closed));
         }
 
@@ -257,23 +261,19 @@ public sealed class LoopbackNetwork
                     continue;
                 end.Closed = true;
                 if (end.Remote is { } remote)
-                    Network.Close(remote, [], end);
+                    Network.Close(remote, []);
             }
             Ends.Clear();
             Inbox.Clear();
         }
     }
 
-    /// <summary>Sends a close to <paramref name="remote"/>, due after the reliable data <paramref name="from"/> already sent.</summary>
-    void Close(LinkEnd remote, byte[] payload, LinkEnd? from = null)
+    /// <summary>Sends a close to <paramref name="remote"/>, due one latency from now; the closing end's data still in flight is lost.</summary>
+    void Close(LinkEnd remote, byte[] payload)
     {
         if (remote.Closed)
             return;
-        long at = Now + Ms(options.LatencyMs);
-        if (from is not null)
-            foreach (long last in from.LastReliableAt)
-                at = Math.Max(at, last);
-        Schedule(remote.Owner, at, new Delivery(DeliveryKind.RemoteClose, remote, NetChannel.Control, payload));
+        Schedule(remote.Owner, Now + Ms(options.LatencyMs), new Delivery(DeliveryKind.RemoteClose, remote, NetChannel.Control, payload));
     }
 
     void Transmit(LinkEnd from, LinkEnd to, NetChannel channel, byte[] data)
@@ -328,6 +328,7 @@ public sealed class LoopbackNetwork
             var refusal = listener.Request(address, connectData);
             if (refusal is not null)
             {
+                INetTransport.CheckDropPayload(refusal.Length);
                 Network.Schedule(client.Owner, Network.Now + Ms(Network.options.LatencyMs),
                     new Delivery(DeliveryKind.Rejected, client, NetChannel.Control, [.. refusal]));
                 return;
@@ -341,6 +342,21 @@ public sealed class LoopbackNetwork
             client.OpenAt = Network.Now + Ms(Network.options.LatencyMs);
             Network.Schedule(client.Owner, client.OpenAt, new Delivery(DeliveryKind.Accepted, client, NetChannel.Control, []));
             listener.Connected(new NetConnectionId(end.Id));
+        }
+
+        /// <summary>Also fails the connect requests still in flight to this server: their clients time out one latency later.</summary>
+        public override void Dispose()
+        {
+            if (Disposed)
+                return;
+            foreach (var (d, _) in Inbox.UnorderedItems)
+                if (d.Kind == DeliveryKind.Request && !d.Target.Closed)
+                {
+                    d.Target.Closed = true;
+                    Network.Schedule(d.Target.Owner, Network.Now + Ms(Network.options.LatencyMs),
+                        new Delivery(DeliveryKind.LocalDrop, d.Target, NetChannel.Control, [], NetDropReason.Timeout));
+                }
+            base.Dispose();
         }
     }
 
@@ -358,6 +374,8 @@ public sealed class LoopbackNetwork
         public NetConnectionId Connect(string host, int port, ReadOnlySpan<byte> connectData)
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(port);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(port, ushort.MaxValue);
             var end = new LinkEnd(this, ++Network.nextClientId, $"loopback-server:{port}");
             Ends.Add(end.Id, end);
             long now = Network.Now, latency = Ms(Network.options.LatencyMs);

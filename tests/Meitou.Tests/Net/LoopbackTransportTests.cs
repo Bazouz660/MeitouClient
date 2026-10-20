@@ -127,7 +127,8 @@ public class LoopbackTransportTests
         var net = new LoopbackNetwork(new LoopbackOptions { LatencyMs = 10, JitterMs = 5 }, clock);
         var (server, client, hostId, clientId, host, guest) = Connected(net, clock);
 
-        // A drop: the remote side gets the payload after the data sent before it; the dropping side an empty Closed at its next poll.
+        // A drop: the remote side gets the payload and loses the data still in flight (as LiteNetLib discards queued reliable packets); the
+        // dropping side gets an empty Closed at its next poll.
         server.Send(hostId, NetChannel.Control, [1]);
         server.Drop(hostId, [7, 7]);
         server.Send(hostId, NetChannel.Control, [2]);
@@ -138,7 +139,7 @@ public class LoopbackTransportTests
         Assert.Equal((hostId, NetDropReason.Closed, 0), (local.Peer, local.Reason, local.Data.Length));
         client.Send(clientId, NetChannel.Control, [3]);
         Settle(clock, server, host, client, guest);
-        Assert.Equal([(byte)1], Assert.Single(guest.Packets).Data);
+        Assert.Empty(guest.Packets);
         var remote = Assert.Single(guest.Drops);
         Assert.Equal((clientId, NetDropReason.Closed), (remote.Peer, remote.Reason));
         Assert.Equal([(byte)7, 7], remote.Data);

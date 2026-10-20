@@ -34,8 +34,10 @@ public readonly record struct NetLinkStats(int RoundTripMs, float LossPercent, l
 /// </summary>
 public interface INetListener
 {
-    /// <summary>Server only: a connect request from <paramref name="address"/> carrying <paramref name="connectData"/>. Null accepts it
-    /// (<see cref="Connected"/> follows, in this poll or the next); a payload refuses it and the client gets <see cref="NetDropReason.Rejected"/> with it.</summary>
+    /// <summary>Server only: a connect request from <paramref name="address"/> (the IP address without the port, so it serves address bans) carrying
+    /// <paramref name="connectData"/>. Null accepts it (<see cref="Connected"/> follows, in this poll or the next); a payload of at most
+    /// <see cref="INetTransport.MaxDropPayload"/> bytes refuses it and the client gets <see cref="NetDropReason.Rejected"/> with it (a longer one throws
+    /// <see cref="ArgumentException"/> out of <see cref="INetTransport.Poll"/>).</summary>
     byte[]? Request(string address, ReadOnlySpan<byte> connectData);
 
     /// <summary>The connection is open and <see cref="INetTransport.Send"/> to it works.</summary>
@@ -56,15 +58,27 @@ public interface INetListener
 /// </summary>
 public interface INetTransport : IDisposable
 {
+    /// <summary>Largest <see cref="Drop"/> payload or connect refusal: LiteNetLib sends it in one datagram of its initial 1024-byte MTU and silently
+    /// blanks a longer one, so both transports throw <see cref="ArgumentException"/> above it and writers must clamp to it (docs/net.md, "Transport").</summary>
+    const int MaxDropPayload = 1000;
+
+    internal static void CheckDropPayload(int length)
+    {
+        if (length > MaxDropPayload)
+            throw new ArgumentException($"A {length}-byte drop or refusal payload exceeds {MaxDropPayload} bytes.");
+    }
+
     /// <summary>Delivers every event due since the last poll to <paramref name="listener"/>, in order.</summary>
     void Poll(INetListener listener);
 
     /// <summary>Queues <paramref name="data"/> (copied before returning). Ignored for a peer that is not connected (pending, dropped or unknown).
-    /// A <see cref="NetChannel.Snapshots"/> payload over <see cref="MaxUnreliablePayload"/> throws <see cref="ArgumentException"/>.</summary>
+    /// A <see cref="NetChannel.Snapshots"/> payload over <see cref="MaxUnreliablePayload"/>, or a reliable one over <see cref="NetLimits.MaxReliableMessage"/>,
+    /// throws <see cref="ArgumentException"/>.</summary>
     void Send(NetConnectionId peer, NetChannel channel, ReadOnlySpan<byte> data);
 
-    /// <summary>Closes the connection, handing <paramref name="payload"/> (a <c>Reject</c>) to the remote side; this side gets
-    /// <see cref="NetDropReason.Closed"/> at the next poll. Ignored for an unknown or already dropped peer.</summary>
+    /// <summary>Closes the connection, handing <paramref name="payload"/> (a <c>Reject</c>, at most <see cref="MaxDropPayload"/> bytes) to the remote
+    /// side; this side gets <see cref="NetDropReason.Closed"/> at the next poll. Data sent to the peer and not yet delivered may be lost (LiteNetLib
+    /// discards queued reliable packets), so whatever the remote side must learn goes in the payload. Ignored for an unknown or already dropped peer.</summary>
     void Drop(NetConnectionId peer, ReadOnlySpan<byte> payload);
 
     /// <summary>Largest <see cref="NetChannel.Snapshots"/> payload that fits one datagram to <paramref name="peer"/> (from its MTU); 0 for an unknown peer.</summary>
@@ -73,7 +87,7 @@ public interface INetTransport : IDisposable
     /// <summary>Current link figures; default for an unknown peer.</summary>
     NetLinkStats Stats(NetConnectionId peer);
 
-    /// <summary>The remote address as text (for logs and address bans); empty for an unknown peer.</summary>
+    /// <summary>The remote IP address as text, without the port (for logs and address bans); empty for an unknown peer.</summary>
     string Address(NetConnectionId peer);
 }
 
@@ -91,6 +105,7 @@ public interface INetServerTransport : INetTransport
 public interface INetClientTransport : INetTransport
 {
     /// <summary>Starts connecting with <paramref name="connectData"/> (<see cref="NetProtocol.Magic"/> + version). Never throws for network
-    /// failures: an unknown host or a refused or unanswered request ends in <see cref="INetListener.Dropped"/> for the returned id.</summary>
+    /// failures: an unknown host or a refused or unanswered request ends in <see cref="INetListener.Dropped"/> for the returned id. <see cref="LiteNetTransport"/>
+    /// returns the same id again for an endpoint still connecting or connected (LiteNetLib keeps one peer per endpoint).</summary>
     NetConnectionId Connect(string host, int port, ReadOnlySpan<byte> connectData);
 }
