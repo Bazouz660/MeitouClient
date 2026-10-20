@@ -153,9 +153,9 @@ internal sealed unsafe partial class CharacterRenderer
         var cmd = Gpu.BeginNative("item icon");
         var target = PassTargets.Of(entry.Colour, entry.Depth);
         cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, target.Width, target.Height));
-        Gpu.BeginHostPass((CommandList)cmd, target, DrawState.Scene(target.Formats));
+        Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
         var rect = new PixelRect(0, 0, (uint)w, (uint)h);
-        Gpu.Clear(cmd, true, default, true, 1, rect);
+        cmd.Clear(true, default, true, 1, rect);
         Gpu.SetPassViewport(new PixelViewport(0, 0, w, h, 0, 1), rect);
         var (_, view, projection) = entry.Style.Matrices();
         var eye = new Vector3(0, 0, entry.Style.Distance);

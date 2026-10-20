@@ -46,7 +46,7 @@ internal sealed unsafe partial class CharacterRenderer
         cmd.BeginRendering(new RenderingDesc(
             target.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0f, 0f, 0f, 0f) },
             target.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, target.Width, target.Height));
-        Gpu.BeginHostPass((CommandList)cmd, target, DrawState.Scene(target.Formats));
+        Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
         portraitLive = index;
         try { DrawView(new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY }, eye, []); }
         finally { portraitLive = -1; }

@@ -84,8 +84,8 @@ internal sealed unsafe partial class CharacterRenderer
         var target = PassTargets.Of(atlas, portraitDepth);
         cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             target.Width, target.Height));
-        Gpu.BeginHostPass((CommandList)cmd, target, DrawState.Scene(target.Formats));
-        if (!cleared) { Gpu.Clear(cmd, true, default, false, 1, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height)); cleared = true; }
+        Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
+        if (!cleared) { cmd.Clear(true, default, false, 1, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height)); cleared = true; }
         foreach (var request in PortraitRequests)
         {
             if (!Due(request, out int index)) continue;
@@ -95,7 +95,7 @@ internal sealed unsafe partial class CharacterRenderer
                 l.Asset.Parts.SelectMany(p => p.Material.Tex).Select(t => (t?.Native, t?.Swizzled ?? false)).ToArray());
             int x = request.Cell % PortraitColumns * PortraitSize, y = request.Cell / PortraitColumns * PortraitSize;
             var rect = new PixelRect(x, y, PortraitSize, PortraitSize);
-            Gpu.Clear(cmd, true, default, true, 1, rect);
+            cmd.Clear(true, default, true, 1, rect);
             Gpu.SetPassViewport(new PixelViewport(x, y, PortraitSize, PortraitSize, 0, 1), rect);
             var (eye, look) = PortraitCamera(in l, head, request.Serial);
             var view = Matrix4x4.CreateLookAt(eye, look, Vector3.UnitY);
@@ -108,7 +108,7 @@ internal sealed unsafe partial class CharacterRenderer
             var (liveBones, livePrevious) = (bones, previousBones);
             var (boneBase, attachBase, weapon) = (l.BoneBase, l.AttachBase, l.WeaponDrawn);
             int bonesCount = l.Asset.Rig.BoneCount;
-            bones = previousBones = Gpu.Frame.Constants.Allocate((ulong)Math.Max(bonesCount, 1) * 64, 256);
+            bones = previousBones = AllocateConstants((ulong)Math.Max(bonesCount, 1) * 64, 256);
             portraitBones.AsSpan(0, bonesCount).CopyTo(new Span<Matrix4x4>(bones.Pointer, bonesCount));
             if (attach.Length < attachCount + l.Asset.AttachCount) Array.Resize(ref attach, attachCount + l.Asset.AttachCount);
             portraitAttach.AsSpan(0, l.Asset.AttachCount).CopyTo(attach.AsSpan(attachCount));

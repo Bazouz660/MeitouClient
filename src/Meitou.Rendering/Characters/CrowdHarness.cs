@@ -42,7 +42,7 @@ internal sealed class CrowdHarness
     }
 
     /// <summary>The renderer with a crowd attached (settled when not interactive, so a still shows every character).</summary>
-    public static CharacterRenderer Create(GpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive)
+    public static CharacterRenderer Create(IGpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive)
     {
         var db = scene.Database ?? throw new InvalidOperationException("--crowd needs the game data");
         var watch = Stopwatch.StartNew();

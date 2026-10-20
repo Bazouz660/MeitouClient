@@ -518,18 +518,28 @@ coast/river views match Vulkan's water.
 
 ### 4. Characters and skinning (plan step 7)
 
-`CharacterRenderer` (internal to `Meitou.Rendering`), `CrowdHarness`, `CharacterContent`, `CharacterMorphs` and
-the draw list are Vulkan-typed; the animation data already uses storage buffers. Widen the renderer, wire the
-skinning buffers and the character draw list, add `Characters.DrawDepth` to the cascades (the call site exists in
-`WorldFrame.DrawShadows`), and enable population in the Metal host. Ends with the town's crowd and the player
-character rendering and casting shadows.
+**The first character slice is on Metal.** `CharacterRenderer`, `CharacterContent`, `MorphArena`,
+`ReflectedProgram` and `CrowdHarness` take `IGpuContext`; the bone palettes, materials, morphs and instances go
+through `IGpuFrame.WriteConstants`, meshes upload through `IGpuUploads` batches, and `ReflectedProgram` binds
+Metal's 16-byte dummy attribute arrays for a disabled input. The Metal host creates the viewer's `--crowd`
+harness or the simulation's population draw list; `--new-game` starts the player's squad through
+`population.StartPlayer`, and `DrawDepth` is called in the shadow cascades.
+
+Verified: `--crowd 6` on open ground (`--at -50000,8000`, `--distance 180`) draws six skinned characters (30
+parts, 52k triangles, 23 calls) with validation clean; `--new-game` at the Hub draws the player (4 parts, 4 calls).
+The Vulkan viewer's same `--crowd 6` view draws the same six characters (26k triangles; its LOD picks a coarser
+mix). Not yet: the town residents (the Metal loop does not run the full population loading/zone warm-up; the
+player squad is there), the character motion pass for TAA, and the portrait/icon/stage/hover passes (the renderer
+code is widened and compiles, but the Metal host does not call them). The UI is step 5.
 
 ### 5. The UI (plan step 8)
 
 `DebugOverlay` and the player interface are immediate-mode Vulkan into the backbuffer. Add a backend-neutral
 painter (quads, text, textures) with a Metal implementation, or a Metal `DebugOverlay`; then the HUD, panels,
 item icons and portraits (`PlayerInterface`, `PlayerUi`, `--ui` showcase). Architecturally separate from the
-scene path; a small renderer of its own is fine.
+scene path; a small renderer of its own is fine. **Not started:** the Metal host does not boot
+`PlayerInterface` (the interface owns the world session, input and the Vulkan `DebugOverlay`), so this needs the
+painter and the host UI wiring together; it is not a small standalone pass.
 
 ### 6. The remaining effects
 
@@ -566,6 +576,14 @@ default.
   a depth-only pipeline skips colour slot 0; a sub-rectangle upload needs the destination level's full row stride
   (the batch repacks); disabled GL attributes use a repeating 16-byte dummy array (stride 16), not stride 0;
   non-indexed draws take `firstVertex`/`baseInstance`; BC5 is 16 bytes a block.
+- **Storage buffers flatten like uniform blocks.** `SpirvPatch.RemapBindings` must shift SPIR-V StorageClass
+  **12** (`StorageBuffer`), not 11 (`Image`): the character skin/morph buffers stayed at `[[id(6)]]`/`[[id(8)]]`
+  while the runtime looked for 21/23, so every skinned vertex collapsed to a point. The corrected class makes the
+  vertex-stage storage members take `15 + set*8 + binding`, the same table as the uniforms.
+- **The Metal constants ring is chunked, not grown in place.** A slice's pointer is written after later
+  allocations (the character palettes, then materials, then instances); replacing the constants buffer on growth
+  would leave those writes in the old ring and the GPU reading zeros. `MetalFrame` uses a new 1 MB shared chunk
+  for each overflow and resets all chunks at the frame's begin.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
@@ -581,6 +599,10 @@ default.
 - Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
+- Character shots: `--crowd 6 --no-population --at -50000,8000 --time 12 --distance 180 --pitch 18
+  --no-objects --no-foliage --no-water --faithful clouds,cloudshadows --no-gi` (the open hillside; six characters).
+  `--new-game --time 12 --distance 250 --pitch 20 --faithful clouds,cloudshadows --no-gi` at the Hub (the player
+  squad). The Metal host does not boot `PlayerInterface`; `--new-game` only starts the simulation squad.
 - Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
   --day 1 --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon.
   The river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there

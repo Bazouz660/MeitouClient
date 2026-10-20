@@ -119,7 +119,7 @@ internal sealed unsafe partial class CharacterRenderer
         // 2. The instances: each batch's contiguous in this view's constants (the draws reach a batch by firstInstance).
         int total = 0;
         foreach (var b in active) { b.Offset = total; total += b.Count; }
-        instances = Gpu.Frame.Constants.Allocate((ulong)total * CharInstance.Size, 16);
+        instances = AllocateConstants((ulong)total * CharInstance.Size, 16);
         var target = new Span<byte>(instances.Pointer, total * CharInstance.Size);
         foreach (var b in active)
             MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * CharInstance.Size)..]);

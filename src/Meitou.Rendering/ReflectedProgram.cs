@@ -11,7 +11,7 @@ namespace Meitou.Rendering;
 /// </summary>
 sealed class ReflectedProgram : IDisposable
 {
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     public readonly GpuProgram P;
     readonly int[] locations;
     readonly ScalarKind[] kinds;
@@ -20,11 +20,11 @@ sealed class ReflectedProgram : IDisposable
     VertexLayout? last;
 
     /// <param name="rowLocation">The first per-instance input location; the inputs below it are the mesh's own.</param>
-    public ReflectedProgram(GpuContext ctx, NativeFrame frame, string vertex, string fragment, string name, int rowLocation)
+    public ReflectedProgram(IGpuContext ctx, NativeFrame frame, string vertex, string fragment, string name, int rowLocation)
     {
         this.ctx = ctx;
         P = frame.Program(vertex, fragment, name);
-        var inputs = ctx.Shaders.Backend(P).VertexReflection!.Inputs;
+        var inputs = P.Info.VertexReflection!.Inputs;
         locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
         kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
         Own = locations.Where(l => l < rowLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -38,7 +38,7 @@ sealed class ReflectedProgram : IDisposable
             int loc = locations[i];
             inputs[i] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? new VertexInput((uint)loc, a.Format, a.Stride, a.PerInstance)
-                : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), 0, false);
+                : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), ctx.ConstantVertexAttributes ? 0u : 16u, false);
         }
         if (last is { } l && inputs.SequenceEqual(l.Inputs)) return l;
         return last = new VertexLayout(inputs.ToArray());
@@ -53,7 +53,9 @@ sealed class ReflectedProgram : IDisposable
             int input = Array.IndexOf(locations, loc);
             result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                 ? a.Buffer
-                : new GpuBufferBinding(ctx.Defaults.DummyVertex.Handle, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
+                : ctx.ConstantVertexAttributes
+                ? new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float))
+                : new GpuBufferBinding(ctx.DummyVertexArray(input >= 0 ? kinds[input] : ScalarKind.Float), 0);
         }
         return result;
     }

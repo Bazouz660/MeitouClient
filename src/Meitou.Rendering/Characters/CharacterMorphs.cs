@@ -74,13 +74,13 @@ internal sealed class MeshMorphs
 /// </summary>
 internal sealed class MorphArena : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     DeviceBuffer buffer;
     Vector4[] host;
     int used = 2;   // entries 0 and 1 are never a set's base, so a base of 0 can mean "no morph"
     readonly Dictionary<string, uint> known = [];
 
-    public MorphArena(GpuContext gpu)
+    public MorphArena(IGpuContext gpu)
     {
         this.gpu = gpu;
         host = new Vector4[4096];
@@ -130,8 +130,7 @@ internal sealed class MorphArena : IDisposable
             Array.Resize(ref host, Math.Max(host.Length * 2, used));
             buffer.Dispose();
             buffer = DeviceBuffer.Create(gpu, (ulong)host.Length * 16, BufferUse.Storage, "character morphs");
-            gpu.EnsureFrame();
-            gpu.Uploads.Write(buffer, 0, MemoryMarshal.AsBytes(host.AsSpan(0, first)));
+            Upload(0, MemoryMarshal.AsBytes(host.AsSpan(0, first)));
         }
         return first;
     }
@@ -139,11 +138,17 @@ internal sealed class MorphArena : IDisposable
     void Write(int first, Vector4[] deltas)
     {
         deltas.CopyTo(host, first);
-        gpu.EnsureFrame();
-        gpu.Uploads.Write(buffer, (ulong)first * 16, MemoryMarshal.AsBytes(deltas.AsSpan()));
+        Upload((ulong)first * 16, MemoryMarshal.AsBytes(deltas.AsSpan()));
     }
 
-    public GpuBufferBinding Binding(GpuFrame frame) => buffer.Binding(frame);
+    void Upload(ulong offset, ReadOnlySpan<byte> data)
+    {
+        gpu.EnsureFrame();
+        using var batch = gpu.Uploads.Begin();
+        batch.Write(buffer, offset, data);
+    }
+
+    public GpuBufferBinding Binding(IGpuFrame frame) => buffer.Binding(frame);
 
     public void Dispose() => buffer.Dispose();
 }

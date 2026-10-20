@@ -127,12 +127,12 @@ internal sealed class AssetRest
 /// <summary>
 /// Turns appearances into GPU content (the port of the removed viewer's <c>CharacterScene.Load</c>, docs/character-viewer.md): meshes by file
 /// (shared between appearances; hair, armour and weapons share naturally), skeleton rigs by file, textures through one cache.
-/// Render thread only; uploads need an open frame (<see cref="GpuContext.EnsureFrame"/>).
+/// Render thread only; uploads need an open frame (<see cref="IGpuContext.EnsureFrame"/>).
 /// </summary>
 internal sealed class CharacterContent : IDisposable
 {
     const string AllocationName = "character meshes";
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly AssetLocator assets;
     readonly GameDatabase db;
     readonly MaterialResolver resolver;
@@ -148,7 +148,7 @@ internal sealed class CharacterContent : IDisposable
     /// <param name="FirstMaterialName">The first submesh's material (script) name, which is all the material resolver takes of a submesh; null: no submesh.</param>
     sealed record LoadedMesh(GpuObjectMesh Gpu, string? FirstMaterialName, Vector3 Centre, float Radius, MeshMorphs? Morphs = null, float[]? ShadowDistances = null, int ShadowFirst = 0, PickBox[]? PickBoxes = null);
 
-    public CharacterContent(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, CharacterRigs? rigs = null)
+    public CharacterContent(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, CharacterRigs? rigs = null)
     {
         this.gpu = gpu;
         this.assets = assets;
@@ -262,14 +262,15 @@ internal sealed class CharacterContent : IDisposable
     {
         var gpuMesh = new GpuObjectMesh { Distances = ready.Distances, Manual = new GpuObjectMesh?[ready.Distances.Length], Centre = ready.Centre, Radius = ready.Radius };
         gpu.EnsureFrame();
+        using var uploads = gpu.Uploads.Begin();
         foreach (var made in ready.Parts)
         {
             var part = made.Part;
             int vertexBytes = part.Vertices.Length * Vertex.Size, indexBytes = made.All.Length * 4;
             var vertices = DeviceBuffer.Create(gpu, (ulong)vertexBytes, BufferUse.Vertex, AllocationName);
             var indices = DeviceBuffer.Create(gpu, (ulong)indexBytes, BufferUse.Index, AllocationName);
-            gpu.Uploads.Write(vertices, 0, MemoryMarshal.AsBytes(part.Vertices.AsSpan()));
-            gpu.Uploads.Write(indices, 0, MemoryMarshal.AsBytes(made.All.AsSpan()));
+            uploads.Write(vertices, 0, MemoryMarshal.AsBytes(part.Vertices.AsSpan()));
+            uploads.Write(indices, 0, MemoryMarshal.AsBytes(made.All.AsSpan()));
             var gp = new GpuObjectPart
             {
                 SubMeshIndex = part.SubMeshIndex, MaterialName = part.MaterialName, HasTangents = part.HasTangents, HasColours = part.HasColours,

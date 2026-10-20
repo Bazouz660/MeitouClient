@@ -22,7 +22,12 @@ namespace Meitou.Rendering.Characters;
 /// </summary>
 internal sealed unsafe partial class CharacterRenderer : IDisposable
 {
-    GpuContext Gpu { get; }
+    IGpuContext Gpu { get; }
+
+    /// <summary>Zeroed host-visible memory of this frame (the bone palettes, the material table and the instances are written into it).</summary>
+    Transient AllocateConstants(ulong bytes, ulong alignment) =>
+        Gpu.Frame.WriteConstants(new byte[checked((int)Math.Max(bytes, 1))], alignment);
+
     readonly NativeFrame nativeFrame;
     readonly ReflectedProgram colourProg, depthProg, motionProg;
     readonly CharacterContent content;
@@ -136,7 +141,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     float textureBias;
     uint textureStandIn;
 
-    public CharacterRenderer(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assetLocator, CharacterRigs? rigs = null)
+    public CharacterRenderer(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assetLocator, CharacterRigs? rigs = null)
     {
         Gpu = gpu;
         nativeFrame = new NativeFrame(gpu, extraStorage: 4);
@@ -153,7 +158,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// <summary>The skeleton rigs and pose setups the characters are drawn with; the simulation's ragdolls pose from the same ones.</summary>
     public CharacterRigs Rigs => content.Rigs;
 
-    /// <summary>Rigs that find files as the renderer does, to share with the simulation (<see cref="CharacterRenderer(GpuContext, GameInstall, GameDatabase, AssetLocator, CharacterRigs?)"/>).</summary>
+    /// <summary>Rigs that find files as the renderer does, to share with the simulation (<see cref="CharacterRenderer(IGpuContext, GameInstall, GameDatabase, AssetLocator, CharacterRigs?)"/>).</summary>
     public static CharacterRigs CreateRigs(GameDatabase db, AssetLocator assets) => CharacterContent.CreateRigs(db, assets);
 
     // ------------------------------------------------------------------ per frame
@@ -170,7 +175,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             SettleFirst = false;
             var settleWatch = Stopwatch.StartNew();
             Settle(eye);
-            Console.WriteLine($"crowd     built and loaded: {Describe()} ({settleWatch.ElapsedMilliseconds} ms)");
+            Console.WriteLine($"characters built and loaded: {Describe()} ({settleWatch.ElapsedMilliseconds} ms)");
             foreach (var m in Messages.Distinct().Take(20)) Console.WriteLine($"warning   {m}");
             Messages.Clear();
         }
@@ -246,9 +251,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         // 2. The bone palettes, posed in parallel straight into the frame's memory.
         double gatherMs = watch.Elapsed.TotalMilliseconds;
         var poseWatch = Stopwatch.StartNew();
-        bones = Gpu.Frame.Constants.Allocate((ulong)Math.Max(boneTotal, 1) * 64, 256);
+        bones = AllocateConstants((ulong)Math.Max(boneTotal, 1) * 64, 256);
         nint bonePointer = (nint)bones.Pointer;
-        previousBones = Motion ? Gpu.Frame.Constants.Allocate((ulong)Math.Max(boneTotal, 1) * 64, 256) : bones;
+        previousBones = Motion ? AllocateConstants((ulong)Math.Max(boneTotal, 1) * 64, 256) : bones;
         nint previousPointer = (nint)previousBones.Pointer;
         bool motion = Motion;
         var liveArray = live;
@@ -313,7 +318,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             foreach (var t in part.Material.Tex) t?.OfferNow(need);
         }
         budget.Update(content.Textures);
-        materials = Gpu.Frame.Constants.Allocate((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
+        materials = AllocateConstants((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
         for (int s = 0; s < slotParts.Count; s++)
             Write(slotParts[s].Material, ref *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size));
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;

@@ -71,7 +71,7 @@ public sealed class DeviceBuffer : IDisposable
 
     /// <summary>A binding of the range from <paramref name="offset"/>, marking the buffer used by <paramref name="frame"/> (the Uploader
     /// refuses to write it again in that frame).</summary>
-    public GpuBufferBinding Binding(GpuFrame frame, ulong offset = 0, ulong size = GpuBufferBinding.WholeSize)
+    public GpuBufferBinding Binding(IGpuFrame frame, ulong offset = 0, ulong size = GpuBufferBinding.WholeSize)
     {
         UsedFrame = frame.Number;
         return new GpuBufferBinding(Handle, offset, size);

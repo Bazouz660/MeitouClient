@@ -15,21 +15,28 @@ namespace Meitou.Metal;
 public sealed unsafe class MetalFrame : IGpuFrame
 {
     readonly MetalContext ctx;
-    readonly GpuBuffer constantsHandle;
-    MTLBuffer constants;
-    byte* constantsPointer;
-    ulong constantsSize, constantsUsed;
+
+    /// <summary>
+    /// One constants chunk. A slice never moves when another allocation does not fit: the next chunk is used
+    /// instead (a frame's characters allocate the bone palettes, the materials and the instances at different
+    /// times, and writing through a slice's pointer must keep reaching the slice the GPU is bound to).
+    /// </summary>
+    sealed class Chunk
+    {
+        public MTLBuffer Buffer = default;
+        public GpuBuffer Handle;
+        public byte* Pointer;
+        public ulong Size, Used;
+    }
+
+    readonly List<Chunk> chunks = [];
+    Chunk current;
 
     internal MetalFrame(MetalContext ctx, int slot)
     {
         this.ctx = ctx;
         Slot = slot;
-        // The frame's own constants ring: grown when a frame's writes fill it (at least a default block's few slices a frame).
-        var shared = ctx.NewSharedBuffer(1 << 20, $"frame constants {slot}");
-        constants = shared.Buffer;
-        constantsPointer = shared.Pointer;
-        constantsSize = shared.Size;
-        constantsHandle = ctx.RegisterBuffer(constants, $"frame constants {slot}");
+        current = NewChunk(1 << 20);
         Commands = new MetalCommandList(ctx, $"frame {slot}", default);
         States = new ResourceStates();
         Stats = new GpuStats();
@@ -55,28 +62,40 @@ public sealed unsafe class MetalFrame : IGpuFrame
     /// <summary>Writes bytes into the frame's constant ring (the default blocks' slices), aligned; the slice lives for the frame.</summary>
     public unsafe Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16)
     {
-        ulong offset = (constantsUsed + alignment - 1) / alignment * alignment;
-        if (constantsSize - offset < (ulong)data.Length)
-        {
-            Grow((ulong)data.Length);
-            offset = 0;
-        }
-        var pointer = constantsPointer + (nint)offset;
+        alignment = Math.Max(alignment, 1);
+        if (data.Length == 0) return new Transient(current.Handle, current.Used, current.Pointer + current.Used, 0);
+        if (current.Size - current.Used < (ulong)data.Length + alignment)
+            current = NextChunk((ulong)data.Length + alignment);
+        ulong offset = (current.Used + alignment - 1) / alignment * alignment;
+        if (current.Size - offset < (ulong)data.Length) current = NextChunk((ulong)data.Length + alignment);
+        offset = (current.Used + alignment - 1) / alignment * alignment;
+        var pointer = current.Pointer + (nint)offset;
         data.CopyTo(new Span<byte>(pointer, data.Length));
-        constantsUsed = offset + (ulong)data.Length;
+        current.Used = offset + (ulong)data.Length;
         // Shared mode needs no flush (Managed's DidModifyRange); the GPU reads the memory as it is.
-        return new Transient(constantsHandle, offset, pointer, (ulong)data.Length);
+        return new Transient(current.Handle, offset, pointer, (ulong)data.Length);
     }
 
-    void Grow(ulong needed)
+    Chunk NewChunk(ulong size)
     {
-        var shared = ctx.NewSharedBuffer(Math.Max(needed, constantsSize * 2), "frame constants");
-        constants.Dispose();
-        constants = shared.Buffer;
-        constantsPointer = shared.Pointer;
-        constantsSize = shared.Size;
-        constantsUsed = 0;
-        ctx.RebindBuffer(constantsHandle, constants);
+        var shared = ctx.NewSharedBuffer(Math.Max(size, 1 << 20), $"frame constants {Slot}");
+        var chunk = new Chunk
+        {
+            Buffer = shared.Buffer,
+            Handle = ctx.RegisterBuffer(shared.Buffer, $"frame constants {Slot}"),
+            Pointer = shared.Pointer,
+            Size = shared.Size,
+        };
+        chunks.Add(chunk);
+        return chunk;
+    }
+
+    Chunk NextChunk(ulong needed)
+    {
+        // Reuse a chunk with room left before making a new buffer; all chunks are reset at the frame's begin.
+        foreach (var chunk in chunks)
+            if (chunk.Size - chunk.Used >= needed) return chunk;
+        return NewChunk(Math.Max(needed, 1 << 20));
     }
 
     internal void Begin(long number, MTLCommandBuffer command, CAMetalDrawable drawable)
@@ -85,7 +104,8 @@ public sealed unsafe class MetalFrame : IGpuFrame
         Command = command;
         Commands.Rebind(command);
         Drawable = drawable;
-        constantsUsed = 0;
+        foreach (var chunk in chunks) chunk.Used = 0;
+        current = chunks[0];
         Commands.Invalidate();
         States.AssumeFullBarrier();
         Stats.Reset();

@@ -9,6 +9,7 @@ using Meitou.Engine;
 using Meitou.Engine.Time;
 using Meitou.Metal;
 using Meitou.Rendering;
+using Meitou.Rendering.Characters;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
@@ -167,7 +168,34 @@ sealed partial class GameHost
         session.Camera.Place(new Vector2((float)(o.X ?? scene.Focus.X), (float)(o.Z ?? scene.Focus.Z)), (float)(o.Yaw ?? 30) * MathF.PI / 180,
             (float)(o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180,
             (float)(o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance));
+        // The game's new-game shortcut: the player's squad in the simulation, which the world draw list then shows.
+        if (start is not null && population is not null)
+        {
+            try
+            {
+                var squad = population.StartPlayer(session.World, start);
+                Console.WriteLine($"metal     player squad: {squad.Members.Count} characters");
+            }
+            catch (InvalidOperationException e) { Console.WriteLine($"metal     player squad skipped: {e.Message}"); }
+        }
         ApplyCamera(session.Camera.Current);
+        SendFocus();
+        // Characters: the viewer's generated harness with `--crowd`, else the simulation's snapshot list. The player
+        // interface is not booted in this loop, so the draw list is the world-only source (no editor previews/portraits).
+        CharacterRenderer? characters = null;
+        if (scene.Database is { } characterDb)
+        {
+            if (o.Crowd > 0)
+            {
+                characters = CrowdHarness.Create(ctx, install, scene, assets, o, interactive: false);
+                Console.WriteLine($"metal     crowd ready ({characters.Assets} appearances)");
+            }
+            else if (!g.NoPopulation)
+            {
+                characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0 };
+                Console.WriteLine("metal     characters ready (population draw list)");
+            }
+        }
         // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
         streamer?.Settle(camera.Eye);
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
@@ -194,6 +222,7 @@ sealed partial class GameHost
             var size = window.FramebufferSize;
             var taaJitter = PostTaa.Offset(frames + 1, size.X);
             if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
+            if (characters is not null) { characters.SetView(size.X, size.Y, camera.FieldOfView); characters.Update(camera.Eye); }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
@@ -235,6 +264,7 @@ sealed partial class GameHost
             {
                 terrain.DrawDepth(worldToClip, lodEye, planes, render);
                 if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain);
+                characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale));
                 if (foliage is not null)
                 {
                     float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
@@ -275,6 +305,8 @@ sealed partial class GameHost
             if (render.Objects && objects is not null)
                 objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
             foliage?.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
+            // Characters after the opaque geometry: they alone write the scene's alpha (the SSAO character mask in the Vulkan post chain).
+            characters?.Draw(worldProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance);
             water?.Draw(worldProjection, eye, light, colours, (float)session.Clock.HoursSinceStart, camera.ViewDistance * 1.5f);
 
             ctx.EndHostPass(cmd);
@@ -300,6 +332,7 @@ sealed partial class GameHost
             }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        characters?.Dispose();
         foliage?.Dispose();
         water?.Dispose();
         objects?.Dispose();

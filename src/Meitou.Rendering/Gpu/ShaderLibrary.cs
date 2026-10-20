@@ -82,9 +82,9 @@ public static class SpirvPatch
         }
         foreach (var (at, variable) in bindings)
         {
-            // A decorated variable is Uniform (2) or StorageBuffer (11) for buffers, UniformConstant (0) for images and samplers.
+            // A decorated variable is Uniform (2) or StorageBuffer (12) for buffers, UniformConstant (0) for images and samplers.
             uint sc = storage.GetValueOrDefault(variable);
-            uint baseBinding = sc is 2 or 11 ? bufferBase : otherBase;
+            uint baseBinding = sc is 2 or 12 ? bufferBase : otherBase;
             w[at] = baseBinding + sets.GetValueOrDefault(variable) * stride + w[at];
         }
         return copy;
