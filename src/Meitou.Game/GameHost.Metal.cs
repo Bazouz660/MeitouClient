@@ -72,6 +72,8 @@ sealed partial class GameHost
             Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
         }
         var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
+        // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
+        var composite = new PostComposite(ctx, flipY: true);
         display.Activate();
         Splash?.Dispose();
 
@@ -112,6 +114,7 @@ sealed partial class GameHost
         var clock = Stopwatch.StartNew();
         double last = 0;
         int frames = 0;
+        GpuTexture? sceneColour = null;
         while (!window.IsClosing)
         {
             window.DoEvents();
@@ -130,9 +133,15 @@ sealed partial class GameHost
             var depth = ctx.Depth;
             var albedo = ctx.Albedo;
             var size = window.FramebufferSize;
-            var targets = PassTargets.Of(backbuffer, depth, albedo) with
+            if (sceneColour is null || sceneColour.Desc.Width != size.X || sceneColour.Desc.Height != size.Y)
             {
-                Colour = new RenderTarget(backbuffer.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
+                sceneColour?.Dispose();
+                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, size.X, size.Y,
+                    Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
+            }
+            var targets = PassTargets.Of(sceneColour, depth, albedo) with
+            {
+                Colour = new RenderTarget(sceneColour.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
                 Depth = new RenderTarget(depth.Attachment(), LoadOp.Clear, default),
             };
             cmd.BeginRendering(targets.Rendering);
@@ -181,6 +190,11 @@ sealed partial class GameHost
             ctx.EndHostPass(cmd);
             cmd.EndRendering();
             ctx.EndNative(cmd);
+
+            // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
+            var post = (MetalCommandList)ctx.BeginNative("post composite");
+            composite.Draw(post, sceneColour, backbuffer, o.Post);
+            ctx.EndNative(post);
             ctx.EndFrame();
             frames++;
             if (o.Screenshot is { } shot && frames == 40) { Capture(ctx, backbuffer, shot); break; }   // one picture, as the Vulkan flow's does
@@ -188,6 +202,8 @@ sealed partial class GameHost
         }
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();
+        sceneColour?.Dispose();
+        composite.Dispose();
         surfaces?.Dispose();
         sky.Dispose();
         Console.WriteLine($"metal     {frames} frames");
