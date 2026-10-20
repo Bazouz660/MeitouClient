@@ -17,6 +17,7 @@ var frames = 300;
 string? shot = null;
 bool world = false;
 bool tri = false;
+bool table = false;
 for (int i = 0; i < args.Length; i++)
 {
     if (args[i] == "--hour" && i + 1 < args.Length) hour = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
@@ -24,6 +25,7 @@ for (int i = 0; i < args.Length; i++)
     else if (args[i] == "--shot" && i + 1 < args.Length) { shot = args[++i]; frames = 10; }
     else if (args[i] == "--world") world = true;
     else if (args[i] == "--tri") tri = true;
+    else if (args[i] == "--table") { table = true; tri = true; }   // --table: the --tri quad whose colour comes out of the bindless table
 }
 
 ObjectiveC.LinkMetal();
@@ -70,6 +72,50 @@ if (tri)
             colour = vCol * uTint * (1.0 - uTime.x);
         }
         """;
+    if (table)
+    {
+        // The bindless set, in the separate form the Metal backend's table model needs (the Vulkan table is combined
+        // samplers; Metal's argument buffer wants separate arrays): the pair constructed per use, the same index.
+        const string tableVertex = """
+            #version 450 core
+            layout(location = 0) in vec2 aPos;
+            layout(location = 1) in vec2 aUv;
+            layout(location = 0) out vec2 vUv;
+            void main()
+            {
+                vUv = aUv;
+                gl_Position = vec4(aPos, 0.0, 1.0);
+            }
+            """;
+        const string tableFragment = """
+            #version 450 core
+            #extension GL_EXT_nonuniform_qualifier : require
+            layout(set = 1, binding = 0) uniform texture2D textures2D[256];
+            layout(set = 1, binding = 2048) uniform sampler smplr2D;
+            layout(push_constant) uniform Push { uint uIndex; } pc;
+            in vec2 vUv;
+            layout(location = 0) out vec4 colour;
+            void main()
+            {
+                colour = texture(sampler2D(textures2D[pc.uIndex], smplr2D), vUv);
+            }
+            """;
+        var bindless = GpuSetLayout.Bindless;
+        triProgram = ctx.Shaders.Native(tableVertex, tableFragment, "tri table", [GpuSetLayout.Fixed([]), bindless, GpuSetLayout.Fixed([])], 4);
+        triLayout = new VertexLayout(
+            new VertexInput(0, InternalFormat.RG32f, 16, false),
+            new VertexInput(1, InternalFormat.RG32f, 16, false));
+        float[] tableVerticesData = [-1, -1, 0, 0,   1, -1, 1, 0,   1, 1, 1, 1,   -1, 1, 0, 1];
+        uint[] tableIndices = [0, 1, 2, 0, 2, 3];
+        using var tableBatch = ctx.Uploads.Begin();
+        triVertices = new DeviceBuffer(ctx, ctx.CreateBuffer(16 * 4, BufferUse.Vertex, "tri vertices"), true, "tri vertices");
+        triIndices = new DeviceBuffer(ctx, ctx.CreateBuffer(6 * 4, BufferUse.Index, "tri indices"), true, "tri indices");
+        tableBatch.Write(triVertices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<float>(tableVerticesData)));
+        tableBatch.Write(triIndices, 0, MemoryMarshal.AsBytes(new ReadOnlySpan<uint>(tableIndices)));
+        var red = SampledImage.Rgba8(ctx, 2, 2, [255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255], false, false, "table red");
+        var blue = SampledImage.Rgba8(ctx, 2, 2, [0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255], false, false, "table blue");
+        // The table's registration comes when the Metal table exists (BindBindlessTable); until then the quad does not draw.
+    }
     var set0 = GpuSetLayout.Written(
     [
         new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.Fragment),
@@ -139,10 +185,17 @@ display.Window.Render += _ =>
             new GpuBinding(4, GpuBindingKind.UniformBuffer, Buffer: new GpuBufferBinding(triView!.Handle, 0)),
         ]);
         cmd.BindSets(triProgram, 2, new ReadOnlySpan<GpuSet>(in triTintSet), [0]);
-        cmd.PushConstants(triProgram, GpuStage.Vertex, Vector2.Zero);
-        cmd.BindVertexBuffers(0, [new GpuBufferBinding(triVertices!.Handle, 0), new GpuBufferBinding(triVertices.Handle, 8)]);   // the colour's offset in the binding, as GL's pointer does
-        cmd.BindIndexBuffer(new GpuBufferBinding(triIndices!.Handle, 0), IndexKind.U32);
-        cmd.DrawIndexed(6);
+        if (table)
+        {
+            // The table's draw waits for the Metal table (the registration and the bind); the translation is checked by the dump.
+        }
+        else
+        {
+            cmd.PushConstants(triProgram, GpuStage.Vertex, Vector2.Zero);
+            cmd.BindVertexBuffers(0, [new GpuBufferBinding(triVertices!.Handle, 0), new GpuBufferBinding(triVertices.Handle, 8)]);   // the colour's offset in the binding, as GL's pointer does
+            cmd.BindIndexBuffer(new GpuBufferBinding(triIndices!.Handle, 0), IndexKind.U32);
+            cmd.DrawIndexed(6);
+        }
     }
 
     ctx.EndHostPass(cmd);

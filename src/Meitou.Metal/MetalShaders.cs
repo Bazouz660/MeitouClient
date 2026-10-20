@@ -157,8 +157,12 @@ public sealed class MetalShaders : IGpuShaders
             Index = programs.Count, Name = name, Model = ShaderModel.Native, VertexCode = v, FragmentCode = f,
             VertexReflection = rv, FragmentReflection = rf, PushConstantBytes = pushConstantBytes, NeutralSets = setLayouts,
         };
-        var vertexMsl = MslTranslator.Translate(v, "vertex_main", ExecutionModel.Vertex);
-        var fragmentMsl = MslTranslator.Translate(f, "fragment_main", ExecutionModel.Fragment);
+        // The bindless set's runtime arrays are Metal 3 tier-2 argument buffers (docs/metal-backend.md); only a program
+        // whose layout includes the table is translated with them.
+        bool bindless = Array.Exists(setLayouts, l => ReferenceEquals(l, GpuSetLayout.Bindless));
+        uint? tableSet = bindless ? Rendering.NativeShaders.BindlessSet : null;
+        var vertexMsl = MslTranslator.Translate(v, "vertex_main", ExecutionModel.Vertex, argumentBufferSet: tableSet);
+        var fragmentMsl = MslTranslator.Translate(f, "fragment_main", ExecutionModel.Fragment, argumentBufferSet: tableSet);
         if (Environment.GetEnvironmentVariable("MEITOU_METAL_DUMP") is { } dump)
         {
             Directory.CreateDirectory(dump);

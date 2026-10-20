@@ -24,7 +24,7 @@ public static unsafe class MslTranslator
     /// The MSL for one SPIR-V module, with its entry point renamed (the MSL entry point names have to be unique per stage:
     /// spirv-cross names the stages' entry points the same).
     /// </summary>
-    public static string Translate(byte[] spirv, string entryPoint, ExecutionModel stage, uint mslVersion = MslVersion)
+    public static string Translate(byte[] spirv, string entryPoint, ExecutionModel stage, uint mslVersion = MslVersion, uint? argumentBufferSet = null)
     {
         ArgumentNullException.ThrowIfNull(spirv);
         var cross = Cross.GetApi();
@@ -53,7 +53,17 @@ public static unsafe class MslTranslator
             cross.CompilerOptionsSetBool(options, CompilerOption.MslEnableDecorationBinding, 1);
             // Push constants: this spirv-cross has no binding option for them, so the block takes whatever the compiler
             // assigns (buffer 0); MetalShaders moves it to the stage's top index after the translation.
-            cross.CompilerInstallCompilerOptions(compiler, options);
+            if (argumentBufferSet is { } set)
+            {
+                // The runtime-sized descriptor arrays (the bindless table) are Metal 3 tier-2 argument buffers in the
+                // device address space; the ordinary sets stay discrete (bound as plain buffers), as MoltenVK marks them.
+                cross.CompilerOptionsSetUint(options, CompilerOption.MslArgumentBuffers, 1);
+                cross.CompilerOptionsSetUint(options, CompilerOption.MslArgumentBuffersTier, 2);
+                cross.CompilerInstallCompilerOptions(compiler, options);
+                cross.CompilerMslSetArgumentBufferDeviceAddressSpace(compiler, set, 1);
+            }
+            else
+                cross.CompilerInstallCompilerOptions(compiler, options);
             cross.CompilerRenameEntryPoint(compiler, "main", entryPoint, stage);
 
             byte* source = null;
