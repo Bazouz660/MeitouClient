@@ -7,6 +7,8 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering.Impostors;
 
 /// <summary>The decoded meshes of a source and the sphere its frames cover.</summary>
@@ -255,7 +257,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
         ulong rowBytes = (ulong)(smallWidth * f * 4);
         for (int pass = 0; pass < 3; pass++)
         {
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.BeginRendering(new RenderingDesc(
                 new RenderTarget(large.Attachment(), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f)),
                 new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f),
@@ -286,9 +288,9 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 if (leaves is not null) Draw(cmd, leavesParts, leaves, formats, lodBias);
             }
             cmd.EndRendering();
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.Blit(large, small, TextureMinFilter.Linear);
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             var region = new BufferImageCopy
             {
                 BufferOffset = (ulong)pass * rowBytes,

@@ -584,6 +584,56 @@ public sealed unsafe class CommandList
         vk.CmdPipelineBarrier2(Handle, &info);
     }
 
+    /// <summary>
+    /// Records the dependencies the engine's words describe (the stages and the access masks are the
+    /// backend's): one barrier for the lot.
+    /// </summary>
+    public void Barrier(ReadOnlySpan<GpuDependency> dependencies)
+    {
+        if (dependencies.Length == 0) return;
+        var batch = new BarrierBatch();
+        foreach (var d in dependencies)
+        {
+            if (d.From == Access.Any || d.To == Access.Any)
+            {
+                // The seam: everything before against everything after.
+                batch.Add(PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryWriteBit, PipelineStageFlags2.AllCommandsBit,
+                    AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit);
+                continue;
+            }
+            var (srcStages, srcAccess, srcWrite) = VkAccess(d.From);
+            var (dstStages, dstAccess, _) = VkAccess(d.To);
+            batch.Add(srcStages, srcWrite ? srcAccess & WriteMask : 0, dstStages, dstAccess);
+        }
+        if (!batch.IsEmpty) Barrier(in batch);
+    }
+
+    /// <summary>Orders everything recorded before against everything after it (the seam between two passes).</summary>
+    public void Order() => Barrier([GpuDependency.Full]);
+
+    const AccessFlags2 WriteMask = AccessFlags2.ColorAttachmentWriteBit | AccessFlags2.DepthStencilAttachmentWriteBit | AccessFlags2.ShaderStorageWriteBit |
+        AccessFlags2.TransferWriteBit | AccessFlags2.MemoryWriteBit;
+
+    /// <summary>The stages and the access of an <see cref="Access"/>, and whether it writes (Vulkan's).</summary>
+    static (PipelineStageFlags2 Stages, AccessFlags2 Access, bool Write) VkAccess(Access a) => a switch
+    {
+        Access.ColourTarget => (PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.ColorAttachmentReadBit | AccessFlags2.ColorAttachmentWriteBit, true),
+        Access.DepthTarget => (PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit,
+            AccessFlags2.DepthStencilAttachmentReadBit | AccessFlags2.DepthStencilAttachmentWriteBit, true),
+        Access.DepthRead => (PipelineStageFlags2.EarlyFragmentTestsBit | PipelineStageFlags2.LateFragmentTestsBit, AccessFlags2.DepthStencilAttachmentReadBit, false),
+        Access.Sampled => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderSampledReadBit, false),
+        Access.StorageRead => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageReadBit, false),
+        Access.StorageWrite => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit,
+            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit, true),
+        Access.TransferSrc => (PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit, false),
+        Access.TransferDst => (PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, true),
+        Access.IndirectRead => (PipelineStageFlags2.DrawIndirectBit, AccessFlags2.IndirectCommandReadBit, false),
+        Access.VertexRead => (PipelineStageFlags2.VertexAttributeInputBit | PipelineStageFlags2.IndexInputBit, AccessFlags2.VertexAttributeReadBit | AccessFlags2.IndexReadBit, false),
+        Access.UniformRead => (PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.FragmentShaderBit | PipelineStageFlags2.ComputeShaderBit, AccessFlags2.UniformReadBit, false),
+        Access.Present => (PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit, false),
+        _ => (PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit, true),
+    };
+
     /// <summary>Writes a timestamp into the frame's query arena slot.</summary>
     public void Timestamp(QueryArena arena, in QuerySlot slot, PipelineStageFlags2 stage = PipelineStageFlags2.AllCommandsBit)
     {

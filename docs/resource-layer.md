@@ -17,7 +17,7 @@ into the backend's textures, with the description) and a `GpuBuffer` (an index i
 buffers, with the size). The Streamline (DLSS) path asks for the native image and view themselves:
 that path is NVIDIA's and stays Vulkan's.
 
-What is left: the seam.
+What is left: the seam (the context as the interface).
 
 ## What the renderers would hold
 

@@ -5,6 +5,8 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>A run of at most <see cref="FoliageShaders.CullChunk"/> instances of one group (std430, 32 bytes): where they are in the

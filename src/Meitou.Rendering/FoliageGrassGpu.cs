@@ -4,6 +4,8 @@ using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>A view's tables in the frame's constants, written by the CPU per view: the zones' patch ranges and the patch rows.</summary>

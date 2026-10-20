@@ -64,7 +64,7 @@ public class RayQueryTests
         var pipeline = ctx.Pipelines.Get(new ComputePipelineDesc(program, "ray query test"));
 
         var cmd = ctx.BeginNative("ray query test");
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         var blas = AccelerationStructure.BuildBottom(device, cmd, [new TriangleGeometry(device.Address(vertices.Handle), 12, 3, device.Address(index.Handle), 1)], "test bottom");
         ((InstanceRecord*)instances.Mapped)->Reference = blas.Address;
         cmd.Barrier(AccelerationStructure.BuildToTrace);
@@ -90,7 +90,7 @@ public class RayQueryTests
             var push = new Push { StartY = c.StartY, DirY = c.DirY, Flags = c.Flags };
             cmd.PushConstants(program, GpuStage.Compute, in push);
             cmd.Dispatch(1, 1);
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.CopyBuffer(results.Handle, readback.Handle, new BufferCopy(0, 0, results.Size));
             ctx.EndNative(cmd);
             ctx.Finish();

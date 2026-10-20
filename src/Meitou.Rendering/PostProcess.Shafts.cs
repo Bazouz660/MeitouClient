@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -113,11 +115,11 @@ public sealed unsafe partial class PostProcess
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, shaftScatter!.Texture.View()));
         bindings[3] = GpuBinding.Sampled(3, new SampledTexture(cube.Sampler, cube.View));
         bindings[4] = GpuBinding.Uniform(4, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(ShaftScanParams)));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BindPipeline(shaftScanPipeline!);
         cmd.BindProgramResources(shaftScanProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 5));
         cmd.Dispatch((uint)(((int)grid.X + 7) / 8), (uint)(((int)grid.Y + 7) / 8));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
     static readonly bool ShaftStamps = Environment.GetEnvironmentVariable("MEITOU_SHAFT_STAMPS") == "1";
     ShaftInjectPass? shaftInject;

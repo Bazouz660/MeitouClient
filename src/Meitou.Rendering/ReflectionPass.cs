@@ -7,6 +7,8 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -354,7 +356,7 @@ public sealed class ReflectionPass : IDisposable
         if (msColour is not null)
         {
             // The multisampled colour into the texture the water samples (a resolve, as the framebuffer blit was), between full barriers.
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.Resolve(msColour, colour!);
         }
         Gpu.EndHostPass(cmd);
@@ -564,7 +566,7 @@ public sealed class ReflectionPass : IDisposable
         p.Set(p.Uniform("uMirroredEye"), mirroredEye.X, mirroredEye.Y, mirroredEye.Z);
         p.Set(p.Uniform("uWaterY"), WorldWater.Height);
         p.ApplyGlobals();   // the atmosphere's and the fog volumes' uniforms, through the frame globals
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BeginRendering(new RenderingDesc(PassTargets.Of(colour, null).Colour, default, width, height));
         cmd.SetViewport(new PixelViewport(0, 0, width, height, 0, 1));
         cmd.SetScissor(new PixelRect(0, 0, (uint)width, (uint)height));

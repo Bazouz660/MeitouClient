@@ -4,6 +4,8 @@ using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -126,7 +128,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
             sweep.Flush(cmd);
             cmd.Draw(3);
             cmd.EndRendering();
-            cmd.Barrier(BarrierBatch.Full);   // the next pass reads what this one wrote (VkGl: a full barrier before each pass)
+            cmd.Order();   // the next pass reads what this one wrote (VkGl: a full barrier before each pass)
             write = 1 - write;
         }
         Gpu.EndNative(cmd);

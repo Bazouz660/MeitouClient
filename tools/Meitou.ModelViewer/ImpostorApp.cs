@@ -12,6 +12,8 @@ using Meitou.Rendering.Impostors;
 using Silk.NET.Vulkan;
 using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.ModelViewer;
 
 /// <summary>
@@ -297,16 +299,16 @@ static class ImpostorApp
         using var depth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
         using var resolved = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
         var formats = new AttachmentFormats(colour.Desc.Format, depth.Desc.Format, 4);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BeginRendering(new RenderingDesc(
             new RenderTarget(colour.Attachment(), LoadOp.Clear, new ClearColour(Sky.X, Sky.Y, Sky.Z, 1f)),
             new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f), w, h));
         cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
         draw(cmd, formats);
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.Resolve(colour, resolved);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.Invalidate();
         frames.Flush();
         var pixels = gpu.ReadBack(resolved, 4);

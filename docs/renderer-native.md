@@ -21,10 +21,15 @@ CommandList records bindings/draw/dispatch/transfer/dynamic rendering, preservin
 
 ## Synchronization and shaders
 
-Sync.PassUse/ResourceStates track whole-resource identity, not independent subresource histories.
-Read/read no barrier; write→access requires visibility, read→write execution ordering. GpuPass
-applies merged synchronization2 dependencies/label immediately; no pass reordering. Repeated
-upload writes require transfer ordering; draw-buffer blits/mips/readback follow command order.
+The engine's words for the synchronization: `Access` says how a pass uses a resource, `PassUse` says
+which resource, and `GpuDependency` says what must be ordered against what. The backend turns them
+into its own barriers (Vulkan: merged synchronization2 dependencies; Metal: none - Apple silicon
+tracks the hazards). The renderers that know nothing of each other's resources order everything
+against everything (`cmd.Order()`); the ones that do declare their uses (`Sync.PassUse`/`ResourceStates`
+track whole-resource identity, not independent subresource histories: read/read no barrier, write→access
+requires visibility, read→write execution ordering; `GpuPass` applies the merged dependencies and the
+label immediately, no pass reordering). Repeated upload writes require transfer ordering;
+draw-buffer blits/mips/readback follow command order.
 
 Own GLSL through bundled shaderc; GlslProgramCompiler legacy cache3/native4, stage interface
 locations and SPIR-V binding shifts. LegacyProgram set0 named blocks/samplers pushed, set1 dynamic

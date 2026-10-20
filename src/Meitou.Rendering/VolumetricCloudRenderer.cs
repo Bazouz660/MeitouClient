@@ -4,6 +4,8 @@ using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>Half-resolution clouds, independent view histories and a world-space sun-transmission map.</summary>
@@ -81,7 +83,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         state.Record(cmd, targets);
         cmd.BindPipeline(segment.Get(state, targets.Formats, null));
         p.Flush(cmd); cmd.Draw(3); cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         gpu.EndNative(cmd);
     }
 

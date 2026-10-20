@@ -68,7 +68,7 @@ public class OceanTests
                 ocean.SetTime(t);
                 ocean.Record();
                 var cmd = ctx.Frame.PreFrame;
-                cmd.Barrier(BarrierBatch.Full);
+                cmd.Order();
                 cmd.CopyBuffer(ocean.Output.Handle, readback.Handle, new BufferCopy(0, 0, ocean.Output.Size));
                 ctx.EndFrame();
                 d!.Frames.WaitAll();

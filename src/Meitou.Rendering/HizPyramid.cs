@@ -4,6 +4,8 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>What a foliage cull dispatch needs of the previous frame's depth pyramid (<see cref="HizPyramid.ViewFor"/>): the buffer and the
@@ -111,7 +113,7 @@ public sealed unsafe class HizPyramid : IDisposable
         var farView = (far ?? near).View();
         cmd.BeginLabel("hiz");
         // The depth was just drawn (the scene's passes, in whichever layout they leave it: GENERAL), and the last frame's cull may still read the buffer.
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         {
             // Levels 0 to 4 in one dispatch (a 16 x 16 tile of level 0 per workgroup, the rest through shared memory).
             var bindings = stackalloc GpuBinding[3];
@@ -131,7 +133,7 @@ public sealed unsafe class HizPyramid : IDisposable
         if (levels.Count > FusedLevels)
         {
             // The rest (at most about a thousand texels a level) in one workgroup, a level at a time.
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             var bindings = stackalloc GpuBinding[1];
             bindings[0] = GpuBinding.Storage(0, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(reducePipeline);
@@ -142,7 +144,7 @@ public sealed unsafe class HizPyramid : IDisposable
             cmd.Dispatch(1);
         }
         // The cull reads it in the next frame's pre-frame commands.
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.EndLabel();
         builtFrame = ctx.Frame.Number;
         Builds++;

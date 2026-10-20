@@ -18,7 +18,7 @@ brew `libglfw.3.dylib` the Vulkan path loads.
 | Storage buffer (std430), dynamic indexing | works |
 | Runtime-sized texture **and** sampler tables, dynamically indexed (tier-2 argument buffer) | works |
 | Compute pass writing an rgba16f storage image, sampled back | works |
-| Barriers between passes | **not needed** - Apple silicon tracks hazards itself |
+| Barriers between passes | **not needed** - Apple silicon tracks hazards itself (the engine's `Access` and `GpuDependency` say what must be ordered; the backend decides) |
 
 ## The shader chain
 
@@ -136,7 +136,8 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The sky on Metal, in the game (`--renderer metal`) | the strategy: the shaders, the uniforms, the present |
 | Done | The state and the formats in the GL vocabulary | the passes state what they want in neutral words |
 | Done | The handles (the samplers, the views, the textures, the buffers, the sets) and the binding list | the renderers hold no Vulkan object |
-| Next | The context's interface and the sync model; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
+| Done | The synchronization in the engine's words (the accesses and the dependencies) | the backend decides the barriers |
+| Next | The context's interface; the Vulkan implementation stays, a Metal one joins it ([resource-layer](resource-layer.md)) | a Metal device that can run any pass |
 | Then | The post chain on Metal (the HDR target, the exposure, the tonemap) | the picture is the game's, not the raw sky |
 | Then | The terrain (the native model, the bindless table as a Metal 3 argument buffer) | the world appears |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame |

@@ -4,6 +4,8 @@ using Meitou.Data.Ogre;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -183,7 +185,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             if (any) boxes.Add((min, max));
         }
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         gpu.EndNative(cmd);
         if (Drawn == 0) return;
         if (bindless is not { } known || known.Texture != target)

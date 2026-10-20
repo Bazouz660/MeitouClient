@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>The push constants all three ocean kernels declare (std430, 48 bytes).</summary>
@@ -179,7 +181,7 @@ public sealed unsafe class OceanWaves : IDisposable
         cmd.BeginLabel("ocean");
         // The last frame's draws sampled the textures, its passes used the buffers, and the spectrum may just have been written.
         if (!foamCleared) { cmd.FillBuffer(foam.Handle, 0, foam.Size, 0); foamCleared = true; }
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         var stamps = (ctx.Frame.Timestamps.Allocate(), ctx.Frame.Timestamps.Allocate());
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, PipelineStageFlags2.ComputeShaderBit);
         uint groups = (uint)Size / 16;

@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering.Gi;
 
 /// <summary>

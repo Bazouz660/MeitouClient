@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -87,13 +89,13 @@ public sealed unsafe partial class PostProcess
         bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View()));
         bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View()));
         bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BindPipeline(velocityPipeline!);
         cmd.BindProgramResources(velocityProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 6));
         var size = new Vector2(width, height);
         cmd.PushConstants(velocityProgram, GpuStage.Compute, in size);
         cmd.Dispatch((uint)((width + 15) / 16), (uint)((height + 15) / 16));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -126,13 +128,13 @@ public sealed unsafe partial class PostProcess
         bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View()));
         bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View()));
         bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BindPipeline(exposurePipeline!);
         cmd.BindProgramResources(exposureProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
         cmd.PushConstants(exposureProgram, GpuStage.Compute, in push);
         cmd.Dispatch(16, 16);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     void DisposeMerged()

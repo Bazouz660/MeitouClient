@@ -5,6 +5,8 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -604,7 +606,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     internal static void GenerateMipmaps(GpuContext gpu, GpuTexture texture)
     {
         var cmd = gpu.Frame.PreFrame;
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         for (int level = 1; level < texture.Desc.Levels; level++)
         {
             var between = new BarrierBatch();
@@ -612,7 +614,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
             cmd.Barrier(in between);
             cmd.BlitLevel(texture, level - 1, level, TextureMinFilter.Linear);
         }
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     /// <summary>A texture left the loading state: its file size is no longer counted as in flight.</summary>

@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -198,11 +200,11 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
             cmd.Draw((uint)count, 1, 0, 0);
         }
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         if (samples > 1)
         {
             cmd.Resolve(msColour, resolved!);
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
         }
         var over = PassTargets.Of(picture, null).At(viewport);
         cmd.BeginRendering(over.Rendering);

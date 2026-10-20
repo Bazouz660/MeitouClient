@@ -5,6 +5,8 @@ using System.Text;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -637,7 +639,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         p.Flush(cmd);
         cmd.Draw(3);
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     /// <summary>A target as its GL texture was sampled: its filters, clamped, the upscaler's LOD bias on a mipmapped filter (VkGl's rule,
