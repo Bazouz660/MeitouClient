@@ -89,6 +89,109 @@ public static class SpirvPatch
         }
         return copy;
     }
+
+    /// <summary>
+    /// The bindless set's integer combined arrays become plain image arrays: GLSL has no separate integer texture type, so
+    /// the backend's rewrite keeps them combined and sized (<c>usampler2D utextures2D[capacity]</c>), and this drops the
+    /// sampler part in SPIR-V — the only operations on them are fetches, which never touch it (the stages' <c>OpImage</c>
+    /// extractions become copies of the already-plain image). <paramref name="set"/> is the table's set number.
+    /// </summary>
+    public static byte[] BindlessFetchImages(byte[] spirv, uint set)
+    {
+        var copy = (byte[])spirv.Clone();
+        var w = MemoryMarshal.Cast<byte, uint>(copy.AsSpan());
+        var sets = new Dictionary<uint, uint>();
+        var intScalars = new HashSet<uint>();                     // OpTypeInt ids
+        var images = new Dictionary<uint, (uint Scalar, uint Dim)>(); // OpTypeImage: scalar, dim
+        var sampledImages = new Dictionary<uint, uint>();         // sampled image id -> image
+        var arrayElem = new Dictionary<uint, (uint Elem, uint Len)>(); // array id -> element, length (a constant id, copied verbatim)
+        var pointerAt = new Dictionary<uint, uint>();             // pointer id -> pointee
+        var variables = new Dictionary<uint, uint>();             // variable id -> pointer
+        var chains = new Dictionary<uint, uint>();                // access chain result -> base variable
+        for (int i = 5; i < w.Length;)
+        {
+            uint op = w[i] & 0xFFFF, count = w[i] >> 16;
+            if (count == 0) break;
+            var a = w.Slice(i + 1, (int)count - 1);
+            if (op == 71 && count == 4) { if (a[1] == 34) sets[a[0]] = a[2]; } // DescriptorSet
+            else if (op == 21) intScalars.Add(a[0]);
+            else if (op == 25 && count >= 8) images[a[0]] = (a[1], a[2]);
+            else if (op == 27 && count == 3) sampledImages[a[0]] = a[1];
+            else if (op == 28 && count == 4) arrayElem[a[0]] = (a[1], a[2]);
+            else if (op == 32 && count == 4) pointerAt[a[0]] = a[2];
+            else if (op == 59) variables[a[1]] = a[0];
+            else if (op == 65) chains[a[1]] = a[2];
+            i += (int)count;
+        }
+        // The ones to swap: the set's array variables whose sampled image reads an OpTypeInt scalar (the integer kinds; the
+        // float kinds stay sampled images, GL's per-entry sampler state is theirs). Their pointers, arrays and element types.
+        uint next = w[3];                                     // fresh ids above the module's bound (word 3 = max id + 1)
+        var ours = new Dictionary<uint, (uint ArrayPtr, uint ElemPtr, uint Array, uint Image)>(); // old array pointer -> new ids
+        var oursByElem = new Dictionary<uint, uint>();            // the ours' sampled image id -> its element pointer
+        foreach (var (id, ptr) in variables)
+        {
+            if (sets.GetValueOrDefault(id) != set) continue;
+            uint arr = pointerAt[ptr];
+            var (elemSI, len) = arrayElem[arr];
+            // The set's other resources (the float kinds' separate texture and sampler arrays) are not sampled images.
+            if (!sampledImages.TryGetValue(elemSI, out uint image)) continue;
+            var (scalar, dim) = images[image];
+            if (!intScalars.Contains(scalar)) continue;
+            if (dim != 1) throw new InvalidOperationException($"SPIR-V: the bindless set's integer array at {dim}D, the rewrite covers 2D only");
+            uint elemPtr = next++;                                // pointer to the plain image (the chains' result type)
+            uint newArr = next++;                                 // OpTypeArray of the image, the length copied
+            uint newArrPtr = next++;                              // pointer to the array (the variable's type)
+            ours[ptr] = (newArrPtr, elemPtr, newArr, image);
+            oursByElem[elemSI] = elemPtr;
+        }
+        if (ours.Count == 0) return copy;
+        var oursVars = new Dictionary<uint, uint>();              // ours' variable id -> old array pointer
+        foreach (var (id, ptr) in variables)
+            if (ours.ContainsKey(ptr)) oursVars[id] = ptr;
+        var chainVars = new Dictionary<uint, uint>();             // chain result -> ours' variable
+        var loads = new Dictionary<uint, uint>();                 // load result -> ours' variable
+        // Pass 2: the rewrite and the rebuild — the new types go in right after each old array pointer, before every use.
+        var list = new List<uint>(w.Length + 16) { w[0], w[1], w[2], next, w[4] };  // the header; the id bound grows to fit
+        for (int i = 5; i < w.Length;)
+        {
+            uint op = w[i] & 0xFFFF, count = w[i] >> 16;
+            if (count == 0) break;
+            var a = w.Slice(i + 1, (int)count - 1);
+            if (op == 32 && ours.TryGetValue(a[0], out var made))
+            {
+                // The old array pointer as-is, then the array of the image (the length's constant id copied) and the pointers.
+                uint arr = a[2];
+                var (elemSI, len) = arrayElem[arr];
+                uint image = sampledImages[elemSI];
+                list.AddRange(w.Slice(i, (int)count).ToArray());
+                list.AddRange([28u | (4u << 16), made.Array, image, len]);
+                list.AddRange([32u | (4u << 16), made.ArrayPtr, 0u, made.Array]);
+                list.AddRange([32u | (4u << 16), made.ElemPtr, 0u, image]);
+            }
+            else
+            {
+                var words = w.Slice(i, (int)count).ToArray();
+                if (op == 59 && oursVars.TryGetValue(a[1], out uint varPtr))
+                    words[1] = ours[varPtr].ArrayPtr;                  // the variable's declared type
+                else if (op == 65 && pointerAt.TryGetValue(a[0], out uint pointee) && oursByElem.TryGetValue(pointee, out uint elemPtr))
+                {
+                    words[1] = elemPtr;                                // the chain's result type: pointer to the plain image
+                    chainVars[a[1]] = chains.GetValueOrDefault(a[1]);
+                }
+                else if (op == 61 && a[2] != 0 && chainVars.TryGetValue(a[2], out uint cv))
+                {
+                    words[1] = ours[oursVars[cv]].Image;               // the load dereferences the pointer: the image itself
+                    loads[a[1]] = cv;
+                }
+                else if (op == 100 && loads.ContainsKey(a[2]))
+                    words[0] = 83u | (count << 16);                    // OpImage -> OpCopyObject: the operand is already the image
+                list.AddRange(words);
+            }
+            i += (int)count;
+        }
+        uint[] outWords = [.. list];
+        return MemoryMarshal.AsBytes(outWords.AsSpan()).ToArray();
+    }
 }
 
 /// <summary>

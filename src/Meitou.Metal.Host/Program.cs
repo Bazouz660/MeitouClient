@@ -90,14 +90,23 @@ if (tri)
         const string tableFragment = """
             #version 450 core
             #extension GL_EXT_nonuniform_qualifier : require
-            layout(set = 1, binding = 0) uniform texture2D textures2D[256];
-            layout(set = 1, binding = 2048) uniform sampler smplr2D;
+            layout(set = 1, binding = 0) uniform sampler2D textures2D[];
+            layout(set = 1, binding = 1) uniform sampler2DArray textures2DArray[];
+            layout(set = 1, binding = 2) uniform samplerCube texturesCube[];
+            layout(set = 1, binding = 3) uniform sampler2DShadow shadowTextures[];
+            layout(set = 1, binding = 4) uniform usampler2D utextures2D[];
+            layout(set = 1, binding = 5) uniform isampler2D itextures2D[];
+            layout(set = 1, binding = 6) uniform sampler2DArrayShadow shadowArrays[];
             layout(push_constant) uniform Push { uint uIndex; } pc;
             in vec2 vUv;
             layout(location = 0) out vec4 colour;
             void main()
             {
-                colour = texture(sampler2D(textures2D[pc.uIndex], smplr2D), vUv);
+                colour = texture(textures2D[pc.uIndex], vUv);
+                colour *= 1.0 - texture(textures2DArray[pc.uIndex], vec3(vUv, 0.0)).a;
+                colour.r += textureLod(texturesCube[pc.uIndex], vec3(vUv, 0.5), 0.0).r;
+                colour.g += texelFetch(utextures2D[pc.uIndex], ivec2(0), 0).r / 255.0;
+                colour.b += texelFetch(itextures2D[pc.uIndex], ivec2(1, 0), 0).r / 255.0;
             }
             """;
         var bindless = GpuSetLayout.Bindless;

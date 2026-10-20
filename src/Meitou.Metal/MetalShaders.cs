@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Gpu.Shaders;
 using SharpMetal.Foundation;
@@ -63,6 +64,62 @@ public sealed class MetalShaders : IGpuShaders
     internal static uint Flatten(GpuSlotKind kind, GpuStage stages, uint set, uint binding) =>
         (stages.HasFlag(GpuStage.Vertex) && kind is GpuSlotKind.UniformBuffer or GpuSlotKind.StorageBuffer ? VertexBlockBase : 0)
         + set * SetStride + binding;
+
+    // ---- the bindless table's rewrite (docs/metal-backend.md, "the bindless table") ----
+
+    /// <summary>The Metal table's capacities per kind (<see cref="BindlessKind"/> order). The rewrite sizes the argument
+    /// buffer's arrays with them so the ids stay in order and within the argument buffer's limits; the runtime's table
+    /// mirrors them (<see cref="MetalContext"/>). 2D textures get most of the room, as the Vulkan table's shares do.</summary>
+    internal static readonly uint[] TableCapacity = [2048, 512, 128, 128, 128, 128, 64];
+
+    /// <summary>The separate GLSL types of the float kinds' textures: a sampler array's pair constructor takes them.</summary>
+    static readonly string[] FloatTextureTypes = ["texture2D", "texture2DArray", "textureCube"];
+
+    /// <summary>
+    /// The Metal form of a native program's bindless set. The shared text (the prelude's <see cref="BindlessTable.Declarations"/>)
+    /// declares seven combined, runtime-sized arrays, and Metal has no place for them in an argument buffer: spirv-cross refuses
+    /// the unsized combined case outright ("runtime array not supported for combined image sampler") and crashes on the sized one.
+    /// The rewrite (Metal only; the Vulkan path's GLSL stays combined):
+    /// the float kinds (<see cref="BindlessKind.Texture2D"/>, <see cref="BindlessKind.Texture2DArray"/>, <see cref="BindlessKind.Cube"/>)
+    /// become separate sized texture arrays with parallel sized sampler arrays — GL's per-entry sampler state survives, every use
+    /// constructs the pair with the same index; the integer kinds (<see cref="BindlessKind.UTexture2D"/>, <see cref="BindlessKind.ITexture2D"/>)
+    /// stay combined and sized (their uses are fetches only, which never touch the sampler, and
+    /// <see cref="SpirvPatch.BindlessFetchImages"/> drops the sampler part in SPIR-V, as GLSL has no separate integer texture type);
+    /// the shadow kinds' declarations are dropped for now — their uses fail to compile, loudly, until the shadows step.
+    /// </summary>
+    static string RewriteBindless(string glsl)
+    {
+        uint[] cap = TableCapacity;
+        uint total = 0;
+        foreach (uint c in cap) total += c;
+        var prefix = new uint[cap.Length];
+        uint sum = 0;
+        for (int k = 0; k < cap.Length; k++) { prefix[k] = sum; sum += cap[k]; }
+        // The uses first: the declarations' empty [] never matches, and the new ones are not in the text yet. An index may
+        // be anything without a closing bracket (nonuniformEXT(...) included) — it is captured once and used for both.
+        for (int k = 0; k <= 2; k++)
+        {
+            string array = BindlessTable.GlslArrays[k];
+            string samplers = "samplers" + array["textures".Length..];
+            glsl = Regex.Replace(glsl, $@"\b{array}\[([^\]]+)\]", $"{BindlessTable.GlslTypes[k]}({array}[$1], {samplers}[$1])");
+        }
+        for (int k = 0; k < cap.Length; k++)
+        {
+            string decl = $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {k}) uniform {BindlessTable.GlslTypes[k]} {BindlessTable.GlslArrays[k]}[];";
+            // A stage that does not include the table's text (the host's test programs) has nothing to rewrite.
+            if (!glsl.Contains(decl)) continue;
+            glsl = glsl.Replace(decl, k switch
+            {
+                <= 2 => $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {prefix[k]}) uniform {FloatTextureTypes[k]} {BindlessTable.GlslArrays[k]}[{cap[k]}];\n"
+                        + $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {total + prefix[k]}) uniform sampler samplers{BindlessTable.GlslArrays[k]["textures".Length..]}[{cap[k]}];",
+                4 or 5 => $"layout(set = {Rendering.NativeShaders.BindlessSet}, binding = {prefix[k]}) uniform {BindlessTable.GlslTypes[k]} {BindlessTable.GlslArrays[k]}[{cap[k]}];",
+                _ => "",
+            });
+        }
+        // The shadow kinds' uses are gone from the declarations now; what remains are real uses of dropped arrays.
+        if (Regex.IsMatch(glsl, @"\b(shadowTextures|shadowArrays)\[")) throw new NotSupportedException("the Metal backend's bindless rewrite covers no shadow kinds yet (they come with the shadows step)");
+        return glsl;
+    }
 
     readonly MTLDevice device;
     readonly List<MetalProgram> programs = [];
@@ -140,29 +197,31 @@ public sealed class MetalShaders : IGpuShaders
     {
         if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");
         var (vs, fs) = InterfaceLocations.Apply(vertexGlsl, fragmentGlsl);
+        // The bindless set's runtime arrays are Metal 3 tier-2 argument buffers (docs/metal-backend.md); only a program
+        // whose layout includes the table is translated with them, and only its shared text needs the rewrite.
+        bool bindless = Array.Exists(setLayouts, l => ReferenceEquals(l, GpuSetLayout.Bindless));
+        if (bindless) { vs = RewriteBindless(vs); fs = RewriteBindless(fs); }
         var v = SpirvPatch.RemapBindings(Compiler.CompileNative(vs, fragment: false), VertexBlockBase, 0, SetStride);
+        if (bindless) v = SpirvPatch.BindlessFetchImages(v, Rendering.NativeShaders.BindlessSet);
         var f = SpirvPatch.RemapBindings(Compiler.CompileNative(fs, fragment: true), 0, 0, SetStride);
-        var rv = SpirvReflection.Parse(v);
-        var rf = SpirvReflection.Parse(f);
-        foreach (var block in rv.Blocks.Concat(rf.Blocks))
-            if (block.Kind == BlockKind.PushConstant && block.Size > pushConstantBytes)
-                throw new InvalidOperationException($"{name}: push-constant block '{block.Name}' is {block.Size} bytes, the layout's range {pushConstantBytes}");
-
+        if (bindless) f = SpirvPatch.BindlessFetchImages(f, Rendering.NativeShaders.BindlessSet);
         if (Environment.GetEnvironmentVariable("MEITOU_METAL_DUMP") is { } dir)
         {
             Directory.CreateDirectory(dir);
             File.WriteAllBytes(Path.Combine(dir, $"{name}.vert.spv"), v);
             File.WriteAllBytes(Path.Combine(dir, $"{name}.frag.spv"), f);
         }
+        var rv = SpirvReflection.Parse(v);
+        var rf = SpirvReflection.Parse(f);
+        foreach (var block in rv.Blocks.Concat(rf.Blocks))
+            if (block.Kind == BlockKind.PushConstant && block.Size > pushConstantBytes)
+                throw new InvalidOperationException($"{name}: push-constant block '{block.Name}' is {block.Size} bytes, the layout's range {pushConstantBytes}");
 
         var info = new ProgramInfo
         {
             Index = programs.Count, Name = name, Model = ShaderModel.Native, VertexCode = v, FragmentCode = f,
             VertexReflection = rv, FragmentReflection = rf, PushConstantBytes = pushConstantBytes, NeutralSets = setLayouts,
         };
-        // The bindless set's runtime arrays are Metal 3 tier-2 argument buffers (docs/metal-backend.md); only a program
-        // whose layout includes the table is translated with them.
-        bool bindless = Array.Exists(setLayouts, l => ReferenceEquals(l, GpuSetLayout.Bindless));
         uint? tableSet = bindless ? Rendering.NativeShaders.BindlessSet : null;
         var vertexMsl = MslTranslator.Translate(v, "vertex_main", ExecutionModel.Vertex, argumentBufferSet: tableSet);
         var fragmentMsl = MslTranslator.Translate(f, "fragment_main", ExecutionModel.Fragment, argumentBufferSet: tableSet);

@@ -93,6 +93,23 @@ The verified model (the MSL that spirv-cross makes and Metal accepts, checked wi
   texture's handle is `MTLTexture.gpuResourceID`, a sampler's `MTLSamplerState.gpuResourceID`,
   at the members' natural offsets (members in id order, 8 bytes each, 8-aligned).
 
+The rewrite (`MetalShaders.RewriteBindless` + `SpirvPatch.BindlessFetchImages`), verified by the
+`--table` dump and `spirv-val` on both stages:
+
+- capacities, in `BindlessKind` order: `[2048, 512, 128, 128, 128, 128, 64]` (index 3, shadow 2D,
+  is unused today; index 6 is the shadow array). T(k) = set base + Σ capacities before k,
+  S(k) = T(0) + Σ all capacities + Σ capacities before k; with set 1's base of 8 the 2D textures
+  sit at id 8, the arrays at 2056, the cubes at 2568, `utextures2D` at 2824, `itextures2D` at
+  2952, `samplers2D` at 3144, `samplers2DArray` at 5192, `samplersCube` at 5704;
+- the float kinds are the separate arrays + sampler pairs above; the integer kinds have no
+  separate type in GLSL, so they stay combined and sized (`usampler2D utextures2D[128]`) and the
+  SPIR-V patch drops the sampler part: the variable's, the array's, each chain's and each load's
+  types become the plain image's, and the stages' `OpImage` (100) extractions become
+  `OpCopyObject` (83) of the already-plain image. `OpImage` = 100, `OpCopyObject` = 83, `OpPhi` =
+  54 — and an instruction's word count includes the op word itself;
+- the shadow kinds' declarations are dropped; a use throws `NotSupportedException` until the
+  shadows step.
+
 Two sharp edges:
 
 - `MTLRenderPassDescriptor.ColorAttachments.Object(0)` returns a struct copy, so a value-type
@@ -214,32 +231,13 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
 | Done | The bindless table's MSL shape, verified: tier-2 argument buffers in the device address space, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
 | Done | The flatten's kind refinement: a vertex module's buffers shift by the vertex base, its images and samplers flatten from 0 (`RemapBindings` classifies by the SPIR-V storage class, `Flatten` takes the kind) | the terrain's vertex-stage table samplers fit the stage's sampler table |
-| Next | The bindless table on Metal (the terrain's prerequisite): the GLSL rewrite, the table runtime, `BindBindlessTable` — see the plan section | the terrain's textures can bind |
+| Done | The bindless table's GLSL rewrite (`--table`'s five kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds throw until the shadows step; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays at non-overlapping ids | the table's MSL shape at the capacities |
+| Next | The Metal table runtime (`IGpuBindlessTable`) and `BindBindlessTable` — see the plan section | the terrain's textures can bind |
 | Then | The terrain in the game (the Vulkan-free widening, the native programs, the materials, the CDLOD draws) | the world appears |
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
 | Then | The objects, the characters, the foliage, the shadows, the water, the UI | the whole frame, and `--renderer metal` becomes the macOS default |
 
 ### The plan for the remaining steps (kept exact, for resuming cold)
-
-**Step B — the GLSL rewrite for the bindless set** (in `MetalShaders.Native`, before
-`CompileNative`, only when the layout has `GpuSetLayout.Bindless`; the Vulkan path's GLSL stays
-combined):
-
-1. Replace `BindlessTable.Declarations(set)`'s seven lines: kind *k*'s combined declaration
-   (`layout(set = 1, binding = k) uniform sampler2D textures2D[];`) becomes two lines — a sized
-   texture array and a sized sampler array: `layout(set = 1, binding = T(k)) uniform texture2D
-   textures2D[cap(k)];` and `layout(set = 1, binding = S(k)) uniform sampler samplers2D[cap(k)];`
-   with T(k) = Σ capacities of kinds before k, S(k) = Σ all capacities + T(k), cap(k) = the
-   table's capacity for the kind (read `BindlessTable`'s; mirror it in the Metal table). The id
-   arithmetic then stays under the argument buffer's limits (tier 2: ids well into the thousands
-   are fine; keep Σcap ≤ 4096).
-2. Rewrite every use: `textures2D[expr]` → `sampler2D(textures2D[expr], samplers2D[expr])`, and
-   the same for each kind's type (`sampler2DArray`, `samplerCube`, `sampler2DShadow`,
-   `usampler2D`, `isampler2D`, `sampler2DArrayShadow`). First check glslang accepts the combined
-   constructor for Vulkan targets with the *separate* arrays (it should; verify with the host's
-   `--table` program before writing the general rewrite).
-3. The depth kinds' textures are depth formats; their sampler arrays need comparison sampler
-   states (a fixed compare function per kind — the game's shadow compare is uniform).
 
 **Step C — the Metal table runtime** (`MetalContext.Bindless` returns it today as a throw).
 Read `BindlessTable`'s implementation first and mirror its contract:
