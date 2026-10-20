@@ -222,7 +222,59 @@ delivers an older packet, drops reach both sides once).
 
 ## Snapshot core
 
-Pending (package N4).
+`CharacterWire` (`Replication/Snapshot/`) holds the quantized fields of one `CharacterSnapshot` in 13 groups, each one bit
+of the change-mask varint of a record, hottest first. The host quantizes each per-viewer snapshot (`Quantize`) and diffs
+it against the last acked wire (`DiffMask`); the client keeps wires and rebuilds snapshots (`ToSnapshot`). Every stored
+value is what the client decodes, so `Quantize(ToSnapshot(w))` equals `w` in every group (**Verified**,
+`CharacterWireTests`). The record header (slot, length, baseline back-reference, mask) belongs to the delta layer; the
+codec (`CharacterWireCodec.WriteGroups`/`ReadGroups`) writes the groups the mask names, in bit order, onto the baseline
+(`CharacterWire.Default` without one).
+
+| Bit | Group | Wire |
+|---|---|---|
+| 0 | Position | `Q64` x3 as zigzag differences from the baseline, absolute without one |
+| 1 | Yaw | `Yaw16` |
+| 2 | Animations | below |
+| 3 | Flags | varint of 13 bools (WeaponDrawn, IsPlayer, IsTrader, Selected, Inspected, PickingLock, WorkingShackles, InBed, InCombat, Shackled, ShacklesLocked, CanBeShackled, CarriesShackles), Task, Orders, RunSpeed byte, PortraitSerial varint |
+| 4 | Body | presence; Blood `U16[0,1]`; WorstPart `S12`; Hunger `U16[0,4]`; varint of Unconscious, Dead, NeedsAid, Care (2 bits), MedicJob, RescueJob, NeedsSplint |
+| 5 | Carry | CarriedBy, Carrying, AttachBone |
+| 6 | Stealth | byte 0 or 1 + level; KO chance; up to 32 watchers (`Q64` relative to the character, level) |
+| 7 | Ragdoll | presence, then `RagdollWire` |
+| 8 | Look | `LookId` varint (0 none; the client rebuilds `Appearance`, never sent), Scale f32 |
+| 9 | Identity | Name, Faction, SquadId, Owner (zigzag), SurgeryCost (`NullableInt`), Activity |
+| 10 | Prison | presence, Locked, Sentence f32, remaining hours as zigzag minutes, Bail |
+| 11 | Turret | presence, Key, BuildingId, GunId, `Q64` position, `Yaw16` |
+| 12 | Jobs | up to 64 `PermaJob`: Type (zigzag), Site, Saved (`Hand` presence + 5 zigzag; absent for `Hand.Null`) |
+
+Together with the id in the record header these cover all 48 `CharacterSnapshot` members once the detail fields (Skills,
+AllSkills, SkillXpMultipliers, Hud, Bounties, HealthParts, ItemGrid, Inventory, Path) go on the reliable views. Blood and
+hunger are quantized so a slow drain is not resent every tick.
+
+**Animations.** A count byte (at most `MaxAnimLayers`), then per layer a flags byte (b0 definition differs from the
+baseline's layer at the same index, b1 weight differs, b2 length differs, b3 raw time, b4 raw weight) and the fields it
+announces: `Definition + 1` varint (0: a name follows, the fallback layer or an index the library lacks), weight `U16[0,1]`
+(raw f32 outside [0,1]), length f32, then the time as a u16 phase `round(Time / Length * 65535)` (raw f32 unless
+`Length > 0` and `0 <= Time <= Length`). A steady layer costs 3 bytes. The client takes `Name` from its library, so both
+ends must share `AnimationLibrary` (`AnimationHash`). Phase error is at most 1/65535 of the clip, which keeps footstep
+fractions exact (audio reads `Time / Length`) and `CharacterSounds`' dominant layer.
+
+**Ragdoll** (`RagdollWire`). Bone count (at most `MaxBones`), the `Set` bitset, weight `U16[0,1]`, a flags byte (b0 wide),
+then for each set bone a smallest-three rotation (u32) and a position: three i16 at 1/256 unit, or raw floats for the
+whole pose ("wide") when any position rounds to 127 units or more (large animals). Every set position is sent although only
+root bones use theirs, because the codec cannot see the rig. The decoder keeps the dropped rotation component strictly the
+largest, so packing a decoded rotation gives the same bits (near-equal components would otherwise flip the index).
+
+**Projectiles** (`ProjectileWire`). Keyed by id with the same baselines as characters; the delta layer writes the id and
+back-reference. Body: a flags byte (bits 0-3 which of position, direction, stretch, mesh follow; bit 4 the stuck value),
+the `Q64` position as zigzag differences, the direction as three i16 (settled so decoding and re-quantizing keep them),
+stretch f32, mesh (interned, sent when it differs from the baseline's, so for a new projectile).
+
+**Writer-side limits.** Text is cut to `MaxName` bytes at a character boundary, non-finite floats become 0, and layers (8),
+watchers (32), jobs (64) and ragdoll bones (a larger pose is dropped) are cut, so a reader never refuses what `Quantize`
+produced. A job whose `TaskType` is undefined is dropped. A layer with an out-of-library definition is sent by name.
+`Quantize` takes the look mapping as a delegate and the `AnimationLibrary`, so this layer does not depend on the look
+registry. **Verified** (`CharacterWireTests`: full and delta round trips, hostile input cut to limits, idempotence over
+random snapshots, smallest-three error at most 0.005 rad, ragdoll position error half a 1/256 step, phase and yaw steps).
 
 ## World and production views
 
