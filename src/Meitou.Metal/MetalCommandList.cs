@@ -58,6 +58,7 @@ public sealed class MetalCommandList : IGpuCommandList
         if (secondaries) throw new NotSupportedException("the Metal backend records no secondary command lists yet");
         EndCompute();
         EndBlit();
+        lastPipeline = default;   // a new encoder starts with no pipeline state (the filter would otherwise skip the set)
         var descriptor = new MTLRenderPassDescriptor(
             ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("MTLRenderPassDescriptor"), "renderPassDescriptor"));
         if (!d.Colour.IsNull)

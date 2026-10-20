@@ -109,11 +109,20 @@ public sealed unsafe partial class GpuContext
     /// The caller has begun a rendering instance on <paramref name="cmd"/> (inside its own <c>BeginNative</c> segment) into
     /// <paramref name="targets"/>: until <see cref="EndHostPass"/> guests draw into it with <paramref name="state"/>.
     /// </summary>
-    public void BeginHostPass(CommandList cmd, PassTargets targets, DrawState state)
+    public void BeginHostPass(CommandList cmd, PassTargets targets, DrawState state) => BeginHostPass((IGpuCommandList)cmd, targets, state);
+
+    /// <inheritdoc/>
+    public void BeginHostPass(IGpuCommandList cmd, PassTargets targets, DrawState state)
     {
         if (passList is not null) throw new InvalidOperationException("a host pass is already open");
         (passList, passTargets, passState) = ((CommandList)cmd, targets, state);
     }
+
+    /// <inheritdoc/>
+    public bool DepthClamp => Device.DepthClamp;
+
+    /// <inheritdoc/>
+    public bool RecordsSecondaries => Recording.Secondaries;
 
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
     public void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null)

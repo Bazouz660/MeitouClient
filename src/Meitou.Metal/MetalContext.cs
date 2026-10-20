@@ -301,6 +301,21 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         HasDepthAttachment = !targets.Depth.View.IsNull;
     }
 
+    void IGpuContext.BeginHostPass(IGpuCommandList cmd, PassTargets targets, DrawState state) => BeginHostPass((MetalCommandList)cmd, targets, state);
+
+    /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
+    public void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null)
+    {
+        if (passTargets is null) throw new InvalidOperationException("no host pass is open");
+        passTargets = passTargets.At(viewport, scissor);
+    }
+
+    /// <inheritdoc/>
+    public bool DepthClamp => true;
+
+    /// <inheritdoc/>
+    public bool RecordsSecondaries => false;
+
     public void EndHostPass(IGpuCommandList cmd)
     {
         if (passList is null || !ReferenceEquals(cmd, passList)) throw new InvalidOperationException("EndHostPass without a matching BeginHostPass");

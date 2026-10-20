@@ -23,7 +23,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; all native since phase 8 stage 3: the atlas's host hands the casters
     /// its targets and state, 8.9).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     // The receiver block (the faithful layout, also the Meitou receiver's cascades) and the casters' bias of the cascade being drawn.
     readonly FrameBlock receiver;
     readonly FrameBlock casterBias;
@@ -42,7 +42,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     SampledTexture sceneDepthSampled;
 
     /// <param name="assets">Where to find the game's <c>white-noise.png</c> (the receiver's jitter); without it a hash stands in.</param>
-    public ShadowPass(GpuContext gpu, AssetLocator? assets = null)
+    public ShadowPass(IGpuContext gpu, AssetLocator? assets = null)
     {
         Gpu = gpu;
         receiver = new FrameBlock(gpu, ReceiverBytes);
@@ -194,10 +194,10 @@ public sealed unsafe partial class ShadowPass : IDisposable
         if (layer != 0) t = t with { Depth = new RenderTarget(map.Attachment(0, layer), LoadOp.Load, default) };
         var depth = clear ? t.Depth with { Load = LoadOp.Clear, DepthClear = 1f } : t.Depth;
         // Wave 4 (docs/renderer-native.md 6): the cascades' segments are secondaries, recorded on the job threads when the host ends.
-        bool secondaries = Recording.Secondaries;
+        bool secondaries = Gpu.RecordsSecondaries;
         cmd.BeginRendering(new RenderingDesc(default, depth, t.Width, t.Height), secondaries);
-        Gpu.BeginHostPass((CommandList)cmd, t, CasterState(t.Formats));
-        if (secondaries) Gpu.Frame.Parallel.Begin((CommandList)cmd, t.Formats, ShadowStage);
+        Gpu.BeginHostPass(cmd, t, CasterState(t.Formats));
+        if (secondaries && Gpu is GpuContext parallel && cmd is CommandList vkCmd) parallel.Frame.Parallel.Begin(vkCmd, t.Formats, ShadowStage);
         return cmd;
     }
 
@@ -206,7 +206,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// (casters between the box and the sun are flattened onto its near side, not clipped), no culling (each caster sets its own), no colour.
     /// </summary>
     DrawState CasterState(in AttachmentFormats formats) =>
-        DrawState.For(formats, Gpu.Device.DepthClamp, depthTest: true, depthWrite: true, compare: DepthFunction.Less, mask: 0, depthClamp: true);
+        DrawState.For(formats, Gpu.DepthClamp, depthTest: true, depthWrite: true, compare: DepthFunction.Less, mask: 0, depthClamp: true);
 
     /// <summary>The viewport and scissor the casters draw with (a whole layer, or the landmark map).</summary>
     void SetTile(int x, int y, int s) =>
@@ -217,7 +217,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
 
     void EndHost(IGpuCommandList cmd)
     {
-        if (Gpu.Frame.Parallel.Open) Gpu.Frame.Parallel.End();
+        if (Gpu is GpuContext parallel && parallel.Frame.Parallel.Open) parallel.Frame.Parallel.End();
         cmd.EndRendering();
         Gpu.EndHostPass(cmd);
         Gpu.EndNative(cmd);
@@ -284,7 +284,8 @@ public sealed unsafe partial class ShadowPass : IDisposable
     void UploadNoise()
     {
         if (noiseUploaded || noise is null || noisePixels is null || !Gpu.Frame.Open) return;
-        Gpu.Uploads.Write(noise, 0, 0, new PixelRect(0, 0, (uint)noiseSize.Width, (uint)noiseSize.Height), noisePixels);
+        using (var batch = Gpu.Uploads.Begin())
+            batch.Write(noise, 0, 0, new PixelRect(0, 0, (uint)noiseSize.Width, (uint)noiseSize.Height), noisePixels);
         noiseSampled = Sampled(noise, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat);
         noiseUploaded = true;
         noisePixels = null;
@@ -357,16 +358,18 @@ public sealed unsafe partial class ShadowPass : IDisposable
             sceneDepth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Name: "shadow debug scene depth"));
             sceneDepthSampled = Sampled(sceneDepth, TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.Repeat);
         }
-        var source = Gpu.Device.NativeImage(scene);
-        var cmd = Gpu.BeginNative("shadow debug depth copy");
+        // The debug view is Vulkan-only so far (its raw depth copy has no seam call yet).
+        if (Gpu is not GpuContext vk) return;
+        var source = vk.Device.NativeImage(scene);
+        var cmd = vk.BeginNative("shadow debug depth copy");
         var region = new ImageCopy
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1),
             Extent = new Extent3D((uint)width, (uint)height, 1),
         };
-        Gpu.Device.Vk.CmdCopyImage(((CommandList)cmd).Handle, source, ImageLayout.General, Gpu.Device.NativeImage(sceneDepth), ImageLayout.General, 1, &region);
-        Gpu.EndNative(cmd);
+        vk.Device.Vk.CmdCopyImage(((CommandList)cmd).Handle, source, ImageLayout.General, vk.Device.NativeImage(sceneDepth), ImageLayout.General, 1, &region);
+        vk.EndNative(cmd);
     }
 
     /// <summary>
@@ -389,7 +392,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
         // The draws' state: every channel, no depth test or write, no culling, no blending (what the post-processing leaves), the multiply for
         // mode 3, blending off for the atlas after the scene view.
         var t = PassTargets.Of(target, null);
-        var state = DrawState.For(t.Formats, Gpu.Device.DepthClamp);
+        var state = DrawState.For(t.Formats, Gpu.DepthClamp);
         bool scene = mode >= 2 && sceneDepth is not null;
         var cmd = Gpu.BeginNative("shadow debug");
         cmd.BeginRendering(t.Rendering);

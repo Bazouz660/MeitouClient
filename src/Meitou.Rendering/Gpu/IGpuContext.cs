@@ -75,6 +75,24 @@ public interface IGpuContext
     /// </summary>
     IGpuCommandList BeginGuest(string label);
 
+    /// <summary>
+    /// The caller has begun a rendering instance on <paramref name="cmd"/> (inside its own native segment) into
+    /// <paramref name="targets"/>: until <see cref="EndHostPass"/> guests draw into it with <paramref name="state"/>.
+    /// </summary>
+    void BeginHostPass(IGpuCommandList cmd, PassTargets targets, DrawState state);
+
+    /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
+    void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null);
+
+    /// <summary>Closes the host's pass (a guest's draws end with it).</summary>
+    void EndHostPass(IGpuCommandList cmd);
+
+    /// <summary>The device clamps depth instead of clipping it (the shadow casters' state).</summary>
+    bool DepthClamp { get; }
+
+    /// <summary>Hosts may open their rendering with secondaries (Vulkan's parallel recording; Metal records one encoder).</summary>
+    bool RecordsSecondaries { get; }
+
     /// <summary>Closes a guest segment (<see cref="BeginGuest"/>).</summary>
     void EndGuest(IGpuCommandList cmd);
 

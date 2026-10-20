@@ -72,6 +72,15 @@ sealed partial class GameHost
             Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
         }
         var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
+        // The sun's shadows: the game's CSM (or the Meitou cascades) into the atlas the terrain's receivers sample.
+        var shadow = new ShadowPass(ctx, assets)
+        {
+            Settings = new Meitou.Data.World.ShadowSettings(Meitou.Data.World.KenshiShadows.MapSize(o.ShadowQuality), o.ShadowRangeFor(o.MeitouShadows)),
+            Meitou = o.MeitouShadows,
+            FilterQuality = o.ShadowFilter,
+            Enabled = !o.ShadowsOff,
+        };
+        shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         display.Activate();
@@ -126,27 +135,7 @@ sealed partial class GameHost
             if (!ctx.BeginFrame()) continue;
             streamer?.Update(camera.Eye);
 
-            // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
-            // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
-            var cmd = (MetalCommandList)ctx.BeginNative("scene");
-            var backbuffer = ctx.Backbuffer;
-            var depth = ctx.Depth;
-            var albedo = ctx.Albedo;
             var size = window.FramebufferSize;
-            if (sceneColour is null || sceneColour.Desc.Width != size.X || sceneColour.Desc.Height != size.Y)
-            {
-                sceneColour?.Dispose();
-                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, size.X, size.Y,
-                    Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
-            }
-            var targets = PassTargets.Of(sceneColour, depth, albedo) with
-            {
-                Colour = new RenderTarget(sceneColour.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
-                Depth = new RenderTarget(depth.Attachment(), LoadOp.Clear, default),
-            };
-            cmd.BeginRendering(targets.Rendering);
-            ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
-
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
@@ -178,6 +167,33 @@ sealed partial class GameHost
             if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
             // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
             camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
+            // The casters' cascades, before the scene reads the receiver block (terrain depth only so far: no objects or foliage on Metal).
+            var shadowView = new Meitou.Data.World.ShadowView(eye, camera.Forward, Vector3.Normalize(new Vector3(view.M12, view.M22, view.M32)), camera.FieldOfView,
+                aspect, camera.Near, camera.Distance);
+            shadow.Render(shadowView, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
+                terrain.DrawDepth(worldToClip, lodEye, planes, render));
+
+
+            // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
+            // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
+            var cmd = (MetalCommandList)ctx.BeginNative("scene");
+            var backbuffer = ctx.Backbuffer;
+            var depth = ctx.Depth;
+            var albedo = ctx.Albedo;
+            if (sceneColour is null || sceneColour.Desc.Width != size.X || sceneColour.Desc.Height != size.Y)
+            {
+                sceneColour?.Dispose();
+                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, size.X, size.Y,
+                    Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
+            }
+            var targets = PassTargets.Of(sceneColour, depth, albedo) with
+            {
+                Colour = new RenderTarget(sceneColour.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
+                Depth = new RenderTarget(depth.Attachment(), LoadOp.Clear, default),
+            };
+            cmd.BeginRendering(targets.Rendering);
+            ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
+
             sky.Draw(viewProjection, colours);
 
             // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
@@ -203,6 +219,7 @@ sealed partial class GameHost
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();
         sceneColour?.Dispose();
+        shadow.Dispose();
         composite.Dispose();
         surfaces?.Dispose();
         sky.Dispose();

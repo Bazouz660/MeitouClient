@@ -308,6 +308,19 @@ silicon tracks the hazards inside one. <code>FillBuffer</code> clears only (Meta
 byte; no caller asks for another value). Verified with an 8x8 dispatch into an RGBA8UI storage
 image through set 0's argument buffer, read back as (2, 3, 99, 255).
 
+**Shadows (step 4's first slice).** The seam now carries the host-pass handoff and the device capabilities
+the shadow pass needs (`BeginHostPass`/`SetPassViewport`/`EndHostPass`, `DepthClamp`, `RecordsSecondaries`), so
+`ShadowPass` and `TerrainShadowMap` run on `IGpuContext`; Metal opens no secondaries and clamps depth. The Metal
+host draws the terrain's depth into the cascades before the scene, and the receivers sample the atlas. Casters
+are terrain only (no objects or foliage yet). Two backend facts this surfaced:
+
+- **A new Metal render encoder carries no pipeline state**, so the redundancy filter must be reset in
+  `BeginRendering`: the multi-pass shadow atlas otherwise drew a later pass without `setRenderPipelineState`.
+- **A depth-only pipeline has no colour attachment at slot 0**; the pipeline builder skips it when the format is
+  `None`.
+
+The noise texture uploads through an upload batch (the seam's `IGpuUploads` has no direct `Write`).
+
 **The composite (the first slice of the chain).** The Metal scene draws into an RGBA16F target and
 `PostComposite` runs the game's own tone-map shader (`PostProcessShaders.Composite`, through
 `LegacyProgram`) into the backbuffer. The fullscreen pass flips `vUv.y` on Metal: Vulkan's negative

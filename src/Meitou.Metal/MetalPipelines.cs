@@ -41,20 +41,24 @@ public sealed class MetalPipelines : IGpuPipelines
         d.RasterSampleCount = (ulong)Math.Max(1, desc.Targets.Samples);
         d.IsAlphaToCoverageEnabled = desc.AlphaToCoverage;
 
-        var attachment = d.ColorAttachments.Object(0);
-        attachment.PixelFormat = MetalConventions.Pixel(desc.Targets.Colour);
-        attachment.IsBlendingEnabled = desc.Blend.Enable;
-        attachment.SourceRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
-        attachment.SourceAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
-        attachment.DestinationRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
-        attachment.DestinationAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
-        attachment.RgbBlendOperation = MetalConventions.BlendOp(desc.Blend.ColourOp);
-        attachment.AlphaBlendOperation = MetalConventions.BlendOp(desc.Blend.AlphaOp);
-        attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.R) ? attachment.WriteMask | MTLColorWriteMask.Red : attachment.WriteMask & ~MTLColorWriteMask.Red;
-        attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.G) ? attachment.WriteMask | MTLColorWriteMask.Green : attachment.WriteMask & ~MTLColorWriteMask.Green;
-        attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.B) ? attachment.WriteMask | MTLColorWriteMask.Blue : attachment.WriteMask & ~MTLColorWriteMask.Blue;
-        attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.A) ? attachment.WriteMask | MTLColorWriteMask.Alpha : attachment.WriteMask & ~MTLColorWriteMask.Alpha;
-        d.ColorAttachments.SetObject(attachment, 0);
+        // A depth-only pass (the shadow casters) has no colour attachment at slot 0.
+        if (desc.Targets.Colour != InternalFormat.None)
+        {
+            var attachment = d.ColorAttachments.Object(0);
+            attachment.PixelFormat = MetalConventions.Pixel(desc.Targets.Colour);
+            attachment.IsBlendingEnabled = desc.Blend.Enable;
+            attachment.SourceRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
+            attachment.SourceAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
+            attachment.DestinationRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
+            attachment.DestinationAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
+            attachment.RgbBlendOperation = MetalConventions.BlendOp(desc.Blend.ColourOp);
+            attachment.AlphaBlendOperation = MetalConventions.BlendOp(desc.Blend.AlphaOp);
+            attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.R) ? attachment.WriteMask | MTLColorWriteMask.Red : attachment.WriteMask & ~MTLColorWriteMask.Red;
+            attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.G) ? attachment.WriteMask | MTLColorWriteMask.Green : attachment.WriteMask & ~MTLColorWriteMask.Green;
+            attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.B) ? attachment.WriteMask | MTLColorWriteMask.Blue : attachment.WriteMask & ~MTLColorWriteMask.Blue;
+            attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.A) ? attachment.WriteMask | MTLColorWriteMask.Alpha : attachment.WriteMask & ~MTLColorWriteMask.Alpha;
+            d.ColorAttachments.SetObject(attachment, 0);
+        }
         if (desc.Targets.Extra != InternalFormat.None)
         {
             var extra = d.ColorAttachments.Object(1);

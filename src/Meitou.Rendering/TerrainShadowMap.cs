@@ -23,7 +23,7 @@ namespace Meitou.Rendering;
 sealed unsafe class TerrainShadowMap : IDisposable
 {
     /// <summary>The native GPU API the map is made and drawn with.</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly int size;
     readonly float spacing;
     readonly GpuTexture heights;
@@ -41,7 +41,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
     public const float RebuildAngle = 0.0017f;
 
     /// <param name="coarse">The whole-world raw heights, <paramref name="size"/>² samples (WorldScene.Coarse).</param>
-    public TerrainShadowMap(GpuContext gpu, ushort[] coarse, int size)
+    public TerrainShadowMap(IGpuContext gpu, ushort[] coarse, int size)
     {
         Gpu = gpu;
         this.size = size;
