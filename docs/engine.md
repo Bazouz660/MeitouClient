@@ -131,6 +131,35 @@ Title character preparation starts ahead of ordinary streaming during boot; the 
 `--title-preview --screenshot <path>` captures it for visual QA; `--ticks` advances the fight. Save arrival still uses the
 loader's leader-focused camera contract; saved camera pose restoration remains unimplemented.
 
+## Multiplayer
+
+`GameHost.Network.cs` holds the role (`NetRole.None` in single-player: no net object, every pump a null check), the `NetHost` or
+`NetClient`, the `NetSessionView` the interface reads (`player.Net`) and the request dispatch (`player.MultiplayerRequested`:
+host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Protocol and loops: [net](net.md).
+
+- **Frame order** (`GameHost.Interactive.cs`): `DoEvents → CoveredFrame → … → NetBeginFrame(frameDt) → if (!Covered)
+  session.Advance → DuelHoldClock → WorldNews → NetEndFrame → HandleSaves → HandleNewGame → HandleMainMenu → StepSceneLoad`.
+  `NetBeginFrame` = `netHost.BeginFrame()` / `netClient.BeginFrame(dt)` (transport events, also while covered; the client's
+  presentation and clock); `NetEndFrame` = `netHost.EndFrame(Covered)` / `netClient.EndFrame()` and the client's frame step,
+  before a save or load can swap the world. Only `session.Advance` ticks the world.
+- **Identity**: the config's `PlayerId` (made and saved on first use), `SanitizeName(--name ?? PlayerName ?? user name)`, build
+  `Tag (Commit)`, and the data set hashed once on a worker (`DataSetIdentity.Compute(LoadOrder.FromInstall)`), started by the
+  first multiplayer request.
+- **News** (`GameHost.News.cs`): a world message for player 0 or everyone is a notice and a log line; while hosting, one for
+  another player or everyone is also sent as `MessageNet`. A knock-out by player 0's character is a notice, by another
+  player's a `KnockoutNet` to its owner (`KnockoutText` builds both).
+- **Debug**: the F11 statistics get a `net` line (`NetHost.StatsLine()` or the client's link figures); the window title ends
+  with `| host, N players` or `| client of address`. On a client the settings' simulation rule rows read and lock to the host's
+  (`SettingsMenu.HostRules`).
+
+### Host
+
+Pending (package G2).
+
+### Client
+
+Pending (package G3).
+
 ## Rendering and upscaling
 
 WorldFrame prepares/streams sky/shadows/reflection, scene depth slices and post. Algorithms

@@ -110,6 +110,7 @@ sealed partial class GameHost
                     Text: v => v <= 0 ? "Unlimited" : $"{v:0} fps"), config)
             {
                 UpscalerStatus = () => gpu.Post?.ActiveUpscaler ?? "Off",
+                HostRules = () => role == NetRole.Client ? netClient?.SessionRules : null,
                 AttackSlotsChanged = slots => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.AttackSlots = slots; },
                 LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
                 DoorsCloseChanged = on => { foreach (var locks in session.World.Systems.OfType<Meitou.Simulation.Locks.LockSystem>()) locks.DoorsCloseBehind = on; },
@@ -342,6 +343,7 @@ sealed partial class GameHost
         int frames = 0, totalFrames = 0;
         bool quit = false;
         player.Config = config;
+        player.MultiplayerRequested += request => { if (OnMultiplayerRequest(request)) quit = true; };
         player.ScreenAction += e =>
         {
             if (e.Action == "save") saveRequestedFolder = Meitou.Data.Save.SaveCatalog.Folder(Meitou.Simulation.Saving.QuickSave.DefaultRoot, e.Text);
@@ -431,10 +433,12 @@ sealed partial class GameHost
             }
             // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
+            NetBeginFrame(frameDt);   // the session's transport events, also while covered (docs/engine.md "Multiplayer")
             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
             DuelHoldClock();
             advanceTotal += Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
             WorldNews();
+            NetEndFrame();   // before a save or load can swap the world
             HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
             HandleNewGame();
             HandleMainMenu();
@@ -585,6 +589,7 @@ sealed partial class GameHost
                 if (audio is not null) stats.Add($"audio       {audio.StatsLine()}");
                 if (audio is not null) stats.Add($"world audio {WorldAudioStats()}");
                 if (audio is not null) stats.Add($"char audio  {CharacterAudioStats()}, {UiAudioStats()}");
+                if (NetStatsLine() is { } netLine) stats.Add($"net         {netLine}");
                 statsTimer = gpuSum = 0;
                 statsFrames = gpuSamples = 0;
             }
@@ -598,7 +603,7 @@ sealed partial class GameHost
                 double achieved = SimulationClock.AchievedSpeedOver(session.TimeScale, ran, dropped);
                 string speedText = session.Simulation.IsPaused ? "paused" + (session.Simulation.RequestedPause ? "" : $" (x{session.Simulation.LastNonZeroSpeed:0})") : $"x{session.TimeScale:0}" + (achieved < session.TimeScale - 0.05 ? $" (running x{achieved:0.0})" : "");
                 window.Title = $"Meitou | {frames / titleTimer:0} fps, cpu {cpuSum / Math.Max(frames, 1):0.00} ms | {(session.Camera.IsFree ? "free camera" : $"boom {s.Distance:0}")} | " +
-                    $"{session.Clock.TimeText} {session.Clock.DayText} {speedText} | {s.Target.X:0}, {s.Target.Z:0}{(gpu.Post is { Temporal: true } p ? $" | {p.ActiveUpscaler}" : "")}";
+                    $"{session.Clock.TimeText} {session.Clock.DayText} {speedText} | {s.Target.X:0}, {s.Target.Z:0}{(gpu.Post is { Temporal: true } p ? $" | {p.ActiveUpscaler}" : "")}{NetTitle()}";
                 titleTimer = cpuSum = 0;
                 frames = 0;
             }
@@ -668,33 +673,5 @@ sealed partial class GameHost
         double remaining = end - clock.Elapsed.TotalSeconds;
         if (remaining > 0.002) Thread.Sleep(TimeSpan.FromSeconds(remaining - 0.0015));
         while (clock.Elapsed.TotalSeconds < end) Thread.SpinWait(64);
-    }
-
-    /// <summary>Between ticks: the world's messages for this player (player 0) go to the HUD and the log, the fights hostility started to the log.</summary>
-    void WorldNews()
-    {
-        var world = session.World;
-        foreach (var message in world.TakeMessages())
-        {
-            if (!message.For(0)) continue;
-            Console.WriteLine($"relations {message.Text}");
-            player.Notice(message.Text);
-        }
-        // Stealth knock-outs: the original's floating "*Thunk*" (a hit) or "Failed!" over the attacker, here as a notice.
-        if (world.Systems.OfType<Meitou.Simulation.Carrying.CarrySystem>().FirstOrDefault() is { Knockouts.Count: > 0 } carry)
-            foreach (var k in carry.TakeKnockouts())
-                if (world.Characters.IsAlive(k.Attacker) && world.Characters.Cold(k.Attacker.Slot) is { IsPlayer: true } attacker)
-                    player.Notice($"{attacker.Name}: {Loc.Tr(k.Success ? "*Thunk*" : "Failed!")} ({Math.Clamp(k.Chance, 0, 100):0}%)", !k.Success);
-        if (population is not null)
-            foreach (var line in population.TakeTownLog()) Console.WriteLine($"town      {line}");
-        if (population is not null)
-            foreach (var w in population.TakeWildLog())
-                Console.WriteLine($"wild      tick {w.Tick}: {w.Squad} ({w.Members}) from the {(w.Kind == Meitou.Simulation.WildKind.Nest ? "nest" : "sector of")} {w.Place}");
-        if (aggro is null || aggro.Log.Count == 0) return;
-        var table = world.Characters;
-        string Who(Meitou.Simulation.CharacterId id, int faction) =>
-            $"{(table.IsAlive(id) ? table.Cold(id.Slot)!.Name : "?")} ({(popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : "no faction")})";
-        foreach (var e in aggro.TakeLog())
-            Console.WriteLine($"aggro     tick {e.Tick}: {Who(e.Attacker, e.AttackerFaction)} attacks {Who(e.Target, e.TargetFaction)} at {e.Distance:0}{(e.Joined > 0 ? $", {e.Joined} squad mate(s) join" : "")}");
     }
 }
