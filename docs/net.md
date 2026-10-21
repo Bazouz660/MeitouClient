@@ -28,7 +28,7 @@ tables are kept for the whole connection, never reset at a world epoch.
 ## Messages
 
 The first byte of every packet is a `MessageType`. The table is append-only within a protocol version; any layout change
-in any codec bumps `NetProtocol.Version` (currently 1).
+in any codec bumps `NetProtocol.Version` (currently 2: the wave 1-6 layouts; 1 never shipped).
 
 | Id | Message | Channel |
 |---|---|---|

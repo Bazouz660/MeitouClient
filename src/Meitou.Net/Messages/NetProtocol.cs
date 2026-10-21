@@ -4,7 +4,7 @@ namespace Meitou.Net;
 public static class NetProtocol
 {
     /// <summary>Bumped on any layout change in any codec; a client with another version is refused at connect time.</summary>
-    public const ushort Version = 1;
+    public const ushort Version = 2;
 
     public const int DefaultPort = 40120;
 

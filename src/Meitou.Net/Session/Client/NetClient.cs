@@ -28,7 +28,7 @@ public sealed class NetClient : IClockAuthority, IDisposable
     public const double FrameEverySeconds = 0.1;
 
     public const string LostText = "Lost connection to the host.", UnreachableText = "Could not reach the host.", BadData = "Bad data from the host.",
-        NeedsPasswordText = "This game needs a password.", LeftText = "You left the game.";
+        NeedsPasswordText = "This game needs a password.", LeftText = "You left the game.", TooManyFilesText = "Too many data files and mods to join a game.";
 
     sealed class Listener(NetClient client) : INetListener
     {
@@ -336,8 +336,21 @@ public sealed class NetClient : IClockAuthority, IDisposable
             return;
         }
         writer.Reset();
-        ProtocolCodec.Write(writer, new Hello(NetProtocol.Version, self.Build, self.PlayerId, self.Name, Handshake.Proof(password, challenge.Nonce, self.PlayerId),
-            self.Data, Handshake.AnimationHash(catalog.Animations)));
+        try
+        {
+            ProtocolCodec.Write(writer, new Hello(NetProtocol.Version, self.Build, self.PlayerId, self.Name, Handshake.Proof(password, challenge.Nonce, self.PlayerId),
+                self.Data, Handshake.AnimationHash(catalog.Animations)));
+        }
+        catch (ArgumentException e)
+        {
+            // A data set the codec cannot carry (over ProtocolCodec.MaxDataFiles files): this game cannot join any host.
+            Log?.Invoke($"net: the hello cannot be written: {e.Message}");
+            writer.Reset();
+            ProtocolCodec.Write(writer, new Reject(RejectCode.Data, TooManyFilesText));
+            transport.Drop(peer, writer.Written);
+            Close(new NetDisconnect(RejectCode.Data, TooManyFilesText), raise: true);
+            return;
+        }
         transport.Send(peer, NetChannel.Control, writer.Written);
         State = NetClientState.Authenticating;
     }
