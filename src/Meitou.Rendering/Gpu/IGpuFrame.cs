@@ -32,6 +32,10 @@ public interface IGpuFrame
     /// <summary>Writes bytes into the frame's constant ring (the default blocks' slices), aligned; the slice lives for the frame.</summary>
     Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16);
 
+    /// <summary>Reserves bytes in the frame's constant ring without a source copy: the caller fills the slice (matrices,
+    /// instances). The same lifetime and alignment rules as <see cref="WriteConstants"/>; the contents are undefined.</summary>
+    Transient AllocateConstants(ulong size, ulong alignment = 16);
+
     /// <summary>The frame's timestamp queries (a pass's two stamps, read when the frame's slot comes round).</summary>
     IGpuTimestamps Timestamps { get; }
 }

@@ -923,7 +923,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (cursors.Length < meshGroupList.Count) cursors = new int[Math.Max(meshGroupList.Count, cursors.Length * 2)];
         for (int k = 0; k < meshGroupList.Count; k++) { var g = meshGroupList[k]; cursors[k] = g.Offset = total; total += g.Count; }
         // Pass 2: each placement straight into its group's place in the frame's (write-combined) constants, one 64-byte line each.
-        placements = gpu.Frame.WriteConstants(new byte[total * 64], 64);
+        placements = gpu.Frame.AllocateConstants((ulong)(total * 64), 64);
         var target = (Matrix4x4*)placements.Pointer;
         var t = biomes ? textures : null;
         for (int i = 0; i < items.Length; i++)

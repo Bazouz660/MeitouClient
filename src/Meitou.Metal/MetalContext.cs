@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Gpu.Shaders;
@@ -175,8 +176,12 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         long chunkBytes = 0;
         int chunkCount = 0;
         foreach (var f in frames) { chunkBytes += f.ChunkBytes; chunkCount += f.ChunkCount; }
+        var managed = GC.GetGCMemoryInfo();
+        long loh = managed.GenerationInfo.Length > 3 ? managed.GenerationInfo[3].SizeAfterBytes : 0;
+        long rss = Process.GetCurrentProcess().WorkingSet64;
         return $"textures {tex}/{textures.Count} views {liveViews}/{views.Count} retiredViews {retiredViews.Count} buffers {liveBuffers}/{buffers.Count} " +
-            $"sets {sets.Count} chunks {chunkCount} ({chunkBytes / 1048576} MB)";
+            $"sets {sets.Count} chunks {chunkCount} ({chunkBytes / 1048576} MB); managed {managed.HeapSizeBytes / 1048576} MB " +
+            $"(LOH {loh / 1048576} MB), RSS {rss / 1048576} MB, GPU {Device.CurrentAllocatedSize / 1048576} MB";
     }
 
     /// <summary>The queue the frames are committed to (an upload batch's command buffer comes from it too: the queue executes its command buffers in commit order).</summary>

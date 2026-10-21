@@ -2,6 +2,7 @@
 // Metal exists on macOS only; the file is compiled only there (the csproj's MEITOU_METAL constant).
 #pragma warning disable CA1416
 using System.Diagnostics;
+using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Numerics;
 using Meitou.Data.Textures;
@@ -37,13 +38,16 @@ sealed partial class GameHost
         }
         if (LoadScene is not null) scene = ownedScene = loaded;
 
+        // Same setting as VulkanDisplay: Metal used to always present with display sync, even under --no-vsync.
+        bool vsync = g.VSync ?? config.VSync;
         using var display = new MetalDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
             Title = "Meitou (metal)",
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
-        });
+        }, vsync);
+        Console.WriteLine($"metal     vsync {(display.VSync ? "on" : "off")}");
         using var ctx = new MetalContext(display);
         var window = display.Window;
         ctx.Samplers.MaxAnisotropy = o.Anisotropy;
@@ -344,7 +348,7 @@ sealed partial class GameHost
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
 
         var clock = Stopwatch.StartNew();
-        double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0;
+        double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;
         int frames = 0, fpsFrames = 0;
         string fpsText = "";
         bool trace = Environment.GetEnvironmentVariable("MEITOU_METAL_TRACE") == "1";
@@ -362,6 +366,7 @@ sealed partial class GameHost
         }
         var statsLines = new List<string>();
         GpuTexture? sceneColour = null;
+        double streamingIdleSince = 0, lastManagedTrim = double.NegativeInfinity;
         // Loading can take long enough for the terminal that started the game to take focus back: bring the game forward again
         // before the interactive loop (its title and FPS are watched there).
         display.Activate();
@@ -375,7 +380,8 @@ sealed partial class GameHost
             {
                 traceAt = now;
                 Console.WriteLine($"metal     trace t={now:0.0}s frame {frames}, window {window.Size.X}x{window.Size.Y} points, " +
-                    $"framebuffer {window.FramebufferSize.X}x{window.FramebufferSize.Y} pixels, cpu {dt * 1000:0.0} ms, gpu {ctx.LastGpuMilliseconds:0.0} ms");
+                    $"framebuffer {window.FramebufferSize.X}x{window.FramebufferSize.Y} pixels, cpu {dt * 1000:0.0} ms " +
+                    $"(drawable {lastWait:0.0} ms, record {lastRecord:0.0} ms), gpu {ctx.LastGpuMilliseconds:0.0} ms");
             }
             if (trace && now - nativeAt >= 5)
             {
@@ -402,6 +408,8 @@ sealed partial class GameHost
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
+            double drawableWait = display.LastDrawableWaitMilliseconds;
+            long recordStart = Stopwatch.GetTimestamp();
             var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
             // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
             ctx.LodBias = MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
@@ -560,7 +568,27 @@ sealed partial class GameHost
                 if (wrote) overlay.Flush(size.X, size.Y);
             }
             ctx.EndFrame();
+            lastWait = drawableWait;
+            lastRecord = Stopwatch.GetElapsedTime(recordStart).TotalMilliseconds;
             frames++;
+            // Once the terrain, object and foliage streamers have been quiet for two seconds, the large decode/upload
+            // buffers are garbage. Compact at that idle point (at most once a minute) so the LOH does not keep them
+            // for the rest of the session. Active streaming is never interrupted.
+            bool streamingIdle = (terrainTextures?.Idle ?? true) && (objects?.Pending ?? 0) == 0 && (foliage?.Pending ?? 0) == 0;
+            if (!streamingIdle) streamingIdleSince = 0;
+            else if (streamingIdleSince == 0) streamingIdleSince = now;
+            if (streamingIdle && now - streamingIdleSince >= 2 && now - lastManagedTrim >= 60)
+            {
+                lastManagedTrim = now;
+                var before = GC.GetGCMemoryInfo();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                var after = GC.GetGCMemoryInfo();
+                long loh = after.GenerationInfo.Length > 3 ? after.GenerationInfo[3].SizeAfterBytes : 0;
+                if (trace)
+                    Console.WriteLine($"metal     idle trim: heap {before.HeapSizeBytes / 1048576} -> {after.HeapSizeBytes / 1048576} MB, " +
+                        $"LOH {loh / 1048576} MB");
+            }
             if (screenshotNow)
             {
                 string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
@@ -588,6 +616,9 @@ sealed partial class GameHost
             }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        // Let the queue finish before the renderers release views, buffers and bindless entries; a quit during a
+        // streaming upload otherwise freed resources the GPU was still reading and could fault on the way out.
+        ctx.Finish();
         hud?.DisposeUi();
         overlay?.Dispose();
         characters?.Dispose();

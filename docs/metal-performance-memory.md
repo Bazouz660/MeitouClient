@@ -1,7 +1,8 @@
 # Metal performance and memory plan
 
-Status: **plan, not implemented** (2026-10-21). Read this with [metal-backend](metal-backend.md);
-the macOS Vulkan numbers are in [macos-port](macos-port.md) section 7.
+Status: **partially implemented** (2026-10-21): presentation diagnostics and vsync wiring, the map-tile/source memory
+releases and an idle LOH trim are in. The GPU cull/indirect port and the remaining frame-rate work are not. Read this
+with [metal-backend](metal-backend.md); the macOS Vulkan numbers are in [macos-port](macos-port.md) section 7.
 
 ## Baseline
 
@@ -22,6 +23,32 @@ Memory before this plan's fixes: 97,000 live texture views / 143,000 total after
 `ImpostorTextures.DropCpu` and the upstream pooled-buffer commit reduced LOH to ~1.2 GB and RSS after load to
 ~1.4-1.6 GB. There is **no observed OOM now**; the remaining growth is high-water caches, native resources and GC
 commitment, not a proven single leak.
+
+## Progress (2026-10-21)
+
+- **Presentation:** `MetalDisplay` now sets three drawables (matching `MetalContext.FrameRingDepth`), exposes
+  `displaySyncEnabled` (so `--vsync`/`--no-vsync` and the saved setting reach Metal as they do Vulkan), keeps
+  `allowsNextDrawableTimeout`, and records the actual `NextDrawable` wait. `MEITOU_METAL_TRACE=1` now prints
+  `drawable ... ms, record ... ms`; `ResourceSummary` prints managed/LOH/RSS/GPU allocation.
+- **Measured:** the built-in display is 120 Hz. At 0.50 with vsync the steady frame is **30-31 fps**:
+  `NextDrawable` 25-27 ms, record 5-7 ms, GPU 19-22 ms. With `--no-vsync` the same view reaches **~45-48 fps**
+  (drawable 14-18 ms, record 5-7 ms); the GPU is not the only wall. A 120 Hz vsync frame has to fit the 25 ms
+  three-refresh window; 20 ms GPU + 6 ms record lands in the four-refresh (33 ms) bucket. The documented Vulkan
+  36-40 fps at 27.5 ms GPU does not fit that bucket, so normalize its actual present mode/refresh before treating it
+  as a like-for-like target.
+- **Memory:** `MapWindows` retains 4 overlay/2 colour decoded tiles only during a compose and clears them afterwards
+  (was 24 + 12 full decoded maps, hundreds of MB of LOH at 2048²/4096²). `TerrainTextures.Source` drops its blend/ground/world-colour/biome
+  CPU images after upload. When terrain/object/foliage streaming has been quiet for two seconds, the host does one
+  compacting LOH collection (at most once a minute).
+- **Result:** over a 75 s Release run at the Hub, managed LOH fell from ~1.8 GB to **~0.67-0.69 GB**, managed heap to
+  ~1.3-1.6 GB and RSS stayed ~0.9-1.7 GB without OOM or monotonic growth. The overview/map screenshot and the
+  `MTL_DEBUG_LAYER=1` gate are clean.
+- **Also:** the large per-frame foliage/object/terrain matrix arrays are written directly into the frame constants
+  (`IGpuFrame.AllocateConstants`) instead of being allocated and copied twice; the GLFW API lookup for edge scrolling
+  is cached.
+- **Gate:** build 0/0; tests 424/425 (the known arm64 `GoldenHashTests.Scripted_scenarios_hash_as_pinned` pin).
+- **Still open:** the same-window vsync >40 fps gate, GPU culls/indirect draws/grass, CPU culling/recording (foliage
+  ~4 ms and shadow recording ~2 ms per frame in the steady profile), and a multi-zone soak.
 
 ## Targets
 

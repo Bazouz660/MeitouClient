@@ -470,7 +470,9 @@ sprite, the settings/free camera and the profiler chart.
 Vulkan reference is 36-40; Metal's GPU is already faster, so the gap is CPU/present and cache/native retention. The
 measurements, targets, two tracks and acceptance gates are in
 [metal-performance-memory](metal-performance-memory.md). Performance and memory come before the remaining UI and
-rendering features; `--render-scale` and `MEITOU_METAL_TRACE=1` remain the comparison tools.
+rendering features; `--render-scale` and `MEITOU_METAL_TRACE=1` remain the comparison tools. The 2026-10-21 slice
+wired the real vsync setting and drawable trace, released the map-tile/source caches and added the idle LOH trim;
+the plan document records the before/after numbers and what remains.
 
 **What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
 host services the panels call:

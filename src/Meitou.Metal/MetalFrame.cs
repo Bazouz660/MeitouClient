@@ -62,18 +62,25 @@ public sealed unsafe class MetalFrame : IGpuFrame
     /// <summary>Writes bytes into the frame's constant ring (the default blocks' slices), aligned; the slice lives for the frame.</summary>
     public unsafe Transient WriteConstants(ReadOnlySpan<byte> data, ulong alignment = 16)
     {
+        var slice = AllocateConstants((ulong)data.Length, alignment);
+        if (data.Length > 0) data.CopyTo(slice.Bytes);
+        return slice;
+    }
+
+    /// <inheritdoc cref="IGpuFrame.AllocateConstants"/>
+    public unsafe Transient AllocateConstants(ulong size, ulong alignment = 16)
+    {
         alignment = Math.Max(alignment, 1);
-        if (data.Length == 0) return new Transient(current.Handle, current.Used, current.Pointer + current.Used, 0);
-        if (current.Size - current.Used < (ulong)data.Length + alignment)
-            current = NextChunk((ulong)data.Length + alignment);
+        if (size == 0) return new Transient(current.Handle, current.Used, current.Pointer + current.Used, 0);
+        if (current.Size - current.Used < size + alignment)
+            current = NextChunk(size + alignment);
         ulong offset = (current.Used + alignment - 1) / alignment * alignment;
-        if (current.Size - offset < (ulong)data.Length) current = NextChunk((ulong)data.Length + alignment);
+        if (current.Size - offset < size) current = NextChunk(size + alignment);
         offset = (current.Used + alignment - 1) / alignment * alignment;
         var pointer = current.Pointer + (nint)offset;
-        data.CopyTo(new Span<byte>(pointer, data.Length));
-        current.Used = offset + (ulong)data.Length;
+        current.Used = offset + size;
         // Shared mode needs no flush (Managed's DidModifyRange); the GPU reads the memory as it is.
-        return new Transient(current.Handle, offset, pointer, (ulong)data.Length);
+        return new Transient(current.Handle, offset, pointer, size);
     }
 
     Chunk NewChunk(ulong size)

@@ -24,10 +24,12 @@ public sealed unsafe class MetalDisplay : IDisposable
     /// <summary>The queue the frames are committed to.</summary>
     public MTLCommandQueue Queue { get; }
 
-    /// <summary>The layer the drawables come from.</summary>
-    public CAMetalLayer Layer { get; }
+    CAMetalLayer layer;
 
-    public MetalDisplay(WindowOptions options)
+    /// <summary>The layer the drawables come from (a struct wrapper: callers read it, the display owns its mutation).</summary>
+    public CAMetalLayer Layer => layer;
+
+    public MetalDisplay(WindowOptions options, bool vsync = true)
     {
         ObjectiveC.LinkMetal();
         Window = Silk.NET.Windowing.Window.Create(options);
@@ -55,7 +57,13 @@ public sealed unsafe class MetalDisplay : IDisposable
         layer.Device = Device;
         layer.PixelFormat = MTLPixelFormat.BGRA8Unorm;
         layer.FramebufferOnly = true;
-        Layer = layer;
+        // Three drawables, matching MetalContext.FrameRingDepth: a fourth would let the CPU run further ahead than the
+        // constants ring can safely retain, and a smaller ring (the layer's old default is also three) serialises present.
+        layer.MaximumDrawableCount = MetalContext.FrameRingDepth;
+        // The Metal path had no vsync switch of its own; it was always on. Follow the game's setting like VulkanDisplay.
+        layer.DisplaySyncEnabled = vsync;
+        layer.AllowsNextDrawableTimeout = true;
+        this.layer = layer;
         Window.Resize += size => Console.WriteLine($"metal     window resize event {size.X}x{size.Y} points");
         Window.FramebufferResize += size => Console.WriteLine($"metal     framebuffer resize event {size.X}x{size.Y} pixels");
         SyncLayer();
@@ -139,13 +147,19 @@ public sealed unsafe class MetalDisplay : IDisposable
 
     long noDrawableStamp;
 
+    /// <summary>How long the last <see cref="TryBeginFrame"/> waited in <c>CAMetalLayer.nextDrawable</c> (ms). The trace
+    /// separates this present/swapchain stall from the CPU time spent recording the frame.</summary>
+    public double LastDrawableWaitMilliseconds { get; private set; }
+
     /// <summary>Begins a frame: the drawable to draw into and the command buffer to record it in.</summary>
     public bool TryBeginFrame(out MTLCommandBuffer command, out CAMetalDrawable drawable)
     {
         SyncLayer();
         command = default;
         drawable = default;
+        long started = Stopwatch.GetTimestamp();
         var next = Layer.NextDrawable;
+        LastDrawableWaitMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         if (next.DrawableID == 0)
         {
             long now = Stopwatch.GetTimestamp();
@@ -159,6 +173,13 @@ public sealed unsafe class MetalDisplay : IDisposable
         drawable = next;
         command = Queue.CommandBuffer();
         return true;
+    }
+
+    /// <summary>The layer's actual display-sync state (diagnostic and the game's settings).</summary>
+    public bool VSync
+    {
+        get => layer.DisplaySyncEnabled;
+        set => layer.DisplaySyncEnabled = value;
     }
 
     /// <summary>Opens the render pass for a frame: the drawable cleared to <paramref name="clear"/>.</summary>

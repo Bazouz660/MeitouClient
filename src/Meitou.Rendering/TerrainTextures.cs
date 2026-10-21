@@ -143,6 +143,19 @@ public sealed unsafe class TerrainTextures : IDisposable
         internal int WorldColourSize;
         internal FoliageBiomeMap? BiomeMap;
         internal readonly List<string> Messages = [];
+
+        /// <summary>Drops the CPU images after <see cref="Create"/> has uploaded them. They are the largest LOH objects
+        /// of a cold start (the blend, ground and world-colour buffers); keeping the source alive kept them rooted.</summary>
+        internal void ReleaseUploaded()
+        {
+            Blend = null;
+            Ground = null;
+            WorldColour = null;
+            BiomeMap = null;
+            All = null!;
+            Info = null!;
+            // Maps stays: the TerrainTextures owns the live map windows.
+        }
     }
 
     /// <summary>The CPU part of <see cref="Create"/>, on any thread (it makes no GPU resource).</summary>
@@ -186,6 +199,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         if (source.Blend is { } blend) t.BuildBiomes(blend);
         t.BuildWorld(source);
         t.biomeMap = source.BiomeMap;
+        source.ReleaseUploaded();
         return t;
     }
 
@@ -909,8 +923,10 @@ sealed class MapWindows
             size = cache.Get(0, 0)?.Width ?? throw new InvalidDataException($"cannot read {first}");
             return cache;
         }
-        var o = Cache("new_overlay", 24, out int ot);
-        var c = Cache("colour", 12, out int ct);
+        // A 2048² overlay tile is 16 MB and a colour tile can be larger. The window spans only a few tiles; keep
+        // enough for one compose and clear them below, instead of pinning 24 + 12 full decoded maps for the session.
+        var o = Cache("new_overlay", 4, out int ot);
+        var c = Cache("colour", 2, out int ct);
         return new MapWindows(o, c, ot, ct);
     }
 
@@ -972,7 +988,12 @@ sealed class MapWindows
                     var cdata = Cut(colour, colourTile, sx * ratio, sz * ratio, sw * ratio, sh * ratio);
                     pieces.Add(new Piece(true, sx * ratio % cs, sz * ratio % cs, sw * ratio, sh * ratio, TerrainTextures.Mips(cdata, sw * ratio, sh * ratio, 7, pooled: true)));
                 }
-        return new Update(px0, pz0, pieces);
+        var update = new Update(px0, pz0, pieces);
+        // The pieces own pooled copies of what they need; the decoded tiles are large and a window moves only after
+        // 4,608 units, so retaining them for the next compose is not worth hundreds of MB of LOH.
+        overlay.Clear();
+        colour.Clear();
+        return update;
     }
 
     /// <summary>Splits [start, start + length) at multiples of <paramref name="period"/> (the texture wraps there).</summary>
@@ -1031,6 +1052,12 @@ sealed class MapWindows
             var img = File.Exists(path) ? TextureLoader.LoadImage(File.ReadAllBytes(path)) : null;
             lock (tiles) tiles[(tx, tz)] = (img, ++clock);
             return img;
+        }
+
+        /// <summary>Drops every decoded tile after a compose has copied what it needs.</summary>
+        public void Clear()
+        {
+            lock (tiles) tiles.Clear();
         }
 
         /// <summary>Drops the least recently used tiles beyond the cache size, keeping the ones just used.</summary>

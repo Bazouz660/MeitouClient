@@ -1228,8 +1228,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (!gpu) foreach (var b in impostorActive) { b.Offset = total; total += b.Count; }
         if (total > 0 && !gpu)
         {
-            instances = Gpu.Frame.WriteConstants(new byte[total * InstanceStride], 16);
-            var target = instances.Bytes[..(total * InstanceStride)];
+            instances = Gpu.Frame.AllocateConstants((ulong)(total * InstanceStride), 16);
+            var target = instances.Bytes;
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
             foreach (var b in impostorActive)
