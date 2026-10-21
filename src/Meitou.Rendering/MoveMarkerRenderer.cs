@@ -65,7 +65,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     /// <summary>Samples per pixel of the marker (anti-aliasing: the mesh has many triangles under a pixel; at most what the device allows).</summary>
     const int WantedSamples = 8;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly DeviceBuffer vertices;
@@ -86,7 +86,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     /// <summary>1 when the order is given, down to 0 (gone).</summary>
     public float Strength { get; set; }
 
-    MoveMarkerRenderer(GpuContext gpu, float[] data)
+    MoveMarkerRenderer(IGpuContext gpu, float[] data)
     {
         this.gpu = gpu;
         count = data.Length / 6;
@@ -102,10 +102,13 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         composite = LegacyProgram.Create(gpu, CompositeVertex, CompositeFragment, "move marker composite");
         compositeSegment = new NativeSegment(gpu, composite, PrimitiveType.Triangles, "move marker composite");
         markerImage = composite.Sampler("uMarker");
-        var l = gpu.Device.Limits;
-        uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
         samples = 1;
-        while (samples < WantedSamples && (both & (uint)(samples * 2)) != 0) samples *= 2;
+        if (gpu is GpuContext vk)
+        {
+            var l = vk.Device.Limits;
+            uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
+            while (samples < WantedSamples && (both & (uint)(samples * 2)) != 0) samples *= 2;
+        }
         vertices = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)data.Length, BufferUse.Vertex, "move marker");
         using (var batch = gpu.Uploads.Begin()) batch.Write(vertices, 0, MemoryMarshal.AsBytes(data.AsSpan()));
         vertexSource = new VertexArrayBindings(
@@ -116,7 +119,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     }
 
     /// <summary>The marker from <c>position.mesh</c> (null when the file is missing or unreadable).</summary>
-    public static MoveMarkerRenderer? Create(GpuContext gpu, Func<string, string?> find)
+    public static MoveMarkerRenderer? Create(IGpuContext gpu, Func<string, string?> find)
     {
         if (find("position.mesh") is not { } path) return null;
         try
@@ -186,8 +189,8 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         for (int pass = 0; pass < 2; pass++)
         {
             bool hidden = pass == 1;
-            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, cull: CullMode.Back, depthTest: true, depthWrite: !hidden,
-                compare: DepthFunction.Lequal, blend: premultiplied, depthClamp: gpu.Device.DepthClamp, front: FrontFaceDirection.Ccw);
+            var state = DrawState.For(t.Formats, gpu.DepthClamp, cull: CullMode.Back, depthTest: true, depthWrite: !hidden,
+                compare: DepthFunction.Lequal, blend: premultiplied, depthClamp: gpu.DepthClamp, front: FrontFaceDirection.Ccw);
             var c = hidden ? Hidden : Visible;
             program.Set(colour, c.X, c.Y, c.Z, c.W * Strength);
             program.Set(hiddenPass, hidden ? 1 : 0);
@@ -209,7 +212,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         var over = PassTargets.Of(picture, null).At(viewport);
         cmd.BeginRendering(over.Rendering);
         composite.Bind(markerImage, new SampledTexture(Nearest(), resolved!.View()));
-        var overState = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: premultiplied);
+        var overState = DrawState.For(over.Formats, gpu.DepthClamp, blend: premultiplied);
         overState.Record(cmd, over);
         cmd.BindPipeline(compositeSegment.Get(overState, over.Formats, null));
         composite.Flush(cmd);

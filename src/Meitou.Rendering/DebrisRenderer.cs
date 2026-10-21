@@ -78,7 +78,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         public readonly Vector3 Extent = extent;
     }
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly MaterialResolver? resolver;
     readonly Func<string, string?> find;
     readonly LegacyProgram program;
@@ -92,7 +92,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
 
     /// <param name="resolver">Finds a mesh's textures (null: every mesh untextured).</param>
     /// <param name="find">A file name to its path in the install (the configured resource locations).</param>
-    public DebrisRenderer(GpuContext gpu, MaterialResolver? resolver, Func<string, string?> find)
+    public DebrisRenderer(IGpuContext gpu, MaterialResolver? resolver, Func<string, string?> find)
     {
         this.gpu = gpu;
         this.resolver = resolver;

@@ -42,7 +42,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         }
         """;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment triangles, lines;
     readonly VertexArrayBindings vertexSource;
@@ -56,7 +56,7 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
     /// <summary>Drawn while true (and a mesh was set).</summary>
     public bool Visible { get; set; }
 
-    public NavmeshOverlayRenderer(GpuContext gpu)
+    public NavmeshOverlayRenderer(IGpuContext gpu)
     {
         this.gpu = gpu;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "navmesh overlay");
@@ -103,8 +103,8 @@ public sealed unsafe class NavmeshOverlayRenderer : IDisposable
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Bind(sceneDepth, new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), nearDepth.View()));
-        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha),
-            depthClamp: gpu.Device.DepthClamp);
+        var state = DrawState.For(t.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha),
+            depthClamp: gpu.DepthClamp);
         state.Record(cmd, t);
         Draw(cmd, state, t, triangles, fill, fillCount);
         Draw(cmd, state, t, lines, edges, edgeCount);

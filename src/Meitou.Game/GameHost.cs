@@ -229,6 +229,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
         gpu.NavmeshOverlay ??= new NavmeshOverlayRenderer(context);
+        navOverlayRenderer = gpu.NavmeshOverlay;
         player.MeshHit = (id, origin, direction) => gpu.Characters?.RayHit(DrawKey(id), origin, direction);
         player.Floor = (() => viewedFloor, StepFloor);
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);

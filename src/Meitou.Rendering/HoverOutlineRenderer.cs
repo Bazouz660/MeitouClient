@@ -62,13 +62,13 @@ public sealed class HoverOutlineRenderer
         }
         """;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly UniformHandle depthScale, maskPlanes, scenePlanes, colour, radius;
     readonly SamplerSlot mask, maskDepth, sceneDepth;
 
-    public HoverOutlineRenderer(GpuContext gpu)
+    public HoverOutlineRenderer(IGpuContext gpu)
     {
         this.gpu = gpu;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "hover outline");
@@ -115,7 +115,7 @@ public sealed class HoverOutlineRenderer
                 program.Set(scenePlanes, sceneNear, sceneFar);
                 program.Set(colour, hover.Tint.X, hover.Tint.Y, hover.Tint.Z, hover.Tint.W);
                 program.Set(radius, outline);
-                var state = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(over.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, over);
                 cmd.BindPipeline(segment.Get(state, over.Formats, null));
                 program.Flush(cmd);

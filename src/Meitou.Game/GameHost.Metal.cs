@@ -273,6 +273,16 @@ sealed partial class GameHost
 
         // The terrain: the whole-world heights, the quadtree's patch grid, and (unless textures are off) the biomes' layers and maps.
         // The textures' CPU bake runs here once, as the Vulkan path's boot does before its loading frames.
+        // The world's lamps (including interior room lights), read on a worker; their grid publishes the light globals the world shaders sample.
+        WorldLamps? lamps = null;
+        if (scene.Database is { } lampDb && scene.Heightmap is { } lampMap)
+        {
+            lamps = new WorldLamps(ctx, () =>
+            {
+                var levels = WorldLevelData.Load(install, includeInteriors: true);
+                return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
+            });
+        }
         var terrain = new TerrainRenderer(ctx, scene.Coarse, scene.CoarseSize, scene.Window);
         TerrainTextures? terrainTextures = null;
         if (!o.NoTextures && scene.Database is { } textureDb)
@@ -408,6 +418,9 @@ sealed partial class GameHost
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
         PlayerInterface? hud = null;
+        HoverOutlineRenderer? hoverOutline = null;
+        MoveMarkerRenderer? moveMarker = null;
+        NavmeshOverlayRenderer? navOverlay = null;
         if (overlay is not null)
         {
             hud = new PlayerInterface(session, heights.HeightAt, DrawnPosition) { SpeedUnit = config.SpeedUnit, Floaters = config.Floaters };
@@ -456,6 +469,11 @@ sealed partial class GameHost
             hud.BuildingMoveHit = (origin, direction, distance) => objects?.MoveHit(origin, direction, viewedFloor, distance);
             hud.SurfaceMoveHit = SurfaceMoveHit;
             hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
+            hoverOutline = new HoverOutlineRenderer(ctx);
+            moveMarker = MoveMarkerRenderer.Create(ctx, assets.Find);
+            hud.MoveMarker = moveMarker;
+            navOverlay = new NavmeshOverlayRenderer(ctx);
+            navOverlayRenderer = navOverlay;
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
         }
         // The shared settings layout: Metal supplies the settings it can change live (window, upscaler, distances,
@@ -692,6 +710,7 @@ sealed partial class GameHost
                     return;
                 }
                 // F11 lists the frame; F12 is the small frame-rate line (the profiler chart waits for Metal timestamps).
+                if (key == SilkKey.F11 && shiftDown) { ToggleNavOverlay(); return; }
                 if (key == SilkKey.F11) { statsVisible = !statsVisible; return; }
                 if (key == SilkKey.F12) { frameStatsVisible = !frameStatsVisible; return; }
                 if (key is SilkKey.F8 or SilkKey.PrintScreen) { screenshotNow = true; return; }
@@ -867,6 +886,7 @@ sealed partial class GameHost
             if (!Covered) UpdateAudio(dt);
             SendFocus();
             UpdateNav();
+            UpdateNavOverlay();
             // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
             // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
             UpdateInteriorView();
@@ -896,6 +916,19 @@ sealed partial class GameHost
                 characters.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView);
                 characters.Update(camera.Eye);
                 characters.DrawPortraits();
+                var hoverKeys = new List<(long Key, Vector4 Colour)>();
+                bool outlining = config.HoverOutline && !session.Camera.IsFree && hud is { UiVisible: true } &&
+                    !Covered && settings?.Visible != true;
+                if (outlining)
+                {
+                    if (shiftDown)
+                        hoverKeys.AddRange(hud!.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius)
+                            .Select(t => (DrawKey(t.Id), t.Colour)));
+                    else if (hud!.HoverTarget is { } hover)
+                        hoverKeys.Add((DrawKey(hover.Id), hover.Colour));
+                }
+                characters.DrawHoverMasks(hoverOutline is null ? [] : hoverKeys, sceneSize.X, sceneSize.Y,
+                    camera.View, camera.FieldOfView, camera.Eye);
                 characters.DrawIcons();
             }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
@@ -965,6 +998,13 @@ sealed partial class GameHost
             // The near-view interior masks, before the scene's passes: the terrain, foliage and map features over a mask discard their
             // fragments between its front and back faces (the game's InteriorMask compositor node).
             interiorMask?.Record(worldProjection, eye, sceneSize.X, sceneSize.Y);
+            // The world's lamps, and the lanterns the characters carry, in this frame's grid.
+            if (lamps is not null)
+            {
+                lamps.Moving.Clear();
+                characters?.CollectLamps(lamps.Moving);
+                lamps.Update(eye, objects, WorldLights.DaylightFactor(hour, scene.Clock.Sunrise, scene.Clock.Sunset));
+            }
             // The casters' cascades, before the scene reads the receiver block.
             shadow.RangeCap = fogVolumes.AtmosphereDistance;
             shadow.SetFogHide(fogVolumes.ShadowHideDistance, fogVolumes.ShadowHidePending);
@@ -1077,6 +1117,16 @@ sealed partial class GameHost
                 if (characters is not null) characters.Fill = savedFill;
                 fogVolumes.HidePlaced = savedHidePlaced;
             }
+            // The overlays that sit on the finished picture, before the interface: the move marker, the navmesh debug view and the hover outline.
+            var (overlayNear, overlayFar) = camera.Slices().Last();
+            var overlayProjection = view * camera.Projection(aspect, overlayNear, overlayFar);
+            if (moveMarker is { Strength: > 0 })
+                moveMarker.Record(backbuffer, size.X, size.Y, depth, sceneSize.X, sceneSize.Y, overlayProjection, eye, sun);
+            if (navOverlay is { Visible: true })
+                navOverlay.Record(backbuffer, size.X, size.Y, depth, sceneSize.X, sceneSize.Y, overlayProjection, eye);
+            if (hoverOutline is not null && characters is { HoverMasks.Count: > 0 } hovered)
+                hoverOutline.Record(backbuffer, size.X, size.Y, hovered.HoverMasks, depth, sceneSize.X, sceneSize.Y,
+                    overlayNear, overlayFar, overlayProjection);
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
@@ -1226,6 +1276,7 @@ sealed partial class GameHost
         water?.Dispose();
         interiorMask?.Dispose();
         objects?.Dispose();
+        lamps?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();
         sceneColour?.Dispose();

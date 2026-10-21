@@ -21,7 +21,7 @@ internal sealed class WorldLamps : IDisposable
     // Allow for the small offset between collision masks and visible wall/floor surfaces.
     const float RoomSurfaceMargin = 0.5f;
 
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly Task<WorldLight[]> loading;
     // The lamps binned each frame: the world's (once loaded) and those of buildings placed during play, by building id.
     WorldLight[]? world, lamps;
@@ -46,11 +46,11 @@ internal sealed class WorldLamps : IDisposable
     public int Count => lamps?.Length ?? 0;
     public int InGrid { get; private set; }
 
-    public WorldLamps(GpuContext ctx, Func<IReadOnlyList<WorldLight>> load)
+    public WorldLamps(IGpuContext ctx, Func<IReadOnlyList<WorldLight>> load)
     {
         this.ctx = ctx;
         loading = Task.Run(() => load().Where(l => l.Intensity > 0 && l.Radius > 0).ToArray());
-        int frames = ctx.Device.Frames.Count;
+        int frames = ctx.FramesInFlight;
         cells = new GpuTexture[frames];
         index = new GpuTexture[frames];
         data = new GpuTexture[frames];
@@ -214,9 +214,12 @@ internal sealed class WorldLamps : IDisposable
         }
 
         var full = new PixelRect(0, 0, Cells, Cells);
-        ctx.Uploads.Write(cells[slot], 0, 0, full, MemoryMarshal.AsBytes(cellValues.AsSpan()));
-        ctx.Uploads.Write(index[slot], 0, 0, new PixelRect(0, 0, IndexWidth, IndexRows), MemoryMarshal.AsBytes(indexValues.AsSpan()));
-        ctx.Uploads.Write(data[slot], 0, 0, new PixelRect(0, 0, DataWidth, (uint)near.Count), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
+        using (var batch = ctx.Uploads.Begin())
+        {
+            batch.Write(cells[slot], 0, 0, full, MemoryMarshal.AsBytes(cellValues.AsSpan()));
+            batch.Write(index[slot], 0, 0, new PixelRect(0, 0, IndexWidth, IndexRows), MemoryMarshal.AsBytes(indexValues.AsSpan()));
+            batch.Write(data[slot], 0, 0, new PixelRect(0, 0, DataWidth, (uint)near.Count), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
+        }
         grid = new Vector4(x0, z0, CellSize, Cells);
         InGrid = near.Count;
     }

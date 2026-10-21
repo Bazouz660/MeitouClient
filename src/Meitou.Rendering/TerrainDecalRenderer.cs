@@ -39,7 +39,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
         void main() { fragColour = texture(uSprite, vUv) * uColour; }
         """;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly UniformHandle centre, axisW, axisH, colour;
@@ -53,7 +53,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     (GpuTexture Texture, uint Index)? bindless;
     int count;
 
-    TerrainDecalRenderer(GpuContext gpu, SampledImage?[][] sprites)
+    TerrainDecalRenderer(IGpuContext gpu, SampledImage?[][] sprites)
     {
         this.gpu = gpu;
         this.sprites = sprites;
@@ -67,7 +67,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     }
 
     /// <summary>The renderer for the decal textures <paramref name="files"/> (per <see cref="TerrainDecalType"/>, its variants in order); a file that cannot be read draws nothing.</summary>
-    public static TerrainDecalRenderer Create(GpuContext gpu, IReadOnlyList<IReadOnlyList<string>> files)
+    public static TerrainDecalRenderer Create(IGpuContext gpu, IReadOnlyList<IReadOnlyList<string>> files)
     {
         var sprites = new SampledImage?[4][];
         for (int t = 0; t < 4; t++)

@@ -457,8 +457,9 @@ objects and buildings; the sun's shadows (terrain, objects, foliage and characte
 and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
-population and navmesh now run in the live loop); the HUD and the faithful panels (inventory, stats,
-overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls.
+population and navmesh now run in the live loop); the world's lamps and room lights; the HUD and the faithful panels
+(inventory, stats, overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls;
+the hover outline, move marker and navmesh debug overlay (Shift+F11).
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
 move the strategy camera; edge scrolling, left click/box select, right-click move orders and the HUD keys work;
 F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
@@ -650,8 +651,8 @@ and camera movement, selection, orders and the pointer sprite belong to the inte
 
 ### 6. The remaining effects
 
-`VolumetricCloudRenderer` (the Meitou clouds), `ParticleRenderer` (weather), `WorldLamps` (the lamps and room
-lights), `HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer`. `InteriorMaskRenderer` is
+`VolumetricCloudRenderer` (the Meitou clouds) and `ParticleRenderer` (weather) remain. `WorldLamps`,
+`HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
 wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
 faithful and Meitou look.
 

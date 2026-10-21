@@ -19,6 +19,7 @@ sealed partial class GameHost
     const float NavOverlayLift = 3, OriginalOverlayLift = 4;
 
     NavView navView;
+    NavmeshOverlayRenderer? navOverlayRenderer;
     (NavWorld World, NavView View)? navOverlayShown;
     Task<(Vector3 Origin, float[] Fill, float[] Edges)>? navOverlayBuild;
     // The original's tiles read so far (null: the install has none for the zone).
@@ -26,7 +27,7 @@ sealed partial class GameHost
 
     void ToggleNavOverlay()
     {
-        if (nav is null || gpu.NavmeshOverlay is not { } overlay) { Console.WriteLine("navmesh   no navmesh in this scene"); return; }
+        if (nav is null || navOverlayRenderer is not { } overlay) { Console.WriteLine("navmesh   no navmesh in this scene"); return; }
         navView = (NavView)(((int)navView + 1) % 4);
         overlay.Visible = navView != NavView.Off;
         Console.WriteLine(navView switch
@@ -41,7 +42,7 @@ sealed partial class GameHost
     /// <summary>Once a frame: a finished build goes to the renderer; a changed world or view starts the next.</summary>
     void UpdateNavOverlay()
     {
-        if (nav is null || gpu.NavmeshOverlay is not { Visible: true } overlay) return;
+        if (nav is null || navOverlayRenderer is not { Visible: true } overlay) return;
         if (navOverlayBuild is { IsCompleted: true } done)
         {
             if (done.IsCompletedSuccessfully) { var (origin, fill, edges) = done.Result; overlay.SetMesh(origin, fill, edges); }
