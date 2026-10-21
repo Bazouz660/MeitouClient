@@ -1037,8 +1037,18 @@ sealed partial class GameHost
                 characters is not null && characters.DrawnCharacters > 0, water is not null ? Meitou.Data.World.WorldWater.Height : null);
             composite.HeatHazeAmount = titleLook ? 0 : weatherState.HeatHaze;
             composite.HeatHazeHours = session.Clock.HoursSinceStart;
-            // Fog volumes and SSAO are scene effects: they run before the temporal resolve, as the Vulkan chain does them.
+            // Fog volumes, light shafts and SSAO are scene effects: they run before the temporal resolve, as the Vulkan chain does them.
             var sceneEffects = (MetalCommandList)ctx.BeginNative("post scene effects");
+            if (shadow.Enabled)
+            {
+                float darkening = WorldFrame.ShaftDarkening(o.Post, light, sun.Y) *
+                    WorldFrame.ShaftCloudFade(WorldFrame.Overcast(sky.CloudDensity, surfaces?.Rain ?? 0));
+                float shaftFar = Math.Min(camera.ViewDistance, sky.HazeCompleteDistance ?? sky.HazeDistance);
+                float shaftFloor = terrain.HeightAt(eye.X, eye.Z);
+                if (water is not null) shaftFloor = Math.Max(shaftFloor, Meitou.Data.World.WorldWater.Height);
+                composite.RunLightShafts(sceneEffects, sceneColour, depth, postInputs, o.Post, darkening, shaftFar, shaftFloor,
+                    WorldFrame.ShaftAirByTime(o.Post, scene.Clock, hour), !noTaa);
+            }
             composite.ApplyScene(sceneEffects, sceneColour, depth, postInputs, fogVolumes.UsedData > 0, o.Post.Ssao);
             ctx.EndNative(sceneEffects);
 

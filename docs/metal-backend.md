@@ -565,8 +565,9 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    sun-motion term, moving geometry's motion (grass/characters) and the remaining `PostProcess` passes (light shafts,
    particles, FogRate, GI resolve).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
-   (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA and the heat
-   haze run there too. Still to do: the light-shaft passes (`PostProcess.Shafts`) and the fog-rate target
+   (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
+   and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
+   fragment integrate/scatter path; the compute scan is Vulkan-only. Still to do: the fog-rate target
    (`PostProcess.FogRate`), which the shafts and the volumetric fog read. Metal has no fragment-shading-rate
    attachment, so the FogRate path stays Vulkan-only unless a non-VRS fallback is added.
 3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to

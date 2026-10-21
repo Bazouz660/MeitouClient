@@ -26,6 +26,10 @@ sealed class PostComposite : IDisposable
     readonly BlurPass blur;
     readonly ApplyPass apply;
     readonly FogPass fog;
+    readonly ShaftInjectPass shaftInjectP;
+    readonly ShaftIntegratePass shaftIntegrateP;
+    readonly ShaftScatterPass shaftScatterP;
+    readonly ShaftApplyPass shaftApplyP;
     readonly FxaaPass fxaa;
     readonly HeatHazePass haze;
     readonly Dictionary<(GpuProgram Program, InternalFormat Format, DrawState State), GraphicsPipelineDesc> pipelines = [];
@@ -34,7 +38,9 @@ sealed class PostComposite : IDisposable
     GpuTexture? luminanceTarget, adaptA, adaptB;
     GpuTexture? ldr, ldrFxaa;
     GpuTexture? aoA, aoB;
+    GpuTexture? shaftInjected, shaftLight, shaftScatter;
     GpuTexture? flowTexture, perturbationTexture;
+    (Vector4 Grid, Vector4 Range, Vector2 Tan, float Darkening) shaftFrame;
     int sceneWidth, sceneHeight, displayWidth, displayHeight;
     long adaptClock;
     bool adaptedValid;
@@ -58,6 +64,10 @@ sealed class PostComposite : IDisposable
         blur = new BlurPass(ctx, vertex);
         apply = new ApplyPass(ctx, vertex);
         fog = new FogPass(ctx, vertex);
+        shaftInjectP = new ShaftInjectPass(ctx, vertex);
+        shaftIntegrateP = new ShaftIntegratePass(ctx, vertex);
+        shaftScatterP = new ShaftScatterPass(ctx, vertex);
+        shaftApplyP = new ShaftApplyPass(ctx, vertex);
         fxaa = new FxaaPass(ctx, vertex);
         haze = new HeatHazePass(ctx, vertex);
         var c = composite;
@@ -206,6 +216,97 @@ sealed class PostComposite : IDisposable
         }
     }
 
+    /// <summary>
+    /// The Meitou light shafts (docs/render-shafts.md): the shadow samples in a froxel grid, their sums front to back and
+    /// the air layer's scatter, then the darkening of the haze over the scene. The fragment integrate/scatter path runs here;
+    /// the compute scan is Vulkan-only.
+    /// </summary>
+    public void RunLightShafts(IGpuCommandList cmd, GpuTexture scene, GpuTexture depth, SceneInputs i, PostOptions o,
+        float darkening, float far, float groundY, float airByTime, bool temporal)
+    {
+        shaftFrame = default;
+        if (!o.LightShafts || darkening <= 0) return;
+        int across = Math.Clamp(PostOptions.ShaftCells, 8, 1024), slices = Math.Clamp(PostOptions.ShaftSlices, 8, 256);
+        int down = Math.Max(1, (int)MathF.Round(across * scene.Desc.Height / (float)Math.Max(scene.Desc.Width, 1)));
+        int columns = LightShaftShaders.AtlasColumns, rows = (slices + columns - 1) / columns;
+        int aw = across * columns, ah = down * rows;
+        if (shaftInjected is null || shaftInjected.Desc.Width != aw || shaftInjected.Desc.Height != ah)
+        {
+            shaftInjected?.Dispose();
+            shaftLight?.Dispose();
+            shaftScatter?.Dispose();
+            shaftInjected = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, aw, ah,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post shafts injected"));
+            shaftLight = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, aw, ah,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post shafts light"));
+            shaftScatter = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, aw, ah,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post shafts scatter"));
+        }
+        float near = Math.Clamp(PostOptions.ShaftNear, 1, far * 0.5f);
+        var grid = new Vector4(across, down, slices, columns);
+        var range = new Vector4(near, far, MathF.Log(far / near), temporal ? ctx.Frame.Number % 4096 : 0);
+        float tanY = MathF.Tan(i.FieldOfView * 0.5f);
+        var tan = new Vector2(tanY * i.Aspect, tanY);
+        var air = new Vector4(MathF.Max(o.ShaftAir, 0) * MathF.Max(airByTime, 0) * PostOptions.ShaftAirDensity,
+            groundY, MathF.Max(PostOptions.ShaftAirHeight, 1), Math.Clamp(PostOptions.ShaftAirPhase, 0, 0.95f));
+        var r = i.View with { M41 = 0, M42 = 0, M43 = 0 };
+
+        void Common(ShaftPass s)
+        {
+            s.P.Set(s.Grid, grid);
+            s.P.Set(s.Range, range);
+            s.P.Set(s.Eye, i.Eye);
+            s.P.Set(s.Tan, tan);
+            s.P.Set(s.Right, r.M11, r.M21, r.M31);
+            s.P.Set(s.Up, r.M12, r.M22, r.M32);
+            s.P.Set(s.Back, r.M13, r.M23, r.M33);
+        }
+
+        var inject = shaftInjectP;
+        Common(inject);
+        inject.P.Set(inject.Samples, Math.Clamp(PostOptions.ShaftSamples, 1, 16));
+        inject.P.ApplyGlobals();
+        Fullscreen(cmd, inject.P, shaftInjected!, aw, ah);
+
+        var integrate = shaftIntegrateP;
+        Common(integrate);
+        integrate.P.Bind(integrate.Injected, pointSampler with { View = shaftInjected!.View() });
+        Fullscreen(cmd, integrate.P, shaftLight!, aw, ah);
+
+        bool withAir = air.X > 0;
+        if (withAir)
+        {
+            var scatter = shaftScatterP;
+            Common(scatter);
+            scatter.P.Bind(scatter.Injected, pointSampler with { View = shaftInjected!.View() });
+            scatter.P.Set(scatter.Air, air);
+            scatter.P.ApplyGlobals();
+            Fullscreen(cmd, scatter.P, shaftScatter!, aw, ah);
+        }
+
+        var apply = shaftApplyP;
+        Common(apply);
+        apply.P.Bind(apply.NearDepth, pointSampler with { View = depth.View() });
+        apply.P.Bind(apply.FarDepth, ctx.Dummy(apply.P.SamplerInfo(apply.FarDepth)));
+        apply.P.Bind(apply.Light, plainSampler with { View = shaftLight!.View() });
+        apply.P.Bind(apply.Scatter, withAir ? plainSampler with { View = shaftScatter!.View() } : ctx.Dummy(apply.P.SamplerInfo(apply.Scatter)));
+        apply.P.Set(apply.Air, air);
+        apply.P.Set(apply.NearPlanes, i.Near, i.Far);
+        apply.P.Set(apply.FarPlanes, i.Near, i.Far);
+        apply.P.Set(apply.WaterY, i.WaterHeight ?? float.MinValue);
+        apply.P.Set(apply.HasFar, 0);
+        apply.P.Set(apply.Atlas, aw, ah);
+        apply.P.Set(apply.Params, Math.Clamp(darkening, 0, 1), PostOptions.ShaftSky, 0f, 0f);
+        apply.P.ApplyGlobals();
+        var state = DrawState.For(new AttachmentFormats(scene.Desc.Format, InternalFormat.None), false) with
+        {
+            Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha),
+            ColourMask = DrawState.Rgb,
+        };
+        Fullscreen(cmd, apply.P, scene, scene.Desc.Width, scene.Desc.Height, state, LoadOp.Load);
+        shaftFrame = (grid, range, tan, Math.Clamp(darkening, 0, 1));
+    }
+
     void RunFogVolumes(IGpuCommandList cmd, GpuTexture scene, GpuTexture depth, in SceneInputs i)
     {
         var f = fog;
@@ -221,14 +322,16 @@ sealed class PostComposite : IDisposable
         f.P.Set(f.Back, r.M13, r.M23, r.M33);
         f.P.Set(f.WaterY, i.WaterHeight ?? float.MinValue);
         f.P.Set(f.HasFar, 0);
-        f.P.Bind(f.ShaftInjected, ctx.Dummy(f.P.SamplerInfo(f.ShaftInjected)));
-        f.P.Set(f.ShaftGrid, 0f, 0f, 0f, 0f);
-        f.P.Set(f.ShaftRange, 0f, 0f, 0f, 0f);
-        f.P.Set(f.ShaftTan, 0f, 0f);
+        var shaft = shaftFrame;
+        bool injected = shaft.Darkening > 0 && shaftInjected is not null;
+        f.P.Bind(f.ShaftInjected, injected ? plainSampler with { View = shaftInjected!.View() } : ctx.Dummy(f.P.SamplerInfo(f.ShaftInjected)));
+        f.P.Set(f.ShaftGrid, shaft.Grid);
+        f.P.Set(f.ShaftRange, shaft.Range);
+        f.P.Set(f.ShaftTan, shaft.Tan);
         f.P.Set(f.ShaftRight, r.M11, r.M21, r.M31);
         f.P.Set(f.ShaftUp, r.M12, r.M22, r.M32);
         f.P.Set(f.ShaftBack, r.M13, r.M23, r.M33);
-        f.P.Set(f.ShaftFog, 0f, 1f, 1f, 0f);
+        f.P.Set(f.ShaftFog, shaft.Darkening, shaftInjected?.Desc.Width ?? 1, shaftInjected?.Desc.Height ?? 1, 0f);
         f.P.ApplyGlobals();
         var state = DrawState.For(new AttachmentFormats(scene.Desc.Format, InternalFormat.None), false) with
         {
@@ -389,6 +492,9 @@ sealed class PostComposite : IDisposable
         ldrFxaa?.Dispose();
         aoA?.Dispose();
         aoB?.Dispose();
+        shaftInjected?.Dispose();
+        shaftLight?.Dispose();
+        shaftScatter?.Dispose();
         flowTexture?.Dispose();
         perturbationTexture?.Dispose();
         composite.Dispose();
@@ -398,6 +504,10 @@ sealed class PostComposite : IDisposable
         blur.P.Dispose();
         apply.P.Dispose();
         fog.P.Dispose();
+        shaftInjectP.P.Dispose();
+        shaftIntegrateP.P.Dispose();
+        shaftScatterP.P.Dispose();
+        shaftApplyP.P.Dispose();
         fxaa.P.Dispose();
         haze.P.Dispose();
     }
@@ -448,6 +558,51 @@ sealed class PostComposite : IDisposable
             ShaftInjected = P.Sampler("uShaftInjected");
             (ShaftGrid, ShaftRange, ShaftTan, ShaftFog) = (P.Uniform("uShaftGrid"), P.Uniform("uShaftRange"), P.Uniform("uShaftTan"), P.Uniform("uShaftFog"));
             (ShaftRight, ShaftUp, ShaftBack) = (P.Uniform("uShaftRight"), P.Uniform("uShaftUp"), P.Uniform("uShaftBack"));
+        }
+    }
+
+    abstract class ShaftPass : Pass
+    {
+        public readonly UniformHandle Grid, Range, Eye, Tan, Right, Up, Back;
+        protected ShaftPass(IGpuContext ctx, string vertex, string fragment, string name) : base(ctx, vertex, fragment, name)
+        {
+            (Grid, Range, Eye, Tan) = (P.Uniform("uShaftGrid"), P.Uniform("uShaftRange"), P.Uniform("uShaftEye"), P.Uniform("uShaftTan"));
+            (Right, Up, Back) = (P.Uniform("uShaftRight"), P.Uniform("uShaftUp"), P.Uniform("uShaftBack"));
+        }
+    }
+
+    sealed class ShaftInjectPass : ShaftPass
+    {
+        public readonly UniformHandle Samples;
+        public ShaftInjectPass(IGpuContext ctx, string vertex) : base(ctx, vertex, LightShaftShaders.Inject, "post shafts inject") =>
+            Samples = P.Uniform("uShaftSamples");
+    }
+
+    sealed class ShaftIntegratePass : ShaftPass
+    {
+        public readonly SamplerSlot Injected;
+        public ShaftIntegratePass(IGpuContext ctx, string vertex) : base(ctx, vertex, LightShaftShaders.Integrate, "post shafts integrate") =>
+            Injected = P.Sampler("uShaftInjected");
+    }
+
+    sealed class ShaftScatterPass : ShaftPass
+    {
+        public readonly SamplerSlot Injected;
+        public readonly UniformHandle Air;
+        public ShaftScatterPass(IGpuContext ctx, string vertex) : base(ctx, vertex, LightShaftShaders.Scatter, "post shafts scatter") =>
+            (Injected, Air) = (P.Sampler("uShaftInjected"), P.Uniform("uShaftAir"));
+    }
+
+    sealed class ShaftApplyPass : ShaftPass
+    {
+        public readonly SamplerSlot NearDepth, FarDepth, Light, Scatter;
+        public readonly UniformHandle NearPlanes, FarPlanes, WaterY, HasFar, Atlas, Params, Air;
+        public ShaftApplyPass(IGpuContext ctx, string vertex) : base(ctx, vertex, LightShaftShaders.Apply, "post shafts apply")
+        {
+            (NearDepth, FarDepth, Light, Scatter) = (P.Sampler("uNearDepth"), P.Sampler("uFarDepth"), P.Sampler("uShaftLight"), P.Sampler("uShaftScatter"));
+            (NearPlanes, FarPlanes, WaterY, HasFar, Atlas, Params) = (P.Uniform("uNearPlanes"), P.Uniform("uFarPlanes"), P.Uniform("uWaterY"),
+                P.Uniform("uHasFar"), P.Uniform("uShaftAtlas"), P.Uniform("uShaftParams"));
+            Air = P.Uniform("uShaftAir");
         }
     }
 
