@@ -51,13 +51,15 @@ commitment, not a proven single leak.
 - **Retired textures:** `MetalContext.ReleaseTexture` now retains the command buffer that was current at release and
   disposes the views and parent only after the three-frame ring and that command have completed, at most 64 views a
   frame. Before it: 890 retired views and ~4.5 GB GPU; after: 0 retired views and ~2.9 GB, stable across the soak.
+- **Mip views and deferred frees:** mip-bake level views are retained by the command that encoded them and disposed
+  once it completes; `DeferDelete` now waits for the frame ring instead of releasing immediately. The trace prints
+  `levelViews` and `deferredDeletes`; the short one-zone route ended with both at 0 and a clean teardown.
 - **Also:** the large per-frame foliage/object/terrain matrix arrays are written directly into the frame constants
   (`IGpuFrame.AllocateConstants`) instead of being allocated and copied twice; the GLFW API lookup for edge scrolling
   is cached; the trace prints terrain/object/foliage streaming pending work.
 - **Gate:** build 0/0; tests 424/425 (the known arm64 `GoldenHashTests.Scripted_scenarios_hash_as_pinned` pin).
 - **Still open:** the same-window vsync >40 fps gate, GPU culls/indirect draws/grass, CPU culling/recording (foliage
-  ~4 ms and shadow recording ~2 ms per frame in the steady profile), a longer 60 s-per-idle/multi-direction soak, and
-  the mip-bake `levelViews` / `DeferDelete` lifetime (`retiredViews` itself is now bounded).
+  ~4 ms and shadow recording ~2 ms per frame in the steady profile), and a longer 60 s-per-idle/multi-direction soak.
 
 ## Targets
 
@@ -163,9 +165,9 @@ RSS alone is not enough: it includes native, GPU, driver and compressed pages th
 
 ### B2. Fix native Metal resource lifetime
 
-- `retiredViews` now drains after the frame ring and command completion (see the soak result above); `levelViews`
-  (mip-bake level views) still live until context teardown. `DeferDelete` is still immediate at
-  `MetalContext`; use the same completion rule if a caller starts deferring GPU objects there.
+- `retiredViews`, mip-bake `levelViews` and `DeferDelete` now drain after the frame ring/command completion; `Finish`
+  still keeps texture parents through the bindless ring, and `Dispose` forces the remainder. `ResourceSummary` reports
+  all three counts.
 - Trim `MetalFrame` constant chunks to the observed high-water and release unused chunks.
 - Use `MTLHeap`/purgeable resources for large transient targets if the driver keeps freed allocations; verify with
   `MTLDevice.CurrentAllocatedSize`, not RSS.

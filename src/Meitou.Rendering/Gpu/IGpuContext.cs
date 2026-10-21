@@ -88,7 +88,7 @@ public interface IGpuContext
     /// <summary>The device's video memory budget in bytes (the impostor and streaming budgets).</summary>
     ulong VideoMemoryBudget { get; }
 
-    /// <summary>Runs <paramref name="release"/> once the frames in flight that may use the resource have finished (Metal's command buffers retain what they encode, so it runs now).</summary>
+    /// <summary>Runs <paramref name="release"/> once the frames in flight that may use the resource have finished.</summary>
     void DeferDelete(Action release);
 
     /// <summary>Submits what is recorded and waits for the GPU (readbacks); a frame is open again afterwards when one was before.</summary>

@@ -172,11 +172,14 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>Debug trace: resource-table and frame-chunk counts (a per-frame leak shows as a count that keeps rising).</summary>
     public string ResourceSummary()
     {
-        int tex = 0, liveViews = 0, liveBuffers = 0, retired = 0;
+        int tex = 0, liveViews = 0, liveBuffers = 0, retired = 0, level = 0;
         foreach (var t in textures) if (t is not null) tex++;
         foreach (var v in views) if (v is not null) liveViews++;
         foreach (var b in buffers) if (b is not null) liveBuffers++;
         foreach (var r in retiredTextures) retired += r.Views.Length;
+        foreach (var r in retiredLevelViews) level += r.Views.Length;
+        int deferred;
+        lock (deferredGate) deferred = deferredDeletes.Count;
         long chunkBytes = 0;
         int chunkCount = 0;
         foreach (var f in frames) { chunkBytes += f.ChunkBytes; chunkCount += f.ChunkCount; }
@@ -185,7 +188,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         long rss = Process.GetCurrentProcess().WorkingSet64;
         long oldest = retiredTextures.Count > 0 ? frameNumber - retiredTextures[0].Frame : 0;
         return $"textures {tex}/{textures.Count} views {liveViews}/{views.Count} retiredViews {retired} retiredTextures {retiredTextures.Count} " +
-            $"oldest {oldest} buffers {liveBuffers}/{buffers.Count} " +
+            $"oldest {oldest} levelViews {level} deferredDeletes {deferred} buffers {liveBuffers}/{buffers.Count} " +
             $"sets {sets.Count} chunks {chunkCount} ({chunkBytes / 1048576} MB); managed {managed.HeapSizeBytes / 1048576} MB " +
             $"(LOH {loh / 1048576} MB), RSS {rss / 1048576} MB, GPU {Device.CurrentAllocatedSize / 1048576} MB";
     }
@@ -393,6 +396,51 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
     }
 
+    /// <summary>Keeps a mip-bake view alive until the command that encoded it has completed.</summary>
+    void RetireLevelViews(MTLCommandBuffer command, List<MTLTexture> images)
+    {
+        if (images.Count == 0) return;
+        if (command.NativePtr == IntPtr.Zero) { foreach (var image in images) image.Dispose(); return; }
+        Retain_objc_retain(command.NativePtr);
+        retiredLevelViews.Add((frameNumber, command, images.ToArray()));
+    }
+
+    void ReleaseRetiredLevelViews(bool force = false)
+    {
+        if (retiredLevelViews.Count == 0) return;
+        int budget = force ? int.MaxValue : 64;
+        for (int i = 0; i < retiredLevelViews.Count && budget > 0;)
+        {
+            var retired = retiredLevelViews[i];
+            if (!force && retired.Command.Status is not (MTLCommandBufferStatus.Completed or MTLCommandBufferStatus.Error))
+            { i++; continue; }
+            foreach (var image in retired.Views) image.Dispose();
+            retired.Command.Dispose();
+            retiredLevelViews.RemoveAt(i);
+            budget -= retired.Views.Length;
+        }
+    }
+
+    void ReleaseDeferred(bool force = false)
+    {
+        List<Action>? run = null;
+        lock (deferredGate)
+        {
+            if (deferredDeletes.Count == 0) return;
+            int budget = force ? int.MaxValue : 64;
+            for (int i = 0; i < deferredDeletes.Count && budget > 0;)
+            {
+                var item = deferredDeletes[i];
+                if (!force && frameNumber - item.Frame < FrameRingDepth) { i++; continue; }
+                (run ??= []).Add(item.Release);
+                deferredDeletes.RemoveAt(i);
+                budget--;
+            }
+        }
+        if (run is null) return;
+        foreach (var release in run) release();
+    }
+
     public GpuBuffer CreateBuffer(ulong size, BufferUse use, string name)
     {
         // Device-local on Apple silicon is the unified memory itself; shared mode makes the CPU's writes (the dummy vertex,
@@ -524,6 +572,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     {
         // Free what the previous rings no longer name before asking for another drawable; a frame's worth at a time.
         ReleaseRetired();
+        ReleaseRetiredLevelViews();
+        ReleaseDeferred();
         if (!display.TryBeginFrame(out var command, out var drawable)) return false;
         if (slot >= 0) { double gpu = CompletedGpuMs(frames[slot]); if (gpu > 0) LastGpuMilliseconds = gpu; }
         var size = display.Window.FramebufferSize;
@@ -732,7 +782,16 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public ulong VideoMemoryBudget => Device.RecommendedMaxWorkingSetSize;
 
     /// <inheritdoc/>
-    public void DeferDelete(Action release) => release();
+    public void DeferDelete(Action release)
+    {
+        bool now;
+        lock (deferredGate)
+        {
+            now = slot < 0;
+            if (!now) deferredDeletes.Add((frameNumber, release));
+        }
+        if (now) release();
+    }
 
     /// <inheritdoc/>
     public void Finish()
@@ -743,9 +802,11 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         marker.WaitUntilCompleted();
         // The frame buffers are complete and are not referenced again; a later release must not retain a stale pointer.
         foreach (var frame in frames) frame.ForgetCommand();
-        // Do not force the queue here: Finish is also used for mid-run readbacks, and the bindless table may still hold
-        // an index for another ring. Dispose forces the remainder once no frame can run again.
-        ReleaseRetired();
+        // Do not force the texture queue here: Finish is also used for mid-run readbacks, and the bindless table may still
+        // hold an index for another ring. Dispose forces the remainder once no frame can run again. Level views and
+        // deferred actions have no bindless entries; the marker has completed every command that can use them.
+        ReleaseRetiredLevelViews(force: true);
+        ReleaseDeferred(force: true);
     }
 
     /// <inheritdoc/>
@@ -781,6 +842,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             blit.EndEncoding();
             return;
         }
+        var made = new List<MTLTexture>(layers * 2);
         for (uint layer = 0; layer < (uint)layers; layer++)
         {
             var source = image.NewTextureView(format, MTLTextureType.Type2D,
@@ -788,14 +850,19 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             var target = image.NewTextureView(format, MTLTextureType.Type2D,
                 new NSRange { location = (ulong)dstLevel, length = 1 }, new NSRange { location = layer, length = 1 });
             BlitScaled(command, source, target, format, dstWidth, dstHeight, filter);
-            levelViews.Add(source);
-            levelViews.Add(target);
+            made.Add(source);
+            made.Add(target);
         }
+        RetireLevelViews(command, made);
     }
 
-    readonly List<MTLTexture> levelViews = [];
     /// <summary>Released textures kept until the command that could name them has completed; see <see cref="ReleaseRetired"/>.</summary>
     readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views, MetalTexture Texture)> retiredTextures = [];
+    /// <summary>Mip-bake level views retained by their encoding command (the impostor bakes create these).</summary>
+    readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views)> retiredLevelViews = [];
+    /// <summary>Actions from <see cref="DeferDelete"/>, released after the frame ring has passed.</summary>
+    readonly List<(long Frame, Action Release)> deferredDeletes = [];
+    readonly object deferredGate = new();
 
     unsafe void BlitScaled(MTLCommandBuffer command, MTLTexture source, MTLTexture target, MTLPixelFormat format, int width, int height, TextureMinFilter filter)
     {
@@ -994,8 +1061,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         clearPipelines.Clear();
         clearLibrary?.Dispose();
         ReleaseRetired(force: true);
-        foreach (var v in levelViews) v.Dispose();
-        levelViews.Clear();
+        ReleaseRetiredLevelViews(force: true);
+        ReleaseDeferred(force: true);
         bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();
         dummyTextures.Clear();
