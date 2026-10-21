@@ -111,7 +111,20 @@ Pending (package U3).
 
 ### Player list, name tags, map markers
 
-Pending (package U4).
+All three are inert in single-player (`Multiplayer` false): tags and map are exactly the original's.
+
+- **Player list** (`PlayerInterface.Players.cs`): while `PlayerList` (P) is held, a `Kenshi_FloatingPanelSkin` panel
+  (0.34 W wide, centred, top 0.14 H) drawn over the windows, all controls unpickable. Title `PLAYERS n / max`, then one
+  row per roster entry whose state is not `Away` (those stay in the roster only so tags can still name them): colour chip,
+  name in its colour (+ " (you)"), a `HOST` plate for the host, "joining…" while `Loading`, squads, ping coloured green
+  up to 80 ms, amber up to 180 ms, red above ("—" for the host). No AFK state: the roster carries none.
+- **Name tags** (`PlayerInterface.Stealth.cs`): a teammate's character (`OtherPlayers`) shows its bare name in the
+  owner's colour and the owner's name under it (MediumSmall, alpha 0.85); an owner missing from the roster is "Player n" in
+  `PlayerColours.Absent`. Own tags keep the original look plus a 2-pixel bar in one's colour. Range and stealth-icon rules
+  are unchanged.
+- **Map** (`PlayerInterface.Map.cs`): own markers use one's colours (single-player keeps the map's); nests show near any
+  player's character. Zoomed in, each teammate's character is a `Character` marker in its owner's colour (tooltip name and
+  player); at the least zoom, one marker per (owner, squad) at the mean position, 1.3x size, tooltip owner and squad size.
 
 ### Status, Esc menu, players window, alerts
 
