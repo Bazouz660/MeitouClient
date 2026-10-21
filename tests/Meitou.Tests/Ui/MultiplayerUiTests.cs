@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Game;
+using Meitou.Net.Session;
 
 namespace Meitou.Tests.Ui;
 
@@ -70,5 +71,35 @@ public class MultiplayerUiTests
         Assert.Equal(1, PlayerColours.Assign([0], -1));
         Assert.Equal(1, PlayerColours.Assign([0], 9));
         Assert.Equal(-1, PlayerColours.Assign([0, 1, 2, 3, 4, 5, 6, 7], 2));
+    }
+
+    [Theory]
+    [InlineData("/kick Bob being rude", ChatVerb.Kick, "Bob", "being rude")]
+    [InlineData("/KICK bob", ChatVerb.Kick, "bob", "")]
+    [InlineData("  /ban \"Big Bob\" twice  ", ChatVerb.Ban, "Big Bob", "twice")]
+    [InlineData("/ban \"Big Bob", ChatVerb.Ban, "Big Bob", "")]
+    [InlineData("/kick", ChatVerb.Kick, "", "")]
+    [InlineData("/players", ChatVerb.Players, "", "")]
+    [InlineData("/Help me", ChatVerb.Help, "me", "")]
+    [InlineData("/dance now", ChatVerb.Unknown, "", "")]
+    [InlineData("/", ChatVerb.Unknown, "", "")]
+    [InlineData("hello", ChatVerb.Unknown, "", "")]
+    public void Chat_commands_split_into_verb_target_and_reason(string line, ChatVerb verb, string target, string rest) =>
+        Assert.Equal(new ChatCommand(verb, target, rest), ChatCommands.Parse(line));
+
+    [Fact]
+    public void A_chat_target_resolves_by_number_then_exact_name_then_unique_prefix()
+    {
+        RosterEntry[] players = [new(0, "Host", NetPlayerState.Host, 0, 0, 1), new(1, "Bob", NetPlayerState.Playing, 20, 1, 1),
+            new(2, "Bobby", NetPlayerState.Playing, 30, 2, 1), new(3, "alice", NetPlayerState.Playing, 40, 3, 1)];
+        Assert.Equal(3, ChatCommands.Resolve(players, "#3", out _)!.Player);
+        Assert.Equal(1, ChatCommands.Resolve(players, "BOB", out _)!.Player);   // exact beats the prefix of Bobby
+        Assert.Equal(3, ChatCommands.Resolve(players, "ali", out _)!.Player);
+        Assert.Null(ChatCommands.Resolve(players, "bo", out string several));
+        Assert.Equal("bo matches several players: Bob, Bobby.", several);
+        Assert.Null(ChatCommands.Resolve(players, "#9", out string none));
+        Assert.Equal("No player called #9.", none);
+        Assert.Null(ChatCommands.Resolve(players, "zed", out none));
+        Assert.Equal("No player called zed.", none);
     }
 }

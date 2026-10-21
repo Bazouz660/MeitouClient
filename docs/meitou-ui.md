@@ -125,7 +125,21 @@ sessions: [net](net.md), [simulation](simulation.md#multiplayer-host-authoritati
 
 ### Chat
 
-Pending (package U3).
+Engine choice (the game has no chat); only in a session (`Net` role not `None`).
+- Entry: OpenChat (Enter, outside windows) opens the non-modal `chat` layout (never pauses; `Kenshi_EditBox` 200
+  chars + SEND, at `y = 0.47·H`, clear of the HUD's InformationPanel at 0.5176·H: **Verified**,
+  `Kenshi_MainPanel.layout`) with the box focused (`MyGuiScreenHost.FocusBox`). Enter or SEND sends and closes; Esc or
+  a click away keeps the text as the draft for the next open; Up/Down step through the last 20 sent lines; Tab is swallowed.
+- Sending: text goes to `IMultiplayerView.SendChat`; own lines are never added locally, they return as `Chat` events so
+  every screen shows the host's order. Chat and session-event lines also go to the Overview Messages tab.
+- History (`AddChatHistory`, Kenshi_StandardFont_Medium, bottom left above the entry): last 100 lines kept. Closed: lines
+  younger than 12 s, fading over the last 2 s, at most 8 rows; open: the last 14 rows. A player's line starts with the
+  name in the player's colour (`PlayerColours`, grey if gone); system and error lines have no name.
+- System lines from events: joined, left, lost the connection, kicked, banned, paused, resumed, set the speed to n×;
+  "You" for the local player's own change. Starting to host adds "Hosting on port n...".
+- Commands (`ChatCommands`, pure): `/help`, `/players` (`#n Name · HOST` or `· ping ms`), host only `/kick <player>
+  [reason]` and `/ban <player>`. A player is `#n`, an exact name, or a unique name prefix; a quoted name may hold
+  spaces. A client gets "Only the host can kick players."; the host cannot kick or ban itself.
 
 ### Player list, name tags, map markers
 
