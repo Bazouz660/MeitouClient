@@ -160,4 +160,24 @@ All three are inert in single-player (`Multiplayer` false): tags and map are exa
 
 ### Status, Esc menu, players window, alerts
 
-Pending (package U5).
+Code: `PlayerInterface.NetStatus.cs`, `PlayerInterface.NetMenu.cs`. All engine choices; inert in single-player except the
+Esc row.
+
+- Indicator (`0.12W x 0.03H` at `0.872W, 0.008H`): a client shows three bars (lit 3 / 2 / 1 for a round trip up to
+  100 ms / 200 ms / above; green, amber, red) and "{ping} ms"; a host shows "HOSTING · {present}/{max}".
+- Starving (client, `Quality.SnapshotAgeSeconds` above 0.5 s): the bars turn red and a plate at `0.16H` reads "Waiting
+  for the host... {age} s". The session's own timeout belongs to the game host.
+- Paused: under the original `PausedPanel`, "{name} paused the game" ("You ..." for oneself) in the pauser's colour, from
+  `IMultiplayerView.PausedBy`. Another player's pause, resume or speed event shows a 3 s banner
+  (`Kenshi_FloatinglPanelSmallSkin`, `0.115H`, lower while paused, fading over its last 0.5 s).
+- Time buttons: `TimeSpeedButton1..` are disabled while `!CanControlTime(LocalPlayer)`.
+- Esc menu (`Kenshi_MainMenuPopupPanel`; rows re-laid on the layout's pitch and the panel resized about its centre;
+  geometry **Verified** from the installed layout): single-player NEW GAME, SAVE GAME, LOAD GAME, OPTIONS, MULTIPLAYER,
+  EXIT GAME, RESUME; host PLAYERS, SAVE GAME, OPTIONS, STOP HOSTING, EXIT GAME, RESUME; client PLAYERS, OPTIONS,
+  DISCONNECT, EXIT GAME, RESUME. The added rows are decorated buttons (`MpOpenButton`, `MpPlayersButton`,
+  `MpStopButton`, `MpLeaveButton`). A client's Exit offers leaving and quitting; a host's adds that the others are
+  disconnected.
+- Players window (`players`, modal, no pause): Player (in its colour, " (you)", " · HOST") / Squads / Ping / Status
+  ("Joining" while loading). The host gets confirmed KICK and BAN for a selected non-host row. It closes when the
+  session ends.
+- Ended session: `ShowDisconnected(NetDisconnect, reachedPlay)` keeps the alert until the title is up, then opens it.
