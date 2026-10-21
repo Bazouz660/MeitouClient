@@ -95,7 +95,7 @@ public sealed class ClientReplicator
 
     static readonly ConditionalWeakTable<LookRegistry, WireCache> Caches = [];
 
-    readonly int player;
+    int player;
     readonly SnapshotEncoderOptions options;
     readonly LookRegistry looks;
     readonly AnimationLibrary animations;
@@ -123,6 +123,13 @@ public sealed class ClientReplicator
     bool framed, sentAnyPart;
     TimeSpan? since;
     TimeSpan lastPart;
+
+    /// <summary>The player whose characters weigh as important; the host renumbers it when a world swap gives the client another number (the connection's string tables stay).</summary>
+    internal int Player
+    {
+        get => player;
+        set => player = value;
+    }
 
     public ClientReplicator(int player, SnapshotEncoderOptions options, LookRegistry looks, AnimationLibrary animations)
     {

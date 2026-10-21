@@ -597,7 +597,8 @@ public sealed class NetHost : IClockAuthority, IDisposable
             peer.State = HostPeerState.Loading;
             peer.PendingReset = true;
             peer.SinceUs = now;
-            peer.Replicator!.Reset(epoch);
+            peer.Replicator!.Player = n;
+            peer.Replicator.Reset(epoch);
             kept.Add(p);
         }
         // Away players are the new world's: its roster sessions not connected now (a save's players keep their numbers, names and our colours).

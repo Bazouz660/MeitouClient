@@ -634,9 +634,9 @@ which keeps them within `MaxDropPayload`. **Verified** (`NetHostTests`, loopback
 a renamed duplicate name, the joined notice batch, `Ready` → Playing with `JoinPlayer` and snapshot parts; wrong password; wrong protocol;
 full game; the same GUID twice; kick → away with the close commands).
 
-**Unknown / gaps**: a reconnect while the old connection still counts may be refused `Full` until that one times out. After a world swap
-changes a player's number, its replicator keeps weighting the old number's characters (`ClientReplicator` takes the number once) until it
-reconnects. Chat and notices reach a Loading peer with the current epoch on Events, which is not ordered with its `WorldReset` on Control.
+**Unknown / gaps**: a reconnect while the old connection still counts may be refused `Full` until that one times out. A world swap that
+changes a player's number renumbers its replicator (string tables kept). Chat and notices reach a Loading peer with the current epoch on Events,
+which is not ordered with its `WorldReset` on Control; the client therefore raises non-spatial events whatever their epoch.
 An exception from a `Notice`, `Chat` or `ClockChanged` handler raised while handling a client's message drops that client as a protocol error.
 
 ## Client and jitter buffer
