@@ -496,10 +496,13 @@ internal sealed unsafe class GiScene : IDisposable
             }
         }
 
+        // One array for every sampling (an LOH array a rebuild otherwise): one job at a time, and Build copies it into the upload staging before the next starts.
+        Vector3[]? samples;
+
         Vector3[] Sample(Vector3 centre, HeightSnapshot heights)
         {
             int n = cells + 1;
-            var p = new Vector3[n * n];
+            var p = samples ??= new Vector3[n * n];
             float half = Side / 2;
             for (int j = 0; j < n; j++)
                 for (int i = 0; i < n; i++)

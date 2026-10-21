@@ -271,46 +271,80 @@ public static class FoliageCardTrimmer
     /// </summary>
     public static Vector2[] Hull(Vector2[] card, FoliageCardMask mask, int level, float margin)
     {
-        float minY = card.Min(p => p.Y), maxY = card.Max(p => p.Y);
+        // Allocation-free but for the result (it runs per card row as foliage streams in; docs/engine.md, pooled buffers).
+        float minY = float.MaxValue, maxY = float.MinValue;
+        foreach (var p in card) (minY, maxY) = (MathF.Min(minY, p.Y), MathF.Max(maxY, p.Y));
         var cells = mask.Levels[Math.Clamp(level, 0, mask.LevelCount - 1)];
         int row0 = Math.Clamp((int)MathF.Floor(minY + 1e-4f), 0, mask.Height - 1), row1 = Math.Clamp((int)MathF.Ceiling(maxY - 1e-4f) - 1, row0, mask.Height - 1);
-        var points = new List<Vector2>();
-        for (int r = row0; r <= row1; r++)
+        // A clip writes at most two points per point it is given: a card's two clips need four times its corners.
+        int stripMax = 4 * card.Length, pointMax = 4 * (row1 - row0 + 1);
+        var rented = System.Buffers.ArrayPool<Vector2>.Shared.Rent(2 * stripMax + pointMax);
+        try
         {
-            // The card's extent along x inside the strip r to r + 1.
-            var strip = ClipHalf(ClipHalf(card, new Vector2(0, 1), -r), new Vector2(0, -1), r + 1);
-            if (strip.Length == 0) continue;
-            float minX = strip.Min(p => p.X), maxX = strip.Max(p => p.X);
-            int c0 = Math.Clamp((int)MathF.Floor(minX + 1e-4f), 0, mask.Width - 1), c1 = Math.Clamp((int)MathF.Ceiling(maxX - 1e-4f) - 1, c0, mask.Width - 1);
-            int first = -1, last = -1;
-            for (int c = c0; c <= c1; c++)
-                if (cells[r * mask.Width + c]) { if (first < 0) first = c; last = c; }
-            if (first < 0) continue;
-            foreach (float x in (ReadOnlySpan<float>)[first - margin, last + 1 + margin])
-                foreach (float y in (ReadOnlySpan<float>)[r - margin, r + 1 + margin]) points.Add(new Vector2(x, y));
+            Span<Vector2> half = rented.AsSpan(0, stripMax), strip = rented.AsSpan(stripMax, stripMax), points = rented.AsSpan(2 * stripMax, pointMax);
+            int count = 0;
+            for (int r = row0; r <= row1; r++)
+            {
+                // The card's extent along x inside the strip r to r + 1.
+                int n = ClipHalf(half[..ClipHalf(card, half, new Vector2(0, 1), -r)], strip, new Vector2(0, -1), r + 1);
+                if (n == 0) continue;
+                float minX = float.MaxValue, maxX = float.MinValue;
+                foreach (var p in strip[..n]) (minX, maxX) = (MathF.Min(minX, p.X), MathF.Max(maxX, p.X));
+                int c0 = Math.Clamp((int)MathF.Floor(minX + 1e-4f), 0, mask.Width - 1), c1 = Math.Clamp((int)MathF.Ceiling(maxX - 1e-4f) - 1, c0, mask.Width - 1);
+                int first = -1, last = -1;
+                for (int c = c0; c <= c1; c++)
+                    if (cells[r * mask.Width + c]) { if (first < 0) first = c; last = c; }
+                if (first < 0) continue;
+                foreach (float x in (ReadOnlySpan<float>)[first - margin, last + 1 + margin])
+                    foreach (float y in (ReadOnlySpan<float>)[r - margin, r + 1 + margin]) points[count++] = new Vector2(x, y);
+            }
+            return count == 0 ? [] : ConvexHull(points[..count]);
         }
-        return points.Count == 0 ? [] : ConvexHull(points);
+        finally
+        {
+            System.Buffers.ArrayPool<Vector2>.Shared.Return(rented);
+        }
     }
 
     /// <summary>Andrew's monotone chain; counter-clockwise in a y-up frame (clockwise on the screen), collinear points dropped.</summary>
     public static Vector2[] ConvexHull(List<Vector2> points)
     {
-        var p = points.Distinct().OrderBy(q => q.X).ThenBy(q => q.Y).ToList();
-        if (p.Count < 3) return [.. p];
-        var h = new List<Vector2>();
-        foreach (var q in p)
+        var copy = points.ToArray();
+        return ConvexHull(copy.AsSpan());
+    }
+
+    /// <summary><see cref="ConvexHull(List{Vector2})"/> sorting <paramref name="points"/> in place.</summary>
+    static Vector2[] ConvexHull(Span<Vector2> points)
+    {
+        // Sorted by x then y, repeats dropped (equal points are next to each other once sorted).
+        points.Sort(static (a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
+        int count = 0;
+        foreach (var q in points)
+            if (count == 0 || !points[count - 1].Equals(q)) points[count++] = q;
+        var p = points[..count];
+        if (p.Length < 3) return p.ToArray();
+        var rented = System.Buffers.ArrayPool<Vector2>.Shared.Rent(2 * p.Length);
+        try
         {
-            while (h.Count >= 2 && Cross(h[^2], h[^1], q) <= 0) h.RemoveAt(h.Count - 1);
-            h.Add(q);
+            var h = rented.AsSpan();
+            int n = 0;
+            foreach (var q in p)
+            {
+                while (n >= 2 && Cross(h[n - 2], h[n - 1], q) <= 0) n--;
+                h[n++] = q;
+            }
+            int lower = n + 1;
+            for (int i = p.Length - 2; i >= 0; i--)
+            {
+                while (n >= lower && Cross(h[n - 2], h[n - 1], p[i]) <= 0) n--;
+                h[n++] = p[i];
+            }
+            return h[..(n - 1)].ToArray();
         }
-        int lower = h.Count + 1;
-        for (int i = p.Count - 2; i >= 0; i--)
+        finally
         {
-            while (h.Count >= lower && Cross(h[^2], h[^1], p[i]) <= 0) h.RemoveAt(h.Count - 1);
-            h.Add(p[i]);
+            System.Buffers.ArrayPool<Vector2>.Shared.Return(rented);
         }
-        h.RemoveAt(h.Count - 1);
-        return [.. h];
     }
 
     static float Cross(Vector2 o, Vector2 a, Vector2 b) => (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X);
@@ -370,18 +404,30 @@ public static class FoliageCardTrimmer
     static Vector2[] ClipHalf(Vector2[] polygon, Vector2 normal, float offset)
     {
         if (polygon.Length == 0) return polygon;
-        var result = new List<Vector2>(polygon.Length + 2);
+        var rented = System.Buffers.ArrayPool<Vector2>.Shared.Rent(2 * polygon.Length);
+        try { return rented.AsSpan(0, ClipHalf(polygon, rented, normal, offset)).ToArray(); }
+        finally { System.Buffers.ArrayPool<Vector2>.Shared.Return(rented); }
+    }
+
+    /// <summary><see cref="ClipHalf(Vector2[], Vector2, float)"/> into <paramref name="result"/> (twice the polygon's length at least, not overlapping it); the count written.</summary>
+    static int ClipHalf(ReadOnlySpan<Vector2> polygon, Span<Vector2> result, Vector2 normal, float offset)
+    {
+        int n = 0;
         for (int i = 0; i < polygon.Length; i++)
         {
             var p = polygon[i]; var q = polygon[(i + 1) % polygon.Length];
             float dp = Vector2.Dot(normal, p) + offset, dq = Vector2.Dot(normal, q) + offset;
-            if (dp >= 0) result.Add(p);
-            if ((dp >= 0) != (dq >= 0)) result.Add(p + (q - p) * (dp / (dp - dq)));
+            if (dp >= 0) result[n++] = p;
+            if ((dp >= 0) != (dq >= 0)) result[n++] = p + (q - p) * (dp / (dp - dq));
         }
         // Points that coincide (a clip through a corner) are one vertex.
-        for (int i = result.Count - 1; i >= 0 && result.Count > 1; i--)
-            if ((result[i] - result[(i + 1) % result.Count]).LengthSquared() < 1e-10f && result.Count > 1) result.RemoveAt(i);
-        return [.. result];
+        for (int i = n - 1; i >= 0 && n > 1; i--)
+            if ((result[i] - result[(i + 1) % n]).LengthSquared() < 1e-10f)
+            {
+                result[(i + 1)..n].CopyTo(result[i..]);
+                n--;
+            }
+        return n;
     }
 
     /// <summary>The signed area (positive when the vertices go counter-clockwise in a y-up frame).</summary>
