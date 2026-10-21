@@ -5,11 +5,15 @@ namespace Meitou.Simulation.Saving;
 
 /// <summary>
 /// The factions' WAR_SAVESTATEs (docs/formats/save.md "WAR_SAVESTATE (type 9)") to and from the war managers (<see cref="PopulationSystem.Wars"/>), with the original's keys.
-/// Keys Meitou does not know are kept (the capture writes into the loaded save's records); phase timers are not saved and restart at load, as the original.
+/// Keys Meitou does not know are kept (the capture writes into the loaded save's records). The original saves no phase timer (its phases start again at load); Meitou writes
+/// its own floats <c>meitou phase start c&lt;i&gt;</c>, <c>meitou fight start c&lt;i&gt;</c>, <c>meitou arrived c&lt;i&gt;</c>, <c>meitou announced c&lt;i&gt;</c> and
+/// <c>meitou carry start c&lt;i&gt;</c> (absolute game hours, as <c>updatetime</c>; absent: not started) and reads them back, so a loaded campaign goes on where it was.
 /// </summary>
 internal static class WarSave
 {
     static readonly string[] ActiveStrings = ["dat c", "enemy c"], ActiveInts = ["phase c", "id c"], ActiveBools = ["rd c", "trig c"], ActiveHands = ["target c", "leader c", "home c"];
+    const string PhaseStartKey = "meitou phase start c", FightStartKey = "meitou fight start c", ArrivedKey = "meitou arrived c", AnnouncedKey = "meitou announced c", CarryStartKey = "meitou carry start c";
+    static readonly string[] Timers = [PhaseStartKey, FightStartKey, ArrivedKey, AnnouncedKey, CarryStartKey];
     static readonly string[] HandParts = ["TYPE", "C", "CS", "I", "S"];
 
     /// <summary>The platoon handles (container and serial) the states' <c>p&lt;i&gt;</c> name, of type 1 or 34 (the reader takes no other).</summary>
@@ -50,7 +54,9 @@ internal static class WarSave
                     Faction = m.Faction, Id = war.Ints.GetValueOrDefault($"id c{i}"), CampaignId = id, Target = Town(world, saved, Hand.Read(war, $"target c{i}")),
                     Home = Town(world, saved, Hand.Read(war, $"home c{i}")), Enemy = enemy.Length > 0 ? data.FactionIndex(enemy) : -1,
                     Phase = Math.Clamp(war.Ints.GetValueOrDefault($"phase c{i}"), 0, 2), Reached = war.Bools.GetValueOrDefault($"rd c{i}"), Trig = war.Bools.GetValueOrDefault($"trig c{i}"),
-                    PhaseStart = now, Required = (int)(c.NumForces * population.Settings.RaidSizeMult),
+                    PhaseStart = Hour(war, PhaseStartKey + i) ?? now, Required = (int)(c.NumForces * population.Settings.RaidSizeMult),
+                    FightStart = Hour(war, FightStartKey + i) ?? -1, ArrivedAt = Hour(war, ArrivedKey + i) ?? -1, AnnouncedAt = Hour(war, AnnouncedKey + i) ?? -1,
+                    CarryStart = Hour(war, CarryStartKey + i) ?? -1,
                 };
                 if (inst.Phase == 1 && !c.HasPt2) inst.Phase = 2;
                 if (Platoon(saved, Hand.Read(war, $"leader c{i}")) is int leader) leaders[inst] = leader;
@@ -84,6 +90,14 @@ internal static class WarSave
             foreach (var inst in m.Actives)
                 inst.Leader = leaders.TryGetValue(inst, out int l) && inst.Platoons.Contains(l) ? l : inst.Platoons.Count > 0 ? inst.Platoons[0] : -1;
         }
+    }
+
+    static double? Hour(FcsRecord war, string key) => war.Floats.TryGetValue(key, out float h) && float.IsFinite(h) ? h : null;
+
+    static void Hour(FcsRecord war, string key, double hour)
+    {
+        if (hour >= 0) war.Floats[key] = (float)hour;
+        else war.Floats.Remove(key);
     }
 
     static int? Platoon(SavedPopulation saved, Hand h) => !h.IsNull && saved.PlatoonIds.TryGetValue((h.C, h.CS), out int id) ? id : null;
@@ -137,8 +151,13 @@ internal static class WarSave
                 war.Ints[$"id c{i}"] = a.Id;
                 war.Bools[$"rd c{i}"] = a.Reached;
                 war.Bools[$"trig c{i}"] = a.Trig;
+                Hour(war, PhaseStartKey + i, a.PhaseStart);
+                Hour(war, FightStartKey + i, a.FightStart);
+                Hour(war, ArrivedKey + i, a.ArrivedAt);
+                Hour(war, AnnouncedKey + i, a.AnnouncedAt);
+                Hour(war, CarryStartKey + i, a.CarryStart);
             }
-            for (int i = m.Actives.Count; i < old; i++) Remove(war, i, ActiveStrings, ActiveInts, ActiveBools, ActiveHands, []);
+            for (int i = m.Actives.Count; i < old; i++) Remove(war, i, ActiveStrings, ActiveInts, ActiveBools, ActiveHands, Timers);
 
             old = war.Ints.GetValueOrDefault("num requests");
             war.Ints["num requests"] = m.Requests.Count;

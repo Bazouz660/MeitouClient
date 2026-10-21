@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Meitou.Data.World;
 using Meitou.Simulation.Bodies;
 
@@ -14,6 +15,9 @@ namespace Meitou.Simulation;
 /// <item>Separation: the repulsion along self-other is nonzero only closer than R and proportional to 100 x (1 - d/R), over at most
 /// 26 neighbours (Observed); R is twice the footprint radius 4 of a human (<see cref="SeparationRadius"/>), and the scale from that
 /// proportionality to a speed is an engine choice (<see cref="SeparationStrength"/>).</item>
+/// <item>Body contact (engine choice; whether the original's characters collide is Unknown): two standing bodies (<see cref="BodyShare"/> of their footprints) do not stay
+/// overlapped. Each takes half of the overlap between its stepped position and where the other's last velocity takes it, so a walker shoves a stander aside; an imprisoned
+/// one does not give.</item>
 /// <item>Paths: a character that wants one is flagged in Think; the Schedule step of the next tick asks the <see cref="PathService"/>;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
@@ -32,6 +36,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// <summary>Speed in units/s of a repulsion of magnitude 100 (engine choice).</summary>
     public const float SeparationStrength = 0.15f;
     public const int MaxSeparationContributions = 26;
+    /// <summary>The share of the footprint radius a body is solid over (engine choice: 2.4 units for a human, about half the shoulders' width).</summary>
+    public const float BodyShare = 0.6f;
     /// <summary>A character within this distance of a waypoint has reached it.</summary>
     public const float ArriveRadius = 10;
     /// <summary>The <see cref="CharacterCold.ArriveWithin"/> of a walk to a spot (engine choice: a barman stands at his node behind the counter, not a stride off it).</summary>
@@ -242,7 +248,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (task == CharacterTask.Follow)
             {
                 var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
-                var leader = squad?.Leader ?? CharacterId.None;
+                // A contract's follow goal follows its mission target (Ai.AiMind.FollowTarget) instead of the leader.
+                var leader = cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
                 if (leader.IsNone || leader.Slot == i || !table.IsAlive(leader))
                 {
                     n.Task = (byte)CharacterTask.Wander;
@@ -354,6 +361,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     if (mode == SpeedMode.Walk && !cold.Carrying.IsNone) mode = SpeedMode.Run;
                     float top = water > 0 && cold.Race is { } race ? Speed.InWater(water, n.MaxSpeed, race, cold.SwimSpeed) : n.MaxSpeed;
                     desired = cold.SpeedOverride > 0 ? cold.SpeedOverride : MathF.Min(top, SpeedMode.Cap(mode, n.WalkSpeed));
+                    // A fighter in its footwork closes in at a shuffle (docs/game/combat.md "Combat stance").
+                    if (cold.InCombat && !cold.CombatRunning && n.Task == (byte)CharacterTask.Attack) desired = MathF.Min(desired, Combat.CombatTuning.FootworkSpeed);
                     if (mode == SpeedMode.Group && cold.SpeedOverride <= 0) desired = MathF.Min(desired, SlowestOfSquad(world, cold));
                     if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
                 }
@@ -410,7 +419,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     var d = new Vector2(all[s.Self].Position.X - all[other].Position.X, all[s.Self].Position.Z - all[other].Position.Z);
                     float len = d.Length();
                     if (len >= SeparationRadius) return;
-                    s.Count++;
+                    s.Near[s.Count++] = other;
                     // Exactly on top of each other: the lower slot is pushed one way, the other the opposite.
                     s.Sum += (len > 1e-4f ? d / len : (s.Self < other ? Vector2.UnitX : -Vector2.UnitX)) * (100 * (1 - len / SeparationRadius));
                 });
@@ -418,9 +427,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             // Closing on its spot it is not held off by those standing round it (they are pushed aside as it arrives).
             if (closing) push.Sum = Vector2.Zero;
             var step = (dir * speed + push.Sum * SeparationStrength) * dt;
+            var shove = closing ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
+            step += shove;
             float x = p.Position.X + step.X, z = p.Position.Z + step.Y;
             // Pushed by its neighbours where it cannot stand (over a hole furniture cuts in a floor): its own step alone.
-            if (push.Sum != Vector2.Zero && !walk.IsWalkable(x, z, p.Position.Y))
+            if ((push.Sum != Vector2.Zero || shove != Vector2.Zero) && !walk.IsWalkable(x, z, p.Position.Y))
             {
                 step = dir * speed * dt;
                 (x, z) = (p.Position.X + step.X, p.Position.Z + step.Y);
@@ -477,6 +488,35 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         cold.ProvisionalRepathTick = world.Tick + (long)MathF.Ceiling(ProvisionalRepathSeconds / world.TickSeconds);
     }
 
+    /// <summary>The solid radius of a body: <see cref="BodyShare"/> of its footprint (a human's when it has no race data).</summary>
+    static float BodyRadius(CharacterCold cold) => BodyShare * (cold.FootprintRadius > 0 ? cold.FootprintRadius : Combat.CombatTuning.DefaultFootprint);
+
+    /// <summary>
+    /// How far a character stepped to <paramref name="at"/> is put out of the standing bodies among its separation neighbours (partition-safe: the last tick's state of the
+    /// others): half of each overlap with where the other's velocity takes it this tick, all of it against one held in a bed or cage. Lying and carried bodies are not in the
+    /// way, and a carried or bedded one is not moved.
+    /// </summary>
+    static Vector2 Contact(World world, int self, CharacterCold cold, ref SeparationState near, Vector2 at)
+    {
+        if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) return Vector2.Zero;
+        var table = world.Characters;
+        var all = table.Previous;
+        float dt = world.TickSeconds, mine = BodyRadius(cold);
+        var shove = Vector2.Zero;
+        for (int k = 0; k < near.Count; k++)
+        {
+            int other = near.Near[k];
+            if (table.Cold(other) is not { } them || them.Medical is { Incapacitated: true }) continue;
+            ref readonly var o = ref all[other];
+            var d = at - new Vector2(o.Position.X + o.Velocity.X * dt, o.Position.Z + o.Velocity.Z * dt);
+            float len = d.Length(), reach = mine + BodyRadius(them);
+            if (len >= reach) continue;
+            var normal = len > 1e-4f ? d / len : self < other ? Vector2.UnitX : -Vector2.UnitX;
+            shove += normal * ((reach - len) * (them.InSomething != Locks.HeldState.None ? 1 : 0.5f));
+        }
+        return shove;
+    }
+
     /// <summary>
     /// The heading turned from <paramref name="yaw"/> towards <paramref name="wanted"/> by at most <see cref="TurnRate"/> x <paramref name="dt"/>,
     /// and the speed scaled by the cosine of the turn still to make (zero beyond 90 degrees: the character turns where it stands).
@@ -497,5 +537,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         public int Self;
         public int Count;
         public Vector2 Sum;
+        /// <summary>The neighbours counted, for the body contact.</summary>
+        public Neighbours Near;
+    }
+
+    [InlineArray(MaxSeparationContributions)]
+    struct Neighbours
+    {
+        int first;
     }
 }

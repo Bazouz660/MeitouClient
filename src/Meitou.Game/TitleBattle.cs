@@ -43,7 +43,7 @@ sealed class TitleBattle : IDisposable
     public static TitleBattle? Create(PopulationData data, Func<float, float, float> ground, IReadOnlyList<Vector3> centres,
         AnimationLengths lengths, AnimationLibrary library)
     {
-        string? Record(string name) => data.Db.OfType(FcsRecordType.CHARACTER).FirstOrDefault(r => r.Name == name)?.StringId;
+        string? Record(string name) => data.Db.OfType(FcsRecordType.CHARACTER).FirstOrDefault(r => r.BaseName == name)?.StringId;
         int Faction(string name) => data.Factions.Select((f, i) => (f, i)).FirstOrDefault(p => p.f.Name == name, (null!, -1)).i;
         if (Record("Paladin") is not { } paladin || Record("Dust Bandit") is not { } bandit ||
             Faction("The Holy Nation") is not (>= 0 and var holyNation) || Faction("Dust Bandits") is not (>= 0 and var bandits) || data.PlayerFaction < 0)

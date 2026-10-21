@@ -40,6 +40,12 @@ readonly struct CommandWriter(NetWriter w, StringTableWriter strings)
 
     public void Id(CharacterId id) => CommonCodec.WriteId(w, id);
 
+    public void Id(CharacterId? id)
+    {
+        w.WriteBool(id.HasValue);
+        if (id is { } v) CommonCodec.WriteId(w, v);
+    }
+
     public void Ids(IReadOnlyList<CharacterId> ids)
     {
         int count = Math.Min(ids.Count, NetLimits.MaxIdList);
@@ -135,6 +141,7 @@ ref struct CommandReader(NetReader reader, StringTableReader strings)
     public int? NullableInt() => CommonCodec.ReadNullableInt(ref r);
 
     public CharacterId Id() => CommonCodec.ReadId(ref r);
+    public CharacterId? NullableId() => r.ReadBool() ? CommonCodec.ReadId(ref r) : null;
     public CharacterId[] Ids() => CommonCodec.ReadIds(ref r);
     public Vector2 Vec2() => CommonCodec.ReadVector2(ref r);
     public Vector3 Vec3() => CommonCodec.ReadVector3(ref r);

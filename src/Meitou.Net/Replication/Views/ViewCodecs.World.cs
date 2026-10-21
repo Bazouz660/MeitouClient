@@ -150,11 +150,18 @@ public static partial class ViewCodecs
         WorldWire.Text(w, s, g.Record);
         WorldWire.Text(w, s, g.Name);
         WorldWire.Vector(w, g.Position);
-        WorldWire.Float(w, g.Yaw);
+        WorldWire.Rotation(w, g.Rotation);
+        w.WriteByte(WorldWire.Pack(g.Dropped));
     }
 
-    static GroundItemSnapshot ReadGroundItem(ref NetReader r, StringTableReader s) =>
-        new(r.ReadVarInt32(), WorldWire.ReadText(ref r, s), WorldWire.ReadText(ref r, s), CommonCodec.ReadVector3(ref r), r.ReadFinite());
+    static GroundItemSnapshot ReadGroundItem(ref NetReader r, StringTableReader s)
+    {
+        int id = r.ReadVarInt32();
+        string record = WorldWire.ReadText(ref r, s), name = WorldWire.ReadText(ref r, s);
+        var position = CommonCodec.ReadVector3(ref r);
+        var rotation = CommonCodec.ReadQuaternion(ref r);
+        return new(id, record, name, position, rotation, (WorldWire.ReadFlags(ref r, 1) & 1) != 0);
+    }
 
     static void WriteContainer(NetWriter w, StringTableWriter s, ContainerSpot c)
     {

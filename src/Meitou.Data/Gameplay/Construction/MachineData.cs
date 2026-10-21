@@ -278,11 +278,20 @@ public sealed class ResourceField
         return NodeYield(resource, n.Position) * (1 - falloff);
     }
 
-    /// <summary>A rock's own yield (its natural site's, <c>FarmBuilding::vfunc_92</c>): the resources record's <c>&lt;p&gt; mult</c> where it stands, 0.1 when missing, at least 0.1.</summary>
+    /// <summary>
+    /// A rock's own yield (its natural site's, <c>FarmBuilding::vfunc_92</c>; <b>Observed</b>, <c>uses_world_resource_mining</c> -> <c>FUN_140a12ff0</c>): WATER and GROUND as
+    /// <see cref="Value"/>, STONE the stone noise x <c>stone mult</c> as <see cref="Yield"/>, the others the resources record's <c>&lt;p&gt; mult</c> where it stands; at least 0.1.
+    /// </summary>
     public float NodeYield(int resource, System.Numerics.Vector3 at)
     {
-        string key = Prefix(resource) + " mult";
-        return Resources(at.X, at.Z) is { } r && r.Floats.ContainsKey(key) ? MathF.Max(0.1f, r.GetFloat(key)) : 0.1f;
+        float v;
+        if (resource is MachineData.WaterResource or MachineData.GroundResource or StoneResource) v = Yield(resource, at);
+        else
+        {
+            string key = Prefix(resource) + " mult";
+            v = Resources(at.X, at.Z) is { } r && r.Floats.ContainsKey(key) ? r.GetFloat(key) : 0;
+        }
+        return MathF.Max(0.1f, v);
     }
 
     GameRecord? Group(float x, float z)

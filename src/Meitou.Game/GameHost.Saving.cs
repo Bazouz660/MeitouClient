@@ -58,7 +58,7 @@ sealed partial class GameHost
             Population = new Meitou.Simulation.PopulationSettings
             {
                 Background = interactive && !IsDuel, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
-                CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild,
+                CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
             },
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
             SynchronousPaths = !interactive || IsDuel,

@@ -59,6 +59,10 @@ stumps and robot wear are not interchangeable. Race tables own HP/blood/hunger/h
 stun0 and bleeding0; the wounds are already treated. First Aid has nothing left to bandage;
 the HUD's yellow layer shows the treated damage awaiting passive recovery.
 
+**Observed** (play, 2026-10-21): a first-aid order (self included) given to a character without a medkit is refused before
+any movement or animation, with the bubble "I don't have a medkit." Whether a squad mate's kit nearby or a robot repair kit
+avoids the refusal is **Unknown** (Meitou accepts any kit `FindKit` would use).
+
 **Verified** carried person adds CONSTANTS weight30, independent of body/race/inventory.
 **Observed** capacity C=1.2*strength*strength-injury-mult+15; encumbrance
 clamp((C-0.05W)/(0.95W),0,1), 1 through W<=C and0 at W>=20C. It affects speed, hunger, XP/dodge.
@@ -244,11 +248,21 @@ Stomach, two arms, two legs, two forelegs):
 ### Limb replacements and robots
 
 A LIMB_REPLACEMENT record (`slot` 50 left arm, 51 right arm, 52 left leg, 53 right leg; **Verified**) becomes a
-`RobotLimbItem` with a `StatsEnumerated -> float` multiplier map. Each multiplier is stored as two fields, `X mult`
-at the lowest quality and `X mult 1` at the highest, interpolated by the item's quality grade
-(`FUN_1400cd500`). The grade is Gear +0x220 = item `level` x 0.01 (the constructor `read_athletics_mult_1_n17`
-lerps `HP`/`HP 1` into +0x268 by it), not the save's `quality` float. **Observed**: METARU's Scout Legs
-(`level` 0, `quality` 95) give legs of 50 HP, the low end of 50/150.
+`RobotLimbItem` with a `StatsEnumerated -> float` multiplier map. Each value is stored as two fields, `X` at the
+lowest quality and `X 1` at the highest, scaled by the item's `level` (Gear +0x224 int, +0x220 = level x 0.01), not
+the save's `quality` float. Constructor `read_athletics_mult_1_n17` (`0x1400ce2d0`; **Verified**, disassembly and
+constant bytes):
+- `HP` (+0x268), `unarmed damage bonus` (+0x278, truncated to int) and `swimming mult` (stat 23, every slot):
+  lerp(level x 0.01, X, X 1), unclamped. Where +0x278 is read is **Unknown** (Meitou: not wired).
+- Skill multipliers (arms 50/51: strength, dexterity, thievery for 10 and 37, ranged; legs 52/53: athletics,
+  stealth) via `FUN_1400cd500(level, X, X 1)`: if X < 1 <= X 1, level >= 40 gives lerp(clamp((level-40)/55,0,1), 1, X 1)
+  and level < 40 gives lerp(clamp((level-5)/35,0,1), X, 1), so the grade bands 5/40/95 hit X, 1, X 1; otherwise
+  lerp(level x 0.01, X, X 1).
+- `overall mult` is looked up and discarded; any other use is **Unknown**.
+
+**Observed**: METARU's Scout Legs (`level` 0, `quality` 95) give legs of 50 HP, the low end of 50/150. Crafted limbs
+take the bench's grade roll ([buildings-production](buildings-production.md)), shop limbs the template's `robotics levels`
+spread ([economy](economy.md) 9.1).
 
 Per limb slot k (0 L arm, 1 R arm, 2 L leg, 3 R leg) the character holds a state (0 original, 1 stump, 2
 replaced, 3 crushed) and the fitted item (holder `FUN_1400cd3f0`; **Verified** by the save code below).

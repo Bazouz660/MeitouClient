@@ -213,6 +213,16 @@ public sealed unsafe class VulkanDevice : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(o), "FramesInFlight must be 2..3");
         }
+        if (OperatingSystem.IsMacOS())
+        {
+            // macOS finds the Vulkan loader through DYLD_LIBRARY_PATH, which SIP-restricted launchers
+            // (nohup among them) silently strip; what breaks then reads like a missing OS feature -
+            // GLFW "doesn't support Vulkan", or a FileNotFoundException deep inside Silk.NET. Name
+            // the real cause here, at first touch, while the launch environment is still in question.
+            if (!NativeLibrary.TryLoad("libvulkan.1.dylib", out _))
+                throw new InvalidOperationException(
+                    $"the Vulkan loader (libvulkan.1.dylib) is not findable on this macOS: DYLD_LIBRARY_PATH='{Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH")}' - the variable is absent from the launch environment, or a restricted launcher stripped it (nohup does); export DYLD_LIBRARY_PATH=/opt/homebrew/lib and launch plainly (a script, a shell function or 'cmd &', not 'nohup cmd &')");
+        }
         var d = new VulkanDevice(o);
         try
         {
@@ -328,6 +338,12 @@ public sealed unsafe class VulkanDevice : IDisposable
         {
             extNames.Add("VK_KHR_surface");
         }
+        // macOS: the loader hides portability drivers (MoltenVK) from instances that do not opt in (VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR).
+        bool portability = OperatingSystem.IsMacOS();
+        if (portability && !extNames.Contains("VK_KHR_portability_enumeration"))
+        {
+            extNames.Add("VK_KHR_portability_enumeration");
+        }
 
         var appName = (byte*)SilkMarshal.StringToPtr("Meitou");
         var layerPtrs = ValidationEnabled ? (byte**)SilkMarshal.StringArrayToPtr(new[] { ValidationLayer }) : null;
@@ -361,6 +377,7 @@ public sealed unsafe class VulkanDevice : IDisposable
             var ci = new InstanceCreateInfo
             {
                 SType = StructureType.InstanceCreateInfo,
+                Flags = portability ? InstanceCreateFlags.EnumeratePortabilityBitKhr : 0,
                 PNext = settingCount > 0 ? &layerInfo : null,
                 PApplicationInfo = &app,
                 EnabledLayerCount = ValidationEnabled ? 1u : 0,
@@ -863,6 +880,13 @@ public sealed unsafe class VulkanDevice : IDisposable
             var p2 = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &pushProps };
             Vk.GetPhysicalDeviceProperties2(pd, &p2);
             MaxPushDescriptors = pushProps.MaxPushDescriptors;
+            // MoltenVK (macOS): push descriptor sets cannot go into Metal argument buffers, so they bind through MSL
+            // attributes, where the per-function sampler cap is 16 — a set with more (water: ocean + shadows + sky) fails
+            // to compile. Lower the budget so the existing regular descriptor set path (argument buffers) is used instead.
+            if (OperatingSystem.IsMacOS() && MaxPushDescriptors > 16)
+            {
+                MaxPushDescriptors = 16;
+            }
         }
         if (HasRayQuery)
         {

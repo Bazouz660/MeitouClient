@@ -24,7 +24,7 @@ sealed partial class PlayerInterface
     /// <summary>Shows a short message at the top of the screen for a few seconds ("Saved", "Loaded", or an error text in red).</summary>
     public void Notice(string text, bool error = false)
     {
-        notice = text.ReplaceLineEndings(" ");
+        notice = Loc.Tr(text).ReplaceLineEndings(" ");
         LogMessage(notice);
         noticeIsError = error;
         noticeUntil = System.Diagnostics.Stopwatch.GetTimestamp() + (long)((error ? 6 : 2.5) * System.Diagnostics.Stopwatch.Frequency);

@@ -153,7 +153,32 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The fights this system started so far.</summary>
     public long Started { get; private set; }
 
-    public void Schedule(World world) => Sync(world.Characters);
+    /// <summary>The fights, for <see cref="Ai.AiStance.ProtectSquad"/> (null: that stance joins any fighting enemy, as <see cref="Ai.AiStance.Defensive"/>).</summary>
+    public CombatSystem? Combat { get; set; }
+
+    public void Schedule(World world)
+    {
+        Sync(world.Characters);
+        SyncSquadFights(world.Characters);
+    }
+
+    /// <summary>(squad, slot) for every character fighting a member of that squad or targeted by one: whom PROTECT_OWN_SQUAD joins against (read only during the looks).</summary>
+    readonly HashSet<(int Squad, int Slot)> squadFights = [];
+
+    void SyncSquadFights(CharacterTable table)
+    {
+        squadFights.Clear();
+        if (Combat is null) return;
+        var next = table.Next;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!next[i].Alive || next[i].Task != (byte)CharacterTask.Attack) continue;
+            var st = Combat.StateOf(new CharacterId(i, next[i].Generation));
+            if (st.TargetSlot is not (>= 0 and var t) || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
+            if (table.Cold(i) is { SquadId: >= 0 } a) squadFights.Add((a.SquadId, t));   // a mate's target
+            if (table.Cold(t) is { SquadId: >= 0 } b) squadFights.Add((b.SquadId, i));   // a mate's attacker
+        }
+    }
 
     void Sync(CharacterTable table)
     {
@@ -201,7 +226,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         public CharacterTable Table;
         public FactionRelations Relations;
-        public int Self, Faction;
+        public int Self, Faction, Squad;
+        /// <summary>The squad fights (<see cref="squadFights"/>; null without a combat system).</summary>
+        public HashSet<(int Squad, int Slot)>? SquadFights;
         public Vector3 Eye;
         public float Yaw, Range;
         public ulong Seed, Key, Tick;
@@ -242,7 +269,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!(range > 0)) continue;
             var scan = new Scan
             {
-                Table = table, Relations = Relations, Self = i, Faction = cold.Faction,
+                Table = table, Relations = Relations, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
                 Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Best = -1, BestD2 = float.MaxValue,
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
@@ -317,6 +344,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (!enemy) return;
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
+        if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
         if (s.Stance == Ai.AiStance.Territorial && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2) return;
         // A sneaking target is harder to see and to hear (the Sneak order; docs/game/perception.md "Sight", "Spotting a sneaker" and "Hearing"): in view it fills the
         // looker's spot meter and counts as seen only once the meter was full before this scan.
@@ -462,6 +490,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 {
                     world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });
                     s.CalmUntil = world.Tick + calm;
+                    // Giving up the chase says so to the target (EV_GIVE_UP_CHASE, as the original's move and follow tasks do, docs/game/dialogue.md "Firing an event").
+                    if (Combat?.StateOf(table.IdOf(i)) is { TargetSlot: >= 0 } st && st.TargetSlot < table.HighWater && next[st.TargetSlot].Generation == st.TargetGeneration)
+                        world.Defer(new Dialogue.DialogueEvent(table.IdOf(i), table.IdOf(st.TargetSlot), 60) { Tick = world.Tick + 1 });
                 }
                 continue;
             }

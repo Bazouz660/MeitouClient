@@ -86,7 +86,7 @@ public static class SquadManagement
     /// </summary>
     public static Squad NewSquad(World world, GameDatabase db, Vector3 at, string factionName, int owner = 0)
     {
-        var template = db.OfType(FcsRecordType.SQUAD_TEMPLATE).FirstOrDefault(r => r.Name == "blank squad");
+        var template = db.OfType(FcsRecordType.SQUAD_TEMPLATE).FirstOrDefault(r => r.BaseName == "blank squad");
         var all = PlayerSquads(world);
         var own = PlayerSquads(world, owner);
         int n = all.Count;

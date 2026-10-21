@@ -6,6 +6,7 @@ using BepuPhysics.Constraints;
 using Meitou.Data.Characters;
 using Meitou.Data.Physics;
 using Meitou.Simulation.Carrying;
+using Meitou.Simulation.Saving;
 
 namespace Meitou.Simulation.Ragdolls;
 
@@ -167,6 +168,13 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             var id = table.IdOf(i);
             ragdolls.TryGetValue(id, out var r);
             var wanted = cold.Appearance is null || !HasRagdoll(cold) ? RagdollPart.None : Wanted(cold);
+            // A ragdoll a save holds (Saving.RagdollSave): taken the first time the character is seen, used when it starts as a whole body.
+            SavedRagdoll? restore = null;
+            if (cold.Save is { Ragdoll: { } saved })
+            {
+                cold.Save.Ragdoll = null;
+                if (r is null && (wanted & RagdollPart.Whole) != 0) restore = saved;
+            }
             if (r is null && wanted == RagdollPart.None) continue;
             if (r is null)
             {
@@ -188,7 +196,13 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
                 if ((r.Mask & RagdollPart.Whole) != 0 && (wanted & RagdollPart.Whole) == 0 && (wanted & RagdollPart.CarryMode) == 0)
                     StartGetUp(world, r, ref next[i]);
                 animated = Animated(r, cold, placement);
-                Rebuild(r, wanted, animated);
+                bool restored = restore is not null && Fits(r, restore, next[i].Position);
+                Rebuild(r, wanted, restored ? restore!.Pose : animated);
+                if (restored)
+                {
+                    r.Age = restore!.Age;
+                    if (restore.Frozen) Freeze(r);
+                }
             }
             if (r.Mask == RagdollPart.None) continue;
             if (!r.Frozen && r.Dynamic.Any(d => !d))
@@ -238,6 +252,20 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         var at = hot.Position + (cold.CarriedBy.IsNone ? Vector3.Zero : CarryPose.Offset(hot.Yaw));
         return CharacterRigs.Placement(r.Setup, at, hot.Yaw, r.Scale);
     }
+
+    /// <summary>Whether a saved ragdoll belongs to this one: a pose for each body, its root where the character stands (a platoon that travelled since moves its characters).</summary>
+    static bool Fits(Ragdoll r, SavedRagdoll saved, Vector3 at)
+    {
+        if (saved.Pose.Length != r.Definition.Bodies.Length) return false;
+        var root = saved.Pose[r.Definition.Root].Position;
+        return Vector2.DistanceSquared(new Vector2(root.X, root.Z), new Vector2(at.X, at.Z)) <= 20 * 20 && MathF.Abs(root.Y - at.Y) <= 50;
+    }
+
+    /// <summary>A whole-body ragdoll's state for a save (<see cref="RagdollSave"/>); null when the character has none or only a carried or limb ragdoll.</summary>
+    public SavedRagdoll? SaveState(CharacterId id) =>
+        ragdolls.TryGetValue(id, out var r) && (r.Mask & RagdollPart.Whole) != 0 && (r.Mask & RagdollPart.CarryMode) == 0 && r.Pose.Length > 0
+            ? new SavedRagdoll(r.Frozen, r.Age, (RigidTransform[])r.Pose.Clone())
+            : null;
 
     /// <summary>Every body's pose where the character's animation puts its bone now, in world space.</summary>
     RigidTransform[] Animated(Ragdoll r, CharacterCold cold, Matrix4x4 placement)

@@ -2,6 +2,16 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.0.3
+
+- A new launcher version shows an update button in the title bar, on every page; the status line no longer loses the notice.
+
+## v1.0.2
+
+- macOS: the launcher starts again instead of crashing at launch (#16).
+- Linux: the AppImage runs on older distributions (glibc 2.35 and newer, e.g. Ubuntu 22.04).
+- A Ko-fi button in the News bar for supporting the project.
+
 ## v1.0.1
 
 - Reads every page of GitHub releases, not only the newest 100: old game versions stay installable and the launcher's own

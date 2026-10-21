@@ -44,6 +44,8 @@ public sealed class AiPackage
     public int Unloaded { get; init; }
     /// <summary><c>Leads to</c>: the package started when this one finishes, resolved among the squad's own packages; null when none.</summary>
     public string? LeadsTo { get; init; }
+    /// <summary><c>contract end talk passive</c> (own, else inherited): the DIALOGUE the leader says to the employer when the package ends as a contract (event 30).</summary>
+    public string? ContractEndTalk { get; init; }
     /// <summary>The goals per <see cref="AiRole"/> (index), the parent's first.</summary>
     public required IReadOnlyList<AiGoal>[] Roles { get; init; }
 
@@ -108,6 +110,7 @@ public sealed class AiDatabase(GameDatabase db)
                 Signal = r.GetInt("signal func"),
                 Unloaded = r.GetInt("unloaded func"),
                 LeadsTo = leads.Count > 0 ? leads[0].TargetStringId : null,
+                ContractEndTalk = EndTalk(r),
                 Roles = [.. roles],
             };
         }
@@ -121,6 +124,14 @@ public sealed class AiDatabase(GameDatabase db)
     /// else <c>Leader AI Goals</c>, Squad2 from <c>Squad2</c> else Squad else Leader, Leader from Leader, Slave from <c>Slave AI Goals</c> only; the
     /// legacy <c>AI Goals</c> (no record of the base game has it) goes into the first three.
     /// </summary>
+    string? EndTalk(GameRecord r, int depth = 0)
+    {
+        if (r.GetReferences("contract end talk passive") is [var own, ..]) return own.TargetStringId;
+        foreach (var parent in r.GetReferences("inherits from"))
+            if (depth < 8 && db.Find(parent.TargetStringId) is { Type: FcsRecordType.AI_PACKAGE } p && EndTalk(p, depth + 1) is { } inherited) return inherited;
+        return null;
+    }
+
     void Load(GameRecord r, List<AiGoal>[] roles, HashSet<string> visiting)
     {
         if (!visiting.Add(r.StringId)) { problems++; return; }

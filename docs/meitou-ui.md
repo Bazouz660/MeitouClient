@@ -2,7 +2,7 @@
 
 Design reference for the Meitou UI mode ([native-ui](native-ui.md)): the game's materials (rust,
 worn paper, charcoal button plates, Exo 2 SemiBold, `kenshi_colours.xml`) as floating plates with
-soft corners, used by the Meitou title and settings. In-game HUD and windows currently use
+soft corners, used by the Meitou title and settings and, in the Meitou UI mode, by the in-game tooltips (one nine-sliced `rust` plate, radius 10; [ui-screens](game/ui-screens.md#tooltips)). In-game HUD and windows currently use
 the original layouts in both modes. Values: [tokens.json](meitou-ui/tokens.json). Live
 components: [reference/](meitou-ui/reference/) (web, React 18): run
 `tools/scripts/meitou-ui-textures.ps1` once (crops the textures from the install into git-ignored

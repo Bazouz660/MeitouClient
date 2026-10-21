@@ -74,5 +74,12 @@ The game/viewer disable tiered compilation and tiered PGO. Experiments can use
 `DOTNET_TieredCompilation` / `DOTNET_TieredPGO`; record these settings. ReadyToRun and tiering
 affect code generation and loading. Compilation/GC stalls matter to tail latency.
 
+The flight benchmark (`--fly-benchmark <frames>`) prints a `gc` line: gen0/gen1 counts, pause total and bytes allocated during the flight.
+Allocated bytes vary about 20% between identical runs (what streams in depends on timing) and a single blocking gen2 dominates the pause total,
+so compare several alternating runs of two builds (copy each build's output folder). To rank allocation sites, run the viewer under
+`dotnet-trace collect --providers Microsoft-Windows-DotNETRuntime:0x1:5 -- <viewer> ...` (GC events with `AllocationTick` stacks, one sample per
+~100 KB) and count only events after the induced compacting gen2 of `FinishLoading` (the flight). Tracing lengthens GC suspensions: take pause
+numbers from untraced runs.
+
 Detailed logs/screenshots belong outside the repository. Evidence for original-game claims
 belongs with the corresponding research and its Verified/Observed/Unknown label.

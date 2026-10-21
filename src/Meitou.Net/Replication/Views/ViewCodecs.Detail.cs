@@ -238,6 +238,11 @@ public static partial class ViewCodecs
             w.WriteSingle(PlayerWire.F(item.Quality));
             PlayerWire.Name(w, strings, item.Material);
             CommonCodec.WriteNullableSingle(w, item.Charge is { } charge ? PlayerWire.F(charge) : null);
+            PlayerWire.Name(w, strings, item.Company);
+            w.WriteVarInt(item.Level);
+            w.WriteSingle(PlayerWire.F(item.Charges));
+            w.WriteSingle(PlayerWire.F(item.MaxCharges));
+            w.WriteVarInt(item.StolenFrom);
         }
     }
 
@@ -260,7 +265,12 @@ public static partial class ViewCodecs
             int x = r.ReadVarInt32(), y = r.ReadVarInt32(), w = r.ReadVarInt32(), h = r.ReadVarInt32(), quantity = r.ReadVarInt32();
             float weight = r.ReadFinite(), quality = r.ReadFinite();
             string material = PlayerWire.ReadName(ref r, strings);
-            items[i] = new InventoryItemView(index, record, name, section, x, y, w, h, quantity, weight, quality) { Material = material, Charge = CommonCodec.ReadNullableSingle(ref r) };
+            float? charge = CommonCodec.ReadNullableSingle(ref r);
+            string company = PlayerWire.ReadName(ref r, strings);
+            int level = r.ReadVarInt32();
+            float charges = r.ReadFinite(), maxCharges = r.ReadFinite();
+            items[i] = new InventoryItemView(index, record, name, section, x, y, w, h, quantity, weight, quality)
+                { Material = material, Charge = charge, Company = company, Level = level, Charges = charges, MaxCharges = maxCharges, StolenFrom = r.ReadVarInt32() };
         }
         return new InventoryDetail(id, new InventoryView(width, height, bagWidth, bagHeight, items) { CarryCapacity = carry, TotalWeight = totalWeight }, lines);
     }

@@ -123,7 +123,9 @@ public sealed class Blackboard
         if (Contract is { } contract)
         {
             if (hours < ContractEnd) return;
+            ended = (contract, MissionTarget);
             Contract = null;
+            MissionTarget = CharacterId.None;
             Current = null;   // the slots choose again
         }
         foreach (var (slot, list) in slots.Reverse())
@@ -202,13 +204,54 @@ public sealed class Blackboard
 
     /// <summary>
     /// Starts a contract package that runs for <paramref name="hours"/> game hours from <paramref name="now"/> (docs/game/ai.md "Dialogue and AI": under 1 hour
-    /// means 10 minutes, Observed). It takes precedence over the slots until it ends; then the slots choose again.
+    /// means 10 minutes, Observed), aimed at <paramref name="target"/> (its goals aimed at the squad's mission, as a bodyguard's, follow it). It takes precedence over the
+    /// slots until it ends; then the slots choose again.
     /// </summary>
-    public void StartContract(AiPackage package, double now, double hours, IPackageRules? rules = null)
+    public void StartContract(AiPackage package, double now, double hours, IPackageRules? rules = null, CharacterId? target = null)
     {
         Contract = package;
         ContractEnd = now + (hours < 1 ? 10.0 / 60 : hours);
+        MissionTarget = target ?? CharacterId.None;
         Start(package, -1, rules);
+    }
+
+    /// <summary>A saved contract (<see cref="Saving.AiSave"/>) running again until <paramref name="end"/>, with no target.</summary>
+    public void ResumeContract(AiPackage package, double end, IPackageRules? rules = null)
+    {
+        Contract = package;
+        ContractEnd = end;
+        MissionTarget = CharacterId.None;
+        Start(package, -1, rules);
+    }
+
+    /// <summary>The package <c>change AI</c> put in place of the template's (saved as <c>replacementAI</c>); null: the template's.</summary>
+    public AiPackage? Replacement { get; private set; }
+
+    /// <summary>The squad's mission target: whom its running contract is aimed at (none without one).</summary>
+    public CharacterId MissionTarget { get; private set; } = CharacterId.None;
+
+    /// <summary>The contract that ended on the last <see cref="Update"/> and whom it was aimed at, until <see cref="TakeEnded"/> takes it.</summary>
+    (AiPackage Package, CharacterId Target)? ended;
+
+    /// <summary>The contract that ended since the last call (the AI fires the leader's <c>contract end talk passive</c>, event 30), or null.</summary>
+    public (AiPackage Package, CharacterId Target)? TakeEnded()
+    {
+        var e = ended;
+        ended = null;
+        return e;
+    }
+
+    /// <summary>
+    /// Dialogue's <c>change AI</c> (<c>FUN_140272430</c>): the squad's packages become <paramref name="package"/> alone and it starts at once (every member chooses again). A running
+    /// contract keeps running.
+    /// </summary>
+    public void Replace(AiPackage package, IPackageRules? rules = null)
+    {
+        Replacement = package;
+        slots.Clear();
+        slots[0] = [package];
+        if (Contract is null) Start(package, 0, rules);
+        else Version++;
     }
 
     internal void Hash(ref StateHasher hasher)
@@ -218,6 +261,8 @@ public sealed class Blackboard
         hasher.Add(Version);
         hasher.Add(Contract is not null);
         hasher.Add(ContractEnd);
+        if (!MissionTarget.IsNone) hasher.Add(MissionTarget);
+        if (Replacement is not null) hasher.Add(Rng.StableHash(Replacement.Id));
         hasher.Add(Intact);
         hasher.Add(Route.Length);
         foreach (var p in Route) hasher.Add(p);
@@ -233,14 +278,16 @@ public enum AiStance : byte
 {
     /// <summary>Starts no fight (it still fights back when attacked).</summary>
     Passive = 0,
+    /// <summary>Attacks enemies fighting its own squad: a mate's target or a mate's attacker (PROTECT_OWN_SQUAD, docs/game/ai-tasks.md "Combat goals").</summary>
+    ProtectSquad = 1,
     /// <summary>Attacks enemies that are fighting (PROTECT_ALLIES and the like).</summary>
-    Defensive = 1,
+    Defensive = 2,
     /// <summary>Attacks enemies within its home (TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME).</summary>
-    Territorial = 2,
+    Territorial = 3,
     /// <summary>Attacks enemies on sight (ATTACK_ENEMIES; also the default for a character whose lists hold no combat goal, the old rule).</summary>
-    Aggressive = 3,
+    Aggressive = 4,
     /// <summary>Attacks enemies and neutrals on sight (ATTACK_ENEMIES_AND_NEUTRALS).</summary>
-    AggressiveNeutrals = 4,
+    AggressiveNeutrals = 5,
 }
 
 /// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, how readily it fights.</summary>
@@ -252,6 +299,10 @@ public sealed class AiMind
     public int MemberIndex { get; init; }
     /// <summary>The goal being acted out (null before the first think).</summary>
     public AiGoal? Goal { get; set; }
+    /// <summary>The goal's plan (<see cref="TaskPlanner"/>), leaf first: the step carried out is the first. Planned again at every think.</summary>
+    public List<PlanStep> Plan { get; } = [];
+    /// <summary>The plan's first step (None without a plan).</summary>
+    public TaskType Step => Plan.Count > 0 ? Plan[0].Type : TaskType.None;
     public AiBehaviour Behaviour { get; set; }
     public AiStance Stance { get; set; } = AiStance.Aggressive;
     /// <summary>The <see cref="Blackboard.Version"/> the goal was chosen under.</summary>
@@ -277,6 +328,12 @@ public sealed class AiMind
     public bool SeatUnreachable { get; set; }
     /// <summary>The sitting clip of the chair it sits on (<see cref="HomeSpot.SitClip"/>), for <see cref="AnimationSystem"/>; null when not seated. Follows from the goal and seat, so not hashed.</summary>
     public string? SitClip { get; set; }
+    /// <summary>Its first think puts it where its plan's walk ends (<see cref="Squad.Resume"/>: back from its town's time unloaded); cleared by that think.</summary>
+    public bool Resume { get; set; }
+    /// <summary>Where the serial step puts it this tick (set by the think that took <see cref="Resume"/> up); null otherwise.</summary>
+    public Vector3? PlaceAt { get; set; }
+    /// <summary>Whom its follow goal follows instead of the squad leader: the contract's mission target for a goal aimed at it (none: the leader).</summary>
+    public CharacterId FollowTarget { get; set; } = CharacterId.None;
     /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
     public bool HasCombatGoals { get; set; }
     /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
@@ -286,6 +343,7 @@ public sealed class AiMind
     internal void Hash(ref StateHasher hasher)
     {
         hasher.Add((int)(Goal?.Task.Type ?? TaskType.None));
+        hasher.Add((int)Step);
         hasher.Add((int)Behaviour);
         hasher.Add((int)Stance);
         hasher.Add(Version);
@@ -298,5 +356,8 @@ public sealed class AiMind
         hasher.Add(SeatUnreachable);
         hasher.Add(CommitUntil);
         hasher.Add(Target ?? new Vector3(float.NaN));
+        if (Resume) hasher.Add(0x52657375);
+        if (PlaceAt is { } place) hasher.Add(place);
+        if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
     }
 }

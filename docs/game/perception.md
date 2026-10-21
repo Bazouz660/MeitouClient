@@ -88,7 +88,7 @@ not be equated with the attack planner or discarded immediately after a lost sig
 
 ## Unknowns
 
-- The attack decision after a sighting (the planner path from ENEMY to an attack task) and its range.
+- The enemy tests of the attack-on-sight finder and its range (goals: [ai-tasks](ai-tasks.md#combat-goals)).
 - Slot 14 `+0xb4`, `+0x2f8` = 1, `FUN_140436610`, `FUN_140856bc0`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
 - Whether the run-away ratios are read at all; the leash.

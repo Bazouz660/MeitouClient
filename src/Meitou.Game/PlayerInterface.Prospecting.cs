@@ -78,14 +78,14 @@ sealed partial class PlayerInterface
         AddLines(controls, "OverviewDatapanel1",
         [
             new("Zone:", r.Zone, TitleColour, TitleColour),
-            new("Altitude:", $"{N(r.Altitude)} m"),
+            new("Altitude:", Loc.Tr("{1,num} m", r.Altitude)),
             new("Prospector Skill:", N(r.Skill)),
-            new("Area Size:", $"{N(r.AreaMetres)} m"),
+            new("Area Size:", Loc.Tr("{1,num} m", r.AreaMetres)),
         ], row, pixels);
         // The wind of the camera's region (140785f50) in mph; the environment lists its coverages, "Dead" when there are none, the first on the label's line.
-        string wind = ((WindSpeed?.Invoke() ?? 0) * 0.22369362f).ToString("0.0", CultureInfo.InvariantCulture);
-        var panel = new List<HudLine> { new("Wind Speed:", $"{wind} mph") };
-        var environment = r.Environment.Count == 0 ? ["Dead"] : r.Environment.Select(l => $"{l.Name} {N(l.Percent)}%").ToArray();
+        double wind = Math.Round((WindSpeed?.Invoke() ?? 0) * 0.22369362f, 1);
+        var panel = new List<HudLine> { new("Wind Speed:", Loc.Tr("{1,num} mph", wind)) };
+        var environment = r.Environment.Count == 0 ? [Loc.Tr("Dead")] : r.Environment.Select(l => $"{Loc.Tr(l.Name)} {N(l.Percent)}%").ToArray();
         for (int i = 0; i < environment.Length; i++) panel.Add(new(i == 0 ? "Environment:" : "", environment[i], null, MainColour));
         AddLines(controls, "OverviewDatapanel2", panel, row, pixels);
 

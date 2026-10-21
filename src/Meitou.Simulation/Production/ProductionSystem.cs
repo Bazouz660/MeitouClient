@@ -51,6 +51,7 @@ public sealed partial class ProductionSystem : ITickSystem
     readonly ItemFactory items;
     readonly XpService xp;
     readonly ResourceField resources;
+    readonly IResourceNodes? nodes;
     readonly Dictionary<string, MachineData?> machineData = new(StringComparer.Ordinal);
     readonly Dictionary<string, ResearchData?> researchData = new(StringComparer.Ordinal);
     List<ResearchData>? allResearch;
@@ -67,6 +68,7 @@ public sealed partial class ProductionSystem : ITickSystem
         Settings = settings ?? new ProductionSettings();
         xp = new XpService(constants, options);
         resources = new ResourceField(db, biomes, nodes);
+        this.nodes = nodes;
     }
 
     public ProductionSystem(PopulationData data, ProductionSettings? settings = null)
@@ -119,8 +121,9 @@ public sealed partial class ProductionSystem : ITickSystem
             m.WaterRate = farm.ConsumptionRate / MachineData.DaySeconds * (farm.Indoor ? 1 : resources.WaterUsage(p.X, p.Z));
             Replant(world, m);
         }
-        // A player's mine yields what the ground or the nearest rock gives, 0 for nothing (the original's 0.5 for nothing is for buildings not the player's; Observed, uses_world_resource_mining).
-        else if (data.Resource != 0) m.Yield = resources.Yield(data.Resource, p);
+        // A rock yields its own value, at least 0.1; a player's mine what the ground or the nearest rock gives, 0 for nothing (the original's 0.5 for nothing is for buildings not the
+        // player's; Observed, uses_world_resource_mining).
+        else if (data.Resource != 0) m.Yield = IsNatural(site.Id) ? resources.NodeYield(data.Resource, p) : resources.Yield(data.Resource, p);
         world.Machines.Add(m);
         return m;
     }
@@ -134,7 +137,7 @@ public sealed partial class ProductionSystem : ITickSystem
         if (world.Machines.Count == 0) return;
         List<Machine>? gone = null;
         foreach (var m in world.Machines.All)
-            if (reg.Find(m.Site) is null) (gone ??= []).Add(m);
+            if (Site(world, m.Site) is null) (gone ??= []).Add(m);
         if (gone is null) return;
         foreach (var m in gone)
         {
@@ -165,7 +168,7 @@ public sealed partial class ProductionSystem : ITickSystem
             {
                 case OperateOrder order:
                 {
-                    var site = world.Buildings.Find(order.Site);
+                    var site = Site(world, order.Site);
                     if (site is not { Complete: true } || (Ensure(world, site) is not { Data.Operable: true } machine)) break;
                     var table = world.Characters;
                     foreach (var id in world.Actors(order, order.Characters))
@@ -281,7 +284,7 @@ public sealed partial class ProductionSystem : ITickSystem
             var cold = table.Cold(i)!;
             if (n.Task == (byte)CharacterTask.Haul)
             {
-                if (cold.HaulSite is { } to && world.Buildings.Find(to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(ref n, cold, leg, legMachine, dt);
+                if (cold.HaulSite is { } to && Site(world, to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(ref n, cold, leg, legMachine, dt);
                 else End(table, i);
                 continue;
             }
@@ -299,7 +302,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 cold.Operating = false;
                 continue;
             }
-            var site = world.Buildings.Find(id);
+            var site = Site(world, id);
             var m = world.Machines.Find(id);
             if (site is not { Complete: true } || m is null || !Able(cold))
             {
@@ -350,7 +353,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             m.LastOperators = m.Operators;
             m.Operators = 0;
-            if (m.Data.IsResearch && world.Buildings.Find(m.Site) is { Complete: true }) bench = Math.Max(bench, m.Data.TechLevel);
+            if (m.Data.IsResearch && Site(world, m.Site) is { Complete: true }) bench = Math.Max(bench, m.Data.TechLevel);
         }
         if (bench != research.BenchLevel)
         {
@@ -360,7 +363,7 @@ public sealed partial class ProductionSystem : ITickSystem
         if (world.Machines.Count == 0) return;
         float dt = world.TickSeconds;
         foreach (var m in world.Machines.All)
-            if (m.Farm is not null && world.Buildings.Find(m.Site) is { Complete: true }) FarmTick(world, m, dt);
+            if (m.Farm is not null && Site(world, m.Site) is { Complete: true }) FarmTick(world, m, dt);
 
         var table = world.Characters;
         int contributions = 0;
@@ -371,7 +374,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (n.Task == (byte)CharacterTask.Haul) { HaulStep(world, i); continue; }
             if (n.Task != (byte)CharacterTask.Operate) continue;
             var cold = table.Cold(i)!;
-            if (cold.OperateSite is not { } id || world.Buildings.Find(id) is not { Complete: true } site || world.Machines.Find(id) is not { } m || !Able(cold))
+            if (cold.OperateSite is not { } id || Site(world, id) is not { Complete: true } site || world.Machines.Find(id) is not { } m || !Able(cold))
             {
                 End(table, i);
                 continue;
@@ -623,7 +626,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             research.Complete(db, item.Id);
             publishedResearch = null;
-            world.Post($"Research complete: {data.Name}");
+            world.Post(Loc.Tr("Research complete: {1}", data.Name));
         }
         return true;
     }
@@ -647,7 +650,7 @@ public sealed partial class ProductionSystem : ITickSystem
     IEnumerable<Inventory> Benches(World world)
     {
         foreach (var m in world.Machines.All)
-            if (m.Data.IsResearch && m.Storage is { } s && world.Buildings.Find(m.Site) is { Complete: true } site && site.Owner == world.Player.Faction) yield return s;
+            if (m.Data.IsResearch && m.Storage is { } s && Site(world, m.Site) is { Complete: true } site && site.Owner == world.Player.Faction) yield return s;
     }
 
     int CountInBenches(World world, string item)
@@ -769,7 +772,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (holder is not null && put.Slot == -1) PutInContainer(world, container, holder, put);
             return;
         }
-        if (world.Buildings.Find(put.Site) is not { Complete: true } site || Ensure(world, site) is not { } m || !Near(world, put.Player, put.Character, site, out var cold)) return;
+        if (Site(world, put.Site) is not { Complete: true } site || Ensure(world, site) is not { } m || !Near(world, put.Player, put.Character, site, out var cold)) return;
         var root = cold.Inventory!;
         var item = root.All().ElementAtOrDefault(put.Item.Index);
         var token = put.Item;
@@ -812,7 +815,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (holder is not null && take.Slot == -1) TakeFromContainer(world, container, holder, take);
             return;
         }
-        if (world.Buildings.Find(take.Site) is not { Complete: true } site || world.Machines.Find(take.Site) is not { } m || !Near(world, take.Player, take.Character, site, out var cold)) return;
+        if (Site(world, take.Site) is not { Complete: true } site || world.Machines.Find(take.Site) is not { } m || !Near(world, take.Player, take.Character, site, out var cold)) return;
         var root = cold.Inventory!;
         if (take.Slot == -1)
         {

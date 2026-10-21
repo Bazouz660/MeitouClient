@@ -52,6 +52,9 @@ public sealed class NavRuntimeBuildings
         }
     }
 
+    /// <summary>Every placement now.</summary>
+    public List<BuildingPlacement> All() { lock (gate) return [.. all.Values]; }
+
     public IReadOnlyList<BuildingPlacement> In(ZoneCoordinate zone) => byZone.TryGetValue(zone, out var list) ? list : [];
 
     /// <summary>The zones whose mesh a building at <paramref name="position"/> can change: its own and the neighbours within <see cref="Reach"/> of it.</summary>

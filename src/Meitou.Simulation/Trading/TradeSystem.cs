@@ -35,6 +35,14 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public string Material { get; init; } = "";
     /// <summary>How full the item is (0 to 1); null: no charge bar.</summary>
     public float? Charge { get; init; }
+    /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), model level and charges, and the trader factor of its price (<c>FUN_14079e6d0</c>, 1: none).</summary>
+    public string Company { get; init; } = "";
+    public int Level { get; init; }
+    public float Charges { get; init; }
+    public float MaxCharges { get; init; }
+    public float PriceFactor { get; init; } = 1;
+    /// <summary>The faction a stolen item was stolen from, -1 when it is not stolen.</summary>
+    public int StolenFrom { get; init; } = -1;
     /// <summary>The tooltip's two prices of the whole stack (<c>FUN_14079e7a0</c>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
     public long Value { get; init; }
     public long SellValue { get; init; }
@@ -492,7 +500,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource, INpcHolder
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
                 item.Quality, sell ? sellValue : value, m.UnitPrice(item.Quantity == 1 ? item : item.WithQuantity(1), sell, shop.Terms, holder), stolen)
             {
-                Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight,
+                Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
+                Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceChance(thievery, item.StolenFrom == squad.Faction) is < 1 and var odds ? Math.Max(odds, 0) : null,
             };

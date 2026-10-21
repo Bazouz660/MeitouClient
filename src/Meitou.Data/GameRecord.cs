@@ -21,7 +21,22 @@ public sealed class GameRecord
 
     public string StringId { get; }
     public FcsRecordType Type { get; }
+    /// <summary>The name shown to the player: a translation file renames records (docs/formats/localisation.md), so this is in the active language.</summary>
     public string Name { get; internal set; }
+
+    string? baseName;
+
+    /// <summary>
+    /// The name the data files gave the record, before a translation file renamed it. Code that finds a record by its English name (the player's
+    /// faction, a start, the global constants) must compare this, never <see cref="Name"/>.
+    /// </summary>
+    public string BaseName => baseName ?? Name;
+
+    internal void Translate(string translated)
+    {
+        baseName ??= Name;
+        Name = translated;
+    }
 
     /// <summary>The file that defined the record.</summary>
     public string DefinedBy { get; }

@@ -46,6 +46,8 @@ public sealed class SavedCharacterLink
     /// <summary>The bed or cage state and fixture read from the save (<see cref="HeldSave"/>): while the character still has them, the original's keys are written back as read.</summary>
     public Locks.HeldState InSomething { get; set; }
     public string? InWhat { get; set; }
+    /// <summary>The whole-body ragdoll the save holds (<see cref="RagdollSave"/>), until the ragdoll system takes it; null: none.</summary>
+    public SavedRagdoll? Ragdoll { get; set; }
 }
 
 /// <summary>A player platoon of the save that is now a <see cref="Squad"/> in the world.</summary>

@@ -36,7 +36,8 @@ sealed partial class PlayerInterface
     {
         if (faithfulScreens is null) return;
         var focus = BuildingFocus();
-        var m = focus?.SiteId is { } id && session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { Complete: true } ? Machine(id) : null;
+        // A rock's natural site is no registry building: its machine, once mined, is enough.
+        var m = focus?.SiteId is { } id && (ProductionSystem.IsNatural(id) || session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { Complete: true }) ? Machine(id) : null;
         if (m is not null && m.Inputs.Count == 0 && m.Output is null && m.Storage is null && m.Craft is null) m = null;
         // An open container takes the window.
         m = session.CurrentSnapshot.Machines.FirstOrDefault(c => c.IsContainer) ?? m;
@@ -68,7 +69,7 @@ sealed partial class PlayerInterface
     void BindMachineScreen(string id, UiBindings b)
     {
         var m = Machine(shownMachine);
-        b.Text["Root"] = (m is { IsContainer: true } ? buildHost?.ItemName(m.Record) ?? "CONTAINER" : selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
+        b.Text["Root"] = (m is { IsContainer: true } ? m.Title ?? buildHost?.ItemName(m.Record) ?? "CONTAINER" : selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
         if (id == "bench")
         {
             b.Disabled.Remove("ResearchButton");
@@ -126,7 +127,7 @@ sealed partial class PlayerInterface
                 if (machineDrag is { Slot: -1 } d && d.Index == item.Index) continue;
                 AddItemCell(controls, $"machine-item-{item.Index}",
                     new(area.X + item.X * area.Width / grid.Width, area.Y + item.Y * area.Height / grid.Height, item.Width * area.Width / grid.Width, item.Height * area.Height / grid.Height),
-                    item.Record, item.Material, item.Name, item.Quantity, $"Weight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg", "MachineItem", 1000 + item.Index,
+                    item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index,
                     slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
             }
             return;
@@ -178,6 +179,11 @@ sealed partial class PlayerInterface
     void MachineDrop((string Site, int Slot, int Index, string Record, string Name, int Quantity, int Width, int Height, Vector2 Grab) d, string screen)
     {
         if (screen is not ("inventory" or "bag") || Selected().FirstOrDefault() is not { } lead) return;
+        if (Machine(d.Site) is { Body.IsNone: false })
+        {
+            Say(new Meitou.Simulation.Carrying.TakeLootItem(d.Index) { Tick = session.World.Tick });
+            return;
+        }
         Say(new TakeFromMachine(lead.Id, d.Site, d.Slot, d.Index, screen == "bag" ? "backpack_content" : "main") { Tick = session.World.Tick });
     }
 
@@ -188,7 +194,7 @@ sealed partial class PlayerInterface
         if (screen == "bench")
         {
             if (m.Storage is { } grid && DropCell(p, screen, "backpack_content", grid.Width, grid.Height, grab, item.Width, item.Height, grid.Items.Select(i => (i.X, i.Y, i.Width, i.Height)), out int x, out int y))
-                Say(new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick });
+                Say(m.Body.IsNone ? new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick } : new Meitou.Simulation.Carrying.PutLootItem(character, token, x, y) { Tick = session.World.Tick });
             return true;
         }
         var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
@@ -299,7 +305,7 @@ sealed partial class PlayerInterface
             {
                 var r = rows[i];
                 bool queued = research.Queue.Any(q => q.Id == r.Id);
-                string caption = $"{r.Name}  (lvl {r.Level.ToString(CultureInfo.InvariantCulture)})" + (r.Progress > 0 ? $"  {(int)(r.Progress * 100)}%" : "");
+                string caption = $"{r.Name}  ({Loc.Tr("lvl {1,num}", r.Level)})" + (r.Progress > 0 ? $"  {(int)(r.Progress * 100)}%" : "");
                 var colour = queued ? new Vector4(0.6f, 0.6f, 0.6f, 1) : r.BenchTooLow || !r.Affordable ? new Vector4(0.75f, 0.35f, 0.3f, 1) : ink;
                 controls.Add(new($"research-row-{i}", "Button", new(blueprints.Bounds.X + 6, blueprints.Bounds.Y + i * line, blueprints.Bounds.Width - 12, line), caption,
                     queued ? "" : "research-queue:" + r.Id, "", !queued, face, Vector4.Zero, TextColour: colour, HoverColour: new(0, 1, 0, 1), Pickable: true, Clip: blueprints.Bounds));

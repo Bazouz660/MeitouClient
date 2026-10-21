@@ -29,12 +29,13 @@ public sealed partial class DialogueSystem
             int f = data.Relations.IndexOf(factionId);
             if (f < 0 || amount == 0 || world.Player.Faction < 0) continue;
             ChangeRelation(world, f, world.Player.Faction, amount);
-            world.Post(amount > 0 ? $"Relations with {data.Factions[f].Name} improved by {amount}" : $"Relations with {data.Factions[f].Name} decreased by {-amount}");
+            world.Post(amount > 0 ? Loc.Tr("Relations with {1} improved by {2}", data.Factions[f].Name, amount) : Loc.Tr("Relations with {1} decreased by {2}", data.Factions[f].Name, -amount));
         }
-        // Crowd triggers and items given are not built yet; then the campaign trigger.
-        if (line.TriggerCampaigns.Count > 0) population?.TriggerFromDialogue(world, me, c.Player, line.TriggerCampaigns);
+        CrowdTrigger(world, c, line, me);
         var target = c.Player;
         var tc = Cold(world, target);
+        if (tc is not null) GiveItems(world, c, line, target, tc);
+        if (line.TriggerCampaigns.Count > 0) population?.TriggerFromDialogue(world, me, c.Player, line.TriggerCampaigns);
         bool takeOver = false, enslave = false;
         foreach (var effect in line.Effects)
         {
@@ -56,7 +57,7 @@ public sealed partial class DialogueSystem
                     break;
                 case DialogueActions.TakeMoney when tc is not null:
                     Pay(world, tc, -effect.Value);
-                    world.Post(effect.Value > 100000 ? $"Paid c.{effect.Value / 1000}k" : $"Paid c.{effect.Value.ToString("N0", CultureInfo.InvariantCulture)}");
+                    world.Post(effect.Value > 100000 ? Loc.Tr("Paid c.{1}k", effect.Value / 1000) : Loc.Tr("Paid c.{1}", effect.Value.ToString("N0", CultureInfo.InvariantCulture)));
                     break;
                 case DialogueActions.GiveMoney when tc is not null:
                     Pay(world, tc, effect.Value);
@@ -66,6 +67,10 @@ public sealed partial class DialogueSystem
                     TalkOf(c.Owner).Request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
                     // The paid surgery edit this editor sends is allowed for the conversation's player only (docs/simulation.md "Multiplayer (host-authoritative co-op)").
                     world.Player.Session(c.Owner).Grant = new EditGrant(Editing.EditKind.Surgery, target, me);
+                    return;
+                case ChoosePrisonerBail when Arrests is not null:
+                    c.Ended = true;
+                    TalkOf(c.Owner).BailAfter = (me, target);   // the bail list opens as the conversation closes (OpenBail)
                     return;
                 case DialogueActions.AssignBounty when tc is not null && mc is not null && effect.Value > 0 && data.Relations.Contains(mc.Faction):
                 {
@@ -82,10 +87,30 @@ public sealed partial class DialogueSystem
                 case DialogueActions.EnslaveTargetsCarriedPerson when tc is { Carrying.IsNone: false }:
                     takeOver = enslave = true;
                     break;
+                case DialogueActions.GiveTargetMySlaves when tc is not null && mc is not null:
+                    GiveSlaves(world, me, mc, tc, c.Owner);
+                    break;
+                case DialogueActions.SurrenderNonHumans when tc is not null && mc is not null:
+                    SurrenderNonHumans(world, me, mc, tc);
+                    break;
+                case DialogueActions.TalkToLeader when tc is not null && mc is not null:
+                    TalkToLeader(world, c, mc, target, tc);
+                    break;
+                case DialogueActions.ArrestTarget when tc is not null:
+                    Arrests?.ArrestFromDialogue(world, me, target);
+                    break;
+                case DialogueActions.TagEscapedSlave when tc is not null:
+                    Locks.FixtureRegistry.TagEscaped(world, tc);
+                    break;
+                case DialogueActions.RemoveSlaveStatus when tc is not null && world.Characters.TryResolveNext(target, out int freed):
+                    Locks.FixtureRegistry.FreeSlave(world, freed, tc);
+                    break;
                 case DialogueActions.ClearBounty when tc?.Bounties is { } ledger && mc is not null:
                     if (ledger.Of(mc.Faction) is { } entry) ledger.Remove(entry);
                     if (Position(world, target) is { } at && TownAt(at) is >= 0 and var town && town < data.SiteFactions.Count && ledger.Of(data.SiteFactions[town]) is { } local)
                         ledger.Remove(local);
+                    if (ledger.Count == 0) tc.Bounties = null;
+                    tc.Recognition = 0;
                     break;
                 case DialogueActions.LockThisDialog when mc is not null && c.Root is { } current:
                     Lock(mc, current.StringId, true);
@@ -99,10 +124,51 @@ public sealed partial class DialogueSystem
             }
         }
         if (takeOver) Arrests?.TakeOver(world, me, target, enslave);
+        // Last, for a speaker squad outside the player's faction (FUN_140273330): change AI replaces its packages, then AI contract starts the contract aimed at the target.
+        if (mc is { SquadId: >= 0 } && mc.Faction != world.Player.Faction && !mc.IsPlayer)
+        {
+            if (line.ChangeAi is { } package) world.Defer(new Ai.ChangeAi(mc.SquadId, package) { Tick = world.Tick + 1 });
+            if (line.AiContract is { } contract) world.Defer(new Ai.StartContract(mc.SquadId, contract.Package, contract.Hours, target.IsNone ? null : target) { Tick = world.Tick + 1 });
+        }
     }
 
     /// <summary>The arrest system the bounty desk's effects pay and hand over through (<c>DA_PAY_BOUNTY</c>, <c>DA_ARREST_TARGETS_CARRIED_PERSON</c>); null: they do nothing.</summary>
     public Crime.ArrestSystem? Arrests { get; set; }
+
+    /// <summary>
+    /// <c>give item</c> (<c>FUN_140680560</c>): each listed item made and put into the target's inventory, val0 2..49 its stack count, and "Received &lt;name&gt;" posted. What does not fit
+    /// is dropped at the target's feet (engine choice; the original's add has no such case in this code).
+    /// </summary>
+    void GiveItems(World world, Conversation c, DialogueNode line, CharacterId target, CharacterCold tc)
+    {
+        foreach (var (id, count) in line.GiveItems)
+        {
+            if (data.Items.Create(id, count is >= 2 and <= 49 ? count : 1) is not { } item) continue;
+            string name = item.Name;
+            if (tc.Inventory?.Add(item) != true && Position(world, target) is { } at) world.GroundItems.Drop(item, at, 0);
+            world.Post(c.Owner, $"{Loc.Tr("Received")} {name}");
+        }
+    }
+
+    /// <summary>
+    /// <c>DA_SURRENDER_NON_HUMANS</c> (47, <c>FUN_140680560</c>): the target faction's characters within 100 of the speaker, not animals, whose race is not the speaker's
+    /// (<c>FUN_14042ecd0</c>: its race or one of its sub-races; engine reading: the same RACE record) become slaves owned by the speaker's faction (<c>FUN_14032e590</c>), and its
+    /// squad remembers them. Their squads are left as they are (what follows is not read).
+    /// </summary>
+    void SurrenderNonHumans(World world, CharacterId me, CharacterCold mc, CharacterCold tc)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(me, out int s) || mc.Race is not { } race) return;
+        var at = table.Next[s].Position;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!table.Next[i].Alive || table.Cold(i) is not { Medical.Dead: false } c || c.Faction != tc.Faction || c.SlaveState != 0) continue;
+            if (c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null || c.Race is null || c.Race.StringId == race.StringId) continue;
+            if (Vector3.DistanceSquared(table.Next[i].Position, at) > 100 * 100) continue;
+            Locks.FixtureRegistry.Enslave(world, c, mc.Faction);
+            if (mc.SquadId >= 0) met[(mc.SquadId, table.IdOf(i))] = world.GameHours;
+        }
+    }
 
     static void Lock(CharacterCold cold, string dialogue, bool locked) => (cold.DialogueLocks ??= new(StringComparer.Ordinal))[dialogue] = locked;
 

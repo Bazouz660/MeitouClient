@@ -50,14 +50,20 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
                     foreach (var id in world.Actors(order, order.Medics))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
-                            Begin(table, slot, order.Patient, CharacterTask.Idle);
+                        {
+                            if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
+                                world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
+                            else Begin(world, slot, order.Patient, CharacterTask.Idle);
+                        }
                     break;
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
                     foreach (var id in world.Actors(splint, splint.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold)
-                            && FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is not null)   // "I don't have a splint kit."
-                            Begin(table, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
+                        {
+                            if (FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");
+                            else Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                        }
                     break;
                 case RestOrder rest:
                     foreach (var id in world.Actors(rest, rest.Characters))
@@ -89,9 +95,11 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat;
 
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
-    static void Begin(CharacterTable table, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
+    static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
     {
+        var table = world.Characters;
         var cold = table.Cold(slot)!;
+        if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
         var keep = n.Task == (byte)CharacterTask.Treat ? cold.ResumeTask : resume;
         MovementSystem.Stop(table, slot);
@@ -101,6 +109,23 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
         cold.ResumeTask = keep;
+    }
+
+    /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
+    const int HealingOtherStart = 18, BeingHealedStart = 19, HealingOtherFinished = 20, BeingHealedFinished = 21, KitEmpty = 22;
+
+    /// <summary>
+    /// The treatment's dialogue events (<c>Task_FirstAid</c> start and finish, <c>FUN_14034ecf0</c> / <c>FUN_1403563a0</c>): the medic fires <paramref name="medicEvent"/> at the
+    /// patient and a patient that is awake fires <paramref name="patientEvent"/> back (-1: none); nothing for a medic treating itself. Said from the next tick.
+    /// </summary>
+    static void Say(World world, int medic, CharacterId patient, int medicEvent, int patientEvent = -1)
+    {
+        var table = world.Characters;
+        var id = table.IdOf(medic);
+        if (patient == id || patient.IsNone) return;
+        world.Defer(new Dialogue.DialogueEvent(id, patient, medicEvent) { Tick = world.Tick + 1 });
+        if (patientEvent >= 0 && table.TryResolveNext(patient, out int p) && table.Cold(p)?.Medical is { Incapacitated: false })
+            world.Defer(new Dialogue.DialogueEvent(patient, id, patientEvent) { Tick = world.Tick + 1 });
     }
 
     /// <summary>Ends a treatment (serial phases): back to the task before it, path dropped.</summary>
@@ -222,11 +247,13 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         bool robot = body.BandageRoom(race, false) <= Done;
         if (robot && body.BandageRoom(race, true) <= Done)
         {
+            Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
             End(table, m);   // nothing left to bandage
             return;
         }
         if (FindKit(world, m, medicCold, FunctionOf(robot)) is not { } kit)
         {
+            Say(world, m, medicCold.TreatTarget, KitEmpty);   // Task_FirstAidRig's empty kit (FUN_14034ef20)
             End(table, m);   // no kit of the right kind within reach
             return;
         }
@@ -379,7 +406,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         if (best < 0) return false;
         taken.Add(best);
         var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-        Begin(table, i, new CharacterId(best, next[best].Generation), resume);
+        Begin(world, i, new CharacterId(best, next[best].Generation), resume);
         return true;
     }
 

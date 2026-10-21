@@ -4,6 +4,8 @@ namespace Meitou.Simulation.Items;
 public sealed record InventoryItemToken(int Index, string Record, string Section, int X, int Y, int Quantity, float Quality);
 public sealed record MoveInventoryItem(CharacterId Character, InventoryItemToken Item, string Section, int X, int Y) : SimCommand;
 public sealed record ArrangeInventory(CharacterId Character) : SimCommand;
+/// <summary>Drops the character's item on the ground at its feet (an item dragged out of the inventory window onto the world); a locked-on item or a fitted limb stays.</summary>
+public sealed record DropInventoryItem(CharacterId Character, InventoryItemToken Item) : SimCommand;
 
 public static class InventoryCommands
 {

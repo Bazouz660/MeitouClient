@@ -103,7 +103,8 @@ public class MyGuiScreenTests
         host.Wheel(new(list.X + 6, list.Y + 4), -2);
         var scrolled = host.Arrange(800, 600, Bind).Single().Controls;
         Assert.DoesNotContain(scrolled, c => c.Name == "Items@row0");
-        Assert.Equal("Items@row4", MyGuiPresentation.HitTest(scrolled, list.X + 6, list.Y + 4)!.Name);
+        // A ListBox wheel event moves one line whatever its size (MyGUI, docs/formats/mygui.md).
+        Assert.Equal("Items@row1", MyGuiPresentation.HitTest(scrolled, list.X + 6, list.Y + 4)!.Name);
         var tabs = MyGuiReader.ParseLayout("""
             <MyGUI type="Layout"><Widget type="TabControl" name="Tabs" position="0 0 300 200">
               <Widget type="TabItem" name="One" position="0 30 300 170"><Widget type="Button" name="First" position="0 0 20 20"/></Widget>

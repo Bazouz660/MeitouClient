@@ -40,6 +40,7 @@ sealed partial class SettingsMenu
         "Shadow filter" => "Higher values smooth shadow edges with more samples.",
         "Haze strength" => "Scale the amount of atmospheric haze.",
         "Planetshine strength" => "Scale night lighting from the planet and moon.",
+        "Ambient light strength" => "Scale the sky's light in shade, at night and indoors.",
         "Light shafts strength" => "Adjust the brightness of light scattered through the air.",
         "Light shafts air" => "Air scattering density; zero removes air scattering.",
         "Light shafts air at dawn and dusk" => "Scale air scattering around sunrise and sunset.",

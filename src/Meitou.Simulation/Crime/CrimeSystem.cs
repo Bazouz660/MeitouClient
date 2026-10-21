@@ -253,12 +253,26 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             {
                 p.Witnessed = true;
                 Note(world, CrimeEventKind.Witnessed, culprit, p.Code, wf, 0, witness);
+                world.Defer(new Dialogue.DialogueEvent(witness, table.IdOf(culprit), WitnessEvent(world, wc, p)) { Tick = world.Tick + 1 });
                 if (p.Code != CrimeCode.Looting) world.Post($"{c.Name} has been caught committing {CrimeTable.Name(p.Code)}!");   // the loot already says "was seen looting"
             }
             if (!p.Booked && IsPoliceLike(world, wc) && Factions.Books(wf)) Book(world, culprit, wf, witness);
             if (p.Booked) return;
         }
     }
+
+    /// <summary>The dialogue event the witness says at the culprit (<c>FUN_140854d10</c>'s switch on the crime code, docs/game/dialogue.md "Event sources").</summary>
+    static int WitnessEvent(World world, CharacterCold w, PendingCrime p) => p.Code switch
+    {
+        CrimeCode.Burglary or CrimeCode.Terrorism => 43,   // WITNESS_THIEF_OR_LOCKPICK
+        CrimeCode.Theft or CrimeCode.Fencing or CrimeCode.Looting =>
+            world.Characters.TryResolveNext(p.Victim, out int v) && world.Characters.Cold(v) is { SquadId: >= 0 } vc && vc.SquadId == w.SquadId ? 8 : 42,   // THIEF_CAUGHT_STEALING_FROM_ME, WITNESS_LOOTING_ALLY
+        CrimeCode.Trespassing => 17,
+        CrimeCode.CropTheft => 57,
+        CrimeCode.Enslaving or CrimeCode.Kidnapping => 58,
+        CrimeCode.UniformTheft => 34,
+        _ => 41,   // WITNESS_GENERIC_ASSAULT
+    };
 
     /// <summary>The witness function's tests for one witness and one pending crime (see <see cref="Witnesses"/>).</summary>
     bool Reacts(World world, CharacterCold w, CharacterCold culprit, PendingCrime p)

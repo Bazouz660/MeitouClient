@@ -7,7 +7,7 @@ using Meitou.Ui;
 namespace Meitou.Game;
 
 /// <summary>
-/// The overview's AI tab (docs/game/ai-tasks.md "Perma-jobs"): a tick button per squad AI option Meitou runs in <c>AIOptions</c>, the hovered one's tooltip in <c>AIToolTip</c>
+/// The overview's AI tab (docs/game/ai-tasks.md "Perma-jobs"): a tick button per squad AI option Meitou runs in <c>AIOptions</c>, the hovered one's tooltip (a static tooltip, <see cref="PlayerInterface.AddHoverLabel"/>) in <c>AIToolTip</c>
 /// (captions and tooltips are the original's, <c>FUN_140005e11</c>). The original's other options (heal, help and rescue allies, share food, feed animals, shoot first) are not
 /// listed until they do something.
 /// </summary>
@@ -30,17 +30,11 @@ sealed partial class PlayerInterface
         for (int i = 0; i < AiOptionRows.Length; i++)
         {
             bool ticked = (on & AiOptionRows[i].Option) != 0;
-            controls.Add(new($"ai-option-{i}", "Button", new(panel.Bounds.X + 6, panel.Bounds.Y + i * line, panel.Bounds.Width - 12, line - 4), AiOptionRows[i].Caption,
+            controls.Add(new($"ai-option-{i}", "Button", new(panel.Bounds.X + 6, panel.Bounds.Y + i * line, panel.Bounds.Width - 12, line - 4), Loc.Tr(AiOptionRows[i].Caption),
                 "ai-option:" + i.ToString(CultureInfo.InvariantCulture), "Kenshi_TickButton1", true,
-                new Dictionary<string, string> { ["Checked"] = ticked ? "true" : "false", ["StateSelected"] = ticked ? "true" : "false" }, Vector4.Zero, Pickable: true, Clip: panel.Bounds));
+                new Dictionary<string, string>(UiTooltips.TextProperties(AiOptionRows[i].Tip, "static:AIToolTip")) { ["Checked"] = ticked ? "true" : "false", ["StateSelected"] = ticked ? "true" : "false" },
+                Vector4.Zero, Pickable: true, Clip: panel.Bounds));
         }
-        int hovered = controls.FindLastIndex(c => c.Name.StartsWith("ai-option-", StringComparison.Ordinal) && c.Bounds.Contains(mouse.X, mouse.Y));
-        if (hovered < 0 || controls.FirstOrDefault(c => c.Name == "AIToolTip") is not { } tip) return;
-        int row = int.Parse(controls[hovered].Name.AsSpan(10), CultureInfo.InvariantCulture);
-        var area = new UiRect(tip.Bounds.X + 8, tip.Bounds.Y + 6, tip.Bounds.Width - 16, tip.Bounds.Height - 12);
-        controls.Add(new("ai-tooltip", "TextBox", area, AiOptionRows[row].Tip, "", "Kenshi_TextboxStandardText", true,
-            new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left Top", ["WordWrap"] = "true", ["TextColour"] = MyGuiColours.InkText },
-            Vector4.Zero, Pickable: false, Clip: tip.Bounds));
     }
 
     void AiAction(MyGuiEvent e)

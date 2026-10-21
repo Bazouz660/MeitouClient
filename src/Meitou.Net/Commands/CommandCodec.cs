@@ -80,6 +80,9 @@ public static class CommandCodec
             case LootOrder c: e.Ids(c.Looters); e.Id(c.Target); break;
             case StealthKoOrder c: e.Ids(c.Attackers); e.Id(c.Target); break;
             case RescueJobCommand c: e.Ids(c.Characters); e.Bool(c.Job); break;
+            case OpenLootOrder c: e.Ids(c.Looters); e.Id(c.Target); break;
+            case TakeLootItem c: e.Int(c.Index); break;
+            case PutLootItem c: e.Id(c.Character); e.Token(c.Item); e.Int(c.X); e.Int(c.Y); break;
 
             case TreatOrder c: e.Ids(c.Medics); e.Id(c.Patient); break;
             case SplintOrder c: e.Ids(c.Medics); e.Id(c.Patient); break;
@@ -113,6 +116,7 @@ public static class CommandCodec
             case ShackleOrder c: e.Ids(c.Characters); e.Id(c.Wearer); e.Value(c.Work); break;
             case PayBailOrder c: e.Id(c.Prisoner); break;
             case PutInCageOrder c: e.Ids(c.Carriers); break;
+            case DropInventoryItem c: e.Id(c.Character); e.Token(c.Item); break;
 
             case OperateOrder c: e.Ids(c.Characters); e.Key(c.Site); break;
             case AddJob c: e.Ids(c.Characters); e.Value(c.Type); e.Key(c.Site); break;
@@ -137,12 +141,14 @@ public static class CommandCodec
             case DebugHeal c: e.Ids(c.Characters); break;
             case DebugMaxSkills c: e.Ids(c.Characters); break;
             case DebugDamage c: e.Ids(c.Characters); e.Float(c.Cut); break;
-            case DebugGiveItem c: e.Id(c.Character); e.Key(c.Record); e.Int(c.Quantity); break;
+            case DebugGiveItem c: e.Id(c.Character); e.Key(c.Record); e.Int(c.Quantity); e.Int(c.Quality); break;
             case DebugSpawn c: e.Key(c.Record); e.Vec2(c.At); break;
 
-            case StartContract c: e.Int(c.SquadId); e.Key(c.PackageId); e.Float(c.Hours); break;
+            case StartContract c: e.Int(c.SquadId); e.Key(c.PackageId); e.Float(c.Hours); e.Id(c.Target); break;
             case JoinPlayer c: e.KeyOrNull(c.StartId); e.Vec3(c.Near); break;
             case TransferSquad c: e.Int(c.Squad); e.Int(c.Owner); break;
+            case ChangeAi c: e.Int(c.SquadId); e.Key(c.PackageId); break;
+            case DialogueEvent c: e.Id(c.Npc); e.Id(c.Target); e.Int(c.Event); e.KeyOrNull(c.Dialogue); break;
 
             default: throw new InvalidOperationException($"{command.GetType().Name} is tagged but has no writer.");
         }
@@ -205,6 +211,9 @@ public static class CommandCodec
             case 43: return new LootOrder(d.Ids(), d.Id()) { Tick = tick, Player = player };
             case 44: return new StealthKoOrder(d.Ids(), d.Id()) { Tick = tick, Player = player };
             case 45: return new RescueJobCommand(d.Ids(), d.Bool()) { Tick = tick, Player = player };
+            case 46: return new OpenLootOrder(d.Ids(), d.Id()) { Tick = tick, Player = player };
+            case 47: return new TakeLootItem(d.Int()) { Tick = tick, Player = player };
+            case 48: return new PutLootItem(d.Id(), d.Token(), d.Int(), d.Int()) { Tick = tick, Player = player };
 
             case 50: return new TreatOrder(d.Ids(), d.Id()) { Tick = tick, Player = player };
             case 51: return new SplintOrder(d.Ids(), d.Id()) { Tick = tick, Player = player };
@@ -238,6 +247,7 @@ public static class CommandCodec
             case 92: return new ShackleOrder(d.Ids(), d.Id(), d.Value<ShackleWork>()) { Tick = tick, Player = player };
             case 93: return new PayBailOrder(d.Id()) { Tick = tick, Player = player };
             case 94: return new PutInCageOrder(d.Ids()) { Tick = tick, Player = player };
+            case 95: return new DropInventoryItem(d.Id(), d.Token()) { Tick = tick, Player = player };
 
             case 100: return new OperateOrder(d.Ids(), d.Key()) { Tick = tick, Player = player };
             case 101: return new AddJob(d.Ids(), d.Value<TaskType>(), d.Key()) { Tick = tick, Player = player };
@@ -262,12 +272,14 @@ public static class CommandCodec
             case 202: return new DebugHeal(d.Ids()) { Tick = tick, Player = player };
             case 203: return new DebugMaxSkills(d.Ids()) { Tick = tick, Player = player };
             case 204: return new DebugDamage(d.Ids(), d.Float()) { Tick = tick, Player = player };
-            case 205: return new DebugGiveItem(d.Id(), d.Key(), d.Int()) { Tick = tick, Player = player };
+            case 205: return new DebugGiveItem(d.Id(), d.Key(), d.Int(), d.Int()) { Tick = tick, Player = player };
             case 206: return new DebugSpawn(d.Key(), d.Vec2()) { Tick = tick, Player = player };
 
-            case 240: return new StartContract(d.Int(), d.Key(), d.Float()) { Tick = tick, Player = player };
+            case 240: return new StartContract(d.Int(), d.Key(), d.Float(), d.NullableId()) { Tick = tick, Player = player };
             case 241: return new JoinPlayer(d.KeyOrNull(), d.Vec3()) { Tick = tick, Player = player };
             case 242: return new TransferSquad(d.Int(), d.Int()) { Tick = tick, Player = player };
+            case 243: return new ChangeAi(d.Int(), d.Key()) { Tick = tick, Player = player };
+            case 244: return new DialogueEvent(d.Id(), d.Id(), d.Int(), d.KeyOrNull()) { Tick = tick, Player = player };
 
             default: throw new InvalidOperationException($"{type.Name} (tag {tag}) is accepted but has no reader.");
         }

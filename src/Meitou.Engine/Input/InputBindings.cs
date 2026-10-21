@@ -99,7 +99,7 @@ public sealed class InputBindings
         Set(InputAction.FloorUp, Key.PageUp);
         Set(InputAction.FloorDown, Key.PageDown);
         Set(InputAction.Highlight, Key.LeftAlt, Key.RightAlt);
-        Set(InputAction.Orbit, MouseButton.Middle);   // right is the command button (move order)
+        Set(InputAction.Orbit, MouseButton.Middle, Key.LeftControl, Key.RightControl);   // right is the command button (move order)
         Set(InputAction.ToggleFreeCamera, Key.Semicolon);
         Set(InputAction.Pause, Key.Space);
         Set(InputAction.TimeFaster);   // the game has no such keys (. and , are its camera tilt); F2..F4 set the speed

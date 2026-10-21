@@ -28,10 +28,10 @@ public static class PlayerRelations
     public static string? Notice(string factionName, float before, float after)
     {
         const float Hostile = FactionRelations.HostileThreshold, Ally = FactionRelations.AllyThreshold;
-        if (before > Hostile && after <= Hostile) return $"{factionName} are now hostile towards you";
-        if (before <= Hostile && after > Hostile) return $"{factionName} are no longer hostile towards you";
-        if (before <= Ally && after > Ally) return $"{factionName} are now your allies";
-        if (before > Ally && after <= Ally) return $"{factionName} are no longer your ally";
+        if (before > Hostile && after <= Hostile) return Loc.Tr("{1} are now hostile towards you", factionName);
+        if (before <= Hostile && after > Hostile) return Loc.Tr("{1} are no longer hostile towards you", factionName);
+        if (before <= Ally && after > Ally) return Loc.Tr("{1} are now your allies", factionName);
+        if (before > Ally && after <= Ally) return Loc.Tr("{1} are no longer your ally", factionName);
         return null;
     }
 }

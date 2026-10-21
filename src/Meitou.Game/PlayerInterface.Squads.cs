@@ -224,7 +224,7 @@ sealed partial class PlayerInterface
     {
         if (LivingPlayerCharacters() <= 1) { Confirm("Dismiss character", "Cannot dismiss the only remaining character in the faction.", () => { }, "OK"); return; }
         string name = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id)?.Name ?? "";
-        Confirm("Dismiss character", $"Dismiss character '{name}'?", () => Say(new DismissCommand(id) { Tick = session.World.Tick }));
+        Confirm("Dismiss character", Loc.Tr("Dismiss character '{1}'?", name), () => Say(new DismissCommand(id) { Tick = session.World.Tick }));
     }
 
     bool SquadsWheel(Vector2 p, float steps)

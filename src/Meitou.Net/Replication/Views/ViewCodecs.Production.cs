@@ -72,6 +72,8 @@ public static partial class ViewCodecs
         if (m.Power is { } power) WritePower(w, power);
         WorldWire.Float(w, m.Sound.Efficiency);
         w.WriteBool(m.Sound.Powered);
+        CommonCodec.WriteId(w, m.Body);
+        WorldWire.OptionalText(w, s, m.Title);
     }
 
     static MachineSnapshot ReadMachine(ref NetReader r, StringTableReader s)
@@ -89,8 +91,12 @@ public static partial class ViewCodecs
         CraftView? craft = (flags & 8) != 0 ? ReadCraft(ref r, s) : null;
         PowerView? power = (flags & 16) != 0 ? ReadPower(ref r) : null;
         var sound = new MachineSound(r.ReadFinite(), r.ReadBool());
+        var body = CommonCodec.ReadId(ref r);
+        string? title = WorldWire.ReadOptionalText(ref r, s);
         return new MachineSnapshot(site, record, inputs, output, storage, farm, status, operators, maxOperators)
         {
+            Body = body,
+            Title = title,
             IsContainer = (flags & 1) != 0,
             TechLevel = techLevel,
             Operable = (flags & 2) != 0,
@@ -224,6 +230,11 @@ public static partial class ViewCodecs
         WorldWire.Float(w, v.Quality);
         WorldWire.Text(w, s, v.Material);
         CommonCodec.WriteNullableSingle(w, v.Charge is { } c && float.IsFinite(c) ? c : null);
+        WorldWire.Text(w, s, v.Company);
+        w.WriteVarInt(v.Level);
+        WorldWire.Float(w, v.Charges);
+        WorldWire.Float(w, v.MaxCharges);
+        w.WriteVarInt(v.StolenFrom);
     }
 
     static InventoryItemView ReadStoreItem(ref NetReader r, StringTableReader s)
@@ -233,10 +244,19 @@ public static partial class ViewCodecs
         int x = r.ReadVarInt32(), y = r.ReadVarInt32(), width = r.ReadVarInt32(), height = r.ReadVarInt32(), quantity = r.ReadVarInt32();
         float weight = r.ReadFinite(), quality = r.ReadFinite();
         string material = WorldWire.ReadText(ref r, s);
+        float? charge = CommonCodec.ReadNullableSingle(ref r);
+        string company = WorldWire.ReadText(ref r, s);
+        int level = r.ReadVarInt32();
+        float charges = r.ReadFinite(), maxCharges = r.ReadFinite();
         return new InventoryItemView(index, record, name, section, x, y, width, height, quantity, weight, quality)
         {
             Material = material,
-            Charge = CommonCodec.ReadNullableSingle(ref r),
+            Charge = charge,
+            Company = company,
+            Level = level,
+            Charges = charges,
+            MaxCharges = maxCharges,
+            StolenFrom = r.ReadVarInt32(),
         };
     }
 

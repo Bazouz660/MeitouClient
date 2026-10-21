@@ -16,6 +16,14 @@
           <Button x:Name="MaximizeButton" Classes="chrome" Click="Maximize_Click" ToolTip.Tip="Maximise"><Path x:Name="MaximizeIcon" Data="M0,0 H10 V10 H0 Z" StrokeThickness="1.4" /></Button>
           <Button Classes="chrome close" Click="Close_Click" ToolTip.Tip="Close"><Path Data="M0,0 L10,10 M10,0 L0,10" StrokeThickness="1.8" /></Button>
         </StackPanel>
+        <!-- A newer launcher: the same action as Settings' update button, seen from every page -->
+        <Button x:Name="TitleLauncherUpdateButton" DockPanel.Dock="Right" Classes="update" Click="LauncherUpdate_Click" VerticalAlignment="Center"
+                Margin="0,0,14,0" IsVisible="False">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Path Data="M6,0 H11 V8 H16 L8.5,16 L1,8 H6 Z M0,18 H17 V20 H0 Z" VerticalAlignment="Center" />
+            <TextBlock x:Name="TitleLauncherUpdateText" FontSize="13" Foreground="{StaticResource BrassLight}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="0,0,14,0">
           <TextBlock x:Name="KenshiBadge" Classes="desc" VerticalAlignment="Center" />
           <Button Classes="icon" Click="BrowseKenshi_Click" ToolTip.Tip="Change the Kenshi folder">
@@ -135,10 +143,29 @@
         <!-- Home: news posts from the repository's news/ folder -->
         <DockPanel x:Name="HomePage">
           <Border DockPanel.Dock="Top" Classes="header" Margin="0,0,0,10">
-            <DockPanel>
-              <TextBlock x:Name="NewsCount" DockPanel.Dock="Right" Classes="aside" />
-              <TextBlock Text="News" />
-            </DockPanel>
+            <Panel>
+              <DockPanel>
+                <TextBlock x:Name="NewsCount" DockPanel.Dock="Right" Classes="aside" />
+                <TextBlock Text="News" />
+              </DockPanel>
+              <!-- Ko-fi's own button, in white, centred on the bar -->
+              <Button Classes="kofi" Click="Kofi_Click" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      ToolTip.Tip="It supports me in the development of Meitou. ko-fi.com/martinvlcek">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <!-- The Ko-fi logo: a black-rimmed white cup with a D handle and an orange heart -->
+                  <Viewbox Height="18" VerticalAlignment="Center">
+                    <Canvas Width="32" Height="26">
+                      <Path Stroke="Black" StrokeThickness="3.6" Fill="White" Data="M22,5 H26 A5,5 0 0 1 26,15 H22" />
+                      <Path Stroke="Black" StrokeThickness="3.6" Fill="White"
+                            Data="M4.8,1.8 H20.2 A3,3 0 0 1 23.2,4.8 V16.2 A8,8 0 0 1 15.2,24.2 H9.8 A8,8 0 0 1 1.8,16.2 V4.8 A3,3 0 0 1 4.8,1.8 Z" />
+                      <Path Fill="#FF5A16"
+                            Data="M12.5,18.5 C6.5,14.5 6,11 6,9.5 C6,7.5 7.6,6 9.4,6 C10.8,6 11.9,6.8 12.5,8 C13.1,6.8 14.2,6 15.6,6 C17.4,6 19,7.5 19,9.5 C19,11 18.5,14.5 12.5,18.5 Z" />
+                    </Canvas>
+                  </Viewbox>
+                  <TextBlock Text="Support me on Ko-fi" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Panel>
           </Border>
           <ScrollViewer>
             <StackPanel x:Name="NewsPanel" Spacing="14" Margin="0,0,14,4" />

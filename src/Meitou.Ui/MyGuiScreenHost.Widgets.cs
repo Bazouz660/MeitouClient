@@ -362,6 +362,14 @@ public sealed partial class MyGuiScreenHost
     /// </summary>
     void DragWindow((string Screen, Vector2 At, Vector2 Offset) d, Vector2 p)
     {
+        var was = screens[d.Screen].Offset;
+        MoveWindow(d, p);
+        var moved = screens[d.Screen].Offset - was;
+        foreach (var (follower, leader) in leaders) if (leader == d.Screen) screens[follower].Offset += moved;
+    }
+
+    void MoveWindow((string Screen, Vector2 At, Vector2 Offset) d, Vector2 p)
+    {
         var s = screens[d.Screen];
         var want = d.Offset + p - d.At;
         if (s.Viewport == default) { s.Offset = want; return; }

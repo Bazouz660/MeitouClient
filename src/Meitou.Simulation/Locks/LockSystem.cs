@@ -95,7 +95,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
             switch (Picking.Step(world, s, f, world.TickSeconds, Crimes))
             {
                 case PickOutcome.Open: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); break;
-                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick success!"); break;
+                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick success!");
+                    if (f.Occupant is { IsNone: false } held && held != table.IdOf(s)) world.Defer(new Dialogue.DialogueEvent(held, table.IdOf(s), UnlockMyCageOrShackles) { Tick = world.Tick + 1 });   // Task_PickLock: the freed character to the picker
+                    break;
                 case PickOutcome.Failed: if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick failed"); break;
                 case PickOutcome.NotAllowed: c.PickingLock = null; if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: I'm not skilled enough..."); break;
             }

@@ -71,7 +71,6 @@ public class WireCoverageTests
         [nameof(CharacterSnapshot.IsPlayer)] = Carrier.InGroup(CharacterWire.Flags),
         [nameof(CharacterSnapshot.Owner)] = Carrier.InGroup(CharacterWire.Identity),
         [nameof(CharacterSnapshot.IsTrader)] = Carrier.InGroup(CharacterWire.Flags),
-        [nameof(CharacterSnapshot.SurgeryCost)] = Carrier.InGroup(CharacterWire.Identity),
         [nameof(CharacterSnapshot.Selected)] = Carrier.InGroup(CharacterWire.Flags),
         [nameof(CharacterSnapshot.Inspected)] = Carrier.InGroup(CharacterWire.Flags),
         [nameof(CharacterSnapshot.Orders)] = Carrier.InGroup(CharacterWire.Flags),

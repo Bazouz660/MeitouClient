@@ -31,7 +31,7 @@ sealed partial class PlayerInterface
     /// <summary>The selected building while it still exists (a site that was cancelled or dismantled drops the selection).</summary>
     SelectedBuilding? BuildingFocus()
     {
-        if (selectedBuilding is { SiteId: { } id } && !session.CurrentSnapshot.Buildings.Any(s => s.Id == id)) SetBuilding(null);
+        if (selectedBuilding is { SiteId: { } id } && !Meitou.Simulation.Production.ProductionSystem.IsNatural(id) && !session.CurrentSnapshot.Buildings.Any(s => s.Id == id)) SetBuilding(null);
         return selectedBuilding;
     }
 
@@ -61,6 +61,7 @@ sealed partial class PlayerInterface
                 var info = host.WorldInfo(b);
                 best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId);
             }
+        if (PickRockAt(pixel) is { } rock && rock.T < bestT) best = RockBuilding(rock.Rock);
         return best;
     }
 
@@ -94,8 +95,10 @@ sealed partial class PlayerInterface
             {
                 var door = detail.Doors[0];
                 if (door.Broken) { status = "Broken"; bad = true; }
-                stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour, door.Open && !door.Broken ? GoodColour : null));
-                stats.Add(new("Security:", $"{(door.Locked ? "Locked" : "Unlocked")} (lvl {door.Level.ToString(CultureInfo.InvariantCulture)})", MainColour, door.Locked ? null : GoodColour));
+                stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour, door.Open && !door.Broken ? GoodColour : null,
+                    door.Broken ? "It will no longer close and needs to be repaired." : null));
+                stats.Add(new("Security:", $"{Loc.Tr(door.Locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, door.Locked ? null : GoodColour,
+                    door.Locked ? "The door is locked and will keep out intruders." : "The door is unlocked."));
             }
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
             if (!own && (focus.PublicDay || focus.PublicNight))

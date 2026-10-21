@@ -24,6 +24,8 @@ Part of the world view of `meitou-viewer` (and the game, which shares `src/Meito
   once the sun is down: `Planetshine` in `NightSky.cs` gives its irradiance from its phase, size and mean albedo (times a strength, default 60), and
   `SkyRenderer.Prepare` publishes it in place of the sun's light (`uAtmoLight`, `uAtmoSunLight`, the `WorldLighting`, the shadows' direction), blended
   through twilight ([formats/sky.md](formats/sky.md), "Planetshine"); the ambient, the sky and the exposure stay the game's.
+  The "Ambient light strength" slider (ours, default 1) multiplies the environment factor (`uAtmoLight.w`, the `WorldLighting` ambients), so the flat ambient,
+  the probes' sky rays and the GI resolve all scale; the sun's bounce does not.
   New shaders include `AtmosphereShaders.Functions` (sky.md, "Using the atmosphere in a new shader"). The old colour model
   (`--simple-sky` / `B`) was removed.
   Cost: not re-measured after the 2026-10-05 rewrite (the sky's integral now runs per pixel, about 4 × 5 exponentials, instead of

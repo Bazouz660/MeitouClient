@@ -171,7 +171,7 @@ public sealed class PopulationData
         }
         var factions = FactionData.LoadAll(db);
         var byId = BuildFactionIndex(factions);
-        int player = factions.FindIndex(f => f.Name == "Nameless");
+        int player = factions.FindIndex(f => f.BaseName == "Nameless");
         var relations = FactionRelations.Build(factions);
         relations.PlayerFaction = player;
         return new PopulationData
@@ -231,6 +231,11 @@ public sealed class PopulationSettings
     public bool CampaignAncestorsOnce { get; init; } = true;
     /// <summary>Meitou: a wild site keeps its squads' characters while it is unloaded and makes the same ones again. Faithful: they are dropped (and a save's wild platoon despawned on leaving), as the original.</summary>
     public bool KeepWild { get; init; } = true;
+    /// <summary>
+    /// Meitou: a town's residents back from at least <see cref="PopulationSystem.ScheduleAfterHours"/> unloaded are where their schedule puts them now (in bed at night, at
+    /// the counter, at their node or seat). Faithful: where they stood when the town unloaded, as the original, which runs nothing for them off screen.
+    /// </summary>
+    public bool ResidentSchedule { get; init; } = true;
 
     // ---- faction campaigns (docs/game/factions-squads-towns.md "Campaigns") ----
     /// <summary>The original's <c>raidFrequencyMult</c> (settings.cfg, "Town raid events: frequency" 0.25 to 3; default 1): times the roll chance.</summary>

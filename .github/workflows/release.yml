@@ -183,3 +183,23 @@ jobs:
           $old = gh release list --limit 200 --json tagName,createdAt | ConvertFrom-Json |
             Where-Object { $_.tagName -match '^v.*-nightly\.' } | Sort-Object createdAt -Descending | Select-Object -Skip 7
           foreach ($r in $old) { gh release delete $r.tagName --cleanup-tag --yes }
+
+      # Posts a nightly's commit list to Discord as an embed linking the release; skipped without the DISCORD_WEBHOOK_URL secret.
+      - name: Announce on Discord
+        if: needs.version.outputs.nightly == 'true'
+        shell: pwsh
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if (-not $env:WEBHOOK) { 'No DISCORD_WEBHOOK_URL secret; not announced.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/v$env:VERSION"
+          $commits = @(Get-Content "$env:RUNNER_TEMP/changes.md" | Where-Object { $_.StartsWith('- ') })
+          # An embed description holds at most 4096 characters; longer lists end with a count and the release has them all.
+          $text = "Untested build of master at $($env:GITHUB_SHA.Substring(0, 7)), may be broken.`n"
+          for ($i = 0; $i -lt $commits.Count; $i++) {
+            if ($text.Length + $commits[$i].Length -gt 3900) { $text += "`n…and $($commits.Count - $i) more"; break }
+            $text += "`n$($commits[$i])"
+          }
+          $body = @{ embeds = @(@{ title = "Meitou $env:VERSION"; url = $url; description = $text; color = 0xE0A030 }) } | ConvertTo-Json -Depth 4
+          Invoke-RestMethod -Uri $env:WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

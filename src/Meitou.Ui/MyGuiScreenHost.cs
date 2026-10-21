@@ -44,8 +44,16 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         open.Add(id);
         focus = null; edit = null; keyButton = null;
     }
+    /// <summary>
+    /// Marries <paramref name="id"/> to <paramref name="leader"/> (the original's bag window beside the inventory): a drag on either moves both, closing the leader closes it
+    /// and Escape on it closes the leader.
+    /// </summary>
+    public void Follow(string id, string leader) => leaders[id] = leader;
+    readonly Dictionary<string, string> leaders = new(StringComparer.Ordinal);
+
     public void Close(string id)
     {
+        foreach (var (follower, leader) in leaders.ToArray()) if (leader == id && open.Contains(follower)) Close(follower);
         open.Remove(id);
         if (focus?.Screen == id) { focus = null; edit = null; }
         if (keyButton?.Screen == id) keyButton = null;
@@ -142,7 +150,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         focus = null; edit = null;
         if (c.Type == "Button") { Activated?.Invoke(new(id, c.Name, c.Action)); return true; }
         var root = frame.First(f => f.Id == id).Controls.FirstOrDefault(n => n.Type == "Window");
-        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned && root.Properties.GetValueOrDefault("Movable") != "false") drag = (id, p, s.Offset);
+        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned && root.Properties.GetValueOrDefault("Movable") != "false")
+            drag = leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? (leader, p, screens[leader].Offset) : (id, p, s.Offset);
         return true;
     }
     public bool PointerMove(Vector2 p)
@@ -165,7 +174,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         if (open.Count == 0) return false;
         if (CloseCombo()) return true;
         string id = frame.LastOrDefault()?.Id ?? open[^1];
-        Close(id);
+        Close(leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? leader : id);
         return true;
     }
     public bool TextInput(char value)

@@ -208,6 +208,12 @@ public static partial class ViewCodecs
             if (v.Charge is { } charge) w.WriteSingle(PlayerWire.F(charge));
             if (v.FenceChance is { } chance) w.WriteSingle(PlayerWire.F(chance));
             if (v.FenceOdds is { } odds) w.WriteSingle(PlayerWire.F(odds));
+            PlayerWire.Name(w, strings, v.Company);
+            w.WriteVarInt(v.Level);
+            w.WriteSingle(PlayerWire.F(v.Charges));
+            w.WriteSingle(PlayerWire.F(v.MaxCharges));
+            w.WriteSingle(PlayerWire.F(v.PriceFactor));
+            w.WriteVarInt(v.StolenFrom);
         }
     }
 
@@ -230,9 +236,13 @@ public static partial class ViewCodecs
             float? charge = (flags & 2) != 0 ? r.ReadFinite() : null;
             float? chance = (flags & 4) != 0 ? r.ReadFinite() : null;
             float? odds = (flags & 8) != 0 ? r.ReadFinite() : null;
+            string company = PlayerWire.ReadName(ref r, strings);
+            int level = r.ReadVarInt32();
+            float charges = r.ReadFinite(), maxCharges = r.ReadFinite(), factor = r.ReadFinite();
             items[i] = new TradeItemView(index, record, name, section, x, y, width, height, quantity, quality, price, unit, (flags & 1) != 0)
             {
                 Material = material, Charge = charge, Value = value, SellValue = sell, Weight = weight, FenceChance = chance, FenceOdds = odds,
+                Company = company, Level = level, Charges = charges, MaxCharges = maxCharges, PriceFactor = factor, StolenFrom = r.ReadVarInt32(),
             };
         }
         return items;

@@ -15,6 +15,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [characters](characters.md)
 - [impostors](impostors.md)
 - [launcher](launcher.md): game release installer, mod list and presets
+- [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
 - [net](net.md): multiplayer wire format, channels, limits, sessions (`Meitou.Net`)
@@ -45,6 +46,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [fcs-mod](formats/fcs-mod.md)
 - [fogfeatures](formats/fogfeatures.md)
 - [gettext](formats/gettext.md)
+- [localisation](formats/localisation.md): language selection, locale overlay, translations
 - [havok-tagfile](formats/havok-tagfile.md): `.hkt` encoding, navmesh tiles
 - [foliage](formats/foliage.md)
 - [lighting](formats/lighting.md)

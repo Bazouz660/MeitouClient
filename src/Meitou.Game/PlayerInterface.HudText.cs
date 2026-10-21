@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Ui;
 using Meitou.Simulation;
+using Meitou.Ui;
 
 namespace Meitou.Game;
 
@@ -26,43 +27,43 @@ sealed partial class PlayerInterface
     public Func<int, string?>? FactionName { get; set; }
 
     /// <summary>A line of a text panel: label and value, each with its colour (null: the text default).</summary>
-    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null);
+    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null);
 
     /// <summary>
     /// The status panel's prison line (<c>FUN_1405d2da0</c>, docs/game/economy.md 11.5, <b>Observed</b>): the hours left rounded up, "FOREVER" for a sentence of 2000 hours or more,
     /// "Waiting to be released" once there is nothing left.
     /// </summary>
     internal static string PrisonText(PrisonView prison) =>
-        prison.Sentence >= 2000 ? "Imprisoned, sentence time remaining: FOREVER"
-        : prison.Sentence > 0 && prison.HoursLeft > 0 ? $"Imprisoned, sentence time remaining: {Math.Ceiling(prison.HoursLeft).ToString(CultureInfo.InvariantCulture)} hrs"
-        : "Waiting to be released";
+        prison.Sentence >= 2000 ? $"{Loc.Tr("Imprisoned, sentence time remaining:")} {Loc.Tr("FOREVER")}"
+        : prison.Sentence > 0 && prison.HoursLeft > 0 ? $"{Loc.Tr("Imprisoned, sentence time remaining:")} {Loc.Plural("{1,num} hr", "{1,num} hrs", (long)Math.Ceiling(prison.HoursLeft), (long)Math.Ceiling(prison.HoursLeft))}"
+        : Loc.Tr("Waiting to be released");
 
     /// <summary>The goal line for a character the AI is not running (the player's orders, a fight, a job): what its movement task is, else Aimless.</summary>
     static string TaskText(CharacterTask task) => task switch
     {
-        CharacterTask.GoTo => "Moving",
-        CharacterTask.Follow => "Following",
-        CharacterTask.Attack => "Attacking",
-        CharacterTask.Treat => "Giving first aid",
-        CharacterTask.Rest => "Resting",
-        CharacterTask.PickUp => "Picking up",
-        CharacterTask.PutDown => "Putting down",
-        CharacterTask.Loot => "Looting",
-        CharacterTask.StealthKo => "Sneak attack",
-        CharacterTask.Build => "Building",
-        CharacterTask.Dismantle => "Dismantling",
-        CharacterTask.DeliverMaterials => "Delivering materials",
-        CharacterTask.Operate => "Operating machine",
-        CharacterTask.Haul => "Hauling",
-        CharacterTask.Prospect => "Prospecting",
-        _ => "Aimless",
+        CharacterTask.GoTo => Loc.Tr("Moving"),
+        CharacterTask.Follow => Loc.Tr("Following"),
+        CharacterTask.Attack => Loc.Tr("Attacking"),
+        CharacterTask.Treat => Loc.Tr("Giving first aid"),
+        CharacterTask.Rest => Loc.Tr("Resting"),
+        CharacterTask.PickUp => Loc.Tr("Picking up"),
+        CharacterTask.PutDown => Loc.Tr("Putting down"),
+        CharacterTask.Loot => Loc.Tr("Looting"),
+        CharacterTask.StealthKo => Loc.Tr("Sneak attack"),
+        CharacterTask.Build => Loc.Tr("Building"),
+        CharacterTask.Dismantle => Loc.Tr("Dismantling"),
+        CharacterTask.DeliverMaterials => Loc.Tr("Delivering materials"),
+        CharacterTask.Operate => Loc.Tr("Operating machine"),
+        CharacterTask.Haul => Loc.Tr("Hauling"),
+        CharacterTask.Prospect => Loc.Tr("Prospecting"),
+        _ => Loc.Tr("Aimless"),
     };
 
     /// <summary>The state lines (State, Goal, Encumbrance) of the selected character.</summary>
     static HudLine[] StateLines(CharacterSnapshot lead)
     {
         var body = lead.Body;
-        string state = body is { Dead: true } ? "Dead" : body is { Unconscious: true } ? "Unconscious" : (lead.Orders & CharacterOrders.Block) != 0 ? "Defensive" : "Normal";
+        string state = body is { Dead: true } ? Loc.Tr("Dead") : body is { Unconscious: true } ? Loc.Tr("Unconscious") : (lead.Orders & CharacterOrders.Block) != 0 ? Loc.Tr("Defensive") : Loc.Tr("Normal");
         string? colour = body is { Dead: true } or { Unconscious: true } ? BadColour : null;
         if (body is not { Dead: true } && lead.Prison is { } prison)
         {
@@ -70,8 +71,8 @@ sealed partial class PlayerInterface
             colour = BadColour;
         }
         int encumbrance = (int)((1 - Math.Clamp(lead.Hud?.Encumbrance ?? 1, 0, 1)) * 100);
-        return [new("State:", state, ValueColour: colour), new("Goal:", lead.Activity ?? TaskText(lead.Task)),
-            new("Encumbrance:", encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
+        return [new(Loc.Tr("State:"), state, ValueColour: colour), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
+            new(Loc.Tr("Encumbrance:"), encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
     }
 
     /// <summary>
@@ -82,7 +83,7 @@ sealed partial class PlayerInterface
     {
         int value = (int)s.Value, change = value - (int)s.Base;
         string text = change == 0 ? value.ToString(CultureInfo.InvariantCulture) : change < 0 ? $"{value} ({change})" : $"{value} (+{change})";
-        return new HudLine(s.Label.ToUpperInvariant(), text, StatLabelColour, change < 0 ? BadColour : change > 0 ? GoodColour : null);
+        return new HudLine(Loc.Tr(s.Label).ToUpperInvariant(), text, StatLabelColour, change < 0 ? BadColour : change > 0 ? GoodColour : null);
     })];
 
     /// <summary>The unit of the run speed in the information panel (Interface settings; the game shows mph).</summary>
@@ -100,11 +101,11 @@ sealed partial class PlayerInterface
         string suffix = unit == SpeedUnit.Kmh ? "km/h" : "mph";
         int speed = (int)MathF.Round(e.RunSpeed * factor), change = (int)MathF.Round((e.RunSpeed - e.RunValue) * factor);
         string run = change == 0 ? $"{speed} {suffix}" : change < 0 ? $"{speed} ({change}) {suffix}" : $"{speed} (+{change}) {suffix}";
-        return [new("Athletics XP:", Percent(e.AthleticsXp)), new("Strength XP:", Percent(e.StrengthXp)),
-            new("Toughness XP:", ((int)e.ToughnessXp).ToString(CultureInfo.InvariantCulture) + "x"),
-            new("KO point:", ((int)e.KoPoint).ToString(CultureInfo.InvariantCulture)),
-            new("Run speed:", run, ValueColour: change < 0 ? BadColour : change > 0 ? GoodColour : null),
-            new("Hunger Rate:", Percent(e.HungerRate))];
+        return [new(Loc.Tr("Athletics XP:"), Percent(e.AthleticsXp)), new(Loc.Tr("Strength XP:"), Percent(e.StrengthXp)),
+            new(Loc.Tr("Toughness XP:"), ((int)e.ToughnessXp).ToString(CultureInfo.InvariantCulture) + "x"),
+            new(Loc.Tr("KO point:"), ((int)e.KoPoint).ToString(CultureInfo.InvariantCulture)),
+            new(Loc.Tr("Run speed:"), run, ValueColour: change < 0 ? BadColour : change > 0 ? GoodColour : null),
+            new(Loc.Tr("Hunger Rate:"), Percent(e.HungerRate))];
     }
 
     /// <summary>
@@ -112,8 +113,8 @@ sealed partial class PlayerInterface
     /// part h: Wounded below 0.7, Hungry below 2 hunger, Slightly Injured below 0.9, else Normal.
     /// </summary>
     internal static (string Text, string? Colour) HealthWord(BodyStatus body) =>
-        body.Dead ? ("Dead", (string?)BadColour) : body.Unconscious ? ("Unconscious", BadColour) : body.Hunger < 1 ? ("Starving", BadColour)
-        : body.WorstPart < 0.7f ? ("Wounded", BadColour) : body.Hunger < 2 ? ("Hungry", BadColour) : body.WorstPart < 0.9f ? ("Slightly Injured", BadColour) : ("Normal", null);
+        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.Unconscious ? (Loc.Tr("Unconscious"), BadColour) : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
+        : body.WorstPart < 0.7f ? (Loc.Tr("Wounded"), BadColour) : body.Hunger < 2 ? (Loc.Tr("Hungry"), BadColour) : body.WorstPart < 0.9f ? (Loc.Tr("Slightly Injured"), BadColour) : (Loc.Tr("Normal"), null);
 
     /// <summary>The row of a body part in the medical panel: the head, the torso, the left then right arm, the left then right leg (the original's order for people,
     /// <b>Observed</b>); the race's own order inside a group.</summary>
@@ -140,8 +141,13 @@ sealed partial class PlayerInterface
             foreach (var (part, text, colour, align, properties) in new[] { ("label", lines[i].Label, lines[i].LabelColour, "Left Top", labelProperties),
                 ("value", lines[i].Value, lines[i].ValueColour, "Right Top", valueProperties) })
                 if (text.Length > 0)
-                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", row, text, "", "Kenshi_TextboxStandardText", true,
-                        new Dictionary<string, string>(properties) { ["TextAlign"] = align, ["TextColour"] = colour ?? MyGuiColours.InkText }, Vector4.Zero, Pickable: false, Clip: host.Clip));
+                {
+                    var textProperties = new Dictionary<string, string>(properties) { ["TextAlign"] = align, ["TextColour"] = colour ?? MyGuiColours.InkText };
+                    // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
+                    if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
+                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", row, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
+                        textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
+                }
         }
 
         static Dictionary<string, string> Face(string name, float? pixels)
@@ -182,7 +188,7 @@ sealed partial class PlayerInterface
             var fullBar = controls.FirstOrDefault(c => c.Name == bar)?.Bounds ?? host.Bounds;
             var textBounds = new UiRect(host.Bounds.X, fullBar.Y, host.Bounds.Width, fullBar.Height);
             string pixels = Math.Max(8, (int)MathF.Round(sidePixels)).ToString(CultureInfo.InvariantCulture);
-            controls.Add(new($"{bar}-name", "TextBox", textBounds, name, "", "", true,
+            controls.Add(new($"{bar}-name", "TextBox", textBounds, Loc.Tr(name), "", "", true,
                 new Dictionary<string, string> { ["FontPixels"] = pixels, ["TextAlign"] = "Center", ["TextColour"] = MyGuiColours.InkText }, Vector4.Zero, Pickable: false, Clip: host.Clip));
             if (arrows.Length > 0)
                 controls.Add(new($"{bar}-arrows", "TextBox", textBounds, arrows, "", "", true,
@@ -216,7 +222,7 @@ sealed partial class PlayerInterface
             float capacity = Math.Max(hud?.BloodCapacity ?? 1, 1e-3f), blood = hud?.Blood ?? body.Blood * capacity;
             // A run of '<', one per 0.05 of bleeding (at most 100).
             int bleed = Math.Min(100, (int)MathF.Ceiling(Math.Abs(hud?.Bleeding ?? 0) / 0.05f));
-            rows.Add(("Blood", blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false));
+            rows.Add((Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false));
             foreach (var part in lead.HealthParts.Select((p, i) => (p, i)).OrderBy(x => PartRank(x.p, x.i)).Select(x => x.p))
             {
                 float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh + part.Rig - part.Stun;
@@ -224,7 +230,7 @@ sealed partial class PlayerInterface
                 rows.Add((part.Name, health / max, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture), arrows, part.Robotic));
             }
             float hunger = body.Hunger;
-            rows.Add(("Hunger", hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hunger < 2 ? "<!   " : "<   ", false));
+            rows.Add((Loc.Tr("Hunger"), hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hunger < 2 ? "<!   " : "<   ", false));
         }
         for (int i = 1; i <= 9; i++)
         {

@@ -130,11 +130,17 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
   (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel: "Hit Points:", "No bleeding"
   below `bleed rate` 0.1, then each stat multiplier as (m-1)x100 % (Meitou omits the hit points line).
-- **Tabs** (`FUN_1405ebd50`, Body first): FACE = head list (if more than one) + XML Face ranges; BODY = "Idle stance" list slider, XML Body
-  ranges, `Skin Tone` colour slider (vec3 interpolated; only with more than one colour); HAIR = Hair (attach slot 2) and Beard (13) lists with
+- **Tabs** (`FUN_1405ebd50`, Body first): FACE = head list (if more than one) + XML Face ranges + colours; BODY = "Idle stance" slider, then
+  `Skin Tone` (vec3 interpolated; only with more than one colour), then XML Body ranges, then other colours (order also seen in the original's
+  screen); HAIR = Hair (attach slot 2) and Beard (13) lists with
   "None" (if more than one entry), hair colour multi-slider `Hair Colour` / `Hair Saturation` / `Hair Brightness` 0..100. No Personality tab, no
   Age. Plain ranges store the integer as the float key; target ranges store value x 0.01 in `target`, a negative value x -0.01 in
-  `target_opposite` (the editor shows the reverse). Meitou: no idle stance slider yet; women get no beard list (generator rule).
+  `target_opposite` (the editor shows the reverse). Meitou: women get no beard list (generator rule).
+- **Idle stance**: slider 1..n over a list built once (`FUN_14007d480`, from the idle list of `FUN_1405bbd40`): ANIMATION records in data
+  order that are `idle`, not `disabled`, `weather type` < 1, `layer` not `overlay`, `has weapon L` and `R` both 0, not `crouched`. Writes
+  the record name to `idle stance` (`FUN_1405eaa30`); a stance not in the list shows as 1. **Verified** by probe on base data: 8 stances
+  (`idle_stand_relax`, `stand 1`, `idle_stand_guard`, `idle_stand_timid`, `idle_stand_confident`, `idle_stand_normal`, `idle_stand_stiff`,
+  `squat`), so the default `idle_stand_normal` is 6, as the original's screen shows. Whether RANDOMISE rolls it is **Unknown** (Meitou: no).
 - **Buttons**: RANDOMISE = current tab only; RANDOMISE ALL = every randomiser; RESET ALL = the appearance template's defaults (hair, beard,
   colours, `Posture`, idle stance `idle_stand_normal`; slider values **Unknown**, Meitou: XML mid, poses 0, Posture 20); CLOTHES toggles worn
   clothing in the preview; IMPORT/EXPORT: see [below](#import-and-export). CONFIRM asks first when some
@@ -182,9 +188,9 @@ race the editor doesn't offer (creation) or another race or sex (surgeon); the d
 same line (val0), gated by `DC_PLAYERMONEY` (2) strictly greater. "plastic surgeon" (CHARACTER 2132 Plastic Surgeon, leader of the bar squads
 "bar plastic surgeon" / "plastic surgeon": Holy Nation, Empire Peasants, United Cities, Deadcat, Waystation, Bark, Sho-Battai...) 200;
 "doctor shop" (hospital squads' `dialog leader` package) 500; Doctor Chung (Mud Town) 200, no money check; Thieves Guild surgeon free
-behind `DC_FACTION_RANK`; Grey free for escaped slaves. Meitou has no dialogue: an NPC whose dialogue offers such a line gated only by money or
-`DC_IS_RECRUITABLE` (`SurgeonDialogues`) gets the context menu verb "Plastic Surgery (c.price)", which opens the editor in mode 1 on the
-first selected character beside it.
+behind `DC_FACTION_RANK`; Grey free for escaped slaves. Meitou: the surgeon is talked to; its line's DA 8 pays and DA 11 opens the editor in
+mode 1, already paid ([dialogue](game/dialogue.md#meitou-design)). An unpaid `EditCharacter` (no UI sends one) is checked against `SurgeonDialogues`:
+a line gated only by money or `DC_IS_RECRUITABLE`.
 
 ## Open questions
 

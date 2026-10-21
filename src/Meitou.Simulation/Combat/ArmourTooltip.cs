@@ -42,7 +42,7 @@ public static class ArmourTooltip
         string material = a.Material == ArmourType.MetalPlate ? "Metal Plate" : a.Material.ToString();
         return
         [
-            new($"{GradeNames[grade]} Grade", "", LineKind.Grade, grade),
+            new(Loc.Tr("{1} Grade", Loc.Tr(GradeNames[grade])), "", LineKind.Grade, grade),
             new($"[{a.Class} Armour Class]", $"[{material}]"),
             new("-Blunt resistance", Percent(piece.BluntDefence), LineKind.Stat),
             new("-Cut resistance", Percent(piece.CutDefence), LineKind.Stat),

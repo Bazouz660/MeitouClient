@@ -35,7 +35,11 @@ Advanced "Keep textures at characters" (Meitou, default on, `UserConfig.KeepText
 the drawn position of every squad bar member each frame. `ObjectStreamer.Near` / zone layout count the nearest of eye, `Ahead` and `Kept`,
 so object meshes and texture mips stay loaded round each character; terrain biome textures gather cells round each (ranked after the
 eye's). `Kept` ranks after the eye in the load order. Foliage and grass pages follow only the eye and `Ahead`. Costs video memory
-(the VRAM guard still applies). **Unknown**: the cost with a large squad; not measured.
+(the VRAM guard still applies). `WorldFrame` merges the points first (`ObjectStreamer.MergeKept`): one within 500 units of the eye or of an
+earlier point is dropped, so a squad standing together is one point. Every distance test walks the kept points, and `ObjectStreamer.Scan`
+tests each unresolved instance every frame. Out-of-range instances (stand-ins and unknown part distances included) are therefore parked per
+zone and come back by one zone test against the current ranges. **Observed** (offscreen bench at Fog Islands, Release, 16.5k instances of which
+2.4k resolved): upd-objects 3.1 ms → 0.17 ms with 10 points together, 9.3 ms → 2.0 ms with 30 points 600 units apart. The same instances and meshes resolve.
 
 ## Batching and depth
 

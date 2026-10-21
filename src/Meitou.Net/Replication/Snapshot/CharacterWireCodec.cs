@@ -58,7 +58,6 @@ public static class CharacterWireCodec
             w.WriteVarInt(now.Faction);
             w.WriteVarInt(now.SquadId);
             w.WriteVarInt(now.Owner);
-            CommonCodec.WriteNullableInt(w, now.SurgeryCost);
             strings.Write(w, now.Activity);
         }
         if ((mask & CharacterWire.Prison) != 0) WritePrison(w, now.PrisonView);
@@ -109,7 +108,6 @@ public static class CharacterWireCodec
             c.Faction = r.ReadVarInt32();
             c.SquadId = r.ReadVarInt32();
             c.Owner = r.ReadVarInt32();
-            c.SurgeryCost = CommonCodec.ReadNullableInt(ref r);
             c.Activity = strings.Read(ref r, NetLimits.MaxName);
         }
         if ((mask & CharacterWire.Prison) != 0) c.PrisonView = ReadPrison(ref r);
@@ -177,7 +175,7 @@ public static class CharacterWireCodec
         c.Watchers = watchers;
     }
 
-    // Prison: a presence byte, Locked, Sentence (float), HoursLeft as zigzag minutes, Bail (nullable int).
+    // Prison: a presence byte, Locked, Sentence (float), HoursLeft as zigzag minutes.
     static void WritePrison(NetWriter w, PrisonWire? prison)
     {
         w.WriteBool(prison.HasValue);
@@ -185,7 +183,6 @@ public static class CharacterWireCodec
         w.WriteBool(p.Locked);
         w.WriteSingle(p.Sentence);
         w.WriteVarInt(p.Minutes);
-        CommonCodec.WriteNullableInt(w, p.Bail);
     }
 
     static PrisonWire? ReadPrison(ref NetReader r)
@@ -194,7 +191,7 @@ public static class CharacterWireCodec
         bool locked = r.ReadBool();
         float sentence = r.ReadFinite();
         long minutes = r.ReadVarInt();
-        return new PrisonWire(locked, sentence, minutes, CommonCodec.ReadNullableInt(ref r));
+        return new PrisonWire(locked, sentence, minutes);
     }
 
     // Turret: a presence byte, Key, BuildingId, GunId (interned), the position as zigzag 1/64 units, the yaw as 16 bits.

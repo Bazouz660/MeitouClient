@@ -170,7 +170,7 @@ sealed partial class PlayerInterface
     /// <summary>The player's orders (the commands that give a character a job), by type name: they make the order dispatcher's click.</summary>
     static readonly HashSet<string> OrderCommands = new(StringComparer.Ordinal)
     {
-        "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
+        "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "OpenLootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
         "OperateOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder",
     };
 
@@ -181,6 +181,7 @@ sealed partial class PlayerInterface
         switch (command)
         {
             case Meitou.Simulation.Items.MoveInventoryItem move: Sound("Item_Drop", item: move.Item.Record); return;
+            case Meitou.Simulation.Items.DropInventoryItem drop: Sound("Item_Drop", item: drop.Item.Record); return;
             case Meitou.Simulation.Trading.BuyItem buy: Sound("Sell_Item", item: buy.Item.Record); return;
             case Meitou.Simulation.Trading.SellItem sell: Sound("Sell_Item", item: sell.Item.Record); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).

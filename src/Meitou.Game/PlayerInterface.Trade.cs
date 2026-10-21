@@ -184,23 +184,16 @@ sealed partial class PlayerInterface
             if (tradeDrag?.Item.Index == item.Index) continue;
             AddItemCell(controls, $"trade-item-{item.Index}",
                 new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows),
-                item.Record, item.Material, item.Name, item.Quantity, ArmourCaption(item.Record, item.Quality, item.Weight, TradeTooltip(item)) ?? TradeTooltip(item), "TradeItem", item.Index, slot.Clip, charge: item.Charge);
+                item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "TradeItem", item.Index, slot.Clip, charge: item.Charge);
         }
     }
 
     /// <summary>
-    /// The trade lines of an item's tooltip (<c>FUN_14079e7a0</c>, <b>Observed</b> by decompile): "Value" (what the shop asks for the stack) and "Sell value" (what it pays), then the weight
-    /// (<c>FUN_1407ae130</c>) and, for a stolen item, "Stolen" (<c>FUN_1407a0ea0</c>). A tab separates a line's label from its value.
+    /// While trading, the trade item behind one of the customer's inventory items: its tooltip gains the prices (Value, Sell value; <c>FUN_14079e7a0</c>, <b>Observed</b> by decompile, see
+    /// <see cref="ItemLines"/>). Null: no trade, or another character's grid.
     /// </summary>
-    static string TradeTooltip(TradeItemView item) =>
-        $"Value\tc.{Money(item.Value)}\nSell value\tc.{Money(item.SellValue)}\nWeight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg" + (item.Stolen ? "\nStolen" : "");
-
-    /// <summary>While trading, the tooltip lines of one of the customer's items (null: no trade, or another character's grid).</summary>
-    string? SellCaption(CharacterId owner, int index)
-    {
-        if (session.CurrentSnapshot.Trade is not { } trade || trade.Customer != owner || trade.Goods.FirstOrDefault(g => g.Index == index) is not { } goods) return null;
-        return TradeTooltip(goods);
-    }
+    TradeItemView? SellTip(CharacterId owner, int index) =>
+        session.CurrentSnapshot.Trade is { } trade && trade.Customer == owner ? trade.Goods.FirstOrDefault(g => g.Index == index) : null;
 
     /// <summary>
     /// The fencing prompt beside a stolen item dragged over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile): stolen from the trader's own faction, "Fencing chance:" and the

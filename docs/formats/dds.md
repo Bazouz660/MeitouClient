@@ -88,6 +88,15 @@ DDS codec, Observed (source)).
 
 The 193 files the biomes use: 188 diffuse BC3 + 2 BC1 at 2048² with 12 mips, 2 diffuse at 1024² BC3, 1 at 512² BC1; normal maps 153 BC1 + 12 BC3 at 2048² with 12 mips and 1 at 512². (`data/land/textures` has 16 older ones: 2048² and one 2048x1532, also one 1024² BC1 without mips.) Normal maps' alpha is unused by the terrain shader (**Observed**: only `.rgb` of the blended normal is read), so the viewer keeps them as BC1. BC1 to BC3 and back is a block rewrite: BC3 always has four colours, BC1 falls back to three colours plus transparent when the first endpoint is not above the second (Verified by `BlockCompressionTests`).
 
+How the game loads them (**Verified**, decompiled): the biome material (FUN_140a14c90) builds `diffuseMaps` and `normalMaps` as
+texture arrays of a biome's six layers in resource group `Landscape` (**Observed**: the string is built at the call, the
+decompile drops the argument); the array loader (FUN_140448990,
+`TextureArrayLoadData::loadImage`) opens each name with `openResource` (a missing one becomes `flat.dds`) and rejects the array,
+logging "sizes mismatch", when a slice's width, height or format differs from slice 0. Opening goes through the texture-quality
+listener (FUN_14082ddc0), so every layer loses `level` top mips (`Landscape` gets no `_HI.` exemption): 2048² becomes 1024² at
+High. **Observed** (not run): a biome mixing the 1024²/512² files above with 2048² ones would fail that check in the game; Meitou
+rescales every layer to one size instead.
+
 ## Channel conventions in Kenshi's textures
 
 Not part of the DDS format, but needed to use the files (details in [../viewer.md](../viewer.md)):

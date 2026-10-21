@@ -136,18 +136,18 @@ sends even an empty list.
 
 ## Command codec
 
-`CommandTags` (`Commands/`) is the explicit, never reordered table of ushort tags, one per concrete `SimCommand` (81), each
+`CommandTags` (`Commands/`) is the explicit, never reordered table of ushort tags, one per concrete `SimCommand` (87), each
 with a `CommandOrigin`: `Client`, `Debug` (tags 200-206, accepted only when the host allows cheats) or `HostOnly`
-(`SandboxMovement` 2, `RepathCommand` 9, `StartContract` 240, `JoinPlayer` 241, `TransferSquad` 242). Tags: 1-9 basics, 20-22
-orders, 30-36 squads, 40-45 carry/combat, 50-53 first aid, 60-64 dialogue/editor, 70-74 trade, 80-94 inventory/locks,
-100-116 production/construction. The abstract `SimCommand`, `DebugCommand` and `SquadCommand` have none.
+(`SandboxMovement` 2, `RepathCommand` 9, `StartContract` 240, `JoinPlayer` 241, `TransferSquad` 242, `ChangeAi` 243, `DialogueEvent` 244).
+Tags: 1-9 basics, 20-22 orders, 30-36 squads, 40-48 carry/combat/loot window, 50-53 first aid, 60-64 dialogue/editor, 70-74 trade,
+80-95 inventory/locks, 100-116 production/construction. The abstract `SimCommand`, `DebugCommand` and `SquadCommand` have none.
 
 **Layout** (`CommandCodec`): varint tag, the constructor parameters in declaration order, then the init-only properties in
 declaration order (`MoveOrder.Queued`, `AttackOrder.Defensive`, `EditCharacter.Surgeon/Paid`, `BuyItem.Section/X/Y/Equip`,
 `SellItem.X/Y`). `Tick` and `Player` are not sent: `Read(ref r, strings, tick, player, allowDebug)` sets them (the host
 passes its own tick and the sender's number). Ints are zigzag varints, floats raw (read finite), enums by `NetWriter.WriteEnum`
 (`CharacterOrders` varint, `SquadAi`/`ShackleWork`/`EditKind` byte, `TaskType` zigzag), `byte?` and `bool?` a presence
-byte then the value, `float?` presence byte then raw, `SellItem.X` as `NullableInt`. Record, site, fixture, building and
+byte then the value, `float?` presence byte then raw, `CharacterId?` (`StartContract.Target`) a presence byte then the id, `SellItem.X` as `NullableInt`. Record, site, fixture, building and
 instance keys are interned; names (squad, character) are literals. `InventoryItemToken` is index, record, section, x, y,
 quantity, then the quality as **raw** float bits (tokens are compared by equality). `PlannedBuilding` is record, position,
 rotation (x, y, z, w), floor, parent (nullable key); at most `MaxPlans` per `PlaceBuildings`. `EditCharacter.Appearance` goes
@@ -242,8 +242,8 @@ codec (`CharacterWireCodec.WriteGroups`/`ReadGroups`) writes the groups the mask
 | 6 | Stealth | byte 0 or 1 + level; KO chance; up to 32 watchers (`Q64` relative to the character, level) |
 | 7 | Ragdoll | presence, then `RagdollWire` |
 | 8 | Look | `LookId` varint (0 none; the client rebuilds `Appearance`, never sent), Scale f32 |
-| 9 | Identity | Name, Faction, SquadId, Owner (zigzag), SurgeryCost (`NullableInt`), Activity |
-| 10 | Prison | presence, Locked, Sentence f32, remaining hours as zigzag minutes, Bail |
+| 9 | Identity | Name, Faction, SquadId, Owner (zigzag), Activity |
+| 10 | Prison | presence, Locked, Sentence f32, remaining hours as zigzag minutes |
 | 11 | Turret | presence, Key, BuildingId, GunId, `Q64` position, `Yaw16` |
 | 12 | Jobs | up to 64 `PermaJob`: Type (zigzag), Site, Saved (`Hand` presence + 5 zigzag; absent for `Hand.Null`) |
 
@@ -289,13 +289,13 @@ without splitting a surrogate pair, and lists to `MaxListItems`.
 | Kind | View | Key | Min interval | Host / client half |
 |---|---|---|---|---|
 | 5 | Buildings (`BuildingSnapshot`, `MaterialView`s, Dismantling, WallParent) | `Id` | 200 ms | `BuildingsSync` / `BuildingsDecoder` |
-| 6 | GroundItems | `Id` (int) | 0 | `GroundItemsSync` / `GroundItemsDecoder` |
+| 6 | GroundItems (`GroundItemSnapshot`: position, whole rotation, Dropped) | `Id` (int) | 0 | `GroundItemsSync` / `GroundItemsDecoder` |
 | 7 | Containers (`ContainerSpot`) | `Id` | 1 s | `ContainersSync` / `ContainersDecoder` |
 | 8 | DoorPicks | `Id` | 1 s | `DoorPicksSync` / `DoorPicksDecoder` |
 | 9 | Doors (`DoorEntry`: Building, Door, `DoorView`) | (Building, Door) | 0 | `DoorsSync` / `DoorsDecoder` (dictionary) |
 | 10 | Unlocked (record ids, sent in ordinal order) | the string | 0 | `UnlockedSync` / `UnlockedDecoder` (set) |
 | 11 | Inspected (`BuildingDetail?`: presence byte, instance, per door flags and level) | single | 0 | `InspectedSync` / `InspectedDecoder` |
-| 12 | Machines (`MachineSnapshot`: slots, storage grid, farm with `PlantGrowth`, craft, power, sound) | `Site` | 200 ms | `MachinesSync` / `MachinesDecoder` |
+| 12 | Machines (`MachineSnapshot`: slots, storage grid, farm with `PlantGrowth`, craft, power, sound, a loot window's `Body` and `Title`) | `Site` | 200 ms | `MachinesSync` / `MachinesDecoder` |
 | 13 | Research: header (levels, queue, rate, finished) then keyed `Available` | option `Id` | 200 ms | `ResearchSync` / `ResearchDecoder` |
 | 14 | Crafts (`CraftEntry`: site and its `CraftOptionView`s) | site | 500 ms | `CraftsSync` / `CraftsDecoder` (dictionary) |
 
@@ -409,7 +409,8 @@ kind is wanted by whoever the host module sent it to.
 
 `Session/ProtocolCodec.cs` writes and reads the Control messages: `Write` puts the `MessageType` byte first, the caller
 reads it (`ReadType`), and `ReadX` reads the rest and demands the end. `NetRules` and `SessionRules` overloads write
-bodies only (flag bits packed in one byte). Writers clamp texts to the reader limit at a character boundary and throw
+bodies only (`NetRules`' flag bits in one byte; `SessionRules`: attack slots, the nine switches as a varint of flag bits in declaration
+order, then `GroundItemLimit`). Writers clamp texts to the reader limit at a character boundary and throw
 `ArgumentException` for a wrong-size fixed field (nonce 16 bytes, proof 0 or 32) or a non-finite clock or weather number; a Reject reason is cut to
 `MaxRejectReason` (996 bytes) so an encoded Reject fits `MaxDropPayload`, so a reader never refuses what a writer
 produced. Doubles are read with a finite check. Limits: build 64 bytes, data set 1024 files, roster 256, weather

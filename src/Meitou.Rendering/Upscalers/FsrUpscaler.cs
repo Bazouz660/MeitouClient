@@ -15,7 +15,7 @@ namespace Meitou.Rendering.Upscalers;
 /// </summary>
 public sealed unsafe class FsrUpscaler : IUpscaler
 {
-    public const string LibraryName = "amd_fidelityfx_vk.dll";
+    public static readonly string LibraryName = OperatingSystem.IsMacOS() ? "libamd_fidelityfx_vk.dylib" : "amd_fidelityfx_vk.dll";
 
     // ffx_api: type constants, flags, states (FidelityFX SDK headers, MIT).
     const ulong CreateUpscaleType = 0x00010000, DispatchUpscaleType = 0x00010001, BackendVkType = 0x00000003;
@@ -107,7 +107,8 @@ public sealed unsafe class FsrUpscaler : IUpscaler
             Header = new ApiHeader { Type = BackendVkType },
             Device = device.Device.Handle,
             PhysicalDevice = device.PhysicalDevice.Handle,
-            DeviceProcAddr = NativeLibrary.GetExport(NativeLibrary.Load("vulkan-1.dll"), "vkGetDeviceProcAddr"),
+            // FFX calls vkGetDeviceProcAddr through the loader the process is already bound to.
+            DeviceProcAddr = NativeLibrary.GetExport(NativeLibrary.Load(OperatingSystem.IsMacOS() ? "libvulkan.1.dylib" : "vulkan-1.dll"), "vkGetDeviceProcAddr"),
         };
         *createDesc = new CreateUpscaleDesc
         {

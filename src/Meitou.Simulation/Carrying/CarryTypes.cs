@@ -16,6 +16,21 @@ public sealed record PutDownOrder(IReadOnlyList<CharacterId> Carriers) : SimComm
 public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
 
 /// <summary>
+/// As <see cref="LootOrder"/>, but in reach the looter opens <see cref="Target"/>'s inventory in a window (<see cref="PlayerSession.OpenLoot"/>) instead of taking all: items are then taken one at a
+/// time (<see cref="TakeLootItem"/>). Closed with <see cref="Items.CloseContainer"/>, or when the looter walks off, goes down, or the body comes round or is lifted.
+/// </summary>
+public sealed record OpenLootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
+
+/// <summary>
+/// Takes the item at <see cref="Index"/> of the open loot's inventory (<see cref="Items.Inventory.Items"/> order) into the looter's (as <see cref="Items.Inventory.Add"/>; what does not fit stays);
+/// a theft as a loot is (<see cref="Crime.CrimeSystem.IsLootTheft"/>).
+/// </summary>
+public sealed record TakeLootItem(int Index) : SimCommand;
+
+/// <summary>Puts the looter's (<see cref="Character"/>, the one who opened it) <see cref="Item"/> into the open loot's main grid at cell (<see cref="X"/>, <see cref="Y"/>), which must be free; worn and bag items are refused (as a container's put).</summary>
+public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken Item, int X, int Y) : SimCommand;
+
+/// <summary>
 /// Orders one of the attackers (the selection when the list is empty) to knock <see cref="Target"/> out from behind (the original's order 228, verb "Stealth KO", <c>Task_StealthKO</c>):
 /// the nearest sneaking one that can act creeps up behind it and swings; the roll (<see cref="CarrySystem.StealthKoChance"/>) decides between a knock-out and a fight.
 /// </summary>

@@ -46,8 +46,8 @@ public class CharacterWireTests
         Stealth = StealthExposure.Noticed, StealthKoChance = 41.5f,
         Watchers = [new WatcherView(new Vector3(1240.1f, -10f, -98760f), StealthExposure.Near), new WatcherView(new Vector3(1200f, 0f, -98800f), StealthExposure.Detected)],
         Ragdoll = Pose(random, 11, 3f),
-        Scale = 0.8765f, Name = "Beep Ünï", Faction = 4, SquadId = 12, Owner = 2, SurgeryCost = -3, Activity = "Patrolling town",
-        Prison = new PrisonView(true, 48.5f, 31.9, 250),
+        Scale = 0.8765f, Name = "Beep Ünï", Faction = 4, SquadId = 12, Owner = 2, Activity = "Patrolling town",
+        Prison = new PrisonView(true, 48.5f, 31.9),
         Turret = new MannedTurret("town 1:3", "BUILDING_TURRET", new Vector3(4.2f, 5.3f, 6.4f), -1.2f, "GUN_X"),
         Jobs = [new PermaJob(TaskType.BUILD, "site-1"), new PermaJob(TaskType.PICKUP, null, new Hand(1, 2, 3, 4, 5)), PermaJob.Untargeted(TaskType.IDLE)],
     };

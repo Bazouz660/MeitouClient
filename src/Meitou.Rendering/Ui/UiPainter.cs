@@ -8,7 +8,7 @@ using Silk.NET.Vulkan;
 namespace Meitou.Rendering.Ui;
 
 /// <summary>Native alpha-composited MyGUI atlas slices and styled native control frames.</summary>
-public sealed class UiPainter : IDisposable
+public sealed partial class UiPainter : IDisposable
 {
     readonly DebugOverlay overlay;
     readonly MyGuiResources resources;
@@ -297,28 +297,9 @@ public sealed class UiPainter : IDisposable
                 font.Target = overlay.Target;
                 scale = 1;
             }
-            else if (FontSpec(fontName) is { } spec && FontPath(spec.Source) is { } sourcePath)
+            else if (ResourceFont(fontName, c.TextScale ?? height / 1080f, minimumTextPixels) is { } resourceFont)
             {
-                // TrueType resource sizes are points at the resource's DPI, resized as the original does on load (KenshiFontSize).
-                float resolution = spec.Resolution > 0 ? spec.Resolution : 50;
-                float points = EffectiveFontSize(sourcePath, spec.Size > 0 ? spec.Size : 20, resolution) * (c.TextScale ?? height / 1080f);
-                float em = points * resolution / 72;
-                bool faithful = Mode == UiMode.Faithful;
-                long size64;
-                uint dpi;
-                if (faithful && em >= Math.Max(6, minimumTextPixels) && em <= 192)
-                {
-                    // MyGUI's own request: fractional points at the resource's dpi (1/16 point steps, so a resized window makes a bounded number of fonts).
-                    size64 = Math.Max(1, (long)MathF.Round(points * 16)) * 4;
-                    dpi = (uint)MathF.Round(resolution);
-                }
-                else
-                {
-                    // Whole pixels: Meitou's look, and the display policy's minimum size in either mode.
-                    size64 = Math.Clamp((int)MathF.Round(Math.Max(minimumTextPixels, em)), 6, 192) * 64L;
-                    dpi = 72;
-                }
-                font = UiFontFor(fontName, spec, sourcePath, size64, dpi, faithful, faithful || !spec.Antialias);
+                font = resourceFont;
                 font.Target = overlay.Target;
                 scale = 1;
             }
@@ -516,19 +497,30 @@ public sealed class UiPainter : IDisposable
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> failedIcons = new(StringComparer.Ordinal);
 
     /// <summary>The <c>ImageTexture</c> name of the icon the renderer draws from an item's mesh (<see cref="RenderedIcons"/>), shown once it exists; flip it (<c>ImageFlipV</c>), as the renderer's targets are upside down.</summary>
-    public static string RenderedIconTexture(string record, string material) => RenderedIconPrefix + record + "|" + material;
+    public static string RenderedIconTexture(string record, string material, string colour = "") => RenderedIconPrefix + record + "|" + material + "|" + colour;
     public const string RenderedIconPrefix = "meitou:icon:";
 
-    /// <summary>The record and material of a <see cref="RenderedIconTexture"/> name.</summary>
-    public static bool TryParseRenderedIcon(string name, out string record, out string material)
+    /// <summary>The <c>ImageTexture</c> name of the picture the renderer draws of a BUILDING (<see cref="RenderedIcons"/> looks it up too); flip it like <see cref="RenderedIconTexture"/>.</summary>
+    public static string RenderedBuildingIconTexture(string record) => RenderedBuildingIconPrefix + record;
+    public const string RenderedBuildingIconPrefix = "meitou:building-icon:";
+
+    /// <summary>The record of a <see cref="RenderedBuildingIconTexture"/> name.</summary>
+    public static bool TryParseRenderedBuildingIcon(string name, out string record)
     {
-        (record, material) = ("", "");
-        if (!name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.IndexOf('|') is not (>= 0 and var bar)) return false;
-        (record, material) = (name[RenderedIconPrefix.Length..bar], name[(bar + 1)..]);
+        record = name.StartsWith(RenderedBuildingIconPrefix, StringComparison.Ordinal) ? name[RenderedBuildingIconPrefix.Length..] : "";
         return record.Length > 0;
     }
 
-    /// <summary>Looks up the texture of a <see cref="RenderedIconTexture"/> name, asking for it to be made when it is not (the host sets this; null: no icons are drawn).</summary>
+    /// <summary>The record, material and colour of a <see cref="RenderedIconTexture"/> name.</summary>
+    public static bool TryParseRenderedIcon(string name, out string record, out string material, out string colour)
+    {
+        (record, material, colour) = ("", "", "");
+        if (!name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.Split('|') is not [var r, var m, var c]) return false;
+        (record, material, colour) = (r[RenderedIconPrefix.Length..], m, c);
+        return record.Length > 0;
+    }
+
+    /// <summary>Looks up the texture of a <see cref="RenderedIconTexture"/> or <see cref="RenderedBuildingIconTexture"/> name, asking for it to be made when it is not (the host sets this; null: no icons are drawn).</summary>
     public Func<string, (Texture Texture, SampledTexture Sampled)?>? RenderedIcons { get; set; }
 
     /// <summary>Whether the rendered icon <paramref name="name"/> can be drawn now (this asks for it too).</summary>
@@ -564,7 +556,7 @@ public sealed class UiPainter : IDisposable
     (Texture Texture, SampledTexture Sampled) LoadTexture(string name)
     {
         if (external.TryGetValue(name, out var given) || textures.TryGetValue(name, out given)) return given;
-        if (name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
+        if ((name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.StartsWith(RenderedBuildingIconPrefix, StringComparison.Ordinal)) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
         string path = resolve(name) ?? throw new FileNotFoundException($"MyGUI texture not found: {name}");
         return Upload(name, TextureLoader.LoadFile(path, allMips: false).Levels[0]);
     }

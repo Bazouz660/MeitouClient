@@ -48,9 +48,11 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         public List<Instance> Real { get; } = [];
         public List<Instance> Stand { get; } = [];
         public List<Instance> Unresolved { get; } = [];
-        /// <summary>Unresolved parts beyond their part distance, out of <see cref="Unresolved"/> until the eye comes near (<see cref="Scan"/>), and the largest of their distances.</summary>
+        /// <summary>Unresolved instances out of range, out of <see cref="Unresolved"/> until the eye comes near (<see cref="Scan"/>): the largest part distance of the
+        /// real ones (<see cref="Instance.Limit"/>, so the object distance when unknown) and whether any are distant stand-ins (back by the distant range).</summary>
         public List<Instance> Parked { get; } = [];
         public float ParkedLimit;
+        public bool ParkedStand;
         /// <summary>The indoor volumes of the zone's buildings (<see cref="ZoneObjects.Interiors"/>).</summary>
         public IReadOnlyList<InteriorVolume> Interiors = [];
     }
@@ -203,6 +205,28 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
     /// <summary>Extra points (the player's characters, "Keep textures at characters") laid out, loaded and kept like the eye's surroundings, but ranked after them.</summary>
     public IReadOnlyList<Vector3> Kept { get; set; } = [];
 
+    /// <summary>How near a kept point may be to the eye or to an earlier kept point and still be dropped (<see cref="MergeKept"/>).</summary>
+    public const float KeptMergeDistance = 500;
+
+    /// <summary>
+    /// <paramref name="points"/> less those within <see cref="KeptMergeDistance"/> of <paramref name="eye"/> or of a point already taken: a squad standing
+    /// together is one point. Every distance test (<see cref="Near"/>, per unresolved instance per frame) walks the kept points, so ten members cost ten
+    /// times the scan (docs/render-objects.md "Kept points"); the merge moves a distance by at most this much.
+    /// </summary>
+    public static IReadOnlyList<Vector3> MergeKept(IReadOnlyList<Vector3> points, Vector3 eye)
+    {
+        if (points.Count == 0) return points;
+        var taken = new List<Vector3>(Math.Min(points.Count, 4));
+        foreach (var p in points)
+        {
+            if (Vector3.Distance(p, eye) <= KeptMergeDistance) continue;
+            bool near = false;
+            foreach (var t in taken) if (Vector3.Distance(p, t) <= KeptMergeDistance) { near = true; break; }
+            if (!near) taken.Add(p);
+        }
+        return taken;
+    }
+
     float NearKept(Vector3 p) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, Vector3.Distance(k, p)); return d; }
     float NearKeptZone(double x0, double z0) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, ZoneDistance(x0, z0, k)); return d; }
 
@@ -340,13 +364,15 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         foreach (var zone in Ahead is null ? (IEnumerable<Zone>)zones.Values : zones.Values.OrderBy(z => RankZone(z.X0, z.Z0, eye, objectRange)))
         {
             var list = zone.Unresolved;
-            // Parked parts come back once the eye could be within their part distance (the zone's square, less the margin and a part's size).
-            if (zone.Parked.Count > 0 && NearZone(zone.X0, zone.Z0, eye) - RequestMargin - ParkedSlack <= zone.ParkedLimit)
+            // Parked instances come back once the eye could be within their range (the zone's square, less the margin and a part's size). The ranges are
+            // the current ones, so a longer distance (settings, the VRAM guard's recovery) brings them back too.
+            float parkedRange = Math.Max(Math.Min(objectRange, zone.ParkedLimit), zone.ParkedStand && !noDistant ? distantRange : 0);
+            if (zone.Parked.Count > 0 && NearZone(zone.X0, zone.Z0, eye) - RequestMargin - ParkedSlack <= parkedRange)
             {
                 for (int i = zone.Parked.Count - 1; i >= 0; i--)
                 {
                     var inst = zone.Parked[i];
-                    if (Near(eye, inst.Centre) - RequestMargin > Math.Min(objectRange, inst.Limit)) continue;
+                    if (Near(eye, inst.Centre) - RequestMargin > (inst.Stand ? distantRange : Math.Min(objectRange, inst.Limit))) continue;
                     list.Add(inst);
                     zone.Parked[i] = zone.Parked[^1];
                     zone.Parked.RemoveAt(zone.Parked.Count - 1);
@@ -363,14 +389,12 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
                 float d = Near(eye, inst.Centre) - RequestMargin;
                 if (d > range)
                 {
-                    // Parked out of the list walked every frame (thousands at long object distances).
-                    if (!inst.Stand && inst.Limit < objectRange)
-                    {
-                        zone.Parked.Add(inst);
-                        zone.ParkedLimit = Math.Max(zone.ParkedLimit, inst.Limit);
-                        list[i] = list[^1];
-                        list.RemoveAt(list.Count - 1);
-                    }
+                    // Parked out of the list walked every frame (thousands at long object distances; each test walks the kept points too).
+                    zone.Parked.Add(inst);
+                    if (inst.Stand) zone.ParkedStand = true;
+                    else zone.ParkedLimit = Math.Max(zone.ParkedLimit, inst.Limit);
+                    list[i] = list[^1];
+                    list.RemoveAt(list.Count - 1);
                     continue;
                 }
                 switch (inst.Mesh.Status)

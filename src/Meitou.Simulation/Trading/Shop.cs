@@ -60,7 +60,7 @@ public sealed class Shop
 /// <item>The vendor lists share n by their weights (v0; 0 counts as 100, engine reading), round(n x w / sum), the last taking what the rounding left.</item>
 /// <item>Each unit is a weighted pick from its list (<see cref="VendorList"/>), skipping the <c>forbidden items</c> of the trader's town and faction cultures. Armour gets a grade from the
 /// faction's armour chances and the grade's quality (5 / 20 / 40 / 60 / 80 / 95); a weapon a manufacturer from the list and a model from the manufacturer (how the original rolls a shop
-/// weapon's quality is <b>Unknown</b>; this is the character generator's rule).</item>
+/// weapon's quality is <b>Unknown</b>; this is the character generator's rule); a robotic limb a level from <see cref="LimbGrade"/>, a crossbow from <see cref="CrossbowGrade"/> (no manufacturer).</item>
 /// <item>The units are merged into stacks up to their stack limit, sorted by unit price (dearest first: the sort key is the price, its direction <b>Unknown</b>) and put into the stock;
 /// what does not fit is destroyed.</item>
 /// <item>The purse is trunc(clamp(0.25 x the stock's value at full price, 3000, 25000) x wealth); the template's <c>vendor money</c> is a building shop's and is not read.</item>
@@ -102,7 +102,7 @@ public static class ShopFiller
             assigned += count;
             var entries = list.Entries.Where(e => town?.Forbidden.Contains(e.Id) != true && own?.Forbidden.Contains(e.Id) != true).ToList();
             for (int k = 0; k < count && entries.Count > 0; k++)
-                if (Make(Pick(entries, ref rng), list, faction, market, data.Db, ref rng) is { } item) Merge(units, item);
+                if (Make(Pick(entries, ref rng), list, faction, template, market, data.Db, ref rng) is { } item) Merge(units, item);
             if (list.MoneyItemProb > 0 && rng.NextFloat() <= list.MoneyItemProb && list.MoneyItemMax >= list.MoneyItemMin)
                 cats += list.MoneyItemMin + rng.NextInt(list.MoneyItemMax - list.MoneyItemMin + 1);
         }
@@ -145,17 +145,46 @@ public static class ShopFiller
         units.Add(item);
     }
 
-    static ItemInstance? Make(VendorEntry entry, VendorList list, GameRecord? faction, Market market, GameDatabase db, ref RandomStream rng)
+    static ItemInstance? Make(VendorEntry entry, VendorList list, GameRecord? faction, SquadTemplate template, Market market, GameDatabase db, ref RandomStream rng)
     {
         float quality = entry.Type == FcsRecordType.ARMOUR ? CharacterGenerator.QualityOfGrade(Grade(faction, ref rng)) : 0;
         if (market.Items.Create(entry.Id, 1, quality) is not { } item) return null;
-        if (entry.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW && Maker(list, db, ref rng) is { } made)
+        if (entry.Type == FcsRecordType.LIMB_REPLACEMENT) item.Level = CharacterGenerator.QualityOfGrade(LimbGrade(template.RoboticsLevels, ref rng));
+        if (entry.Type == FcsRecordType.CROSSBOW) item.Level = CharacterGenerator.QualityOfGrade(CrossbowGrade(template.CrossbowLevels, ref rng));
+        if (entry.Type == FcsRecordType.WEAPON && Maker(list, db, ref rng) is { } made)
         {
             item.CompanyId = made.Maker.StringId;
             item.MaterialId = made.Model ?? "";
             item.Level = made.Level;
         }
         return item;
+    }
+
+    /// <summary>
+    /// A shop limb's grade around the template's <c>robotics levels</c> g (<c>FUN_140955370</c>, <b>Verified</b>): g weighs 100, g - 2 22 when g > 1, g - 1 44 when g > 0,
+    /// g + 1 44 when g &lt; 5, g + 2 22 when g &lt; 4; the roll is an int in [0, total) against the running sums in that order (engine reading of the roll's range).
+    /// </summary>
+    public static int LimbGrade(int g, ref RandomStream rng) =>
+        Spread([(g, 100), (g - 2, g > 1 ? 22 : 0), (g - 1, g > 0 ? 44 : 0), (g + 1, g < 5 ? 44 : 0), (g + 2, g < 4 ? 22 : 0)], g, ref rng);
+
+    /// <summary>
+    /// A shop crossbow's grade around the template's <c>crossbow levels</c> g (<c>FUN_140955210</c>, <b>Verified</b>): g weighs 100; unless g is 5, g - 2 20 when g > 1, g - 1 33
+    /// when g > 0, g + 1 33 when g &lt; 5, g + 2 5 when g &lt; 4. Rolled as <see cref="LimbGrade"/>.
+    /// </summary>
+    public static int CrossbowGrade(int g, ref RandomStream rng) => g == 5 ? g :
+        Spread([(g, 100), (g - 2, g > 1 ? 20 : 0), (g - 1, g > 0 ? 33 : 0), (g + 1, g < 5 ? 33 : 0), (g + 2, g < 4 ? 5 : 0)], g, ref rng);
+
+    static int Spread(ReadOnlySpan<(int Grade, int Weight)> w, int g, ref RandomStream rng)
+    {
+        int total = 0;
+        foreach (var (_, weight) in w) total += weight;
+        int roll = rng.NextInt(total);
+        foreach (var (grade, weight) in w)
+        {
+            if (roll < weight) return grade;
+            roll -= weight;
+        }
+        return g;
     }
 
     /// <summary>A grade 0..5 by the faction's <c>armors 0</c> .. <c>armors 5</c> chances (the field names as the doc gives them; the spelling in the data is <b>Unknown</b>).</summary>

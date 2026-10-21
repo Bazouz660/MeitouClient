@@ -27,6 +27,8 @@ public sealed unsafe class DebugOverlay : IDisposable
     [
         @"C:\Windows\Fonts\consola.ttf", @"C:\Windows\Fonts\CascadiaMono.ttf", @"C:\Windows\Fonts\cour.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+        // stb_truetype cannot bake from .ttc collections without an index, so macOS needs a plain .ttf (Menlo is a .ttc here).
+        "/System/Library/Fonts/Supplemental/Courier New.ttf", "/System/Library/Fonts/SFNS.ttf",
         "/System/Library/Fonts/Menlo.ttc",
     ];
 

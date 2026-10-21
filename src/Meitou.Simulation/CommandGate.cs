@@ -56,14 +56,14 @@ public static class CommandGate
 
     delegate GateResult Rule(Check c, SimCommand command);
 
-    static readonly FrozenSet<Type> hostOnly = new[] { typeof(RepathCommand), typeof(SandboxMovement), typeof(StartContract), typeof(JoinPlayer), typeof(TransferSquad) }.ToFrozenSet();
+    static readonly FrozenSet<Type> hostOnly = new[] { typeof(RepathCommand), typeof(SandboxMovement), typeof(StartContract), typeof(ChangeAi), typeof(Dialogue.DialogueEvent), typeof(JoinPlayer), typeof(TransferSquad) }.ToFrozenSet();
     static readonly FrozenDictionary<Type, Rule> rules = Rules();
     static readonly ConcurrentDictionary<Type, PropertyInfo[]> shapes = new();
 
     /// <summary>Every command type with a rule: every concrete <see cref="SimCommand"/> of this assembly (a test enumerates them). Any other type is refused.</summary>
     public static IReadOnlySet<Type> Ruled { get; } = rules.Keys.ToFrozenSet();
 
-    /// <summary>Whether a remote player may never send <paramref name="type"/> (the host's own bookkeeping: repaths, the sandbox, contracts, joins, squad transfers). <see cref="DebugCommand"/>s are not: they pass with <see cref="GateOptions.Cheats"/>.</summary>
+    /// <summary>Whether a remote player may never send <paramref name="type"/> (the host's own bookkeeping: repaths, the sandbox, contracts and AI changes, dialogue events, joins, squad transfers). <see cref="DebugCommand"/>s are not: they pass with <see cref="GateOptions.Cheats"/>.</summary>
     public static bool HostOnly(Type type) => hostOnly.Contains(type);
 
     /// <summary>
@@ -168,6 +168,8 @@ public static class CommandGate
         /// <summary>A building of the player faction (<see cref="BuildingRegistry"/>).</summary>
         public bool PlayerSite(string site) => world.Buildings.Find(site) is { } b && b.Owner == world.Player.Faction;
         public bool Machine(string site) => world.Machines.Find(site) is not null;
+        /// <summary>A natural rock's site id (<see cref="Production.ProductionSystem.NaturalId"/>): its machine is made at the first order; the production system ignores an id that names no rock.</summary>
+        public bool Rock(string site) => Production.ProductionSystem.IsNatural(site);
         public bool Container(string fixture) => world.Fixtures.Find(fixture) is { Contents: not null };
 
         /// <summary>One of the sender's player squads (of the player faction, not a platoon's active half).</summary>
@@ -201,6 +203,8 @@ public static class CommandGate
         On<RepathCommand>((_, _) => No(HostOnlyText));
         On<SandboxMovement>((_, _) => No(HostOnlyText));
         On<StartContract>((_, _) => No(HostOnlyText));
+        On<ChangeAi>((_, _) => No(HostOnlyText));
+        On<Dialogue.DialogueEvent>((_, _) => No(HostOnlyText));
         On<JoinPlayer>((_, _) => No(HostOnlyText));
         On<TransferSquad>((_, _) => No(HostOnlyText));
 
@@ -224,6 +228,7 @@ public static class CommandGate
         On<EndConversation>((_, x) => Ok(x));
         On<FinishCreation>((_, x) => Ok(x));
         On<DialogueChoice>((_, x) => x.Index >= 0 ? Ok(x) : No(BadValue));
+        On<TakeLootItem>((_, x) => x.Index >= 0 ? Ok(x) : No(BadValue));
         On<FocusCommand>((_, x) => Ok(x));
         On<QueueResearch>((_, x) => x.Research.Length > 0 ? Ok(x) : No(BadValue));
         On<CancelResearch>((_, x) => x.Research.Length > 0 ? Ok(x) : No(BadValue));
@@ -245,6 +250,7 @@ public static class CommandGate
         // The sender's characters and a living target.
         On<PickUpOrder>((c, x) => Targeted(c, x, x.Carriers, x.Target, (y, l) => y with { Carriers = l }));
         On<LootOrder>((c, x) => Targeted(c, x, x.Looters, x.Target, (y, l) => y with { Looters = l }));
+        On<OpenLootOrder>((c, x) => Targeted(c, x, x.Looters, x.Target, (y, l) => y with { Looters = l }));
         On<StealthKoOrder>((c, x) => Targeted(c, x, x.Attackers, x.Target, (y, l) => y with { Attackers = l }));
         On<TreatOrder>((c, x) => Targeted(c, x, x.Medics, x.Patient, (y, l) => y with { Medics = l }));
         On<SplintOrder>((c, x) => Targeted(c, x, x.Medics, x.Patient, (y, l) => y with { Medics = l }));
@@ -261,8 +267,8 @@ public static class CommandGate
         On<DoorOrder>((c, x) => Placed(c, x, x.Characters, c.World.Fixtures.Find(x.Door) is { Kind: FixtureKind.Door }, (y, l) => y with { Characters = l }));
         On<OpenContainerOrder>((c, x) => Placed(c, x, x.Characters, c.Container(x.Fixture), (y, l) => y with { Characters = l }));
         On<PickUpItemOrder>((c, x) => Placed(c, x, x.Characters, c.World.GroundItems.Find(x.Item) is not null, (y, l) => y with { Characters = l }));
-        On<OperateOrder>((c, x) => Placed(c, x, x.Characters, c.Machine(x.Site) || c.PlayerSite(x.Site), (y, l) => y with { Characters = l }));
-        On<AddJob>((c, x) => !Enum.IsDefined(x.Type) ? No(BadValue) : Placed(c, x, x.Characters, c.Machine(x.Site) || c.PlayerSite(x.Site), (y, l) => y with { Characters = l }));
+        On<OperateOrder>((c, x) => Placed(c, x, x.Characters, c.Machine(x.Site) || c.PlayerSite(x.Site) || c.Rock(x.Site), (y, l) => y with { Characters = l }));
+        On<AddJob>((c, x) => !Enum.IsDefined(x.Type) ? No(BadValue) : Placed(c, x, x.Characters, c.Machine(x.Site) || c.PlayerSite(x.Site) || c.Rock(x.Site), (y, l) => y with { Characters = l }));
         On<BuildOrder>((c, x) => c.PlayerSite(x.Site) ? Listed(c, x, x.Characters, (y, l) => y with { Characters = l }) : No(NotYourBuilding));
         On<DismantleOrder>((c, x) => c.PlayerSite(x.Site) ? Listed(c, x, x.Characters, (y, l) => y with { Characters = l }) : No(NotYourBuilding));
 
@@ -271,6 +277,9 @@ public static class CommandGate
         On<OpenTrade>((c, x) => c.Other(x.Trader) ? One(c, x, x.Customer) : No(Gone));
         On<MoveInventoryItem>((c, x) => One(c, x, x.Character));
         On<ArrangeInventory>((c, x) => One(c, x, x.Character));
+        On<DropInventoryItem>((c, x) => One(c, x, x.Character));
+        // The sender's open loot window: its looter (the carry system checks the window is the sender's and still open).
+        On<PutLootItem>((c, x) => One(c, x, x.Character));
         On<ReadMapItem>((c, x) => One(c, x, x.Character));
         On<RemoveJob>((c, x) => One(c, x, x.Character));
         On<MoveJob>((c, x) => One(c, x, x.Character));

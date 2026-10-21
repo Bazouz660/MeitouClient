@@ -635,7 +635,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Ruined = false;
         world.Buildings.Changed();
         SyncChildren(world, site);
-        if (site.Owner == world.Player.Faction) world.Post($"Building '{site.Name}' construction complete.");
+        if (site.Owner == world.Player.Faction) world.Post(Loc.Tr("Building '{1}' construction complete.", site.Name));
     }
 
     /// <summary>The first tick on a destroyed building (<b>Verified</b>, <c>FUN_1405595a0</c>): no longer complete, progress 0.4 x target, each delivered amount floor(delivered x U[0.3, 0.5) + 0.5).</summary>

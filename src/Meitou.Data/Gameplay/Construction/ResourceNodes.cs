@@ -3,13 +3,13 @@ using Meitou.Data.World;
 
 namespace Meitou.Data.Gameplay.Construction;
 
-/// <summary>A mineable rock (docs/game/buildings-production.md "Resources"): where it stands, its <c>world resource mining</c> and its radius.</summary>
-public readonly record struct ResourceNode(Vector3 Position, int Resource, float Radius);
+/// <summary>A mineable rock (docs/game/buildings-production.md "Resources"): where it stands, its <c>world resource mining</c>, its radius and its BUILDING record.</summary>
+public readonly record struct ResourceNode(Vector3 Position, int Resource, float Radius, string Record = "");
 
 /// <summary>Where the world's mineable rocks are.</summary>
 public interface IResourceNodes
 {
-    /// <summary>The rocks of <paramref name="resource"/> within <paramref name="range"/> (horizontally) of a point.</summary>
+    /// <summary>The rocks of <paramref name="resource"/> (0: of any) within <paramref name="range"/> (horizontally) of a point.</summary>
     IReadOnlyList<ResourceNode> Near(int resource, float x, float z, float range);
 }
 
@@ -36,7 +36,7 @@ public sealed class FoliageResourceNodes(FoliageWorld world, GameDatabase db) : 
             for (int zx = first.X; zx <= last.X; zx++)
                 for (int zy = first.Y; zy <= last.Y; zy++)
                     foreach (var node in Zone(new ZoneCoordinate(zx, zy)))
-                        if (node.Resource == resource && Vector2.DistanceSquared(new(node.Position.X, node.Position.Z), new(x, z)) <= range * range) found.Add(node);
+                        if ((resource == 0 || node.Resource == resource) && Vector2.DistanceSquared(new(node.Position.X, node.Position.Z), new(x, z)) <= range * range) found.Add(node);
         }
         return found;
     }
@@ -48,7 +48,7 @@ public sealed class FoliageResourceNodes(FoliageWorld world, GameDatabase db) : 
         if (zone.IsInsideGrid)
             foreach (var instance in world.Zone(zone).Instances)
                 if (instance.Mesh.BuildingType is { } building && ResourceOf(building) is > 0 and var resource)
-                    list.Add(new ResourceNode(instance.Position, resource, NodeRadius));
+                    list.Add(new ResourceNode(instance.Position, resource, NodeRadius, building.StringId));
         zones[zone] = list;
         return list;
     }

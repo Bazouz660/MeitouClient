@@ -132,7 +132,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             Assert.Contains(ui.UiFrame, c => c.Properties.ContainsKey("CaptionOwner") && c.Caption == "THIEVES BACKPACK");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name is "CapacityText" or "TypeText");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "inventory-scroll-thumb");
-            Assert.True(ui.UiKey(Key.Escape));
+            Click(ui, "OpenBagButton");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "backpack_content");
             Assert.Contains(ui.UiFrame, c => c.Name == "main");
         }

@@ -33,7 +33,7 @@ public static partial class MyGuiPresentation
     public static float Num(IReadOnlyDictionary<string, string> p, string key, float fallback = 0) => p.TryGetValue(key, out var s) && float.TryParse(s, NumberStyles.Float, Inv, out float v) ? v : fallback;
     static bool IsBar(MyGuiWidget w) => w.Type == "ScrollBar" || w.UserStrings.GetValueOrDefault("LE_TargetWidgetType") == "ScrollBar";
     static string? PartText(UiBindings b, IReadOnlyDictionary<string, string> props) =>
-        b.Text.Count > 0 && props.TryGetValue("TemplateOwner", out var o) && props.TryGetValue("TemplatePart", out var part) && part.Length > 0 ? b.Text.GetValueOrDefault(o + "." + part) : null;
+        b.Text.Count > 0 && props.TryGetValue("TemplateOwner", out var o) && props.TryGetValue("TemplatePart", out var part) && part.Length > 0 ? b.Coded(o + "." + part) : null;
     /// <summary>Where the children of a ScrollView's client are placed: the scrolled canvas rather than the client.</summary>
     static UiRect ChildParent(IReadOnlyDictionary<string, string> props, UiRect bounds) => props.TryGetValue("CanvasOrigin", out var s) ? UiRect.Parse(s) : bounds;
 
@@ -282,7 +282,7 @@ public static partial class MyGuiPresentation
     {
         var items = b.Lists.GetValueOrDefault(w.Name) ?? [];
         int selected = b.SelectedItems.GetValueOrDefault(w.Name, -1);
-        string text = selected >= 0 && selected < items.Count ? items[selected].Caption : b.Text.GetValueOrDefault(w.Name) ?? "";
+        string text = selected >= 0 && selected < items.Count ? items[selected].Caption : b.Coded(w.Name) ?? "";
         foreach (string part in new[] { "Button", "Client" })
             if (IndexOfPart(result, w, part) is var i and >= 0)
                 result[i] = result[i] with { Action = $"mygui:combo:{w.Name}:toggle", Pickable = true, Enabled = enabled, Caption = part == "Client" ? text : result[i].Caption };

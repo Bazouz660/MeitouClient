@@ -54,9 +54,9 @@ sealed partial class GameHost
         var spot = g.DuelAt is { } at ? new Vector2(at.X, at.Z) : DuelSpot;
         duelSpot = new Vector3(spot.X, gpu.Terrain.HeightAt(spot.X, spot.Y), spot.Y);
         var db = scene.Database!;
-        duelRecord = db.OfType(FcsRecordType.CHARACTER).FirstOrDefault(r => r.Name == DuelRecord)?.StringId
+        duelRecord = db.OfType(FcsRecordType.CHARACTER).FirstOrDefault(r => r.BaseName == DuelRecord)?.StringId
             ?? throw new InvalidOperationException($"--duel: no CHARACTER named '{DuelRecord}' in the game data");
-        int faction = popData!.Factions.Select((f, i) => (f, i)).FirstOrDefault(p => p.f.Name == DuelFaction, (null!, -1)).Item2;
+        int faction = popData!.Factions.Select((f, i) => (f, i)).FirstOrDefault(p => p.f.BaseName == DuelFaction, (null!, -1)).Item2;
         duelFaction = faction >= 0 ? faction : null;
         if (duelFaction is null) Console.Error.WriteLine($"duel      no faction named '{DuelFaction}': the pair gets another faction's looks");
         duelVariants = HelmetedVariants();

@@ -88,10 +88,13 @@ public static class WorldObjectLayout
     /// </summary>
     public static PlacedMesh? Item(GameRecord item, string placementId, Vector3 worldPosition, Quaternion rotation)
     {
-        string mesh = item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
+        string mesh = ItemMesh(item);
         if (mesh.Length == 0) return null;
         return new PlacedMesh(mesh, InstanceTransform(worldPosition, rotation, Vector3.One), item, item, placementId, PlacedKind.Item);
     }
+
+    /// <summary>The mesh a loose item is drawn with: its <c>ground mesh</c>, else its <c>mesh</c>; "" for none.</summary>
+    public static string ItemMesh(GameRecord item) => item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
 
     /// <summary>
     /// Meshes of a placed building and of the doors it lists. <paramref name="worldPosition"/> is the absolute position

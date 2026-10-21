@@ -16,7 +16,7 @@ public sealed partial class ProductionSystem
 
     void AddJobs(World world, AddJob add)
     {
-        if (world.Buildings.Find(add.Site) is null) return;
+        if (Site(world, add.Site) is null) return;
         var table = world.Characters;
         foreach (var id in world.Actors(add, add.Characters))
             if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold) PermaJobs.Add(cold, add.Type, new PermaJob(add.Type, add.Site));
@@ -116,13 +116,13 @@ public sealed partial class ProductionSystem
         }
         if ((options & SquadAi.Sleep) != 0 && Injured(cold))
         {
-            if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && world.Buildings.Find(bed) is { } kept && Gap(kept.Position, at) <= Settings.HaulRange)
+            if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && Site(world, bed) is { } kept && Gap(kept.Position, at) <= Settings.HaulRange)
                 return (TaskType.GO_HOME_AND_GO_TO_BED, bed);
             if (NearestSite(world, at, Settings.HaulRange, (s, m) => IsBed(m) && Free(world, cold, s, m)) is { } free) return (TaskType.GO_HOME_AND_GO_TO_BED, free);
         }
         if ((options & SquadAi.Sit) != 0)
         {
-            if (cold.Implicit == TaskType.SIT_AROUND && cold.OperateSite is { } seat && world.Buildings.Find(seat) is { } kept && Gap(kept.Position, at) <= SeatRange)
+            if (cold.Implicit == TaskType.SIT_AROUND && cold.OperateSite is { } seat && Site(world, seat) is { } kept && Gap(kept.Position, at) <= SeatRange)
                 return (TaskType.SIT_AROUND, seat);
             if (NearestSite(world, at, SeatRange, (s, m) => IsSeat(m) && Free(world, cold, s, m)) is { } free) return (TaskType.SIT_AROUND, free);
         }
@@ -150,7 +150,7 @@ public sealed partial class ProductionSystem
         float bestGap = float.MaxValue;
         foreach (var m in world.Machines.All)
         {
-            if (world.Buildings.Find(m.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
+            if (Site(world, m.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
             float gap = Gap(site.Position, at);
             if (gap > range || gap > bestGap || (gap == bestGap && string.CompareOrdinal(m.Site, best) > 0) || !ok(site, m)) continue;
             best = m.Site;
@@ -163,7 +163,7 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        var site = world.Buildings.Find(siteId)!;
+        var site = Site(world, siteId)!;
         var m = Ensure(world, site)!;
         var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)table.Next[slot].Task;
         if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m);
@@ -202,7 +202,7 @@ public sealed partial class ProductionSystem
     /// </summary>
     bool Blocked(World world, CharacterCold cold, PermaJob job)
     {
-        if (job.Site is not { } id || world.Buildings.Find(id) is not { Complete: true } site || Ensure(world, site) is not { } m) return true;
+        if (job.Site is not { } id || Site(world, id) is not { Complete: true } site || Ensure(world, site) is not { } m) return true;
         switch (job.Type)
         {
             case TaskType.OPERATE_MACHINERY:
@@ -259,7 +259,7 @@ public sealed partial class ProductionSystem
         float bestGap = float.MaxValue;
         foreach (var s in world.Machines.All)
         {
-            if (s.Data.IsStorage || s.Output is not { Count: > 0 } output || world.Buildings.Find(s.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
+            if (s.Data.IsStorage || s.Output is not { Count: > 0 } output || Site(world, s.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
             float gap = Gap(site.Position, storage.Position);
             if (gap > Settings.HaulRange || gap > bestGap || (gap == bestGap && string.CompareOrdinal(s.Site, best) > 0)) continue;
             if (items.Create(output.Recipe.Item, 1) is not { } one || !store.Data.Accepts(one.Record, one.Type) || !Fits(store.Storage!, one)) continue;
@@ -274,7 +274,7 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var job = cold.Jobs[k];
-        var site = world.Buildings.Find(job.Site!)!;
+        var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
         if (cold.JobIndex < 0) cold.ResumeTask = (CharacterTask)table.Next[slot].Task;
         if (job.Type == TaskType.OPERATE_MACHINERY)
@@ -309,8 +309,8 @@ public sealed partial class ProductionSystem
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
         if (cold.HaulTo is not { } storeId || cold.HaulSite is not { } at
-            || world.Buildings.Find(storeId) is not { Complete: true } || world.Machines.Find(storeId) is not { Storage: not null } store
-            || world.Buildings.Find(at) is not { Complete: true } atSite || world.Machines.Find(at) is not { } there || !Able(cold) || cold.Inventory is not { } inv)
+            || Site(world, storeId) is not { Complete: true } || world.Machines.Find(storeId) is not { Storage: not null } store
+            || Site(world, at) is not { Complete: true } atSite || world.Machines.Find(at) is not { } there || !Able(cold) || cold.Inventory is not { } inv)
         {
             End(table, slot);
             return;

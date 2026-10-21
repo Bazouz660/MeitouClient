@@ -251,7 +251,9 @@ again at load makes new squads (**Observed**, headless new game with town buildi
 town's fresh squads are). On save, a restored platoon is rewritten
 only once loaded (its characters from the world), otherwise only its position/package; a squad the population made is written as a new PLATOON with the
 `SaveBuilder` key set plus `basetown` (town id), `hometown` (the town state's `hand`), `homebuilding` (below), `is resident`, `sqt`, `map area sid` / `map area name`
-(the BIOME_GROUP of its cell) and `currentPackage`. **Observed** (headless load of saves 1, 2,
+(the BIOME_GROUP of its cell) and `currentPackage`. Dialogue-given AI (`AiSave`, every written or rewritten platoon but a wild one): `contractjob` (the contract
+AI_PACKAGE id, "" none), `jobhr` (float, the game hours it ends at: the start time + its hours, 10 min under 1 h; `FUN_140272240`), `replacementAI` (the `change AI` package,
+"" the template's), read and written by `FUN_140272c20` / `FUN_14026c2d0` (**Observed**); the contract loads with no target, as the original's. **Observed** (headless load of saves 1, 2,
 wade): NPCs within 5 units of their saved positions (save 2: 4 of 107 differ in Y only, flat test ground); a Meitou save → load restores them
 exactly with no fresh squads for save 2 and a new game (with town buildings: 36 NPCs after two save → load cycles for a new game at The Hub; saves 1, 2, 3, wade keep
 86, 116, 18, 114). A pinned platoon is homed in the building its `homebuilding` handle names (state `<id>-S23`
@@ -271,6 +273,12 @@ PLATOON keys (**Verified**):
 - `homebuilding` (handle) is bound through the game's per-frame system-message queue (`FUN_1407b65b0`): only if the building resolves that frame, else the message is
   dropped (**Unknown** whether something rebinds it later). Meitou writes the handle of the building's state in the save's zone file (a Meitou save writes a file for
   every visited zone, [Zone files](#zone-files)), else its level-data handle ([handles](#object-handles-and-slot-lists)).
+- `inventory refresh time` (float) is a trader platoon's next restock in absolute game hours (day x 24 + hour) (**Observed**: METARU's 107 and its quicksave's 117
+  trader platoons; the largest is 200.3 at clock 177.4 and 207.7 at 186.6, about the clock + a 24 h `vendors refresh time`; three or four are 0). Meitou writes it for every
+  shop with Meitou's own `meitou shop` (string: the stock as JSON, `[]` when empty, the container format of [locks](../game/locks.md)) and `meitou shop fills` (int, the next
+  fill's roll key), and restores the shop from them when it makes the platoon; without `meitou shop` the shop is filled anew. Items' stolen marks are not kept. **Observed**
+  (headless, real data): two squad shops (one with an item taken out) come back with the same items, cells, purse, fill count and restock tick (±1); a building shop
+  (merged grid of its home's containers, wider than 18 when they are) is restored by code only, and loses the cells past 18 if its home does not resolve.
 
 ### Wild and nest platoons (Meitou mapping)
 
@@ -330,6 +338,10 @@ has an override world state (its lists are then replaced) or `0-buildinglist` ho
 - Slot list: the last level layer's list (a layer without one empties it), plus slots allocated in play (the lists Meitou makes this way are within the saved ones in 181 of 183 files, the other two lack
   one slot each). `nextId` can be above the highest record id.
 - Nest buildings are not saved (no type-85 `town` handle in save 2's 133 files); nest debris are `1-itemlist` ITEMs whose `persist` handle is the nest (222 in save 2).
+  Meitou places neither, so writes neither.
+- Shop stock (**Observed**, METARU): 9025 of its 9038 `backpack_content` INVENTORY_ITEM_STATEs are in zone files (the shop buildings' containers), 13 in platoon
+  files; no trader character carries its stock. Meitou cannot address those containers (unmapped interior ids) and saves a shop on its PLATOON instead
+  ([NPC platoons](#npc-platoons-meitou-mapping)).
 - `1-itemlist` (**Observed**, METARU: 285 items in its zone files): INSTANCE_COLLECTION, name "0", flags 0; entries numbered "1", "2", ... with no states, the item's position and a
   full (physics-settled) quaternion, target an ITEM record (type 4, name "0", flags 0) of the same file, id `<n>-zone<X>.<Y>-INGAME` of the zone it was made in (an item
   moved to another zone keeps it). Its keys are INVENTORY_ITEM_STATE's with `in inventory` false and `section` "": `base data sid`, `material sid`, `company sid`,
@@ -431,7 +443,9 @@ every `fwc id` and all 77 `poss time` are 0 (no campaign ever started; no save h
 `poss` list is its merged FACTION `campaigns` list in order (103 of 103). `updatetime` lies in (clock, clock + 6], spread over about
 0.6 h (all 40 in the two day-1 saves). Meitou's `SaveBuilder` writes `updatetime` 40 and zero counts, as a new game; a captured
 world writes its war managers over the loaded state (unknown keys kept, numbered keys past the new counts removed), and a campaign squad
-never made is written as a PLATOON with content file `platoon/` (no file) so its `p<i>` handle resolves.
+never made is written as a PLATOON with content file `platoon/` (no file) so its `p<i>` handle resolves. Meitou also writes floats
+`meitou phase start c<i>`, `meitou fight start c<i>`, `meitou arrived c<i>`, `meitou announced c<i>`, `meitou carry start c<i>` (absolute game hours; absent:
+not started) and reads them back (a missing phase start is the load's hour, as the original). **Observed** (headless, real data): all five come back equal.
 
 ### Cross-checks against base data (the sample vs `GameDatabase` of the four base files)
 
@@ -468,7 +482,7 @@ never made is written as a PLATOON with content file `platoon/` (no file) so its
 
 - What `byteSize` encodes beyond "child count for some record classes", and whether the game ever reads it (it does not at load).
 - The two long slot lists (2503 and 2969 ints) at the end of `quick.save`; the `S` serial's use when a handle goes stale (what happens on a mismatch).
-- The roles of BIOMES `E<n>` instances (EffectHandler state fields), `_w_fog_a`, the short-key CAMERA floats and bools (`bs cod gdm ht nnm ps rs`, `bl ep`), `TI day/dat0`, `towntime`, `jobhr`, `ssct`, and whether MEDICAL `fed` / `KO` are the stomach buffer and the KO timer (the other MEDICAL floats are explained above).
+- The roles of BIOMES `E<n>` instances (EffectHandler state fields), `_w_fog_a`, the short-key CAMERA floats and bools (`bs cod gdm ht nnm ps rs`, `bl ep`), `TI day/dat0`, `towntime`, `ssct`, and whether MEDICAL `fed` / `KO` are the stomach buffer and the KO timer (the other MEDICAL floats are explained above).
 - Whether `loadGame` rejects or adapts to a `mods` list that differs from the current load order (nothing in the sample: single base-game save).
 - Prisoners, dead characters, bounties, trade and mission state, and player outposts: not present in an early-game sample. Player-built building and outpost keys are known from the code only ([zones](zones.md#placement-keys), [outposts](#player-outposts)).
 - The condition list of the autosave pause, and how `Import Game` selects squads (`FUN_140378a30`, `FUN_140377710`).

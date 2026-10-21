@@ -35,6 +35,8 @@ public sealed record ArrestSettings
     /// <summary>A bounty hunter stops chasing a target farther than this; after a hunt he leaves that target alone for <see cref="HuntRestSeconds"/> game seconds.</summary>
     public float HuntLeash { get; init; } = 3000;
     public float HuntRestSeconds { get; init; } = 600;
+    /// <summary>After a guard fires event 44 or 45 at a target, nobody fires again at it for this many game seconds, longer while the guard is still saying or walking up to say it.</summary>
+    public float SpotRetrySeconds { get; init; } = 60;
     /// <summary>Keep a <see cref="ArrestSystem.Log"/> (tests).</summary>
     public bool RecordLog { get; init; }
 }
@@ -67,7 +69,21 @@ public sealed class Arrest
     }
 }
 
-public enum ArrestEventKind { Attack, Fine, Paid, Arrest, Lifted, Jailed, Dropped, GaveUp, Released, Bailed, Claimed, Hunt, HuntOver }
+public enum ArrestEventKind { Attack, Fine, Paid, Arrest, Lifted, Jailed, Dropped, GaveUp, Released, Bailed, Claimed, Hunt, HuntOver, Spotted }
+
+/// <summary>A guard that fired event 44 or 45 at a target (serial state of the <see cref="ArrestSystem"/>): the target is left to that dialogue until <see cref="Until"/>.</summary>
+public sealed class Spotting
+{
+    public required CharacterId Guard { get; init; }
+    public required CharacterId Target { get; init; }
+    public required int Event { get; init; }
+    public long Until { get; set; }
+
+    internal void Hash(ref StateHasher h)
+    {
+        h.Add(Guard); h.Add(Target); h.Add(Event); h.Add(Until);
+    }
+}
 
 public readonly record struct ArrestEvent(long Tick, ArrestEventKind Kind, CharacterId Guard, CharacterId Target, int Faction, int Amount);
 
@@ -76,12 +92,13 @@ public readonly record struct ArrestEvent(long Tick, ArrestEventKind Kind, Chara
 /// in slot order, after the crime system's sweep.
 /// <list type="bullet">
 /// <item><b>Spotting</b> (11.8): an awake NPC within 400 that sees a player character whose bounty with its faction reaches its class's threshold (<see cref="SpotThreshold"/>) fills the
-/// target's recognition meter, or recognises it at once while it is recently wanted. Only police-like lookers act on it (the original's law dialogues); the nearest free one does. A
-/// police-like NPC in its own town also arrests an escaped prisoner it sees there (event 45). A police-like witness that books a crime acts at once (events 41/43).</item>
-/// <item><b>Fine or arrest</b> (11.7, the dialogue's choices taken by the engine): outside his town the guard just attacks, with his squad. In it, a bounty of 1..1049 is a fine
-/// (<see cref="FineFor"/>): he walks up and takes it when the player's money is more than it, clearing his faction's entry; otherwise, and for a bigger bounty, he arrests: fights until the
-/// target is down, lifts it (<see cref="Carrying.CarrySystem"/>), carries it to the best free cage (<see cref="FixtureRegistry.FindCage"/>) and imprisons it with its sentence. No free
-/// cage: he drops the captive (engine choice; the original's is Unknown).</item>
+/// target's recognition meter, or recognises it at once while it is recently wanted. The nearest free police-like looker fires event 44 BOUNTY_SPOTTED at it through the
+/// <see cref="Talk"/> dialogue; a police-like NPC in its own town fires event 45 ESCAPED_PRISONER_SPOTTED at an escaped prisoner it sees there. The data's lines then fine (DA 2 and
+/// the "Bounty extortion pay" talk), arrest (DA 29, <see cref="ArrestFromDialogue"/>) or do nothing. A booking witness is left to its witness event; one already fighting arrests at once.</item>
+/// <item><b>Fine or arrest</b> (11.7; the engine's fallback for a world without dialogue events): outside his town the guard just attacks, with his
+/// squad. In it, a bounty of 1..1049 is a fine (<see cref="FineFor"/>): he walks up and takes it when the player's money is more than it, clearing his faction's entry; otherwise, and for
+/// a bigger bounty, he arrests: fights until the target is down, lifts it (<see cref="Carrying.CarrySystem"/>), carries it to the best free cage (<see cref="FixtureRegistry.FindCage"/>)
+/// and imprisons it with its sentence. No free cage: he drops the captive (engine choice; the original's is Unknown).</item>
 /// <item><b>Release</b> (11.5, goal 211): a player character whose sentence is served and who is awake is freed by the jail's faction (a police-like NPC of it near the cage, else the
 /// system in its name; engine choice), which erases its and the jail's bounty entries. NPC prisoners stay (their jailers' AI is not built).</item>
 /// <item><b>Bail, claims, hunters</b> (11.4, 11.5, 11.8; ArrestSystem.Bounties.cs): <see cref="PayBailOrder"/>, the player's <see cref="PutInCageOrder"/> with its reward
@@ -94,6 +111,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public const int FineLimit = 1050;
 
     readonly List<Arrest> arrests = [];
+    readonly List<Spotting> spottings = [];
     readonly List<ArrestEvent> log = [];
 
     public ArrestSettings Settings { get; } = settings ?? new ArrestSettings();
@@ -101,6 +119,10 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     /// <summary>The carry system the guards lift and carry with; null: an arrest ends when the target is down.</summary>
     public Carrying.CarrySystem? Carry { get; set; }
     public IReadOnlyList<Arrest> Arrests => arrests;
+    public IReadOnlyList<Spotting> Spottings => spottings;
+    /// <summary>The dialogue spotting fires events 44 and 45 through; null, or its event lines off (<see cref="Dialogue.DialogueSettings.AmbientEvents"/>): the engine's fine or arrest instead.</summary>
+    public Dialogue.DialogueSystem? Talk { get; set; }
+    bool Talks => Talk is { Settings.AmbientEvents: true };
     public IReadOnlyList<ArrestEvent> Log => log;
 
     /// <summary>
@@ -128,6 +150,11 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public void SlowWorld(World world)
     {
         foreach (var b in Crimes.BookingsOf(world.Tick)) Booked(world, b);
+        for (int k = 0; k < spottings.Count;)
+        {
+            if (StepSpotting(world, spottings[k])) k++;
+            else spottings.RemoveAt(k);
+        }
         if (world.Tick % Math.Max(1, Settings.SpotEveryTicks) == 0) Spot(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
         for (int k = 0; k < arrests.Count;)
         {
@@ -162,9 +189,10 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             && Crimes.IsPoliceLike(world, c) && !Busy(table.IdOf(slot));
     }
 
-    /// <summary>A target the police may go after: a living, awake player character, not carried or in a cage, not already being arrested.</summary>
+    /// <summary>A target the police may go after: a living, awake player character, not carried or in a cage, not already being arrested or left to a spotting's dialogue.</summary>
     bool Suspect(World world, int slot) =>
-        world.Characters.Next[slot].Alive && world.Characters.Cold(slot) is { IsPlayer: true, IsImprisoned: false, CarriedBy.IsNone: true, Medical.Incapacitated: false } && !Busy(world.Characters.IdOf(slot));
+        world.Characters.Next[slot].Alive && world.Characters.Cold(slot) is { IsPlayer: true, IsImprisoned: false, CarriedBy.IsNone: true, Medical.Incapacitated: false } && !Busy(world.Characters.IdOf(slot))
+        && !spottings.Exists(p => p.Target == world.Characters.IdOf(slot));
 
     /// <summary>A police-like witness booked a crime (the original's witnessed-crime dialogues): he deals with the culprit at once.</summary>
     void Booked(World world, Booking b)
@@ -173,6 +201,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         if (!table.TryResolveNext(b.Witness, out int g) || !table.TryResolveNext(b.Culprit, out int t) || !Suspect(world, t)) return;
         var gc = table.Cold(g)!;
         bool fighting = table.Next[g].Task == (byte)CharacterTask.Attack || gc.InCombat;
+        if (!fighting && Talks) return;   // the witness's dialogue event (CrimeSystem) decides, as the spotting's does
         if (fighting ? !Crimes.IsPoliceLike(world, gc) || Busy(b.Witness) || gc.Medical is { Incapacitated: true } : !FreeGuard(world, g)) return;
         Start(world, g, t, force: fighting);
     }
@@ -223,15 +252,48 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             }
             if (escapeGuard >= 0)
             {
-                Start(world, escapeGuard, s, force: true);
+                if (Talks) Spotted(world, escapeGuard, s, EscapedPrisonerSpotted);
+                else Start(world, escapeGuard, s, force: true);
                 continue;
             }
             float step = seconds / Math.Max(Settings.RecognitionSeconds, 1e-3f);
             c.Recognition = seen ? MathF.Min(1, c.Recognition + step) : MathF.Max(0, c.Recognition - step);
             bool recognised = seen && (c.RecentlyWanted > 0 || c.Recognition >= 1);
-            if (recognised && best >= 0) Start(world, best, s, force: false);
+            if (recognised && best >= 0)
+            {
+                if (Talks) Spotted(world, best, s, BountySpotted);
+                else Start(world, best, s, force: false);
+            }
             if (recognised && hunter >= 0 && hunter != best) BeginHunt(world, hunter, s);
         }
+    }
+
+    /// <summary>EV_BOUNTY_SPOTTED, EV_ESCAPED_PRISONER_SPOTTED.</summary>
+    public const int BountySpotted = 44, EscapedPrisonerSpotted = 45;
+
+    /// <summary>
+    /// The guard recognised the target: event <paramref name="ev"/> fired at it (<c>FUN_140856f00</c> / <c>FUN_140859680</c>, economy.md 11.8). What follows is the data's: the line said
+    /// as a bubble arrests (DA 29), sends the guard to talk (DA 2 and an interrupt: the fine), or nothing. The target is left to it for <see cref="ArrestSettings.SpotRetrySeconds"/>
+    /// (engine: the original's recognition fires once; the data's own DC 18 keeps the bounty lines from repeating within 2 hours).
+    /// </summary>
+    void Spotted(World world, int g, int t, int ev)
+    {
+        var table = world.Characters;
+        var guard = table.IdOf(g);
+        var target = table.IdOf(t);
+        if (Talk!.FireEvent(world, guard, target, ev)) Note(world, ArrestEventKind.Spotted, guard, target, table.Cold(g)!.Faction, ev);
+        if (!Busy(target)) spottings.Add(new Spotting { Guard = guard, Target = target, Event = ev, Until = world.Tick + (long)MathF.Ceiling(Settings.SpotRetrySeconds / world.TickSeconds) });
+    }
+
+    /// <summary>One tick of a spotting; false when it is over: an arrest took the target, the bounty is paid (DA 49), or the time is up while the guard no longer talks.</summary>
+    bool StepSpotting(World world, Spotting p)
+    {
+        if (Busy(p.Target) || !world.Characters.TryResolveNext(p.Target, out int t) || world.Characters.Cold(t) is not { } tc) return false;
+        if (p.Event == BountySpotted && tc.Bounties is not { Any: true }) return false;
+        // Still talking, or held by the dialogue (walking up to talk: DA 2).
+        if (Talk?.Engages(p.Guard) == true || world.Characters.TryResolveNext(p.Guard, out int g) && world.Characters.Cold(g) is { Engaged: true })
+            p.Until = Math.Max(p.Until, world.Tick + 1);
+        return world.Tick < p.Until;
     }
 
     /// <summary>The guard stands in the town his resident squad belongs to (<see cref="ArrestSettings.TownSlack"/>).</summary>
@@ -470,6 +532,12 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public void Hash(ref StateHasher hasher)
     {
         HashBounties(ref hasher);
+        if (spottings.Count > 0)
+        {
+            hasher.Add(0x53706F74);
+            hasher.Add(spottings.Count);
+            foreach (var p in spottings) p.Hash(ref hasher);
+        }
         if (arrests.Count == 0) return;   // only while an arrest runs, so worlds without them hash as before
         hasher.Add(0x41727273);
         hasher.Add(arrests.Count);

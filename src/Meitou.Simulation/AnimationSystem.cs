@@ -197,20 +197,11 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     }
 
     /// <summary>
-    /// Whether a fighter is still closing in on its target: on a path to it (the pursuit system asks for one only while the target is out of reach) and more than
-    /// <see cref="CombatTuning.StanceRange"/> away. It keeps the plain walk and run clips until it is near (engine choice, docs/game/combat.md "Combat stance").
+    /// Whether a fighter is running at its target out of the combat stance (<see cref="CharacterCold.CombatRunning"/>, set by the pursuit system): it keeps the plain walk
+    /// and run clips until it is near (docs/game/combat.md "Combat stance").
     /// </summary>
-    internal bool Approaching(CharacterTable table, int slot, CharacterCold cold)
-    {
-        if (!cold.InCombat || combat is null) return false;
-        var next = table.Next;
-        if (next[slot].Task != (byte)CharacterTask.Attack || (next[slot].Flags & (ushort)MoveFlags.AnyPath) == 0) return false;
-        var target = combat.StateOf(table.IdOf(slot));
-        int t = target.TargetSlot;
-        if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != target.TargetGeneration) return false;
-        var d = next[t].Position - next[slot].Position;
-        return d.X * d.X + d.Z * d.Z > CombatTuning.StanceRange * CombatTuning.StanceRange;
-    }
+    internal bool Approaching(CharacterTable table, int slot, CharacterCold cold) =>
+        cold.InCombat && cold.CombatRunning && table.Next[slot].Task == (byte)CharacterTask.Attack;
 
     /// <summary>What the combat system says about a character for its animation: the technique playing and its progress, and the last hit taken (the last finished tick's state).</summary>
     CombatView ViewOf(CharacterId id, long tick, CharacterCold cold, float tickSeconds)

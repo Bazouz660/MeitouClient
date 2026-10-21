@@ -19,8 +19,8 @@ Steamworks. Saves use `%LOCALAPPDATA%\kenshi\save\` unless `User save location=0
    depends on preceding files; base references Newwworld, Dialogue references rebirth.
    No scan; failed core logs an error and continues. Core list is initialized only if
    `data/mods.cfg` exists or can be created (missing file is created empty).
-2. Core language `.translation`, same record format.
-3. Mods in `data/mods.cfg` order, then all mod translations (`<folder>/locale/...`). Header
+2. Core language `.translation` (`locale/<code>/<code>.translation`, same record format) for the language chosen from `settings.cfg` ([localisation](localisation.md)).
+3. Mods in `data/mods.cfg` order, then the translation of the first mod that has one (`<folder>/locale/X/X.translation`; that mod also sets the language). Header
    dependencies do not affect runtime order. Unopenable/invalid mods are skipped and collected
    in one ignored-files dialog, workshop entries marked `(*)`.
 

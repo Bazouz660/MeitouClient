@@ -66,7 +66,8 @@ public sealed record NetRules(int SendRate, ClockPolicy ClockPolicy, int MaxPlay
 
 /// <summary>The simulation rules the host's settings decide; clients use these in place of their own (the <c>UserConfig</c> keys of the same names).</summary>
 public sealed record SessionRules(int AttackSlots, bool LateDefences, bool DoorsCloseBehind, bool KeepRoamers, bool OffscreenFights,
-    bool OffscreenHealing, bool CampaignAncestorsOnce, bool KeepWild, bool LuckyrenMode);
+    bool OffscreenHealing, bool CampaignAncestorsOnce, bool KeepWild, bool LuckyrenMode, bool ResidentSchedule = true,
+    int GroundItemLimit = Meitou.Simulation.Items.GroundItems.DefaultLimit);
 
 /// <summary>Where a player is in joining and playing; an <see cref="Away"/> player keeps the number, name and squads.</summary>
 public enum NetPlayerState : byte

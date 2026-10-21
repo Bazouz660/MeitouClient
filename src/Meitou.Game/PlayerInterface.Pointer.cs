@@ -14,7 +14,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The mouse pointer (kenshi_pointers.xml) for what the right button would do under the cursor (docs/game/ui-input.md, pointers): the quick order's pointer
-    /// (<see cref="QuickOrder"/>: talk, attk, med, lift), with Ctrl lift and with Alt search over a downed character; over the interface, while dragging or with no
+    /// (<see cref="QuickOrder"/>: talk, attk, med, lift, search), with Ctrl lift and with Alt search over a downed character; over the interface, while dragging or with no
     /// selection, the arrow.
     /// </summary>
     public string PointerName => Point().Name;
@@ -23,14 +23,46 @@ sealed partial class PlayerInterface
     /// The character under the cursor for the hover outline and its colour: the one a right click would act on, in the colour of that order (attack red, treat
     /// green, talk gold, carry or loot blue), else any character under the cursor in white; null over the interface or nobody.
     /// </summary>
-    public (CharacterId Id, Vector4 Colour)? HoverTarget => Point() is { Target: { } id } p ? (id, p.Name switch
+    public (CharacterId Id, Vector4 Colour)? HoverTarget => Point() is { Target: { } id } p ? (id, PointerColour(p.Name)) : null;
+
+    /// <summary>The outline colour for the order a pointer shows: attack red, treat green, talk gold, carry or loot blue, else white.</summary>
+    static Vector4 PointerColour(string pointer) => pointer switch
     {
         "attk" => new Vector4(1f, 0.3f, 0.22f, 1),
         "med" => new Vector4(0.4f, 1f, 0.5f, 1),
         "talk" => new Vector4(1f, 0.82f, 0.4f, 1),
         "lift" or "search" => new Vector4(0.45f, 0.75f, 1f, 1),
         _ => WhiteOutline,
-    }) : null;
+    };
+
+    /// <summary>How far from the camera's focus the held Highlight key outlines characters (<see cref="HighlightTargets"/>).</summary>
+    public const float HighlightRadius = 500;
+
+    /// <summary>
+    /// The characters the held Highlight key (Alt) outlines (docs/game/ui-input.md "Hover outline"): every character, the squad's, people and animals, within <paramref name="radius"/>
+    /// of <paramref name="centre"/>, each in the colour hovering it would give (the quick order's rules applied to it alone), and the hovered one as <see cref="HoverTarget"/>.
+    /// </summary>
+    public List<(CharacterId Id, Vector4 Colour)> HighlightTargets(Vector3 centre, float radius)
+    {
+        var hover = HoverTarget;
+        var list = new List<(CharacterId Id, Vector4 Colour)>();
+        if (hover is { } h) list.Add(h);
+        var selection = SelectedIds();
+        foreach (var c in session.CurrentSnapshot.Characters)
+            if (c.Id != hover?.Id && Vector3.DistanceSquared(c.Position, centre) <= radius * radius)
+                list.Add((c.Id, PointerColour(selection.Count == 0 ? "arrow" : QuickPointer(c, selection[0]))));
+        return list;
+    }
+
+    /// <summary><see cref="QuickOrder"/>'s pointer for <paramref name="c"/>, as if it alone were under the cursor.</summary>
+    string QuickPointer(CharacterSnapshot c, CharacterId selected)
+    {
+        if (c.IsPlayer) return c.Body is { Dead: false, NeedsAid: true } ? "med" : !c.CarriedBy.IsNone ? "search" : c.Body is { Dead: true } or { Unconscious: true } ? "lift" : "arrow";
+        if (c.Body is { Dead: true } or { Unconscious: true } || !c.CarriedBy.IsNone) return "search";
+        if (c.IsTrader) return "talk";
+        if (Hostile(c)) return "attk";
+        return session.World.CanTalk(c.Id, selected) ? "talk" : "arrow";
+    }
 
     static readonly Vector4 WhiteOutline = new(0.95f, 0.93f, 0.85f, 0.85f);
 
@@ -38,7 +70,8 @@ sealed partial class PlayerInterface
     public Func<int, bool>? HostileFaction { get; set; }
 
     /// <summary>Whether the character's faction is hostile to the player's: only a hostile one gets the attack pointer, the red outline and the quick-attack right click.</summary>
-    bool Hostile(CharacterId id) => session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } c || HostileFaction?.Invoke(c.Faction) != false;
+    bool Hostile(CharacterId id) => session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } c || Hostile(c);
+    bool Hostile(CharacterSnapshot c) => HostileFaction?.Invoke(c.Faction) != false;
 
     (long Tick, Vector2 Mouse, bool Ctrl, bool Alt, string Name, CharacterId? Target) Point()
     {

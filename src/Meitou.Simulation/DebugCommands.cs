@@ -1,6 +1,8 @@
 using System.Numerics;
+using Meitou.Data;
 using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay.Bodies;
+using Meitou.Data.Gameplay.Construction;
 using Meitou.Simulation.Bodies;
 
 namespace Meitou.Simulation;
@@ -23,9 +25,29 @@ public sealed record DebugMaxSkills(IReadOnlyList<CharacterId> Characters) : Deb
 /// <summary>One cut of <see cref="Cut"/> damage to each character, on a part chosen as a blow's is.</summary>
 public sealed record DebugDamage(IReadOnlyList<CharacterId> Characters, float Cut) : DebugCommand;
 
-/// <summary>Puts <see cref="Quantity"/> of item record <see cref="Record"/> into the character's inventory.</summary>
-public sealed record DebugGiveItem(CharacterId Character, string Record, int Quantity) : DebugCommand
+/// <summary>
+/// Puts <see cref="Quantity"/> of item record <see cref="Record"/> into the character's inventory, at <see cref="Quality"/> (0 to 100) for the types that have one;
+/// what does not fit is dropped at the character's feet.
+/// </summary>
+public sealed record DebugGiveItem(CharacterId Character, string Record, int Quantity, int Quality = 0) : DebugCommand
 {
+    /// <summary>
+    /// The record types whose items have a quality (grade): armour's is <see cref="Items.ItemInstance.Quality"/>, the others' the <see cref="Items.ItemInstance.Level"/> their stats read.
+    /// A weapon gets the model of <see cref="Grade"/> instead, so its name shows the grade.
+    /// </summary>
+    public static readonly FcsRecordType[] QualityTypes = [FcsRecordType.WEAPON, FcsRecordType.ARMOUR, FcsRecordType.CROSSBOW, FcsRecordType.LIMB_REPLACEMENT];
+
+    /// <summary>The <c>PLAYER_WEAPONS</c> model a weapon of <paramref name="quality"/> gets: the highest level at or below it, else the lowest (null without models).</summary>
+    public static (string Model, string Name, int Level)? Grade(GameDatabase db, int quality)
+    {
+        var models = (db.Find(CraftBench.PlayerWeapons)?.GetReferences("weapon models") ?? [])
+            .Select(r => (Record: db.Find(r.TargetStringId), Level: r.Values.Value0)).Where(m => m.Record is not null).ToList();
+        if (models.Count == 0) return null;
+        var pick = models.Where(m => m.Level <= quality).OrderByDescending(m => m.Level).FirstOrDefault();
+        if (pick.Record is null) pick = models.OrderBy(m => m.Level).First();
+        return (pick.Record!.StringId, pick.Record.Name, pick.Level);
+    }
+
     /// <summary>The record types an item can be made from.</summary>
     public static readonly FcsRecordType[] ItemTypes =
         [FcsRecordType.WEAPON, FcsRecordType.ARMOUR, FcsRecordType.ITEM, FcsRecordType.CONTAINER, FcsRecordType.BLUEPRINT, FcsRecordType.MAP_ITEM, FcsRecordType.CROSSBOW, FcsRecordType.LIMB_REPLACEMENT];
@@ -82,7 +104,13 @@ static class DebugCheats
             case DebugGiveItem give when data is not null:
                 if (!table.TryResolveNext(give.Character, out int owner) || table.Cold(owner)?.Inventory is not { } inventory) break;
                 if (data.Items.Create(give.Record, give.Quantity) is not { } item) { world.Post(give.Player, $"No item record {give.Record}."); break; }
-                if (!inventory.Add(item)) world.Post(give.Player, $"{item.Quantity} x {item.Name} did not fit.");
+                if (item.Type == FcsRecordType.ARMOUR) item.Quality = Math.Clamp(give.Quality, 0, 100);
+                else if (item.Type == FcsRecordType.WEAPON && DebugGiveItem.Grade(data.Db, give.Quality) is { } grade)
+                    (item.CompanyId, item.MaterialId, item.Level) = (CraftBench.PlayerWeapons, grade.Model, grade.Level);
+                else if (DebugGiveItem.QualityTypes.Contains(item.Type)) item.Level = Math.Clamp(give.Quality, 0, 100);
+                if (inventory.Add(item)) break;
+                world.GroundItems.Drop(item, table.Next[owner].Position, 0);
+                world.Post(give.Player, $"{item.Quantity} x {item.Name} did not fit; dropped on the ground.");
                 break;
         }
     }

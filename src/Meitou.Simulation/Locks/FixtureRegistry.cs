@@ -556,7 +556,7 @@ public sealed class FixtureRegistry
         Clear(c);
         c.Escaped = false;
         SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406add20, FUN_1406ae170)
-        if (c.IsPlayer) world.Post($"{c.Name} has been released from prison.");
+        if (c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
         return true;
     }
 
@@ -609,13 +609,30 @@ public sealed class FixtureRegistry
     /// </summary>
     public static void Enslave(World world, CharacterCold c, int owner) => SetSlave(world, c, 1, owner);
 
+    /// <summary><c>DA_TAG_ESCAPED_SLAVE</c> (25): the character becomes an escaped slave (state 2), keeping its owner (<c>FUN_140680560</c>).</summary>
+    public static void TagEscaped(World world, CharacterCold c) => SetSlave(world, c, 2, c.SlaveOwner);
+
+    /// <summary>
+    /// <c>DA_REMOVE_SLAVE_STATUS</c> (53, <c>FUN_140680560</c>): a character in shackles or slave state is freed with "Free!" (the original floats it in green over the head) and
+    /// <c>Character_Unlock_Success</c>; its slave state is cleared and its worn shackles unlocked.
+    /// </summary>
+    public static void FreeSlave(World world, int slot, CharacterCold c)
+    {
+        var shackles = LockSystem.WornShackles(c);
+        if (shackles is null && c.SlaveState == 0) return;
+        world.Bark(world.Characters.IdOf(slot), Loc.Tr("Free!"));
+        world.EmitSound(SoundKind.Unlocked, slot, world.Characters.Next[slot].Position);
+        SetSlave(world, c, 0, -1);
+        if (shackles?.Lock is { } l) l.Locked = false;
+    }
+
     /// <summary>
     /// The slave state setter (<c>FUN_1405a4940</c>, <b>Observed</b>): free to slave posts "{1} has been enslaved" for a player-faction character; becoming an escaped slave sets the
     /// recently-wanted marker to 250 (status <c>+0x110</c>), so a looker who knows recognises it at once.
     /// </summary>
     static void SetSlave(World world, CharacterCold c, byte state, int owner)
     {
-        if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post($"{c.Name} has been enslaved");
+        if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post(Loc.Tr("{1} has been enslaved", c.Name));
         if (state == 2) c.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         c.SlaveState = state;
         c.SlaveOwner = state == 0 ? -1 : owner;

@@ -1,0 +1,174 @@
+using System.Numerics;
+using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Ai;
+
+namespace Meitou.Simulation.Ai;
+
+public sealed partial class AiSystem
+{
+    /// <summary>Kinds of <see cref="PlanTarget"/> the finders give.</summary>
+    static class Targets
+    {
+        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5;
+    }
+
+    /// <summary>How near a home's position counts as at home (units; engine stand-in for the original's inside-the-building test).</summary>
+    const float HomeRadius = 20;
+
+    /// <summary>
+    /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), standing at a node,
+    /// shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed. A plan ending in another step fails.
+    /// </summary>
+    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
+        or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
+        or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED;
+
+    /// <summary>
+    /// One character's view for the <see cref="TaskPlanner"/> (one per worker thread, bound per think): its states (docs/simulation.md "Planner" lists the
+    /// stand-ins), the targets of the goals Meitou acts out, and the desires of the rows on the way.
+    /// </summary>
+    sealed class PlanContext : IPlanWorld
+    {
+        [ThreadStatic] static PlanContext? local;
+        public static PlanContext Local => local ??= new PlanContext();
+
+        AiSystem system = null!;
+        World world = null!;
+        AiMind mind = null!;
+        Blackboard board = null!;
+        int slot;
+        readonly List<PlanStep> scratch = [];
+
+        /// <summary>Everyone plans with the first category, the one nearly every row is in (engine choice: which one a character uses is Unknown, docs/game/ai-tasks.md "Planner").</summary>
+        public int Category => 0x1;
+        public bool Squadless => false;
+
+        public PlanContext Bind(AiSystem s, World w, int at, AiMind m, Blackboard b)
+        {
+            (system, world, slot, mind, board) = (s, w, at, m, b);
+            return this;
+        }
+
+        /// <summary>
+        /// Plans a goal; true (and the plan in <see cref="AiMind.Plan"/>) when it has one whose first step the engine carries out. A goal without a TaskData
+        /// row is its own plan; one whose list A already holds is left out (the scorer's done test).
+        /// </summary>
+        public bool TryPlan(AiGoal goal, float desire)
+        {
+            var type = goal.Task.Type;
+            if (TaskDataTable.Of(type) is not { } row)
+            {
+                mind.Plan.Clear();
+                mind.Plan.Add(new PlanStep(type, default));
+                return true;
+            }
+            var target = row.Is(TaskDataFlags.NeedsTarget) && !row.Is(TaskDataFlags.Finder) ? Find(row, default) : default;
+            if (row.Is(TaskDataFlags.NeedsTarget) && !row.Is(TaskDataFlags.Finder) && target.IsNone) return false;
+            if (row.Done.Length > 0 && Array.TrueForAll(row.Done, c => Holds(c, target))) return false;
+            if (TaskPlanner.Local.Plan(row, desire, target, this, mind.Plan, scratch) <= 0) return false;
+            if (scratch[0].Type != type && !Carried(scratch[0].Type)) return false;
+            mind.Plan.Clear();
+            mind.Plan.AddRange(scratch);
+            return true;
+        }
+
+        public float Desire(TaskDataRow row, in PlanTarget target)
+        {
+            float d = TaskProfiles.Of(row.Type).Desire;
+            return d >= 0 ? d : 1;   // a random or own desire function counts as 1 on the way
+        }
+
+        ref CharacterHot Me => ref world.Characters.Next[slot];
+
+        bool At(in PlanTarget t)
+        {
+            if (t.IsNone) return true;
+            var p = Me.Position;
+            float slack = t.Kind == Targets.Turret ? TurretSlack : system.Settings.PostSlack;
+            if (Vector2.DistanceSquared(Flat(p), Flat(t.Position)) > slack * slack) return false;
+            // A spot on a floor counts on that floor only (NaN: no floor).
+            return float.IsNaN(t.Position.Y) || MathF.Abs(p.Y - t.Position.Y) <= FloorSlack;
+        }
+
+        float Distance(in PlanTarget t) => t.IsNone ? 0 : Vector2.Distance(Flat(Me.Position), Flat(t.Position));
+
+        bool Settled(in PlanTarget t) => At(t) && (CharacterTask)Me.Task is CharacterTask.Rest or CharacterTask.Idle;
+
+        /// <summary>
+        /// A state's value for a target. States of rooms, doors, machines and fights the AI does not run into (it runs only out of a fight, carrying nothing)
+        /// have a fixed stand-in value; an unlisted state is false.
+        /// </summary>
+        public bool Holds(TaskCondition condition, in PlanTarget target)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            bool value = condition.State switch
+            {
+                StateType.isAtLocation or StateType.isAtLocation_46 or StateType.atNode => At(target),
+                StateType.isWithin10Meters => Distance(target) <= 10,
+                StateType.isWithin50Meters => Distance(target) <= 50,
+                StateType.isNearTo => Distance(target) <= 10,
+                StateType.hasWeaponEquipped or StateType.hasWeaponEquipped_156 or StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
+                StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
+                StateType.isInBed => (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,
+                StateType.IS_WORKING or StateType.IS_WORKING_PRETEND or StateType.using_target_turret or StateType.using_any_turret => Settled(target),
+                StateType.isAtHome => board.Home is not { } home || mind.HomeUnreachable || Vector2.DistanceSquared(Flat(Me.Position), Flat(home.Position)) <= HomeRadius * HomeRadius,
+                // Without a town it is never at its home town; its destination town (patrolling in town) is wherever it is.
+                StateType.isAtHomeTown => board.Town >= 0 && system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
+                StateType.atDestinationTown or StateType.atDestinationTown_94 => system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
+                StateType.hasDestinationTown => board.Town >= 0,
+                StateType.atATown => system.TownAt(Me.Position) >= 0,
+                StateType.isLeaderDown => mind.Squad.Leader.IsNone || !world.Characters.IsAlive(mind.Squad.Leader),
+                StateType.isFullyRested => cold.Medical is not { Incapacitated: true },
+                // Held true: moving, standing up, arms, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").
+                StateType.isMovementAllowed or StateType.canGetUp or StateType.hasOneWorkingArm or StateType.hasTwoWorkingArm or StateType.isBuildingComplete
+                    or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction or StateType.isNoEnemiesInVicinity
+                    or StateType.DOOR_IS_OPEN or StateType.DOOR_IS_OPEN_HERE or StateType.AT_LOCATION_BUILDING_DOOR or StateType.AT_CURRENT_LOCATION_BUILDING_DOOR
+                    or StateType.AT_LOCATION_BUILDING_DOOR_INSIDE or StateType.AT_LOCATION_BUILDING_DOOR_OUTSIDE or StateType.DESTINATION_IS_ACCESSIBLE
+                    or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS or StateType.AT_LOCATION_FORTIFICATION_GATE
+                    or StateType.DOOR_IS_LOCKED_AND_IM_INSIDE or StateType.DOOR_IS_LOCKED_AND_IM_OUTSIDE or StateType.allDoorsLocked or StateType.isObjectMine
+                    or StateType.I_AM_INSIDE_TARGET_BUILDING or StateType.isAlly or StateType.crowdLimit8 or StateType.targetStandingStill
+                    or StateType.isMachineOutputEmpty or StateType.hasBuildingMaterials or StateType.buildingHasBuildingMaterials => true,
+                _ => false,
+            };
+            return value == condition.Holds;
+        }
+
+        /// <summary>The target finders of the goals Meitou acts out (the spots, beds, seats, turrets and towns it already picks); none for the rest.</summary>
+        public PlanTarget Find(TaskDataRow row, in PlanTarget from)
+        {
+            var type = row.Type;
+            switch (type)
+            {
+                case TaskType.STAND_AT_SHOPKEEPER_NODE or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING_INDOORS_ONLY
+                    or TaskType.STAND_AT_GUARD_NODE_HOMETOWN_OUTSIDE or TaskType.STAND_AT_GENERAL_NODE or TaskType.STAY_IN_HOME or TaskType.SIT_ON_THRONE
+                    or TaskType.HOLD_POSITION or TaskType.MAN_THE_GATE:
+                    return Spot(Targets.Spot, system.SpotFor(mind, board, AiBehaviour.Post, type));
+                case TaskType.GO_HOME_AND_GO_TO_BED or TaskType.GO_HOME_AND_GO_TO_BED_SECURE:
+                    return Spot(Targets.Bed, system.SpotFor(mind, board, AiBehaviour.Sleep, type));
+                case TaskType.GO_HOMEBUILDING:
+                    return Spot(Targets.Spot, system.SpotFor(mind, board, AiBehaviour.GoHome, type));
+                case TaskType.WANDER_TOWN or TaskType.SHOPPING or TaskType.WANDERER:
+                {
+                    var behaviour = TaskBehaviours.Of(type);
+                    var at = mind.Goal?.Task.Type == type && mind.Target is { } kept ? kept : system.TargetFor(world, world.Characters.IdOf(slot), behaviour, board.Town);
+                    if (at is not { } p) return default;
+                    return new PlanTarget(type == TaskType.WANDERER ? Targets.Town : Targets.Spot, type == TaskType.WANDERER ? p with { Y = float.NaN } : p);
+                }
+                case TaskType.RELAX_IN_TOWN_PACKAGE or TaskType.SIT_AROUND:
+                    if (type == TaskType.SIT_AROUND && board.Home is null) return new PlanTarget(Targets.Spot, Me.Position);
+                    return board.SeatClaims.TryGetValue(slot, out var seat) && !mind.SeatUnreachable ? new PlanTarget(Targets.Seat, seat.Position) : default;
+                case TaskType.MAN_A_TURRET or TaskType.MAN_A_TURRET_ON_BUILDING or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TURRET:
+                    return board.TurretClaims.TryGetValue(slot, out int t) && (uint)t < (uint)board.Turrets.Count && board.Turrets[t].Turret is { } turret
+                        ? new PlanTarget(Targets.Turret, TurretSpot(world, turret)) : default;
+            }
+            return default;
+        }
+
+        /// <summary>A spot as the act-out walks to it: one on a floor over a hole furniture cuts is at the nearest floor point (<see cref="GoToSpot"/>).</summary>
+        PlanTarget Spot(byte kind, (Vector2 Target, bool Home, float? Floor) s)
+        {
+            if (s.Floor is { } y && world.Walkability.FloorNear(s.Target.X, s.Target.Y, y, FloorSlack) is { } floor) return new(kind, floor);
+            return new(kind, new Vector3(s.Target.X, s.Floor ?? float.NaN, s.Target.Y));
+        }
+    }
+}

@@ -182,6 +182,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case Items.CloseContainer close:
                     var closing = world.SessionOf(close);
                     closing.OpenContainer = closing.OpeningContainer = null;
+                    closing.OpenLoot = closing.OpeningLoot = CharacterId.None;
                     break;
                 case InspectBuildingCommand building:
                     world.SessionOf(building).InspectedBuilding = building.Instance;
@@ -228,6 +229,24 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     break;
                 case Items.PickUpItemOrder pick:
                     PickUpInput(world, pick);
+                    break;
+                case Items.DropInventoryItem drop:
+                    if (table.TryResolveNext(drop.Character, out int dropper) && table.Cold(dropper) is { IsPlayer: true, Inventory: { } held } holder &&
+                        held.All().ElementAtOrDefault(drop.Item.Index) is { } item && item.Record == drop.Item.Record && item.Section == drop.Item.Section && item.X == drop.Item.X &&
+                        item.Y == drop.Item.Y && item.Quantity == drop.Item.Quantity && Items.InventoryCommands.IsMovableSection(item.Section))
+                    {
+                        if (item.LockedOn) { world.Post(drop.Player, "This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength."); break; }
+                        bool worn = Items.InventoryCommands.IsEquipmentSection(item.Section);
+                        held.Remove(item);
+                        item.Section = "main";
+                        // At the feet, a little ahead (engine choice), on the ground.
+                        ref var hot = ref table.Next[dropper];
+                        var at = hot.Position + new System.Numerics.Vector3(MathF.Sin(hot.Yaw), 0, MathF.Cos(hot.Yaw)) * 3;
+                        at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
+                        // Turned at random (the original's physics tumbles it), by a roll of the dropper and the tick.
+                        world.GroundItems.Drop(item, at, Rng.Float(Rng.Hash(world.Seed, (ulong)dropper, RngPurpose.Loot, (ulong)world.Tick)) * MathF.Tau);
+                        if (worn) assembly?.RefreshEquipment(holder);
+                    }
                     break;
                 case Items.ArrangeInventory arrange:
                     if (table.TryResolveNext(arrange.Character, out int character) && table.Cold(character) is { IsPlayer: true, Inventory: { } carried } &&

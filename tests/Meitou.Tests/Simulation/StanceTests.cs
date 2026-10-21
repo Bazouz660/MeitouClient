@@ -12,7 +12,7 @@ namespace Meitou.Tests.Simulation;
 
 public class StanceTests
 {
-    /// <summary>A fighter on its path to a target further than the stance range is still closing in (the plain walk and run clips); within it, it is in the combat stance.</summary>
+    /// <summary>A fighter running at a target from afar keeps the plain walk and run clips; once near it, it is in the combat stance.</summary>
     [Fact]
     public void A_fighter_closing_in_from_afar_takes_the_combat_stance_only_near_its_target()
     {
@@ -31,10 +31,10 @@ public class StanceTests
 
         world.RunTicks(30);
         Assert.True(table.Cold(a.Slot)!.InCombat);
-        Assert.True(Distance() > CombatTuning.StanceRange * 2);
+        Assert.True(Distance() > CombatTuning.RunGap);
         Assert.True(Approaching(), "on its way from afar");
-        for (int ticks = 0; Distance() > CombatTuning.StanceRange / 2 && ticks < 900; ticks++) world.RunTick();
-        Assert.True(Distance() <= CombatTuning.StanceRange / 2, "arrived");
+        for (int ticks = 0; Distance() > CombatTuning.FootworkGap / 2 && ticks < 900; ticks++) world.RunTick();
+        Assert.True(Distance() <= CombatTuning.FootworkGap / 2, "arrived");
         Assert.True(table.Cold(a.Slot)!.InCombat);
         Assert.False(Approaching(), "near its target");
     }

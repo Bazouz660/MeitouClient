@@ -20,7 +20,7 @@ public sealed record WildSite(int Index, WildKind Kind, ZoneCoordinate Zone, int
 /// The wild population (docs/game/factions-squads-towns.md 6.2, 6.3): homeless squads of the area sectors and the animals (and camps) of the nests. Runs
 /// only when <see cref="PopulationData.Biomes"/> is set.
 /// <list type="bullet">
-/// <item><b>Sectors</b> (6.2). Every zone cell is a sector of its BIOME_GROUP. When its zone activates it gets ceil(P x <c>homeless spawn amount</c>)
+/// <item><b>Sectors</b> (6.2; patrols and the area tick's refill in <c>PopulationHomeless.cs</c>). Every zone cell is a sector of its BIOME_GROUP. When its zone activates it gets ceil(P x <c>homeless spawn amount</c>)
 /// squads: what the original's area tick reaches for a sector loaded alone (it spawns while the island's population is below P x the sum of the amounts and
 /// the sector's own count below its share; with one sector that stops at the ceiling). The island-wide sum over several loaded sectors, the counters a and
 /// b and the "town nearby" halving are not modelled (engine choice). Template weights are 6.2's homeless branch,
@@ -33,7 +33,7 @@ public sealed record WildSite(int Index, WildKind Kind, ZoneCoordinate Zone, int
 /// 100, the TOWN's <c>world state</c> gate), its place a seeded cell of the group's area with candidate spots away from placed towns, or for groups with
 /// <c>nests at fixed markers only</c> one of the placed NEST_MARKER towns of the area. When its zone activates the nest fills its roaming pool to
 /// its pool's floor(<c>pop2</c>) members (0.7 x <c>nest resident population</c> at first; <c>PopulationPools.cs</c>) from the TOWN's <c>roaming squads</c> (weight max(0, v0 - count), k = 1; an entry whose expected
-/// size passes the free capacity is skipped), the squads wandering round the nest. While loaded it tops up one squad
+/// size passes the free capacity is skipped, unless the pool is empty and more than 4 are free), the squads wandering round the nest. While loaded it tops up one squad
 /// per look and can be wiped out for good (<c>PopulationPools.cs</c>).</item>
 /// <item><b>Saves</b> (docs/formats/save.md "Nests", "Wild and nest platoons"): a loaded save's nests are the layout's first (at their saved places), the
 /// seeded roll (with the seed the save restores) only tops each group up to its count, leaving out the rolls whose nests the save holds, so a Meitou save
@@ -333,7 +333,7 @@ public sealed partial class PopulationSystem
         foreach (int id in state.Squads)
         {
             if (world.Squads.Find(id) is not { } squad) continue;
-            var stored = new StoredSquad { Name = squad.Name, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id };
+            var stored = new StoredSquad { Name = squad.Name, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id, Ai = Saving.AiSave.Of(squad.Ai) ?? squad.SavedAi };
             Store(world, squad, stored);
             world.Squads.Remove(id);
             if (stored.Members.Count == 0) continue;
@@ -472,7 +472,8 @@ public sealed partial class PopulationSystem
     bool TemplateUsable(string id) =>
         data.Db.Find(id) is { } r && SquadFactory.IsTemplate(r) && SquadTemplate.From(r).WorldState.All(w => IWorldStates.Passes(States, data.Db, w.Id, w.V0));
 
-    BuiltWild BuildSector(WildSite site, long loadId, ulong seed, IWalkability walk, Vector2[] players, WildHold? hold)
+    /// <summary>A sector's squads as it loads, or with <paramref name="topUp"/> ≥ 0 the one squad of the area tick's refill number <paramref name="topUp"/> (<c>PopulationHomeless.cs</c>).</summary>
+    BuiltWild BuildSector(WildSite site, long loadId, ulong seed, IWalkability walk, Vector2[] players, WildHold? hold, int topUp = -1)
     {
         var squads = new List<BuiltSquad>();
         var group = data.Biomes!.Groups[site.Group];
@@ -480,12 +481,15 @@ public sealed partial class PopulationSystem
         var centre = new Vector2((minX + maxX) / 2, (minZ + maxZ) / 2);
         // A sector whose nearest town is the player's makes nothing (6.2).
         if (NearestTown(centre, out _) is { } nearest && data.PlayerFaction >= 0 && data.SiteFactions[nearest.Index] == data.PlayerFaction)
-            return new BuiltWild(site.Index, loadId, centre, squads);
+            return new BuiltWild(site.Index, loadId, centre, squads, TopUp: topUp >= 0);
         int n = HomelessCount(group, settings.PopulationMultiplier);
         var counts = new int[group.HomelessSpawns.Count];
         // The save's homeless squads standing in this sector are of its count (and of their entry's).
         for (int i = 0; hold is not null && i < counts.Length; i++) counts[i] = hold.Templates.GetValueOrDefault(group.HomelessSpawns[i].Id);
-        for (int s = hold?.Squads ?? 0; s < n; s++)
+        int first = hold?.Squads ?? 0;
+        // A refill's key follows the load's (n of them) and the refills before it.
+        if (topUp >= 0) (first, n) = (n + topUp, n + topUp + 1);
+        for (int s = first; s < n; s++)
         {
             ulong key = Rng.Mix(SeedSalts.HomelessSquad ^ (ulong)site.Zone.X << 40 ^ (ulong)site.Zone.Y << 24 ^ (uint)s);
             var weights = HomelessWeights(group, settings.PopulationMultiplier, counts, TemplateUsable);
@@ -497,7 +501,7 @@ public sealed partial class PopulationSystem
             if (PlaceInSector(minX, minZ, maxX, maxZ, faction, seed, key, walk, players) is not { } spot) continue;
             if (BuildOne(template, faction, faction >= 0 ? data.Factions[faction] : null, key, seed, spot) is { } one) squads.Add(one);
         }
-        return new BuiltWild(site.Index, loadId, centre, squads);
+        return topUp >= 0 ? new BuiltWild(site.Index, loadId, centre, squads, Rolls: 1, TopUp: true) : new BuiltWild(site.Index, loadId, centre, squads);
     }
 
     TownSite? NearestTown(Vector2 p, out float distance)
@@ -569,8 +573,10 @@ public sealed partial class PopulationSystem
         int rolls = 0;
         for (int s = 0; s < budget.Rolls && squads.Count < budget.Squads && (members < cap || topUp); s++)
         {
+            // An entry fits the free room, or any size does while the pool is empty and more than 4 are free (FUN_1408f7e80).
+            int free = cap - members;
             for (int i = 0; i < entries.Count; i++)
-                weights[i] = templates[i] is { } t && SquadFactory.ExpectedSize(t, settings.SquadSizeMultiplier) <= cap - members
+                weights[i] = templates[i] is { } t && (SquadFactory.ExpectedSize(t, settings.SquadSizeMultiplier) <= free || members == 0 && free > 4)
                     ? MathF.Max(0, entries[i].V0 - counts[i]) : 0;
             ulong key = Rng.Mix(Rng.Mix(SeedSalts.NestSquad ^ site.Key) ^ (uint)(budget.First + s));
             rolls++;

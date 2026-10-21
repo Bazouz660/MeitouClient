@@ -186,7 +186,7 @@ public class ReplicationTests(ITestOutputHelper output)
             }
             if (random.NextDouble() < 0.05)
             {
-                ground.Add(new GroundItemSnapshot(serial++, "item", $"Thing {serial}", new Vector3(Next(100), 0, Next(100)), 0.5f));
+                ground.Add(new GroundItemSnapshot(serial++, "item", $"Thing {serial}", new Vector3(Next(100), 0, Next(100)), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f), true));
                 groundRevision++;
             }
             if (random.NextDouble() < 0.1)

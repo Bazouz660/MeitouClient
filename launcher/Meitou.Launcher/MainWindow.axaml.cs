@@ -109,6 +109,8 @@ public sealed partial class MainWindow : Window
             await this.Launcher.LaunchUriAsync(uri);
     }
 
+    void Kofi_Click(object? sender, RoutedEventArgs e) => OpenLink("https://ko-fi.com/martinvlcek");
+
     // ---- Kenshi folder ----
 
     void UseKenshi(GameInstall? found)
@@ -551,8 +553,8 @@ public sealed partial class MainWindow : Window
         var (list, problem) = await releases.FetchAsync();
         allReleases = list;
         ShowReleases();
-        await ShowLauncherUpdateAsync();
         Status(problem ?? "");
+        await ShowLauncherUpdateAsync();   // after: its "Launcher … is available" line must not be cleared
     }
 
     void ShowReleases()
@@ -748,13 +750,16 @@ public sealed partial class MainWindow : Window
         }
         LauncherUpdateButton.IsVisible = version is not null;
         LauncherUpdateButton.Content = updater.IsInstalled ? $"Update to {version}" : $"Get launcher {version}";
-        if (version is not null) Status($"Launcher {version} is available (Settings).");
+        TitleLauncherUpdateButton.IsVisible = version is not null;
+        TitleLauncherUpdateText.Text = updater.IsInstalled ? $"Update launcher to {version}" : $"Get launcher {version}";
+        ToolTip.SetTip(TitleLauncherUpdateButton, updater.IsInstalled ? "Download the new launcher and restart into it" : "Open the launcher's release page");
+        if (version is not null) Status($"Launcher {version} is available.");
     }
 
     async void LauncherUpdate_Click(object? sender, RoutedEventArgs e)
     {
         if (LauncherUpdateButton.Tag is string url) { await this.Launcher.LaunchUriAsync(new Uri(url)); return; }
-        LauncherUpdateButton.IsEnabled = false;
+        LauncherUpdateButton.IsEnabled = TitleLauncherUpdateButton.IsEnabled = false;
         try
         {
             StatusProgress.Value = 0;
@@ -769,7 +774,7 @@ public sealed partial class MainWindow : Window
         {
             StatusProgress.IsVisible = false;
             Status($"Launcher update failed: {ex.Message}");
-            LauncherUpdateButton.IsEnabled = true;
+            LauncherUpdateButton.IsEnabled = TitleLauncherUpdateButton.IsEnabled = true;
         }
     }
 

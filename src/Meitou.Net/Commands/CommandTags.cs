@@ -54,6 +54,9 @@ public static class CommandTags
         (43, typeof(LootOrder), CommandOrigin.Client),
         (44, typeof(StealthKoOrder), CommandOrigin.Client),
         (45, typeof(RescueJobCommand), CommandOrigin.Client),
+        (46, typeof(OpenLootOrder), CommandOrigin.Client),
+        (47, typeof(TakeLootItem), CommandOrigin.Client),
+        (48, typeof(PutLootItem), CommandOrigin.Client),
 
         (50, typeof(TreatOrder), CommandOrigin.Client),
         (51, typeof(SplintOrder), CommandOrigin.Client),
@@ -87,6 +90,7 @@ public static class CommandTags
         (92, typeof(ShackleOrder), CommandOrigin.Client),
         (93, typeof(PayBailOrder), CommandOrigin.Client),
         (94, typeof(PutInCageOrder), CommandOrigin.Client),
+        (95, typeof(DropInventoryItem), CommandOrigin.Client),
 
         (100, typeof(OperateOrder), CommandOrigin.Client),
         (101, typeof(AddJob), CommandOrigin.Client),
@@ -117,6 +121,8 @@ public static class CommandTags
         (240, typeof(StartContract), CommandOrigin.HostOnly),
         (241, typeof(JoinPlayer), CommandOrigin.HostOnly),
         (242, typeof(TransferSquad), CommandOrigin.HostOnly),
+        (243, typeof(ChangeAi), CommandOrigin.HostOnly),
+        (244, typeof(DialogueEvent), CommandOrigin.HostOnly),
     ];
 
     static readonly Dictionary<Type, ushort> ByType = Table.ToDictionary(e => e.Type, e => e.Tag);

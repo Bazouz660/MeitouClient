@@ -66,6 +66,8 @@ sealed class UserConfig
     public bool CampaignAncestorsOnce { get; set; } = true;
     /// <summary>Wild animals and homeless squads keep their characters while their area is unloaded (Advanced settings; Faithful off: removed and made anew, as the game does).</summary>
     public bool KeepWild { get; set; } = true;
+    /// <summary>Town residents back after an hour or more unloaded are where their daily schedule puts them (Advanced settings; Faithful off: where they stood, as the game does).</summary>
+    public bool ResidentSchedule { get; set; } = true;
     /// <summary>Doors a walker opened close behind it after 5 s (Advanced settings; Faithful off: they stay open, as in the game; docs/simulation.md "Cages, beds and locks").</summary>
     public bool DoorsCloseBehind { get; set; } = true;
     /// <summary>Fixes of the game's own bugs (Fixes settings; on: fixed, off: as the game does; docs/audio.md): doors and gates sound when they break,
@@ -73,14 +75,20 @@ sealed class UserConfig
     public bool FixDoorBreak { get; set; } = true;
     public bool FixAmbienceSuffix { get; set; } = true;
     public bool FixWindStop { get; set; } = true;
+    /// <summary>The strategy camera's turn and tilt rate in degrees per second per unit of input (Controls settings): the original's
+    /// <c>mouse speed pan</c> / <c>mouse speed tilt</c> (slider 2 … 50, default 6), one value for both here.</summary>
+    public float CameraRotateSpeed { get; set; } = Meitou.Data.World.KenshiCamera.DefaultRotateSpeed;
+    public const float MinCameraRotateSpeed = 2, MaxCameraRotateSpeed = 50;
     /// <summary>The Windows cursor instead of the game's drawn pointer (the original's <c>hardware_mouse</c>, default off; Interface settings).</summary>
     public bool HardwareMouse { get; set; }
     /// <summary>Outline and tint the character under the cursor (Advanced settings; Meitou only, the game has none).</summary>
     public bool HoverOutline { get; set; } = true;
     /// <summary>The green ring under each selected character (Advanced settings; default on).</summary>
     public bool SelectionRings { get; set; } = true;
-    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; Meitou only, off by default). Stored only: nothing reads it yet.</summary>
+    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; Meitou only, off by default; docs/game/luckyren.md).</summary>
     public bool LuckyrenMode { get; set; }
+    /// <summary>How many items dropped in play stay on the ground before the oldest goes (Advanced settings; <see cref="Meitou.Simulation.Items.GroundItems.Limit"/>).</summary>
+    public int GroundItemLimit { get; set; } = Meitou.Simulation.Items.GroundItems.DefaultLimit;
     /// <summary>The audio sliders (Audio settings): the original's six volumes and the music frequency; null until first used, then taken from the install's settings.cfg.</summary>
     public Meitou.Audio.AudioSettings? Audio { get; set; }
     /// <summary>Worker threads of the simulation; null = half the cores.</summary>

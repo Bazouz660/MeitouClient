@@ -16,7 +16,8 @@ items); the launcher never downloads or hosts mods.
   (patch after the newest full release) as a pre-release without a changelog section; its notes list every
   commit since the newest game tag (GitHub's generated notes cover only merged pull requests, so nightlies don't use them). It is skipped when nothing
   outside `news/`, `site/`, `launcher/` and their workflows changed since the newest game tag (nightly or full). Only the newest 7
-  nightlies are kept, so the releases page and the launcher's Versions list stay short. The launcher shows them with the Nightly builds checkbox beside Play ticked ("Play latest nightly"; ticking it asks first, with Yes under the pointer, warning of crashes and corrupted saves) (GitHub pre-releases; `IncludePrereleases` in `launcher.json`).
+  nightlies are kept, so the releases page and the launcher's Versions list stay short. Each nightly's commit list is posted to Discord
+  through the `DISCORD_WEBHOOK_URL` repo secret (a channel webhook), when set. The launcher shows them with the Nightly builds checkbox beside Play ticked ("Play latest nightly"; ticking it asks first, with Yes under the pointer, warning of crashes and corrupted saves) (GitHub pre-releases; `IncludePrereleases` in `launcher.json`).
 - Game assets: `Meitou-<version>-<rid>.zip`, `<rid>` as .NET's `RuntimeInformation.RuntimeIdentifier` (`win-x64`, `linux-x64`,
   `osx-x64`, `osx-arm64`). A release with no zip for the machine's RID is listed but not installable.
 - The list comes from the REST API without a token (60 requests an hour per IP). Every page is read (`per_page=100`, until a short page),
@@ -31,10 +32,11 @@ items); the launcher never downloads or hosts mods.
 - `dotnet publish -r <rid>` gives a single Native AOT `meitou-launcher[.exe]` (`PublishAot`, ~45 MB on win-x64, **Verified**
   2026-10-20) and nothing else: no symbols, no native libraries beside it. `Meitou.Core` is `IsAotCompatible`, so code it or the
   launcher adds that AOT can't compile (reflection `JsonSerializer`, for one) fails the build; JSON goes through `LauncherJson`.
-- Avalonia's native libraries (`libSkiaSharp`, `libHarfBuzzSharp`, on Windows ANGLE's `av_libglesv2`) can't be linked in, so the
-  publish embeds them as `native/<file>` resources. `NativeLibraries.Load` (right after Velopack's hooks) writes them once to
-  `native/<16 hex of their SHA-256>/` in the data folder, loads them by full path and points SkiaSharp's and HarfBuzzSharp's
-  P/Invokes at them; ANGLE is then found by name as an already loaded module. Other `native/*` folders are deleted when not in use.
+- Avalonia's native libraries (`libSkiaSharp`, `libHarfBuzzSharp`, on Windows ANGLE's `av_libglesv2`, on macOS
+  `libAvaloniaNative`) can't be linked in, so the publish embeds them as `native/<file>` resources. `NativeLibraries.Load` (right
+  after Velopack's hooks) writes them once to `native/<16 hex of their SHA-256>/` in the data folder, loads them by full path and
+  points SkiaSharp's, HarfBuzzSharp's and Avalonia.Native's P/Invokes at them; ANGLE is then found by name as an already loaded
+  module (Windows only: macOS dyld doesn't match a bare name to a loaded library, issue #16). Other `native/*` folders are deleted when not in use.
   Debug builds embed nothing and load them from beside the executable.
 - Statically linked Skia/ANGLE (third-party prebuilt packages, win-x64 only) would avoid the extraction; not used, so all four
   RIDs share one mechanism on the official binaries.
@@ -52,27 +54,27 @@ items); the launcher never downloads or hosts mods.
   whose `GetReleases` returns only `launcher-v*` releases from the launcher's own cached list. Velopack's stock listing reads just
   the newest 10 releases (`per_page=10`, page 1; **Verified** in its source 2026-10-19), which game releases would crowd out;
   its `GitBase` merges the feed of every release given and skips releases without one.
-- Installed by Setup or AppImage (`UpdateManager.IsInstalled`): Settings offers "Update to <v>", which downloads, applies and
-  restarts. Run from anywhere else (a build, a copied folder): a button to the newest `launcher-v*` release page.
-- **Unknown**: the update path end to end; no `launcher-v*` release exists yet.
+- Checked each time the release list loads (startup). Installed by Setup or AppImage (`UpdateManager.IsInstalled`): the title bar
+  and Settings offer "Update launcher to <v>" / "Update to <v>", which download, apply and restart. Run from anywhere else (a build,
+  a copied folder): the same buttons open the newest `launcher-v*` release page.
+- **Unknown**: the update path end to end (1.0.1 → 1.0.2 is the first real one).
 
 ## Game zips per runtime
 
 `release.yml` runs `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
 both osx RIDs on macOS) and attaches all four zips to the one `v<version>` release. Each zip has a single top folder
-`Meitou-<version>-<rid>/` with the game (named by `Meitou.Game`'s `AssemblyName`), `meitou-viewer` and the self-contained Satori runtime. Unix zips are made with
+`Meitou-<version>-<rid>/` with the game (named by `Meitou.Game`'s `AssemblyName`), `meitou-viewer` and the self-contained .NET runtime. Unix zips are made with
 `zip(1)` (execute bits kept), macOS binaries and dylibs are ad-hoc signed, runtime debug symbols (`*.dbg`, ~250 MB) are dropped.
 
 Native dependencies off Windows:
 - Bundled from NuGet runtimes (**Verified** in the linux-x64 publish output): `libopenal.so`/`.dylib` (OpenAL Soft 1.23.1),
   `libglfw.so.3`/`.3.dylib` (GLFW 3.4), `libshaderc_shared`.
 - Only in the win-x64 zip: DLSS/Streamline 2.14.16 (`sl.*.dll`, `nvngx_dlss.dll`, `NvLowLatencyVk.dll`) and FSR (`amd_fidelityfx_vk.dll`),
-  copied from the vendor SDK zips by `package-release.ps1`; both load via `NativeLibrary.TryLoad` and report a reason when missing. `FsrUpscaler` also loads `vulkan-1.dll` by name.
+  copied from the vendor SDK zips by `package-release.ps1`; both load via `NativeLibrary.TryLoad` and report a reason when missing. `FsrUpscaler` also loads the Vulkan loader by name (`vulkan-1.dll`, `libvulkan.1.dylib` on macOS).
 - Linux: the Vulkan loader (`libvulkan.so.1`) and driver come from the system, as do X11/Wayland and the OpenAL backend
   (PipeWire/PulseAudio/ALSA). **Verified** (KDE on Wayland and X11, RTX 3070 Laptop with the NVIDIA driver, GLFW 3.4): the game starts, loads a large save, renders and plays with sound; other distributions, AMD and Intel GPUs were not run. Case-sensitive file systems need `GameFiles.Resolve` for paths from game data.
-- macOS: no Vulkan loader or MoltenVK is bundled (no `Silk.NET.MoltenVK.Native` reference); the user must install one (LunarG SDK).
-  `VulkanDevice` requests and requires Vulkan 1.3 and does not enable `VK_KHR_portability_enumeration`, which the loader needs to list
-  MoltenVK. **Unknown**: whether MoltenVK offers 1.3 and the features the renderer uses; never run on macOS. Browser downloads get
+- macOS: no Vulkan loader or MoltenVK is bundled (no `Silk.NET.MoltenVK.Native` reference); the user installs them
+  (Homebrew or the LunarG SDK). Runs on Apple Silicon, see [macos-port](macos-port.md). Browser downloads get
   Gatekeeper's quarantine flag (no Apple signing or notarisation).
 - Kenshi's Steam folder is found only on Windows (`GameInstall`); elsewhere it comes from `KENSHI_PATH` or the console prompt.
 

@@ -265,17 +265,6 @@ sealed partial class PlayerInterface
     }
 
 
-    /// <summary>
-    /// The surgeon verb: like the dialogue, it needs the patient beside the surgeon and more money than the price (DC_PLAYERMONEY &gt; cost); then the editor opens on the
-    /// patient in surgery mode. Payment happens when the editor is confirmed (<see cref="EditCharacter"/>).
-    /// </summary>
-    void AskSurgery(CharacterId patient, CharacterSnapshot surgeon, int cost)
-    {
-        if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == patient) is not { } p) return;
-        if (Vector3.Distance(p.Position, surgeon.Position) > CharacterEditing.SurgeonReach) { Notice($"{p.Name} has to walk up to {surgeon.Name} first.", true); return; }
-        if (cost > 0 && session.World.Player.Money <= cost) { Notice($"Surgery costs c.{cost.ToString("N0", CultureInfo.InvariantCulture)}: not enough money.", true); return; }
-        OpenEditor(EditKind.Surgery, [patient], surgeon.Id);
-    }
     static int IndexOf(IReadOnlyList<EditorRaceGroup> groups, GameRecord race)
     {
         for (int i = 0; i < groups.Count; i++)
@@ -331,7 +320,7 @@ sealed partial class PlayerInterface
         {
             Directory.CreateDirectory(Path.Combine(installRoot, ExportFolder));
             Meitou.Data.Fcs.FcsWriter.WriteFile(draft.Export(), Path.Combine(installRoot, relative));
-            Notice($"Character '{name}' exported to file ./{relative}");
+            Notice(Loc.Tr("Character '{1}' exported to file {2}", name, "./" + relative));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice($"Can't export '{name}': {e.Message}", true); }
     }
@@ -354,7 +343,7 @@ sealed partial class PlayerInterface
         Meitou.Data.Fcs.FcsRecord appearance;
         try { appearance = AppearanceFile.Read(path).Record; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or Meitou.Data.Fcs.FcsFormatException or InvalidDataException)
-        { Notice($"Error loading appearance file '{file}'. The file is in an old format or invalid.", true); return; }
+        { Notice(Loc.Tr("Error loading appearance file '{1}'. The file is in an old format or invalid.", file), true); return; }
         bool female = appearance.Bools.TryGetValue("sex female", out var f) && f;
         bool allowed = CharacterDraft.RaceOf(data.Db, appearance) is { } race && (s.Kind == EditKind.Creation
             ? IndexOf(EditorRaces(data.Db), race) >= 0
@@ -454,7 +443,7 @@ sealed partial class PlayerInterface
             var c = rows[i];
             float y = area.Y + i * row;
             string index = i.ToString(CultureInfo.InvariantCulture);
-            controls.Add(new($"editor-label-{i}", "TextBox", new(area.X + pad, y, labelWidth - pad, row), c.Label, "", "", true,
+            controls.Add(new($"editor-label-{i}", "TextBox", new(area.X + pad, y, labelWidth - pad, row), Loc.Tr(c.Label), "", "", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MainColour, ["TextAlign"] = "Left VCenter" }, Vector4.Zero, Pickable: false));
             if (c.IsPicker)
             {
@@ -510,7 +499,7 @@ sealed partial class PlayerInterface
             // As the original's "Character_Editor_Race_Stats" table (FUN_1405ebd50 area, Observed): "No bleeding" below a bleed rate of 0.1, then each stat multiplier
             // that is not 1 (RACE stats good / bad, strength, dexterity: RaceData.StatMultipliers) as (m - 1) x 100 %. Its first line, the character's hit points, is left out.
             var r = Meitou.Data.Gameplay.Bodies.RaceData.From(race, data.Db);
-            if (race.GetFloat("bleed rate", 1) < 0.1f) lines.Add(("No bleeding", "", true));
+            if (race.GetFloat("bleed rate", 1) < 0.1f) lines.Add((Loc.Tr("No bleeding"), "", true));
             for (int i = 1; i < r.StatMultipliers.Length; i++)
             {
                 float m = r.StatMultipliers[i];

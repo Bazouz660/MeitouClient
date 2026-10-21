@@ -464,5 +464,36 @@
     <Style Selector="Button.icon:pointerover Path">
       <Setter Property="Fill" Value="{StaticResource PaperLight}" />
     </Style>
+
+    <!-- Ko-fi support button on Home: Ko-fi's rounded button, white with black text -->
+    <Style Selector="Button.kofi">
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="MinHeight" Value="0" />
+      <!-- Overhangs the header's padding so the bar keeps its height -->
+      <Setter Property="Margin" Value="0,-8" />
+      <Setter Property="CornerRadius" Value="10" />
+    </Style>
+    <!-- Over the header's large pale TextBlock style (later style wins) -->
+    <Style Selector="Button.kofi TextBlock">
+      <Setter Property="Foreground" Value="Black" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.kofi /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="Black" />
+      <Setter Property="BorderBrush" Value="White" />
+      <Setter Property="BoxShadow" Value="0 1 3 0 #CC000000" />
+    </Style>
+    <Style Selector="Button.kofi:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#EBEBEB" />
+      <Setter Property="BorderBrush" Value="#EBEBEB" />
+      <Setter Property="Foreground" Value="Black" />
+    </Style>
+    <Style Selector="Button.kofi:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#D9D9D9" />
+      <Setter Property="BorderBrush" Value="#D9D9D9" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
   </Application.Styles>
 </Application>

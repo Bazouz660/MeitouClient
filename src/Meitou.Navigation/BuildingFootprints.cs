@@ -76,6 +76,34 @@ public sealed class BuildingFootprints
     /// <summary>Whether the footprint has been worked out (it may be none).</summary>
     public bool Ready(string buildingId) => Request(buildingId).IsCompleted;
 
+    /// <summary>The footprint of a BUILDING, read now if it was not yet (null: no collision).</summary>
+    public BuildingFootprint? Wait(string buildingId) => Request(buildingId).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// The placed footprints of the buildings that stand in a walker's way: the long-range grid's obstacles (<see cref="CoarseRoute"/>). Left out (engine choice): IGNORE
+    /// <c>path mode</c>, gateways, destroyed ones, and WALKABLE ones walked across rather than round: features (Shield Bridge, Swamp Walkboard) and those whose top is
+    /// below the agent height (pontoons, swamp platforms). WALKABLE walls and houses stay: you can stand on them, not walk through. Reads every record's footprint (on
+    /// the pool) before it returns.
+    /// </summary>
+    public IReadOnlyList<Vector2[]> Obstacles(IEnumerable<BuildingPlacement> placements, WorldLevelData levels, Func<double, double, float> terrainHeight)
+    {
+        var placed = new List<ResolvedBuilding>();
+        foreach (var b in placements)
+        {
+            if (b.TargetsZoneRecord || BuildingPlacements.Resolve(b, db, levels, terrainHeight) is not { Destroyed: false } r) continue;
+            var mode = (PathMode)r.Record.GetInt("path mode", (int)PathMode.Obstacle);
+            if (mode == PathMode.Ignore || r.Record.GetBool("is gateway") || mode == PathMode.Walkable && r.Record.GetBool("is feature")) continue;
+            placed.Add(r);
+            _ = Request(r.Record.StringId);
+        }
+        float agentHeight = new NavBuildSettings().AgentHeight;
+        var result = new List<Vector2[]>(placed.Count);
+        foreach (var r in placed)
+            if (Wait(r.Record.StringId) is { } footprint && !((PathMode)r.Record.GetInt("path mode", (int)PathMode.Obstacle) == PathMode.Walkable && footprint.YMax < agentHeight))
+                result.Add(footprint.Place(r.Position, r.Placement.Rotation));
+        return result;
+    }
+
     Task<BuildingFootprint?> Request(string buildingId) => byRecord.GetOrAdd(buildingId, id => Task.Run(() => Compute(id)));
 
     BuildingFootprint? Compute(string buildingId)

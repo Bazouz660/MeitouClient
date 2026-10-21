@@ -32,6 +32,10 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
 {
     /// <summary>A container of a building's interior, open (<see cref="PlayerSession.OpenContainer"/>): <see cref="Site"/> is its fixture id; no research, recipe or power.</summary>
     public bool IsContainer { get; init; }
+    /// <summary>The open loot (<see cref="PlayerSession.OpenLoot"/>), also <see cref="IsContainer"/>: the body whose main grid <see cref="Storage"/> shows (indices into its inventory's items), else none.</summary>
+    public CharacterId Body { get; init; } = CharacterId.None;
+    /// <summary>The window's caption when it is not the record's name (the looted character's).</summary>
+    public string? Title { get; init; }
     /// <summary>The research bench's tech level (0 for other machines).</summary>
     public int TechLevel { get; init; }
     /// <summary>Characters can work it (a well, farm or research bench).</summary>

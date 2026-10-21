@@ -8,7 +8,7 @@ using Meitou.Simulation.Production;
 namespace Meitou.Net.Replication;
 
 /// <summary>A prisoner's cage and sentence in wire form: the remaining sentence is whole minutes, so it is not resent every tick.</summary>
-public readonly record struct PrisonWire(bool Locked, float Sentence, long Minutes, int? Bail);
+public readonly record struct PrisonWire(bool Locked, float Sentence, long Minutes);
 
 /// <summary>A watcher of a sneaking character in wire form: the looker's position in 1/64 units, absolute (the codec sends it relative to the character).</summary>
 public readonly record struct WatcherWire(int X, int Y, int Z, StealthExposure Level);
@@ -83,7 +83,6 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
     public int Faction { get; internal set; }
     public int SquadId { get; internal set; }
     public int Owner { get; internal set; }
-    public int? SurgeryCost { get; internal set; }
     public string? Activity { get; internal set; }
     // Prison
     public PrisonWire? PrisonView { get; internal set; }
@@ -133,7 +132,6 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
             Faction = c.Faction,
             SquadId = c.SquadId,
             Owner = c.Owner,
-            SurgeryCost = c.SurgeryCost,
             Activity = WireText.LimitOrNull(c.Activity, NetLimits.MaxName),
             PrisonView = c.Prison is { } p ? QuantizePrison(p) : null,
             TurretView = c.Turret is { } t ? QuantizeTurret(t) : null,
@@ -166,7 +164,7 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
     static PrisonWire QuantizePrison(PrisonView p)
     {
         double minutes = double.IsFinite(p.HoursLeft) ? Math.Round(p.HoursLeft * 60.0) : 0.0;
-        return new PrisonWire(p.Locked, WireText.Finite(p.Sentence), (long)Math.Clamp(minutes, -1e12, 1e12), p.Bail);
+        return new PrisonWire(p.Locked, WireText.Finite(p.Sentence), (long)Math.Clamp(minutes, -1e12, 1e12));
     }
 
     static TurretWire QuantizeTurret(MannedTurret t) =>
@@ -212,7 +210,6 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
             IsPlayer = (FlagBits & IsPlayerFlag) != 0,
             Owner = Owner,
             IsTrader = (FlagBits & IsTraderFlag) != 0,
-            SurgeryCost = SurgeryCost,
             Selected = (FlagBits & SelectedFlag) != 0,
             Inspected = (FlagBits & InspectedFlag) != 0,
             Orders = Orders,
@@ -236,7 +233,7 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
             Activity = Activity,
             Stealth = StealthLevel,
             StealthKoChance = StealthKoChance,
-            Prison = PrisonView is { } p ? new PrisonView(p.Locked, p.Sentence, p.Minutes / 60.0, p.Bail) : null,
+            Prison = PrisonView is { } p ? new PrisonView(p.Locked, p.Sentence, p.Minutes / 60.0) : null,
             Turret = TurretView is { } t
                 ? new MannedTurret(t.Key, t.BuildingId, new Vector3(Quant.FromQ64(t.X), Quant.FromQ64(t.Y), Quant.FromQ64(t.Z)), Quant.FromYaw16(t.Yaw), t.GunId)
                 : null,
@@ -259,7 +256,7 @@ public sealed class CharacterWire : IEquatable<CharacterWire>
         if (!Equals(RagdollPose, other.RagdollPose)) m |= Ragdoll;
         if (LookId != other.LookId || Scale != other.Scale) m |= Look;
         if (!string.Equals(Name, other.Name, StringComparison.Ordinal) || Faction != other.Faction || SquadId != other.SquadId || Owner != other.Owner
-            || SurgeryCost != other.SurgeryCost || !string.Equals(Activity, other.Activity, StringComparison.Ordinal)) m |= Identity;
+            || !string.Equals(Activity, other.Activity, StringComparison.Ordinal)) m |= Identity;
         if (PrisonView != other.PrisonView) m |= Prison;
         if (!Equals(TurretView, other.TurretView)) m |= Turret;
         if (!JobList.AsSpan().SequenceEqual(other.JobList)) m |= Jobs;

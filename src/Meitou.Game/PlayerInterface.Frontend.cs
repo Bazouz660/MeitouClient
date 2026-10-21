@@ -42,7 +42,7 @@ sealed partial class PlayerInterface
     }
     void Confirm(string title, string text, Action action, string yes = "YES", (string Caption, Action Act)? middle = null)
     {
-        confirmation = new(title, text, action, yes, middle); faithfulScreens.Open("message");
+        confirmation = new(UpperTr(title), Loc.Tr(text), action, UpperTr(yes), middle is { } m ? (UpperTr(m.Caption), m.Act) : null); faithfulScreens.Open("message");
     }
     /// <summary>A message box with only OK (a multiplayer session that ended, docs/meitou-ui.md "Multiplayer").</summary>
     void Alert(string title, string text)
@@ -140,7 +140,7 @@ sealed partial class PlayerInterface
                 try { SaveCatalog.ValidateName(name); }
                 catch (ArgumentException ex) { Notice(ex.Message, true); return true; }
                 void Save() { ScreenAction?.Invoke(new("save", "SaveButton", "save", name)); faithfulScreens.Close("save"); }
-                if (slots.Any(s => s.Writable && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))) Confirm("OVERWRITE SAVE", $"Replace '{name}'?", Save); else Save();
+                if (slots.Any(s => s.Writable && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))) Confirm("OVERWRITE SAVE", Loc.Tr("Overwrite save '{1}'?", name), Save); else Save();
             }
             return true;
         }

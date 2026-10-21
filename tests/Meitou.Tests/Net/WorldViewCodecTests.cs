@@ -126,7 +126,7 @@ public class WorldViewCodecTests
     {
         var link = new Link();
 
-        var items = new List<GroundItemSnapshot> { new(7, "10-bread", "Bread", new Vector3(1, 2, 3), -1.5f), new(-2, "11-axe", "", new Vector3(-4, 0, 5e4f), 3.1f) };
+        var items = new List<GroundItemSnapshot> { new(7, "10-bread", "Bread", new Vector3(1, 2, 3), Quaternion.CreateFromAxisAngle(Vector3.UnitY, -1.5f), true), new(-2, "11-axe", "", new Vector3(-4, 0, 5e4f), new Quaternion(0.1f, 0.2f, 0.3f, 0.9f), false) };
         var groundSync = ViewCodecs.GroundItemsSync();
         var groundDecoder = ViewCodecs.GroundItemsDecoder();
         link.Receive(link.Send((w, s) => groundSync.Encode(items, false, T0, w, s)), (ref NetReader r, StringTableReader s) => groundDecoder.Apply(ref r, s));

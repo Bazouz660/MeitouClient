@@ -64,6 +64,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         OffscreenHealing = this.settings.OffscreenHealing;
         CampaignAncestorsOnce = this.settings.CampaignAncestorsOnce;
         KeepWild = this.settings.KeepWild;
+        ResidentSchedule = this.settings.ResidentSchedule;
         live = new WorldStates(data.Db, data.Relations);
         if (!this.settings.Background) return;
         work = [];
@@ -79,6 +80,11 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     public bool CampaignAncestorsOnce { get; set; }
     /// <summary>The wild-squad switch (<see cref="PopulationSettings.KeepWild"/>), changed live by the host.</summary>
     public bool KeepWild { get; set; }
+    /// <summary>The residents' schedule switch (<see cref="PopulationSettings.ResidentSchedule"/>), changed live by the host.</summary>
+    public bool ResidentSchedule { get; set; }
+
+    /// <summary>Game hours a town must have been unloaded for its residents to come back where their schedule puts them (engine choice: a quick reload changes nothing).</summary>
+    public const double ScheduleAfterHours = 1;
 
     readonly WorldStates live;
     /// <summary>The world states the population's spawns and campaigns read: the data's fixed ones when it has any, else the live ones of this world (<see cref="WorldStates"/>).</summary>
@@ -177,7 +183,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
                 if (site.Town.Type is TownType.NestMarker or TownType.Null) continue;   // never on the map
                 float d2 = Vector2.DistanceSquared(at, new(site.Position.X, site.Position.Z)), far = DiscoverRangeOf(site.Town.Type);
                 if (d2 <= ExploreRange * ExploreRange) player.Know(site.Index, TownKnowledge.Discovered | TownKnowledge.Explored);
-                else if (d2 <= far * far && player.Know(site.Index, TownKnowledge.Discovered) && site.Town.Type != TownType.Nest) world.Post($"Discovered {site.Town.Name}");
+                else if (d2 <= far * far && player.Know(site.Index, TownKnowledge.Discovered) && site.Town.Type != TownType.Nest) world.Post(Loc.Tr("Discovered {1}", site.Town.Name));
             }
             var wild = WildSites;
             for (int w = 0; w < wild.Count && w < wildCentres.Length; w++)
@@ -271,7 +277,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         foreach (int id in state.Squads)
         {
             if (world.Squads.Find(id) is not { } squad) continue;
-            var stored = new StoredSquad { Name = squad.Name, HomeBuilding = squad.HomeBuilding, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id };
+            var stored = new StoredSquad { Name = squad.Name, HomeBuilding = squad.HomeBuilding, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id, Ai = Saving.AiSave.Of(squad.Ai) ?? squad.SavedAi };
             var at = Store(world, squad, stored);
             world.Squads.Remove(id);
             if (stored.Members.Count == 0) continue;

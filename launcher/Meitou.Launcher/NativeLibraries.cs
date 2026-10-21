@@ -5,7 +5,8 @@ using System.Security.Cryptography;
 namespace Meitou.Launcher;
 
 /// <summary>
-/// The published launcher is one Native AOT executable, but Avalonia's native libraries (Skia, HarfBuzz, ANGLE on Windows) cannot be
+/// The published launcher is one Native AOT executable, but Avalonia's native libraries (Skia, HarfBuzz, ANGLE on Windows,
+/// AvaloniaNative on macOS) cannot be
 /// linked in statically. The csproj embeds them as <c>native/&lt;file&gt;</c> resources; this writes them once to
 /// <c>native/&lt;content hash&gt;/</c> in <see cref="LauncherConfig.DataDirectory"/> and loads them from there (docs/launcher.md).
 /// Debug builds embed nothing and load them from next to the executable as usual.
@@ -56,5 +57,7 @@ static class NativeLibraries
         DllImportResolver resolver = (library, _, _) => handles.GetValueOrDefault(Path.GetFileNameWithoutExtension(library));
         NativeLibrary.SetDllImportResolver(typeof(SkiaSharp.SKObject).Assembly, resolver);
         NativeLibrary.SetDllImportResolver(typeof(HarfBuzzSharp.Blob).Assembly, resolver);
+        // macOS's libAvaloniaNative: dyld never matches a bare name to an already loaded library, so it needs the resolver too.
+        NativeLibrary.SetDllImportResolver(typeof(Avalonia.AvaloniaNativePlatformOptions).Assembly, resolver);
     }
 }

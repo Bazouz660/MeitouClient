@@ -263,6 +263,9 @@ research `14213358c`) default **Unknown**; 1 below.
 **Per operator and frame** (**Observed**, `ProductionBuilding::vfunc_150` `FUN_140298700`, called by
 `Task_OperateMachine` `FUN_14035bc90` with the operator's skill factor s):
 `amount = yield x outputRate x upgrade x dt x P x health x powerSat x s x option`. Several operators add up.
+Nothing else calls slot 150 (**Observed**: the only decompiled caller of vtable +0x4b0 that also tests the building), and neither it
+nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner: any building, the player's, an NPC town's or a rock, makes output
+only while someone operates it.
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
   helper `FUN_140015b63` is `a + (b - a) t`).
 - outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
@@ -280,8 +283,9 @@ clamps amount to what the inputs hold and to `capacity - held - progress`; nothi
 Else status 2, inputs drawn, progress += amount; each time progress >= 0.999 one output item is added and progress is 0
 (`vfunc_184` `FUN_1402984b0`). Example: well (Water 10, production mult 48, `output rate` 0.75) at s 1: 36 water/day,
 holding at most 10. Save (`vfunc_17`/`18` `FUN_1402a1fa0` / `FUN_1402a23a0`, **Observed**): floats `production amount`
-(output progress), `resource mult` (yield), `mining resource level` (natural sites only), `consumption amount-<k>`
-(input levels); the items are in the building's INVENTORY_STATE.
+(output progress), `resource mult` (yield), `mining resource level` (the yield again, written only for a building that is
+not a natural site, has a functionality and passes the owner test of [resources](#resources); 0 occurrences in two saves),
+`consumption amount-<k>` (input levels); the items are in the building's INVENTORY_STATE.
 
 | function | examples (production mult) |
 |---|---|
@@ -307,13 +311,24 @@ field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, 
   f = clamp((d² - r²) / (1500² - r²)), r = the rock's mean horizontal half-size, at least 25 (Meitou always 25: the term
   moves the result under 0.5% for rocks up to 100). No `resources` record or no rock: 0.
 - Rocks are BUILDINGs with `is foliage` placed by the foliage system as a FOLIAGE_MESH's `building type` ("Iron
-  Resource", "Copper Resource", "Stone Resource"; functionality 1 with the resource, not 27). A rock is a natural
-  site: its yield is the resources record's `<p> mult` where it stands (0.1 when missing), at least 0.1
-  (`FarmBuilding::vfunc_92` returns it).
+  Resource", "Copper Resource", "Stone Resource"; functionality 1 with the resource, not 27). Level data also places
+  `is foliage` buildings (1241 "Iron Resource" entries in the merged building lists, **Observed**). A rock is a natural site
+  (Building `+0xc0`): its yield is `FUN_140a12ff0` where it stands, at least 0.1 (`FarmBuilding::vfunc_92` returns it):
+  WATER/GROUND as above, STONE the stone noise x `stone mult`, else the resources record's `<p> mult` (0 when missing).
+- **Rocks are mined like mines** (**Verified** data, gamedata.base): the rock BUILDINGs reference the player mines'
+  functionalities (Iron Resource → `Ore mine`: Raw Iron, output 5, `production mult` 64; Copper Resource → `copper mine`:
+  Copper, output 5, 72; both `stat used` 3, `stonemine`, special tool Pickaxe, `output per day`) with their own `output rate`
+  (1.2, 1) and `max operators` (3, 2). So hand mining is `Task_OperateMachine` on the rock (**Observed**); the ore waits in
+  the rock's output until the player takes it (**Observed** by the owner in play; no rock-specific transfer in the operate update). No
+  rock has a saved state in two saves (253 zone files, **Observed**).
 - A building that is not the player's (`FUN_140546dd0`: its owner's `+0x250`, the test also used by research
   upgrades and generator fuel) yields 0.5 where it would get 0; the player's yields 0.
 - The farm efficiency also reads the record's `arid`, `green`, `swamp` coverages (crop types 2, 1, 3).
-- The prospecting window lists water, fertility, stone, iron and copper from `uses_resources` ([ui-screens](ui-screens.md#prospecting)); mining the rocks directly is not in the engine.
+- The prospecting window lists water, fertility, stone, iron and copper from `uses_resources` ([ui-screens](ui-screens.md#prospecting)).
+- **NPC mines** (**Observed**, two saves of one game): NPC towns' mines have production states; Quarry Mine A 14 of 16,
+  Quarry Mine B 16 of 18 and Stone Mine 8 of 8 with `production amount` > 0 (at most 0.19), none holding output items; Ore
+  Mine 0 of 8; Ore Drill III (Automated) `resource mult` 0.5 (the not-player fallback). So NPCs work them (the town goal 43
+  Staying home leads to 221 operating, [ai-tasks](ai-tasks.md#town-goals)). **Unknown:** what empties an NPC mine's output.
 
 ## Crafting
 
@@ -337,7 +352,9 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   **Verified** by the bytes. `total coverage` (`FUN_14082fd80`): sum of `part coverage` v0, chest `101-gamedata.quack`
   x1.5 truncated, 0 -> 100.
 - **Quality.** Armour (`FUN_14082e6b0`): tier from the int skill (20, 40, 60, 80 -> 1..4), +1 on a critical, at most 5;
-  quality by tier 5, 20, 40, 60, 80, 95 (**Verified**, jump table). Critical chance (`FUN_1402b5900`): (skill -
+  quality by tier 5, 20, 40, 60, 80, 95 (**Verified**, jump table). A robotic limb (type 111) or crossbow takes the same roll as
+  its `level` (`FUN_1402bcac0` passes it to the item factory, whose limb and crossbow branches hand it to the Gear constructor;
+  **Verified**, decompile); Meitou caps it at `tech level` as for armour. Critical chance (`FUN_1402b5900`): (skill -
   threshold)/50, none below 0; threshold for stats 8 and 38 the floor of the skill's tier (80/60/40/20, else 5), else
   the item level. A weapon below the crafter's skill with no critical comes out as a lower model
   (`uses_weapon_crafts_weapon_models`; which model is **Unknown**, Meitou takes the best at or below the skill).
@@ -486,7 +503,8 @@ storage` (function 2); Large Barrels also hold Water.
 ### Hauling
 
 - **Tasks** (**Verified** classes, **Observed** meaning): `Task_EmptyMachine` (92 "Collecting resource", 284 "Looting")
-  moves a building's output into the character's inventory while it has room (`FUN_14033cd10`). `Task_FillMachine`
+  moves a building's output into the character's inventory while it has room (`FUN_14033cd10`). No GOAP row has "output not
+  full" (!63) as its effect, so a full output blocks operating (87) rather than leading the planner to 92 (**Observed**, table). `Task_FillMachine`
   (93 "Filling machine", 124 "Hauling to") puts carried items, main grid and backpack, into a machine or a storage
   (`FUN_140344510`). GOAP rows: [ai-tasks](ai-tasks.md); states 62 machineHasEmptyInputs, 63 isMachineOutputFull,
   66 haveSomeResourcesFrom, 67 haveSomeResourcesFor, 82 gotInventoryRoomForResources, 169 isMachineInputInvalid.

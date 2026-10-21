@@ -37,8 +37,10 @@ public static class DdsReader
     /// bytes from its first surface on are read. A dropped top level is three quarters of a mip chain's bytes, which were read, held and thrown away with the file.
     /// The result's <see cref="DdsFile.Data"/> starts at its first surface (the offsets are rebased); when <paramref name="keep"/> returns <paramref name="whole"/> itself (nothing dropped)
     /// the result is the whole file, as <see cref="Read"/> returns it, and <paramref name="whole"/> is that file.
+    /// With <paramref name="pool"/> the result's <see cref="DdsFile.Data"/> is rented from it and may be longer than the bytes read (go by the surfaces, not its length;
+    /// <see cref="DdsFile.TrailingBytes"/> means nothing): the caller returns it once nothing reads the file any more (docs/engine.md, pooled buffers).
     /// </summary>
-    public static DdsFile ReadKept(Microsoft.Win32.SafeHandles.SafeFileHandle file, Func<DdsFile, DdsFile> keep, out DdsFile whole)
+    public static DdsFile ReadKept(Microsoft.Win32.SafeHandles.SafeFileHandle file, Func<DdsFile, DdsFile> keep, out DdsFile whole, System.Buffers.ArrayPool<byte>? pool = null)
     {
         long length = RandomAccess.GetLength(file);
         if (length > int.MaxValue) throw new DdsFormatException($"File of {length} bytes is too large.");
@@ -46,17 +48,21 @@ public static class DdsReader
         head = head[..ReadFully(file, head, 0)];
         var headers = Parse(head, length, []);
         var kept = keep(headers);
-        if (ReferenceEquals(kept, headers) || kept.Surfaces.Count == 0)
+        bool all = ReferenceEquals(kept, headers) || kept.Surfaces.Count == 0;
+        int first = all ? 0 : kept.Surfaces[0].Offset, count = (int)(length - first);
+        var data = pool?.Rent(count) ?? new byte[count];
+        try
         {
-            var all = new byte[length];
-            if (ReadFully(file, all, 0) != length) throw new DdsFormatException("File ended early.");
-            return whole = Parse(all, length, all);
+            if (ReadFully(file, data.AsSpan(0, count), first) != count) throw new DdsFormatException("File ended early.");
+            if (all) return whole = Parse(data, length, data);
+            whole = headers;
+            return kept.WithData(data, kept.Surfaces.Select(s => s with { Offset = s.Offset - first }).ToList());
         }
-        whole = headers;
-        int first = kept.Surfaces[0].Offset;
-        var tail = new byte[length - first];
-        if (ReadFully(file, tail, first) != tail.Length) throw new DdsFormatException("File ended early.");
-        return kept.WithData(tail, kept.Surfaces.Select(s => s with { Offset = s.Offset - first }).ToList());
+        catch
+        {
+            pool?.Return(data);
+            throw;
+        }
     }
 
     static int ReadFully(Microsoft.Win32.SafeHandles.SafeFileHandle file, Span<byte> buffer, long offset)

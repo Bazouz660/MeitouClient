@@ -296,4 +296,80 @@ public class QuickSaveTests
             if (Directory.Exists(Path.GetDirectoryName(again)!)) Directory.Delete(Path.GetDirectoryName(again)!, recursive: true);
         }
     }
+
+    /// <summary>
+    /// What Meitou keeps beyond the original's keys (docs/formats/save.md "NPC platoons", docs/game/ragdolls.md "Saves"): a trader's shop (stock, purse, fill count, restock)
+    /// and a knocked-out character's settled ragdoll come back from a save as they were, and a second save writes their keys again.
+    /// </summary>
+    [Fact, Slow]
+    public void A_shops_stock_and_a_settled_ragdoll_survive_a_save_load_and_second_save()
+    {
+        var install = GameInstall.Locate();
+        Assert.SkipWhen(install is null, "Kenshi install not found");
+        var db = InstallData.BaseGame!;
+        var levels = InstallData.Levels!;
+        var data = PopulationData.Create(db, levels.Towns(), new GeneratedAppearances(db, install!.Root));
+        var assets = new Meitou.Rendering.AssetLocator(install);
+        var rigs = new Meitou.Data.Characters.CharacterRigs(db, p => assets.Configured.Find(Path.GetFileName(p.Replace('\\', '/'))) ?? assets.Find(p), n => assets.Find(n));
+        var lengths = AnimationLengths.Load(install.Root, db);
+        var walk = new OpenGroundWalkability((_, _) => 300);
+        SimWorld Make() => new(new WorldSettings { Seed = 5, Threads = 2, PublishSnapshots = false }, walk, StandardSystems.Build(data, walk, new StandardSystemOptions
+        {
+            Parts = StandardParts.Population | StandardParts.Player | StandardParts.Trade | StandardParts.Movement | StandardParts.Body | StandardParts.Animation,
+            SynchronousPaths = true, Population = new PopulationSettings { CheckEveryTicks = 1 }, Ragdolls = rigs, AnimationLengths = lengths,
+        }).Systems);
+        static Meitou.Simulation.Ragdolls.RagdollSystem Ragdolls(SimWorld w) => w.Systems.OfType<Meitou.Simulation.Ragdolls.RagdollSystem>().Single();
+        static List<(string, int, int, int)> Stock(Squad s) => [.. s.Shop!.Stock.Items.Select(i => (i.Record, i.Quantity, i.X, i.Y))];
+
+        using var a = Make();
+        var squad = a.Systems.OfType<PopulationSystem>().Single().StartPlayer(a, NewGameStart.Find(NewGameStart.LoadAll(db), NewGameStart.DefaultName)!);
+        a.Player.Faction = data.PlayerFaction;
+        a.RunTicks(30);
+        var downed = squad.Members[0];
+        a.Characters.Cold(downed.Slot)!.Medical!.KnockOut(600);
+        for (int t = 0; t < 600 && Ragdolls(a).SaveState(downed) is not { Frozen: true }; t++) a.RunTicks(1);
+        var ragdoll = Ragdolls(a).SaveState(downed);
+        Assert.True(ragdoll is { Frozen: true }, "the knocked-out character's ragdoll settles");
+        var shop = a.Squads.All.First(s => s.Shop is { Stock.Items.Count: > 1 });
+        shop.Shop!.Stock.Items.RemoveAt(0);   // a fresh fill would not give this stock
+
+        string root = Temp("meitou-keys");
+        try
+        {
+            var save = SaveCapture.Capture(a, data, new SaveClock(1, 13, 39), null, new SaveCaptureOptions { Placements = levels.Towns().ToList() });
+            string folder = QuickSave.Folder(root);
+            save.Write(folder);
+
+            using var b = Make();
+            var loaded = SaveLoader.Load(b, SaveGame.Load(folder), data, new SaveLoadOptions { Appearances = data.Appearances });
+            b.Player.Faction = data.PlayerFaction;
+            b.RunTicks(300);   // the shop's town loads and makes its saved platoons
+            var again = Ragdolls(b).SaveState(b.Squads.Find(b.Player.Local.Squad)!.Members[0]);
+            Assert.NotNull(again);
+            Assert.Equal((ragdoll!.Frozen, ragdoll.Age), (again!.Frozen, again.Age));
+            Assert.Equal(ragdoll.Pose.Length, again.Pose.Length);
+            for (int i = 0; i < ragdoll.Pose.Length; i++)   // the rotations are normalised again when read
+            {
+                Assert.Equal(ragdoll.Pose[i].Position, again.Pose[i].Position);
+                Assert.True(MathF.Abs(Quaternion.Dot(ragdoll.Pose[i].Rotation, again.Pose[i].Rotation)) > 1 - 1e-5f, $"body {i}");
+            }
+            var shopB = b.Squads.All.Single(s => s.TemplateId == shop.TemplateId && s.Town == shop.Town && s.Shop is not null);
+            Assert.Equal(Stock(shop), Stock(shopB));
+            Assert.Equal((shop.Money, shop.Shop.Fills), (shopB.Money, shopB.Shop!.Fills));
+            // The next restock is the saved game hour.
+            float refresh = save.Platoons.Single(p => p.Record.Strings.ContainsKey(ShopSave.StockKey) && p.SquadTemplate == shop.TemplateId && p.Money == shop.Money)
+                .Record.Floats[ShopSave.RefreshKey];
+            Assert.InRange(b.GameHours + (shopB.Shop.NextRestockTick - b.Tick) * BodySystem.HoursPerTick - refresh, -0.01, 0.01);
+
+            var second = SaveCapture.Capture(b, data, loaded.Clock, loaded, new SaveCaptureOptions { Placements = levels.Towns().ToList() });
+            Assert.Contains(second.Platoons, p => p.Record.Strings.ContainsKey(ShopSave.StockKey) && p.SquadTemplate == shop.TemplateId);
+            Assert.Contains(second.Characters, c => c.GameState?.Strings.ContainsKey(RagdollSave.Key) == true);
+            foreach (var s in b.Systems) (s as IDisposable)?.Dispose();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            foreach (var s in a.Systems) (s as IDisposable)?.Dispose();
+        }
+    }
 }

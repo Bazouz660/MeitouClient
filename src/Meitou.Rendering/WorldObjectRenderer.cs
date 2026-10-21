@@ -1443,6 +1443,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public void Dispose()
     {
         if (ObjectLodGen.Built + ObjectLodGen.Cached > 0) Console.WriteLine($"object lods  {ObjectLodGen.Built} meshes generated ({System.Diagnostics.Stopwatch.GetElapsedTime(0, ObjectLodGen.BuildTicks).TotalSeconds:0.0} s of worker time), {ObjectLodGen.Cached} read from the cache, {ObjectLodGen.Skipped} too small or not eligible");
+        DisposeBuildingIcons();
         colourProg.Dispose();
         solidProg.Dispose();
         depthProg.Dispose();

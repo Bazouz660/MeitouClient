@@ -13,6 +13,9 @@ public sealed record NewGameStart
 {
     public required string Id { get; init; }
     public required string Name { get; init; }
+    /// <summary>The name in the data files (<see cref="GameRecord.BaseName"/>), so a start is found by its English name in any language.</summary>
+    public string BaseName { get => baseName ?? Name; init => baseName = value; }
+    string? baseName;
     /// <summary><c>money</c>: "Starting cash".</summary>
     public int Money { get; init; }
     /// <summary><c>start pos X</c> and <c>start pos Z</c>: where the new-game map opens; the player picks a start town from <see cref="Towns"/>. Only <see cref="ForceStartPos"/> makes it the place the squad stands.</summary>
@@ -38,6 +41,7 @@ public sealed record NewGameStart
         {
             Id = r.StringId,
             Name = r.Name,
+            BaseName = r.BaseName,
             Money = r.GetInt("money"),
             StartPosition = new Vector2(r.GetInt("start pos X"), r.GetInt("start pos Z")),
             ForceStartPos = r.GetBool("force start pos"),
@@ -58,7 +62,8 @@ public sealed record NewGameStart
     /// <summary>The standard start of the base game (difficulty "Default", the one with the Wanderer squad).</summary>
     public const string DefaultName = "Wanderer";
 
-    /// <summary>Finds a start by name (case-insensitive) or string id.</summary>
+    /// <summary>Finds a start by name (case-insensitive; the shown or the data-file name) or string id.</summary>
     public static NewGameStart? Find(IEnumerable<NewGameStart> starts, string nameOrId) =>
-        starts.FirstOrDefault(s => s.Id == nameOrId) ?? starts.FirstOrDefault(s => string.Equals(s.Name, nameOrId, StringComparison.OrdinalIgnoreCase));
+        starts.FirstOrDefault(s => s.Id == nameOrId) ?? starts.FirstOrDefault(s => string.Equals(s.Name, nameOrId, StringComparison.OrdinalIgnoreCase))
+        ?? starts.FirstOrDefault(s => string.Equals(s.BaseName, nameOrId, StringComparison.OrdinalIgnoreCase));
 }

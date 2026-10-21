@@ -18,8 +18,17 @@ public sealed class NavSystem : IDisposable
     /// <summary>The buildings the player placed, which every zone build sees (<see cref="AddRuntimeBuilding"/>).</summary>
     public NavRuntimeBuildings Runtime { get; } = new();
 
+    // Footprints for the long-range grid's obstacles, the level data's and the player's (one record cache for both).
+    readonly Lazy<BuildingFootprints> footprints;
+    readonly WorldLevelData levels;
+    readonly Func<double, double, float> placementHeight;
+    readonly object playerRouteGate = new();
+
     public NavSystem(GameInstall install, GameDatabase db, WorldLevelData levels, Func<float, float, float> terrainHeight, NavBuildSettings? settings = null, NavMeshCache? cache = null)
     {
+        this.levels = levels;
+        placementHeight = (x, z) => terrainHeight((float)x, (float)z);
+        footprints = new(() => new BuildingFootprints(install, db, levels));
         // The long-range grid reads every second heightmap sample (36 units) when it is first needed: the simulation's own grid is coarse far from the start.
         Walkability = new NavmeshWalkability(terrainHeight, routeTerrain: () =>
         {
@@ -27,8 +36,9 @@ public sealed class NavSystem : IDisposable
             var raw = map.Downsample(2, out int size);
             var grid = new HeightWindow(0, 0, 2, size, size, raw);
             return (x, z) => grid.TryHeightAt(x, z, out float h) ? h : terrainHeight(x, z);
-        });
+        }, routeObstacles: () => footprints.Value.Obstacles(levels.Buildings(), levels, placementHeight));
         service = new NavMeshService(install, db, levels, Walkability, settings, cache, Runtime);
+        Walkability.KeepStanding = service.KeepAt;
         Walkability.DoorGeometry = new NavDoorGeometry(install, db);
     }
 
@@ -71,14 +81,25 @@ public sealed class NavSystem : IDisposable
     {
         Runtime.Add(placement);
         foreach (var zone in NavRuntimeBuildings.ZonesReached(placement.Position)) RebuildZone(zone);
+        UpdatePlayerRoute();
     }
 
     /// <summary>The building is gone (dismantled, cancelled, a world replaced): the zones it shaped are built again without it.</summary>
     public void RemoveRuntimeBuilding(string instanceId)
     {
-        if (Runtime.Remove(instanceId) is { } removed)
-            foreach (var zone in NavRuntimeBuildings.ZonesReached(removed.Position)) RebuildZone(zone);
+        if (Runtime.Remove(instanceId) is not { } removed) return;
+        foreach (var zone in NavRuntimeBuildings.ZonesReached(removed.Position)) RebuildZone(zone);
+        UpdatePlayerRoute();
     }
+
+    /// <summary>
+    /// Gives the long-range grid the player's buildings now, on the pool (their footprints may need reading). Runs one at a time, each from the overlay as it is
+    /// then, so the last one leaves the newest set.
+    /// </summary>
+    void UpdatePlayerRoute() => Task.Run(() =>
+    {
+        lock (playerRouteGate) Walkability.Coarse.SetPlayerObstacles(footprints.Value.Obstacles(Runtime.All(), levels, placementHeight));
+    });
 
     /// <summary>Builds a zone again if its mesh is loaded (a zone that is not is built with the current buildings when it is asked for).</summary>
     public void RebuildZone(ZoneCoordinate zone)

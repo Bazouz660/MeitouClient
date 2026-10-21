@@ -286,20 +286,23 @@ public static class ProtocolCodec
         return new NetRules(sendRate, policy, maxPlayers, (flags & 1) != 0, (flags & 2) != 0, r.ReadVarInt32());
     }
 
-    /// <summary>The body of <see cref="SessionRules"/>: attack slots, then a flags byte with the eight switches in declaration order.</summary>
+    /// <summary>The body of <see cref="SessionRules"/>: attack slots, a varint of flags with the nine switches in declaration order, then the ground item limit.</summary>
     public static void Write(NetWriter w, SessionRules m)
     {
         w.WriteVarInt(m.AttackSlots);
         int flags = (m.LateDefences ? 1 : 0) | (m.DoorsCloseBehind ? 2 : 0) | (m.KeepRoamers ? 4 : 0) | (m.OffscreenFights ? 8 : 0)
-            | (m.OffscreenHealing ? 16 : 0) | (m.CampaignAncestorsOnce ? 32 : 0) | (m.KeepWild ? 64 : 0) | (m.LuckyrenMode ? 128 : 0);
-        w.WriteByte((byte)flags);
+            | (m.OffscreenHealing ? 16 : 0) | (m.CampaignAncestorsOnce ? 32 : 0) | (m.KeepWild ? 64 : 0) | (m.LuckyrenMode ? 128 : 0) | (m.ResidentSchedule ? 256 : 0);
+        w.WriteVarUInt((uint)flags);
+        w.WriteVarInt(m.GroundItemLimit);
     }
 
     public static SessionRules ReadSessionRules(ref NetReader r)
     {
         int slots = r.ReadVarInt32();
-        byte f = r.ReadByte();
-        return new SessionRules(slots, (f & 1) != 0, (f & 2) != 0, (f & 4) != 0, (f & 8) != 0, (f & 16) != 0, (f & 32) != 0, (f & 64) != 0, (f & 128) != 0);
+        uint f = r.ReadVarUInt32();
+        if ((f & ~0x1FFu) != 0) throw new NetFormatException($"Unknown session rule flags {f}.");
+        int groundItems = r.ReadVarInt32();
+        return new SessionRules(slots, (f & 1) != 0, (f & 2) != 0, (f & 4) != 0, (f & 8) != 0, (f & 16) != 0, (f & 32) != 0, (f & 64) != 0, (f & 128) != 0, (f & 256) != 0, groundItems);
     }
 
     // ---- Roster ----

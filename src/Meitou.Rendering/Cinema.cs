@@ -18,16 +18,19 @@ enum CinemaKey
 /// the bottom of the window (<see cref="Draw"/>): drag keys to retime them, drag the ruler to scrub, buttons to add, replace, delete and ease keys,
 /// to record a camera path (a key every <see cref="PathStep"/> seconds while you fly) and to delete every key.
 /// The keys are kept in <paramref name="file"/> across starts (<see cref="ViewerFile"/>, <see cref="GameFile"/>). Without
-/// <paramref name="setHour"/> (the game, whose hour is the simulation clock's) "time follows" is unavailable. PageUp/PageDown zoom the lens only with
-/// <paramref name="lensKeysAlways"/> (the viewer): in the game they are its floor keys. Home puts the lens back wherever <see cref="LensResetLive"/>.
+/// <paramref name="setHour"/> (the game, whose hour is the simulation clock's) "time follows" is unavailable. PageUp/PageDown zoom the lens wherever
+/// <see cref="LensZoomLive"/>: elsewhere in the game they are its floor keys. Home puts the lens back wherever <see cref="LensResetLive"/>.
 /// </summary>
 sealed class Cinema(Func<WorldCamera> camera, Func<float> getHour, Action<float>? setHour, Func<bool> fullScreenOn, Action toggleFullScreen, string file, bool lensKeysAlways = true)
 {
-    /// <summary>The game's other times for Home besides the open editor: its free camera and a camera the cinema holds.</summary>
+    /// <summary>The game's other times for the lens keys (and for Home besides the open editor): its free camera and a camera the cinema holds.</summary>
     public Func<bool>? LensKeys { get; set; }
 
     /// <summary>Whether Home puts the lens back (the viewer always; the game in the free camera, on a camera the cinema holds, and with its editor open).</summary>
     public bool LensResetLive => lensKeysAlways || EditorVisible || LensKeys?.Invoke() == true;
+
+    /// <summary>Whether PageUp/PageDown zoom the lens (the viewer always; the game in the free camera and on a camera the cinema holds).</summary>
+    public bool LensZoomLive => lensKeysAlways || LensKeys?.Invoke() == true;
 
     /// <summary>The viewer's keys file.</summary>
     public static string ViewerFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Meitou", "viewer-shots.json");
@@ -115,9 +118,9 @@ sealed class Cinema(Func<WorldCamera> camera, Func<float> getHour, Action<float>
                 Say(Summary());
                 foreach (var k in Sorted) Console.WriteLine($"  {k.Label,2}  {k.Time,6:0.00} s{(k.Ease ? " ease" : "     ")}  {Describe(k.Shot)}");
                 return true;
-            // PageUp/PageDown zoom the lens in the viewer only: in the game they are floor_up / floor_down, in every camera.
-            case CinemaKey.PageUp when lensKeysAlways: cam.FieldOfView = MathF.Max(cam.FieldOfView - 2.5f * MathF.PI / 180, MinFov); Say($"field of view {Degrees(cam.FieldOfView):0.#} deg"); return true;
-            case CinemaKey.PageDown when lensKeysAlways: cam.FieldOfView = MathF.Min(cam.FieldOfView + 2.5f * MathF.PI / 180, MaxFov); Say($"field of view {Degrees(cam.FieldOfView):0.#} deg"); return true;
+            // PageUp/PageDown zoom the lens in the viewer and in the game's free and held cameras: in its strategy camera they are floor_up / floor_down.
+            case CinemaKey.PageUp when LensZoomLive: cam.FieldOfView = MathF.Max(cam.FieldOfView - 2.5f * MathF.PI / 180, MinFov); Say($"field of view {Degrees(cam.FieldOfView):0.#} deg"); return true;
+            case CinemaKey.PageDown when LensZoomLive: cam.FieldOfView = MathF.Min(cam.FieldOfView + 2.5f * MathF.PI / 180, MaxFov); Say($"field of view {Degrees(cam.FieldOfView):0.#} deg"); return true;
             case CinemaKey.Home when LensResetLive: cam.FieldOfView = DefaultFov; Say($"field of view {Degrees(DefaultFov):0} deg"); return true;
         }
         return false;

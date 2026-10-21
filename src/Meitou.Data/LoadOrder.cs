@@ -1,4 +1,5 @@
 using Meitou.Content;
+using Meitou.Localisation;
 
 namespace Meitou.Data;
 
@@ -15,16 +16,30 @@ public sealed class LoadOrder
 
     public List<GameDataIssue> Issues { get; } = [];
 
-    /// <summary>Only the core files, without the mods in <c>mods.cfg</c>: the unmodded base game.</summary>
+    /// <summary>
+    /// The language the game runs in and the translation files it adds to the load order (core translation after the core files, a mod's
+    /// translation after all mods; docs/formats/localisation.md). English, with no files, for <see cref="BaseGame"/>.
+    /// </summary>
+    public GameLanguage Language { get; private set; } = GameLanguage.English;
+
+    /// <summary>Only the core files, without the mods in <c>mods.cfg</c>: the unmodded base game (English: no translation is applied).</summary>
     public static LoadOrder BaseGame(GameInstall install)
     {
         var order = FromInstall(install);
         order.Entries.RemoveAll(e => !BaseFiles.Contains(e.Name));
         order.Issues.Clear();
+        order.Language = GameLanguage.English;
         return order;
     }
 
     public static LoadOrder FromInstall(GameInstall install)
+    {
+        var order = FromInstallFiles(install);
+        order.Language = GameLanguage.Detect(install, order.Entries.Where(e => !BaseFiles.Contains(e.Name)).Select(e => Path.GetDirectoryName(e.Path)!));
+        return order;
+    }
+
+    static LoadOrder FromInstallFiles(GameInstall install)
     {
         var order = new LoadOrder();
         foreach (var name in BaseFiles)

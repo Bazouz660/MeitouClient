@@ -16,11 +16,13 @@ public sealed class NavmeshWalkability : IWalkability
     volatile NavWorld world = NavWorld.Empty;
 
     /// <param name="routeTerrain">Makes the finer height function the long-range grid is built from (<see cref="CoarseRoute"/>); null: <paramref name="terrainHeight"/>.</param>
-    public NavmeshWalkability(Func<float, float, float> terrainHeight, IWalkability? fallback = null, Func<Func<float, float, float>>? routeTerrain = null)
+    /// <param name="routeObstacles">Makes the building footprints the long-range grid avoids; null: none.</param>
+    public NavmeshWalkability(Func<float, float, float> terrainHeight, IWalkability? fallback = null, Func<Func<float, float, float>>? routeTerrain = null,
+        Func<IReadOnlyList<Vector2[]>>? routeObstacles = null)
     {
         ground = terrainHeight;
         this.fallback = fallback ?? new OpenGroundWalkability(terrainHeight);
-        coarse = new Lazy<CoarseRoute>(() => new CoarseRoute(terrainHeight, routeTerrain));
+        coarse = new Lazy<CoarseRoute>(() => new CoarseRoute(terrainHeight, routeTerrain, routeObstacles));
     }
 
     /// <summary>The doors' run-time state; shared with every query made through this object.</summary>
@@ -33,6 +35,9 @@ public sealed class NavmeshWalkability : IWalkability
 
     /// <summary>Replaces the loaded meshes; only <see cref="NavMeshService"/> calls it, under its publish lock.</summary>
     internal void SetWorld(NavWorld value) => world = value;
+
+    /// <summary>Keeps the pruned region a point stands on (<see cref="NavMeshService.KeepAt"/>); true when the world changed. Set by <see cref="NavSystem"/>.</summary>
+    internal Func<Vector3, bool>? KeepStanding { get; set; }
 
     /// <summary>
     /// How far (in height) a walkable collision surface may be from the mesh for its height to be used instead, and the terrain's where no collision
@@ -172,6 +177,16 @@ public sealed class NavmeshWalkability : IWalkability
         if (!fromLoaded || !w.Contains(WorldLayout.ZoneOf(to.X, to.Z))) return LongRoute(w, from, to, agent, fromLoaded);
         var exact = Exact(w, from, to, agent);
         if (exact.Found) return exact;
+        // A walker on a region its zone's pruning dropped (its way to a seed leads through a zone not loaded): that region is kept, and the path asked again.
+        if (!IsWalkable(from.X, from.Z, from.Y) && KeepStanding?.Invoke(from) == true)
+        {
+            w = world;
+            exact = Exact(w, from, to, agent);
+            if (exact.Found) return exact;
+        }
+        // Both ends loaded but in separate blocks of loaded zones (two groups of walkers far apart): a long route like any other through the zones
+        // between, not a straight line from the nearest reachable point. Within one block the navmesh's answer stands (the terrain search is not run).
+        if (!Joined(w, WorldLayout.ZoneOf(from.X, from.Z), WorldLayout.ZoneOf(to.X, to.Z))) return LongRoute(w, from, to, agent, fromLoaded);
         // Unreachable over the loaded zones (shut in, or the way round leads through zones not loaded): as near as can be got, then on to the goal
         // provisionally, which asks again a few times on the way (MovementSystem) before the walker gives up.
         var part = Toward(w, from, to, agent);
@@ -273,6 +288,20 @@ public sealed class NavmeshWalkability : IWalkability
         points.AddRange(rest);
         Ahead(w, points, exact);
         return new PathResult(points) { Exact = exact };
+    }
+
+    /// <summary>Whether loaded zones lead from <paramref name="a"/> to <paramref name="b"/> side by side (both loaded).</summary>
+    static bool Joined(NavWorld w, ZoneCoordinate a, ZoneCoordinate b)
+    {
+        var seen = new HashSet<ZoneCoordinate> { a };
+        var queue = new Queue<ZoneCoordinate>([a]);
+        while (queue.TryDequeue(out var z))
+        {
+            if (z == b) return true;
+            foreach (var next in (ReadOnlySpan<ZoneCoordinate>)[new(z.X - 1, z.Y), new(z.X + 1, z.Y), new(z.X, z.Y - 1), new(z.X, z.Y + 1)])
+                if (w.Contains(next) && seen.Add(next)) queue.Enqueue(next);
+        }
+        return false;
     }
 
     /// <summary>Whether the point and everything within <see cref="HandoverMargin"/> of it lies on loaded zones.</summary>

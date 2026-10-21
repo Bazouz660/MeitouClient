@@ -12,7 +12,7 @@ public sealed partial class ProductionSystem
     (BuildSite Site, Machine Machine)? Hauling(World world, CharacterCold cold)
     {
         if (cold.HaulSite is not { } id) return null;
-        if (world.Buildings.Find(id) is { Complete: true } site && world.Machines.Find(id) is { Storage: not null } m) return (site, m);
+        if (Site(world, id) is { Complete: true } site && world.Machines.Find(id) is { Storage: not null } m) return (site, m);
         cold.HaulSite = null;
         cold.HaulFetch = null;
         return null;
@@ -130,7 +130,7 @@ public sealed partial class ProductionSystem
         float bestGap = float.MaxValue;
         foreach (var s in world.Machines.All)
         {
-            if (!s.Data.IsStorage || s.Storage is null || s.Site == from.Id || world.Buildings.Find(s.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
+            if (!s.Data.IsStorage || s.Storage is null || s.Site == from.Id || Site(world, s.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
             float gap = Gap(site.Position, from.Position);
             if (gap > Settings.HaulRange || gap > bestGap || (gap == bestGap && string.CompareOrdinal(s.Site, best) > 0) || !ok(s)) continue;
             best = s.Site;

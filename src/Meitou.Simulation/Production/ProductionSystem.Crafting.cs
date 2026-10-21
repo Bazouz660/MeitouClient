@@ -132,7 +132,7 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>
-    /// A finished craft (<b>Observed</b>, <c>FUN_1402bcac0</c>): armour of the crafter's tier (one better on a critical), capped at the bench's tech level; a weapon of the queued model,
+    /// A finished craft (<b>Observed</b>, <c>FUN_1402bcac0</c>): armour of the crafter's tier (one better on a critical), capped at the bench's tech level, and a robotic limb or crossbow of that grade as its level; a weapon of the queued model,
     /// or when the crafter's skill is below its level and there was no critical, of the best model of the bench at or below the skill (engine reading of the model pick); other items as
     /// they are. The craft leaves the queue, and with repeat on goes back to its end.
     /// </summary>
@@ -146,6 +146,10 @@ public sealed partial class ProductionSystem
         {
             case CraftKind.Armour:
                 made = items.Create(option.Item, 1, Math.Min(CraftBench.ArmourQuality(skill, critical), bench.TechLevel));
+                break;
+            case CraftKind.Robotics or CraftKind.Crossbow:
+                made = items.Create(option.Item, 1);
+                if (made is not null) made.Level = Math.Min(CraftBench.ArmourQuality(skill, critical), bench.TechLevel);
                 break;
             case CraftKind.Weapon:
                 var model = option;

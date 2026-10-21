@@ -42,7 +42,7 @@ public sealed partial class ProductionSystem
         {
             m.Power = 1;
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
-            if (world.Buildings.Find(m.Site) is not { Complete: true } site) continue;
+            if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
             grid.Add(m);
         }
@@ -56,9 +56,9 @@ public sealed partial class ProductionSystem
             }
         foreach (var m in world.Machines.All)
         {
-            bool built = world.Buildings.Find(m.Site) is { Complete: true };
+            bool built = Site(world, m.Site) is { Complete: true };
             m.Efficiency = built ? Efficiency(world, m) : 0;
-            m.HasPower = built && HasPower(world, m, world.Buildings.Find(m.Site)!.Town);
+            m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
         }
     }
 

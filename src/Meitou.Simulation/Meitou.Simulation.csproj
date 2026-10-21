@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Using Include="Meitou.Localisation" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Meitou.Core\Meitou.Core.csproj" />
     <ProjectReference Include="..\Meitou.Data\Meitou.Data.csproj" />
   </ItemGroup>

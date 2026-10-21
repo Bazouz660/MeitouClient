@@ -148,11 +148,12 @@ sealed partial class GameHost
     /// What the player's build mode needs (docs/simulation.md "Buildings", PlayerInterface.Build.cs): the catalog of BUILDINGs, their texts and parts, the placement services
     /// (terrain, collision footprints) and the ghost drawing. Null without a game database.
     /// </summary>
-    Building.BuildServices? MakeBuildServices(Meitou.Data.World.GroundHeights heights)
+    Building.BuildServices? MakeBuildServices()
     {
         if (scene.Database is not { } db) return null;
         var footprints = new Meitou.Navigation.BuildingFootprints(install, db, IsSandbox || IsDuel ? null : scene.Objects?.Levels);
         var parts = new Dictionary<string, IReadOnlyList<Meitou.Data.World.PlacedMesh>>(StringComparer.Ordinal);
+        var icons = new Meitou.Data.Gameplay.Construction.BuildingIcons(Path.Combine(install.DataDirectory, "icons", "buildings"));
         IReadOnlyList<Meitou.Data.Gameplay.Construction.PlacementTown>? towns = null;
         Dictionary<(Meitou.Data.World.ZoneCoordinate, string), (string Town, string? Owner)>? townOf = null;
         var pickable = new Dictionary<string, bool>(StringComparer.Ordinal);
@@ -171,9 +172,10 @@ sealed partial class GameHost
                     ? Meitou.Data.World.WorldObjectLayout.Building(db, record, "ghost:" + id, System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, new Meitou.Data.World.BuildingState())
                     : [];
             },
+            IconFile = icons.Find,
             Placement = new Building.PlacementServices
             {
-                Ground = heights.HeightAt,
+                Ground = gpu.Terrain.HeightAt,
                 Footprint = footprints.Of,
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),

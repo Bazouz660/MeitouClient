@@ -16,6 +16,12 @@ public sealed partial class UiBindings
     /// <summary>Scale pixel-based template chrome along with viewport-relative layouts.</summary>
     public float TemplateScale { get; set; } = 1;
     public Dictionary<string, string> Text { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The text the code set for <paramref name="key"/>, in the active language when it is a message of the game's catalog (the original sets such
+    /// captions through gettext; a layout's own captions stay as written). Null when the code set nothing.
+    /// </summary>
+    public string? Coded(string key) => Text.TryGetValue(key, out var text) ? Localisation.Loc.Tr(text) : null;
     public Dictionary<string, string> Actions { get; } = new(StringComparer.Ordinal);
     public HashSet<string> Hidden { get; } = new(StringComparer.Ordinal);
     public HashSet<string> Disabled { get; } = new(StringComparer.Ordinal);
@@ -57,10 +63,10 @@ public static partial class MyGuiPresentation
                         .AlignTo(parent, float.Parse(rw, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, float.Parse(rh, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, w.Align)
                     : w.Position.RelativeTo(parent, false);
             if (bindings.Progress.TryGetValue(w.Name, out float fraction)) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
-            string caption = bindings.Text.GetValueOrDefault(w.Name) ?? PartText(bindings, props) ?? props.GetValueOrDefault("Caption") ?? "";
+            string caption = bindings.Coded(w.Name) ?? PartText(bindings, props) ?? props.GetValueOrDefault("Caption") ?? "";
             if (props.TryGetValue("CaptionOwner", out string? owner))
             {
-                caption = bindings.Text.GetValueOrDefault(owner) ?? layout.Find(owner)?.Properties.GetValueOrDefault("Caption") ?? "";
+                caption = bindings.Coded(owner) ?? layout.Find(owner)?.Properties.GetValueOrDefault("Caption") ?? "";
                 // An EditBox's WordWrap is its text's, which the template's client draws.
                 if (!props.ContainsKey("WordWrap") && ((bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault("WordWrap")) ?? layout.Find(owner)?.Properties.GetValueOrDefault("WordWrap")) is { } wrap)
                     props["WordWrap"] = wrap;
@@ -88,7 +94,7 @@ public static partial class MyGuiPresentation
                     ? Math.Min(fixedWidth, header.Width / buttons) : header.Width / buttons;
                 for (int i = 0; i < buttons; i++)
                     result.Add(new(w.Name + "@tab" + i, "Button", new(header.X + i * tabWidth, header.Y, tabWidth, header.Height),
-                        captions?[i] ?? bindings.Text.GetValueOrDefault(w.Name + "@tab" + i) ?? pages[i].Properties.GetValueOrDefault("Caption") ?? pages[i].Name, $"mygui:tab:{w.Name}:{i}", "Kenshi_SquadTabButton1Skin", enabled,
+                        captions?[i] ?? bindings.Coded(w.Name + "@tab" + i) ?? pages[i].Properties.GetValueOrDefault("Caption") ?? pages[i].Name, $"mygui:tab:{w.Name}:{i}", "Kenshi_SquadTabButton1Skin", enabled,
                         new Dictionary<string, string> { ["State"] = i == selected ? "normal_checked" : "normal", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, Clip: clip));
                 if (pages.Length > 0) Visit(pages[captions is null ? selected : 0], bounds, childClip, enabled, alpha);
             }

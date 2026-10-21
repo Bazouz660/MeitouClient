@@ -25,6 +25,9 @@ public sealed record FactionData
     /// <summary>The record's string id (<c>204-gamedata.base</c>).</summary>
     public required string Id { get; init; }
     public required string Name { get; init; }
+    /// <summary>The name in the data files (<see cref="GameRecord.BaseName"/>): to find a faction by its English name in any language.</summary>
+    public string BaseName { get => baseName ?? Name; init => baseName = value; }
+    string? baseName;
     /// <summary><c>default relation</c>: the relation towards a faction without an explicit entry, capped by the other side's default (section 3.2).</summary>
     public int DefaultRelation { get; init; }
     /// <summary><c>relations</c>: explicit entries, faction id to the value (v0, an int; v1 and v2 are unused).</summary>
@@ -81,6 +84,7 @@ public sealed record FactionData
         {
             Id = r.StringId,
             Name = r.Name,
+            BaseName = r.BaseName,
             DefaultRelation = r.GetInt("default relation"),
             Relations = relations,
             Coexistence = [.. r.GetReferences("coexistence").Select(l => l.TargetStringId)],

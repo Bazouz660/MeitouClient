@@ -15,7 +15,7 @@ hit bursts. No original behaviour; every rule here is an engine choice. Implemen
   is removed. No corpse remains to loot or carry.
 - An `Explosion` blood mark carries the position, blow direction, race id and blood colour
   (amount 0 for a bloodless race, `bleed rate` 0: no blood, but bones still fly).
-- Play-dropped ground items keep the `GroundItems.Limit` (64): many bursts evict the oldest drops.
+- Play-dropped ground items keep the `GroundItems.Limit` (default 1024, "Dropped items kept" up to 4096): many bursts evict the oldest drops.
 - The host sets `World.Luckyren` from the option every frame, so it changes a run's outcome.
 
 ## Display (host)

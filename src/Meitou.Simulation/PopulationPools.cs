@@ -298,7 +298,7 @@ public sealed partial class PopulationSystem
         if (HoldOf(world, site.Index) is { Members: > 0 }) return;
         pools.Ded = true;
         pools.DiedAt = (float)Hours(world);
-        world.Post($"{site.Nest!.Name} has been wiped out");
+        world.Post(Loc.Tr("{1} has been wiped out", site.Nest!.Name));
         if (townLog.Count >= 256) townLog.RemoveAt(0);
         townLog.Add($"{site.Nest.Name} (wild site {site.Index}) wiped out");
     }

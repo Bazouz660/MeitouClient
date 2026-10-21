@@ -9,6 +9,11 @@ public sealed record TalkOrder(CharacterId Talker, CharacterId Target) : SimComm
 public sealed record DialogueChoice(int Index) : SimCommand;
 /// <summary>Leaves the open conversation (its window closed).</summary>
 public sealed record EndConversation : SimCommand;
+/// <summary>
+/// Fires dialogue event <see cref="Event"/> at <see cref="Npc"/> with <see cref="Target"/> as its partner (the original's <c>FUN_140684990</c>, from the systems that witness it):
+/// a line of the NPC's list for the event, or of <see cref="Dialogue"/> when given, said as speech bubbles.
+/// </summary>
+public sealed record DialogueEvent(CharacterId Npc, CharacterId Target, int Event, string? Dialogue = null) : SimCommand;
 
 /// <summary>The open player conversation as the conversation window shows it (published with the snapshot).</summary>
 public sealed record ConversationView(CharacterId Npc, CharacterId Player, CharacterId Speaker, string SpeakerName, string PlayerName, string Text,
@@ -108,6 +113,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         public Conversation? Open;
         public ConversationView? View;
         public DialogueRequest? Request;
+        /// <summary>DA_CHOOSE_PRISONER_BAIL: the desk and talker whose bail list opens when the open conversation ends (<see cref="OpenBail"/>).</summary>
+        public (CharacterId Npc, CharacterId Player)? BailAfter;
         public bool Empty => Talker.IsNone && Target.IsNone && Open is null;
     }
 
@@ -134,6 +141,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         public readonly List<(DialogueNode? Reply, string Text)> Choices = [];
         public readonly List<string> Log = [];
         public bool Ended;
+        /// <summary>The prisoners of a bail list (<see cref="OpenBail"/>), one per choice before <c>[Leave]</c>; null for any other conversation.</summary>
+        public List<CharacterId>? BailList;
     }
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
@@ -161,8 +170,14 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                     End(world, ended);
                     CancelApproach(world, ended);
                     break;
+                case DialogueEvent e:
+                    if (e.Dialogue is { } id) { if (dialogue.Node(id) is { IsRoot: true } root) StartBubbles(world, e.Npc, e.Target, root, e.Event); }
+                    else if (Settings.AmbientEvents) Fire(world, e.Npc, e.Target, e.Event);
+                    break;
             }
         }
+        // Bubbles a choice started (a crowd trigger) are said at once, also while the conversation window pauses the game.
+        if (bubbles.Count > 0) StepBubbles(world);
         RefreshView(world);
     }
 
@@ -170,7 +185,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         ExpireSpeech(world);
         if (bubbles.Count > 0) StepBubbles(world);
-        if (Settings.AmbientEvents && world.Tick % Settings.AmbientEveryTicks == 0) SeePlayers(world);
+        if (Settings.AmbientEvents && world.Tick % Settings.AmbientEveryTicks == 0) { SeeOthers(world); SeeGettingUp(world); }
+        if (approaches.Count > 0) StepApproaches(world);
         foreach (var talk in talks.Values)
         {
             if (talk.Talker.IsNone || talk.Open is not null) continue;
@@ -230,7 +246,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     }
 
     /// <summary>Fires <paramref name="ev"/> at <paramref name="npc"/> with <paramref name="player"/> as its target and opens the conversation in <paramref name="talk"/> (docs/game/dialogue.md "Player conversation").</summary>
-    void Start(World world, PlayerTalk talk, CharacterId npc, CharacterId player, int ev)
+    void Start(World world, PlayerTalk talk, CharacterId npc, CharacterId player, int ev, bool quiet = false)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(npc, out int n) || table.Cold(n) is not { } nc) return;
@@ -239,7 +255,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         var picked = Pick(world, c, roots);
         if (picked is not { } p)
         {
-            world.Post(c.Owner, $"{nc.Name} has nothing to say.");
+            if (!quiet) world.Post(c.Owner, $"{nc.Name} has nothing to say.");
             return;
         }
         talk.Open = c;
@@ -324,6 +340,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     void Choose(World world, Conversation c, int index)
     {
         if ((uint)index >= (uint)c.Choices.Count) return;
+        if (c.BailList is not null) { ChooseBail(world, c, index); return; }
         var (reply, text) = c.Choices[index];
         DialogueNode? from = c.Line;
         if (reply is not null)
@@ -351,11 +368,14 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (talk.Open is not { } c) return;
         talk.Open = null;
         talk.View = null;
+        if (c.BailList is not null) { Release(world, c.Npc); return; }   // the bail list closing: the conversation was counted already
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
         if (world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
-        Release(world, c.Npc);
+        // An arrest the conversation started (DA 29, 30) keeps the guard held.
+        if (Arrests?.Arrests.Any(a => a.Guard == c.Npc) != true) Release(world, c.Npc);
+        OpenBail(world, talk);
     }
 
     void MarkUsed(World world, Conversation c, DialogueNode line)
@@ -415,7 +435,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     /// </summary>
     public void Hash(ref StateHasher hasher)
     {
-        if (lastUse.Count == 0 && permanent.Count == 0 && counters.Count == 0 && met.Count == 0 && interrupts.Count == 0 && bubbles.Count == 0 && ambientAt.Count == 0 && NoTalks()) return;
+        if (lastUse.Count == 0 && permanent.Count == 0 && counters.Count == 0 && met.Count == 0 && interrupts.Count == 0 && bubbles.Count == 0 && ambientAt.Count == 0 && approaches.Count == 0 && down.Count == 0 && NoTalks()) return;
         hasher.Add(0x44696167);
         hasher.Add(rolls);
         foreach (var (line, hours) in lastUse) { hasher.Add(Rng.StableHash(line)); hasher.Add(hours); }
@@ -425,6 +445,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         foreach (var (who, line) in interrupts) { hasher.Add(who); hasher.Add(Rng.StableHash(line)); }
         foreach (var b in bubbles) { hasher.Add(b.C.Npc); hasher.Add(Rng.StableHash(b.Line.StringId)); hasher.Add(b.DueTick); }
         foreach (var ((squad, whom), hours) in ambientAt) { hasher.Add(squad); hasher.Add(whom); hasher.Add(hours); }
+        HashApproaches(ref hasher);
+        foreach (var id in down) hasher.Add(id);
         var local = talks.GetValueOrDefault(0);
         hasher.Add(local?.Talker ?? CharacterId.None);
         hasher.Add(local?.Target ?? CharacterId.None);

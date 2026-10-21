@@ -27,11 +27,14 @@ public static class CombatTuning
     /// <summary>A fighter closes in until the gap between bodies is this (units), when it moves by itself.</summary>
     public const float CloseInGap = 3;
     /// <summary>
-    /// A fighter on its way to its target from further than this (world units between the two, engine choice) is not in the combat stance yet: it moves with the plain
-    /// walk and run clips and the weapon in hand. The original clears the combat flag of the animation whenever a movement goal is given and in its chase of a target along
-    /// a path (docs/game/combat.md "Combat stance"); how far away its footwork takes over is <b>Unknown</b>.
+    /// A fighter runs at its target out of the combat stance (plain run clips, full speed) once the gap between the two bodies is over <see cref="RunGap"/>, and goes back
+    /// to its footwork once it is under <see cref="FootworkGap"/> (<b>Observed</b>, the fight steering FUN_1402af1e0, docs/game/combat.md "Combat stance").
     /// </summary>
-    public const float StanceRange = 40;
+    public const float RunGap = 90, FootworkGap = 70;
+    /// <summary>The top speed (units per second) of a fighter in its footwork, closing in on its target (<b>Observed</b>, FUN_1402af1e0).</summary>
+    public const float FootworkSpeed = 18;
+    /// <summary>A target that is not fighting and moves faster than this (units per second) for <see cref="FleeingSeconds"/> on end is run after at any gap (<b>Observed</b>, FUN_1402ae0e0).</summary>
+    public const float FleeingSpeed = 9, FleeingSeconds = 1.5f;
 
     /// <summary>The footprint radius of a human, used when a character has no race data.</summary>
     public const float DefaultFootprint = 4;

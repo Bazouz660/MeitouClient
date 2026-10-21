@@ -147,7 +147,8 @@ sealed partial class PlayerInterface
             var props = new Dictionary<string, string> { ["ImageResource"] = "Kenshi_MapMarkers", ["ImageGroup"] = group, ["ImageName"] = group,
                 ["Colour"] = FormattableString.Invariant($"{colour.X} {colour.Y} {colour.Z} {colour.W}") };
             if (angle != 0) props["ImageAngle"] = angle.ToString(CultureInfo.InvariantCulture);
-            if (tooltip is not null) props["ItemTooltip"] = tooltip;
+            // Type 4, a map place (the original's "hand" payload, FUN_140922e60): rows of the data, a tab between a row's label and value.
+            if (tooltip is not null) { props[UiTooltips.Type] = "4"; props[UiTooltips.Data] = tooltip; }
             controls.Insert(++imageIndex, new(name, "ImageBox", box, "", "", "", true, props, default, Pickable: tooltip is not null, Clip: mapViewport));
         }
         void Label(string name, string text, Vector2 topCentre, Vector4 colour)
@@ -189,7 +190,7 @@ sealed partial class PlayerInterface
             };
             string shownName = explored || unexploredName.Length == 0 ? townName : unexploredName;
             // An explored place's tooltip: its name, its faction and the player's relation to it.
-            string? tooltip = explored ? $"{shownName}\nFaction: {faction?.Name ?? "-"}\nRelations: {(faction is { } f ? MathF.Round(f.Relation).ToString(CultureInfo.InvariantCulture) : "-")}" : null;
+            string? tooltip = explored ? $"{shownName}\nFaction:\t{faction?.Name ?? "-"}\nRelations:\t{(faction is { } f ? MathF.Round(f.Relation).ToString(CultureInfo.InvariantCulture) : "-")}" : null;
             Marker(name, group, box, colour, tooltip: tooltip);
             if (recent)
             {

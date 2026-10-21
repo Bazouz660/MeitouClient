@@ -91,7 +91,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });
         else if (e.Screen is "inventory" or "bag")
         {
-            if (e.Widget == "OpenBagButton") { faithfulScreens.Open("bag"); if (shownTrader.IsNone) PlaceBagWindow(); else PlaceTradeWindows(); }
+            if (e.Widget == "OpenBagButton") ToggleBag();
             else if (e.Widget == "LimbsButton") faithfulScreens.Open("limbs");
             else if (e.Widget == "ArrangeButton" && Selected().FirstOrDefault() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
         }
@@ -171,7 +171,9 @@ sealed partial class PlayerInterface
             StatsEnumerated.SmithingWeapon, StatsEnumerated.SmithingArmour, StatsEnumerated.SmithingBow, StatsEnumerated.Labouring, StatsEnumerated.Farming, StatsEnumerated.Cooking],
     ];
 
-    static string StatLabel(StatsEnumerated stat) => stat switch
+    static string StatLabel(StatsEnumerated stat) => Loc.Tr(StatLabelEnglish(stat));
+
+    static string StatLabelEnglish(StatsEnumerated stat) => stat switch
     {
         StatsEnumerated.Thieving => "Thievery", StatsEnumerated.HeavyWeapons => "Heavy weapons",
         StatsEnumerated.MeleeAttack => "Melee attack", StatsEnumerated.MeleeDefence => "Melee defence",
@@ -190,6 +192,8 @@ sealed partial class PlayerInterface
         if (id == "dialogue") { AddDialogueChoices(controls); return; }
         if (id == "prospect") { AddProspectContent(controls); return; }
         if (id is "building" or "bench") { AddMachineContent(id, controls); return; }
+        // The bag window has no caption buttons (the vanilla screenshot): OPEN BAG closes it.
+        if (id == "bag") controls.RemoveAll(c => c.Action.StartsWith("mygui:close", StringComparison.Ordinal) || c.Action.StartsWith("mygui:pin", StringComparison.Ordinal));
         AddMapContent(id, controls);
         if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); }
         if (id == "trader") { ArrangeTraderWindow(controls); AddTraderContent(controls); return; }
@@ -206,7 +210,7 @@ sealed partial class PlayerInterface
             var area = slot.Bounds;
             if (item.Section == gridSection && columns > 0 && rows > 0) area = new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows);
             else area = new(area.X + item.X * InventoryCell, area.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell);
-            AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, JoinCaptions(ArmourCaption(item.Record, item.Quality, item.Weight, SellCaption(lead.Id, item.Index)) ?? SellCaption(lead.Id, item.Index) ?? $"Weight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg", MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
+            AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
         }
     }
     readonly List<string> uiMessages = [];
@@ -253,7 +257,7 @@ sealed partial class PlayerInterface
         for (int i = 0; i < (lead?.Jobs.Count ?? 0); i++)
         {
             var job = lead!.Jobs[i];
-            string text = Meitou.Simulation.Production.PermaJobs.Text(job.Type) ?? job.Type.ToString();
+            string text = Loc.Tr(Meitou.Simulation.Production.PermaJobs.Text(job.Type) ?? job.Type.ToString());
             if (job.Site is { } id && session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { } site) text += ": " + SiteName(site);
             jobs.Add(new("job:" + i.ToString(CultureInfo.InvariantCulture), text));
         }
@@ -261,7 +265,7 @@ sealed partial class PlayerInterface
         // A few rows never overflow the box, and MyGUI shows an ItemBox's scroll bars only on overflow.
         foreach (var bar in faithfulHud.Find("JobsPanel")?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
         if (jobs.Count > 0) b.Hidden.Add("JobsPanelInfo");
-        else b.Text["JobsPanelInfo"] = "[No jobs assigned]\n[To add jobs, hold shift key when giving an order]";
+        else b.Text["JobsPanelInfo"] = Loc.Tr("[No jobs assigned]") + "\n" + Loc.Tr("[To add jobs, hold shift key when giving an order]");
     }
 
     /// <summary>The X at the right end of each jobs row (the original's remove button, its tutorial: "remove a job at any time by pressing the X button").</summary>

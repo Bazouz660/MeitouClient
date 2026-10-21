@@ -209,9 +209,9 @@ static partial class TerrainShaders
 
         // A layer's coordinate with its screen derivatives, taken before the layer branches below (derivatives inside a branch
         // that only some pixels of a 2 x 2 quad take are undefined), so a skipped neighbour cannot change a sampled pixel's mip.
-        struct Coord { vec2 p, dx, dy; };
-        Coord coord(vec2 p) { Coord c; c.p = p; c.dx = dFdxCoarse(p); c.dy = dFdyCoarse(p); return c; }
-        vec4 tex(sampler2DArray s, Coord c, float layer) { return textureGrad(s, vec3(c.p, layer), c.dx, c.dy); }
+        struct GradCoord { vec2 p, dx, dy; };
+        GradCoord gradCoord(vec2 p) { GradCoord c; c.p = p; c.dx = dFdxCoarse(p); c.dy = dFdyCoarse(p); return c; }
+        vec4 tex(sampler2DArray s, GradCoord c, float layer) { return textureGrad(s, vec3(c.p, layer), c.dx, c.dy); }
 
         // A layer weight with its small values dropped: 0 up to eps, rising smoothly to the weight itself at twice eps (continuous, so no seam where a
         // layer stops being sampled); eps 0 is the weight unchanged. docs/render-terrain.md, "Layer weight threshold".
@@ -242,8 +242,8 @@ static partial class TerrainShaders
             // A layer whose weight is exactly 0 at this pixel is not sampled: mixing in a weight of 0 leaves the value as it was
             // (x + 0 * (y - x) and x * 1 + y * 0 are both x). On the swamp the dirt weight is exactly 0 on 57 % of the ground, but the slope and
             // cliff weights almost never are, so this skips only some of the 14 layer samples per biome (docs/render-terrain.md, "Where the terrain's 0.99 ms goes").
-            Coord base = coord(uv * sB.xy), grass = coord(uv * sB.zw), slopeUv = coord(uv * sA.xy), dirt = coord(uv * sC.xy), road = coord(uv * sC.zw);
-            Coord cliffX = coord(vec2(uv.y, vert) * sA.zw), cliffZ = coord(vec2(uv.x, vert) * sA.zw);
+            GradCoord base = gradCoord(uv * sB.xy), grass = gradCoord(uv * sB.zw), slopeUv = gradCoord(uv * sA.xy), dirt = gradCoord(uv * sC.xy), road = gradCoord(uv * sC.zw);
+            GradCoord cliffX = gradCoord(vec2(uv.y, vert) * sA.zw), cliffZ = gradCoord(vec2(uv.x, vert) * sA.zw);
             float far = clamp(distance * fade.a - 0.3, 0.0, 1.0);
 
             Surface s;

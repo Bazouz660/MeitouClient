@@ -79,7 +79,12 @@ public sealed class DialogueNode
     public IReadOnlyList<string> UnlockButKeepMe { get; internal set; } = [];
     public IReadOnlyList<string> Locks { get; internal set; } = [];
     public string? Interrupt { get; internal set; }
+    /// <summary><c>crowd trigger</c>: the DIALOGUE the speaker's squadmates start (event 74) and its val0 (a percent; where the original reads it is <b>Unknown</b>).</summary>
     public string? CrowdTrigger { get; internal set; }
+    public int CrowdChance { get; internal set; }
+    /// <summary><c>change AI</c>: the AI_PACKAGE that replaces the speaker squad's packages; <c>AI contract</c>: the AI_PACKAGE run as a contract and its val0 hours.</summary>
+    public string? ChangeAi { get; internal set; }
+    public (string Package, int Hours)? AiContract { get; internal set; }
     /// <summary><c>trigger campaign</c>: FACTION_CAMPAIGNs, V0..V1 hours of delay and V2 percent (one weighted draw).</summary>
     public IReadOnlyList<CampaignLink> TriggerCampaigns { get; internal set; } = [];
     public IReadOnlyList<DialogueNode> Children { get; internal set; } = [];
@@ -98,8 +103,8 @@ public sealed class DialogueNode
 /// <summary>The <c>DialogActionEnum</c> numbers the engine runs (docs/game/dialogue.md "Effects").</summary>
 public static class DialogueActions
 {
-    public const int None = 0, Trade = 1, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
-        BubbleWait = 12, ArrestTargetsCarriedPerson = 30, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57;
+    public const int None = 0, Trade = 1, TalkToLeader = 2, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
+        BubbleWait = 12, TagEscapedSlave = 25, ArrestTarget = 29, ArrestTargetsCarriedPerson = 30, RemoveSlaveStatus = 53, SurrenderNonHumans = 47, GiveTargetMySlaves = 24, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57;
 }
 
 /// <summary>The <c>DialogConditionEnum</c> numbers with special handling at load (docs/game/dialogue.md "Line check").</summary>
@@ -297,7 +302,11 @@ public sealed class DialogueDatabase(GameDatabase db)
         node.UnlockButKeepMe = [.. record.GetReferences("unlock but keep me").Select(r => r.TargetStringId)];
         node.Locks = [.. record.GetReferences("locks").Select(r => r.TargetStringId)];
         node.Interrupt = record.GetReferences("interrupt").FirstOrDefault().TargetStringId;
-        node.CrowdTrigger = record.GetReferences("crowd trigger").FirstOrDefault().TargetStringId;
+        var crowd = record.GetReferences("crowd trigger").FirstOrDefault();
+        (node.CrowdTrigger, node.CrowdChance) = (crowd.TargetStringId, crowd.TargetStringId is null ? 0 : crowd.Values.Value0);
+        node.ChangeAi = record.GetReferences("change AI").FirstOrDefault().TargetStringId;
+        var contract = record.GetReferences("AI contract").FirstOrDefault();
+        node.AiContract = contract.TargetStringId is { } package ? (package, contract.Values.Value0) : null;
         node.TriggerCampaigns = [.. record.GetReferences("trigger campaign").Select(r => new CampaignLink(r.TargetStringId, r.Values.Value0, r.Values.Value1, r.Values.Value2))];
 
         // The specificity score (FUN_14067b070, docs/game/dialogue.md "Score").

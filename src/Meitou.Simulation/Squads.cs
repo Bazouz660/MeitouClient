@@ -45,6 +45,8 @@ public sealed class Squad
     public bool Pinned { get; init; }
     /// <summary>One of its town's own squads: the town made it, or a save holds it as the town's.</summary>
     public bool TownOwn => Town >= 0 && (PlatoonId < 0 || Pinned);
+    /// <summary>Back from its town's time unloaded: its members' minds take up their schedule where it puts them (<see cref="PopulationSettings.ResidentSchedule"/>); cleared once they have minds.</summary>
+    public bool Resume { get; set; }
     /// <summary>How many it was made with (its town's regeneration measures losses against it; not part of the state).</summary>
     public int SpawnSize { get; set; }
     public List<CharacterId> Members { get; } = [];
@@ -58,6 +60,8 @@ public sealed class Squad
     public long NextHomeFillTick { get; set; }
     /// <summary>The squad's AI packages and the one running (<see cref="Ai.AiSystem"/>); null for a squad the AI does not run.</summary>
     public Ai.Blackboard? Ai { get; set; }
+    /// <summary>The dialogue-given AI a save or its stored state held, until the AI attaches a blackboard and applies it (then null).</summary>
+    public Saving.AiSave? SavedAi { get; set; }
     /// <summary>Whom a campaign squad in its assault also treats as enemies (<see cref="WarTargets"/>; written by the population's serial look, read by the aggro).</summary>
     public WarTargets War { get; set; } = WarTargets.None;
 }
@@ -117,6 +121,7 @@ public sealed class SquadRegistry
             hasher.Add(s.Leader);
             if (s.Index != 0) hasher.Add(0x51647800 + s.Index);   // nothing for a squad in the first place, so the pinned hashes stay
             if (s.Owner != 0) hasher.Add(0x4F776E00 + s.Owner);   // nor for player 0's squads
+            if (s.Resume) hasher.Add(0x52657375);
             hasher.Add(s.Members.Count);
             foreach (var m in s.Members)
             {

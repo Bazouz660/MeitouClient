@@ -167,7 +167,7 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
     Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); with a weapon in hand the original shows a "Weapon weight" figure from a field at `+0x184` instead (**Unknown**, Meitou keeps the carrying rate).
     Toughness XP `{n}x` (the suffix is the `x` at `0x1416bc008`, **Verified** in the exe) = `FUN_1408c5f40`: 1, but 2 with the left arm crippled, +2 right arm crippled, +2 blood-loss KO, +2 when a counter at `+0xa4` is under 15 (**Unknown**, Meitou omits it).
     KO point = (int)`FUN_140643ae0` (negative HP, [character-stats.md](character-stats.md#hunger-blood-and-parts)). Run speed = the current top speed S × 0.22369362 (units per second to mph) rounded, `{S} (+{d}) mph` or `(-{d})` where d is S minus V in mph; plain when equal. Meitou adds an Interface setting "Speed units" (`UserConfig.SpeedUnit`, default mph): km/h multiplies by 0.36 instead. Hunger Rate `{n}%` = (int)(100 × `FUN_1408837a0`), the race's hunger rate × its situation factor.
-    Each line also carries a tooltip with its breakdown (Encumbrance penalty, Full speed bonus, Carrying somebody, Crippled arms ...), not modelled.
+    Each line also carries a tooltip with its breakdown (Encumbrance penalty, Full speed bonus, Carrying somebody, Crippled arms ...), not modelled ([Tooltips](#tooltips)).
   - Stats lines: Martial Arts when unarmed; Crossbows, Precision, Perception with a crossbow in ranged mode; else Attack and Defense; then Strength,
     Dexterity, Toughness and (not in ranged mode) Dodge. A value is the effective number, then its change in brackets: `{1} ({2})` all Bad when lower,
     `{1} (+{2})` all Good when higher, plain when equal. The code passes the labels in mixed case ("Martial Arts:"); the original shows them upper case in
@@ -211,7 +211,7 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
   **Verified** in the exe). Empty, `JobsPanelInfo` shows "[No jobs assigned]" and the hint. The row text is **Unknown**; Meitou shows each job
   as its type's name (with the building) and an X (`Kenshi_CloseButtonSkin`), dragged to reorder. Hold = hold position; Block = defensive mode ([combat.md](combat.md#techniques-block-and-dodge) has a +20 guarding-state term in the block chance; whether it is this stance is **Unknown** there) (+20 melee defence, no attacks; **Verified**
   against the tooltip string in the exe: "gain 20 to his melee defense skill ... will not attempt to make any
-  attacks"); Passive = non-combat mode (tooltip strings).
+  attacks"); Passive = non-combat mode (tooltip strings; all the orders panel's tooltips: [Tooltips](#tooltips)).
 - Speed selector: the `SpeedPanel` ImageBox shows an image of `Kenshi_CharacterSpeedSet` / `Icons`, indexed Walk, Jog, Run, Group;
   the index is the movement mode ([pathfinding.md](pathfinding.md) "Speed"). Each arrow steps it by -1 / +1 with wrap over all four,
   plays `General_Click` and applies the mode to every selected character; a refresh shows the lead's mode. Right after the panel is
@@ -282,7 +282,7 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   Meitou shows the header word (Normal, Broken, or a site's construction state) and no condition rows (it models no building health); Open to
   public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's buildings only.
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`; 6 `Open/Close:` with
-  "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and `lvl {1,num}`, with tooltips. For the player's own door both
+  "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and `lvl {1,num}`, with tooltips ([Tooltips](#tooltips)). For the player's own door both
   lines are `Kenshi_Button2` buttons: Open/Close runs `FUN_140546fb0`, Security `FUN_140547060` ([locks](locks.md#doors); **Verified**: the
   delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text.
 - **Beds, cages, containers, lamps** (Useable / Storage / Light slot 40 `FUN_140304e90`): 3 `Town:`, `Training:` (function 7), `Cost to use:`
@@ -378,7 +378,7 @@ decompile unless marked; Meitou's adapter is `PlayerInterface.Map.cs`.
   item is used up; with none: "You already know all these locations, no new information can be learned." and it stays. Never camps or nests. Its
   tooltip (`1407b4e50`) runs the same pick: "[Right-click to learn new map locations]", "Towns:" and the names (a count for repeats), or "[Location
   already known]". The original seeds the draws from the item instance (field **Unknown**); Meitou from the world seed and the MAP_ITEM record.
-- **Tooltip** (`14048fd10`, `140922e60`): only an explored town or camp, in the Overview's `ToolTip` (`Kenshi_GenericTextBoxSkin`): the name, "Faction:"
+- **Tooltip** (`14048fd10`, `140922e60`; [Tooltips](#tooltips), type 4): only an explored town or camp, in the Overview's `ToolTip` (`Kenshi_GenericTextBoxSkin`): the name, "Faction:"
   name, "Relations:" the player faction's relation, then population rows ("Residents max:", "Actual Num Residents:", "Roaming currentMax/desiredMax:",
   "Roaming Population:", "Num Roaming Squads:", "???" when the manager has no numbers) and, for towns, "Residents:" with a line per resident faction and
   "Hostile Occupiers:". Meitou shows the first three rows only.
@@ -423,6 +423,9 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   vertical scrollbar. Equipment icons occupy their cell footprints; empty clothing slots are red, other empty cells pale. Stack counts are plain numbers in the lower-right corner;
   stock prices are not printed over every icon. A white line over a black full-width track (about 3 px at 1080p) along the bottom edge of a single food item or charged tool (item function
   other than 0: medkit, splint kit, robot repair), as long as the charge left (`ItemInstance.ChargeFraction`); the 2026-10-18 vanilla trader screenshot (Swamper Barman) shows it full under food stacks, **Observed** (whether it shrinks is **Unknown**). The bag has a 10-by-14 grid with a fitted frame and an ARRANGE footer without the generic layout's editor capacity/type fields.
+  **Observed** (vanilla screenshot supplied 2026-10-21, METARU, Medium Backpack): the bag window sits left of the character window, same top, with no caption buttons; it is married to
+  the character window and closed only by OPEN BAG again. Meitou: `MyGuiScreenHost.Follow("bag", "inventory")` (a drag on either moves both; Escape or closing the inventory closes both). Engine choice: OPEN BAG's state is kept per character
+  (`PlayerInterface.bagOpen`, not saved), so the bag reopens with that character's inventory or when they are selected again.
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.
 - **Trader window** (code `PlayerInterface.Trade.cs`):
@@ -458,9 +461,9 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
       (`InventoryCommands.TryEquip`), the rest of the stack and everything else into the first free cell; a stolen item a non-fence shop may catch asks the prompt above (`TradeItemView.FenceOdds`).
   - Reference screenshot (**Observed**, 2026-10-17, from a video): `Money:` label left and `c.442,269` right in the money box, stock icons at their footprints with plain counts bottom
     right, a vertical scrollbar, no other panels; the HUD stays. The character panel reads `Disguise: None`. Its text boxes and empty cells are dark, where the install's skins draw parchment; the cause (a UI mod or setting) is **Unknown**.
-- **Item tooltip** (**Observed**, decompile): name, then `Value` (`c.{1,num}` with ` (+N%)`/` (-N%)` when the price factor is not 1) and `Sell value` (`FUN_14079e7a0`); weight `{1,num} kg`,
+- **Item tooltip** ([Tooltips](#tooltips); **Observed**, decompile): name, then `Value` (`c.{1,num}` with ` (+N%)`/` (-N%)` when the price factor is not 1) and `Sell value` (`FUN_14079e7a0`); weight `{1,num} kg`,
   quality, charges, damage, nutrition and kind lines (`FUN_1407ae130`); armour classes and resistances (`FUN_1407a1650`); `Stolen` / `Stolen from:` (`FUN_1407a0ea0`); `Buyback` (`FUN_1407a13a0`).
-  Meitou shows name, Value, Sell value (stack prices) and weight while trading, name and weight otherwise, plus `Stolen`. Armour also gets (`ArmourTooltip`): the grade name in its `ItemGrade` colour,
+  Meitou: the rows listed under Tooltips ("Meitou item rows"); armour also gets (`ArmourTooltip`): the grade name in its `ItemGrade` colour (a crossbow only that, from its `level`),
   `[Heavy Armour Class]` / `[Metal Plate]`, Blunt resistance, Cut resistance, Cut resistance efficiency (1 - cut into stun), Harpoon resistance (flat pierce, `pts`), `-Weight` (two decimals), a
   `[Coverage]` list (Chest, Stomach, Right Arm, Left Arm; percentages) and a `[Skills]` list of the effects that are not neutral: Crossbows and Precision shooting (both the record's `ranged skill mult`), Dodge
   skill, Attack damage (`damage output mult`), Assassination skill, Melee attack bonus (`combat attk bonus`), Martial arts bonus (`unarmed bonus`). **Observed** on a screenshot of the Samurai Armour at all six
@@ -488,7 +491,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   - **The game's saved pictures**: it looks for the texture name in its `Icons` resource group first and draws only when it is not there, saving `<install>/data/icons/<name>`.
     The name is the item's string id, `.`, the instance's material string id and, only when the item has a colour record, its `dont colorise` is false and the material has a non-empty `color map`,
     `.` and the colour's string id (FUN_140845e80 and FUN_140847bf0, **Verified**). The folder is made on the player's machine, so it holds only items they have seen (**Observed**: 842 files,
-    all of that form; 116 with a colour; also mod items; `data/icons/buildings/` holds BUILDING pictures, 618 files, not used yet). Every picture of a base-game record is of a drawn kind
+    all of that form; 116 with a colour; also mod items; `data/icons/buildings/` holds BUILDING pictures, see "Building icons"). Every picture of a base-game record is of a drawn kind
     (test `Every_picture_the_game_saved_of_a_base_game_item_is_of_a_kind_it_draws`) except limbs.mod's eight severed limbs (ITEM with a static icon; why they are drawn is **Unknown**). The colour is
     mostly not the record's own `color` reference (15 of 116 are), so it is the instance's colour, which `ItemInstance` does not carry.
   - **How it is drawn** (**Verified** against FUN_1408473d0, FUN_140846060, FUN_140845f30 and FUN_140840380): a picture of 50 x 50 pixels a footprint cell, each side rounded up to a power of two (saved
@@ -499,14 +502,15 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     (one item kind, 0x11) or `RTTIcons_Base`, double sided for `material type` 2, textured from the instance's material record. Lighting (rtticons.hlsl, lightingFunctions.hlsl): one white punctual
     light along the view axis, no ambient: colour = albedo x pi x N.L x 0.6 + GGX specular (roughness 1 - 0.99 x gloss, F0 0.4), stored linearly in an 8-bit target; the background is transparent.
     The reflection cube (`cloudy_noon.jpg`) is missing from the install, so the game's own pictures have none.
-  - **Meitou's order** (`ItemIcons.Choose`): a drawn kind takes the game's saved picture of exactly that item and material without a colour part, else is drawn by `CharacterRenderer`
+  - **Meitou's order** (`ItemIcons.Choose`): a drawn kind takes the game's saved picture of exactly that item, material and colour (`ItemIcons.ColourOf`, below), else is drawn by `CharacterRenderer`
     (below); the other kinds take their static file, else `default_icon.png`; with nothing (or while the picture loads), the cell shows the item's name.
   - **Meitou's drawing** (`CharacterRenderer.Icons.cs`, `ItemIconStyle`): the item's mesh through the character shader's item mode with the lighting above (a negative `FogDistance` in the view
     constants selects it), into its own UNORM texture, drawn each frame until the textures it uses are resident, then kept (rows bottom first like every target: shown with `ImageFlipV`).
     Against six saved pictures (test `Icons_drawn_from_the_mesh_cover_the_same_part_of_the_picture_as_the_games_saved_ones`, silhouettes agree to two decimals on all): mean colour identical on two bags
     (142 114 91 and 131 104 81), 5 % darker on two armours (108 95 82 against 113 100 87), 10 % and 7 % darker on two swords (131 123 113 against 143 136 127; 122 119 117 against 130 128 125);
-    why the weapons and armour run dark is **Unknown** (gloss, normal-map or colour-map handling). An icon is drawn undyed: the game's dye is the instance's colour, which `ItemInstance` does not carry
-    (the saved picture of an armour whose record names a `color` has no colour part and shows none).
+    why the weapons and armour run dark is **Unknown** (gloss, normal-map or colour-map handling). An icon is dyed as worn clothing is, by the record's own `color` when the item's `dont colorise`
+    is false and the material has a `color map` (`ItemIcons.ColourOf`; the instance's colour is not carried). **Observed**: the game saved Thieves Backpack (rebirth.mod, `color` "black lighter")
+    undyed, dyed with that colour (dark grey) and dyed 1297; an armour whose record names a `color` was saved with no colour part.
     **Verified** by `Cached_starter_icons_use_the_original_files_without_rendering_replacements` against the configured install: the sandbox preview's Rag Loincloth
     (`2308-clothes_v1.mod`, material `2312-clothes_v1.mod`) and Iron Club (`52295-rebirth.mod`, material `914-gamedata.base`) select their original cached PNG files directly.
     Their appearance is not evidence of the fallback renderer's accuracy; comparisons require the same item and material.
@@ -514,8 +518,19 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     the DXT5N variant decodes X from alpha and Y from green without that transparency test. Meitou's fallback enables the Base normal-alpha cut-out at 0.5,
     separately from worn clothing's 0.6 threshold. `Icons_drawn_from_the_mesh_cover_the_same_part_of_the_picture_as_the_games_saved_ones` includes the starter icons and
     requires 99% silhouette agreement for the Rag Loincloth, whose transparent tears are missed by the opaque samples.
-    Not done: BUILDING icons, the vertex-colour and DXT5N variants (the item shader is used), writing the pictures to disk (a readback inside the frame would stall it), bounding the icon textures
+    Not done: the vertex-colour and DXT5N variants (the item shader is used), writing the pictures to disk (a readback inside the frame would stall it), bounding the icon textures
     (one per item and material seen, at most 512 x 512, colour only).
+- **Building icons**: the build window's `BuildingImage` shows the chosen BUILDING's picture (FUN_1404e2040 calls FUN_14084af40 with 128 x 128, yaw -90, pitch 30; **Verified**, disassembly).
+  - **Saved pictures**: looked up as `<string id>.png` in the `Icons` group (`data/icons/buildings` is one of its folders), drawn and saved to `data\icons\buildings\` only when missing
+    (**Verified**). The install's folder holds 618 such files, all 128 x 128, 34 of them under 1 KB (nearly empty; **Observed**).
+  - **How it is drawn** (**Verified**, FUN_14084af40, FUN_140845f30, FUN_140845bf0): the parts laid out as for the placement preview (`Materials_BuildingPreviewMaterial`) under a node
+    pitched 30 degrees, then yawed -90, about its own axes; the entities' merged world box decides one more yaw of -90 when its half width (X) is less than 1.2 times its half depth (Z).
+    The camera (vertical field of view 45, aspect 1, near 0.1, far 2000) looks down -Z from the box's centre and moves back until every corner is inside the frustum: by
+    `half depth + max(half width, half height) / tan 22.5` (or the near distance). It renders through the `RTT_Deferred` workspace; its lights are **Unknown**.
+  - **Meitou** (`BuildingIcons`, `BuildingIconStyle`, `WorldObjectRenderer.Icons.cs`): the saved picture, else the ghost's parts (interior ones left out; whether the preview keeps them is
+    **Unknown**) drawn into a texture through the objects' program, framed from the loaded meshes' bounds (many files lack a bounds chunk), no weather, lit from the camera.
+    Against twelve base-game pictures (headless render, not a test): silhouettes agree to 0.999 or better, mean brightness within 10 % on ten, 17 % darker on Outpost s-IV; Stairs (`1092`)
+    (the only one of them that takes the second yaw, and its framing matches) draws near-white: its material's `Severe_C_10.dds` averages 226 grey while the saved picture is dark, so the game tints it somehow (**Unknown**). Not done: writing pictures to disk.
 - Build window: categories, groups, research gating and the stats panel are in [buildings-production](buildings-production.md#build-menu);
   placement checks and messages (`FUN_1404e27e0`) and the build-map controls in [placement](buildings-production.md#placement).
 
@@ -557,6 +572,66 @@ Full info "separate numbers for each damage type". Built at the end of `MedicalS
 Meitou: the Simple/Full text and the gate follow the above; floaters rise 30 px and fade over 1.4 s (engine choice). Colour: red
 when a player's character is hit, green when one lands the blow, else grey. Healing is a Meitou addition: a green `+N` over a
 player character each time about a second of treated damage has healed (any non-Off setting).
+
+### Tooltips
+
+Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime, item rows, HUD texts), `UiPainter.MeasureText`. Decompile of `kenshi_x64.exe`.
+
+- **Classes** (**Verified**, constructors): `ToolTip` (`FUN_140920d10`) makes a `ToolTip` widget of 0.25 x 0.2 of the screen (floats 0x3e800000, 0x3e4ccccd), hidden, unless given a widget.
+  `ToolTipFixed` (`FUN_140921440`, skin `Kenshi_GenericTextBoxSkin`, an anchor widget), `ToolTipInventory` (`FUN_140921510`, template `Kenshi_FloatingPanelLight` = `Kenshi_FloatingPanelSkin`
+  holding a `Kenshi_GenericTextBox` inset 5 px), `ToolTipDynamic`, `ToolTipStatic` (empty `vfunc_8` / `vfunc_9`: it stays in its widget). Only the HUD builds a Fixed one (`FUN_14072d3b0`, anchor
+  `TooltipPanel`), only the inventory code an Inventory one (`FUN_140716a40`).
+- **User strings** (**Verified**, `ToolTip::vfunc_7` `140924290`): a widget's `tooltip_type` picks the content: 0 `tooltip_text` as one row (setter `FUN_140920fe0`; empty text shows none);
+  1 `tooltip_size` rows of `tooltip_key_N` / `tooltip_val_N` (N from 0, **Observed**: the loop's start is not in the decompile); 2 `tooltip_data` a GameData record
+  (`FUN_1409239d0`): its name, and for a TOWN or NEST record (types 13, 85) the town's name, `Faction:`, `Relations:` and the `Residents` rows (**Observed**; not the item tooltip); 4 `tooltip_data` a map
+  place (`FUN_140922e60`, see [Map](#map)). Row text may start with an inline colour tag `#rrggbb` (the exe's static colours: `#afa68b` Main, `#140806`, `#492620` Title, `#59231a` Bad, `#bf4834` BadBright,
+  `#a8b774` Good, `#444444`, `#777777`, `#14ffdc`; **Verified**, `FUN_14158a2a0` ...). `vfunc_4` (`140921bb0`) registers a widget for tooltips (**Observed**, not read in full). The skin of the plain `ToolTip` and `ToolTipDynamic` is given by their creators (`FUN_14049f5b0`, `FUN_1406e4f50`, not read): Meitou uses `Kenshi_GenericTextBoxSkin` (engine choice, original **Unknown**).
+- **Item tooltips** are not user strings (**Observed**: the only ToolTipInventory constructor is in the inventory code): the Item classes' `vfunc_79` write rows into the Inventory tooltip (below).
+- **Timing** (**Verified**, MyGUI 3.2 `ToolTipManager`): shown 0.5 s after the pointer rests on the same widget (moving before it shows restarts the wait); once shown it follows the pointer; it hides when the
+  widget under the pointer changes or the mouse is captured (a press). The delay Kenshi sets is **Unknown** (`setDelayVisible` is in neither the strings nor the call graph dump). Meitou: the topmost control under the pointer decides, a press
+  hides, a drag hides.
+- **Layout** (**Observed**, `FUN_140922680`, `FUN_1409208d0`, `FUN_140920d10`, `vfunc_9`s). One row per line: a `PanelEmpty` holding a `Kenshi_WordWrapEmpty` EditBox (WordWrap, Static, MultiLine) with the key
+  aligned Left Top and, when there is a value, a second one aligned Right Top. The row sits `0.025` (`0.04` for the Inventory one) x UI scale of the widget's width from the left; its width is the key text width +
+  the value text width + 2 offsets; its height the taller text. The first row starts round(0.1 x widget height) from the top, the next ones round(0.01 x widget height) below the one before, and the panel ends round(0.1 x
+  widget height) below the last row. `DAT_1421337f0` is the UI scale (it multiplies pixel sizes of 10, 16, 24, 200). Meitou takes the scale as height / 1080 and right-aligns every value to the panel's inner edge.
+  The HUD's Fixed tooltip is built on the `TooltipPanel`'s first child, the parchment box (97.2 % of the panel height; **Verified**, the call in `FUN_14072d3b0` passes it to `FUN_140921440`), so its margins come from that box's size (7 px and 1 px at 1080 p) and the panel never gets lower than its own 72 px. Wrapping at the widget's width less the offsets is **Observed** from the row being the whole widget.
+- **Placement** (**Observed**): `ToolTip::vfunc_9` puts the bottom right corner at the pointer, an axis that would go negative taking the pointer coordinate instead; `ToolTipDynamic` the same with the width of its
+  widest row; `ToolTipInventory` sets the width to 0.17 x `DAT_141f1fb40` (the screen width, **Unknown** by name) and puts the top left at the point it is given, which `ToolTipInventory::vfunc_6` (**Verified**, decompiled) takes from the inventory window holding the item: its top right corner, or the window's left edge less the tooltip's width when the tooltip would pass the screen's right edge (also seen in a base-game screenshot); `vfunc_6` shows it at once from the inventory's mouse-move hook, without MyGUI's tooltip delay; `ToolTipFixed` moves its anchor so that
+  the anchor's bottom edge stays and the height is at least the anchor's. Meitou keeps every tooltip on the screen (engine choice), places the Inventory one beside its window as above, shown at once (at the pointer if no window holds the item), and the Fixed one at `TooltipPanel`'s left and
+  bottom edge (`position_real` 0.3198, 0.7130, 0.2083 x 0.0667), and draws a Static one inside its own widget (`AIToolTip`).
+- **Skins:** Faithful: Floating `Kenshi_GenericTextBoxSkin`; Inventory and Fixed `Kenshi_FloatingPanelSkin` with `Kenshi_GenericTextBoxSkin` inside (inset 5, resp. 97.2 % of the height as the layout's `TooltipPanel`),
+  rows in `Kenshi_StandardFont_Medium` measured with the painter's resource-font measuring. Meitou UI: the same rows on one `rust` plate (radius 10, drop shadow; [Meitou UI](../meitou-ui.md)), colours of the kit
+  (Title paper-light, Bad / BadBright bad-bright, Good good, Main and the rest main, greys greyed-bright).
+- **Item rows** (**Observed**, `FUN_1407ae130`; weapon `FUN_1407b2a20`, armour `FUN_1407a1650`): the name, ` (N)` after it for a stack (Title); `Buyback`; a kind marker `[Ammunition]` (item function 16), `[Research Artifact]`,
+  `[Unique]`, `[Food]` (3), `[Book]` (13), `Possibly Edible` and `-Only for:` the races (15); `Nutrition` `{n} nu` and `Ingredients` for food; `Stolen from:` the owner (Bad) or `Stolen` (`FUN_1407a0ea0`); for ammunition
+  `Damage:` and `Shots` a/b; `Weight` as `{unit} kg`, for a stack `{N} x {unit} kg ({total} kg)`; `Value` and `Sell value` (`c.{n}`, the trader factor after it as ` (+N%)` / ` (-N%)` in Bad; `FUN_14079e7a0`); `Avg. Price` and
+  `Price mark-up N%` for crop items; for ITEM records that are not food or ammunition `Charges` a/b when the maximum is above 1 and `Quality` n/100 when not 1. Labels carry a leading `-` (`-Weight`, `-Value`,
+  `-Shots`, `-Quality`, ...; **Observed** from the string builders and the `-Weightless` burden rows). A weapon lists its class (`Katana` / `Sabre` / `Blunt weapon` / `Heavy weapons` / `Hacker` / `Crossbow` / `Polearm class`),
+  `Cutting damage`, `Blunt damage`, `Blood loss`, `Armour penetration` (when not 0), `Attack bonus`, `Defence bonus`, `Indoors penalty` / `bonus` (Bad when negative, Good when positive, none at 0), the `Damage vs`
+  robots / humans / animals / race rows, a `----------------` rule (#444444), then `Weight` as whole kg and the prices; no grade or quality row (**Verified**: the strings `FUN_1407b2a20`
+  references). A weapon's grade is its model (`material sid`), whose name the base game's tooltip shows on its own line under the item's name (**Observed** by the owner in game; its colour is not decoded) and crafting recipes put before it (`Mk I Fragment Axe`). Armour lists `Light` / `Medium` / `Heavy Armour Class`, the material, `{n} Grade`,
+  `[Weather Protections]`, the cut / blunt / harpoon resistances and the part coverage (`FUN_1407a1650`, `FUN_1407a33a0`). Map items add `[Right-click to learn new map locations]` and `Towns:` (`1407b4e50`).
+  Value rows' key colour is `#140806` normally and `#afa68b` when `FUN_140710e10` returns non-null (a trade window?, **Unknown**).
+- **Meitou item rows:** name and stack count, the grade line right under it (a weapon's model name in the `ItemGrade` colour of its `level`'s grade, armour's / crossbow's / prosthetic's `{n} Grade`; a brief tooltip puts the model before the name instead), the kind marker (`[Food]`, `Possibly Edible`, `[Book]`, `[Ammunition]`), `Stolen from:` / `Stolen`, for a weapon the class, `Cutting damage`, `Blunt damage` (the
+  stats' multipliers as two decimals, **Observed** reading), `Blood loss` (the record's bleed multiplier), `Armour penetration` (x 100 as a percentage), the attack, defence and indoors modifiers and the weight in whole kg;
+  for armour the weight class; for a prosthetic its grade (from its `level`), `Max HP`, `Martial arts bonus` and each multiplier not 1 at that level (Meitou's rows; the original's limb rows are not decoded); the weight; `Value` and `Sell value` with the mark-up while trading (outside a trade Meitou has no shop to price against; the original lists them always); `Charges` and `Quality`
+  as above (quality only when above 0 and not 100). **Not shown (Unknown data or format):** `Buyback`, research artifact / unique flags, `Nutrition` and `Ingredients` values, ammunition `Damage:` / `Shots`,
+  `Avg. Price` / mark-up, the `Damage vs` rows (their number format is in the helper `FUN_14079f650`, not read), armour material / grade / resistances / coverage / weather protections, the race list of special food,
+  containers' and limbs' own rows (`FUN_1407aa090`, `FUN_1407a9080`).
+- **HUD texts** (**Verified**, the type 0 setter's callers `FUN_14072b540` and `FUN_14072d3b0`): per widget `OrdersBlockButton` (defensive mode, "gain 20 to his melee defense skill"), `OrdersHoldButton` ("HOLD POSITION ..."),
+  `OrdersPassiveButton` ("In non-combat mode ..."), `OrdersChaseButton` (the Jobs toggle: "If this is disabled then the character won't do any of the jobs listed."), `OrdersTauntButton`, `OrdersRangedButton`,
+  `OrdersSneakButton` (two strings joined by a line break), `OrdersMedicButton`, `OrdersRescueButton`, `OrdersProspectButton`, `ShortcutInventoryButton` ("Open character inventory"), `ShortcutStatsButton` ("Open
+  character status window"), `ShortcutMapButton` ("Open world map"), `ShortcutTechButton` ("Open research window"), `ShortcutSquadButton` ("Open squad management window"), `ShortcutHelpButton` ("Open help window"),
+  `BuildButton` ("Opens the BUILD menu ...") and the floor arrows (the texts name Page Up / Page Down). The texts are in `PlayerInterface.HudTips`; they all show in the Fixed tooltip. The wording of "Pause Game", "Normal
+  game speed", "Faster game speed" and "Fastest game speed" is no tooltip: it sits with the key binding names of the controls list (`FUN_1403f0260`, **Observed**), and `FUN_14072d3b0` sets no text on the
+  `TimeSpeedButton`s (**Verified**: it makes nine text tooltips, those above); the speed buttons have none. Which tooltip the Chase widget's caption belongs to is **Observed** from its Jobs binding.
+- **Status tooltips:** a selected building's header word gets the building classes' texts (`vfunc_114` of the storage, production, farm and turret classes: "Building is in good condition.", "This machine is currently under
+  construction.", "This machine has broken down as a result of damage. Send one of your engineers to repair it.", the farm and machine "Output full" / water / harvest / power texts; **Observed**, a title followed by its text
+  in the exe's strings, Meitou uses them for every building). The door's `Security:` row: "The door is locked and will keep out intruders." / "The door is unlocked."; `Open/Close:` of a broken door: "It will no longer
+  close and needs to be repaired." (`FUN_140304120`; the other door texts need door condition, which Meitou does not model).
+- **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the stats lines' breakdown texts and the health-word texts
+  (`FUN_14088a8f0` holds both ("Bleeding": "Losing blood, will collapse if blood goes below 0.", "Starving", "Crippled arm" ...) but which line each belongs to is not resolved; their data (encumbrance penalty, full speed
+  bonus) is not modelled), the `LifeBar#Tooltip` widgets, the lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.
 
 ## Unknowns
 

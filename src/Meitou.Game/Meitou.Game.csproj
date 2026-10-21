@@ -1,8 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Satori GC (docs/engine.md): replaces the runtime on a self-contained publish; plain builds keep the stock runtime. -->
-  <Sdk Name="PublishWithSatoriGC" Version="10.0.13-satori.38707290103.1" />
-
   <!-- The game executable: boots into the world with the Kenshi camera (docs/engine.md). -->
 
   <PropertyGroup>
@@ -18,6 +15,10 @@
     <!-- Server GC on four heaps: the streaming threads allocate ~2 MB a frame, and single-threaded gen0 GCs over the ~0.5 GB gen2 paused every thread 3-15 ms (DECISIONS 19). -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Meitou.Localisation" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />

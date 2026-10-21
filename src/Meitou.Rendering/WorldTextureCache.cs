@@ -1,3 +1,4 @@
+using System.Buffers;
 using Meitou.Data.Textures;
 
 using Meitou.Rendering.Gpu;
@@ -482,16 +483,27 @@ public sealed unsafe class WorldTextureCache : IDisposable
         {
             // Texture quality: the game drops top mips as it loads (docs/formats/settings.md); mip streaming drops more where nothing near uses them.
             // Only the mips that are kept are read: a dropped top level is three quarters of the file, and was read, held and thrown away (docs/renderer-native.md 8.14).
-            var dds = DdsReader.ReadKept(file, w => TextureQuality.DropTopMips(w, Math.Max(dropMips, MipStreaming.Drop(w.Width, w.Height, need, streaming, perDistance, bias, extra))), out var whole);
-            int dropped = whole.MipCount - dds.MipCount;
-            bool droppable = TextureQuality.DropTopMips(whole, 1).MipCount < whole.MipCount;
-            if (CanUploadCompressed(dds))
+            // The file's bytes are pooled (docs/engine.md, pooled buffers): an RGBA8 decode returns them here, a stored upload after its last step.
+            var dds = DdsReader.ReadKept(file, w => TextureQuality.DropTopMips(w, Math.Max(dropMips, MipStreaming.Drop(w.Width, w.Height, need, streaming, perDistance, bias, extra))), out var whole, ArrayPool<byte>.Shared);
+            bool handedOver = false;
+            try
             {
-                // Only the level the swizzle test looks at is decoded on the CPU.
-                int level = Math.Max(Array.FindIndex(dds.Surfaces.ToArray(), s => s.Width <= 256 && s.Height <= 256), 0);
-                return new TextureData(new LoadedTexture([DdsDecoder.Decode(dds, 0, level)], dds), dds, dropped, whole.Width, whole.Height, droppable);
+                int dropped = whole.MipCount - dds.MipCount;
+                bool droppable = TextureQuality.DropTopMips(whole, 1).MipCount < whole.MipCount;
+                if (CanUploadCompressed(dds))
+                {
+                    // Only the level the swizzle test looks at is decoded on the CPU.
+                    int level = Math.Max(Array.FindIndex(dds.Surfaces.ToArray(), s => s.Width <= 256 && s.Height <= 256), 0);
+                    var compressed = new TextureData(new LoadedTexture([DdsDecoder.Decode(dds, 0, level)], null), dds, dropped, whole.Width, whole.Height, droppable);
+                    handedOver = true;
+                    return compressed;
+                }
+                return new TextureData(TextureLoader.FromDds(dds) with { Source = null }, null, dropped, whole.Width, whole.Height, droppable);
             }
-            return new TextureData(TextureLoader.FromDds(dds), null, dropped, whole.Width, whole.Height, droppable);
+            finally
+            {
+                if (!handedOver) ArrayPool<byte>.Shared.Return(dds.Data);
+            }
         }
         return new TextureData(new LoadedTexture([TextureLoader.LoadImage(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)))], null), null);
     }
@@ -554,6 +566,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
             t.ViewSwizzle = dds.Format == DdsFormat.Bc4 ? new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.One) : default;
             long bytes = dds.Surfaces.Sum(s => (long)s.Length);
             Resident(t, bytes);
+            ArrayPool<byte>.Shared.Return(dds.Data);   // rented by Load; every slab above has been copied to staging
         });
     }
 

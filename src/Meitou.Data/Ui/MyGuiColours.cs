@@ -50,6 +50,8 @@ public static class MyGuiColours
     }
     public static Vector4 Text(MyGuiResources resources, UiControl control, string state, Vector4 fallback)
     {
+        // A text-only button (no background to tint) shows its hover colour on the text: dialogue choices, research and crafting lists.
+        if (state == "highlighted" && control.HoverColour is { } hover && control.Background.W <= 0) return hover;
         var colour = control.TextColour ?? fallback;
         if (control.TextColour is null && resources.Skins.TryGetValue(control.Skin, out var skin))
             foreach (var part in skin.Parts.Where(p => p.Type is "SimpleText" or "EditText"))

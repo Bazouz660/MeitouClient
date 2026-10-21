@@ -21,6 +21,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     readonly Slider inGameTransitionSpeed = new("In-game transition speed", SkyArrival.MinSpeed, SkyArrival.MaxSpeed,
         () => config.InGameTransitionSpeed, v => config.InGameTransitionSpeed = v, "0.00'x'");
     readonly Slider characterFlightTime = new("Character flight time", 0.5f, 6, () => config.CharacterFlightSeconds, v => config.CharacterFlightSeconds = v, "0.0' s'");
+    Slider? cameraRotateSpeed;
+    Slider CameraRotateSpeed => cameraRotateSpeed ??= new("Camera rotation speed", UserConfig.MinCameraRotateSpeed, UserConfig.MaxCameraRotateSpeed,
+        () => config.CameraRotateSpeed, v => { config.CameraRotateSpeed = MathF.Round(v * 2) / 2; CameraRotateSpeedChanged?.Invoke(config.CameraRotateSpeed); },
+        "0.#", Faithful: global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
     Slider[]? audioSliders;
     /// <summary>The seven audio sliders of the original's options (docs/formats/settings.md); each writes <see cref="UserConfig.Audio"/> and calls <see cref="AudioChanged"/>.</summary>
     Slider[] AudioSliders => audioSliders ??= [
@@ -45,6 +49,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.AttackSlots = Math.Clamp((int)MathF.Round(v), 1, 5);
         AttackSlotsChanged?.Invoke(config.AttackSlots);
     }, "0", Faithful: UserConfig.FaithfulAttackSlots, Meitou: UserConfig.MeitouAttackSlots);
+    Slider? groundItemsSlider;
+    Slider GroundItemsSlider => groundItemsSlider ??= new("Dropped items kept", 16, global::Meitou.Simulation.Items.GroundItems.MaxLimit, () => Host?.GroundItemLimit ?? config.GroundItemLimit,
+        v => config.GroundItemLimit = Math.Clamp((int)MathF.Round(v), 1, global::Meitou.Simulation.Items.GroundItems.MaxLimit), "0", Logarithmic: true,
+        Meitou: global::Meitou.Simulation.Items.GroundItems.DefaultLimit);
     readonly List<Hit> hits = [];
     readonly List<UiControl> controls = [];
     readonly SettingsMenuArt art = new();
@@ -79,6 +87,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action? OffscreenChanged { get; init; }
     /// <summary>The door auto-close switch changed (<see cref="UserConfig.DoorsCloseBehind"/>).</summary>
     public Action<bool>? DoorsCloseChanged { get; init; }
+    /// <summary>Applies a new camera rotation speed (<see cref="UserConfig.CameraRotateSpeed"/>) to the camera.</summary>
+    public Action<float>? CameraRotateSpeedChanged { get; init; }
     /// <summary>Called when an audio slider changes (the config holds the new values); the game applies them to the running sound.</summary>
     public Action? AudioChanged { get; init; }
     /// <summary>On a client: the host's <see cref="SessionRules"/> (null on the host and in single player). The rule rows show these values and are locked.</summary>
@@ -110,7 +120,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (label is "Time of day" or "Time speed") return "Advanced";
         if (label is "VSync" or "Full screen" || WorldFrame.UpscalerSliders.Contains(label) || label == WorldFrame.FilteringSlider || label == WorldFrame.TextureQualitySlider) return "Display";
         if (label.Contains("water", StringComparison.OrdinalIgnoreCase) || label.Contains("Reflection", StringComparison.Ordinal)) return "Water";
-        if (label.StartsWith("Shadow", StringComparison.Ordinal) || label.StartsWith("Light shafts", StringComparison.Ordinal) || label.StartsWith("Planetshine", StringComparison.Ordinal) || label.StartsWith("Haze", StringComparison.Ordinal)) return "Lighting";
+        if (label.StartsWith("Shadow", StringComparison.Ordinal) || label.StartsWith("Light shafts", StringComparison.Ordinal) || label.StartsWith("Planetshine", StringComparison.Ordinal) || label.StartsWith("Haze", StringComparison.Ordinal) || label.StartsWith("Ambient", StringComparison.Ordinal)) return "Lighting";
         if (label.Contains("Tone", StringComparison.OrdinalIgnoreCase) || label.Contains("Grading", StringComparison.OrdinalIgnoreCase) || label.StartsWith("Heat", StringComparison.Ordinal) || WorldFrame.ParticleSliders.Contains(label)) return "Effects";
         return "World";
     }
@@ -166,6 +176,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Hardware mouse", "Use the Windows cursor instead of the game's drawn pointer (no hover pointers).",
                 Toggle: new("Hardware mouse", () => config.HardwareMouse, v => config.HardwareMouse = v)));
         if (page == 3)
+            result.Add(new(CameraRotateSpeed.Label, "How fast the rotate and tilt keys and the mouse turn the camera (the game: 6).", Slider: CameraRotateSpeed));
+        if (page == 3)
             foreach (var action in Enum.GetValues<InputAction>().Where(a => a != InputAction.Quit && a != InputAction.ToggleFps))
                 result.Add(new(ActionLabel(action), BindingHint(action), Binding: action));
         if (page == 5)
@@ -213,6 +225,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(Rule(new("Wild squads stay", "Animals, bandits and other wild squads keep their characters, wounds and places when the area around them unloads, and are there again when you come back. "
                 + "In the game they are removed and new ones are made.",
                 Toggle: new("Wild squads stay", () => Host?.KeepWild ?? config.KeepWild, v => { config.KeepWild = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
+            result.Add(Rule(new("Towns keep their schedule", "Townspeople you come back to after an hour or more are where their day puts them: in bed at night, at the counter, at their posts and seats. "
+                + "In the game they are where they stood when you left.",
+                Toggle: new("Towns keep their schedule", () => Host?.ResidentSchedule ?? config.ResidentSchedule, v => { config.ResidentSchedule = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true))));
             result.Add(Rule(new("Doors close behind", "A door someone opened by walking through it closes again a few seconds after the last person went through. In the game doors stay open.",
                 Toggle: new("Doors close behind", () => Host?.DoorsCloseBehind ?? config.DoorsCloseBehind, v => { config.DoorsCloseBehind = v; DoorsCloseChanged?.Invoke(v); }, Remaster: true, OnOff: true))));
             result.Add(new("Hover outline", "Outline and tint the character under the cursor, in the colour of what a right click would do.",
@@ -222,6 +237,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(Rule(new("luckyren Mode", "A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying everywhere. Its gear falls to the ground around the spot.",
                 Toggle: new("luckyren Mode", () => Host?.LuckyrenMode ?? config.LuckyrenMode, v => config.LuckyrenMode = v, Remaster: true, OnOff: true),
                 Picture: SettingsMenuArt.LuckyrenImage)));
+            result.Add(Rule(new(GroundItemsSlider.Label, "How many items dropped during play (severed limbs, luckyren Mode's gear) stay on the ground; past it the oldest disappears. "
+                + "Items that were on the ground in the save always stay.", Slider: GroundItemsSlider)));
             result.Add(new("Main menu scene transitions", "Sky flight to/from the main menu (Meitou UI).",
                 Toggle: new("Main menu scene transitions", () => config.MainMenuTransitions, v => config.MainMenuTransitions = v)));
             result.Add(new(mainMenuTransitionSpeed.Label, "Higher values make the camera ascend and descend faster.", Slider: mainMenuTransitionSpeed));
@@ -449,18 +466,21 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             AttackSlotsSlider.Set(UserConfig.MeitouAttackSlots);
             config.LateDefences = true;
             LateDefencesChanged?.Invoke(true);
-            config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = true;
+            config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = true;
             config.DoorsCloseBehind = true;
             DoorsCloseChanged?.Invoke(true);
             config.LuckyrenMode = false;
+            config.GroundItemLimit = global::Meitou.Simulation.Items.GroundItems.DefaultLimit;
         }
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
         if (Host is null) OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();
         config.HardwareMouse = false;
+        CameraRotateSpeed.Set(global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
         config.HoverOutline = true;
         config.SelectionRings = true;
+
         player.SetUiMode(UiMode.Meitou);
         player.SpeedUnit = config.SpeedUnit = SpeedUnit.Mph;
         player.Floaters = config.Floaters = FloaterMode.Simple;

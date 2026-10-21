@@ -135,6 +135,8 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 | Ctrl + right click on a knocked-out or dead character | the nearest selected character picks it up (`PickUpOrder`); on a body a selected character carries, puts it down (`PutDownOrder`) |
 | right click on one of the player's own downed characters with nothing to bandage | picks it up (as the original's quick right click; with something to bandage it is first aid, as above) |
 | Alt + right click on a knocked-out or dead character | the nearest selected character takes all that fits from its inventory and backpack (`LootOrder`; no window) |
+| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its pockets open in the container window beside the inventory: items are dragged out of it or into it (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
+| an item dragged out of the inventory window and let go over the world | dropped on the ground 3 units ahead of the character (`DropInventoryItem`; worn gear too, not locked-on items or fitted limbs; engine choice, the original's drop rule is **Unknown**) |
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
 | `J` | Rescue for the selection (the original's NUM8): each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
@@ -178,7 +180,7 @@ hit with no walkable point sets `invalidmove` (`FUN_140800250`). Which other hov
 
 Meitou (`PlayerInterface.Pointer.cs`, engine choices): the window's own cursor is hidden and the pointer drawn last in the frame (not in
 screenshots or cinema takes). It follows the quick right-click order, so it never disagrees with the click: with a selection, over a
-trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
+trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
 `lift`, Alt `search`; otherwise, over the interface, the settings panel or the loading screen, `arrow`. The free camera hides it (as mode 0's
 `invisible`). Interface → Hardware mouse (`HardwareMouse` in meitou.user.json, default off as the game's `hardware_mouse`; settings.cfg is
 not read) shows the Windows cursor instead, applied at once.
@@ -209,7 +211,7 @@ Rendering details: [objects](../render-objects.md#building-sign-highlight).
 Meitou only (Advanced → Hover outline, `HoverOutline`, default on; the game has none). The character under the cursor is drawn alone into a
 mask (colour pass, live pose, picture levels, own depth planes round it) right after the portraits, then after the tone map an outline
 (about 2.5 px at 1080p, 60 % strength fading outward) is blended round the silhouette, through walls, and its visible part tinted at 11 %, visible meaning its
-linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (only for a faction hostile to the player's; a neutral one is white although a right click attacks it), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Off in the free camera, with the interface hidden and in
+linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (only for a faction hostile to the player's; a neutral one is white although a right click attacks it), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Holding the Highlight key (Alt, which also lights up signs) outlines the same way every character (the squad's too, people and animals) within 500 units of the camera's focus, each in the colour hovering it would give (own hurt green, downed or carried blue, trader or someone to talk to gold, hostile red, else white; all white with no selection); one mask per colour, overlapping outline rectangles joined. Off in the free camera, with the interface hidden and in
 screenshots and cinema takes. Not in the Shift+F1 switch list (a game setting, like Attackers per target).
 
 ### Selection rings
@@ -346,7 +348,7 @@ The settings panel and the native Meitou UI have their own keyboard focus ([nati
 
 Meitou only (no original counterpart). F10 (`ToggleDebugMenu`, rebindable) opens a cheat list; while open it takes every key (Up/Down, typing, Enter, Esc).
 Rows send `DebugCommand`s, applied in the next tick's Inputs phase: teleport the selection to the camera target, spawn a character record there
-(own squad, first faction hostile to the player), give an item record (`name x5`) to the first selected, add or remove money (signed number),
+(own squad, first faction hostile to the player), give an item record (`name x5 q80`; quality 0-100: armour's quality, crossbows' and limbs' level, a weapon the `PLAYER_WEAPONS` model of the highest level at or below it (else the lowest) and that level; what does not fit drops at their feet) to the first selected, add or remove money (signed number),
 heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage. Heal, stats and damage fall back to the inspected character. Names match a record's string id,
 its exact name, else the shortest name containing the text. Replaces the game's F10 key list (the viewer keeps its own).
 In a multiplayer game F10 opens it only when the host allows cheats ([meitou-ui](../meitou-ui.md#multiplayer)).

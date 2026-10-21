@@ -45,7 +45,16 @@ sealed partial class PlayerInterface
         machineDrag = null;
         if ((buying is null && moving is null && taking is null) || !UiVisible) return;
         ArrangeUi();
-        if (faithfulScreens.HitTest(p) is not { } hit) return;
+        if (faithfulScreens.HitTest(p) is not { } hit)
+        {
+            // A character's item let go over the world (no window, no HUD): dropped on the ground at its feet.
+            if (moving is { } dropped && !OverHud(p))
+            {
+                var i = dropped.Item;
+                Say(new DropInventoryItem(dropped.Character, new InventoryItemToken(i.Index, i.Record, i.Section, i.X, i.Y, i.Quantity, i.Quality)) { Tick = session.World.Tick });
+            }
+            return;
+        }
         if (taking is { } t) { MachineDrop(t, hit.Screen); return; }
         var trade = session.CurrentSnapshot.Trade;
 
@@ -179,10 +188,32 @@ sealed partial class PlayerInterface
         return captured;
     }
 
+    /// <summary>The characters whose bag was left open with OPEN BAG: their inventory shows it again when it opens or they are selected.</summary>
+    readonly HashSet<Meitou.Simulation.CharacterId> bagOpen = [];
+
+    /// <summary>OPEN BAG: opens or closes the lead character's bag and remembers it for that character.</summary>
+    void ToggleBag()
+    {
+        if (Selected().FirstOrDefault() is not { } lead) return;
+        if (!bagOpen.Remove(lead.Id)) bagOpen.Add(lead.Id);
+        SyncBagScreen();
+    }
+
+    /// <summary>Once a frame: the bag window is open while the inventory is, the lead character wears a bag and left it open (<see cref="bagOpen"/>).</summary>
+    void SyncBagScreen()
+    {
+        var lead = Selected().FirstOrDefault();
+        bool want = faithfulScreens.IsOpen("inventory") && lead is { ItemGrid: { BagWidth: > 0, BagHeight: > 0 } } && bagOpen.Contains(lead.Id);
+        if (want == faithfulScreens.IsOpen("bag")) return;
+        if (!want) { faithfulScreens.Close("bag"); return; }
+        faithfulScreens.Open("bag");
+        if (shownTrader.IsNone) PlaceBagWindow(); else PlaceTradeWindows();
+    }
+
     void ValidateInventoryDrag()
     {
         if (faithfulScreens.HasModal) { CancelInventoryDrag(); return; }
-        if (faithfulScreens.IsOpen("bag") && Selected().FirstOrDefault()?.ItemGrid is not { BagWidth: > 0, BagHeight: > 0 }) faithfulScreens.Close("bag");
+        SyncBagScreen();
         if (inventoryDrag is { } drag &&
             (!faithfulScreens.IsOpen(drag.Item.Section == "backpack_content" ? "bag" : "inventory") ||
              Selected().FirstOrDefault()?.Id != drag.Character ||

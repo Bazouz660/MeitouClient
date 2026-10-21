@@ -39,6 +39,11 @@ public sealed class PlayerSession
     public CharacterId ContainerOpener { get; set; } = CharacterId.None;
     public string? OpeningContainer { get; set; }
     public CharacterId ContainerWalker { get; set; } = CharacterId.None;
+    /// <summary>The downed character whose inventory window is open and who opened it (<see cref="Carrying.OpenLootOrder"/>), and the one a looter is still walking to. Display only, as the container.</summary>
+    public CharacterId OpenLoot { get; set; } = CharacterId.None;
+    public CharacterId LootOpener { get; set; } = CharacterId.None;
+    public CharacterId OpeningLoot { get; set; } = CharacterId.None;
+    public CharacterId LootWalker { get; set; } = CharacterId.None;
     /// <summary>The door (<see cref="Locks.Fixture.Id"/>) a character is walking to open or close (<see cref="Locks.DoorOrder"/>), and who. Not hashed and not saved, as the container walk.</summary>
     public string? DoorTarget { get; set; }
     public CharacterId DoorWalker { get; set; } = CharacterId.None;

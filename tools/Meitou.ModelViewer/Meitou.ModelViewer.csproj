@@ -1,8 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Satori GC (docs/engine.md): replaces the runtime on a self-contained publish; plain builds keep the stock runtime. -->
-  <Sdk Name="PublishWithSatoriGC" Version="10.0.13-satori.38707290103.1" />
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>meitou-viewer</AssemblyName>

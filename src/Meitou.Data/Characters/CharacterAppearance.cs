@@ -113,12 +113,13 @@ public sealed class CharacterAppearance
     public Dictionary<string, float> PoseWeights { get; } = new(StringComparer.Ordinal);
     public List<string> Notes { get; } = [];
 
-    /// <summary>Finds a record by string id, else by exact name (case-insensitive) among <paramref name="types"/>.</summary>
+    /// <summary>Finds a record by string id, else by exact name (case-insensitive; the shown name or the data files' English one) among <paramref name="types"/>.</summary>
     public static GameRecord? Find(GameDatabase db, string nameOrId, params FcsRecordType[] types)
     {
         if (db.Find(nameOrId) is { } byId && (types.Length == 0 || types.Contains(byId.Type))) return byId;
         return db.Records.Values.Where(r => (types.Length == 0 || types.Contains(r.Type))
-                && string.Equals(r.Name.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase))
+                && (string.Equals(r.Name.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(r.BaseName.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase)))
             .OrderBy(r => Array.IndexOf(types, r.Type)).FirstOrDefault();
     }
 

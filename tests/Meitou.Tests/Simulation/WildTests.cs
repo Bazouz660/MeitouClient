@@ -237,7 +237,7 @@ public class WildTests(ITestOutputHelper output)
             }
             output.WriteLine($"{squad.Name}: {squad.Members.Count}");
         }
-        // floor(0.7 x 10) = 7, and a squad is skipped when its expected size passes the free room.
+        // floor(0.7 x 10) = 7, and a squad is skipped when its expected size passes the free room (unless the pool is empty and more than 4 are free).
         Assert.InRange(members, 1, (int)(0.7f * den.Nest!.NestResidentPopulation) + 4);
         world.RunTicks(300);
     }

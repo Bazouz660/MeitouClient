@@ -50,14 +50,15 @@ public class TradeUiTests
         {
             var before = ui.UiFrame.Single(c => c.Name == "backpack_content");
             Assert.True(before.Bounds.Height > before.Clip!.Value.Height);
-            Assert.True(ui.UiScroll(Centre(before with { Bounds = before.Clip.Value }), -1000));
+            // The stock is a ScrollView: one wheel event moves a fixed 50 px whatever its size (docs/formats/mygui.md).
+            for (int i = 0; i < 60; i++) Assert.True(ui.UiScroll(Centre(before with { Bounds = before.Clip.Value }), -1));
             var after = ui.UiFrame.Single(c => c.Name == "backpack_content");
             Assert.Equal(before.Bounds.Height, after.Bounds.Height);
             Assert.True(after.Bounds.Y < before.Bounds.Y);
             var bottom = ui.UiFrame.Single(c => c.Name == "trade-item-1");
             Assert.True(bottom.Clip!.Value.Contains(Centre(bottom).X, Centre(bottom).Y));
             ui.MouseMove(Centre(bottom));
-            Assert.Contains(ui.UiFrame, c => c.Name == "inventory-tooltip" && c.Properties.GetValueOrDefault("ItemTooltip") is { } tip && tip.StartsWith("Bottom\nValue\t", StringComparison.Ordinal));
+            Assert.True(ui.UiFrame.Single(c => c.Name == "trade-item-1").Properties.ContainsKey("tooltip_item"));
             Drag(ui, Centre(bottom), Centre(ui.UiFrame.Single(c => c.Name == "main")));
             var buy = Assert.Single(session.World.Commands.TakeDue(long.MaxValue).OfType<Meitou.Simulation.Trading.BuyItem>());
             Assert.Equal("bottom", buy.Item.Record);

@@ -37,7 +37,7 @@ foreach ($project in @("src/Meitou.Game/Meitou.Game.csproj", "tools/Meitou.Model
         -p:DebugType=embedded -p:Version=$numeric -p:InformationalVersion=$Version -o $stage
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish $project failed" }
 }
-# The Unix runtime packs carry native debug symbols (*.dbg, *.dwarf, *.dSYM; ~250 MB) for binaries Satori partly replaces: not shipped.
+# The Unix runtime packs carry native debug symbols (*.dbg, *.dwarf, *.dSYM; ~250 MB): not shipped.
 Get-ChildItem $stage -Recurse -Include *.dbg, *.dwarf, *.dSYM | Remove-Item -Recurse -Force
 
 # The settings the launcher's Graphics page shows, under the names this build saves them (docs/launcher.md "Graphics"). The file is the same

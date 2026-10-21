@@ -7,14 +7,14 @@ using Meitou.Data.Gameplay.Bodies;
 
 namespace Meitou.Data.Ui;
 
-/// <summary>Stat help read from the user's English gettext template, never embedded game text.</summary>
+/// <summary>Stat help read from the user's English gettext template, never embedded game text; shown in the active language when its catalog translates the paragraph.</summary>
 public sealed class StatHelpCatalog
 {
-    sealed record Entry(int[] Lines, string Text);
+    sealed record Entry(int[] Lines, string Text, int EnglishLength);
     readonly List<Entry> entries = [];
     public sealed record Help(string Description, IReadOnlyList<string> Affected, IReadOnlyList<string> Training, string PhysicalEffect);
 
-    public string TextAt(int line) => entries.Where(e => e.Lines.Contains(line)).MaxBy(e => e.Text.Length)?.Text ?? "";
+    public string TextAt(int line) => entries.Where(e => e.Lines.Contains(line)).MaxBy(e => e.EnglishLength)?.Text ?? "";
 
     public static StatHelpCatalog Read(string? path)
     {
@@ -27,7 +27,8 @@ public sealed class StatHelpCatalog
         bool reading = false;
         void Finish()
         {
-            if (references.Count > 0 && text.Length > 0) result.entries.Add(new(references.Distinct().ToArray(), text.ToString()));
+            // The structure (which paragraph answers which stat) comes from the English template; the text shown is its translation when the language has one.
+            if (references.Count > 0 && text.Length > 0) result.entries.Add(new(references.Distinct().ToArray(), Meitou.Localisation.Loc.Tr(text.ToString()), text.Length));
             references.Clear(); text.Clear(); reading = false;
         }
         foreach (string raw in File.ReadLines(path))

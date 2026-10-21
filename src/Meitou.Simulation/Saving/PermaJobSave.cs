@@ -10,7 +10,7 @@ namespace Meitou.Simulation.Saving;
 /// <summary>
 /// A character's job list and jobs switch in its GAMESTATE_AI record <c>ai</c> (<b>Verified</b>, <c>OrdersReceiver</c> vfuncs 1 and 2 and 4122 sampled records; docs/game/ai-tasks.md
 /// "Perma-jobs"): bool <c>jobs</c>, and per job i from 0 the int <c>pjob&lt;i&gt;</c> (task type) and the handle <c>pjobT&lt;i&gt;</c> (target). Meitou's own string <c>meitou pjob&lt;i&gt;</c>
-/// (the <see cref="BuildSite.Id"/>) names a building the handle cannot (one without a saved state) and wins on load.
+/// (the <see cref="BuildSite.Id"/>) names a building the handle cannot (one without a saved state, or a rock's natural site) and wins on load.
 /// </summary>
 public static class PermaJobSave
 {
@@ -45,7 +45,8 @@ public static class PermaJobSave
         for (int i = 0; ai.Ints.TryGetValue(Type + i, out int type); i++)
         {
             var hand = Hand.Read(ai, Target + i);
-            string? site = ai.Strings.TryGetValue(MeitouSite + i, out var id) && sites.Find(id) is not null ? id
+            // A rock's natural id is kept as it is: its site is made from the id (ProductionSystem.Natural).
+            string? site = ai.Strings.TryGetValue(MeitouSite + i, out var id) && (sites.Find(id) is not null || ProductionSystem.IsNatural(id)) ? id
                 : handles.Building(hand) is { } b && instanceOf.TryGetValue(b, out var key) && key.IndexOf(':') is var colon and >= 0 && sites.Find(key[(colon + 1)..]) is not null ? key[(colon + 1)..]
                 : null;
             PermaJobs.Add(cold, (TaskType)type, new PermaJob((TaskType)type, site, site is null ? hand : Hand.Null));

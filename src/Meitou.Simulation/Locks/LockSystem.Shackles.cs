@@ -25,6 +25,8 @@ public sealed partial class LockSystem
 {
     /// <summary>A worker beside the wearer works within this distance (engine: a cage's use range).</summary>
     public const float ShackleReach = 25;
+    /// <summary>Dialogue events 13 (EV_UNLOCK_MY_CAGE_OR_SHACKLES) and 46 (EV_PRISONER_FREE_TO_GO).</summary>
+    const int UnlockMyCageOrShackles = 13, PrisonerFreeToGo = 46;
 
     /// <summary>The worn locked shackles of a character (null: none).</summary>
     public static Items.ItemInstance? WornShackles(CharacterCold? c) => c?.Inventory?.Items.FirstOrDefault(i => i.LockedOn);
@@ -151,27 +153,31 @@ public sealed partial class LockSystem
                     switch (Picking.StepShackles(world, s, job.Wearer, item, world.TickSeconds, Crimes))
                     {
                         case PickOutcome.Open: c.Shackles = null; break;
-                        case PickOutcome.Success: c.Shackles = null; Freed(world, s, c, "Pick success!"); break;
+                        case PickOutcome.Success: c.Shackles = null; Freed(world, s, c, job.Wearer, "Pick success!"); break;
                         case PickOutcome.Failed: if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: Pick failed"); break;
                         case PickOutcome.NotAllowed: c.Shackles = null; if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: I'm not skilled enough..."); break;
                     }
                     break;
                 case ShackleWork.Cut:
                     if (Lockpicking.BestTool(c) is null) { c.Shackles = null; if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: I don't have any tools"); break; }
-                    if (Picking.CutShackles(world, s, job.Wearer, item, world.TickSeconds, Crimes)) { c.Shackles = null; Freed(world, s, c, "Shackles broken!"); }
+                    if (Picking.CutShackles(world, s, job.Wearer, item, world.TickSeconds, Crimes)) { c.Shackles = null; Freed(world, s, c, job.Wearer, "Shackles broken!"); }
                     break;
                 case ShackleWork.Break:
                     c.Shackles = null;
-                    if (Picking.BreakShackles(world, s, job.Wearer, item, Crimes)) Freed(world, s, c, "*Crunck*");
+                    if (Picking.BreakShackles(world, s, job.Wearer, item, Crimes)) Freed(world, s, c, job.Wearer, "*Crunck*");
                     else if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: I'm not strong enough to do that");
                     break;
             }
         }
     }
 
-    static void Freed(World world, int s, CharacterCold c, string message)
+    static void Freed(World world, int s, CharacterCold c, CharacterId wearer, string message)
     {
         world.EmitSound(SoundKind.Unlocked, s, world.Characters.Next[s].Position);
         if (c.IsPlayer) world.PostOwnerOfSlot(s, $"{c.Name}: {message}");
+        // An NPC freed by a player character thanks it (EV_UNLOCK_MY_CAGE_OR_SHACKLES, as for a player releasing a prisoner, economy.md 11.5).
+        var worker = world.Characters.IdOf(s);
+        if (c.IsPlayer && wearer != worker && world.Characters.TryResolveNext(wearer, out int w) && world.Characters.Cold(w) is { IsPlayer: false })
+            world.Defer(new Dialogue.DialogueEvent(wearer, worker, UnlockMyCageOrShackles) { Tick = world.Tick + 1 });
     }
 }
