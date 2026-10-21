@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Characters;
 using Meitou.Data.Gameplay;
+using Meitou.Data.World;
 using Meitou.Engine;
 using Meitou.Engine.Time;
 using Meitou.Net;
@@ -48,6 +49,8 @@ sealed class SessionHarness : IDisposable
         public List<string> Messages { get; } = [];
         public List<(ClockChange Change, string Name)> ClockChanges { get; } = [];
         public List<NoticeNet> Notices { get; } = [];
+        /// <summary>The camera this guest reports every frame (null: above <see cref="SyntheticTown.Centre"/>, 8000 draw distance).</summary>
+        public ViewState? View { get; set; }
         public int Player => Client.Player;
         public Meitou.Simulation.World World => Session.World;
 
@@ -72,6 +75,8 @@ sealed class SessionHarness : IDisposable
     public readonly List<(ClockChange Change, string Name)> HostClockChanges = [];
     /// <summary>What the host published for each player at each tick (taken after every EndFrame), for comparing with what the guests assembled.</summary>
     public readonly Dictionary<(int Player, long Tick), WorldSnapshot> Published = [];
+    /// <summary>The host's population system when the harness built the host (<see cref="SyntheticTownHost"/>).</summary>
+    public PopulationSystem? Population { get; private init; }
     readonly ReplicaCatalog catalog;
 
     public SessionHarness(WorldSession hostSession, GameDatabase database, NetHostOptions? options = null, int latencyMs = 10)
@@ -85,18 +90,21 @@ sealed class SessionHarness : IDisposable
         Host.Start();
     }
 
-    /// <summary>A SyntheticTown host: the population, player and movement systems, the host's start squad, the camera on it; publishing every tick.</summary>
-    public static SessionHarness SyntheticTownHost(NetHostOptions? options = null)
+    /// <summary>
+    /// A SyntheticTown host: the population, player and movement systems, the host's start squad, the camera on it; publishing every tick.
+    /// <paramref name="database"/> and <paramref name="towns"/> replace the synthetic town's records and placements.
+    /// </summary>
+    public static SessionHarness SyntheticTownHost(NetHostOptions? options = null, GameDatabase? database = null, IEnumerable<TownPlacement>? towns = null)
     {
-        var db = SyntheticTown.Database();
-        var data = SyntheticTown.Data(db);
+        var db = database ?? SyntheticTown.Database();
+        var data = towns is null ? SyntheticTown.Data(db) : PopulationData.Create(db, towns);
         var walk = new OpenGroundWalkability(SyntheticTown.Ground);
         var systems = SyntheticTown.Standard(data, walk, StandardParts.Population | StandardParts.Player | StandardParts.Movement);
         var session = new WorldSession(SyntheticTown.Centre, (-20000, -20000, 20000, 20000), SyntheticTown.Ground,
             simulation: new WorldSettings { Seed = 4, PublishSnapshots = true }, systems: systems.Systems, walkability: walk);
         session.World.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = 0 });
         systems.Population!.StartPlayer(session.World, NewGameStart.From(db.Find("40-t")!));
-        return new SessionHarness(session, db, options);
+        return new SessionHarness(session, db, options) { Population = systems.Population };
     }
 
     /// <summary>A guest that connects now; it joins over the next frames (its replica is built at the <c>WorldReset</c>, then Ready).</summary>
@@ -160,7 +168,7 @@ sealed class SessionHarness : IDisposable
         foreach (var guest in Guests)
         {
             if (guest.Client.State == NetClientState.Closed) continue;
-            guest.Client.SetView(new ViewState(SyntheticTown.Centre + new Vector3(0, 1500, 0), SyntheticTown.Centre, 8000));
+            guest.Client.SetView(guest.View ?? new ViewState(SyntheticTown.Centre + new Vector3(0, 1500, 0), SyntheticTown.Centre, 8000));
             guest.Client.BeginFrame(FrameSeconds);
             if (guest.Session.Mode == SessionMode.Replica) guest.Session.Advance(FrameSeconds);
             guest.Client.EndFrame();

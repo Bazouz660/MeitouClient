@@ -660,3 +660,8 @@ trade, conversation and selection do not show in the other's view; a guest's pau
 `ClockChanged` with the guest's name, and `HostOnly` refuses it with a message; a guest who leaves is `Away`, keeps its squads
 and comes back as the same number with no new squad; a guest joining a paused game gets its squad (in creation) while the
 host's tick stays put.
+`FarPlayersAndFightTests`: with a guest's squad 21 000 units from the host's (four zones off), the population keeps the zones round both
+active and both towns made, the far town's residents walk, the guest's replica holds those residents (where the host has them) and every
+player character but none of the host town's NPCs, and its orders move its far character; in a fight beside one guest, its replica shows
+`InCombat`/`WeaponDrawn` and the host's body status, and it gets every sound, blood mark and floater the host's consumers got, in order,
+while a guest 20 000 units off gets none whose subject is only the NPC.
