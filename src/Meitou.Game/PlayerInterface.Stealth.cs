@@ -50,7 +50,8 @@ sealed partial class PlayerInterface
     /// The name tag over each of the player's characters within the original's range: the <c>Kenshi_CharacterNamePanel</c> layout (<b>Verified</b>), 0.1057 x 0.0296 of the
     /// screen, the name centred in <c>Kenshi_StandardFont_Large</c> with a shadow in the middle 0.655, and while the character sneaks the <c>Stealth</c> icon on the left in
     /// the state's tag colour. The name is white and in square brackets when the character is selected, grey and bare otherwise (<c>NameTagSelected</c> / <c>NameTagUnselected</c>, the brackets from a screenshot of the original; <b>Observed</b>);
-    /// the light level icon is not drawn (no light model). The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
+    /// In multiplayer a teammate's tag is the name in its owner's colour with the owner's name under it, and one's own tags get a 2-pixel bar in one's colour.
+    /// The light level icon is not drawn (no light model). The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
     /// </summary>
     void AddNameTags(List<UiControl> controls)
     {
@@ -63,11 +64,25 @@ sealed partial class PlayerInterface
             if (Vector3.DistanceSquared(Eye, feet) >= NameTagRangeSquared) continue;
             if (Project(feet + new Vector3(0, CharacterHeight + 4, 0)) is not { } head) continue;
             float x = head.X - width / 2, y = head.Y - 4 * scale - height;
-            controls.Add(new($"nametag-{n}", "TextBox", new(x + width * 0.187192f, y, width * 0.655172f, height), c.Selected ? $"[{c.Name}]" : c.Name, "", "", true,
+            // A teammate's character: its name in the owner's colour with the owner's name under it ("Player n" in grey when the owner left the roster).
+            bool other = OtherPlayers(c);
+            var owner = other ? PlayerInfo(c.Owner) : null;
+            string ownerColour = other ? PlayerColours.MyGui(owner?.Colour ?? -1) : "";
+            controls.Add(new($"nametag-{n}", "TextBox", new(x + width * 0.187192f, y, width * 0.655172f, height), c.Selected && !other ? $"[{c.Name}]" : c.Name, "", "", true,
                 new Dictionary<string, string>
                 {
-                    ["FontName"] = "Kenshi_StandardFont_Large", ["TextAlign"] = "Center", ["TextShadow"] = "true", ["TextColour"] = c.Selected ? "1 1 1" : "0.702 0.702 0.702",
+                    ["FontName"] = "Kenshi_StandardFont_Large", ["TextAlign"] = "Center", ["TextShadow"] = "true",
+                    ["TextColour"] = other ? ownerColour : c.Selected ? "1 1 1" : "0.702 0.702 0.702",
                 }, Vector4.Zero, Pickable: false));
+            if (other)
+                controls.Add(new($"nametag-owner-{n}", "TextBox", new(x + width * 0.187192f, y + height, width * 0.655172f, height * 0.7f), owner?.Name ?? $"Player {c.Owner}", "", "", true,
+                    new Dictionary<string, string>
+                    {
+                        ["FontName"] = "Kenshi_StandardFont_MediumSmall", ["TextAlign"] = "Center", ["TextShadow"] = "true", ["TextColour"] = ownerColour, ["Alpha"] = "0.85",
+                    }, Vector4.Zero, Pickable: false));
+            else if (Multiplayer && PlayerInfo(LocalPlayer) is { } me)
+                controls.Add(new($"nametag-mine-{n}", "Widget", new(head.X - width * 0.2f, y + height + scale, width * 0.4f, 2 * scale), "", "", "", true,
+                    new Dictionary<string, string>(), PlayerColours.Of(me.Colour), Pickable: false));
             if (c.Stealth is { } state)
             {
                 var tint = state switch { StealthExposure.Detected => TagSeen, StealthExposure.Noticed => TagAlmostSeen, _ => TagHidden };

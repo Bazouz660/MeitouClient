@@ -164,6 +164,8 @@ sealed partial class PlayerInterface
         // Towns, camps and nests: discovered ones only; which zoom levels show each kind, its size, label and tooltip (docs/game/ui-screens.md "Map").
         var snapshot = session.CurrentSnapshot;
         var players = snapshot.Characters.Where(c => c.IsPlayer).ToList();
+        var mine = players.Where(Mine).ToList();
+        // Nests show near any player's character: teammates reveal them too.
         bool PlayerNear(Vector3 at) => players.Any(c => Vector2.DistanceSquared(new(c.Position.X, c.Position.Z), new(at.X, at.Z)) <= NestShowRange * NestShowRange);
         void Place(string name, TownType type, string townName, string unexploredName, string? factionId, Vector3 position, TownKnowledge known)
         {
@@ -208,11 +210,40 @@ sealed partial class PlayerInterface
         if (level > 0)
         {
             var size = GroupSize("Character") * ui;
-            foreach (var character in players)
+            // Single-player keeps the map's own colours; in multiplayer each player has theirs.
+            var own = Multiplayer && PlayerInfo(LocalPlayer) is { } me ? (PlayerColours.Of(me.Colour), PlayerColours.Selected(me.Colour)) : (PlayerColour, SelectedColour);
+            foreach (var character in mine)
             {
                 var at = Screen(where(character));
-                Marker("map-character-" + character.Id, "Character", new(at.X - size.X / 2, at.Y - size.Y / 2, size.X, size.Y), character.Selected ? SelectedColour : PlayerColour);
+                Marker("map-character-" + character.Id, "Character", new(at.X - size.X / 2, at.Y - size.Y / 2, size.X, size.Y), character.Selected ? own.Item2 : own.Item1);
             }
+        }
+
+        // Other players' characters in their owners' colours: each one when zoomed in, one per squad (mean position, larger) at the least zoom level.
+        if (Multiplayer)
+        {
+            var size = GroupSize("Character") * ui;
+            string OwnerName(int owner) => PlayerInfo(owner)?.Name ?? $"Player {owner}";
+            Vector4 OwnerColour(int owner) => PlayerColours.Of(PlayerInfo(owner)?.Colour ?? -1);
+            var others = players.Where(OtherPlayers).ToList();
+            if (level > 0)
+                foreach (var character in others)
+                {
+                    var at = Screen(where(character));
+                    Marker("map-other-" + character.Id, "Character", new(at.X - size.X / 2, at.Y - size.Y / 2, size.X, size.Y), OwnerColour(character.Owner),
+                        tooltip: $"{character.Name}\nPlayer: {OwnerName(character.Owner)}");
+                }
+            else
+                foreach (var squad in others.GroupBy(c => (c.Owner, c.SquadId)))
+                {
+                    var members = squad.ToList();
+                    var mean = Vector3.Zero;
+                    foreach (var m in members) mean += where(m);
+                    var at = Screen(mean / members.Count);
+                    var big = size * 1.3f;
+                    Marker($"map-other-squad-{squad.Key.Owner}-{squad.Key.SquadId}", "Character", new(at.X - big.X / 2, at.Y - big.Y / 2, big.X, big.Y), OwnerColour(squad.Key.Owner),
+                        tooltip: $"{OwnerName(squad.Key.Owner)}\nSquad of {members.Count}");
+                }
         }
 
         // The movement marker stands on the ordered point (its bottom centre) for 3 s.
