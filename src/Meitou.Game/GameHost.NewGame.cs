@@ -19,6 +19,7 @@ sealed partial class GameHost
         if (!mainMenuRequested) return;
         mainMenuRequested = false;
         if (role == NetRole.Host) StopHostingCore(NetHost.ClosedText);
+        if (role == NetRole.Client) { LeaveClientCore(new NetDisconnect(RejectCode.Left, NetClient.LeftText), quit: false); return; }
         if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
         StartSceneLoad(mainMenuTransition: true, Stage("build", () =>
         {
@@ -39,6 +40,7 @@ sealed partial class GameHost
     {
         if (newGameRequested is not { } id) return;
         newGameRequested = null;
+        if (role == NetRole.Client) { player.Notice("Leave the host's game first.", true); return; }
         if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
         if (scene.Database is not { } database || NewGameStart.Find(NewGameStart.LoadAll(database), id) is not { } chosen) return;
         StandardSystemSet? built = null;

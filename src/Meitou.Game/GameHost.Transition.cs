@@ -110,7 +110,8 @@ sealed partial class GameHost
         warmSeconds += seconds;
         // A ready character mesh alone is insufficient: finish terrain, scenery and deferred textures too.
         // Content readiness has no pacing timeout that can expose missing NPCs or white stand-ins.
-        bool populationReady = TitleVisible || session.World.PreparePopulation(session.Camera.Current.Target);
+        // A client's world is ready once a host snapshot of it is on show (a replica has no population of its own).
+        bool populationReady = TitleVisible || (session.Mode == Meitou.Engine.SessionMode.Replica ? netClient?.HasPresented == true : session.World.PreparePopulation(session.Camera.Current.Target));
         bool charactersReady = gpu.Characters is not { } characters || !characters.ContentPending &&
             session.CurrentSnapshot.Characters.All(c => c.Appearance is null || characters.IsPrepared(c.Appearance));
         bool sceneReady = TitleVisible ? TitleSceneReady : populationReady && charactersReady &&
@@ -178,7 +179,7 @@ sealed partial class GameHost
     {
         sentFocus = false;
         SendFocus();
-        session.World.RunTick();
+        if (session.Mode == Meitou.Engine.SessionMode.Local) session.World.RunTick();   // a replica never ticks: the host's snapshot is on show
         indexedFor = null;
         previousById.Clear();
         player.Reset();

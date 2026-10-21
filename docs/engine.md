@@ -177,7 +177,29 @@ scene load forgets the request; asking to host the running game with none runnin
 
 ### Client
 
-Pending (package G3).
+`GameHost.Client.cs`. `JoinGame` → `NetClient(LiteNetTransport, NetIdentity(), catalog)` and `Connect`; connecting and the
+handshake run behind the Multiplayer window (no scene load, so closing the window still cancels), with 60 s for the host's first
+`WorldReset` (`The host did not send its world.`). Engine choice against the contract's "connect"/"host" scene-load stages.
+- **Each `WorldReset`** (the join, then every host world swap) loads under the loading screen: "world" (`ReplaceWorld([],
+  MakeReplica(seed), Replica)`; population, aggro, player squad, loaded save and pending creation dropped; navmesh zones unloaded;
+  clock from the anchor; camera on `Focus`; the reset's weather; blood emptied; `Attach`, `Ready`), "people" (the first host
+  snapshot on show, at most 60 s), "finishing" (`SettleNewWorld`, which sends the focus and runs no tick on a replica,
+  `FollowSelected`; the first time `Joined {host}'s game` and the address into the recent games). The warm-up's population
+  readiness on a replica is `HasPresented`.
+- **Every frame** (`ClientFrameCore`): an ending reported by the client is handled; the host's relations of the player faction
+  replace the client data's other factions' entries towards it when `(epoch, RelationsRevision)` moves (only when the host's
+  player faction is the data's; restored on leaving); `InCreation` with the own active squad in view opens the character editor
+  once per world (its edits and the finish are commands; `ResumeAfterCreation` runs no tick on a replica); `SetView(camera eye,
+  target, character draw distance)`.
+- **Host events**: messages and command refusals are notices (refusals as errors); knock-outs use `KnockoutText` with the
+  attacker's snapshot name; weather (`Restore` of the regions at the host's day and hour, its forced weather); luckyren Mode
+  follows the host's `SessionRules`.
+- **Leaving** (Esc Disconnect/Exit, the main menu, a disconnect, a failed join): the client disposed (the host is told), the
+  scene load, warm-up and creation state dropped, relations restored, the clock given back (speed 1), the role cleared. Quitting
+  ends there. A join that failed before a replica was built leaves the ended view for the Multiplayer window to show the reason;
+  otherwise the main-menu world is built under the loading screen and, unless the player left, `ShowDisconnected(reason,
+  reachedPlay)`. A client cannot start a new game (`Leave the host's game first.`) or save and load.
+
 
 ## Rendering and upscaling
 

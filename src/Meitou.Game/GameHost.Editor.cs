@@ -44,7 +44,7 @@ sealed partial class GameHost
         if (!creationWarmOwed || pendingCreation is not null || player.EditorOpen || sceneLoad is not null) return;
         creationWarmOwed = false;
         if (loading is null) return;
-        session.World.RunTick();
+        if (session.Mode == Meitou.Engine.SessionMode.Local) session.World.RunTick();   // a client's edits are the host's to apply
         loading.Restart();
         loadingSteps = SceneSteps;
         BeginWarm();

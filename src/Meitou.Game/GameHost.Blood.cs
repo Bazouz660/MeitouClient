@@ -49,8 +49,10 @@ sealed partial class GameHost
     void UpdateBlood()
     {
         var world = session.World;
-        world.Luckyren = config.LuckyrenMode;
-        if (decalStore is null && !config.LuckyrenMode && pieces.Count == 0)
+        // A client follows the host's luckyren Mode (its replica world runs no combat, the setting picks what the marks do here).
+        bool luckyren = role == NetRole.Client ? netClient?.SessionRules?.LuckyrenMode == true : config.LuckyrenMode;
+        world.Luckyren = luckyren;
+        if (decalStore is null && !luckyren && pieces.Count == 0)
         {
             world.BloodMarks = null;
             return;
