@@ -458,7 +458,7 @@ and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones);
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
 population and navmesh now run in the live loop); the world's lamps and room lights; the weather's and map placers'
-particles (full size for now; the low-resolution targets are Vulkan-only); the HUD and the faithful panels
+particles (full size for now; the low-resolution targets and the near-plane close pass are Vulkan-only); the HUD and the faithful panels
 (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls;
 the hover outline, move marker and navmesh debug overlay (Shift+F11).
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
@@ -651,7 +651,8 @@ and camera movement, selection, orders and the pointer sprite belong to the inte
 ### 6. The remaining effects
 
 `VolumetricCloudRenderer` (the Meitou clouds) remains. `ParticleRenderer` (weather and map placers) is wired and
-drawn full size over the scene; the low-resolution particle targets are Vulkan-only. `WorldLamps`,
+drawn full size over the scene; the low-resolution particle targets are Vulkan-only, and Metal skips the near-plane
+close pass because a large dust sprite crossing it produced a black frame and a GPU reset. `WorldLamps`,
 `HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
 wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
 faithful and Meitou look.

@@ -1126,7 +1126,7 @@ sealed partial class GameHost
 
             // The weather's and map placers' particles, over the scene after SSAO and before the temporal resolve. Metal draws
             // them full size for now (the low-resolution particle targets are Vulkan-only): the game's queue 84.
-            if (particles is not null && !titleLook)
+            if (particles is not null && !titleLook && Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_DRAW") != "1")
             {
                 float particleNear = camera.Near;
                 var particleNearProjection = view * Jitter.Apply(

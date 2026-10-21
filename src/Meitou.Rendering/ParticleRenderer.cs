@@ -439,6 +439,9 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 int written = sim.Collect(t, scratch.AsSpan(0, n), u.Tint, u.Alpha * EffectOpacity(u.Effect.Name), offset);
                 if (written == 0) continue;
                 int close = PartitionByDepth(scratch.AsSpan(0, written), forward, nearPlane);
+                // Metal's near-plane particle path is not safe yet: a large dust sprite crossing the close projection
+                // produced a black frame and a GPU reset. Draw only the normal-depth set until that path is ported.
+                if (gpu.ClipDepthZeroToOne) close = 0;
                 var instances = frame.AllocateConstants((ulong)(written * InstanceBytes), 16);
                 scratch.AsSpan(0, written).CopyTo(new Span<ParticleInstance>(instances.Pointer, written));
                 long collected = Stopwatch.GetTimestamp() - collectStart;
