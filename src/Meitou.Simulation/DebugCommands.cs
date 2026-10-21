@@ -58,7 +58,12 @@ public sealed record DebugSpawn(string Record, Vector2 At) : DebugCommand;
 
 static class DebugCheats
 {
-    public static void Apply(World world, PopulationData? data, DebugCommand command)
+    /// <summary>
+    /// Applies a cheat (the player system's inputs). A teleport only stops the characters here and adds where they go to <paramref name="placements"/>, which the player
+    /// system puts them at in its serial step after the movement: written now, the movement's step that tick rebuilt the position from the previous one and the
+    /// teleport was lost whenever the character was being pushed (as <see cref="Ai.AiSystem"/> places its residents).
+    /// </summary>
+    public static void Apply(World world, PopulationData? data, DebugCommand command, List<(CharacterId Id, Vector3 At)> placements)
     {
         var table = world.Characters;
         switch (command)
@@ -73,8 +78,7 @@ static class DebugCheats
                     if (!table.TryResolveNext(id, out int slot)) continue;
                     float x = teleport.Target.X + 10 * k++, z = teleport.Target.Z;
                     MovementSystem.Stop(table, slot);
-                    table.Next[slot].Position = new Vector3(x, world.Walkability.GroundHeight(x, z, teleport.Target.Y), z);
-                    table.Next[slot].Velocity = Vector3.Zero;
+                    placements.Add((id, new Vector3(x, world.Walkability.GroundHeight(x, z, teleport.Target.Y), z)));
                 }
                 break;
             case DebugHeal heal when data is not null:

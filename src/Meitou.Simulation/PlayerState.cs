@@ -143,6 +143,8 @@ public sealed class PlayerState
 public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSystem
 {
     readonly CharacterAssembly? assembly = data is null ? null : new(data);
+    /// <summary>Teleports of this tick's cheats, put in place after the movement (<see cref="DebugCheats.Apply"/>); empty between ticks.</summary>
+    readonly List<(CharacterId Id, System.Numerics.Vector3 At)> placements = [];
     internal PopulationData? Data => data;
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
@@ -222,7 +224,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     if (data is not null) Editing.CharacterEditing.Apply(world, data, edit);
                     break;
                 case DebugCommand debug:
-                    DebugCheats.Apply(world, data, debug);
+                    DebugCheats.Apply(world, data, debug, placements);
                     break;
                 case Editing.FinishCreation finish:
                     world.SessionOf(finish).InCreation = false;
@@ -258,6 +260,15 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
 
     public void SlowWorld(World world)
     {
+        var table = world.Characters;
+        foreach (var (id, at) in placements)
+        {
+            if (!table.TryResolveNext(id, out int slot)) continue;
+            MovementSystem.Stop(table, slot);
+            table.Next[slot].Position = at;
+            table.Next[slot].Velocity = System.Numerics.Vector3.Zero;
+        }
+        placements.Clear();
         world.Player.Prune(world);
         SquadManagement.KeepActive(world);
         PickUpWorkers(world);
