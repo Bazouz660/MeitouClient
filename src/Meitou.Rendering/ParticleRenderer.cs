@@ -99,7 +99,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// <summary>The farthest a unit is drawn (the near depth slice's far plane is about this).</summary>
     public const float DrawRange = 20400;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly string texturesDirectory;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
@@ -165,7 +165,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         public float Fill;
     }
 
-    ParticleRenderer(GpuContext gpu, string texturesDirectory, ParticleLibrary library)
+    ParticleRenderer(IGpuContext gpu, string texturesDirectory, ParticleLibrary library)
     {
         this.gpu = gpu;
         this.texturesDirectory = texturesDirectory;
@@ -195,7 +195,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         white = SampledImage.Rgba8(gpu, 1, 1, [255, 255, 255, 255], repeat: false, mipmaps: false, "particle white");
     }
 
-    public static ParticleRenderer Create(GpuContext gpu, GameInstall install, ParticleLibrary? library = null)
+    public static ParticleRenderer Create(IGpuContext gpu, GameInstall install, ParticleLibrary? library = null)
     {
         BackgroundWork.Run(EffectGroups.PrimeJit);   // the group kinds' code is compiled off the render thread, before the first weather change needs it
         return new(gpu, GameFiles.Resolve(Path.Combine(install.DataDirectory, "particles", "textures")), library ?? ParticleLibrary.Load(install));
@@ -404,7 +404,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         coveragePending = false;
         if (!Enabled || (weatherGroups.Groups.Count == 0 && placerGroups.Count == 0)) return;
         draws.Clear();
-        var constants = gpu.Frame.Constants;
+        var frame = gpu.Frame;
         var forward = -new Vector3(view.M13, view.M23, view.M33);   // the view's -Z axis in the world
         var planes = WorldCamera.FrustumPlanes(viewProjectionMatrix);
         var units = new List<EffectUnit>();
@@ -439,7 +439,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 int written = sim.Collect(t, scratch.AsSpan(0, n), u.Tint, u.Alpha * EffectOpacity(u.Effect.Name), offset);
                 if (written == 0) continue;
                 int close = PartitionByDepth(scratch.AsSpan(0, written), forward, nearPlane);
-                var instances = constants.Allocate((ulong)(written * InstanceBytes), 16);
+                var instances = frame.AllocateConstants((ulong)(written * InstanceBytes), 16);
                 scratch.AsSpan(0, written).CopyTo(new Span<ParticleInstance>(instances.Pointer, written));
                 long collected = Stopwatch.GetTimestamp() - collectStart;
                 collectTotal += collected;

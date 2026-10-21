@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Numerics;
+using Meitou.Data.Particles;
 using Meitou.Data.Save;
 using Meitou.Data.Textures;
 using Meitou.Data.World;
@@ -284,6 +285,22 @@ sealed partial class GameHost
             });
         }
         var terrain = new TerrainRenderer(ctx, scene.Coarse, scene.CoarseSize, scene.Window);
+        // The weather's and map placers' particles: created here, updated each frame, and drawn after the scene effects.
+        ParticleRenderer? particles = null;
+        WeatherAreas? weatherAreas = null;
+        if (!o.NoParticles && Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1" && scene.Database is { } effectsDb)
+        {
+            var particleWatch = Stopwatch.StartNew();
+            particles = ParticleRenderer.Create(ctx, install);
+            particles.PrewarmSeconds = o.ParticlePrewarm;
+            particles.World.GroundHeight = terrain.HeightAt;
+            particles.World.FreezeGroundHeight = () => terrain.Snapshot().HeightAt;
+            weatherAreas = WeatherAreas.Load(install);
+            particles.World.Area = RegionArea.At(weatherAreas, scene.Focus.X, scene.Focus.Z);
+            var placers = MapEffectPlacers.Find(effectsDb, MapFeatureFile.Open(install));
+            particles.SetPlacers(placers);
+            Console.WriteLine($"metal     particles ready: {particles.Library.Systems.Count} systems, {placers.Count} placers ({particleWatch.ElapsedMilliseconds} ms)");
+        }
         TerrainTextures? terrainTextures = null;
         if (!o.NoTextures && scene.Database is { } textureDb)
         {
@@ -977,6 +994,21 @@ sealed partial class GameHost
             }
             var weatherState = titleLook ? Meitou.Data.World.WeatherState.Clear : weather?.State ?? Meitou.Data.World.WeatherState.Clear;
             water?.Animate(session.Clock.HoursSinceStart, weatherState.WindDirection, weatherState.WindSpeed);
+            // The weather's particles and map placers step on the game clock; the draw follows the scene effects.
+            if (particles is not null && !titleLook)
+            {
+                if (weather is not null)
+                {
+                    if (weatherAreas is { } areas)
+                    {
+                        var (cx, cz) = WeatherAreas.CellOf(eye.X, eye.Z);
+                        if (WeatherAreas.InMap(cx, cz)) particles.World.Area = RegionArea.At(areas, eye.X, eye.Z);
+                    }
+                    particles.SetWeather(weather.EffectInput());
+                }
+                particles.World.Density = o.ParticleDensity;
+                particles.Update(session.Clock.HoursSinceStart * 3600, camera);
+            }
             sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
             sky.Eye = eye;
             sky.Clock = scene.Clock;
@@ -1091,6 +1123,28 @@ sealed partial class GameHost
             }
             composite.ApplyScene(sceneEffects, sceneColour, depth, postInputs, fogVolumes.UsedData > 0, o.Post.Ssao);
             ctx.EndNative(sceneEffects);
+
+            // The weather's and map placers' particles, over the scene after SSAO and before the temporal resolve. Metal draws
+            // them full size for now (the low-resolution particle targets are Vulkan-only): the game's queue 84.
+            if (particles is not null && !titleLook)
+            {
+                float particleNear = camera.Near;
+                var particleNearProjection = view * Jitter.Apply(
+                    camera.Projection(aspect, Math.Min(0.5f, particleNear * 0.5f), particleNear), taaJitter, sceneSize.X, sceneSize.Y);
+                particles.Prepare(worldProjection, particleNearProjection, particleNear, view, eye, light.SunDirection,
+                    0, sceneSize.X * sceneSize.Y, forcedDivisor: 1);
+                if (particles.FullCount > 0)
+                {
+                    var particleCmd = (MetalCommandList)ctx.BeginNative("particles");
+                    var particleTargets = PassTargets.Of(sceneColour, depth);
+                    particleCmd.BeginRendering(particleTargets.Rendering);
+                    ctx.BeginHostPass(particleCmd, particleTargets, DrawState.Scene(particleTargets.Formats));
+                    particles.Record(1);
+                    ctx.EndHostPass(particleCmd);
+                    particleCmd.EndRendering();
+                    ctx.EndNative(particleCmd);
+                }
+            }
 
             // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
             GpuTexture resolved;
@@ -1277,6 +1331,7 @@ sealed partial class GameHost
         interiorMask?.Dispose();
         objects?.Dispose();
         lamps?.Dispose();
+        particles?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();
         sceneColour?.Dispose();

@@ -3,7 +3,7 @@
 A second native path for the renderer, next to Vulkan. Status: **the world draws on Metal**
 (`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
 uniform block, the scene, shadows, faithful water, skinned characters, the HUD and the faithful panels. The
-interactive camera/selection, title, New Game, save/load and audio are in; the Meitou water/effects, trade/dialogue/
+interactive camera/selection, title, New Game, save/load and audio are in; the Meitou water/clouds, trade/dialogue/
 build/editor hosts and the free camera are not there yet.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
@@ -457,7 +457,8 @@ objects and buildings; the sun's shadows (terrain, objects, foliage and characte
 and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
-population and navmesh now run in the live loop); the world's lamps and room lights; the HUD and the faithful panels
+population and navmesh now run in the live loop); the world's lamps and room lights; the weather's and map placers'
+particles (full size for now; the low-resolution targets are Vulkan-only); the HUD and the faithful panels
 (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls;
 the hover outline, move marker and navmesh debug overlay (Shift+F11).
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
@@ -494,10 +495,9 @@ are in. The remaining UI work is the host services the panels call:
    need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
 **After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
-refraction); the character motion pass and the hover/stage host calls; the effects (weather particles, lamps,
-hover/move/navmesh overlays, Meitou clouds); the full post chain (SSAO, light shafts, `FogRate`, dynamic motion,
-MetalFX/upscaler, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on `IGpuContext`; then the GI
-decision, parity, memory/tone and the macOS default.
+refraction); the character motion pass and the hover/stage host calls; the Meitou clouds; the remaining post
+(`FogRate`, dynamic motion, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on `IGpuContext`; then the
+GI decision, parity, memory/tone and the macOS default.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
@@ -513,9 +513,8 @@ Vulkan at default settings, the remaining scope is:
    in-game menu render and act; still missing trade, dialogue, build, editor, world tooltips, the pointer sprite,
    full selection/orders input and a Metal `--ui-showcase`.
 3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
-   `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
-   move marker, navmesh overlay); post (SSAO, light shafts, `FogRate`, full TAA with character/grass motion,
-   MetalFX/upscaler); and the character motion/stage/hover passes.
+   `ReflectionPass`, refraction); the Meitou volumetric clouds/fog; post (`FogRate`, full TAA with character/grass
+   motion, MetalFX reactive mask); and the character motion/stage/hover passes.
 4. **GI decision.** On this Mac Vulkan also reports `gi off: the device has no ray queries (VK_KHR_ray_query)`,
    so the local parity shots are no-GI; on a machine where Vulkan traces GI the target includes it. Either port
    `GiScene`/`GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline.
@@ -563,8 +562,8 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
    settings choose it, balanced by default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
-   sun-motion term, moving geometry's motion (grass/characters) and the remaining `PostProcess` passes (light shafts,
-   particles, FogRate, GI resolve).
+   sun-motion term, moving geometry's motion (grass/characters) and the remaining `PostProcess` passes (FogRate,
+   GI resolve).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
    (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
    and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
@@ -651,7 +650,8 @@ and camera movement, selection, orders and the pointer sprite belong to the inte
 
 ### 6. The remaining effects
 
-`VolumetricCloudRenderer` (the Meitou clouds) and `ParticleRenderer` (weather) remain. `WorldLamps`,
+`VolumetricCloudRenderer` (the Meitou clouds) remains. `ParticleRenderer` (weather and map placers) is wired and
+drawn full size over the scene; the low-resolution particle targets are Vulkan-only. `WorldLamps`,
 `HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
 wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
 faithful and Meitou look.
