@@ -107,6 +107,16 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     internal void Begin(long number, MTLCommandBuffer command, CAMetalDrawable drawable)
     {
+        // Drop the chunks this slot did not use in its previous frame. A busy frame can grow the ring to
+        // hundreds of megabytes; after the camera leaves a town those chunks would otherwise stay for the
+        // process lifetime even though no pass wants them.
+        for (int i = chunks.Count - 1; i >= 1; i--)
+        {
+            if (chunks[i].Used != 0) continue;
+            var stale = chunks[i];
+            chunks.RemoveAt(i);
+            ctx.DeferDelete(() => ctx.ReleaseBuffer(stale.Handle));
+        }
         // The context retains this command for its slot (the queue's autorelease would otherwise end it after
         // one frame); the slot is reused only after the three-frame ring has advanced.
         if (Command.NativePtr != IntPtr.Zero) Command.Dispose();
@@ -136,5 +146,9 @@ public sealed unsafe class MetalFrame : IGpuFrame
     internal long ChunkBytes
     {
         get { long bytes = 0; foreach (var c in chunks) bytes += (long)c.Size; return bytes; }
+    }
+    internal long ChunkUsedBytes
+    {
+        get { long bytes = 0; foreach (var c in chunks) bytes += (long)c.Used; return bytes; }
     }
 }
