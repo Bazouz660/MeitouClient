@@ -4,7 +4,8 @@ namespace Meitou.Game;
 
 /// <summary>
 /// log.txt next to MeitouClient.exe: everything the game writes to its output and error, appended across runs. Past <see cref="Cap"/> the
-/// oldest lines are cut, down to <see cref="Keep"/>. Only one running game writes it; a second one started from the same folder logs nothing.
+/// oldest lines are cut, down to <see cref="Keep"/>. A second game running from the same folder (two instances for multiplayer) writes log.2.txt, then up to log.4.txt.
+
 /// </summary>
 sealed class GameLog : TextWriter
 {
@@ -21,18 +22,23 @@ sealed class GameLog : TextWriter
 
     public override Encoding Encoding => writer.Encoding;
 
-    /// <summary>The log of this run, or null when it cannot be opened (another game has it, or the folder is read-only).</summary>
+    /// <summary>The log of this run: log.txt, or log.2.txt to log.4.txt when other games have the earlier ones; null when none can be opened.</summary>
     public static GameLog? Open()
     {
-        try
+        for (int n = 1; n <= 4; n++)
         {
-            var file = new FileStream(Path.Combine(AppContext.BaseDirectory, "log.txt"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
-            file.Seek(0, SeekOrigin.End);
-            var log = new GameLog(file);
-            log.WriteLine($"==== {DateTime.Now:yyyy-MM-dd HH:mm:ss} meitou {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}");
-            return log;
+            try
+            {
+                var file = new FileStream(Path.Combine(AppContext.BaseDirectory, n == 1 ? "log.txt" : $"log.{n}.txt"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+                file.Seek(0, SeekOrigin.End);
+                var log = new GameLog(file);
+                log.WriteLine($"==== {DateTime.Now:yyyy-MM-dd HH:mm:ss} meitou {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}");
+                return log;
+            }
+            catch (UnauthorizedAccessException) { return null; }
+            catch (IOException) { }   // another game writes it: the next one
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        return null;
     }
 
     public override void Write(char value) { writer.Write(value); Trim(); }

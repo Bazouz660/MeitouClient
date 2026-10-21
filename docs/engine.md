@@ -152,6 +152,14 @@ host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Proto
   with `| host, N players` or `| client of address`. On a client the settings' simulation rule rows read and lock to the host's
   (`SettingsMenu.HostRules`).
 
+- **Command line** (`GameOptions`): `--host [port]` (0 or none: the settings' port) hosts once a game runs, at once with
+  `--new-game`/`--load`; `--join <addr[:port]>` joins from the title after the boot's loading screen lifts; `--name` (this run
+  only), `--password`, `--config <file>` (another settings file, so a second instance has its own player id). Refused (exit 2,
+  `NetProblem`): `--host` with `--join`; `--join` with `--new-game`, `--load`, `--list-starts`; either with `--sandbox`, `--duel`,
+  `--no-population`, `--title-preview`, `--ui-showcase`, `--move-to` or `--screenshot`; a bad address or port; a name that is
+  blank, over 24 characters or has control characters; a password over 32; `--name`/`--password` alone. **Verified**
+  (`MultiplayerOptionsTests`). A second game in the same folder logs to `log.2.txt` (up to `log.4.txt`).
+
 ### Host
 
 `GameHost.Hosting.cs`. `HostGame(settings, start, folder)` (Multiplayer window, Esc menu) remembers the settings and, for a new

@@ -18,6 +18,7 @@ sealed partial class GameHost
     /// <summary>The address a client joined, for the window title.</summary>
     string? netAddress;
     Task<DataSetIdentity>? dataIdentity;
+    bool netStartDone;
 
     /// <summary><c>--host</c>: host with these settings as soon as the game is ready (G4).</summary>
     public HostSettings? HostOnStart { get; init; }
@@ -50,6 +51,13 @@ sealed partial class GameHost
     /// <summary>After <c>session.Advance</c> and <see cref="WorldNews"/>, before a save or load can swap the world: the host's sends, the client's uplink.</summary>
     void NetEndFrame()
     {
+        // --host waits for a game to run, --join starts from the title: both once the boot's loading screen lifted.
+        if (!netStartDone && !Covered)
+        {
+            netStartDone = true;
+            if (HostOnStart is { } host) hostPending = host;
+            if (JoinOnStart is { } join) OnMultiplayerRequest(join);
+        }
         netHost?.EndFrame(Covered);
         netClient?.EndFrame();
         HostFrameCore();

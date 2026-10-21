@@ -31,6 +31,10 @@ sealed class GameOptions
     public double? QuitAfter;
     /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
     public string? Load;
+    /// <summary><c>--host [port]</c>: host the game once one runs; 0 is the port from the settings (docs/engine.md "Multiplayer").</summary>
+    public int? Host;
+    /// <summary><c>--join</c>: the host's address (<see cref="JoinAddress"/>); <c>--name</c>, <c>--password</c> and <c>--config</c> (a second instance's settings file).</summary>
+    public string? Join, Name, Password, ConfigFile;
 
     public const string Usage = """
         meitou [where] [options]     boots into the world with the Kenshi camera (default --town "The Hub")
@@ -52,6 +56,10 @@ sealed class GameOptions
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
+          --host [port]              share the game: hosts once a game runs (at once with --new-game / --load); port from meitou.user.json (40120)
+          --join <addr[:port]>       join a host's game from the title instead of starting one
+          --name <n>, --password <p> your player name for this run (default from meitou.user.json) and the host's password
+          --config <file>            settings file instead of meitou.user.json (a second instance on one machine needs its own player id)
           --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
           world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
         Keys: W/A/S/D or arrows move (or the pointer at a screen edge), Q/E rotate, Comma/Period tilt, wheel or Home/End zoom, PageUp/PageDown floor up/down (lens in the free camera), middle drag or Ctrl orbit, left click or drag selects, right click moves (shift queues), 1..9 / ` select, R stops,
@@ -61,6 +69,44 @@ sealed class GameOptions
           Backspace restarts the --duel lap, PageUp/PageDown narrow/widen its lens, Home resets it.
         Settings (frame limit, vsync, full screen (--windowed for one run), tick rate (tickRate), simulation threads (simThreads), the settings sliders, key bindings) are kept in meitou.user.json.
         """;
+
+    /// <summary>
+    /// What is wrong with the multiplayer options given the rest (<paramref name="screenshot"/>: a picture run); null when they go together. A client plays the
+    /// host's game, so it starts none of its own and takes no picture; a host needs an interactive game of its own.
+    /// </summary>
+    public string? NetProblem(bool screenshot)
+    {
+        if (Host is { } port && port is < 0 or > 65535) return "--host: the port is 1-65535.";
+        if (Host is not null && Join is not null) return "--host and --join do not go together.";
+        if (Join is not null)
+        {
+            if (!JoinAddress.TryParse(Join, MultiplayerDefaults.Port, out _, out _)) return $"--join {Join}: not an address (host, host:port, [v6]:port).";
+            var drop = Clash(includeGameStart: true, screenshot);
+            if (drop.Count > 0) return $"--join plays the host's game: drop {string.Join(", ", drop)}.";
+        }
+        if (Host is not null && Clash(includeGameStart: false, screenshot) is { Count: > 0 } hostDrop) return $"--host shares an interactive game: drop {string.Join(", ", hostDrop)}.";
+        if (Name is { } name && (name.Trim().Length == 0 || name.Length > MultiplayerDefaults.NameLength || name.Any(char.IsControl)))
+            return $"--name: 1 to {MultiplayerDefaults.NameLength} characters, no control characters.";
+        if (Password is { } password && password.Length > MultiplayerDefaults.PasswordLength) return $"--password: at most {MultiplayerDefaults.PasswordLength} characters.";
+        if ((Name is not null || Password is not null) && Host is null && Join is null) return "--name and --password need --host or --join.";
+        return null;
+    }
+
+    List<string> Clash(bool includeGameStart, bool screenshot)
+    {
+        var drop = new List<string>();
+        if (includeGameStart && NewGame) drop.Add("--new-game");
+        if (includeGameStart && Load is not null) drop.Add("--load");
+        if (includeGameStart && ListStarts) drop.Add("--list-starts");
+        if (Sandbox > 0) drop.Add("--sandbox");
+        if (Duel) drop.Add("--duel");
+        if (NoPopulation) drop.Add("--no-population");
+        if (TitlePreview) drop.Add("--title-preview");
+        if (UiShowcase) drop.Add("--ui-showcase");
+        if (MoveTo is not null) drop.Add("--move-to");
+        if (screenshot) drop.Add("--screenshot");
+        return drop;
+    }
 
     /// <summary>Takes the game's own options out of <paramref name="args"/> and returns the rest.</summary>
     public static (GameOptions, string[]) Split(string[] args)
@@ -106,6 +152,15 @@ sealed class GameOptions
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--load": g.Load = Next(); break;
+                case "--host":
+                    g.Host = 0;
+                    if (i + 1 < args.Length && args[i + 1].Length > 0 && args[i + 1].All(char.IsAsciiDigit))
+                        g.Host = int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out int hostPort) ? hostPort : -1;
+                    break;
+                case "--join": g.Join = Next(); break;
+                case "--name": g.Name = Next(); break;
+                case "--password": g.Password = Next(); break;
+                case "--config": g.ConfigFile = Next(); break;
                 default: rest.Add(a); break;
             }
         }

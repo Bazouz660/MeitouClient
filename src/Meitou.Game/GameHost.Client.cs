@@ -215,6 +215,7 @@ sealed partial class GameHost
             // Still on the title: the Multiplayer window reads the reason from the ended view for a frame or two.
             if (reason.Code != RejectCode.Left && view is not null)
             {
+                player.Notice(reason.Reason, true);
                 view.Ended = reason;
                 player.Net = view;
                 endedViewFrames = 3;

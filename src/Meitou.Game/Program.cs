@@ -41,6 +41,11 @@ static class Program
             Console.Error.WriteLine("--title-preview needs --screenshot <path>.");
             return 2;
         }
+        if (game.NetProblem(world.Screenshot is not null) is { } netProblem)
+        {
+            Console.Error.WriteLine(netProblem);
+            return 2;
+        }
         // Booting to the Meitou title: the world is loaded round the title's view, which it shows first (docs/engine.md).
         bool toTitle = game.TitlePreview || world.Screenshot is null && !game.NewGame && game.Load is null && game.Sandbox == 0 && !game.Duel && !game.NoPopulation;
         if (world.X is null && world.Zone is null && world.Town is null && toTitle) (world.X, world.Z) = TitleComposition.Focus;
@@ -55,7 +60,7 @@ static class Program
         }
         // A native splash at once, until the game window draws (docs/engine.md "Loading"); not for pictures or a listing.
         using var splash = world.Screenshot is null && !game.ListStarts ? SplashWindow.Show(install.DataDirectory) : null;
-        var config = UserConfig.Load();
+        var config = game.ConfigFile is { } configFile ? UserConfig.LoadOrCreate(configFile) : UserConfig.Load();
         Meitou.Localisation.Loc.Use(install);   // the language of settings.cfg: texts from locale/<code>/LC_MESSAGES/main.mo (docs/formats/localisation.md)
         // The saved texture quality before the world loads: the terrain's layer arrays are sized from it once (the Tab panel's restore after
         // the boot reaches only the other textures). --texture-quality and --low-end choose it for this run instead.
@@ -148,7 +153,13 @@ static class Program
         }
         // Interactive: the host reads the world behind its loading screen (docs/engine.md "Loading"); a picture reads it first.
         if (world.Screenshot is null)
-            return new GameHost(install, null!, new AssetLocator(install), world, game, config, start) { StartSave = save, Splash = splash, LoadScene = () => WorldFrame.Load(install, world, db) }.Run();
+            return new GameHost(install, null!, new AssetLocator(install), world, game, config, start)
+            {
+                StartSave = save, Splash = splash, LoadScene = () => WorldFrame.Load(install, world, db),
+                HostOnStart = game.Host is { } port ? new HostSettings(port > 0 ? port : config.HostPort, config.HostMaxPlayers, game.Password ?? "", config.HostClientsControlTime, config.HostAllowCheats) : null,
+                JoinOnStart = game.Join is { } join && JoinAddress.TryParse(join, config.HostPort, out var joinHost, out var joinPort) ? new JoinGame(joinHost, joinPort, game.Password ?? "") : null,
+                NameOverride = game.Name?.Trim(),
+            }.Run();
         using var scene = WorldFrame.Load(install, world, db);
         if (scene is null) return 1;
         return new GameHost(install, scene, new AssetLocator(install), world, game, config, start) { StartSave = save }.Run();
