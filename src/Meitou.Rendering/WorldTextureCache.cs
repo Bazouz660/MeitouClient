@@ -173,6 +173,12 @@ public sealed unsafe class WorldTextureCache : IDisposable
     /// first, whatever the high-water mark.</summary>
     public VramGuard? Guard { get; set; }
     public double GuardIdleSeconds { get; set; } = 2;
+    /// <summary>
+    /// What this cache holds is needed to draw at all (the characters' textures): under the guard's pressure it still loads what it is asked for while the image fits
+    /// the guard's room (<see cref="VramGuard.Allows(ulong, ulong)"/>, below its ceiling), instead of waiting for the pressure to end. Without it an 8 GB card that
+    /// stayed between 85 and 90 % drew every character white for good: the textures evicted while idle could never come back. The other caches still give way.
+    /// </summary>
+    public bool Essential { get; set; }
 
     public string Describe() => $"{ResidentCount} textures {ResidentBytes / 1048576.0:0} MB ({Unloads} unloaded, {Reloads} reloaded so far" +
         (Mips.Enabled ? $"; mip streaming: {Math.Max(UnstreamedBytes - ResidentBytes, 0) / 1048576.0:0} MB less than every mip, {Refined} refined, {Coarsened} coarsened)" : ")");
@@ -212,7 +218,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     bool MayStart(WorldTexture t)
     {
         if (Guard is not { } guard) return true;
-        if (!guard.Streaming) return false;
+        if (!guard.Streaming && !Essential) return false;
         long bytes;
         try { bytes = new FileInfo(t.Path!).Length; }
         catch (IOException) { bytes = 4 << 20; }

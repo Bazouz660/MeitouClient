@@ -20,6 +20,10 @@ pass preserves alpha coverage. Face morphs and body shape precede skinning.
 `CharacterContent` owns buffers/textures/morph arena; worker fetching/preparation precedes render
 uploads. Reuse appearances/content; replace only after ready and retire after GPU consumers.
 `CharacterTextureBudget` shares mip/VRAM pressure policy; unavailable content uses a stand-in.
+The character texture cache is `Essential`: under `VramGuard` pressure it still loads while an image fits the guard's room
+(below its ceiling) instead of waiting for the pressure to end. **Observed** (RTX 5060 Laptop, 8 GB, 2560×1440, use held at 85-90 %:
+every character white for good, 114 textures unloaded and none reloaded; reproduced with `MEITOU_VRAM_BUDGET_MB=4300`: 0
+character textures before, 102 resident after).
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
 Generated four-level reductions are always enabled; pose updates stagger by distance:120/300/600
 units every2/4/8 frames, animal scale by radius/16. `CharacterInstance.FullRateAnimation` bypasses
