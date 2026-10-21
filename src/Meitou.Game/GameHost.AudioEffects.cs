@@ -29,7 +29,7 @@ sealed partial class GameHost
             effectEmittersFor = emitters;
         }
         effectUnitsSeen.Clear();
-        if (gpu.Particles is { } particles)
+        if (gpu is not null && gpu.Particles is { } particles)
             foreach (var group in particles.Groups.Concat(particles.PlacerGroups))
             {
                 if (group.Effect.Sound is not { } sound) continue;
