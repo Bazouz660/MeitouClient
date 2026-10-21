@@ -166,7 +166,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
             if (c.Unused) continue;   // in front of the camera's near plane: nothing on screen reads it (a viewer saving)
             int x = (int)MathF.Round(c.Tile.X * atlasSize), y = (int)MathF.Round(c.Tile.Y * atlasSize), s = Settings.TileSize;
             SetTile(x, y, s);
-            SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, 0));
+            SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
             draw(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
         }
         EndHost(host);
@@ -180,6 +180,9 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// <summary>The casters' bias block of the cascade about to be drawn: the guests' segments take it when they are prepared (in the
     /// draw callback), a new slice after each write, as VkGl renamed the GL buffer written between their draws.</summary>
     void SetCasterBias(in Vector4 bias) => casterBias.Set([bias.X, bias.Y, bias.Z, bias.W]);
+
+    /// <summary>The scale <c>uShadowBias.w</c> the caster shader uses to undo the viewport's clip-depth mapping (2 for −1..1, 1 for 0..1).</summary>
+    float DepthScale => Gpu.ClipDepthZeroToOne ? 1f : 2f;
 
     /// <summary>
     /// Opens a rendering of one cascade's layer (or of <paramref name="target"/>, the landmark map) as a native host (docs/renderer-native.md 4.5):

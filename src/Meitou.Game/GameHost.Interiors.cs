@@ -35,7 +35,7 @@ sealed partial class GameHost
     /// </summary>
     void UpdateInteriorView()
     {
-        if (gpu.Objects is not { } objects) return;
+        if (ActiveObjects is not { } objects) return;
         interiorView.Clear();
         viewed.Clear();
         aboveFloor.Clear();
@@ -64,7 +64,7 @@ sealed partial class GameHost
     /// </summary>
     void FollowFloor(Meitou.Rendering.WorldObjectRenderer objects)
     {
-        var follow = player.Follow;
+        var follow = player?.Follow;
         if (follow is not { } id || session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } c)
         {
             (floorFollow, followedFloor) = (null, -1);
@@ -99,7 +99,7 @@ sealed partial class GameHost
             {
                 if (h > previousY + 0.5f || h < p.Y - 0.5f || h - nav.Walkability.TerrainHeight(p.X, p.Z) <= 5) continue;
                 var at = new System.Numerics.Vector3(p.X, h, p.Z);
-                if (gpu.Objects?.InteriorAt(at, InsideMargin) is null) return at;
+                if (ActiveObjects?.InteriorAt(at, InsideMargin) is null) return at;
             }
             previousY = p.Y;
         }

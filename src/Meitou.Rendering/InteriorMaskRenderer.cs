@@ -51,7 +51,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         public Vector3 Min, Max;
     }
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly WorldObjectRenderer objects;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
@@ -63,7 +63,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
     GpuTexture? target;
     (GpuTexture Texture, uint Index)? bindless;
 
-    internal InteriorMaskRenderer(GpuContext gpu, WorldObjectRenderer objects)
+    internal InteriorMaskRenderer(IGpuContext gpu, WorldObjectRenderer objects)
     {
         this.gpu = gpu;
         this.objects = objects;
@@ -152,7 +152,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         cmd.BeginRendering(t.Rendering);
         // Min on the colour (the nearest face), max on the alpha (the farthest); every face drawn, no depth test (the game's target has no depth).
         var blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Min, BlendOperation.Max);
-        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: blend, mask: ColorMask.R | ColorMask.A);
+        var state = DrawState.For(t.Formats, gpu.DepthClamp, blend: blend, mask: ColorMask.R | ColorMask.A);
         state.Record(cmd, t);
         cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
         var relative = Matrix4x4.CreateTranslation(eye) * viewProjection;   // camera-relative placement keeps the precision far from the origin

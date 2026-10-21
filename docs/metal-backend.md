@@ -90,7 +90,7 @@ The verified model (the MSL that spirv-cross makes, the pipeline reflection, and
 - **the members' offsets are sequential from 0, one entry (8 bytes) per element**; the `[[id]]`
   decorations in the MSL do not move them (the pipeline reflection reports `textures2D` at 0).
   The order is the members' declaration order: the texture arrays in kind order, then the
-  sampler arrays. Gaps that are not declared (the shadow kinds today) close up;
+  sampler arrays. All seven kinds are declared;
 - **per-entry samplers work**: the rewrite declares a parallel sampler array per kind
   (`sampler samplers2D[capacity]`), and every use constructs the pair with the same index —
   `sampler2D(textures2D[i], samplers2D[i])` — so GL's per-texture sampler state survives. A
@@ -117,19 +117,17 @@ The verified model (the MSL that spirv-cross makes, the pipeline reflection, and
 The rewrite (`MetalShaders.RewriteBindless` + `SpirvPatch.BindlessFetchImages`), verified by the
 `--table` dump and `spirv-val` on both stages:
 
-- capacities, in `BindlessKind` order: `[2048, 512, 128, 128, 128, 128, 64]` (index 3, shadow 2D,
-  and index 6, the shadow array, are not declared today: their capacities do not count). The
-  declared texture arrays' entries run 0 to 2943 — `textures2D`, `textures2DArray`,
-  `texturesCube`, `utextures2D`, `itextures2D` — then `samplers2D`, `samplers2DArray`,
-  `samplersCube` to 5631 (the buffer 45056 bytes);
+- capacities, in `BindlessKind` order: `[2048, 512, 128, 128, 128, 128, 64]`, all seven declared
+  (the shadow kinds were added with the shadow step); the argument buffer packs them in declaration
+  order, and `MetalTableLayout` reads each stage's offsets from its MSL;
 - the float kinds are the separate arrays + sampler pairs above; the integer kinds have no
   separate type in GLSL, so they stay combined and sized (`usampler2D utextures2D[128]`) and the
   SPIR-V patch drops the sampler part: the variable's, the array's, each chain's and each load's
   types become the plain image's, and the stages' `OpImage` (100) extractions become
   `OpCopyObject` (83) of the already-plain image. `OpImage` = 100, `OpCopyObject` = 83, `OpPhi` =
   54 — and an instruction's word count includes the op word itself;
-- the shadow kinds' declarations are dropped; a use throws `NotSupportedException` until the
-  shadows step.
+- the shadow kinds are the split depth image + compare sampler pairs (`shadowTextures`,
+  `shadowArrays`), read by the same bindless lookups as the float kinds.
 
 Two sharp edges:
 
@@ -252,7 +250,7 @@ Each step ends with something visible; the order is the cheap one first.
 | Done | The vertex vocabulary: vertex and index buffers, indexed draws, push constants; the stages' one binding table flattened (base + set × 8 + binding, the vertex buffers keep Vulkan's slots, the push constants the top index); the native-model programs (`MetalShaders.Native`) | the terrain's own draw vocabulary, verified by the host's quad (`--tri`: the four corners' colours and the centre's interpolation land exactly) |
 | Done | The bindless table's MSL shape, verified: tier-2 argument buffers, sized arrays, per-entry sampler arrays | the model the backend's table runtime builds to (below) |
 | Done | The flatten's kind refinement: a vertex module's buffers shift by the vertex base, its images and samplers flatten from 0 (`RemapBindings` classifies by the SPIR-V storage class, `Flatten` takes the kind) | the terrain's vertex-stage table samplers fit the stage's sampler table |
-| Done | The bindless table's GLSL rewrite (`--table`'s five kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds throw until the shadows step; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays | the table's MSL shape at the capacities |
+| Done | The bindless table's GLSL rewrite (`--table`'s seven kinds through the real path): the float kinds become separate sized texture and sampler arrays, the integer kinds stay combined and sized with their samplers dropped in SPIR-V, the shadow kinds use split depth image and compare sampler arrays; verified: both stages' patched SPIR-V pass `spirv-val`, the argument buffer's members are `texture2d/texture2d_array/texturecube/texture2d<uint>/texture2d<int>` arrays then `sampler` arrays | the table's MSL shape at the capacities |
 | Done | The table's runtime (`MetalBindlessTable`: the journal, a shared argument buffer per frame slot, the GPU resource ids, the sampler flag, `useResource`) and `BindBindlessTable` at buffer 28 | the terrain's textures can bind; verified by the host: red → blue across the quad, the update's swap visible |
 | Doing | The terrain in the game: the Vulkan-free widening (`IGpuContext` through `TerrainRenderer`, `NativeFrame`, `TerrainTextures`), the programs, the textures, the pass (depth + GI-albedo attachment), the CDLOD draws at the camera. **Open:** the draws are recorded with a valid pipeline, buffers and a trivial shader, yet produce no fragments (depth and albedo both empty); the same program shape draws in the host, so the difference is still unexplained — see the note below | the world appears |
 | Then | Compute and the post chain (the tone parity) | the picture is the game's, not raw |
@@ -313,8 +311,8 @@ image through set 0's argument buffer, read back as (2, 3, 99, 255).
 **Shadows (step 4's first slice).** The seam now carries the host-pass handoff and the device capabilities
 the shadow pass needs (`BeginHostPass`/`SetPassViewport`/`EndHostPass`, `DepthClamp`, `RecordsSecondaries`), so
 `ShadowPass` and `TerrainShadowMap` run on `IGpuContext`; Metal opens no secondaries and clamps depth. The Metal
-host draws the terrain's and the objects' depth into the cascades before the scene, and the receivers sample the
-atlas; foliage is not a caster yet. Two backend facts this surfaced:
+host draws terrain, objects, foliage and characters into the cascades before the scene, and the receivers sample the
+atlas. Two backend facts this surfaced:
 
 - **A new Metal render encoder carries no pipeline state**, so the redundancy filter must be reset in
   `BeginRendering`: the multi-pass shadow atlas otherwise drew a later pass without `setRenderPipelineState`.
@@ -496,9 +494,9 @@ are in. The remaining UI work is the host services the panels call:
 
 **After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
 refraction); the character motion pass and the hover/stage host calls; the effects (weather particles, lamps,
-hover/move/navmesh overlays, interior mask, Meitou clouds); the full post chain (SSAO, light shafts, `FogRate`,
-dynamic motion, MetalFX/upscaler, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on
-`IGpuContext`; then the GI decision, parity, memory/tone and the macOS default.
+hover/move/navmesh overlays, Meitou clouds); the full post chain (SSAO, light shafts, `FogRate`, dynamic motion,
+MetalFX/upscaler, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on `IGpuContext`; then the GI
+decision, parity, memory/tone and the macOS default.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
@@ -506,17 +504,17 @@ Vulkan at default settings, the remaining scope is:
 1. **The rest of the real game loop (largest).** The first playable slice is in: camera bindings, edge/turn/zoom,
    left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
    unify the bespoke loop with `WorldFrame`/`SceneHost` on `IGpuContext` (or keep the duplicate, which doubles every
-   future feature); the free camera, context menus, building selection/hover, mesh/building/surface hits, build
-   host, floor stepping and fly-to; trade/dialogue/build/editor hosts, warm-up, resize/fullscreen, HDR/EDR and the
-   remaining present details. Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world
-   rebuild, the loading screen, audio/UI sounds and the sky transitions are wired.
+   future feature); the free camera, context menus, building selection/hover, build host and fly-to;
+   trade/dialogue/build/editor hosts, warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
+   Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world rebuild, the loading
+   screen, audio/UI sounds, the sky transitions, mesh/building/surface hits and floor stepping are wired.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu, title, New Game, save/load and the
    in-game menu render and act; still missing trade, dialogue, build, editor, world tooltips, the pointer sprite,
    full selection/orders input and a Metal `--ui-showcase`.
 3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
    `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
-   move marker, navmesh overlay, interior mask); post (SSAO, light shafts, `FogRate`, full TAA with character/grass
-   motion, MetalFX/upscaler); and the character motion/stage/hover passes.
+   move marker, navmesh overlay); post (SSAO, light shafts, `FogRate`, full TAA with character/grass motion,
+   MetalFX/upscaler); and the character motion/stage/hover passes.
 4. **GI decision.** On this Mac Vulkan also reports `gi off: the device has no ray queries (VK_KHR_ray_query)`,
    so the local parity shots are no-GI; on a machine where Vulkan traces GI the target includes it. Either port
    `GiScene`/`GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline.
@@ -611,6 +609,25 @@ outdoor still shows only the player; the `--crowd` harness covers the outdoor cr
 icons are now drawn (the HUD and inventory shots verify them). Not yet: the character motion pass for TAA and the
 hover/stage passes.
 
+### 4b. Interiors and shadows
+
+**The interior view is on Metal.** `UpdateInteriorView` now reads `ActiveObjects`, sets the building's
+`InteriorView` (the viewed floor's parts and furniture, the floors above hidden), fills `aboveFloor` for the
+character draw list, and feeds the HUD's `Floor`, `SurfaceMoveHit` and `ClosedBuildingHit` callbacks. PageUp/PageDown
+and the HUD floor arrows step `viewedFloor`. `InteriorMaskRenderer` takes `IGpuContext`; Metal records it at scene
+size with the scene's jittered near-view projection, then sets it on the terrain, objects and foliage for their
+colour draws. The mask's `texelFetch` reads the same pixel grid as the scene, so no V flip is involved. Observed at
+the Hub: entering a house shows its floor and furniture and hides the near walls and roof; its indoor characters
+are drawn, and characters above the viewed floor are left out.
+
+**Shadow casters now write the right depths on Metal.** The shared caster shader recovers the cascade matrix's
+depth from `gl_FragCoord.z` with `uShadowBias.w`: 2 for Vulkan's −1..1 depth-clip-control mapping, 1 for Metal's
+0..1 NDC (`IGpuContext.ClipDepthZeroToOne`). Before this Metal applied the Vulkan recovery, so every caster's depth
+was shifted toward the sun: cast shadows were misplaced or missing and moved with the view. The Metal host now also
+passes the sky's real sun height, the fog/atmosphere range caps, far-cascade coarse casters to terrain and objects,
+the landmark shadow map, and the temporal shadow noise. The shadow map is still drawn before the scene, after the
+interior view, so upper-floor casters are hidden with their floors.
+
 ### 5. The UI (plan step 8)
 
 The UI is the shared immediate-mode `DebugOverlay`/`UiPainter` over the finished backbuffer. It was already
@@ -631,9 +648,9 @@ and camera movement, selection, orders and the pointer sprite belong to the inte
 ### 6. The remaining effects
 
 `VolumetricCloudRenderer` (the Meitou clouds), `ParticleRenderer` (weather), `WorldLamps` (the lamps and room
-lights), `HoverOutlineRenderer`, `MoveMarkerRenderer`, `NavmeshOverlayRenderer` and `InteriorMaskRenderer` (the
-object/foliage interior-cut hooks exist but nothing renders the mask). The faithful sky path the parity shots use
-already works. Decide the default between the faithful and Meitou look.
+lights), `HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer`. `InteriorMaskRenderer` is
+wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
+faithful and Meitou look.
 
 ### 7. The full game loop (plan step 10)
 

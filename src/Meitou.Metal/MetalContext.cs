@@ -557,6 +557,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public bool DepthClamp => true;
 
     /// <inheritdoc/>
+    public bool ClipDepthZeroToOne => true;   // Metal's NDC depth is 0..1
+
+    /// <inheritdoc/>
     public bool RecordsSecondaries => false;
 
     public void EndHostPass(IGpuCommandList cmd)

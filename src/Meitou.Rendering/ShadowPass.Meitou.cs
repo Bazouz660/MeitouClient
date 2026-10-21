@@ -202,7 +202,7 @@ public sealed unsafe partial class ShadowPass
         }
         var host = BeginHost("landmark shadows", clear: true, landmarkMap);
         SetTile(0, 0, LandmarkMapSize);
-        SetCasterBias(new Vector4(box.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, 0));
+        SetCasterBias(new Vector4(box.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
         l.Draw(box, box.WorldToClip(), box.CullPlanes(), view.Eye);
         EndHost(host);
         (landmarkBox, landmarkKey, landmarkSun) = (box, key, toSun);
@@ -258,7 +258,7 @@ public sealed unsafe partial class ShadowPass
             var c = MeitouShadowFit.Fit(view, toSun, Effective, splits, i, gridAnchor);
             var host = BeginHost("shadow cascade", clear: true, layer: i);
             SetTile(0, 0, atlasSize);
-            SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, 0));
+            SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
             draw(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
             EndHost(host);
             stored[i] = c;

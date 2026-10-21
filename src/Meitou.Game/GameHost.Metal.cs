@@ -289,6 +289,9 @@ sealed partial class GameHost
             hostObjects = objects;
             Console.WriteLine("metal     objects ready");
         }
+        // The buildings' interior masks (docs/render-interior-cut.md): the depth range the terrain, foliage and map features are cut by
+        // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.
+        InteriorMaskRenderer? interiorMask = objects is null ? null : new InteriorMaskRenderer(ctx, objects);
         // The world's foliage (the catalog's meshes, the grass pages and the TERRAIN-mode rocks), as WorldFrame.CreateGpu makes it. The
         // impostor bakes and the GPU culls stay Vulkan-only for now: the CPU cull draws the meshes and the CPU grass path the blades.
         FoliageRenderer? foliage = null;
@@ -378,6 +381,7 @@ sealed partial class GameHost
                 Console.WriteLine("metal     characters ready (population draw list)");
             }
             hostCharacters = characters;
+            if (characters is not null) characters.InteriorObjects = objects;
         }
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
@@ -426,7 +430,9 @@ sealed partial class GameHost
                 hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
             // The picks the interface asks the host for: the drawn character meshes, the buildings' floors and their closed shells.
             hud.MeshHit = (id, origin, direction) => characters?.RayHit(DrawKey(id), origin, direction);
+            hud.Floor = (() => viewedFloor, StepFloor);
             hud.BuildingMoveHit = (origin, direction, distance) => objects?.MoveHit(origin, direction, viewedFloor, distance);
+            hud.SurfaceMoveHit = SurfaceMoveHit;
             hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
         }
@@ -741,6 +747,8 @@ sealed partial class GameHost
         {
             if (actions.Pressed(InputAction.QuickSave)) quickSaveRequested = true;
             if (actions.Pressed(InputAction.QuickLoad)) quickLoadRequested = true;
+            if (actions.Pressed(InputAction.FloorUp)) StepFloor(1);
+            if (actions.Pressed(InputAction.FloorDown)) StepFloor(-1);
         };
         // Put the title's camera and staging up before the streamers settle, so the menu's first frame is already the staged view.
         if (hud is not null) ApplyTitleCamera();
@@ -833,6 +841,9 @@ sealed partial class GameHost
             if (!Covered) UpdateAudio(dt);
             SendFocus();
             UpdateNav();
+            // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
+            // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
+            UpdateInteriorView();
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
@@ -919,22 +930,37 @@ sealed partial class GameHost
             // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
             camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
             fogVolumes.Update(eye, camera.Forward, camera.FieldOfView, aspect, camera.ViewDistance, sun.Y, true, null, sky.FogCullDistance);
-            // The casters' cascades, before the scene reads the receiver block (terrain depth only so far: no objects or foliage on Metal).
+            // The scene's projection, its frustum and the interior masks all use the same jittered view: the mask is read with the
+            // scene's pixel coordinates (texelFetch), and the casters' LOD needs the rendered pixel scale.
+            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(sceneSize.Y, camera.FieldOfView);
+            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, sceneSize.X, sceneSize.Y);
+            var frustum = WorldCamera.FrustumPlanes(worldProjection);
+            // The near-view interior masks, before the scene's passes: the terrain, foliage and map features over a mask discard their
+            // fragments between its front and back faces (the game's InteriorMask compositor node).
+            interiorMask?.Record(worldProjection, eye, sceneSize.X, sceneSize.Y);
+            // The casters' cascades, before the scene reads the receiver block.
+            shadow.RangeCap = fogVolumes.AtmosphereDistance;
+            shadow.SetFogHide(fogVolumes.ShadowHideDistance, fogVolumes.ShadowHidePending);
+            shadow.Temporal = mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa;
             var shadowView = new Meitou.Data.World.ShadowView(eye, camera.Forward, Vector3.Normalize(new Vector3(view.M12, view.M22, view.M32)), camera.FieldOfView,
                 aspect, camera.Near, camera.Distance);
+            ShadowPass.LandmarkCasters? landmarkCasters = null;
+            if (render.Objects && objects is { HasLandmarks: true } landmarkObjects)
+                landmarkCasters = new ShadowPass.LandmarkCasters(
+                    spheres => landmarkObjects.LandmarkCasters(camera.Eye, spheres),
+                    (_, worldToClip, planes, lodEye) => landmarkObjects.DrawLandmarksDepth(worldToClip, lodEye, planes, render, terrain));
             shadow.Render(shadowView, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
             {
-                terrain.DrawDepth(worldToClip, lodEye, planes, render);
-                if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain);
-                characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale));
+                float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
+                terrain.DrawDepth(worldToClip, lodEye, planes, render, coarse);
+                if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain, coarse);
+                characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(coarse, render.TerrainPixelScale));
                 if (foliage is not null)
                 {
-                    float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
                     foliage.DrawDepth(worldToClip, lodEye, planes, render, terrain, maxRange: shadow.EffectiveRange * 1.2f,
                         minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0);
                 }
-            });
-
+            }, sunHeight: sky.ShadowSunHeight, landmarks: landmarkCasters);
 
             // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
             // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
@@ -959,14 +985,19 @@ sealed partial class GameHost
             sky.Draw(viewProjection, colours);
 
             // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
-            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(sceneSize.Y, camera.FieldOfView);
-            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, sceneSize.X, sceneSize.Y);
-            var frustum = WorldCamera.FrustumPlanes(worldProjection);
             terrain.BeginFrame();
+            terrain.InteriorCut = interiorMask;
             terrain.Draw(worldProjection, eye, frustum, render, light);
+            terrain.InteriorCut = null;
             if (render.Objects && objects is not null)
+            {
+                objects.InteriorCut = interiorMask;
                 objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
+                objects.InteriorCut = null;
+            }
+            foliage?.InteriorCut = interiorMask;
             foliage?.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
+            if (foliage is not null) foliage.InteriorCut = null;
             // Characters after the opaque geometry: they alone write the scene's alpha (the SSAO character mask in the Vulkan post chain).
             characters?.Draw(worldProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance);
             water?.Draw(worldProjection, eye, light, colours, (float)session.Clock.HoursSinceStart, camera.ViewDistance * 1.5f);
@@ -1136,6 +1167,7 @@ sealed partial class GameHost
         characters?.Dispose();
         foliage?.Dispose();
         water?.Dispose();
+        interiorMask?.Dispose();
         objects?.Dispose();
         terrain.Dispose();   // owns the textures it was given
         streamer?.Dispose();

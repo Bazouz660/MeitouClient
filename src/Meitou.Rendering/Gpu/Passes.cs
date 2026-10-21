@@ -122,6 +122,9 @@ public sealed unsafe partial class GpuContext
     public bool DepthClamp => Device.DepthClamp;
 
     /// <inheritdoc/>
+    public bool ClipDepthZeroToOne => false;   // the Vulkan path's clip-depth mapping (2·z−1), extension or remap fallback
+
+    /// <inheritdoc/>
     public bool RecordsSecondaries => Recording.Secondaries;
 
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
