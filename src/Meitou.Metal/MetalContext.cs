@@ -147,6 +147,38 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public MTLDevice Device => display.Device;
 
+    /// <summary>The GPU time of the last command buffer the three-frame ring found completed (ms); 0 until one is.</summary>
+    public double LastGpuMilliseconds { get; private set; }
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    static extern double Time_objc_msgSend(IntPtr receiver, IntPtr selector);
+
+    static readonly Selector GpuStartTime = new("GPUStartTime");
+    static readonly Selector GpuEndTime = new("GPUEndTime");
+
+    double CompletedGpuMs(MetalFrame frame)
+    {
+        var command = frame.Command;
+        if (command.NativePtr == IntPtr.Zero || command.Status != MTLCommandBufferStatus.Completed) return 0;
+        double start = Time_objc_msgSend(command.NativePtr, GpuStartTime.SelPtr);
+        double end = Time_objc_msgSend(command.NativePtr, GpuEndTime.SelPtr);
+        return end > start ? (end - start) * 1000 : 0;
+    }
+
+    /// <summary>Debug trace: resource-table and frame-chunk counts (a per-frame leak shows as a count that keeps rising).</summary>
+    public string ResourceSummary()
+    {
+        int tex = 0, liveViews = 0, liveBuffers = 0;
+        foreach (var t in textures) if (t is not null) tex++;
+        foreach (var v in views) if (v is not null) liveViews++;
+        foreach (var b in buffers) if (b is not null) liveBuffers++;
+        long chunkBytes = 0;
+        int chunkCount = 0;
+        foreach (var f in frames) { chunkBytes += f.ChunkBytes; chunkCount += f.ChunkCount; }
+        return $"textures {tex}/{textures.Count} views {liveViews}/{views.Count} retiredViews {retiredViews.Count} buffers {liveBuffers}/{buffers.Count} " +
+            $"sets {sets.Count} chunks {chunkCount} ({chunkBytes / 1048576} MB)";
+    }
+
     /// <summary>The queue the frames are committed to (an upload batch's command buffer comes from it too: the queue executes its command buffers in commit order).</summary>
     public MTLCommandQueue Queue => display.Queue;
 
@@ -244,6 +276,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public GpuView View(GpuTexture texture, int baseLevel, int levels, int baseLayer, int layers, GpuViewType type, GpuSwizzle swizzle)
     {
         var of = textures[texture.Index]!;
+        var key = new MetalViewKey(baseLevel, levels, baseLayer, layers, type, swizzle);
+        if (of.ViewCache.TryGetValue(key, out var cached)) return new GpuView(cached.ViewIndex);
         var format = MetalConventions.Pixel(of.Desc.Format);
         var viewType = type switch
         {
@@ -262,10 +296,12 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
                 ? of.Image.NewTextureView(format, viewType, levelRange, layerRange)
                 : of.Image.NewTextureView(format, viewType, levelRange, layerRange, Swizzle(swizzle)),
             Of = of,
+            ViewIndex = views.Count,
         };
         of.Views.Add(view);
+        of.ViewCache[key] = view;
         views.Add(view);
-        return new GpuView(views.Count - 1);
+        return new GpuView(view.ViewIndex);
     }
 
     static MTLTextureSwizzleChannels Swizzle(GpuSwizzle swizzle) => new()
@@ -291,8 +327,13 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public void ReleaseTexture(GpuTexture texture)
     {
         var of = textures[texture.Index]!;
-        foreach (var view in of.Views) views[views.IndexOf(view)] = null;
+        foreach (var view in of.Views)
+        {
+            views[view.ViewIndex] = null;
+            retiredViews.Add(view.Image);
+        }
         of.Views.Clear();
+        of.ViewCache.Clear();
         of.Release();
         textures[texture.Index] = null;
     }
@@ -427,6 +468,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public bool BeginFrame()
     {
         if (!display.TryBeginFrame(out var command, out var drawable)) return false;
+        if (slot >= 0) { double gpu = CompletedGpuMs(frames[slot]); if (gpu > 0) LastGpuMilliseconds = gpu; }
         var size = display.Window.FramebufferSize;
         int width = size.X, height = size.Y;
         if (backbuffer is not { } target || target.Desc.Width != width || target.Desc.Height != height)
@@ -435,11 +477,18 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             backbuffer?.Dispose();
             backbuffer = CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "backbuffer"));
+        }
+        float scale = Math.Clamp(RenderScale, 0.25f, 1f);
+        SceneWidth = Math.Max((int)MathF.Round(width * scale), 1);
+        SceneHeight = Math.Max((int)MathF.Round(height * scale), 1);
+        if (depth is not { } currentDepth || currentDepth.Desc.Width != SceneWidth || currentDepth.Desc.Height != SceneHeight)
+        {
+            Console.WriteLine($"metal     scene {SceneWidth}x{SceneHeight} (scale {scale:0.##})");
             depth?.Dispose();
-            depth = CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height,
+            depth = CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, SceneWidth, SceneHeight,
                 Use: TextureUse.DepthTarget | TextureUse.Sampled, Name: "depth"));
             albedo?.Dispose();
-            albedo = CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, width, height, Use: TextureUse.ColourTarget, Name: "gi albedo"));
+            albedo = CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, SceneWidth, SceneHeight, Use: TextureUse.ColourTarget, Name: "gi albedo"));
         }
         frameNumber++;
         slot = (slot + 1) % FrameRingDepth;
@@ -453,12 +502,17 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>The offscreen target the renderers draw into (the engine's Rgba8, as the Vulkan path's backbuffer is).</summary>
     public GpuTexture Backbuffer => backbuffer ?? throw new InvalidOperationException("no frame is open");
 
-    /// <summary>The scene's depth attachment (the backbuffer's size, re-made with it): the host pass tests and writes it.</summary>
+    /// <summary>The scene's depth attachment (the scene's render size, re-made with it): the host pass tests and writes it.</summary>
     public GpuTexture Depth => depth ?? throw new InvalidOperationException("no frame is open");
 
     /// <summary>The scene's second colour target (the lit fragments' GI albedo; the GI resolve is not on Metal yet, but the lit
     /// programs write it, so the pass has the attachment they expect).</summary>
     public GpuTexture Albedo => albedo ?? throw new InvalidOperationException("no frame is open");
+
+    /// <summary>The scene's render scale (the Vulkan path's TAA/upscaler scale): 1 = native, 0.83 = the Meitou default.</summary>
+    public float RenderScale { get; set; } = 1f;
+    public int SceneWidth { get; private set; }
+    public int SceneHeight { get; private set; }
 
     /// <summary>Ends the frame: the backbuffer is copied into the drawable (flipped) and the frame's commands are committed.</summary>
     public void EndFrame()
@@ -678,6 +732,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     }
 
     readonly List<MTLTexture> levelViews = [];
+    readonly List<MTLTexture> retiredViews = [];
 
     unsafe void BlitScaled(MTLCommandBuffer command, MTLTexture source, MTLTexture target, MTLPixelFormat format, int width, int height, TextureMinFilter filter)
     {
@@ -877,6 +932,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         clearLibrary?.Dispose();
         foreach (var v in levelViews) v.Dispose();
         levelViews.Clear();
+        foreach (var v in retiredViews) v.Dispose();
+        retiredViews.Clear();
         bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();
         dummyTextures.Clear();

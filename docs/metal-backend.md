@@ -549,9 +549,9 @@ this order:
 1. **TAA and the upscaler.** The **TAA slice is done** in `PostTaa` (seam-only): the game's velocity and TAA shaders,
    a render-size RGBA16F motion target, two RGBA16F histories, the same 8-phase `Jitter` on the scene projection and the
    pass, `uBlend` 0.1 and a reset on the first frame/cut. The Metal host now renders the scene jittered and composites
-   the TAA output; the scene depth carries `Sampled`. Still to do: the render-scale upscaler and MetalFX behind
-   `IUpscaler` (the FSR path stays Vulkan), the sun-motion term, moving geometry's motion (grass/characters) and
-   widening the rest of `PostProcess` (SSAO, particles, FXAA, heat haze, GI resolve).
+   the TAA output; the scene depth carries `Sampled`. Still to do: MetalFX behind `IUpscaler` (the FSR path stays
+   Vulkan), the sun-motion term, moving geometry's motion (grass/characters) and widening the rest of `PostProcess`
+   (SSAO, particles, FXAA, heat haze, GI resolve).
 2. **Fog volumes and light shafts.** The **fog-volume data slice is done**: `FogVolumes` takes `IGpuContext`, the Metal
    host builds the placed volumes and publishes `uFogVolumeData` / `uFogVolumeEye` / `uFogVolumeInfo` every frame (the
    world shaders' look). The weather's effect spheres wait for the particle renderer. Still to do: the light-shaft
@@ -640,7 +640,8 @@ default.
   accept the no-GI look as the macOS baseline.
 - **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
   step 6.
-- **Upscaler**: MetalFX vs FSR, and whether TAA alone is the first target.
+- **Upscaler**: TAA at render scale 0.5 is the Metal macOS default and matches the Vulkan macOS reference; MetalFX
+  behind `IUpscaler` remains open.
 
 ### Resume notes (facts already established)
 
@@ -664,6 +665,16 @@ default.
 - **Cube stand-ins.** A dummy cube's `TextureDesc.Layers` is 1: its six faces are the cube type's slices, not array
   layers. Passing 6 made `GpuTexture.View` ask for 36 slices and `MTL_DEBUG_LAYER=1` abort at the first cube
   sampler (the UI's first frame after the painter was added). `MetalContext.Dummy` now passes 1.
+- **Live performance and memory (Apple M1 Pro, Release).** The view cache and the impostor CPU release changed the
+  picture: at 0.50 render scale, **30-32 fps**, CPU 32-35 ms and GPU 19-22 ms; at 0.83, 21-27 fps and GPU 30-36 ms.
+  Under Debug the same views read about 20 fps. The macOS Vulkan report is 36-40 fps at 0.50. The remaining CPU cost is
+  foliage recording/culling, shadows, the HUD and GC; the GPU is not the first limit at 0.50. A trace
+  (`MEITOU_METAL_TRACE=1`) prints frame CPU/GPU milliseconds, the resource tables (textures/views/buffers/sets/chunks)
+  and the native window state. The live process before these fixes had 97,000 live texture views and 6.9 GB in
+  `IOAccelerator`; `MetalContext.View` now caches a view by texture and level/layer/swizzle key, and released views are
+  retired until teardown (a recorded frame can still reference them). 173 resident impostor atlases also held their
+  CPU levels: after the last upload `ImpostorTextures.DropCpu` keeps only the metadata. The managed LOH fell from 2.8
+  GB to 1.2 GB and the live RSS from ~2.3 GB to 1.4-1.6 GB; the remaining LOH is the terrain's source maps.
 - **Window present and sizing.** The present fragment divides the drawable pixel position by the **drawable** size,
   not the backbuffer size: on a scaled display the drawable is larger, and dividing by the backbuffer showed only
   its top-left part in the window. `--screenshot` reads the backbuffer, so it cannot catch this; the live window is
@@ -706,8 +717,8 @@ default.
 - Character shots: `--crowd 6 --no-population --at -50000,8000 --time 12 --distance 180 --pitch 18
   --no-objects --no-foliage --no-water --faithful clouds,cloudshadows --no-gi` (the open hillside; six characters).
   `--new-game --time 12 --distance 250 --pitch 20 --faithful clouds,cloudshadows --no-gi` at the Hub (the player
-  squad, the HUD and the interactive camera/selection/orders). Observed live window: 20 fps / 20 ms at 2560x1440;
-  `MTL_DEBUG_LAYER=1` drops it to ~2 fps, so measure without the layer.
+  squad, the HUD and the interactive camera/selection/orders). Release at 0.50 render scale: 30-32 fps; at 0.83:
+  21-27; the Debug build reads about 20. `MTL_DEBUG_LAYER=1` drops it to ~2 fps, so measure without the layer.
 - Water test views: the sea is at the world edge; `--at 44352,-122544 --yaw 0 --distance 800 --pitch 15 --time 8
   --day 1 --faithful water,clouds,cloudshadows --no-gi` is the top coast (Great Desert), with the sea to the horizon.
   The river/lake `--at -45060,6348 --yaw 30 --distance 800 --pitch 20` is inland water. The Hub is inland: a shot there
@@ -715,8 +726,9 @@ default.
   matches Vulkan's faithful water: the water regions average RGB ~[14, 28, 32] vs [16, 30, 34], the sky ~[105, 141, 147]
   vs [109, 143, 151]; the horizon is ~9 darker in Metal (haze/exposure). Both paths now draw the HUD.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
-  `UpscaleShaders.Taa` (into two RGBA16F histories); the scene projection is jittered with `Jitter.Apply` and
-  `PostTaa.Offset` (8 phases at 1×), the depth target is `DepthTarget | Sampled`. TAA resets on the first frame, a
+  `UpscaleShaders.Taa` (into a display-size RGBA16F history pair); the scene projection is jittered with
+  `Jitter.Apply` and `PostTaa.Offset` (the phase count follows render/display scale), the depth target is `DepthTarget
+  | Sampled`. TAA resets on the first frame, a
   resize and a camera cut (>5000 units). The velocity pass's far-slice inputs are disabled; the sun-motion term is
   zero (the sky's sun compensation comes with the full chain).
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +

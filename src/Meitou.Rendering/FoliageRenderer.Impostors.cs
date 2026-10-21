@@ -575,6 +575,7 @@ public sealed partial class FoliageRenderer
                 } while (!s.Next.Complete && uploaded + s.Next.NextStepBytes <= budget && UploadTimeLeft(settling));
             }
             if (!s.Next.Complete) { impostorUploadsWaiting = settling; continue; }
+            s.Next.DropCpu();
             var old = s.Textures!;
             (s.Textures, s.Next) = (s.Next, null);
             impostorBytes -= old.Bytes;
@@ -799,7 +800,8 @@ public sealed partial class FoliageRenderer
         if (!s.Textures.Complete) return false;
         s.Stage = ImpostorStage.Ready;
         if (SpikeLog.Enabled) SpikeLog.Note($"impostor ready {Label(a)} skip {s.Skip}");
-        s.Atlas = null;   // the CPU copy is not needed any more (a reload reads the cache again)
+        s.Textures.DropCpu();   // keep the atlas's metadata for the draw; its byte arrays are no longer needed
+        s.Atlas = null;
         s.Meshes = null;
         residentStamp++;
         return true;

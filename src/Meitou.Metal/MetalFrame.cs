@@ -113,4 +113,10 @@ public sealed unsafe class MetalFrame : IGpuFrame
     }
 
     internal void End() => Open = false;
+
+    internal int ChunkCount => chunks.Count;
+    internal long ChunkBytes
+    {
+        get { long bytes = 0; foreach (var c in chunks) bytes += (long)c.Size; return bytes; }
+    }
 }

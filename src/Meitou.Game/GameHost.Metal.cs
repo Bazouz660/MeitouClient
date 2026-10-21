@@ -47,6 +47,9 @@ sealed partial class GameHost
         using var ctx = new MetalContext(display);
         var window = display.Window;
         ctx.Samplers.MaxAnisotropy = o.Anisotropy;
+        // Same scale as the Vulkan path's TAA/upscaler setting: the scene is rendered smaller and TAA reconstructs it.
+        // The macOS Vulkan reference runs at 0.50 (36-40 fps on an M1 Pro); 0.83 is the Windows/Meitou default.
+        ctx.RenderScale = o.Post.Upscale.Explicit ? o.Post.Upscale.EffectiveScale : 0.5f;
 
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
@@ -359,6 +362,9 @@ sealed partial class GameHost
         }
         var statsLines = new List<string>();
         GpuTexture? sceneColour = null;
+        // Loading can take long enough for the terminal that started the game to take focus back: bring the game forward again
+        // before the interactive loop (its title and FPS are watched there).
+        display.Activate();
         while (!window.IsClosing)
         {
             window.DoEvents();
@@ -368,12 +374,14 @@ sealed partial class GameHost
             if (trace && now - traceAt >= 1)
             {
                 traceAt = now;
-                Console.WriteLine($"metal     trace t={now:0.0}s frame {frames}, window {window.Size.X}x{window.Size.Y} points, framebuffer {window.FramebufferSize.X}x{window.FramebufferSize.Y} pixels");
+                Console.WriteLine($"metal     trace t={now:0.0}s frame {frames}, window {window.Size.X}x{window.Size.Y} points, " +
+                    $"framebuffer {window.FramebufferSize.X}x{window.FramebufferSize.Y} pixels, cpu {dt * 1000:0.0} ms, gpu {ctx.LastGpuMilliseconds:0.0} ms");
             }
             if (trace && now - nativeAt >= 5)
             {
                 nativeAt = now;
                 Console.WriteLine($"metal     native {display.NativeWindowState()}");
+                Console.WriteLine($"metal     resources {ctx.ResourceSummary()}");
             }
             var size = window.FramebufferSize;
             // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
@@ -394,21 +402,24 @@ sealed partial class GameHost
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
+            var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
+            // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
+            ctx.LodBias = MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
             if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
             streamer?.Update(camera.Eye);
             foliage?.Update(camera.Eye);
 
-            var taaJitter = PostTaa.Offset(frames + 1, size.X);
-            if (objects is not null) { objects.SetView(size.X, size.Y, camera.FieldOfView); objects.Update(camera.Eye); }
+            var taaJitter = PostTaa.Offset(frames + 1, sceneSize.X, size.X);
+            if (objects is not null) { objects.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             if (characters is not null)
             {
                 characters.PortraitRequests.Clear();
                 if (hud is not null)
                     foreach (var (member, cell) in hud.SquadBarMembers().Select((member, cell) => (member, cell)))
                         characters.PortraitRequests.Add(new PortraitRequest(DrawKey(member.Id), cell, member.PortraitSerial));
-                characters.SetView(size.X, size.Y, camera.FieldOfView);
+                characters.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView);
                 characters.Update(camera.Eye);
                 characters.DrawPortraits();
                 characters.DrawIcons();
@@ -416,7 +427,7 @@ sealed partial class GameHost
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             float hour = (float)session.Clock.HourOfDay;
-            var aspect = size.X / (float)Math.Max(size.Y, 1);
+            var aspect = sceneSize.X / (float)Math.Max(sceneSize.Y, 1);
             var eye = camera.Eye;
             var view = camera.View;
             var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
@@ -470,10 +481,10 @@ sealed partial class GameHost
             var backbuffer = ctx.Backbuffer;
             var depth = ctx.Depth;
             var albedo = ctx.Albedo;
-            if (sceneColour is null || sceneColour.Desc.Width != size.X || sceneColour.Desc.Height != size.Y)
+            if (sceneColour is null || sceneColour.Desc.Width != sceneSize.X || sceneColour.Desc.Height != sceneSize.Y)
             {
                 sceneColour?.Dispose();
-                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, size.X, size.Y,
+                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, sceneSize.X, sceneSize.Y,
                     Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
             }
             var targets = PassTargets.Of(sceneColour, depth, albedo) with
@@ -487,8 +498,8 @@ sealed partial class GameHost
             sky.Draw(viewProjection, colours);
 
             // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
-            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(size.Y, camera.FieldOfView);
-            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, size.X, size.Y);
+            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(sceneSize.Y, camera.FieldOfView);
+            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, sceneSize.X, sceneSize.Y);
             var frustum = WorldCamera.FrustumPlanes(worldProjection);
             terrain.BeginFrame();
             terrain.Draw(worldProjection, eye, frustum, render, light);
@@ -505,7 +516,7 @@ sealed partial class GameHost
 
             // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
             var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
-            var resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter);
+            var resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter, size.X, size.Y);
             ctx.EndNative(taaCmd);
 
             // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.

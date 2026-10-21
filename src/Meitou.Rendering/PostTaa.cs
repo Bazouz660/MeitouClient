@@ -5,10 +5,10 @@ namespace Meitou.Rendering;
 
 /// <summary>
 /// The seam's temporal anti-aliasing (the first slice of the post chain's widening): the game's velocity and TAA shaders
-/// (<see cref="UpscaleShaders.Velocity"/>, <see cref="UpscaleShaders.Taa"/>) at the scene's own size. The camera's projection
-/// is jittered by <see cref="Jitter"/> (the caller applies the same offset to the scene's projection), the velocity pass writes
-/// the reprojection into an RGBA16F motion target, and the TAA pass blends the jittered frame into a display-size history.
-/// No render-scale upscaler yet; the vendor upscalers and the full <see cref="PostProcess"/> chain stay Vulkan-typed.
+/// (<see cref="UpscaleShaders.Velocity"/>, <see cref="UpscaleShaders.Taa"/>). The camera's projection is jittered by
+/// <see cref="Jitter"/> (the caller applies the same offset to the scene's projection), the velocity pass writes the reprojection
+/// into a render-size RGBA16F motion target, and the TAA pass reconstructs the jittered scene into a display-size history pair.
+/// The vendor upscalers and the full <see cref="PostProcess"/> chain stay Vulkan-typed.
 /// </summary>
 sealed class PostTaa : IDisposable
 {
@@ -24,7 +24,7 @@ sealed class PostTaa : IDisposable
     readonly SampledTexture pointSampler, linearSampler;
 
     GpuTexture? motion, historyA, historyB;
-    int width, height;
+    int width, height, displayWidth, displayHeight;
     bool historyValid, previousValid;
     Vector3 previousEye;
     Matrix4x4 previousRotation;
@@ -73,17 +73,19 @@ sealed class PostTaa : IDisposable
         ctx.Samplers.Get(SamplerDesc.FromGl(min, mag, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat,
             false, DepthFunction.Lequal, false, 1, false, 0));
 
-    /// <summary>The offset frame <paramref name="frame"/> moves the projection by, in render pixels.</summary>
-    public static Vector2 Offset(long frame, int renderWidth) => Jitter.Offset(frame, Jitter.PhaseCount(renderWidth, renderWidth));
+    /// <summary>The offset frame <paramref name="frame"/> moves the projection by, in render pixels (the phase count covers every
+    /// display pixel at the render scale).</summary>
+    public static Vector2 Offset(long frame, int renderWidth, int displayWidth) =>
+        Jitter.Offset(frame, Jitter.PhaseCount(renderWidth, displayWidth));
 
     /// <summary>
     /// Resolves the scene into the history: <paramref name="scene"/> and <paramref name="depth"/> are the frame's render-size targets,
     /// <paramref name="jitterPixels"/> is the offset the scene's projection used. Returns the TAA picture (at the scene's size).
     /// </summary>
     public GpuTexture Draw(IGpuCommandList cmd, GpuTexture scene, GpuTexture depth, Vector3 eye, Matrix4x4 view, float fov, float aspect,
-        float near, float far, Vector2 jitterPixels)
+        float near, float far, Vector2 jitterPixels, int outputWidth, int outputHeight)
     {
-        Ensure(scene.Desc.Width, scene.Desc.Height);
+        Ensure(scene.Desc.Width, scene.Desc.Height, outputWidth, outputHeight);
         var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
         var projection = Jitter.Apply(Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, near, far), jitterPixels, width, height);
         var previousProjection = previousValid ? Matrix4x4.CreatePerspectiveFieldOfView(previousFov, previousAspect, near, far) : projection;
@@ -123,11 +125,11 @@ sealed class PostTaa : IDisposable
         t.Bind(motionSlot, pointSampler with { View = motion!.View() });
         t.Bind(history, linearSampler with { View = previous.View() });
         t.Set(renderSize, (float)width, (float)height);
-        t.Set(displaySize, (float)width, (float)height);
+        t.Set(displaySize, (float)displayWidth, (float)displayHeight);
         t.Set(jitter, jitterPixels.X, jitterPixels.Y);
         t.Set(blend, Blend);
         t.Set(reset, historyValid && previousValid ? 0 : 1);
-        Fullscreen(cmd, taa, output, width, height);
+        Fullscreen(cmd, taa, output, displayWidth, displayHeight);
 
         historyA = output;
         historyB = previous;
@@ -140,17 +142,19 @@ sealed class PostTaa : IDisposable
         return output;
     }
 
-    void Ensure(int w, int h)
+    void Ensure(int w, int h, int dw, int dh)
     {
-        if (motion is not null && width == w && height == h) return;
+        if (motion is not null && width == w && height == h && displayWidth == dw && displayHeight == dh) return;
         DisposeTargets();
         width = w;
         height = h;
+        displayWidth = dw;
+        displayHeight = dh;
         motion = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa motion"));
-        historyA = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h,
+        historyA = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
-        historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h,
+        historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
         historyValid = false;
         previousValid = false;
