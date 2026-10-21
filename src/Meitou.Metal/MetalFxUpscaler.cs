@@ -70,7 +70,7 @@ public sealed class MetalFxUpscaler : IUpscaler
 
     bool EnsureScaler(int width, int height, int displayWidth, int displayHeight)
     {
-        // The temporal path is reliable at the 2x default; the 3x mode darkens/hangs on this device.
+        // The temporal path is reliable at the 2x default; the 2.5x/3x modes darken or hang on this device.
         if (displayWidth > 2 * width || displayHeight > 2 * height)
         {
             Console.WriteLine($"metal     MetalFX needs at least a 0.50 render scale ({width}x{height} -> {displayWidth}x{displayHeight}); using TAA");

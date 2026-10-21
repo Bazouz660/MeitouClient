@@ -132,8 +132,9 @@ This is the largest CPU win and the main reason Vulkan still leads:
 
 - TAA at 0.50 is the current macOS reference and the first target. Its Metal motion-projection ghosting is a
   separate bug; native/no-TAA and MetalFX remain the clean comparison views.
-- MetalFX temporal is available opt-in (`--upscaler metalfx`, 0.50+); measured slower than TAA at the same scale,
-  so it is not a frame-budget lever and does not belong in the performance baseline.
+- MetalFX is opt-in: temporal at 0.50/0.67 and spatial at the 0.40 performance tier. Temporal measured slower than
+  TAA at the same scale, so leave MetalFX out of the performance baseline while optimizing the scene; the F10 panel is
+  the quality/performance user control.
 - Add the rest of the Vulkan post chain (SSAO, shafts, particles, FXAA, GI resolve) after the frame has CPU/GPU
   headroom; do not let new effects consume the gains.
 

@@ -109,39 +109,66 @@ sealed partial class GameHost
         if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
         // MetalFX temporal upscaling is opt-in while it is being validated; without it the TAA path is unchanged.
         var metalFx = MetalFxUpscaler.TryCreate(ctx);
-        if (metalFxRequested)
+        var metalFxSpatial = MetalFxSpatialUpscaler.TryCreate(ctx);
+        bool spatial = Environment.GetEnvironmentVariable("MEITOU_METALFX_SPATIAL") is "1" or "true";
+        if (spatial && metalFxSpatial is null) spatial = false;
+        if (metalFxRequested && !spatial)
         {
             if (metalFx is not null) taa.External = metalFx;
             else Console.WriteLine("metal     MetalFX requested but unavailable; using TAA");
         }
+        if (spatial && metalFxSpatial is not null)
+        {
+            noTaa = false;
+            taa.External = metalFxSpatial;
+            ctx.RenderScale = 0.4f;
+        }
         bool presetPanel = Environment.GetEnvironmentVariable("MEITOU_METAL_PRESETS") is "1" or "true";
-        int preset = noTaa ? 0 : metalFxRequested && metalFx is not null ? (ctx.RenderScale >= 0.6f ? 2 : 1) : 3;
+        int preset = noTaa ? 0
+            : spatial && metalFxSpatial is not null ? 3
+            : metalFxRequested && metalFx is not null ? (ctx.RenderScale >= 0.6f ? 1 : 2)
+            : 4;
         void SetPreset(int index)
         {
             if (index is 1 or 2 && metalFx is null)
             {
-                Console.WriteLine("metal     MetalFX is unavailable on this device");
+                Console.WriteLine("metal     MetalFX temporal is unavailable on this device");
+                return;
+            }
+            if (index == 3 && metalFxSpatial is null)
+            {
+                Console.WriteLine("metal     MetalFX spatial is unavailable on this device");
                 return;
             }
             switch (index)
             {
                 case 0:
                     noTaa = true;
+                    spatial = false;
                     taa.External = null;
                     ctx.RenderScale = 1f;
                     break;
                 case 1:
                     noTaa = false;
-                    taa.External = metalFx;
-                    ctx.RenderScale = 0.5f;
-                    break;
-                case 2:
-                    noTaa = false;
+                    spatial = false;
                     taa.External = metalFx;
                     ctx.RenderScale = 0.67f;
                     break;
+                case 2:
+                    noTaa = false;
+                    spatial = false;
+                    taa.External = metalFx;
+                    ctx.RenderScale = 0.5f;
+                    break;
+                case 3:
+                    noTaa = false;
+                    spatial = true;
+                    taa.External = metalFxSpatial;
+                    ctx.RenderScale = 0.4f;
+                    break;
                 default:
                     noTaa = false;
+                    spatial = false;
                     taa.External = null;
                     ctx.RenderScale = 0.5f;
                     break;
@@ -339,7 +366,7 @@ sealed partial class GameHost
                 if (presetPanel)
                 {
                     if (key == SilkKey.Escape) { presetPanel = false; return; }
-                    if (key is SilkKey.Number1 or SilkKey.Number2 or SilkKey.Number3 or SilkKey.Number4)
+                    if (key is SilkKey.Number1 or SilkKey.Number2 or SilkKey.Number3 or SilkKey.Number4 or SilkKey.Number5)
                     {
                         SetPreset((int)key - (int)SilkKey.Number1);
                         return;
@@ -476,14 +503,14 @@ sealed partial class GameHost
             long recordStart = Stopwatch.GetTimestamp();
             var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
             // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
-            ctx.LodBias = noTaa ? 0 : MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
+            ctx.LodBias = noTaa || spatial ? 0 : MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
             if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
             streamer?.Update(camera.Eye);
             foliage?.Update(camera.Eye);
 
-            var taaJitter = noTaa ? Vector2.Zero : PostTaa.Offset(frames + 1, sceneSize.X, size.X);
+            var taaJitter = noTaa || spatial ? Vector2.Zero : PostTaa.Offset(frames + 1, sceneSize.X, size.X);
             if (objects is not null) { objects.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             if (characters is not null)
             {
@@ -638,12 +665,13 @@ sealed partial class GameHost
                 {
                     presetLines.Clear();
                     presetLines.Add("1  Native (no TAA/MetalFX)");
-                    presetLines.Add($"2  MetalFX Balanced 0.50{(metalFx is null ? " (unavailable)" : "")}");
-                    presetLines.Add($"3  MetalFX Quality 0.67{(metalFx is null ? " (unavailable)" : "")}");
-                    presetLines.Add("4  TAA 0.50 (experimental: ghosts)");
-                    presetLines.Add($"Current: {preset switch { 0 => "native", 1 => "MetalFX balanced", 2 => "MetalFX quality", _ => "TAA" }}");
+                    presetLines.Add($"2  MetalFX Quality 0.67{(metalFx is null ? " (unavailable)" : "")}");
+                    presetLines.Add($"3  MetalFX Balanced 0.50{(metalFx is null ? " (unavailable)" : "")}");
+                    presetLines.Add($"4  MetalFX Performance 0.40{(metalFxSpatial is null ? " (unavailable)" : "")} (spatial)");
+                    presetLines.Add("5  TAA 0.50 (experimental: ghosts)");
+                    presetLines.Add($"Current: {preset switch { 0 => "native", 1 => "MetalFX quality", 2 => "MetalFX balanced", 3 => "MetalFX performance (spatial)", _ => "TAA" }}");
                     presetLines.Add($"Render: {ctx.SceneWidth}x{ctx.SceneHeight} -> {size.X}x{size.Y}");
-                    presetLines.Add("F10/Esc closes   1-4 applies");
+                    presetLines.Add("F10/Esc closes   1-5 applies");
                     overlay.Panel(size.X, size.Y, "Metal display (F10)", presetLines, 8 * textScale, textScale);
                     wrote = true;
                 }
@@ -716,7 +744,8 @@ sealed partial class GameHost
         shadow.Dispose();
         composite.Dispose();
         taa.Dispose();
-        metalFx?.Dispose();   // PostTaa owns it while selected; safe to dispose again after a preset switch
+        metalFx?.Dispose();           // PostTaa owns it while selected; safe to dispose again after a preset switch
+        metalFxSpatial?.Dispose();
         surfaces?.Dispose();
         sky.Dispose();
         double elapsed = clock.Elapsed.TotalSeconds;

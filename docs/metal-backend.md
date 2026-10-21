@@ -558,10 +558,11 @@ this order:
 1. **TAA and the upscaler.** The **TAA slice is done** in `PostTaa` (seam-only): the game's velocity and TAA shaders,
    a render-size RGBA16F motion target, two RGBA16F histories, the same 8-phase `Jitter` on the scene projection and the
    pass, `uBlend` 0.1 and a reset on the first frame/cut. The Metal host now renders the scene jittered and composites
-   the TAA output; the scene depth carries `Sampled`. MetalFX temporal now sits behind `IUpscaler` as an opt-in
-   (`--upscaler metalfx`; 0.50+, TAA fallback), but is slower than TAA and is not the default. Still to do: the TAA
-   motion-reprojection ghosting, MetalFX's reactive mask/object motion, the sun-motion term, moving geometry's motion
-   (grass/characters) and widening the rest of `PostProcess` (SSAO, particles, FXAA, heat haze, GI resolve).
+   the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
+   spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA). It is opt-in and
+   not the default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
+   sun-motion term, moving geometry's motion (grass/characters) and widening the rest of `PostProcess` (SSAO, particles,
+   FXAA, heat haze, GI resolve).
 2. **Fog volumes and light shafts.** The **fog-volume data slice is done**: `FogVolumes` takes `IGpuContext`, the Metal
    host builds the placed volumes and publishes `uFogVolumeData` / `uFogVolumeEye` / `uFogVolumeInfo` every frame (the
    world shaders' look). The weather's effect spheres wait for the particle renderer. Still to do: the light-shaft
@@ -654,8 +655,10 @@ default.
   camera moves (known; fix pending). MetalFX temporal is available opt-in with `--upscaler metalfx` or
   `MEITOU_METALFX=1`: it is reliable at 0.50 (and falls back to TAA below 0.50), but is slower than TAA and is not
   the default. `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve). The Metal
-  host also has a small **F10 display-preset panel** (Native / MetalFX Balanced / MetalFX Quality / TAA) showing the
-  internal → output size; `MEITOU_METAL_PRESETS=1` starts it open for screenshots.
+  host also has a small **F10 display-preset panel**: Native / MetalFX Quality 0.67 / MetalFX Balanced 0.50 /
+  MetalFX Performance 0.40 (spatial) / TAA 0.50, showing the internal → output size. The performance tier uses
+  MetalFX Spatial because temporal 2.5x/3x darkens on this device. `MEITOU_METAL_PRESETS=1` starts the panel open for
+  screenshots; `MEITOU_METALFX_SPATIAL=1` starts in the performance tier.
 
 ### Resume notes (facts already established)
 
@@ -794,8 +797,9 @@ plumbing, profiling, docs) need no Vulkan run.
   translation; Metal's ray tracing is a different programming model. The engine already runs
   without GI where the device has no ray queries (macOS today), so a Metal path starts with GI
   off, like the Vulkan path on macOS.
-- **Upscaler**: MetalFX temporal is implemented behind `IUpscaler` (`MetalFxUpscaler`) as an opt-in; it uses the
-  standard `MTLFXTemporalScaler` at 0.50+ and falls back to TAA below that. The FSR path stays for Vulkan.
+- **Upscaler**: MetalFX is implemented behind `IUpscaler` as an opt-in: `MetalFxUpscaler` is the temporal scaler at
+  0.50+, `MetalFxSpatialUpscaler` is the 0.40 performance tier; temporal below 0.50 falls back to TAA. The FSR path
+  stays for Vulkan.
 
 ## Open questions
 
