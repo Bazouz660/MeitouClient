@@ -93,7 +93,7 @@ sealed partial class GameHost
     {
         var world = session.World;
         pieces.Clear();
-        gpu.DebrisPieces.Clear();
+        if (gpu is not null) gpu.DebrisPieces.Clear();
         bloodQueue.Clear();
         bloodFor = world;
         bloodTick = world.Tick;
