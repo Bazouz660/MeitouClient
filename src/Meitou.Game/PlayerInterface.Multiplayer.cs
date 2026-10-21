@@ -54,7 +54,7 @@ sealed partial class PlayerInterface
         </MyGUI>
         """;
 
-    const string NewGameRow = "new";
+    const string NewGameRow = "<new>";   // not a valid folder name, so never a save
     /// <summary>The status line's error ink (a light red: the window's panel is dark).</summary>
     const string MultiplayerErrorInk = "1 0.45 0.38";
 
