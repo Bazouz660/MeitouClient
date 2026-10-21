@@ -675,7 +675,7 @@ default.
   `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. Not a Metal regression.
 - **Population and navmesh.** The live Metal loop boots the simulation with `interactive: true`, loads the navmesh
   zones round the start and calls `UpdateNav` each frame. The Hub shows its wall guards and residents again; the
-  background population costs frames (about 16 fps at 3024x1712 in the still, versus 20 before it).
+  background population costs frames, so measure the live window rather than the still's first-frames average.
 - **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
   portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
   F7, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll), selection/box
