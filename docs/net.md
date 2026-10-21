@@ -540,7 +540,104 @@ about 26 B per send once nothing changes. Real scenes are **Unknown** (wave 7 lo
 
 ## Host
 
-Pending (package N11).
+`Session/Host/` (`Meitou.Net.Session`): `NetHost(session, transport, options, self, game, catalog, clock)` drives one listen server on the
+caller's frame thread; it needs no game types (`IHostGame`: `Gate`, `Rules`, `Weather()`) and owns the transport (disposed with it).
+`HostWorldLink` is its only caller of the simulation's player API. Times come from `INetClock`.
+
+- **Start**: `Listen(Port)` (a `SocketException` changes nothing), `Local.Guid/Name = self`, `ClockAuthority = this`, `RequestedPause = false`.
+  Epochs start at 1 (so a client's 0 means none yet) and skip 0 when they wrap.
+- **`BeginFrame`** (before `session.Advance`): `Poll` (every transport event), timeouts, then the event tap hooks the world.
+- **`EndFrame(hostBusy)`** (after `Advance` and the game's news): tap drain; pending `WorldReset`s; clock; rules; weather; unless `hostBusy`
+  (loading screen: Control traffic only) event batches and snapshots; roster (on change and every 2 s); link figures (every second).
+- **Options** are clamped: `MaxPlayers` 2..8, `SendRate` 1..60, `PausedSendRate` 1..`SendRate`. `NetRules` = (SendRate, ClockPolicy,
+  MaxPlayers, `Gate.Cheats`, password set, bound port).
+
+**Joining.** Request: `CheckRequest(data, live connections, MaxPlayers, false)` (challenged ones count, so simultaneous requests cannot
+overfill). Connected: a 16-byte `RandomNumberGenerator` nonce, `Challenge(nonce, HostName, password set)`. Only `Hello` may follow, else
+`ProtocolError`. `CheckHello` (GUID bans), then the host's checks: joined players + 1 ≥ MaxPlayers → `Full`; number =
+`FindByGuid ?? NextNumber` (0 → `Duplicate` "Your player id is already in this game.", > 255 → `NoSlot`); a live connection with the same
+GUID is dropped with `Duplicate` "Signed in from another place." and the player continues on the new one (no leave notice). Name =
+`SanitizeName`, then " (2)", " (3)"... while the host or another roster entry has it (ignoring case); `Player.Join(n, guid, name)`. Colour:
+the player's earlier one when free, else `PlayerColourRule.Assign(host and connected colours, n)`. A new `ClientReplicator` per connection
+(`Reset(epoch)`), state Loading, `Welcome`, `WorldReset`, `NoticeNet(Joined)` to everyone and `Notice`. `Ready(epoch)` of the current epoch
+from a Loading peer: Playing, `Reset(epoch)`, snapshots due at once, `JoinPlayer(null, JoinPoint) { Tick = world.Tick, Player = n }` enqueued.
+`JoinPoint`: the host's first living player character in `world.Snapshot`, else `Local.Focus`, else the host camera's target.
+`WorldReset.Focus`: n's first living character, else n's `Focus`, else the join point (non-finite becomes 0).
+
+- **Timeouts**: no `Hello` within `HelloTimeout` → `Timeout` "Lost connection to the host."; no `Ready` within `LoadTimeout` of the last
+  `WorldReset` → `LoadTimeout` "Took too long to load." (and a `TimedOut` notice).
+- **Leaving**: a drop of a joined peer leaves its player Away (number, session, squads, name and colour kept) and enqueues `CloseTrade`,
+  `EndConversation`, `CloseContainer` with `Player = n`; notice `TimedOut` (transport timeout) or `Left`. `Kick` → `Kicked` "Kicked by the
+  host: {reason}" ("Kicked by the host." without one); `Ban` adds the GUID to this host's bans → `Banned` "Banned by the host: {reason}";
+  both notices carry the reason as `Detail`. A reconnect with the same GUID gets the same number and a new replicator (full snapshot).
+- **Protocol errors**: anything a client sends that does not parse or that the protocol does not allow (Views or Events channel, a second
+  `Hello`, a host-to-client type) drops it with `ProtocolError` "The host could not read what your game sent." A `ClientFrame` that does
+  not parse is ignored (Snapshots is unreliable).
+- **Stop**: `Stop(reason)` drops every connection with `HostClosed`, gives back the tap's queues and the clock (`ClockAuthority = null`);
+  the world keeps the extra sessions. `Dispose` = `Stop("The host ended the game.")`, then the transport is disposed.
+
+**Commands.** A `CommandBatch` is always decoded (so the Control string table stays in step) with `tick = world.Tick`, `player = n`,
+`allowDebug = Gate.Cheats`, then ignored unless the peer is Playing and the epoch matches. Per command one token of 200/s, burst 400 (the
+rest dropped; `MessageNet` "Too many commands at once; some were ignored." at most once a second); `CommandGate.Admit(world, n, cmd, Gate)`;
+admitted ones are enqueued, a refusal is answered with `CommandResult(FirstSeq + i, reason)` at most 2/s (burst 2; the rest silently).
+
+**Clock.** `IClockAuthority.Request` (the host's input) and client `ClockRequest`s (Loading or Playing; 10/s per client, more ignored, engine
+choice) take one path: `HostOnly` and n ≠ 0 → `MessageNet` "Only the host can change the game speed."; else applied to
+`session.Simulation` (an invalid speed is ignored); an unchanged speed does nothing; else `ClockChange(n, Paused | Resumed | Speed, new
+speed)` and `ClockChanged(change, name)`. `ClockState(epoch, Speed, LastNonZeroSpeed, hostBusy, AchievedSpeed, world.Tick,
+Clock.TotalHours, change)` goes to joined peers once per change (at most 8 per frame), when `hostBusy` changed, when the game clock moved
+other than by the frame's ticks (expected `anchorHours + Δtick · TickSeconds / SecondsPerGameHour`, tolerance 1e-6 h; change `TimeSet`,
+player -1), else every 2 s (change `None`, player -1). The anchor is taken again every frame.
+
+**Events.** `HostEventTap`: `BeginFrame` remembers the world's `Sounds`, `BloodMarks` and `Floaters` (the host's consumers; null when off)
+unless they are the tap's own, and installs its own; `EndFrame` dequeues everything, re-enqueues each item into the remembered queue (when
+non-null) and copies it for clients, then restores the consumer queues on the hooked world and on the current one (`ReplaceWorld` hands a
+new world the floater queue it holds). A frame whose world was replaced sends no copies. Ticks outside the frame pair (settle, after
+creation) feed the consumers only (R7). **Verified** (`EventTapTests`: consumers get every sound, blood mark and floater in order while
+copies are listed, a null consumer stays null, restore across `ReplaceWorld`). Per frame and peer one or more `EventBatch(epoch,
+world.Tick, …)`: its queued non-spatial events (`Send`, chat, notices; joined peers, at most 4096 waiting) and, when Playing, the spatial
+copies `EventFilter.Wants(e, replicator.View, replicator.Interest, EventRadius)` keeps. A batch is cut at 1024 events and halved until it
+fits `MaxReliableMessage`; an event the codec refuses on its own is dropped and logged. `Send(player, e)` refuses spatial events
+(`ArgumentException`); -1 is every joined peer, 0 is ignored.
+
+**Chat.** `ChatRequest` (Loading or Playing; token bucket 1/s, burst 5, about 5 lines per 5 s; more silently dropped) and `SendChat` (the
+host, not limited): control characters dropped, trimmed, cut to 200 chars (no split surrogate pair), empty ignored; `ChatNet(from, name,
+text)` to every joined peer and `Chat`.
+
+**Snapshots.** Per Playing peer when `now ≥ NextSendUs`: `replicator.Send(world.PublishFor(n), now, PeerSink)`; `NextSendUs += 1 s /
+(Simulation.IsPaused ? PausedSendRate : SendRate)`, or `now + interval` when more than one interval behind. `SnapshotEncoderOptions`:
+`SendHz = SendRate`, `BytesPerSecond = MaxBytesPerSecond`. One `LookRegistry` per host over the catalog's `RecordingAppearances` (another
+source is wrapped, so its earlier looks use `FromLook`). `ClientFrame`s go to the peer's replicator.
+
+**Rules and weather.** `RulesUpdate(NetRules, game.Rules)` is compared by value each `EndFrame` and sent on change. `game.Weather()` is
+polled once a second while someone is joined and sent on a `Revision` change or after 60 s; `WorldReset` carries the current one (and is
+sent without it when the codec refuses it).
+
+**World swap** (`WorldReplaced`): epoch + 1; `Local` named again; per joined peer `n = FindByGuid ?? NextNumber` on the new world (0 or
+> 255: dropped with `NoSlot`), `Join`, `Reset(epoch)`, Loading; its `WorldReset` goes at the next `EndFrame` (also when busy), and until
+then no other Control traffic reaches it. Away roster entries become the new world's roster sessions that are not connected.
+
+**Framing** (what the client must match; every packet's first byte is its `MessageType`):
+
+| Message | Dir | Channel | Bytes |
+|---|---|---|---|
+| Challenge, Welcome, WorldReset, Roster, ClockState, Rules, Weather; Reject (drop and refusal payload only) | h→c | Control | `ProtocolCodec.Write` (type byte + body) |
+| Hello, Ready, ClockRequest, ChatRequest | c→h | Control | `ProtocolCodec.Write`; the host reads `ReadType`, then `ReadX` (demands the end) |
+| CommandBatch | c→h | Control | `0x20`, then the `CommandBatchCodec.Write` body (Control string table c→h); the host demands the end after it |
+| CommandResult | h→c | Control | `0x21`, then the `CommandBatchCodec.Write(result)` body (no string table) |
+| EventBatch | h→c | Events | `EventCodec.Write` (includes `0x40`) |
+| SnapshotPart; ViewUpdate, LookDefinition | h→c | Snapshots; Views | `ClientReplicator` (include `0x10`; `0x30`, `0x31`) |
+| ClientFrame | c→h | Snapshots | `ClientFrameCodec.Write` (includes `0x11`) |
+
+A message whose codec refuses it or that exceeds `MaxReliableMessage` is not sent and is logged; `Reject`s go through `ProtocolCodec`,
+which keeps them within `MaxDropPayload`. **Verified** (`NetHostTests`, loopback with a hand-driven client: accept with Welcome, WorldReset,
+a renamed duplicate name, the joined notice batch, `Ready` → Playing with `JoinPlayer` and snapshot parts; wrong password; wrong protocol;
+full game; the same GUID twice; kick → away with the close commands).
+
+**Unknown / gaps**: a reconnect while the old connection still counts may be refused `Full` until that one times out. After a world swap
+changes a player's number, its replicator keeps weighting the old number's characters (`ClientReplicator` takes the number once) until it
+reconnects. Chat and notices reach a Loading peer with the current epoch on Events, which is not ordered with its `WorldReset` on Control.
+An exception from a `Notice`, `Chat` or `ClockChanged` handler raised while handling a client's message drops that client as a protocol error.
 
 ## Client and jitter buffer
 
