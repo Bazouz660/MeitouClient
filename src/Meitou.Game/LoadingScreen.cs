@@ -49,10 +49,13 @@ sealed class LoadingScreen : IDisposable
     {
         var random = new Random();
         string tip = "";
-        if (dataDirectory is not null && Path.Combine(dataDirectory, "tips.txt") is var tipsFile && File.Exists(tipsFile))
+        // tips.txt through the resource lookup: the active language's own copy (locale/<code>/tips.txt) replaces data/tips.txt; a tip that is also a
+        // message of the catalog (main.pot lists the tips) is translated.
+        string? tipsFile = resolve("tips.txt") ?? (dataDirectory is null ? null : Path.Combine(dataDirectory, "tips.txt"));
+        if (tipsFile is not null && File.Exists(tipsFile))
         {
             var tips = File.ReadAllLines(tipsFile).Where(l => l.Trim().Length > 0).ToArray();
-            if (tips.Length > 0) tip = tips[random.Next(tips.Length)].Trim();
+            if (tips.Length > 0) tip = Meitou.Localisation.Loc.Tr(tips[random.Next(tips.Length)].Trim());
         }
         try
         {

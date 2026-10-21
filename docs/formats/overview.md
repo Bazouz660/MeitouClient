@@ -19,8 +19,8 @@ Steamworks. Saves use `%LOCALAPPDATA%\kenshi\save\` unless `User save location=0
    depends on preceding files; base references Newwworld, Dialogue references rebirth.
    No scan; failed core logs an error and continues. Core list is initialized only if
    `data/mods.cfg` exists or can be created (missing file is created empty).
-2. Core language `.translation`, same record format.
-3. Mods in `data/mods.cfg` order, then all mod translations (`<folder>/locale/...`). Header
+2. Core language `.translation` (`locale/<code>/<code>.translation`, same record format) for the language chosen from `settings.cfg` ([localisation](localisation.md)).
+3. Mods in `data/mods.cfg` order, then the translation of the first mod that has one (`<folder>/locale/X/X.translation`; that mod also sets the language). Header
    dependencies do not affect runtime order. Unopenable/invalid mods are skipped and collected
    in one ignored-files dialog, workshop entries marked `(*)`.
 
@@ -61,7 +61,7 @@ string in the engine. Resource scan skips `_`-prefixed files.
 `resources.cfg` lists about 100 FileSystem folders in General. Ogre resolves bare filenames
 across folders; names must be unique. `mods/readme.txt` describes art replacement under
 `mods/<name>/<same relative path>`. **Unknown:** exact relative-path/bare-name precedence and
-multiple overrides; needs tests.
+multiple overrides; needs tests. Letter case of paths is not reliable in the original data: `resources.cfg` and the particle renderer say `data/particles/textures`, the folder is `Textures`; a mesh links `mammal_beak.skeleton`, the file is `Mammal_beak.skeleton`; a record names `automine.xml`, the file is `automine.XML`. `GameFiles.Resolve` finds the real path on a case-sensitive file system (**Verified** on Linux with an LD_PRELOAD check of failed lookups over load plus a minute of play on a large save: these three, all found afterwards; area switches, menus and the editor were not covered).
 
 **Verified** `FUN_140816d90`: after base folders, walk active mods in cfg order; add subfolders
 holding files to matching base resource group, default General. Skip `leveldata`,

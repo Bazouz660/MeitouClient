@@ -18,7 +18,7 @@ public sealed class WorldEmitters(WwisePlayer player)
     {
         public readonly string Key = key;
         public readonly AmbientSound Sound = sound;
-        public readonly Vector3 Position = position;
+        public Vector3 Position = position;
         /// <summary>The game object; 0 until the first start registers it (the game registers lazily).</summary>
         public ulong Object;
         public bool Started;
@@ -43,11 +43,20 @@ public sealed class WorldEmitters(WwisePlayer player)
 
     public string? NearestName { get; private set; }
 
-    /// <summary>Adds the emitter (replacing the one with the same key). Nothing sounds until <see cref="Update"/> finds the eye in range.</summary>
-    public void Add(PlacedEmitter placed)
+    /// <summary>
+    /// Adds the emitter (replacing the one with the same key). Nothing sounds until <see cref="Update"/> finds the eye in range. A <paramref name="powered"/> emitter starts out powered with
+    /// <paramref name="efficiency"/> in its <c>Intensity</c> (a building nothing calls <see cref="SetPower"/> for: the level's, which the simulation does not run).
+    /// </summary>
+    public void Add(PlacedEmitter placed, bool powered = false, float efficiency = 0)
     {
         Remove(placed.Key);
-        emitters[placed.Key] = new Emitter(placed.Key, placed.Sound, placed.Position);
+        var e = new Emitter(placed.Key, placed.Sound, placed.Position);
+        if (powered)
+        {
+            e.Powered = true;
+            e.Level = efficiency * placed.Sound.EfficiencyMultiplier * 100 + placed.Sound.Intensity * 100;
+        }
+        emitters[placed.Key] = e;
     }
 
     /// <summary>Removes the emitter: <c>Stop_Emitter</c> if it plays, then its object is unregistered at once, which cuts what is left of the sound (the game's <c>FUN_140258260</c>).</summary>
@@ -64,6 +73,14 @@ public sealed class WorldEmitters(WwisePlayer player)
     }
 
     public bool Contains(string key) => emitters.ContainsKey(key);
+
+    /// <summary>Moves an emitter that follows something (an effect's node, <c>FUN_140258120</c>): the next <see cref="Update"/> measures the range from the new place, and a registered object is placed there.</summary>
+    public void Move(string key, Vector3 position)
+    {
+        if (!emitters.TryGetValue(key, out var e)) return;
+        e.Position = position;
+        if (e.Object != 0) player.SetPosition(e.Object, position);
+    }
 
     public void Clear()
     {
@@ -101,7 +118,7 @@ public sealed class WorldEmitters(WwisePlayer player)
     /// <summary>
     /// A machine's state (the game's <c>FUN_140258c20</c>, called each frame by production buildings): <paramref name="powered"/> starts or stops an emitter that needs power,
     /// and the <c>Intensity</c> becomes <c>efficiency × efficiency multiplier × 100 + intensity × 100</c> when it changed. Only for an emitter within range, as the game does.
-    /// Meitou has no machines yet, so nothing calls this and the emitters that need power stay silent.
+    /// The host calls it each frame for the machines of the player's buildings (docs/audio.md "Point emitters").
     /// </summary>
     public void SetPower(string key, float efficiency, bool powered)
     {

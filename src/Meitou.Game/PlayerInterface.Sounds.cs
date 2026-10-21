@@ -15,8 +15,8 @@ sealed partial class PlayerInterface
     /// <summary>Where interface sounds go (the host's audio); null without audio.</summary>
     public Action<UiSoundEvent>? UiSound { get; set; }
 
-    void Sound(string name, string? group = null, string? value = null, bool state = false, string? item = null) =>
-        UiSound?.Invoke(new UiSoundEvent(name, group, value, state, item));
+    void Sound(string name, string? group = null, string? value = null, bool state = false, string? item = null, string? building = null) =>
+        UiSound?.Invoke(new UiSoundEvent(name, group, value, state, item, building));
 
     readonly HashSet<string> soundScreens = [];
     int soundOverviewTab = -1;
@@ -87,9 +87,9 @@ sealed partial class PlayerInterface
         if (speedNow > 0) soundSpeed = speedNow;
         speedSounded = false;
 
-        // A blueprint read or a building unlocked another way: "Research complete" (140834550). The first look only takes the baseline.
+        // A research finished (also one that unlocks nothing) or a blueprint read: "Research complete" (140834550). The first look only takes the baseline.
         if (!ReferenceEquals(soundWorld, session.World)) soundUnlocked = -1;
-        int unlocked = session.CurrentSnapshot.UnlockedBuildings.Count;
+        int unlocked = session.CurrentSnapshot.UnlockedBuildings.Count + session.CurrentSnapshot.Research.Finished;
         if (soundUnlocked >= 0 && unlocked > soundUnlocked) Sound("Notifications", "Notifications", "Thing_Complete");
         soundUnlocked = unlocked;
 
@@ -147,14 +147,17 @@ sealed partial class PlayerInterface
         if (UiSound is null || e.Action.StartsWith("inventory-scroll", StringComparison.Ordinal)) return;
         switch (e.Screen)
         {
-            case "title" or "menu" or "new-game" or "advanced" or "save" or "load" or "message": Sound("General_Click"); break;
+            case "title" or "menu" or "new-game" or "save" or "load" or "message" or "file": Sound("General_Click"); break;
             case "inventory" or "bag" or "trader": if (e.Widget == "ArrangeButton") Sound("General_Click"); break;
+            // A pick in the research type list (FUN_14049b5e0): Research_Tabs is set to the item's text, the category; the same row again is no change.
+            case "overview": if (e is { Widget: "ResearchTypeList", Action: "select" } && e.Text != researchCategory) Sound("Research_Tab", "Research_Tabs", e.Text); break;
             case "build":
                 if (e.Widget is "CategoriesList" or "BuildingsList" or "BuldingTypePrevButton" or "BuldingTypeNextButton") Sound("Building_Navigate");
                 break;
             case "editor":
                 if (e.Widget == "ConfirmButton") Sound("Create_Character");
                 else if (e.Widget is "BodyTabButton" or "FaceTabButton" or "HairTabButton") Sound("Tab");
+                // Slider: the first event of each drag. A data-panel slider (the host's Slider property) is not built yet; its drag events would sound here the same way.
                 else if (e.Action.StartsWith("editor-slider:", StringComparison.Ordinal)) { if (e.Action != lastSliderSound) Sound("Slider"); lastSliderSound = e.Action; }
                 else if (e.Widget.EndsWith("Button", StringComparison.Ordinal) || e.Widget.EndsWith("Arrow", StringComparison.Ordinal)) Sound("General_Click");
                 break;
@@ -167,7 +170,7 @@ sealed partial class PlayerInterface
     /// <summary>The player's orders (the commands that give a character a job), by type name: they make the order dispatcher's click.</summary>
     static readonly HashSet<string> OrderCommands = new(StringComparer.Ordinal)
     {
-        "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
+        "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "OpenLootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
         "OperateOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder",
     };
 
@@ -178,8 +181,12 @@ sealed partial class PlayerInterface
         switch (command)
         {
             case Meitou.Simulation.Items.MoveInventoryItem move: Sound("Item_Drop", item: move.Item.Record); return;
+            case Meitou.Simulation.Items.DropInventoryItem drop: Sound("Item_Drop", item: drop.Item.Record); return;
             case Meitou.Simulation.Trading.BuyItem buy: Sound("Sell_Item", item: buy.Item.Record); return;
             case Meitou.Simulation.Trading.SellItem sell: Sound("Sell_Item", item: sell.Item.Record); return;
+            // The sound the exe posts after giving the selection a job (FUN_1407f5a90).
+            case Meitou.Simulation.Production.AddJob: Sound("Permanent_Job"); return;
+            case Meitou.Simulation.FirstAid.MedicJobCommand { Job: true } or Meitou.Simulation.Carrying.RescueJobCommand { Job: true }: Sound("Permanent_Job"); return;
         }
         string name = command.GetType().Name;
         if (name == "DialogueChoice") Sound("Dialogue_Choice", "Dialogue_Choice", "Continue_Conversation");

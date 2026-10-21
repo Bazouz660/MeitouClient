@@ -115,7 +115,7 @@ public static class FogFeatures
     /// <summary>The install's file, or an empty list when it has none.</summary>
     public static IReadOnlyList<FogFeature> Load(GameInstall install)
     {
-        string path = Path.Combine(install.DataDirectory, RelativePath);
+        string path = GameFiles.Resolve(Path.Combine(install.DataDirectory, RelativePath));
         return File.Exists(path) ? Read(File.ReadAllBytes(path)) : [];
     }
 

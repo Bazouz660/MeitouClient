@@ -8,6 +8,8 @@ public sealed class PostOptions
     public string Preset = "meitou";
     /// <summary>Kenshi's FXAA on the final image (its <c>FXAA=1</c> setting; docs/formats/post-processing.md) when no temporal upscaler runs.</summary>
     public bool Fxaa = true;
+    /// <summary>Meitou's SMAA in place of FXAA when no temporal upscaler runs (docs/render-post.md "SMAA"); off by default.</summary>
+    public bool Smaa;
     /// <summary>Kenshi's heat haze after FXAA (its <c>HeatHaze=1</c> setting, on when the key is absent; docs/formats/post-processing.md).</summary>
     public bool HeatHaze = true;
     /// <summary>Scales the heat haze's amount (the weather's): 1 is the game's (Faithful <c>heathaze</c>), 0 hides it; Meitou's default is
@@ -83,7 +85,7 @@ public sealed class PostOptions
 
     public void CopyFrom(PostOptions other)
     {
-        Preset = other.Preset; Fxaa = other.Fxaa; HeatHaze = other.HeatHaze; Ssao = other.Ssao;
+        Preset = other.Preset; Fxaa = other.Fxaa; Smaa = other.Smaa; HeatHaze = other.HeatHaze; Ssao = other.Ssao;
         Dither = other.Dither; LowResParticles = other.LowResParticles; LightShafts = other.LightShafts; ShaftStrength = other.ShaftStrength; ShaftAir = other.ShaftAir; ShaftAirDawn = other.ShaftAirDawn;
         ParticleDivisor = other.ParticleDivisor; Exposure = other.Exposure; ToneMap = other.ToneMap; ToneMix = other.ToneMix; Grade = other.Grade;
         HeatHazeStrength = other.HeatHazeStrength; NightGradeStrength = other.NightGradeStrength;
@@ -97,6 +99,7 @@ public sealed class PostOptions
             case "--post": CopyFrom(Create(next())); return true;
             case "--particle-divisor": ParticleDivisor = Math.Clamp(int.Parse(next(), CultureInfo.InvariantCulture), 0, 4); return true;
             case "--no-fxaa": Fxaa = false; return true;
+            case "--smaa": Smaa = true; return true;
             case "--no-heat-haze": HeatHaze = false; return true;
             case "--upscaler":
                 Upscale.Explicit = true;
@@ -109,7 +112,7 @@ public sealed class PostOptions
     }
 
     public string Describe() =>
-        $"{Preset}: fxaa {(Fxaa && !Upscale.Temporal ? "on" : "off")}, heat haze {(HeatHaze ? "weather" + (HeatHazeStrength != 1 ? $" strength {HeatHazeStrength:0.##}" : "") : "off")}, " +
+        $"{Preset}: aa {(Upscale.Temporal ? "temporal" : Smaa ? "smaa" : Fxaa ? "fxaa" : "off")}, heat haze {(HeatHaze ? "weather" + (HeatHazeStrength != 1 ? $" strength {HeatHazeStrength:0.##}" : "") : "off")}, " +
         $"ssao {(Ssao ? "on" : "off")}, shafts {(LightShafts ? $"{ShaftStrength:0.##} ({ShaftCells}x{ShaftSlices}x{ShaftSamples})" : "off")}, exposure x{Exposure:0.##}, tonemap {ToneMap.ToString().ToLowerInvariant()}{(ToneMap == ToneMapOperator.Hybrid ? $" {ToneMix:0.##}" : "")}, " +
         $"grade {(Grade ? $"saturation {Saturation:0.##} contrast {Contrast:0.##}" : "off")}, night grade {(NightGradeStrength > 0 ? NightGradeStrength.ToString("0.##", CultureInfo.InvariantCulture) : "off")}, " +
         $"upscaler {Upscale.Describe()}";

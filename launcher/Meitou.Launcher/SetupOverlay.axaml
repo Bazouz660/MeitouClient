@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Meitou.Launcher.SetupOverlay">
+  <!-- First start, over the main window: where to install versions and where Kenshi is, both prefilled. -->
+  <Border Classes="plate" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20,16">
+    <StackPanel>
+      <Border Classes="header" Margin="0,0,0,10">
+        <TextBlock Text="Folders" />
+      </Border>
+      <Border Classes="row">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="name" Text="Install folder" />
+          <TextBlock Classes="desc" Text="Where game versions are downloaded and installed (in its versions folder)." />
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseInstall_Click" Margin="6,0,0,0" />
+            <TextBox x:Name="InstallBox" />
+          </DockPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="row">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="name" Text="Kenshi folder" />
+          <TextBlock x:Name="KenshiStatus" Classes="desc" />
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Find" Click="FindKenshi_Click" Margin="6,0,0,0" />
+            <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseKenshi_Click" Margin="6,0,0,0" />
+            <TextBox x:Name="KenshiBox" LostFocus="KenshiBox_LostFocus" />
+          </DockPanel>
+        </StackPanel>
+      </Border>
+      <DockPanel Margin="0,14,0,0">
+        <Button DockPanel.Dock="Right" Classes="paper" Click="Continue_Click">
+          <TextBlock Text="Continue" Foreground="{StaticResource Secondary}" />
+        </Button>
+        <TextBlock x:Name="Problem" Classes="warn" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0"
+                   Text="Both can be changed later in Settings." />
+      </DockPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

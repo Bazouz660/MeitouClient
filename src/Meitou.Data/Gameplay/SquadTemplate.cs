@@ -67,6 +67,10 @@ public sealed record SquadTemplate
     public int VendorsFillTotalAmount { get; init; } = 100;
     /// <summary><c>vendor money</c>: the purse of a building shop (0 or less: derived from the stock); the squad filler never reads it.</summary>
     public int VendorMoney { get; init; }
+    /// <summary><c>robotics levels</c>: the average grade 0..5 of the robotic limbs the squad's shop stocks (ArmourRarity, default 1 GEAR_CHEAP).</summary>
+    public int RoboticsLevels { get; init; } = 1;
+    /// <summary><c>crossbow levels</c>: the same for the crossbows it stocks.</summary>
+    public int CrossbowLevels { get; init; } = 1;
     /// <summary><c>vendors refresh time</c> in game hours as the restock reads it: 0 or less means 24000.</summary>
     public float VendorsRefreshTime { get; init; } = 24;
     /// <summary><c>buy mult</c>: the trader's price factor, both ways (section 6).</summary>
@@ -123,6 +127,8 @@ public sealed record SquadTemplate
             Vendors = Links("vendors"),
             VendorsFillTotalAmount = fill < 1 ? 100 : fill,
             VendorMoney = RecordReading.Int(r, "vendor money", 0),
+            RoboticsLevels = RecordReading.Int(r, "robotics levels", 1),
+            CrossbowLevels = RecordReading.Int(r, "crossbow levels", 1),
             VendorsRefreshTime = refresh <= 0 ? 24000 : refresh,
             BuyMult = RecordReading.Float(r, "buy mult", 1),
             BuysStolen = RecordReading.Bool(r, "buys stolen", false),

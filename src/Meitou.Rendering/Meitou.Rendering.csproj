@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
+    <PackageReference Include="FreeTypeSharp" Version="3.1.0" />
     <PackageReference Include="Silk.NET.Vulkan" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.23.0" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" />
@@ -20,7 +21,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="meitou-viewer" />
-    <InternalsVisibleTo Include="meitou" />
+    <InternalsVisibleTo Include="MeitouClient" />
     <InternalsVisibleTo Include="Meitou.Tests" />
     <InternalsVisibleTo Include="Meitou.Metal" />
     <InternalsVisibleTo Include="meitou-metal-host" />

@@ -189,6 +189,8 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     {
         var cold = table.Cold(slot)!;
         cold.InCombat = false;
+        cold.CombatRunning = false;
+        cold.TargetFleeingTime = 0;
         cold.DrawnWeapon = WeaponKinds.None;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) table.Next[slot].Task = (byte)CharacterTask.Idle;
     }
@@ -235,6 +237,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                 continue;
             }
             float speed = n.MaxSpeed > 0 ? n.MaxSpeed : Settings.ApproachSpeed;
+            if (!cold.CombatRunning) speed = MathF.Min(speed, CombatTuning.FootworkSpeed);
             float step = MathF.Min(speed * dt, gap - CombatTuning.CloseInGap);
             float x = prev[i].Position.X + dir.X * step, z = prev[i].Position.Z + dir.Y * step;
             if (world.Walkability.IsWalkable(x, z, prev[i].Position.Y))

@@ -1,14 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Satori GC (docs/engine.md): replaces the runtime on a self-contained publish; plain builds keep the stock runtime. -->
-  <Sdk Name="PublishWithSatoriGC" Version="10.0.13-satori.38707290103.1" />
-
   <!-- The game executable: boots into the world with the Kenshi camera (docs/engine.md). -->
 
   <PropertyGroup>
     <!-- Windowed: no console window opens with the game; a terminal that starts it still gets its output (GameConsole). -->
     <OutputType>WinExe</OutputType>
-    <AssemblyName>meitou</AssemblyName>
+    <AssemblyName>MeitouClient</AssemblyName>
     <ApplicationIcon>../../assets/branding/meitou.ico</ApplicationIcon>
     <RootNamespace>Meitou.Game</RootNamespace>
     <!-- Tiered PGO re-JITs hot render code for minutes; each install suspends the runtime and stalled frames 10-20 ms (DECISIONS 11). -->
@@ -18,6 +15,10 @@
     <!-- Server GC on four heaps: the streaming threads allocate ~2 MB a frame, and single-threaded gen0 GCs over the ~0.5 GB gen2 paused every thread 3-15 ms (DECISIONS 19). -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Meitou.Localisation" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />

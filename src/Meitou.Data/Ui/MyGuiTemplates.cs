@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Meitou.Data.Ui;
 
 /// <summary>Resolve ResourceLayout skins and their Client regions without rewriting the source layout.</summary>
-public static class MyGuiTemplates
+public static partial class MyGuiTemplates
 {
     public static MyGuiLayout Expand(MyGuiLayout layout, MyGuiResources resources) => new(layout.Version,
         layout.Roots.Select(w => ExpandWidget(w, resources, [])).ToArray());
@@ -47,6 +47,7 @@ public static class MyGuiTemplates
         if (framed.Any(c => c.DescendantsAndSelf().Any(n => n.Properties.ContainsKey("CaptionOwner")))) rootProperties["SkipCaption"] = "true";
         var strings = new Dictionary<string, string>(template.UserStrings, StringComparer.Ordinal);
         foreach (var p in source.UserStrings) strings[p.Key] = p.Value;
+        if (source.Type == "MultiListBox") framed.AddRange(ColumnPrototypes(source.Name, strings, resources, chain));
         var expanded = source with { Skin = template.Skin, Properties = rootProperties, UserStrings = strings, Children = framed };
         // A template's root requests a native skin, even when that skin shares the template's name.
         var resolvedProperties = new Dictionary<string, string>(expanded.Properties, StringComparer.Ordinal) { ["ResolvedTemplate"] = "true" };

@@ -79,7 +79,12 @@ public sealed class DialogueNode
     public IReadOnlyList<string> UnlockButKeepMe { get; internal set; } = [];
     public IReadOnlyList<string> Locks { get; internal set; } = [];
     public string? Interrupt { get; internal set; }
+    /// <summary><c>crowd trigger</c>: the DIALOGUE the speaker's squadmates start (event 74) and its val0 (a percent; where the original reads it is <b>Unknown</b>).</summary>
     public string? CrowdTrigger { get; internal set; }
+    public int CrowdChance { get; internal set; }
+    /// <summary><c>change AI</c>: the AI_PACKAGE that replaces the speaker squad's packages; <c>AI contract</c>: the AI_PACKAGE run as a contract and its val0 hours.</summary>
+    public string? ChangeAi { get; internal set; }
+    public (string Package, int Hours)? AiContract { get; internal set; }
     /// <summary><c>trigger campaign</c>: FACTION_CAMPAIGNs, V0..V1 hours of delay and V2 percent (one weighted draw).</summary>
     public IReadOnlyList<CampaignLink> TriggerCampaigns { get; internal set; } = [];
     public IReadOnlyList<DialogueNode> Children { get; internal set; } = [];
@@ -98,8 +103,8 @@ public sealed class DialogueNode
 /// <summary>The <c>DialogActionEnum</c> numbers the engine runs (docs/game/dialogue.md "Effects").</summary>
 public static class DialogueActions
 {
-    public const int None = 0, Trade = 1, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
-        BubbleWait = 12, ArrestTargetsCarriedPerson = 30, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57;
+    public const int None = 0, Trade = 1, TalkToLeader = 2, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
+        BubbleWait = 12, TagEscapedSlave = 25, ArrestTarget = 29, ArrestTargetsCarriedPerson = 30, RemoveSlaveStatus = 53, SurrenderNonHumans = 47, GiveTargetMySlaves = 24, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57;
 }
 
 /// <summary>The <c>DialogConditionEnum</c> numbers with special handling at load (docs/game/dialogue.md "Line check").</summary>
@@ -118,6 +123,22 @@ public sealed class DialogueSet
     public IReadOnlyDictionary<int, IReadOnlyList<DialogueNode>> ByEvent { get; }
     public IReadOnlySet<string> Packages { get; }
     public IReadOnlyList<DialogueNode> For(int ev) => ByEvent.GetValueOrDefault(ev) ?? [];
+
+    int trades;   // 0 not yet known, 1 no, 2 yes
+    /// <summary>A line under its event-1 dialogue has the Trade effect (conditions not checked): the character trades when talked to, as only the shopkeeper of most trader squads does.</summary>
+    public bool Trades
+    {
+        get
+        {
+            if (trades == 0)
+            {
+                var seen = new HashSet<DialogueNode>();
+                bool Walk(DialogueNode n) => seen.Add(n) && (n.Effects.Any(e => e.Action == DialogueActions.Trade) || n.Children.Any(Walk));
+                trades = For(DialogueEvents.PlayerTalkToMe).Any(Walk) ? 2 : 1;
+            }
+            return trades == 2;
+        }
+    }
 }
 
 /// <summary>
@@ -166,7 +187,7 @@ public sealed class DialogueDatabase(GameDatabase db)
     /// <summary>
     /// What a character answers (docs/game/dialogue.md "Who has which dialogue"): its CHARACTER <c>dialogue</c> list at event 1, plus one package: a player character's
     /// <c>dialogue package player</c>, else <paramref name="playerFactionId"/>'s <c>dialog default</c>, else <c>5369-gamedata.base</c>; an animal its template's <c>dialog animal</c>;
-    /// an NPC leader its template's <c>dialog leader</c> and the others <c>dialog squad</c>, else the character's <c>dialogue package</c>.
+    /// an NPC leader its template's <c>dialog leader</c>, else its own <c>dialogue package</c>, else <c>dialog squad</c>; the others <c>dialog squad</c>, else the character's <c>dialogue package</c>.
     /// </summary>
     public DialogueSet SetFor(string characterId, string? templateId, bool leader, bool player, bool animal, string? playerFactionId = null) =>
         sets.GetOrAdd((characterId, templateId ?? "", leader, player, animal, playerFactionId ?? ""), Make);
@@ -187,6 +208,8 @@ public sealed class DialogueDatabase(GameDatabase db)
         else
         {
             packages = key.Leader ? [.. Refs(template, "dialog leader")] : [];
+            // A leader's own package comes before the squad's (FUN_14062b210): a shopkeeper leading guards keeps its trade lines.
+            if (packages.Count == 0 && key.Leader) packages = [.. Refs(character, "dialogue package")];
             if (packages.Count == 0) packages = [.. Refs(template, "dialog squad")];
             if (packages.Count == 0) packages = [.. Refs(character, "dialogue package")];
         }
@@ -279,7 +302,11 @@ public sealed class DialogueDatabase(GameDatabase db)
         node.UnlockButKeepMe = [.. record.GetReferences("unlock but keep me").Select(r => r.TargetStringId)];
         node.Locks = [.. record.GetReferences("locks").Select(r => r.TargetStringId)];
         node.Interrupt = record.GetReferences("interrupt").FirstOrDefault().TargetStringId;
-        node.CrowdTrigger = record.GetReferences("crowd trigger").FirstOrDefault().TargetStringId;
+        var crowd = record.GetReferences("crowd trigger").FirstOrDefault();
+        (node.CrowdTrigger, node.CrowdChance) = (crowd.TargetStringId, crowd.TargetStringId is null ? 0 : crowd.Values.Value0);
+        node.ChangeAi = record.GetReferences("change AI").FirstOrDefault().TargetStringId;
+        var contract = record.GetReferences("AI contract").FirstOrDefault();
+        node.AiContract = contract.TargetStringId is { } package ? (package, contract.Values.Value0) : null;
         node.TriggerCampaigns = [.. record.GetReferences("trigger campaign").Select(r => new CampaignLink(r.TargetStringId, r.Values.Value0, r.Values.Value1, r.Values.Value2))];
 
         // The specificity score (FUN_14067b070, docs/game/dialogue.md "Score").

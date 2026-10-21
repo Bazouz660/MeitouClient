@@ -5,7 +5,9 @@ namespace Meitou.Game;
 
 sealed partial class SettingsMenu
 {
-    static string SliderHint(Slider slider) => Label(slider.Label) switch
+    static string SliderHint(Slider slider) => SliderHint(slider.Label);
+
+    internal static string SliderHint(string label) => Label(label) switch
     {
         "VSync" => "Match the display refresh rate to prevent tearing.",
         "Full screen" => "Fill the monitor with a borderless game window.",
@@ -39,6 +41,7 @@ sealed partial class SettingsMenu
         "Shadow filter" => "Higher values smooth shadow edges with more samples.",
         "Haze strength" => "Scale the amount of atmospheric haze.",
         "Planetshine strength" => "Scale night lighting from the planet and moon.",
+        "Ambient light strength" => "Scale the sky's light in shade, at night and indoors.",
         "Light shafts strength" => "Adjust the brightness of light scattered through the air.",
         "Light shafts air" => "Air scattering density; zero removes air scattering.",
         "Light shafts air at dawn and dusk" => "Scale air scattering around sunrise and sunset.",
@@ -48,7 +51,7 @@ sealed partial class SettingsMenu
         "Hybrid tone map: ACES share" => "Blend more ACES into the hybrid tone mapping curve.",
         "Heat haze strength" => "Scale the distortion caused by hot air.",
         "Night grading strength" => "Adjust the blue shift of colours in low light.",
-        _ => $"Adjust {Label(slider.Label).ToLowerInvariant()}.",
+        _ => $"Adjust {Label(label).ToLowerInvariant()}.",
     };
 
     static string ToggleHint(string label) => label switch

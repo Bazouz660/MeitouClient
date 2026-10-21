@@ -69,7 +69,7 @@ public sealed class HavokTagfile
         return file;
     }
 
-    public static HavokTagfile ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static HavokTagfile ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     /// <summary>The named variant of the root container whose class is <paramref name="className"/> (null: none).</summary>
     public HkObject? Variant(string className)

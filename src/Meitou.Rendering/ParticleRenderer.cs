@@ -198,7 +198,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
     public static ParticleRenderer Create(GpuContext gpu, GameInstall install, ParticleLibrary? library = null)
     {
         BackgroundWork.Run(EffectGroups.PrimeJit);   // the group kinds' code is compiled off the render thread, before the first weather change needs it
-        return new(gpu, Path.Combine(install.DataDirectory, "particles", "textures"), library ?? ParticleLibrary.Load(install));
+        return new(gpu, GameFiles.Resolve(Path.Combine(install.DataDirectory, "particles", "textures")), library ?? ParticleLibrary.Load(install));
     }
 
     /// <summary>
@@ -626,7 +626,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
 
     Task<RgbaImage?> StartDecode(string name)
     {
-        string path = Path.Combine(texturesDirectory, name);
+        string path = GameFiles.Resolve(Path.Combine(texturesDirectory, name));
         return decoding[name] = BackgroundWork.Run<RgbaImage?>(() =>
         {
             if (!File.Exists(path)) return null;

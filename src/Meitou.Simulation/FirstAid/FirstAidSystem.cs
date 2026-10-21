@@ -50,14 +50,20 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, order.Medics))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
-                            Begin(table, slot, order.Patient, CharacterTask.Idle);
+                        {
+                            if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
+                                world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
+                            else Begin(world, slot, order.Patient, CharacterTask.Idle);
+                        }
                     break;
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, splint.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold)
-                            && FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is not null)   // "I don't have a splint kit."
-                            Begin(table, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
+                        {
+                            if (FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");
+                            else Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                        }
                     break;
                 case RestOrder rest:
                     foreach (var id in Who(world, rest.Characters))
@@ -71,10 +77,16 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                     }
                     break;
                 case MedicJobCommand job:
+                {
+                    var taken = job.Job ? null : Treated(table);
                     foreach (var id in Who(world, job.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { } cold)
-                            cold.MedicJob = job.On ?? !cold.MedicJob;
+                    {
+                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
+                        if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC));
+                        else TreatSomeone(world, slot, taken);
+                    }
                     break;
+                }
             }
         }
     }
@@ -85,9 +97,11 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat;
 
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
-    static void Begin(CharacterTable table, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
+    static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
     {
+        var table = world.Characters;
         var cold = table.Cold(slot)!;
+        if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
         var keep = n.Task == (byte)CharacterTask.Treat ? cold.ResumeTask : resume;
         MovementSystem.Stop(table, slot);
@@ -97,6 +111,23 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
         cold.ResumeTask = keep;
+    }
+
+    /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
+    const int HealingOtherStart = 18, BeingHealedStart = 19, HealingOtherFinished = 20, BeingHealedFinished = 21, KitEmpty = 22;
+
+    /// <summary>
+    /// The treatment's dialogue events (<c>Task_FirstAid</c> start and finish, <c>FUN_14034ecf0</c> / <c>FUN_1403563a0</c>): the medic fires <paramref name="medicEvent"/> at the
+    /// patient and a patient that is awake fires <paramref name="patientEvent"/> back (-1: none); nothing for a medic treating itself. Said from the next tick.
+    /// </summary>
+    static void Say(World world, int medic, CharacterId patient, int medicEvent, int patientEvent = -1)
+    {
+        var table = world.Characters;
+        var id = table.IdOf(medic);
+        if (patient == id || patient.IsNone) return;
+        world.Defer(new Dialogue.DialogueEvent(id, patient, medicEvent) { Tick = world.Tick + 1 });
+        if (patientEvent >= 0 && table.TryResolveNext(patient, out int p) && table.Cold(p)?.Medical is { Incapacitated: false })
+            world.Defer(new Dialogue.DialogueEvent(patient, id, patientEvent) { Tick = world.Tick + 1 });
     }
 
     /// <summary>Ends a treatment (serial phases): back to the task before it, path dropped.</summary>
@@ -218,11 +249,13 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         bool robot = body.BandageRoom(race, false) <= Done;
         if (robot && body.BandageRoom(race, true) <= Done)
         {
+            Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
             End(table, m);   // nothing left to bandage
             return;
         }
         if (FindKit(world, m, medicCold, FunctionOf(robot)) is not { } kit)
         {
+            Say(world, m, medicCold.TreatTarget, KitEmpty);   // Task_FirstAidRig's empty kit (FUN_14034ef20)
             End(table, m);   // no kit of the right kind within reach
             return;
         }
@@ -318,41 +351,65 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         if (Settings.AutoEveryTicks <= 0 || world.Tick % Settings.AutoEveryTicks != 0) return;
         var table = world.Characters;
         var next = table.Next;
-        var taken = new HashSet<int>();
-        for (int i = 0; i < table.HighWater; i++)
-            if (next[i].Alive && next[i].Task == (byte)CharacterTask.Treat && table.TryResolveNext(table.Cold(i)!.TreatTarget, out int busy)) taken.Add(busy);
+        var taken = Treated(table);
         for (int i = 0; i < table.HighWater; i++)
         {
-            if (!next[i].Alive || next[i].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow)) continue;
+            if (!next[i].Alive) continue;
             var cold = table.Cold(i)!;
-            if (cold.Medical is not { Incapacitated: false } || cold.Race is null || cold.Stats is null || cold.Inventory is null || cold.InCombat) continue;
-            if (cold.IsPlayer ? !cold.MedicJob || !Orders.Has(cold, CharacterOrders.Jobs) : !Settings.AutoNpcs) continue;
-            bool organic = Best(cold.Inventory, ItemInfo.FirstAidKitFunction) is not null, robotic = Best(cold.Inventory, ItemInfo.RobotKitFunction) is not null;
-            if (!organic && !robotic) continue;
-            var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
-            if (squad is not null && Fighting(table, squad)) continue;
-            int best = -1;
-            (int Down, float Blood, float Distance) bestKey = default;
-            IEnumerable<CharacterId> candidates = squad is not null ? squad.Members : [table.IdOf(i)];
-            foreach (var id in candidates)
-            {
-                if (!table.TryResolveNext(id, out int s) || taken.Contains(s) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other || other.InCombat) continue;
-                float distance = Gap(next[i], next[s]);
-                if (distance > Settings.AutoReach || (s != i && !med.Incapacitated && Speed2(next[s].Velocity) > Settings.StillSpeed * Settings.StillSpeed)) continue;   // a moving patient cannot be treated (targetStandingStill)
-                if (!(organic && med.NeedsAid(race, false)) && !(robotic && med.NeedsAid(race, true))) continue;
-                float capacity = MathF.Max(MedicalState.BloodCapacity(race, other.Stats?.Strength ?? 50), 1);
-                var key = (med.Incapacitated ? 0 : 1, med.Blood / capacity, distance);
-                if (best < 0 || key.CompareTo(bestKey) < 0)
-                {
-                    best = s;
-                    bestKey = key;
-                }
-            }
-            if (best < 0) continue;
-            taken.Add(best);
-            var resume = next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-            Begin(table, i, new CharacterId(best, next[best].Generation), resume);
+            // The medic job runs whether the Jobs switch is on or off (docs/game/ai-tasks.md "Perma-jobs", FUN_14050c1c0).
+            if (cold.IsPlayer ? !cold.MedicJob : !Settings.AutoNpcs) continue;
+            // Idle: no task, following, wandering, an implicit job or a list job below the medic job (which ranks above them).
+            int medic = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC);
+            bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null || medic >= 0 && cold.JobIndex > medic;
+            if (idle) TreatSomeone(world, i, taken);
         }
+    }
+
+    /// <summary>The patients being treated now (by slot).</summary>
+    static HashSet<int> Treated(CharacterTable table)
+    {
+        var taken = new HashSet<int>();
+        for (int i = 0; i < table.HighWater; i++)
+            if (table.Next[i].Alive && table.Next[i].Task == (byte)CharacterTask.Treat && table.TryResolveNext(table.Cold(i)!.TreatTarget, out int busy)) taken.Add(busy);
+        return taken;
+    }
+
+    /// <summary>
+    /// One look for a patient (the medic job's pass, and the Medic button without Shift once): a medic with a kit and no fight in its squad treats the squad mate (or itself) within
+    /// <see cref="FirstAidSettings.AutoReach"/> that most needs it, downed first, then the least blood; true when it started.
+    /// </summary>
+    bool TreatSomeone(World world, int i, HashSet<int> taken)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var cold = table.Cold(i)!;
+        if (cold.Medical is not { Incapacitated: false } || cold.Race is null || cold.Stats is null || cold.Inventory is null || cold.InCombat) return false;
+        bool organic = Best(cold.Inventory, ItemInfo.FirstAidKitFunction) is not null, robotic = Best(cold.Inventory, ItemInfo.RobotKitFunction) is not null;
+        if (!organic && !robotic) return false;
+        var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
+        if (squad is not null && Fighting(table, squad)) return false;
+        int best = -1;
+        (int Down, float Blood, float Distance) bestKey = default;
+        IEnumerable<CharacterId> candidates = squad is not null ? squad.Members : [table.IdOf(i)];
+        foreach (var id in candidates)
+        {
+            if (!table.TryResolveNext(id, out int s) || taken.Contains(s) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other || other.InCombat) continue;
+            float distance = Gap(next[i], next[s]);
+            if (distance > Settings.AutoReach || (s != i && !med.Incapacitated && Speed2(next[s].Velocity) > Settings.StillSpeed * Settings.StillSpeed)) continue;   // a moving patient cannot be treated (targetStandingStill)
+            if (!(organic && med.NeedsAid(race, false)) && !(robotic && med.NeedsAid(race, true))) continue;
+            float capacity = MathF.Max(MedicalState.BloodCapacity(race, other.Stats?.Strength ?? 50), 1);
+            var key = (med.Incapacitated ? 0 : 1, med.Blood / capacity, distance);
+            if (best < 0 || key.CompareTo(bestKey) < 0)
+            {
+                best = s;
+                bestKey = key;
+            }
+        }
+        if (best < 0) return false;
+        taken.Add(best);
+        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
+        Begin(world, i, new CharacterId(best, next[best].Generation), resume);
+        return true;
     }
 
     /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>

@@ -1,0 +1,134 @@
+# Manual launcher release: Velopack packages of launcher/Meitou.Launcher (one Native AOT executable each), one channel per runtime (win-x64, linux-x64, osx-x64,
+# osx-arm64), each built on its own OS (macOS packages need a Mac), all attached to one launcher-v<version> release; a full one
+# is marked Latest, so /releases/latest (the README's link) is always the newest launcher. The installed launcher updates itself from these (docs/launcher.md, "Self-update").
+name: Launcher release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Launcher version without the v, e.g. 0.1.0"
+        required: true
+      prerelease:
+        description: "Mark as a pre-release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  VPK_VERSION: 1.2.161 # must match the Velopack package in Meitou.Launcher.csproj
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          v="${INPUT_VERSION#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "bad version '$v'"; exit 1; }
+          [ -z "$(git tag -l "launcher-v$v")" ] || { echo "tag launcher-v$v already exists"; exit 1; }
+          # The version's launcher/CHANGELOG.md section (from "## v<version>" to the next "## "): required.
+          awk -v h="## v$v" '$0==h{f=1;next} /^## /{f=0} f' launcher/CHANGELOG.md > "$RUNNER_TEMP/changes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/changes.md" || { echo "launcher/CHANGELOG.md has no non-empty '## v$v' section"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes.md
+
+  package:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - { rid: win-x64, os: windows-latest, exe: meitou-launcher.exe }
+          - { rid: linux-x64, os: ubuntu-22.04, exe: meitou-launcher }
+          - { rid: osx-x64, os: macos-latest, exe: meitou-launcher }
+          - { rid: osx-arm64, os: macos-latest, exe: meitou-launcher }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      # Native AOT links with the platform's toolchain: clang and zlib on Linux (MSVC and Xcode are on the other runners).
+      - name: AOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+          EXE: ${{ matrix.exe }}
+        run: |
+          dotnet tool install -g vpk --version "$VPK_VERSION"
+          dotnet publish launcher/Meitou.Launcher -c Release -r "$RID" --self-contained -p:Version="$VERSION" -o pub
+          icon=()
+          [ "$RID" = win-x64 ] && icon=(--icon assets/branding/meitou.ico)
+          [ "$RID" = linux-x64 ] && icon=(--icon assets/branding/meitou-64.png)
+          vpk pack --packId MeitouLauncher --packVersion "$VERSION" --packTitle "Meitou Launcher" --packDir pub \
+            --mainExe "$EXE" --channel "$RID" --outputDir "out/$RID" "${icon[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.rid }}
+          path: out/${{ matrix.rid }}
+          if-no-files-found: error
+
+  release:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: launcher-*
+          path: out
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: changes
+          path: ${{ runner.temp }}
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          # Every channel's files go on the one release, so their names must not clash.
+          dupes=$(find out -type f -printf '%f\n' | sort | uniq -d)
+          [ -z "$dupes" ] || { echo "files with the same name in two channels: $dupes"; exit 1; }
+          {
+            echo "## Launcher v$VERSION"; echo; cat "$RUNNER_TEMP/changes.md"; echo
+            echo "## Download"; echo
+            echo "- **Windows**: \`MeitouLauncher-win-x64-Setup.exe\` (or the Portable zip)."
+            echo "- **Linux**: the \`linux-x64\` AppImage."
+            echo "- **macOS**: the \`osx-arm64\` (Apple silicon) or \`osx-x64\` (Intel) package; not signed yet, so Gatekeeper warns."
+            echo; echo "Once installed, the launcher updates itself. You need Kenshi installed."
+          } > "$RUNNER_TEMP/notes.md"
+          flags=(--latest)
+          [ "$PRERELEASE" = true ] && flags=(--prerelease --latest=false)
+          previous=$(git tag -l "launcher-v*" --sort=-v:refname | head -n1)
+          [ -n "$previous" ] && flags+=(--generate-notes --notes-start-tag "$previous")
+          gh release create "launcher-v$VERSION" $(find out -type f) --target "$GITHUB_SHA" \
+            --title "Meitou Launcher $VERSION" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"

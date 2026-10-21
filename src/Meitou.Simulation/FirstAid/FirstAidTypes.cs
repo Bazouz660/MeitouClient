@@ -17,10 +17,10 @@ public sealed record SplintOrder(IReadOnlyList<CharacterId> Medics, CharacterId 
 public sealed record RestOrder(IReadOnlyList<CharacterId> Characters) : SimCommand;
 
 /// <summary>
-/// Switches the medic job on or off for the characters (the selection when the list is empty): the original's <c>medic</c> toggle (<c>JOB_MEDIC</c>). While it is on, an idle
-/// character with a kit treats a hurt squad mate by itself. <see cref="On"/> null flips each character's own switch.
+/// The Medic button for the characters (the selection when the list is empty), the original's order 58 <c>JOB_MEDIC</c> (docs/game/ai-tasks.md "Perma-jobs"): with
+/// <see cref="Job"/> (Shift) it is added to their job lists, where an idle character with a kit treats hurt squad mates by itself; else each looks for a patient once.
 /// </summary>
-public sealed record MedicJobCommand(IReadOnlyList<CharacterId> Characters, bool? On = null) : SimCommand;
+public sealed record MedicJobCommand(IReadOnlyList<CharacterId> Characters, bool Job = true) : SimCommand;
 
 /// <summary>The numbers of <see cref="FirstAidSystem"/>; all engine choices (the original's first aid task is only partly decoded, docs/game/character-stats.md "First aid").</summary>
 public sealed class FirstAidSettings

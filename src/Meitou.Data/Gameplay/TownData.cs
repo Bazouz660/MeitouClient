@@ -22,9 +22,24 @@ public sealed record TownData
     public string? Faction { get; init; }
     public bool IsPublic { get; init; }
     public bool IsSecret { get; init; }
+    /// <summary><c>size radius</c>: read by the game only for the nest debris scatter (<c>FUN_140938440</c>), not the town's radius (that is <see cref="Radius"/>).</summary>
     public float SizeRadius { get; init; }
     /// <summary><c>town radius mult</c> after the setup rule: values below 0.1 become 1, then it is capped at 5.</summary>
     public float TownRadiusMult { get; init; } = 1;
+
+    /// <summary>
+    /// The town's radius as the game uses it for a non-player town (<c>Town::vfunc_84</c>, docs/game/buildings-production.md "Towns"): <see cref="TownRadiusMult"/> x 2500 for a
+    /// Town, 937.5 a Village, 875 Ruins, 437.5 a PointOfInterest, 0 a NestMarker or Null, 1250 the rest.
+    /// </summary>
+    public float Radius => TownRadiusMult * Type switch
+    {
+        TownType.Town => 2500,
+        TownType.Village => 937.5f,
+        TownType.Ruins => 875,
+        TownType.PointOfInterest => 437.5f,
+        TownType.NestMarker or TownType.Null => 0,
+        _ => 1250,
+    };
     /// <summary><c>no-foliage range</c> after the setup rule: 0 for a NEST_MARKER.</summary>
     public float NoFoliageRange { get; init; }
     public bool DistantMesh { get; init; }

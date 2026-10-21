@@ -4,7 +4,7 @@ Current choices; implementation details belong in the linked references.
 
 - **Compatibility:** exact formats, merge rules and save keys. Original assets and decompiled
   output never enter the repository. Use researched formulas; do not reproduce scheduling races.
-  [AGENTS.md](AGENTS.md), [ROADMAP.md](ROADMAP.md).
+  [AGENTS.md](AGENTS.md).
 - **Simulation:** headless, deterministic, fixed 1/30 s game-time tick. Ordered effects and
   stateless seeded rolls; agreement across worker counts. [docs/simulation.md](docs/simulation.md).
 - **Ownership:** `WorldSession` owns clocks, input, camera and world; GPU state belongs to Rendering.
@@ -21,7 +21,7 @@ Current choices; implementation details belong in the linked references.
   [docs/engine.md](docs/engine.md), [docs/bench.md](docs/bench.md).
 - **Upscaling:** single-sample jittered HDR scene; shadow maps/reused reflections unjittered.
   FSR/DLSS LOD bias `log2(scale)-1`; TAA `log2(scale)-0.5`. [docs/render-post.md](docs/render-post.md).
-- **Vendors:** Vulkan FidelityFX API DLL from SDK 1.1.4; Streamline 2.14.1 manual hooking for DLSS.
+- **Vendors:** Vulkan FidelityFX API DLL from SDK 1.1.4; Streamline 2.14.16 manual hooking for DLSS.
   Initialize Streamline before Vulkan, apply requested features/extensions and proxy presentation.
   Vendor binaries are not committed. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
   [docs/engine.md](docs/engine.md#rendering-and-upscaling).

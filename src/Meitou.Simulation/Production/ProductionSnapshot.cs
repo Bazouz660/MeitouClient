@@ -1,4 +1,5 @@
 using Meitou.Simulation.Items;
+using Meitou.Data.Gameplay.Construction;
 
 namespace Meitou.Simulation.Production;
 
@@ -12,26 +13,62 @@ public readonly record struct FarmView(float Growth, float Death, int Harvested,
     public IReadOnlyList<float> PlantGrowth { get; init; } = [];
 }
 
+/// <summary>A crafting bench as the host shows it: the queue (the first is being made), the repeat toggle and the finished items waiting in its output.</summary>
+public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Progress, float Hours)> Queue, bool Repeat, IReadOnlyList<InventoryItemView> Done);
+
+/// <summary>Something a bench can craft, with its hours and inputs per item, and whether research and the bench level allow it now.</summary>
+public sealed record CraftOptionView(string Key, string Name, CraftKind Kind, int Level, float Hours, IReadOnlyList<(string Name, float PerItem)> Inputs, bool Unlocked);
+
+/// <summary>A machine's power as the host shows it: a consumer's demand and grant, a generator's output and load, a battery's flow and store (docs/game/buildings-production.md "Power").</summary>
+public enum PowerKind : byte { Consumer, Generator, Battery }
+
+public readonly record struct PowerView(PowerKind Kind, float Demand, float Granted, float Usage, float Charge, float Store, bool Fueled);
+
+/// <summary>What the host tells a machine's sound emitter (docs/audio.md "Point emitters"): the efficiency and whether it is powered, as the exe's <c>FUN_140258c20</c> takes them.</summary>
+public readonly record struct MachineSound(float Efficiency, bool Powered);
+
 /// <summary>A machine of a complete player building after a tick (docs/simulation.md "Production"); <see cref="Site"/> is the building's instance id.</summary>
 public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<MachineSlotView> Inputs, MachineSlotView? Output, InventoryView? Storage, FarmView? Farm, byte Status, int Operators, int MaxOperators)
 {
+    /// <summary>A container of a building's interior, open (<see cref="PlayerState.OpenContainer"/>): <see cref="Site"/> is its fixture id; no research, recipe or power.</summary>
+    public bool IsContainer { get; init; }
+    /// <summary>The open loot (<see cref="PlayerState.OpenLoot"/>), also <see cref="IsContainer"/>: the body whose main grid <see cref="Storage"/> shows (indices into its inventory's items), else none.</summary>
+    public CharacterId Body { get; init; } = CharacterId.None;
+    /// <summary>The window's caption when it is not the record's name (the looted character's).</summary>
+    public string? Title { get; init; }
     /// <summary>The research bench's tech level (0 for other machines).</summary>
     public int TechLevel { get; init; }
     /// <summary>Characters can work it (a well, farm or research bench).</summary>
     public bool Operable { get; init; }
+    /// <summary>A storage (a "Hauling to" job can name it).</summary>
+    public bool IsStorage { get; init; }
+    /// <summary>The crafting bench state (null for other machines).</summary>
+    public CraftView? Craft { get; init; }
+    /// <summary>Its power (null for a building outside the grid).</summary>
+    public PowerView? Power { get; init; }
+    /// <summary>What its sound emitter is told each frame (docs/audio.md "Point emitters").</summary>
+    public MachineSound Sound { get; init; }
 
     internal static MachineSnapshot Of(Machine m, ItemFactory items)
     {
         string Name(string record) => items.Info(record)?.Name ?? record;
-        var inputs = m.Inputs.Select(i => new MachineSlotView(i.Recipe.Item, Name(i.Recipe.Item), i.Count, i.Recipe.Capacity, Math.Clamp(i.Level, 0, 1))).ToArray();
+        var inputs = m.Inputs.Select(i => new MachineSlotView(i.Item, Name(i.Item), i.Count, i.Recipe.Capacity, Math.Clamp(i.Level, 0, 1))).ToArray();
         MachineSlotView? output = m.Output is { } o ? new MachineSlotView(o.Recipe.Item, Name(o.Recipe.Item), o.Count, o.Recipe.Capacity, Math.Clamp(o.Progress, 0, 1)) : null;
         InventoryView? storage = m.Storage is { } s ? new InventoryView(s.Width, s.Height, 0, 0,
             Array.AsReadOnly(s.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
                 { Material = item.MaterialId, Charge = item.ChargeFraction }).ToArray())) : null;
         FarmView? farm = m.Farm is { } f && m.Data.Farm is { } fd
             ? new FarmView(f.Growth, f.Death, f.Harvested, f.Plants.Length, f.Status, m.Yield, m.CropMatch, ProductionSystem.Ripeness(f)) { PlantGrowth = [.. f.Plants] } : null;
-        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable };
+        // The classes that update their emitter every frame tell it the efficiency and the power; the others powered it once, when built, with no operators (efficiency 0).
+        var sound = m.Data.PowersEmitterEachFrame ? new MachineSound(m.Efficiency, m.HasPower && m.Efficiency > 0) : new MachineSound(0, true);
+        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsStorage = m.Data.IsStorage, Craft = Crafting(m, items),
+            Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null };
     }
+
+    static CraftView? Crafting(Machine m, ItemFactory items) => m.Craft is { } c
+        ? new CraftView([.. c.Queue.Select(j => (j.Option.Key, j.Recipe.Name, Math.Clamp(j.Progress, 0, 1), j.Recipe.Hours))], c.Repeat,
+            [.. c.Done.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "out", 0, 0, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId })])
+        : null;
 }
 
 /// <summary>A research the player may queue, with its cost and whether the benches can pay it and the bench level allows it.</summary>
@@ -45,5 +82,7 @@ public readonly record struct ResearchOption(string Id, string Name, string Cate
 /// <summary>The research state as the host shows it (docs/simulation.md "Production", Research).</summary>
 public sealed record ResearchSnapshot(int TechLevel, int BenchLevel, IReadOnlyList<(string Id, string Name, float Progress)> Queue, float Rate, IReadOnlyList<ResearchOption> Available)
 {
+    /// <summary>How many researches have been finished (counting repeats): the host plays the notification when it grows.</summary>
+    public int Finished { get; init; }
     public static ResearchSnapshot Empty { get; } = new(1, 0, [], 0, []);
 }

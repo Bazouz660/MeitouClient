@@ -248,6 +248,7 @@ sealed class WorldOptions
           --upscaler <off|taa|fsr|dlss|metalfx>   temporal upscaling (default taa in Meitou, off in Faithful; FSR and DLSS need the vendor library; MetalFX is the Metal backend's opt-in, else TAA)
           --render-scale <0.25..1|native|ultra-quality|quality|balanced|performance|ultra>   render size per axis (Meitou default 0.83 with an upscaler, else 1)
           --no-fxaa                the game's FXAA off when no upscaler runs (the game's own FXAA setting, default on)
+          --smaa                   SMAA instead of FXAA when no upscaler runs
           --particle-divisor <0|1|2|4>   the weather's alpha and additive particles drawn at 1/n of the render size (0, the default: by sprite size; `--faithful particles` draws them full size)
           --no-heat-haze           no heat haze (the game's HeatHaze setting, default on: strength from the weather's `heat haze`)
           (ambient occlusion, dithering, light shafts, heat haze strength, the tone map, night grading and the rest are the switches above: --meitou / --faithful <id>; their strengths are Tab sliders)
@@ -596,13 +597,19 @@ static class WorldFrame
         public ParticleRenderer? Particles;
         /// <summary>The movement marker the game interface shows after a ground move order (null in the viewer, or without <c>position.mesh</c>).</summary>
         public MoveMarkerRenderer? MoveMarker;
+        /// <summary>The blood decals on the ground (null in the viewer, or with the game's <c>Blood</c> setting off) and the host's decals they draw (docs/game/blood-decals.md).</summary>
+        public TerrainDecalRenderer? Decals;
+        public TerrainDecalStore? DecalStore;
+        /// <summary>luckyren Mode's flying bones and limbs (null until the host makes it) and the pieces it draws this frame (docs/game/luckyren.md).</summary>
+        public DebrisRenderer? Debris;
+        public readonly List<DebrisPiece> DebrisPieces = [];
         /// <summary>The buildings' interior masks the terrain, foliage and map features are cut by (made with the first frame that has objects; docs/render-interior-cut.md).</summary>
         public InteriorMaskRenderer? InteriorMask;
         /// <summary>The navmesh debug view (null in the viewer; drawn while visible).</summary>
         public NavmeshOverlayRenderer? NavmeshOverlay;
-        /// <summary>The hover outline the game draws round the character under the mouse (null in the viewer); <see cref="HoverKey"/> picks the character by its draw-list key (null: none).</summary>
+        /// <summary>The hover outline the game draws round the character under the mouse, and with Alt those near (null in the viewer); <see cref="HoverKeys"/> picks the characters by their draw-list keys, each with its colour (empty: none).</summary>
         public HoverOutlineRenderer? HoverOutline;
-        public long? HoverKey;
+        public IReadOnlyList<(long Key, Vector4 Colour)> HoverKeys = [];
         /// <summary>The Tab panel's weather particles at 0 and its particle density, given to <see cref="Particles"/> every frame (it is made only with the first weather).</summary>
         public bool WeatherParticles = true;
         public float ParticleDensity = 1;
@@ -632,6 +639,8 @@ static class WorldFrame
         public TerrainStreamer? Streamer;
         /// <summary>Where the camera is about to arrive (a character flight's end view's eye; null otherwise): the object and terrain texture streaming load there too.</summary>
         public Vector3? Ahead;
+        /// <summary>Points whose surroundings stay loaded besides the camera's (the player's characters, "Keep textures at characters"): object meshes and textures, terrain biome textures.</summary>
+        public IReadOnlyList<Vector3> Kept = [];
         /// <summary>Keeps the video memory under the budget by clamping the ranges and pausing the streaming (null with <c>MEITOU_VRAM_GUARD=0</c>).</summary>
         public VramGuard? Guard;
         /// <summary>The scene's native host (wave 4), made at the first frame.</summary>
@@ -658,6 +667,8 @@ static class WorldFrame
             Objects?.Dispose();
             Particles?.Dispose();
             MoveMarker?.Dispose();
+            Decals?.Dispose();
+            Debris?.Dispose();
             InteriorMask?.Dispose();
             NavmeshOverlay?.Dispose();
             Water?.Dispose();
@@ -685,9 +696,8 @@ static class WorldFrame
         Console.WriteLine($"gc        {GcName()}, latency mode {System.Runtime.GCSettings.LatencyMode}");
     }
 
-    /// <summary>Which collector runs: Satori (a replaced runtime, docs/engine.md), else the runtime's server or workstation GC.</summary>
-    public static string GcName() =>
-        GC.GetConfigurationVariables().ContainsKey("SatoriGC") ? "satori" : System.Runtime.GCSettings.IsServerGC ? "server" : "workstation";
+    /// <summary>Which collector runs: the runtime's server or workstation GC (docs/engine.md).</summary>
+    public static string GcName() => System.Runtime.GCSettings.IsServerGC ? "server" : "workstation";
 
     /// <summary>
     /// Feeds the particle renderer the weather state's effect list, strength and wind (the renderer is made the first time a weather has effects; a weather
@@ -887,20 +897,23 @@ static class WorldFrame
     /// <summary>Draws a frame: the sky, then the far depth slice (terrain, water), then the near one (terrain, objects, water).</summary>
     // The Tab panel: draw distances and LOD.
     /// <summary>The upscaler sliders' labels (the game keeps command-line upscaler options over the saved ones).</summary>
-    // The anti-aliasing slider's label changed when "0 off" was added (2026-10-09), so a value saved under the old numbering is not misread.
-    public static readonly string[] UpscalerSliders = ["Anti-aliasing: 0 off 1 FXAA 2 TAA 3 FSR 4 DLSS", "Render scale (upscaler)", "Upscaler sharpness"];
+    // The anti-aliasing slider's label changes with its numbering ("0 off" 2026-10-09, SMAA 2026-10-19), so a value saved under an old one is not misread.
+    public static readonly string[] UpscalerSliders = ["Anti-aliasing: 0 off 1 FXAA 2 SMAA 3 TAA 4 FSR 5 DLSS", "Render scale (upscaler)", "Upscaler sharpness"];
 
-    /// <summary>The anti-aliasing slider's value for the options: 0 none, 1 FXAA, 2.. the upscaler kinds (TAA, FSR, DLSS).</summary>
+    /// <summary>The anti-aliasing slider's value for the options: 0 none, 1 FXAA, 2 SMAA, 3.. the upscaler kinds (TAA, FSR, DLSS).</summary>
     public const string FilteringSlider = "Anisotropic filtering (texture filtering)";
     public const string TextureQualitySlider = "Texture quality 0-4 (game)";
     public static readonly string[] ParticleSliders = ["Weather particles: 0 off 1 quarter 2 half 3 auto 4 full", "Particle density x"];
+    // More labels the launcher's settings schema names (they are the meitou.user.json keys too).
+    public const string ObjectDistanceSlider = "Object draw distance", GrassDensitySlider = "Grass density x", WaterReflectionSlider = "Water reflection 0-4 (game)",
+        ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)";
     /// <summary>The weather particles slider's position for the renderer's state: 0 off, 1 quarter, 2 half, 3 by sprite size (auto), 4 full size.</summary>
     public static int WeatherParticlesSlider(bool weatherOn, PostOptions o) =>
         !weatherOn ? 0 : !o.LowResParticles || o.ParticleDivisor == 1 ? 4 : o.ParticleDivisor switch { 4 => 1, 2 => 2, _ => 3 };
-    public static int AntiAliasingSlider(PostOptions o) => o.Upscale.Kind != UpscalerKind.Off ? (int)o.Upscale.Kind + 1 : o.Fxaa ? 1 : 0;
+    public static int AntiAliasingSlider(PostOptions o) => o.Upscale.Kind != UpscalerKind.Off ? (int)o.Upscale.Kind + 2 : o.Smaa ? 2 : o.Fxaa ? 1 : 0;
 
-    /// <summary>The upscaler a value of the anti-aliasing slider picks (<see cref="UpscalerKind.Off"/> for none and FXAA).</summary>
-    public static UpscalerKind AntiAliasingKind(float v) => (int)MathF.Round(v) is var i && i >= 2 ? (UpscalerKind)Math.Min(i - 1, (int)UpscalerKind.Dlss) : UpscalerKind.Off;
+    /// <summary>The upscaler a value of the anti-aliasing slider picks (<see cref="UpscalerKind.Off"/> for none, FXAA and SMAA).</summary>
+    public static UpscalerKind AntiAliasingKind(float v) => (int)MathF.Round(v) is var i && i >= 3 ? (UpscalerKind)Math.Min(i - 2, (int)UpscalerKind.Dlss) : UpscalerKind.Off;
 
     /// <summary>
     /// The Faithful / Meitou switches over the live renderer (the game's Shift+F keys, the viewer's F keys, the Tab checkboxes): they change the
@@ -964,7 +977,7 @@ static class WorldFrame
             sliders.Add(new Slider("Full screen", 0, 1, () => getFullScreen() ? 1 : 0, v => { if (v >= 0.5f != getFullScreen()) setFullScreen(v >= 0.5f); }, Text: v => v >= 0.5f ? "borderless" : "window"));
         if (g.Objects is { } objects)
         {
-            sliders.Add(new Slider("Object draw distance", 1000, 400000, () => objects.ObjectDistance, v => objects.ObjectDistance = v, "0", Logarithmic: true,
+            sliders.Add(new Slider(ObjectDistanceSlider, 1000, 400000, () => objects.ObjectDistance, v => objects.ObjectDistance = v, "0", Logarithmic: true,
                 Faithful: Enhancements.FaithfulObjectDistance, Meitou: Enhancements.MeitouObjectDistance));
             if (objects.HasLandmarks)
                 sliders.Add(new Slider("Landmark distance (Meitou)", 1000, 400000, () => objects.LandmarkDistance, v => objects.LandmarkDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
@@ -986,12 +999,12 @@ static class WorldFrame
             sliders.Add(new Slider("Medium foliage range", 400, 80000, () => foliage.MediumRange, v => foliage.MediumRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
             sliders.Add(new Slider("Small foliage range", 200, 40000, () => foliage.SmallRange, v => foliage.SmallRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
             sliders.Add(new Slider("Grass draw distance x", 0.25f, 80, () => foliage.GrassRangeSetting, v => foliage.GrassRangeSetting = v, "0.00", Logarithmic: true));
-            sliders.Add(new Slider("Grass density x", 0.1f, 2, () => foliage.GrassDensitySetting, v => foliage.GrassDensitySetting = v, "0.00"));
+            sliders.Add(new Slider(GrassDensitySlider, 0.1f, 2, () => foliage.GrassDensitySetting, v => foliage.GrassDensitySetting = v, "0.00"));
         }
         // The game's `water reflection` (0 off .. 4 everything) and `reflection range` (x the haze distance), docs/formats/settings.md.
         if (g.Reflection is { } reflection)
         {
-            sliders.Add(new Slider("Water reflection 0-4 (game)", 0, 4, () => reflection.Level, v => reflection.Level = (int)MathF.Round(v), "0",
+            sliders.Add(new Slider(WaterReflectionSlider, 0, 4, () => reflection.Level, v => reflection.Level = (int)MathF.Round(v), "0",
                 Text: v => (int)MathF.Round(v) switch { 0 => "0 off", 1 => "1 landscape", 2 => "2 characters", 3 => "3 buildings", _ => "4 everything" }));   // the label is the user config key: keep it
             sliders.Add(new Slider("Reflection range x (game 0.6)", 0.1f, 50, () => reflection.Range, v => reflection.Range = v, "0.00", Logarithmic: true));
         }
@@ -1012,13 +1025,13 @@ static class WorldFrame
         if (g.Shadow is { } shadow)
         {
             const float off = KenshiShadows.MinRange * 0.9f;
-            sliders.Add(new Slider("Shadow distance (game 1k-9k, 0 off)", off, 200000, () => shadow.Enabled ? shadow.Settings.Range : off, v =>
+            sliders.Add(new Slider(ShadowDistanceSlider, off, 200000, () => shadow.Enabled ? shadow.Settings.Range : off, v =>
             {
                 shadow.Enabled = v >= KenshiShadows.MinRange;
                 if (shadow.Enabled) shadow.Settings = shadow.Settings with { Range = MathF.Round(v / 100) * 100 };
             }, "0", Logarithmic: true, Text: v => shadow.Enabled ? v.ToString("0", CultureInfo.InvariantCulture) : "0 (off)", Faithful: 5000, Meitou: Enhancements.MeitouShadowRange));
             // The game's `shadow quality` (--shadow-quality): the atlas is made again at the new side on the next frame.
-            sliders.Add(new Slider("Shadow map size (game quality 0-2)", 0, 2, () => Array.IndexOf(KenshiShadows.QualitySizes, shadow.Settings.MapSize),
+            sliders.Add(new Slider(ShadowMapSlider, 0, 2, () => Array.IndexOf(KenshiShadows.QualitySizes, shadow.Settings.MapSize),
                 v => shadow.Settings = shadow.Settings with { MapSize = KenshiShadows.MapSize((int)MathF.Round(v)) }, "0",
                 Text: v => KenshiShadows.MapSize((int)MathF.Round(v)).ToString(CultureInfo.InvariantCulture) + "²"));
             if (shadow.Meitou) sliders.Add(new Slider("Shadow filter 0-2 (Meitou; 0 low-end)", 0, 2, () => shadow.FilterQuality, v => shadow.FilterQuality = (int)MathF.Round(v), "0"));
@@ -1028,14 +1041,18 @@ static class WorldFrame
         sliders.Add(new Slider("Haze strength (1 = game)", 0, 3, () => g.Sky.HazeStrength, v => g.Sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
         // Ours (docs/formats/sky.md "Planetshine"): the planet's light at night, a multiple of the physical value.
         sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => g.Sky.PlanetshineStrength, v => g.Sky.PlanetshineStrength = MathF.Round(v), "0"));
+        // Ours: the sky's ambient light (shade, nights, interiors), a multiple of the game's.
+        sliders.Add(new Slider("Ambient light strength (1 = game)", 0, 3, () => g.Sky.AmbientStrength, v => g.Sky.AmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
         if (g.Post is { } post)
         {
             // Upscaling (docs/engine.md "Upscaling"): FSR and DLSS fall back to TAA where their library or backend is missing.
             var up = post.Options.Upscale;
-            sliders.Add(new Slider(UpscalerSliders[0], 0, 4, () => AntiAliasingSlider(post.Options), v =>
+            sliders.Add(new Slider(UpscalerSliders[0], 0, 5, () => AntiAliasingSlider(post.Options), v =>
             {
                 up.Kind = AntiAliasingKind(v);
-                post.Options.Fxaa = MathF.Round(v) >= 1;   // 0: no anti-aliasing at all (FXAA off, no upscaler)
+                int i = (int)MathF.Round(v);
+                post.Options.Smaa = i == 2;
+                post.Options.Fxaa = i >= 1 && i != 2;   // 0: no anti-aliasing at all (FXAA off, no upscaler); FXAA stays the fallback of the upscalers
                 if (up.Kind != UpscalerKind.Off) up.Preferred = up.Kind;   // what the Meitou anti-aliasing switch turns back on
             }, "0"));
             sliders.Add(new Slider(UpscalerSliders[1], 0.33f, 1, () => up.EffectiveScale, v => up.Scale = MathF.Round(v * 100) / 100, "0.00",
@@ -1163,8 +1180,9 @@ static class WorldFrame
         var jitter = gpu.Post?.JitterPixels ?? Vector2.Zero;
         var eye = camera.Eye;
         gpu.Guard?.Tick();
-        if (gpu.Streamer is { } aheadTerrain) aheadTerrain.Ahead = gpu.Ahead;
-        if (gpu.Objects is { } aheadObjects) aheadObjects.Ahead = gpu.Ahead;
+        var kept = ObjectStreamer.MergeKept(gpu.Kept, eye);
+        if (gpu.Streamer is { } aheadTerrain) (aheadTerrain.Ahead, aheadTerrain.Kept) = (gpu.Ahead, kept);
+        if (gpu.Objects is { } aheadObjects) (aheadObjects.Ahead, aheadObjects.Kept) = (gpu.Ahead, kept);
         if (gpu.Foliage is { } aheadFoliage) aheadFoliage.Ahead = gpu.Ahead;
         gpu.Streamer?.Update(eye);
         StageClock.Lap(0);
@@ -1178,8 +1196,9 @@ static class WorldFrame
         StageClock.Lap(2);
         gpu.Characters?.Update(eye);
         gpu.Characters?.DrawPortraits();   // the squad portraits, from this update's poses
-        gpu.Characters?.DrawHoverMask(gpu.HoverOutline is null ? null : gpu.HoverKey, width, height, camera.View, camera.FieldOfView, eye);   // before the colour pass, whose statistics stand
+        gpu.Characters?.DrawHoverMasks(gpu.HoverOutline is null ? [] : gpu.HoverKeys, width, height, camera.View, camera.FieldOfView, eye);   // before the colour pass, whose statistics stand
         gpu.Characters?.DrawIcons();   // the item icons being made, from the same update
+        gpu.Objects?.DrawBuildingIcons();   // the build window's pictures being made
         StageClock.Lap(StageClock.UpdChars);
         float floor = gpu.Terrain.HeightAt(eye.X, eye.Z);
         if (render.Water) floor = Math.Max(floor, WorldWater.Height);
@@ -1239,7 +1258,12 @@ static class WorldFrame
         gpu.Shadow?.SetFogHide(gpu.FogVolumes?.ShadowHideDistance, gpu.FogVolumes?.ShadowHidePending == true);   // or where the placed fog block the eye is in hides the whole view
         if (gpu.Shadow is not null) { gpu.Shadow.Temporal = gpu.Post?.Temporal == true; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
         StageClock.Lap(12);
-        gpu.Lamps?.Update(eye, gpu.Objects);
+        if (gpu.Lamps is { } lamps)
+        {
+            lamps.Moving.Clear();
+            gpu.Characters?.CollectLamps(lamps.Moving);   // the lanterns characters carry, where this update posed them
+        }
+        gpu.Lamps?.Update(eye, gpu.Objects, WorldLights.DaylightFactor(hour, scene.Clock.Sunrise, scene.Clock.Sunset));
         // The traced scene of the global illumination: its acceleration structures for this eye (docs/render-gi.md).
         if (gpu.Probes is { } probesActive) probesActive.Active = gpu.GiActive;
         if (gpu.Gi is { } gi && gpu.GiActive)
@@ -1250,6 +1274,9 @@ static class WorldFrame
             gpu.Probes?.Update(gi, eye, heights, gpu.Lamps, gpu.FogVolumes, gpu.Objects?.GiInteriorFocus(camera.Target));
             StageClock.Sub("gi blend");
         }
+        // The blood on the ground near the eye (docs/game/blood-decals.md), before any terrain draw reads it.
+        if (gpu.Decals is { } decals && gpu.DecalStore is { } decalStore) decals.Record(decalStore, eye);
+        gpu.Terrain.Decals = gpu.DecalStore is null ? null : gpu.Decals;
         StageClock.Lap(14);
         // Water reflection: the mirrored scene into its own framebuffer (restores the bound one), before the main pass.
         bool reflecting = render.Water && render.Reflections && gpu.Water is not null && gpu.Reflection is { Level: > 0 };   // level 0: no pass, the water shows the sky colour
@@ -1363,6 +1390,7 @@ static class WorldFrame
             StageClock.Lap(8);
             host.Stage(6);
             gpu.Terrain.DrawDeferred();   // the terrain colour where nothing nearer covers it (the depth is in from the draw above)
+            if (nearSlice && gpu.Debris is { } debris) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light);
             StageClock.Lap(6);
             // Characters after the opaque geometry: they alone write the scene's alpha (SSAO's character mask), so nothing drawn later may cover them but water.
             if (gpu.Characters is { } fogCharacters) { fogCharacters.FogCull = fogCull; fogCharacters.InteriorObjects = gpu.Objects; }
@@ -1444,7 +1472,7 @@ static class WorldFrame
             navOverlay.Record(navPicture, width, height, navPost.SceneDepth, navPost.RenderWidth, navPost.RenderHeight, view * camera.Projection(aspect, navNear, navFar), eye);
         }
         // The hover outline over the finished picture too (Meitou only): the mask drawn after the portraits, sorted against the near slice.
-        if (gpu.HoverOutline is { } outline && gpu.HoverKey is not null && gpu.Characters?.HoverMask is { } hover && gpu.Post is { Target: { } hoverPicture } hoverPost)
+        if (gpu.HoverOutline is { } outline && gpu.Characters?.HoverMasks is { Count: > 0 } hover && gpu.Post is { Target: { } hoverPicture } hoverPost)
         {
             var (hoverNear, hoverFar) = camera.Slices().Last();
             outline.Record(hoverPicture, width, height, hover, hoverPost.SceneDepth, hoverPost.RenderWidth, hoverPost.RenderHeight, hoverNear, hoverFar, view * camera.Projection(aspect, hoverNear, hoverFar));

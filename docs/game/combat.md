@@ -62,11 +62,13 @@ ends leaves 0.2 s.
 
 ## Combat stance
 
-**Observed** (static reading; the animation's combat flag is `AnimationClass +0x244`, the value a clip's `is combat mode` is compared with, [animation](../animation.md#choosing-candidates--14051d660)). One setter, `FUN_14051cc30`, writes it. Set on: every tick of the fight's attack update (`CombatClass::vfunc_11`), and by the combat footwork (`FUN_1402ae1b0`, from a movement flag, not from the target). Cleared by: any new movement goal (`CharMovement::vfunc_18`), the end of the fight task (`CombatClass::vfunc_2`, mode 2), and the chase branch of `CombatClassAI::vfunc_9` (fight states 10 and 11, which also put the movement back to its plain mode 0; every other state sets movement mode 1). When a movement stops (`CharMovement::vfunc_19`) the flag is set to whether the fight task is active (`FUN_140436610`, `CombatClass +0x130`, set at task start). So the stance follows the fight's own steering and is off while the character walks a path to a goal, including a chase of its target along a path (state 10, chosen by `FUN_14060c8b0` when `+0x58` is set from a navmesh query between the two, `FUN_1403a56e0`; what the query's result means is not decoded).
+**Observed** (static reading; the animation's combat flag is `AnimationClass +0x244`, the value a clip's `is combat mode` is compared with, [animation](../animation.md#choosing-candidates--14051d660)). One setter, `FUN_14051cc30`, writes it. Set on: every tick of the fight's attack update (`CombatClass::vfunc_11`), and by the combat footwork (`FUN_1402ae1b0`, from a movement flag, not from the target). Cleared by: any new movement goal (`CharMovement::vfunc_18`), the end of the fight task (`CombatClass::vfunc_2`, mode 2), and the chase branch of `CombatClassAI::vfunc_9` (fight states 10 and 11, which also put the movement back to its plain mode 0; every other state sets movement mode 1). When a movement stops (`CharMovement::vfunc_19`) the flag is set to whether the fight task is active (`FUN_140436610`, `CombatClass +0x130`, set at task start). So the stance follows the fight's own steering and is off while the character walks a path to a goal, including a chase of its target along a path (states 10/11). `CombatClassAI::vfunc_9` sets `+0x58` each tick when the navmesh line query between the two (`FUN_1403a56e0`, 1 clear, 0 blocked, −1 failed) returns 0; that, or the two being in different places (a vtable `0x60` id of each differs), or the 2 s chase timer `+0x14c` still running, picks the chase; otherwise the AI picks its target and approach (`FUN_14060c8b0`, state 3) and steers with mode 1.
+
+**Observed** (static reading, the fight steering `FUN_1402af1e0`; its constants are literals in the decompile): the footwork flag `FUN_1402ae1b0` reads is a "running" flag. With gap = distance − (own radius + target's radius), it is set when gap > 90 (> 160 in a steering mode 6, not decoded) and cleared when gap < 70; then forced on while the target is fleeing (`FUN_1402ae0e0`: target's movement in plain mode 0, speed > 9, for 1.5 s on end; the chaser then aims at a lead point). The anim combat flag is `!running`. Speed: up to `min(cap, own max speed)` (the AI's cap is 200, so the max speed), ramping 15 units/s per second; not running it is capped at 18 (16 backing off). So a fighter runs normally from afar and drops into the shuffle within 70 units of its target, distance-driven, whether or not it walks a path.
 
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
-**Unknown**: how far from its target a fighter is in its footwork rather than on the chase path; what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and the stance is off until the pair is within `CombatTuning.StanceRange` ([simulation](../simulation.md#animation)).
+**Unknown**: the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
 ## Armour and medical hit
 
@@ -84,6 +86,10 @@ state and consume ammo charges; do not model hitscan. Turret objects and mounted
 branches differ from carried crossbows. Player/NPC targeting and friendly-fire training have
 separate eligibility. The retained field/constant tables and expression list specify decoded
 values; trajectory, aim timing and obstruction uncertainties remain labelled.
+
+Turret aim (**Verified**, `TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`): the turning parts are the BUILDING_PART records with `rotation function` 5; each turns toward the aim point by its angular error
+(yaw about Y, or pitch) limited to ±GUN_DATA `aim speed` × efficiency × frame time, one after the other down the part chain. Movement and its sound counter: [audio.md](../audio.md#other-world-side-events).
+**Unknown:** which target a manned turret picks (`FUN_140437f40`), its idle behaviour, and the wall bonus to the turning speed. Meitou turns turrets only for sound (display only, nearest hostile in `range`; no firing or damage model).
 
 ## Stealth knock-out
 
@@ -196,7 +202,7 @@ below is what the engine uses.
 
 The ranged-or-melee switch; what sets the trigger flag (the time between the decision and the shot); the reload animation against the timer; a character's hit shape
 (capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; turret
-aiming and states; how NPC crossbowmen get their bolts.
+target choice and states; how NPC crossbowmen get their bolts.
 
 ## Unknowns
 
@@ -204,7 +210,7 @@ aiming and states; how NPC crossbowmen get their bolts.
 - Attacker-side technique choice (which technique an attacker starts, using min/max skill, encumbrance, distance); whether `140887970` tests min/max skill. Attack-slot AI (`14060a9e0` and neighbours), aggression,
   stance and target selection. The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
-- Turrets (aiming and states; see [Ranged and turrets](#ranged-and-turrets) for what is known and its own unknowns); the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
+- Turrets (target choice and states; see [Ranged and turrets](#ranged-and-turrets) for what is known and its own unknowns); the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
 - Whether the +20 guarding state of the block chance is the state the HUD's Block stance sets ([ui-screens.md](ui-screens.md#4-hud-mainbargui)).
 - What `anim hesitate point` (stored as a frame fraction, no reader found) and `max encumbrance` do; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.

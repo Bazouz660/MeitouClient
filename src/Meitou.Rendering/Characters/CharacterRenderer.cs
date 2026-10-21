@@ -163,6 +163,19 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
 
     // ------------------------------------------------------------------ per frame
 
+    /// <summary>Adds the carried lights of this update's posed characters to <paramref name="into"/>, at their world positions (after <see cref="Update"/>).</summary>
+    public void CollectLamps(List<Meitou.Data.World.WorldLight> into)
+    {
+        for (int i = 0; i < liveCount; i++)
+        {
+            ref var l = ref live[i];
+            if (l.PortraitOnly || l.Asset.IsIcon || l.Asset.Lamps.Count == 0) continue;
+            foreach (var lamp in l.Asset.Lamps)
+                if (lamp.AttachIndex < l.State.Attach.Length)
+                    into.Add(lamp.Light with { Position = (l.State.Attach[lamp.AttachIndex] * l.World).Translation });
+        }
+    }
+
     /// <summary>
     /// The frame's characters: the list from <see cref="Source"/>, assets built for new appearances (at most <see cref="LoadBudget"/>), every
     /// character within <see cref="DrawDistance"/> of <paramref name="eye"/> posed in parallel into the frame's bone palettes, the textures'
@@ -277,6 +290,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                     scratch.Pose(asset.Shape, layerArray.AsSpan(l.LayerStart, l.LayerCount), state.Bones, l.Bones);
                     foreach (var part in asset.Parts)
                         if (part.AttachIndex >= 0) state.Attach[part.AttachIndex] = part.Offset * scratch.BoneTransform(part.Bone);
+                    foreach (var lamp in asset.Lamps) state.Attach[lamp.AttachIndex] = lamp.Offset * scratch.BoneTransform(lamp.Bone);
                     rig.Return(scratch);
                     if (state.Posed < 0) { state.Bones.CopyTo(state.Previous, 0); state.Attach.CopyTo(state.PreviousAttach, 0); }
                     state.Posed = stamp;

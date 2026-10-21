@@ -418,8 +418,8 @@ sealed partial class GameHost
                 var (atlas, sampled) = characters.PortraitAtlas;
                 hud.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled);
                 hud.SetItemIcons(ItemIconsOfInstall());
-                hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material)
-                    && characters.TryGetIcon(new IconKey(record, material), out var icon) ? icon : null);
+                hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material, out string colour)
+                    && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null);
             }
             hud.ConfigureFrontend(scene.Database,
                 () => SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,

@@ -70,8 +70,10 @@ Inventory/stat interactions and current gaps are tracked in parity ledger.
 The painter collects vertices into one upload/rendering and merges adjacent batches with matching
 texture, sampling mode and scissor, retaining painter order. A scissor becomes the full viewport only
 when all batch vertices lie inside it. Full GPU barriers/shared state occur at pass boundaries.
-Font paths are cached; immutable text geometry is keyed by caption/position/scale/colour and capped
-per font at 512 entries/1 MiB. Shape vertices are written in blocks. Opaque union area is reused
+Font paths are cached; text geometry is keyed by caption/position/scale/colour and capped
+per font at 512 entries/1 MiB, and dropped when the font's glyph atlas grows or restarts (its
+generation). Fonts are FreeType glyph caches ([fonts](formats/mygui.md)); a text batch records
+its atlas texture per run, so an atlas replaced mid-batch still draws correctly. Shape vertices are written in blocks. Opaque union area is reused
 until its rectangle sequence changes. Standalone debug-overlay flushes still own their pass.
 Inventory drags draw the cell's icon/count at its footprint size and original grab point,
 above windows without intercepting drops; the source hides until release/cancellation.

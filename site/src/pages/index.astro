@@ -6,61 +6,6 @@ import GithubIcon from '../components/GithubIcon.astro';
 // The performance video: 30 fps WebM, no audio.
 const performanceVideo = '/fast-loading.webm';
 
-// Roadmap to 1.0.0 (feature parity with the base game), from ROADMAP.md, docs/simulation.md and CHANGELOG.md (to v0.14.0).
-// done: works in the game today. Partly finished areas are split into a done row and a missing row.
-const roadmap = [
-  { area: 'Data and mods', items: [
-    { name: 'Original game data, FCS mods and load order', done: true },
-    { name: 'Original saves load', done: true },
-    { name: 'Exact Steam Workshop subscription selection', done: false },
-    { name: 'Runtime code-module loading', done: false },
-  ] },
-  { area: 'World and rendering', items: [
-    { name: 'Streamed terrain, objects and foliage', done: true },
-    { name: 'Water, sky, weather and clouds', done: true },
-    { name: 'Lights and shadows', done: true },
-    { name: 'Building interiors: terrain, grass and rocks cut away inside', done: true },
-    { name: 'Characters and animals: meshes, animation, drawn weapons', done: true },
-    { name: 'Remaining body, attachment and material parity', done: false },
-  ] },
-  { area: 'Characters and combat', items: [
-    { name: 'Movement and pathfinding on a navmesh', done: true },
-    { name: 'Doors that open, close and lock', done: true },
-    { name: 'Melee and ranged combat, body parts, medical state', done: true },
-    { name: 'First aid, resting, carrying, rescue and looting', done: true },
-    { name: 'Crimes, bounties, arrests, cages, locks and shackles', done: true },
-    { name: 'Ragdolls', done: true },
-    { name: 'Swimming, severed limbs and prosthetics', done: true },
-    { name: 'Global pathing', done: false },
-    { name: 'Thrown bodies, physics props and character collision', done: false },
-  ] },
-  { area: 'World simulation', items: [
-    { name: 'NPC population, AI tasks, senses and fleeing, wild animals', done: true },
-    { name: 'Town and nest populations, off-screen roaming squads and roads', done: true },
-    { name: 'Wars and campaigns, kidnapping, prisoners and slavery', done: true },
-    { name: 'Dialogue, recruiting and speech bubbles', done: true },
-    { name: 'Saves restore NPC squads, towns, nests and weather', done: true },
-    { name: 'Full AI planner', done: false },
-    { name: 'Full off-screen town simulation', done: false },
-    { name: 'Remaining dialogue events, AI talk and contracts', done: false },
-    { name: 'Full world-state restore from saves', done: false },
-  ] },
-  { area: 'Economy and bases', items: [
-    { name: 'Inventories, trade and town shops stocked from building storage', done: true },
-    { name: 'Building placement and construction', done: true },
-    { name: 'Production, farming and research', done: false },
-  ] },
-  { area: 'Interface and audio', items: [
-    { name: 'Menus, HUD, inventory and map panels', done: true },
-    { name: 'Trader window, character editor, portraits and name tags as in vanilla', done: true },
-    { name: 'Audio: ambience, music, voices, combat and interface sounds', done: true },
-    { name: 'Remaining sound triggers: doors, machines and effects', done: false },
-    { name: 'Full control, font and mod UI fidelity', done: false },
-  ] },
-];
-const roadmapItems = roadmap.flatMap((g) => g.items);
-const roadmapDone = roadmapItems.filter((i) => i.done).length;
-
 // Before/after pairs for the comparison slider: Faithful on the left, Meitou on the right.
 const pairs = [
   { name: 'Lighting', before: '/compare/lighting-before.webp', after: '/compare/lighting-after.webp' },
@@ -173,34 +118,6 @@ const pairs = [
     </div>
   </section>
 
-  <section id="roadmap">
-    <div class="road">
-      <h2>Roadmap to 1.0.0</h2>
-      <p>1.0.0 means feature parity with the base game. {roadmapDone} of {roadmapItems.length} items work today.</p>
-      <div class="road-bar" role="img" aria-label={`${roadmapDone} of ${roadmapItems.length} roadmap items done`}>
-        <span style={`width: ${(100 * roadmapDone) / roadmapItems.length}%`}></span>
-      </div>
-      <table class="road-table">
-        {roadmap.map((g) => (
-          <tbody>
-            {g.items.map((item, i) => (
-              <tr>
-                {i === 0 && <th scope="rowgroup" rowspan={g.items.length}>{g.area}</th>}
-                <td>{item.name}</td>
-                <td class="road-state">
-                  <span class={item.done ? 'is-done' : 'is-todo'} role="img" aria-label={item.done ? 'Done' : 'Not yet'}>
-                    {item.done
-                      ? <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                      : <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 6l12 12M18 6L6 18" /></svg>}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        ))}
-      </table>
-    </div>
-  </section>
 </Base>
 
 <script>
@@ -240,22 +157,6 @@ const pairs = [
   .perf p { margin: 0; font-size: 18px; line-height: 27px; }
   .perf-video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: calc(2 * var(--radius-card)); background: #000; }
   @media (max-width: 800px) { .perf { grid-template-columns: 1fr; } }
-  /* Roadmap: a table grouped by area, a green check for what works and a red cross for what is missing. */
-  #roadmap { background: #151010; }
-  .road { max-width: 1280px; margin: 0 auto; padding: 64px 0; }
-  .road h2 { margin: 0 0 var(--space-5); color: #fff; font: 600 32px/40px var(--font-exo); }
-  .road > p { margin: 0 0 var(--space-6); font-size: 18px; line-height: 27px; }
-  .road-bar { height: 8px; margin-bottom: var(--space-7); overflow: hidden; border-radius: 4px; background: rgba(8, 6, 5, .6); box-shadow: var(--plate-border); }
-  .road-bar span { display: block; height: 100%; border-radius: 4px; background: var(--good); }
-  .road-table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: calc(2 * var(--radius-card)); background: rgba(8, 6, 5, .45); box-shadow: var(--plate-border); }
-  .road-table tbody + tbody { border-top: 1px solid rgba(175, 166, 139, .3); }
-  .road-table tr + tr td { border-top: 1px solid var(--plate-rim); }
-  .road-table th { width: 220px; padding: var(--space-5) var(--space-7); vertical-align: top; text-align: left; color: #fff; font: 600 16px/24px var(--font-exo); }
-  .road-table td { padding: var(--space-4) var(--space-6); font-size: 16px; line-height: 24px; }
-  .road-state { width: 64px; text-align: center; }
-  .road-state span { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; vertical-align: middle; }
-  .road-state .is-done { background: rgba(168, 183, 116, .18); color: var(--good); box-shadow: inset 0 0 0 1px rgba(168, 183, 116, .5); }
-  .road-state .is-todo { background: rgba(191, 72, 52, .18); color: var(--bad-bright); box-shadow: inset 0 0 0 1px rgba(191, 72, 52, .5); }
   /* About: as tall as its content, the text centred. */
   /* About: a centred column. The lead and the belief are set larger, the modes are two cards (Meitou lit in brass), the
      dividers carry a brass diamond, and the links are plate buttons. */
@@ -324,9 +225,7 @@ const pairs = [
     .lede { color: var(--paper-light); }
     .actions .mt-btn { min-height: 44px; }
     .actions .mt-btn-primary { min-height: 52px; }
-    .perf h2, .cmp-head h2, .ai h2, .road h2 { font-size: 28px; line-height: 36px; }
     .perf, .ai { padding: 40px 0; }
-    .perf p, .cmp-head p, .ai p, .road > p { font-size: 17px; line-height: 25px; }
     .about { padding: 56px 0 64px; }
     .about .lead { font-size: 19px; line-height: 30px; }
     .about .switches { flex-direction: column; text-align: center; }
@@ -339,12 +238,5 @@ const pairs = [
     .cmp-tabs { align-self: stretch; display: flex; margin: 0 0 var(--space-6); }
     .cmp-tabs .mt-tab { flex: 1 1 auto; justify-content: center; min-height: 40px; padding: 0 var(--space-4); }
     .cmp-stage { min-height: 360px; border-radius: calc(2 * var(--radius-card)); }
-    /* Roadmap: each area is a heading line, its items full width below it. */
-    .road { padding: 48px 0; }
-    .road-table, .road-table tbody { display: block; }
-    .road-table tr { display: flex; flex-wrap: wrap; align-items: center; }
-    .road-table th { display: block; flex: 0 0 100%; width: auto; padding: var(--space-5) var(--space-6) var(--space-2); color: var(--brass-light); font-size: 13px; line-height: 18px; letter-spacing: .08em; text-transform: uppercase; }
-    .road-table td { flex: 1 1 0; min-width: 0; padding: var(--space-4) var(--space-6); font-size: 15px; line-height: 22px; }
-    .road-table td.road-state { flex: 0 0 56px; padding: var(--space-4) var(--space-3); }
   }
 </style>

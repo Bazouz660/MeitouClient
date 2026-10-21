@@ -263,12 +263,15 @@ research `14213358c`) default **Unknown**; 1 below.
 **Per operator and frame** (**Observed**, `ProductionBuilding::vfunc_150` `FUN_140298700`, called by
 `Task_OperateMachine` `FUN_14035bc90` with the operator's skill factor s):
 `amount = yield x outputRate x upgrade x dt x P x health x powerSat x s x option`. Several operators add up.
+Nothing else calls slot 150 (**Observed**: the only decompiled caller of vtable +0x4b0 that also tests the building), and neither it
+nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner: any building, the player's, an NPC town's or a rock, makes output
+only while someone operates it.
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
   helper `FUN_140015b63` is `a + (b - a) t`).
 - outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
   `FUN_14029e7b0`). So a building makes `output rate x production mult x P/2 x s` cycles per game day.
 - yield (slot 120 via offset `0x46c`): 1 without `world resource mining`; else the resource at the position
-  ([resources](#resources)), 0 replaced by 0.5 for a non-natural site, at least 0.1 for a natural one.
+  ([resources](#resources)), at least 0.1 for a natural site; 0 becomes 0.5 for a building not the player's.
 - health x powerSat (slot 109): health `min(1, hp/max)`; powerSat the granted share of the demand, 1 with no demand.
 - upgrade = the research `production mult` of the building ([research](#research)), default 1.
 
@@ -280,8 +283,9 @@ clamps amount to what the inputs hold and to `capacity - held - progress`; nothi
 Else status 2, inputs drawn, progress += amount; each time progress >= 0.999 one output item is added and progress is 0
 (`vfunc_184` `FUN_1402984b0`). Example: well (Water 10, production mult 48, `output rate` 0.75) at s 1: 36 water/day,
 holding at most 10. Save (`vfunc_17`/`18` `FUN_1402a1fa0` / `FUN_1402a23a0`, **Observed**): floats `production amount`
-(output progress), `resource mult` (yield), `mining resource level` (natural sites only), `consumption amount-<k>`
-(input levels); the items are in the building's INVENTORY_STATE.
+(output progress), `resource mult` (yield), `mining resource level` (the yield again, written only for a building that is
+not a natural site, has a functionality and passes the owner test of [resources](#resources); 0 occurrences in two saves),
+`consumption amount-<k>` (input levels); the items are in the building's INVENTORY_STATE.
 
 | function | examples (production mult) |
 |---|---|
@@ -294,17 +298,75 @@ holding at most 10. Save (`vfunc_17`/`18` `FUN_1402a1fa0` / `FUN_1402a23a0`, **O
 | 23 BATTERY | battery 0.00125 |
 | 26 RAIN_COLLECTOR | 48 |
 
-**Crafting** (**Observed**, `FUN_1402b5a40`): the same factors / the recipe duration (`craft time hrs` / P); quality roll
-`FUN_1402b5900` (**Unknown**).
-
 ### Resources
 
-(**Observed**, `FUN_140a13540`, `FUN_140a12ff0`.) The BIOME_GROUP at the position (areas map) names an
-ENVIRONMENT_RESOURCES record (`resources`). WATER and GROUND use the prefix `water` / `farming`: band = 1 between
-`<p> altitude min` and `max` (height y), ramping to 0 over `<p> altitude fade` below the min and above the max, else 0;
-value = band x `<p> mult` + `<p> min`. STONE uses a noise field (`stone noise zoom`, `cutoff`); IRON/COPPER/CARBON need a
-resource node within 1500 (falloff from the node radius, at least 25). The farm efficiency also reads the record's
-`arid`, `green`, `swamp` coverages (crop types 2, 1, 3).
+(**Observed**, `uses_world_resource_mining` `FUN_14029c670`, `uses_resources` `FUN_140a13540`,
+`FUN_140a12ff0`.) The BIOME_GROUP at the position (areas map) names an ENVIRONMENT_RESOURCES record (`resources`);
+field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, `farming`.
+- WATER and GROUND: band = 1 between `<p> altitude min` and `max` (height y), ramping to 0 over `<p> altitude fade`
+  below the min and above the max, else 0; value = band x `<p> mult` + `<p> min`.
+- STONE: the coverage noise of [foliage](../formats/foliage.md) (`Foliage_NoiseHashC`, five octaves) at scale `stone noise
+  zoom` x 1000, cutoff `stone noise cutoff`, boost 3 and cap 1 (**Verified** bytes `141f12ce0`/`ce4`), x `stone mult`.
+- IRON, COPPER, CARBON: the nearest rock of that resource within 1500 (3D, squared 2.25e6): its yield x (1 - f),
+  f = clamp((d² - r²) / (1500² - r²)), r = the rock's mean horizontal half-size, at least 25 (Meitou always 25: the term
+  moves the result under 0.5% for rocks up to 100). No `resources` record or no rock: 0.
+- Rocks are BUILDINGs with `is foliage` placed by the foliage system as a FOLIAGE_MESH's `building type` ("Iron
+  Resource", "Copper Resource", "Stone Resource"; functionality 1 with the resource, not 27). Level data also places
+  `is foliage` buildings (1241 "Iron Resource" entries in the merged building lists, **Observed**). A rock is a natural site
+  (Building `+0xc0`): its yield is `FUN_140a12ff0` where it stands, at least 0.1 (`FarmBuilding::vfunc_92` returns it):
+  WATER/GROUND as above, STONE the stone noise x `stone mult`, else the resources record's `<p> mult` (0 when missing).
+- **Rocks are mined like mines** (**Verified** data, gamedata.base): the rock BUILDINGs reference the player mines'
+  functionalities (Iron Resource → `Ore mine`: Raw Iron, output 5, `production mult` 64; Copper Resource → `copper mine`:
+  Copper, output 5, 72; both `stat used` 3, `stonemine`, special tool Pickaxe, `output per day`) with their own `output rate`
+  (1.2, 1) and `max operators` (3, 2). So hand mining is `Task_OperateMachine` on the rock (**Observed**); the ore waits in
+  the rock's output until the player takes it (**Observed** by the owner in play; no rock-specific transfer in the operate update). No
+  rock has a saved state in two saves (253 zone files, **Observed**).
+- A building that is not the player's (`FUN_140546dd0`: its owner's `+0x250`, the test also used by research
+  upgrades and generator fuel) yields 0.5 where it would get 0; the player's yields 0.
+- The farm efficiency also reads the record's `arid`, `green`, `swamp` coverages (crop types 2, 1, 3).
+- The prospecting window lists water, fertility, stone, iron and copper from `uses_resources` ([ui-screens](ui-screens.md#prospecting)).
+- **NPC mines** (**Observed**, two saves of one game): NPC towns' mines have production states; Quarry Mine A 14 of 16,
+  Quarry Mine B 16 of 18 and Stone Mine 8 of 8 with `production amount` > 0 (at most 0.19), none holding output items; Ore
+  Mine 0 of 8; Ore Drill III (Automated) `resource mult` 0.5 (the not-player fallback). So NPCs work them (the town goal 43
+  Staying home leads to 221 operating, [ai-tasks](ai-tasks.md#town-goals)). **Unknown:** what empties an NPC mine's output.
+
+## Crafting
+
+Function 10, `CraftingBuilding` (**Observed** unless noted).
+- **Lists.** The functionality's `item crafts` (v0 = finished items the output holds), `armour crafts`, `weapon crafts`
+  (MATERIAL_SPECS_WEAPON models), `crossbow crafts`, `backpack crafts`, `robotics crafts`. A weapon bench crafts every
+  WEAPON in the `PLAYER_WEAPONS` manufacturer's `weapon types` in each listed model; the model's level is that
+  manufacturer's `weapon models` v0 (Rusted Junk 5 ... Edge Type 3 80). `tech level` caps the made level (0: none).
+- **Queue item** (`FUN_1402b5ca0`): seconds = hours x G/24, progress, critical state (2 not rolled, 1 critical, 0 none).
+- **Tick** (`CraftingBuilding::vfunc_150` `FUN_1402b5a40`), state 2 with a queue: amount = `output rate x production
+  mult` (/ `max operators` when above 1, `FUN_1402b9aa0`) `x health x s x option x P x dt / seconds`. The critical is
+  rolled at the item's first work: random < chance. Inputs drawn `amount x per-item` as for [recipes](#production);
+  progress 0.999 makes the item (`FUN_1402bcac0`).
+- **Inputs** (`vfunc_182`): section k takes ingredient k at `ingredients` v0/100 x material cost; with `overrides
+  ingredients` or no ingredients, the bench's `consumes` at v1/100. Material cost (item vfunc 102): a weapon's
+  `material cost`, else 1. Armour: each section at `total coverage`/100; Fabrics (`584-gamedata.base`, hard-coded,
+  **Verified** bytes) at that x `fabrics amount`.
+- **Hours:** ITEM `production time` (default 4); crossbow / robotic limb `craft time hrs` / P (defaults 20, 10); weapon
+  (`FUN_1402b76f0`) clamp(q² x 100 x `value`/300 x 2/P, 2, 32), q = level/100; armour (`FUN_140898e90`) coverage/100
+  x lerp(q, 1, 5), at least 1, then hat x0.6, legs x0.45, shirt x3, boots x0.5, chain (`material type` 2) x2. Constants
+  **Verified** by the bytes. `total coverage` (`FUN_14082fd80`): sum of `part coverage` v0, chest `101-gamedata.quack`
+  x1.5 truncated, 0 -> 100.
+- **Quality.** Armour (`FUN_14082e6b0`): tier from the int skill (20, 40, 60, 80 -> 1..4), +1 on a critical, at most 5;
+  quality by tier 5, 20, 40, 60, 80, 95 (**Verified**, jump table). A robotic limb (type 111) or crossbow takes the same roll as
+  its `level` (`FUN_1402bcac0` passes it to the item factory, whose limb and crossbow branches hand it to the Gear constructor;
+  **Verified**, decompile); Meitou caps it at `tech level` as for armour. Critical chance (`FUN_1402b5900`): (skill -
+  threshold)/50, none below 0; threshold for stats 8 and 38 the floor of the skill's tier (80/60/40/20, else 5), else
+  the item level. A weapon below the crafter's skill with no critical comes out as a lower model
+  (`uses_weapon_crafts_weapon_models`; which model is **Unknown**, Meitou takes the best at or below the skill).
+- **Research** `enable item`, `enable armour`, `enable weapon type`, `enable weapon model`, `enable crossbow`,
+  `enable backpack`, `enable robotics` unlock crafts, v0 = the repetition that does it; `repeats` and `repeat mult`
+  (cost x mult per repetition). Whether a craft no research lists is available from the start is **Unknown** (Meitou: yes).
+- **Save** (GAMESTATE_BUILDING, `vfunc_17`/`18` `FUN_1402b8440` / `FUN_1402b8ab0`): float `num crafts`, bool `repeat`,
+  per queued k strings `current<k>` (item) and `currentExtraData<k>` (weapon model), float `current prog<k>`, int
+  `crit<k>`; partly drawn items as `craft partial item sid <k>` / `val <k>` / `size` (Meitou does not write these).
+- **UI:** overview CraftTab (`CraftingStationsList`, `QueueItemsPanel`, `CraftQueue`, `QueueRepeat` "Repeat Queue",
+  `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE...").
+- Example: Weapon Smith 2033, functionality 2035 (stat 7, tech level 25, consumes Iron Plates 5/100).
 
 ## Farming
 
@@ -389,7 +451,8 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   player's research benches near the player (`FUN_14082e750`, `FUN_14082e810`), then removed; a paid id is remembered and
   never charged again. Partial progress is kept when an item leaves the queue.
 - **Complete** (`FUN_140834550`): leaves the queue, joins the finished set, `improve buildings` applied
-  (`FUN_140831a60`: `production mult`, additive `power increase`, `power capacity increase` per listed building), lists
+  (`FUN_140831a60`, the research's own fields for each listed building: `production mult` replaces the building's, so the
+  last finished wins; `power increase` and `power capacity increase` add; lookup `FUN_14082ec70`, default 1, 0, 0), lists
   rebuilt, message "Research complete: {1}", sound `Thing_Complete`.
 - **Tech levels** (**Verified**, probe): Tech Level 2 time 4 (6 Book, requires Small House), 3 time 10 (10 Book),
   4 time 16 (4 Ancient Science Book), 5 time 24 (8 Ancient Science Book), 6 time 32 (2 AI Core), each after the previous.
@@ -400,18 +463,64 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   panels); the bench's `Kenshi_InventoryResearchWindow` (`ResearchButton`); HUD `ResearchProgressBar`; header
   "RESEARCH - LEVEL {1} (CURRENT RATE: {2}x)" (`FUN_140494af0`).
 
-## Power and storage
+## Power
 
-**Observed**: a building's power is data `power output` plus research `power increase`; capacity data plus increase, x
-health. A town shares generator supply among consumers max-min fairly, batteries cover the shortfall and charge from
-surplus (`Town::vfunc_87` `FUN_14092cd60`). Wind fraction, fuel units and the minimum powered share are **Unknown**.
-Storage (**Verified**, 603 buildings): 87 have `has inventory`; default 18 x 18, `itemtype limit` 4; `stackable bonus
+**Observed** unless noted. Per building: `power output` (generator output, battery rate, consumer draw when negative)
+and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([improvements](#research)).
+- **Kinds** (registration `FUN_14092da80`, from switching on `vfunc_99`): capacity > 0 a battery, else output > 0 a
+  generator; output < 0 a consumer. Function 5 without `consumes` is a wind generator, otherwise fuelled; batteries
+  (23) share the generator class (factory `FUN_14057cc70`).
+- **Generator output** (`GeneratorBuilding::vfunc_166`): health x (output + increase) when switched on (`power on`) and
+  fuelled ("Out of fuel" otherwise). Wind: x a value read from the turbine's animation (`FUN_1404cbd90`, **Unknown**
+  units), nothing below 1. A battery's output is its rate while it holds charge.
+- **Demand** (`vfunc_163`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0; a
+  battery's rate while below its capacity health x (capacity + increase) (`FUN_140297650`).
+- **Town frame** (`Town::vfunc_87`): consumers sorted by ascending demand (`FUN_140927350`); each takes
+  min(demand, supply left / consumers left). Consumers left short with `gets battery` are counted; if batteries were in
+  use the previous frame (town `+0x470`) they share the batteries' output the same way. With no supply left the
+  batteries drain by what was drawn (`FUN_1402978d0`) and the town enters battery mode; with a surplus it leaves it and
+  the batteries charge from it, each at most its rate. Factor = granted / demand (1 with no demand), x health
+  (`vfunc_109`); production, crafting, research and farm growth are scaled by it.
+- **Fuel** (`vfunc_183` on generators): inputs drawn as a producer's, x the load (`GeneratorBuilding::vfunc_167`):
+  output / rated x (battery charging + consumer demand) / all generators' output, at most 1 ("Fuel Consumption {1}%").
+- **Battery store** (`vfunc_27`): += flow / rate x dt, clamped to 0..capacity.
+- **Efficiency and "has power"** (the sound emitter's inputs, [audio](../audio.md#point-emitters)): slot 108 = operators / raw `max operators` x `vfunc_109` x `vfunc_119`, with
+  `vfunc_119` = yield (`vfunc_92`) x the BUILDING's raw `output rate` (`+0x1a8`) x the research production mult; `FUN_140299370` is true for a generator (fuel and switch ignored), a building drawing nothing,
+  else `power on` and the town's generator output (`Town::vfunc_87` `+0x474`) above 0 or battery mode with batteries' output (`+0x480`) above 0. Town `+0x47c` is the consumers' total demand.
+- **Switch** (`FarmBuilding::vfunc_161`): flips `power on` (slot 99), then the `Generator` switch `On`/`Off` and `UI_Generator` on GUI object 110.
+- **Save** (building `vfunc_17`/`18`): bools `power on`, `gets battery`, `broken`; float `batterycharge`.
+- **Status strings** (`GeneratorBuilding::vfunc_114`): "Out of fuel", battery "Charging" / "Draining" / "Stored" / "Empty".
+- Data (**Verified**, probe): Small Generator 40, Generator II 100, Wind Generator 50, Small Wind 25, Wind II 100,
+  Battery Bank 40 / capacity 60; Weapon Smith -8, refineries -10 to -40, Research Bench III-VI -10 to -30. Power
+  research: Upgraded Small Generators +15, Amplified Generators +15, Battery Power / Advanced +10 each, Battery
+  Capacity / Advanced +60 each.
+
+**Storage** (**Verified**, 603 buildings): 87 have `has inventory`; default 18 x 18, `itemtype limit` 4; `stackable bonus
 mult` 1 to 100000; `limit inventory` restricts the items. Locks and containers: [locks](locks.md).
+Water Tower takes only Water and `Storage: Ore` only Raw Iron, both with mult 100 and functionality `Resource
+storage` (function 2); Large Barrels also hold Water.
+
+### Hauling
+
+- **Tasks** (**Verified** classes, **Observed** meaning): `Task_EmptyMachine` (92 "Collecting resource", 284 "Looting")
+  moves a building's output into the character's inventory while it has room (`FUN_14033cd10`). No GOAP row has "output not
+  full" (!63) as its effect, so a full output blocks operating (87) rather than leading the planner to 92 (**Observed**, table). `Task_FillMachine`
+  (93 "Filling machine", 124 "Hauling to") puts carried items, main grid and backpack, into a machine or a storage
+  (`FUN_140344510`). GOAP rows: [ai-tasks](ai-tasks.md); states 62 machineHasEmptyInputs, 63 isMachineOutputFull,
+  66 haveSomeResourcesFrom, 67 haveSomeResourcesFor, 82 gotInventoryRoomForResources, 169 isMachineInputInvalid.
+- **Option** (**Verified**, string): "If they have nothing else to do, characters will automatically put any excess
+  materials they are carrying into storage."
+- **Jobs** (**Verified**, [perma-jobs](ai-tasks.md#perma-jobs)): Shift with an order on a machine adds job 87 "Operating machine";
+  on a storage 124 "Hauling to" (several targets allowed); an automatic machine (152) adds 152 plus 124 on it. The first job in a
+  character's list that can run wins; operating is skipped while the machine's output is full or its inputs are empty (task 87's start
+  conditions), so a character moves down its list and returns when the machine can work again.
+- **Unknown:** how the original picks the storage (nearest, same town, a range), when an operator leaves a
+  machine to haul, and where a 124 job takes its items from.
 
 ## Unknowns
 
 - How often Building slot 28 resets the builder counter, the work distance of builders, which storages
   `Task_EmptyMachine_BuildMats` fetches from, and what `FUN_14025c6d0` (holding dismantle work) tests.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
-- Generator fuel and wind units, the minimum powered share, the crafting quality curve and `craft time hrs` units.
+- The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
 - Option slider defaults; the third value of reference triples; the record field of `BuildingClassType`.

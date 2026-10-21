@@ -73,4 +73,40 @@ public static class KenshiCamera
 
     /// <summary>The highest the camera gets above its pivot: the longest boom at the steepest view (1840).</summary>
     public const float MaxHeightAbovePivot = MaxDistance * -MinViewY;
+
+    // ------------------------------------------------------------------ the saved camera (docs/formats/camera.md "Saved camera")
+
+    /// <summary>A saved pivot whose x or z is outside ±this is replaced on load (<c>FUN_1407ade60</c>).</summary>
+    public const float SavedPivotLimit = 147456;
+    /// <summary>Where the loader puts a pivot that is out of bounds (x, z; the height comes from the ground).</summary>
+    public static readonly System.Numerics.Vector2 SavedPivotFallback = new(500, 51000);
+
+    /// <summary>Whether a saved pivot is inside the bounds the loader accepts.</summary>
+    public static bool SavedPivotInBounds(System.Numerics.Vector3 pivot) =>
+        pivot.X >= -SavedPivotLimit && pivot.X <= SavedPivotLimit && pivot.Z >= -SavedPivotLimit && pivot.Z <= SavedPivotLimit;
+
+    /// <summary>
+    /// The CAMERA <c>rot</c> and <c>zoom</c> for a view: <c>rot</c> is the pivot's orientation, yaw about Y then pitch about the pivot's X, stored w, x, y, z; <c>zoom</c> is
+    /// the camera's position on the pivot's local Z, minus the boom. <paramref name="yaw"/> 0 looks along -Z, <paramref name="pitch"/> is radians below the horizon.
+    /// </summary>
+    public static (System.Numerics.Vector4 Rot, float Zoom) ToSaved(float yaw, float pitch, float distance)
+    {
+        // Ry(yaw + pi) * Rx(pitch): the pivot's +Z is the view direction, the camera sits at -distance on it.
+        float a = (yaw + MathF.PI) * 0.5f, b = pitch * 0.5f;
+        float aw = MathF.Cos(a), ay = MathF.Sin(a), bw = MathF.Cos(b), bx = MathF.Sin(b);
+        var q = new System.Numerics.Vector4(aw * bw, aw * bx, ay * bw, -ay * bx);
+        return (q.X < 0 ? -q : q, -distance);
+    }
+
+    /// <summary>The view a CAMERA <c>rot</c> (w, x, y, z) and <c>zoom</c> describe: yaw, pitch and boom as <see cref="ToSaved"/> takes them.</summary>
+    public static (float Yaw, float Pitch, float Distance) FromSaved(System.Numerics.Vector4 rot, float zoom)
+    {
+        float w = rot.X, x = rot.Y, y = rot.Z, z = rot.W;
+        // The pivot's +Z in world space; a camera on the +Z side (zoom > 0) looks the other way.
+        var forward = new System.Numerics.Vector3(2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y));
+        if (zoom > 0) forward = -forward;
+        float yaw = MathF.Atan2(-forward.X, -forward.Z);
+        float pitch = MathF.Asin(Math.Clamp(-forward.Y, -1, 1));
+        return (yaw, pitch, MathF.Abs(zoom));
+    }
 }

@@ -1,0 +1,101 @@
+using System.Globalization;
+using System.Numerics;
+using Meitou.Data.Ui;
+using Meitou.Simulation.Production;
+using Meitou.Ui;
+
+namespace Meitou.Game;
+
+/// <summary>
+/// The overview's Craft tab (docs/game/ui-screens.md "Selected building", docs/game/buildings-production.md "Crafting"): STATIONS lists the player's crafting benches, ITEMS what the
+/// selected one can craft (a click queues one; locked or too advanced rows are red and do nothing), QUEUE its queue (a click takes one off), Repeat Queue its repeat toggle, DESCRIPTION
+/// the hovered or last clicked craft's time and inputs. The original's row widgets and colours are <b>Unknown</b>; Meitou draws plain text rows like the research tab.
+/// </summary>
+sealed partial class PlayerInterface
+{
+    const int CraftTab = 3;
+    string? craftStation, craftFocus;
+
+    List<MachineSnapshot> CraftStations() => [.. session.CurrentSnapshot.Machines.Where(m => m.Craft is not null)];
+
+    string StationName(MachineSnapshot m) => session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == m.Site) is { } site ? SiteName(site) : m.Record;
+
+    /// <summary>Opens the Craft tab on a bench (the building window's QUEUE... button).</summary>
+    void OpenCraftTab(string site)
+    {
+        craftStation = site;
+        faithfulScreens.Open("overview");
+        faithfulScreens.SetTab("overview", "TabsMain", CraftTab);
+    }
+
+    void BindCraftTab(UiBindings b)
+    {
+        var stations = CraftStations();
+        if (craftStation is null || stations.All(s => s.Site != craftStation)) craftStation = stations.FirstOrDefault()?.Site;
+        b.Lists["CraftingStationsList"] = [.. stations.Select(s => new UiListItem(s.Site, StationName(s)))];
+        b.SelectedItems["CraftingStationsList"] = stations.FindIndex(s => s.Site == craftStation);
+        bool repeat = stations.FirstOrDefault(s => s.Site == craftStation)?.Craft?.Repeat == true;
+        b.Actions["QueueRepeat"] = "QueueRepeat";
+        b.Properties["QueueRepeat"] = new Dictionary<string, string> { ["Checked"] = repeat ? "true" : "false", ["StateSelected"] = repeat ? "true" : "false" };
+    }
+
+    void CraftAction(MyGuiEvent e)
+    {
+        if (e.Widget == "CraftingStationsList" && e.Action == "select")
+        {
+            var stations = CraftStations();
+            craftStation = stations.FirstOrDefault(s => s.Site == e.Text)?.Site ?? stations.FirstOrDefault(s => StationName(s) == e.Text)?.Site ?? craftStation;
+        }
+        else if (e.Widget == "QueueRepeat" && craftStation is not null && Machine(craftStation)?.Craft is { } craft)
+            Say(new RepeatCrafts(craftStation, !craft.Repeat) { Tick = session.World.Tick });
+        else if (e.Action.StartsWith("craft-queue:", StringComparison.Ordinal) && craftStation is not null)
+        {
+            craftFocus = e.Action[12..];
+            Say(new QueueCraft(craftStation, craftFocus) { Tick = session.World.Tick });
+        }
+        else if (e.Action.StartsWith("craft-focus:", StringComparison.Ordinal)) craftFocus = e.Action[12..];
+        else if (e.Action.StartsWith("craft-cancel:", StringComparison.Ordinal) && craftStation is not null)
+            Say(new CancelCraft(craftStation, int.Parse(e.Action.AsSpan(13), CultureInfo.InvariantCulture)) { Tick = session.World.Tick });
+    }
+
+    /// <summary>The item rows, the queue rows and the description, drawn into the Craft tab's panels.</summary>
+    void AddCraftContent(List<UiControl> controls)
+    {
+        if (faithfulScreens.GetTab("overview", "TabsMain") != CraftTab || craftStation is null || Machine(craftStation) is not { Craft: { } craft }) return;
+        var options = session.CurrentSnapshot.Crafts.GetValueOrDefault(craftStation) ?? [];
+        var face = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter" };
+        float line = MathF.Max(18, 24 * InventoryScale);
+        var ink = new Vector4(0.86f, 0.82f, 0.71f, 1);
+        if (controls.FirstOrDefault(c => c.Name == "QueueItemsPanel") is { } panel)
+        {
+            var rows = options.OrderBy(o => o.Kind).ThenBy(o => o.Level).ThenBy(o => o.Name, StringComparer.Ordinal).ToList();
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var o = rows[i];
+                controls.Add(new($"craft-row-{i}", "Button", new(panel.Bounds.X + 6, panel.Bounds.Y + i * line, panel.Bounds.Width - 12, line), o.Name,
+                    o.Unlocked ? "craft-queue:" + o.Key : "craft-focus:" + o.Key, "", true, face, Vector4.Zero,
+                    TextColour: o.Unlocked ? ink : new Vector4(0.75f, 0.35f, 0.3f, 1), HoverColour: new(0, 1, 0, 1), Pickable: true, Clip: panel.Bounds));
+            }
+        }
+        if (controls.FirstOrDefault(c => c.Name == "CraftQueue") is { } queue)
+            for (int i = 0; i < craft.Queue.Count; i++)
+            {
+                var (_, name, progress, _) = craft.Queue[i];
+                controls.Add(new($"craft-queue-{i}", "Button", new(queue.Bounds.X + 6, queue.Bounds.Y + i * line, queue.Bounds.Width - 12, line),
+                    $"{name}  {(int)(progress * 100)}%", "craft-cancel:" + i.ToString(CultureInfo.InvariantCulture), "", true, face, Vector4.Zero,
+                    TextColour: i == 0 ? new(0.66f, 0.72f, 0.45f, 1) : ink, HoverColour: new(1, 0.4f, 0.3f, 1), Pickable: true, Clip: queue.Bounds));
+            }
+        string? hovered = controls.LastOrDefault(c => c.Name.StartsWith("craft-row-", StringComparison.Ordinal) && c.Bounds.Contains(mouse.X, mouse.Y))?.Action;
+        string? focus = hovered is { } h ? h[(h.IndexOf(':') + 1)..] : craftFocus;
+        if (focus is null || options.FirstOrDefault(o => o.Key == focus) is not { } option) return;
+        var lines = new List<HudLine>
+        {
+            new(option.Name, ""),
+            new("Time:", $"{option.Hours.ToString("0.#", CultureInfo.InvariantCulture)} h", MainColour),
+        };
+        if (option.Level > 0) lines.Add(new("Level:", option.Level.ToString(CultureInfo.InvariantCulture), MainColour));
+        foreach (var (item, per) in option.Inputs) lines.Add(new(item, per.ToString("0.##", CultureInfo.InvariantCulture), MainColour));
+        if (!option.Unlocked) lines.Add(new("Needs research", "", BadColour));
+        AddLines(controls, "QueueDescriptionPanel1", lines, line);
+    }
+}

@@ -7,9 +7,9 @@ public sealed record MyGuiEvent(string Screen, string Widget, string Action, str
 public sealed record MyGuiScreenFrame(string Id, IReadOnlyList<UiControl> Controls);
 
 /// <summary>Window lifetime, z-order, capture, focus and template events for the original MyGUI layouts.</summary>
-public sealed class MyGuiScreenHost(MyGuiResources resources)
+public sealed partial class MyGuiScreenHost(MyGuiResources resources)
 {
-    sealed class Screen(MyGuiLayout layout, bool modal, bool centreRoot)
+    sealed partial class Screen(MyGuiLayout layout, bool modal, bool centreRoot)
     {
         public MyGuiLayout Layout { get; } = layout;
         public bool Modal { get; } = modal;
@@ -27,12 +27,10 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
     (string Screen, string Widget)? focus;
     UiTextBuffer? edit;
     (string Screen, Vector2 At, Vector2 Offset)? drag;
-    /// <summary>The slider being dragged: its screen, widget, action, argument and track (a control with the property <c>Slider</c>).</summary>
-    (string Screen, string Widget, string Action, string Argument, UiRect Track)? slide;
     public event Action<MyGuiEvent>? Activated;
     public bool HasWindows => open.Count > 0;
     public bool HasModal => open.Any(id => screens[id].Modal);
-    public bool CapturesPointer => drag is not null || slide is not null;
+    public bool CapturesPointer => drag is not null || CapturesWidget;
     public bool HasKeyboardFocus => focus is not null;
     public IReadOnlyList<string> Registered => screens.Keys.ToArray();
     public IReadOnlyList<string> OpenScreens => open.ToArray();
@@ -44,14 +42,23 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
         if (!screens.ContainsKey(id)) throw new KeyNotFoundException(id);
         open.Remove(id);
         open.Add(id);
-        focus = null; edit = null;
+        focus = null; edit = null; keyButton = null;
     }
+    /// <summary>
+    /// Marries <paramref name="id"/> to <paramref name="leader"/> (the original's bag window beside the inventory): a drag on either moves both, closing the leader closes it
+    /// and Escape on it closes the leader.
+    /// </summary>
+    public void Follow(string id, string leader) => leaders[id] = leader;
+    readonly Dictionary<string, string> leaders = new(StringComparer.Ordinal);
+
     public void Close(string id)
     {
+        foreach (var (follower, leader) in leaders.ToArray()) if (leader == id && open.Contains(follower)) Close(follower);
         open.Remove(id);
         if (focus?.Screen == id) { focus = null; edit = null; }
+        if (keyButton?.Screen == id) keyButton = null;
         if (drag?.Screen == id) drag = null;
-        if (slide?.Screen == id) slide = null;
+        ForgetWidgets(id);
         frame = frame.Where(f => f.Id != id).ToArray();
     }
     public void CloseAll() { foreach (string id in open.ToArray()) Close(id); }
@@ -62,10 +69,16 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
     public void SetText(string id, string widget, string text) { screens[id].Text[widget] = text; if (focus == (id, widget)) edit?.Set(text); }
     public string GetText(string id, string widget) => screens[id].Text.GetValueOrDefault(widget) ?? "";
     public int GetTab(string id, string widget) => screens[id].Tabs.GetValueOrDefault(widget);
+    /// <summary>Ends typing in the focused edit box (a press the screen's decoration took).</summary>
+    public void Blur() { focus = null; edit = null; keyButton = null; }
+    /// <summary>The edit box being typed in (also one a screen's decoration added): its screen, name, caret and selection; null: none.</summary>
+    public (string Screen, string Widget, int Caret, int SelectionStart, int SelectionLength)? Focus =>
+        focus is { } f && edit is not null ? (f.Screen, f.Widget, edit.Caret, edit.SelectionStart, edit.SelectionLength) : null;
 
     public IReadOnlyList<MyGuiScreenFrame> Arrange(int width, int height, Func<string, UiBindings> bind, Action<string, List<UiControl>>? decorate = null)
     {
         var result = new List<MyGuiScreenFrame>();
+        RepeatTick();
         foreach (string id in open.OrderBy(i => screens[i].Modal ? 1 : 0).ToArray())
         {
             var s = screens[id];
@@ -74,6 +87,7 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
             foreach (var t in s.Text) b.Text[t.Key] = t.Value;
             foreach (var t in s.Selected) b.SelectedItems[t.Key] = t.Value;
             foreach (var t in s.Scroll) b.ScrollOffsets[t.Key] = t.Value;
+            PushWidgetState(id, s, b);
             if (focus is { } f && f.Screen == id && edit is not null)
             {
                 foreach (var widget in s.Layout.Widgets.Where(w => w.Name == f.Widget || w.Properties.GetValueOrDefault("CaptionOwner") == f.Widget))
@@ -86,15 +100,10 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
                     if (widget.Properties.GetValueOrDefault("SkipCaption") != "true") b.Properties[widget.Name] = properties;
                 }
             }
-            foreach (var root in s.Layout.Roots.Where(r => r.Type == "Window" || s.CentreRoot))
-            {
-                var initial = b.Positions.GetValueOrDefault(root.Name, root.Position.RelativeTo(new(0, 0, width, height), root.RealPosition));
-                float w = Math.Clamp(initial.Width, 0, Math.Max(0, width - 24)), h = Math.Clamp(initial.Height, 0, Math.Max(0, height - 24));
-                b.Positions[root.Name] = new(Math.Clamp((width - w) / 2 + s.Offset.X, 0, Math.Max(0, width - w)),
-                    Math.Clamp((height - h) / 2 + s.Offset.Y, 0, Math.Max(0, height - h)), w, h);
-            }
+            PlaceRoots(s, b, width, height);
             var controls = MyGuiPresentation.Arrange(s.Layout, width, height, b, resources.Layers).ToList();
             decorate?.Invoke(id, controls);
+            ArrangeKeyboard(id, controls);
             result.Add(new(id, controls));
         }
         frame = result;
@@ -114,11 +123,13 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
     public (string Screen, UiControl Control)? HitTest(Vector2 p) => Pick(p);
     public bool PointerDown(Vector2 p)
     {
-        if (Pick(p) is not { } picked) { focus = null; edit = null; return false; }
+        keyButton = null;
+        if (Pick(p) is not { } picked) { focus = null; edit = null; PressOutside(null); return false; }
         var (id, c) = picked;
         var s = screens[id];
         open.Remove(id); open.Add(id);
         if (!c.Enabled) return true;
+        if (PressWidget(id, c, p)) return true;
         if (c.Action.StartsWith("mygui:", StringComparison.Ordinal))
         {
             var parts = c.Action.Split(':');
@@ -133,59 +144,35 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
             }
             return true;
         }
-        if (c.Type == "EditBox" && c.Properties.GetValueOrDefault("Static") != "true" && c.Properties.GetValueOrDefault("ReadOnly") != "true")
-        {
-            focus = (id, c.Name);
-            s.Text.TryAdd(c.Name, c.Caption);
-            edit = new(s.Text[c.Name]);
-            return true;
-        }
+        if (c.Type == "EditBox" && c.Properties.GetValueOrDefault("Static") != "true") { FocusEdit(id, c); return true; }
         focus = null; edit = null;
-        if (c.Properties.GetValueOrDefault("Slider") == "true")
-        {
-            slide = (id, c.Name, c.Action, c.Argument, c.Bounds);
-            Slide(p);
-            return true;
-        }
         if (c.Type == "Button") { Activated?.Invoke(new(id, c.Name, c.Action)); return true; }
         var root = frame.First(f => f.Id == id).Controls.FirstOrDefault(n => n.Type == "Window");
-        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned) drag = (id, p, s.Offset);
+        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned && root.Properties.GetValueOrDefault("Movable") != "false")
+            drag = leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? (leader, p, screens[leader].Offset) : (id, p, s.Offset);
         return true;
     }
     public bool PointerMove(Vector2 p)
     {
-        if (slide is not null) { Slide(p); return true; }
+        if (MoveWidget(p)) return true;
         if (drag is not { } d) return false;
-        screens[d.Screen].Offset = d.Offset + p - d.At;
+        DragWindow(d, p);
         return true;
     }
-    public void PointerUp() { drag = null; slide = null; }
+    public void PointerUp() { drag = null; ReleaseWidget(); }
 
-    /// <summary>A slider drag at <paramref name="p"/>: the event carries the slider's argument and where along its track the pointer is (0 at the left, 1 at the right).</summary>
-    void Slide(Vector2 p)
-    {
-        if (slide is not { } s) return;
-        float t = s.Track.Width > 0 ? Math.Clamp((p.X - s.Track.X) / s.Track.Width, 0, 1) : 0;
-        Activated?.Invoke(new(s.Screen, s.Widget, s.Action, s.Argument, t));
-    }
     public bool Wheel(Vector2 p, float steps)
     {
         if (Pick(p) is not { } picked) return false;
-        var row = frame.First(f => f.Id == picked.Id).Controls.LastOrDefault(c => c.Properties.ContainsKey("ListOwner") && (c.Clip?.Contains(p.X, p.Y) ?? false));
-        if (row is not null)
-        {
-            string owner = row.Properties["ListOwner"];
-            int count = int.Parse(row.Properties["ListCount"], System.Globalization.CultureInfo.InvariantCulture);
-            float max = Math.Max(0, count * 22 - row.Clip!.Value.Height);
-            screens[picked.Id].Scroll[owner] = Math.Clamp(screens[picked.Id].Scroll.GetValueOrDefault(owner) - steps * 44, 0, max);
-        }
+        WheelWidget(picked.Id, p, steps);
         return true;
     }
     public bool Escape()
     {
         if (open.Count == 0) return false;
+        if (CloseCombo()) return true;
         string id = frame.LastOrDefault()?.Id ?? open[^1];
-        Close(id);
+        Close(leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? leader : id);
         return true;
     }
     public bool TextInput(char value)
@@ -196,29 +183,23 @@ public sealed class MyGuiScreenHost(MyGuiResources resources)
     }
     void PublishEdit()
     {
-        if (focus is not { } f || edit is null) return;
+        if (focus is not { } f || edit is null || edit.ReadOnly) return;
         screens[f.Screen].Text[f.Widget] = edit.Text;
         Activated?.Invoke(new(f.Screen, f.Widget, "text", edit.Text));
     }
     public bool EditKey(UiEditKey key, bool extend = false)
     {
         if (focus is null || edit is null) return false;
+        if (key >= UiEditKey.Copy) return Clipboard(key);
         edit.Key(key, extend); PublishEdit();
         return true;
     }
     public bool Backspace() => EditKey(UiEditKey.Backspace);
-    public bool FocusNext(bool backwards = false)
-    {
-        if (frame.LastOrDefault() is not { } top) return false;
-        var fields = top.Controls.Where(c => c.Enabled && c.Type == "EditBox" && c.Properties.GetValueOrDefault("Static") != "true" && c.Properties.GetValueOrDefault("ReadOnly") != "true").ToArray();
-        if (fields.Length == 0) return false;
-        int index = Array.FindIndex(fields, c => focus == (top.Id, c.Name));
-        var next = fields[(index + (backwards ? fields.Length - 1 : 1)) % fields.Length];
-        focus = (top.Id, next.Name); screens[top.Id].Text.TryAdd(next.Name, next.Caption); edit = new(screens[top.Id].Text[next.Name]);
-        return true;
-    }
+    /// <summary>Tab (Shift+Tab): the next edit box or button of the top window (<see cref="CycleFocus"/>).</summary>
+    public bool FocusNext(bool backwards = false) => CycleFocus(backwards);
     public bool Submit()
     {
+        if (ActivateFocused()) return true;
         if (frame.LastOrDefault() is not { } top) return false;
         var button = top.Controls.FirstOrDefault(c => c.Type == "Button" && c.Enabled && c.Properties.GetValueOrDefault("DefaultAction") == "true");
         if (button is null) return false;

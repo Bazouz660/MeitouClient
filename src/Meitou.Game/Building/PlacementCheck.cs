@@ -53,12 +53,8 @@ public static class PlacementCheck
     {
         var b = q.Building;
         var at = new Vector2(q.Position.X, q.Position.Z);
-        try
-        {
-            var town = PlacementRules.TownBlock(b, at, q.Towns, q.PlayerFactionId);
-            if (town != PlacementFailure.None) return town;
-        }
-        catch (NotImplementedException) { /* the simulation track has not filled the stub: the town rule is not enforced yet */ }
+        var town = PlacementRules.TownBlock(b, at, q.Towns, q.PlayerFactionId);
+        if (town != PlacementFailure.None) return town;
 
         var turned = Quaternion.CreateFromAxisAngle(Vector3.UnitY, q.Yaw);
         var hull = q.Services.Footprint(b.Id) is { } footprint ? footprint.Place(q.Position, turned) : null;
@@ -150,34 +146,8 @@ public static class PlacementCheck
         return normal.Y < 0 ? -normal : normal;
     }
 
-    /// <summary>The text of a failure: the simulation's table (<see cref="PlacementRules.Message"/>) once it exists, else the original's strings.</summary>
-    public static string Message(PlacementFailure failure)
-    {
-        if (failure == PlacementFailure.None) return "";
-        try { return PlacementRules.Message(failure); }
-        catch (NotImplementedException) { return Fallback(failure); }
-    }
-
-    /// <summary>The original's texts (docs/game/buildings-production.md "Placement"); the engine's for <see cref="PlacementFailure.NotAvailable"/>.</summary>
-    internal static string Fallback(PlacementFailure failure) => failure switch
-    {
-        PlacementFailure.TooCloseToTown => "Can't build too close to another town.",
-        PlacementFailure.NotOwnedBuilding => "Can't place in a building you don't own.",
-        PlacementFailure.NoResources => "No resources at this location, mining would be pointless.",
-        PlacementFailure.CropWillNotGrow => "This crop will not grow in this environment.",
-        PlacementFailure.InsideIncomplete => "Cannot build inside incomplete buildings.",
-        PlacementFailure.MustBeOutside => "Must be placed outside or on a roof.",
-        PlacementFailure.MustBeInside => "Must be placed inside a building.",
-        PlacementFailure.NeedsSnapNode => "Can only be placed on certain locations (marked by blue nodes).",
-        PlacementFailure.TooCloseToBuilding => "Too close to another building.",
-        PlacementFailure.NoValidUsageNodes => "No valid usage nodes.",
-        PlacementFailure.CharactersInTheWay => "There are characters in the way.",
-        PlacementFailure.BlocksUseNodes => "The building blocks another building use nodes.",
-        PlacementFailure.InvalidGround => "The building has one or more parts on invalid ground.",
-        PlacementFailure.InvalidFloor => "Invalid placing floor number.",
-        PlacementFailure.NotLevel => "Ground needs to be more level.",
-        _ => "This building cannot be placed.",
-    };
+    /// <summary>The text of a failure (<see cref="PlacementRules.Message"/>).</summary>
+    public static string Message(PlacementFailure failure) => PlacementRules.Message(failure);
 
     // ---- plane geometry on convex polygons ----
 

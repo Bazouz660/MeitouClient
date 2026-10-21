@@ -41,7 +41,7 @@ public static class DistantTowns
         {
             if (db.Find(town.TownId) is not { } record || !record.GetBool("distant mesh")) continue;
             if (!handles.TryGetValue(town.InstanceId, out int handle)) continue;
-            string path = Path.Combine(directory, MeshFileName(handle));
+            string path = GameFiles.Resolve(Path.Combine(directory, MeshFileName(handle)));
             if (File.Exists(path)) result.Add(new DistantTown(town.InstanceId, town.TownId, record.Name, town.Position, handle, path));
         }
         return result;

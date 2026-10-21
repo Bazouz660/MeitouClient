@@ -28,6 +28,61 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     static void Click(PlayerInterface ui, string name) => ui.MouseDown(MouseButton.Left, Centre(ui.UiFrame.Last(c => c.Name == name)), false);
 
     [Fact, Slow]
+    public void AdvancedOptionsShareTheNewGameScreenAndRemainOperable()
+    {
+        using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
+        var ui = Ui(session);
+        try
+        {
+            int height = 720; ui.Width = 1280; ui.Height = height; ui.ShowTitle();
+            Click(ui, "NewGameButton");
+            float closedY = ui.UiFrame.Last(c => c.Name == "BeginButton").Bounds.Y;
+            Click(ui, "AdvancedButton");
+            var controls = ui.UiFrame;
+            var begin = controls.Last(c => c.Name == "BeginButton");
+            var lower = controls.Last(c => c.Name == "advanced-Root");
+            Assert.True(begin.Bounds.Y < closedY);
+            Assert.True(lower.Bounds.Y >= begin.Bounds.Y + begin.Bounds.Height);
+            Assert.True(lower.Bounds.Y + lower.Bounds.Height <= height);
+            Assert.DoesNotContain(controls, c => c.Name is "advanced-reset" or "advanced-close");
+            var help = NewGameHelpCatalog.Read(Path.Combine(GameInstall.Locate()!.Root, "locale/en_GB/LC_MESSAGES/main.pot"));
+            for (int i = 0; i < 7; i++)
+            {
+                foreach (string part in new[] { "label", "track", "less", "more", "value" })
+                {
+                    ui.MouseMove(Centre(ui.UiFrame.Last(c => c.Name == $"advanced-{part}-{i}")));
+                    Assert.NotEmpty(help.EnglishAt(NewGameSettings.Options[i].HelpLine));
+                    Assert.Equal(help.TextAt(NewGameSettings.Options[i].HelpLine), ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
+                }
+                Click(ui, $"advanced-more-{i}");
+                Assert.Equal(1.05f, ui.NewGameOptions[i]);
+                var track = ui.UiFrame.Last(c => c.Name == $"advanced-track-{i}");
+                ui.MouseDown(MouseButton.Left, Centre(track), false);
+                ui.MouseUp(MouseButton.Left, Centre(track), false);
+                Assert.InRange(ui.NewGameOptions[i], NewGameSettings.Options[i].Min, NewGameSettings.Options[i].Max);
+            }
+            ui.MouseMove(Vector2.Zero);
+            Assert.Empty(ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
+            float selectedHunger = ui.NewGameOptions[0];
+            Click(ui, "AdvancedButton"); // The lower panel must not intercept the parent toggle.
+            Assert.DoesNotContain(ui.UiFrame, c => c.Name == "advanced-track-0");
+            Click(ui, "AdvancedButton");
+            Assert.Equal(selectedHunger, ui.NewGameOptions[0]);
+            ui.UiKey(Key.Escape);
+            Assert.Contains(ui.UiFrame, c => c.Name == "BeginButton");
+            Assert.DoesNotContain(ui.UiFrame, c => c.Name == "advanced-track-0");
+            Click(ui, "AdvancedButton");
+            MyGuiEvent? request = null; ui.ScreenAction += e => request = e;
+            Click(ui, "BeginButton"); Assert.Equal("new-game", request?.Action);
+            Assert.Equal(selectedHunger, ui.NewGameOptions[0]);
+            Click(ui, "CancelButton");
+            Assert.DoesNotContain(ui.UiFrame, c => c.Name == "advanced-track-0");
+            Click(ui, "NewGameButton"); Assert.Equal(1, ui.NewGameOptions[0]);
+        }
+        finally { ui.DisposeUi(); }
+    }
+
+    [Fact, Slow]
     public void MeitouTitleUsesTheWorldAndKeepsNewGameDialogsAndModeSwitchingFunctional()
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
@@ -132,7 +187,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             Assert.Contains(ui.UiFrame, c => c.Properties.ContainsKey("CaptionOwner") && c.Caption == "THIEVES BACKPACK");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name is "CapacityText" or "TypeText");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "inventory-scroll-thumb");
-            Assert.True(ui.UiKey(Key.Escape));
+            Click(ui, "OpenBagButton");
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "backpack_content");
             Assert.Contains(ui.UiFrame, c => c.Name == "main");
         }

@@ -23,10 +23,17 @@ public sealed record AmbientSound(string Id, string Emitter, float Chance, float
     public static AmbientSound? From(GameRecord record) => record.Type != FcsRecordType.AMBIENT_SOUND ? null : new(
         record.StringId, record.GetString("emitter"), record.GetFloat("chance", 1), record.GetFloat("cutoff", 50), record.GetFloat("intensity"),
         record.GetFloat("efficiency multiplier"), record.GetBool("needs power"));
+
+    /// <summary>
+    /// The sound of the first entry of <paramref name="holder"/>'s <paramref name="field"/> list (EFFECT <c>sound</c>, RACE <c>ambient sound</c>), or null when the list is empty,
+    /// the AMBIENT_SOUND is missing or names no emitter. The exe takes the first entry only and rolls no <c>chance</c> for them (docs/audio.md "Point emitters").
+    /// </summary>
+    public static AmbientSound? FirstOf(GameDatabase db, GameRecord holder, string field) =>
+        holder.GetReferences(field) is { Count: > 0 } list && db.Find(list[0].TargetStringId) is { } record && From(record) is { Emitter.Length: > 0 } sound ? sound : null;
 }
 
-/// <summary>A building's sound emitter in the world: the record, where it sounds and the id of the building it belongs to.</summary>
-public readonly record struct PlacedEmitter(string Key, AmbientSound Sound, Vector3 Position);
+/// <summary>A building's sound emitter in the world: the record, where it sounds and the id of the building it belongs to; <paramref name="Building"/> is the BUILDING record that made it.</summary>
+public readonly record struct PlacedEmitter(string Key, AmbientSound Sound, Vector3 Position, string Building = "");
 
 /// <summary>The emitters of buildings (docs/audio.md "Point emitters", the exe's building audio set-up <c>FUN_14055c240</c>).</summary>
 public static class BuildingEmitters
@@ -44,7 +51,7 @@ public static class BuildingEmitters
         float scale = building.GetFloat("scale", 1);
         var offset = new Vector3(sounds[0].Values.Value0, sounds[0].Values.Value1, sounds[0].Values.Value2) * (scale > 0 ? scale : 1);
         var q = rotation.LengthSquared() < 1e-12f ? Quaternion.Identity : Quaternion.Normalize(rotation);
-        return new PlacedEmitter(instanceId, sound, position + Vector3.Transform(offset, q));
+        return new PlacedEmitter(instanceId, sound, position + Vector3.Transform(offset, q), building.StringId);
     }
 
     /// <summary>A number in [0, 1) that depends only on the placement id (FNV-1a).</summary>

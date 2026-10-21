@@ -14,7 +14,7 @@ sealed partial class PlayerInterface
 {
     /// <summary>A building selected by a click: what it is, where it stands (hull in the world, for the outline) and what the panels say of it.</summary>
     sealed record SelectedBuilding(string Name, string? Type, string? Owner, string? Town, string? SiteId, string Instance, Vector3 Position, Vector2[]? Hull,
-        bool PublicDay = false, bool PublicNight = false);
+        bool PublicDay = false, bool PublicNight = false, string? Record = null);
 
     SelectedBuilding? selectedBuilding;
 
@@ -23,13 +23,15 @@ sealed partial class PlayerInterface
     {
         if (ReferenceEquals(selectedBuilding, building)) return;
         selectedBuilding = building;
+        // Selecting calls the building's select sound (FUN_1405504a0: Buildings_Click = its `select sound`, none for 0); a click on the same building picks it anew and sounds again.
+        if (building?.Record is { } record) Sound("Building_Click", building: record);
         Say(new InspectBuildingCommand(building?.Instance) { Tick = session.World.Tick });
     }
 
     /// <summary>The selected building while it still exists (a site that was cancelled or dismantled drops the selection).</summary>
     SelectedBuilding? BuildingFocus()
     {
-        if (selectedBuilding is { SiteId: { } id } && !session.CurrentSnapshot.Buildings.Any(s => s.Id == id)) SetBuilding(null);
+        if (selectedBuilding is { SiteId: { } id } && !Meitou.Simulation.Production.ProductionSystem.IsNatural(id) && !session.CurrentSnapshot.Buildings.Any(s => s.Id == id)) SetBuilding(null);
         return selectedBuilding;
     }
 
@@ -45,7 +47,8 @@ sealed partial class PlayerInterface
             bestT = site.T;
             string? faction = FactionName?.Invoke(session.World.Player.Faction);
             best = new(SiteName(site.Site), null, faction, null, site.Site.Id, site.Site.Id, site.Site.Position,
-                buildHost?.Placement.Footprint(site.Site.Record) is { } f ? f.Place(site.Site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Site.Rotation))) : null);
+                buildHost?.Placement.Footprint(site.Site.Record) is { } f ? f.Place(site.Site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Site.Rotation))) : null,
+                Record: site.Site.Record);
         }
         if (buildHost is { } host)
             foreach (var candidate in host.Placement.StaticAlong(ray.Origin, ray.Direction, limit))
@@ -56,8 +59,9 @@ sealed partial class PlayerInterface
                 if (RayPrism(ray.Origin, ray.Direction, hull, y + candidate.Footprint.YMin, y + candidate.Footprint.YMax) is not { } t || t >= bestT) continue;
                 bestT = t;
                 var info = host.WorldInfo(b);
-                best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight);
+                best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId);
             }
+        if (PickRockAt(pixel) is { } rock && rock.T < bestT) best = RockBuilding(rock.Rock);
         return best;
     }
 
@@ -91,8 +95,10 @@ sealed partial class PlayerInterface
             {
                 var door = detail.Doors[0];
                 if (door.Broken) { status = "Broken"; bad = true; }
-                stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour, door.Open && !door.Broken ? GoodColour : null));
-                stats.Add(new("Security:", $"{(door.Locked ? "Locked" : "Unlocked")} (lvl {door.Level.ToString(CultureInfo.InvariantCulture)})", MainColour, door.Locked ? null : GoodColour));
+                stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour, door.Open && !door.Broken ? GoodColour : null,
+                    door.Broken ? "It will no longer close and needs to be repaired." : null));
+                stats.Add(new("Security:", $"{Loc.Tr(door.Locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, door.Locked ? null : GoodColour,
+                    door.Locked ? "The door is locked and will keep out intruders." : "The door is unlocked."));
             }
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
             if (!own && (focus.PublicDay || focus.PublicNight))

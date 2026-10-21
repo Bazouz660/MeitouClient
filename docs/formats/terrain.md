@@ -71,7 +71,7 @@ stay explicit. Sun trajectory derives latitude/sunrise/sunset and sky controller
 | Zone grid | 64 × 64 zones of 4608 units; zone index = `floor(coord / 4608) + 32` on each axis | **Verified**: all 11,714 placed buildings lie in the zone of the file that places them (`LevelFileTests.Base_game_world_placements_are_consistent`), and all 224 towns whose state lists zones list the zone their position falls in |
 | Heightmap | 16385 × 16385 samples, 18 units apart (256 per zone, plus the far edge) | **Verified**: file size and tags, and heights below |
 | Height scale | `height = raw × 9800 / 65535`; raw 0 = height 0 | **Verified** (below) |
-| Unit size | If 1 unit = 1 dm, the world is 29.5 km across (870 km², the size usually quoted by players); 1 cm would make it 2.9 km | **Unknown**; decimetres fit best |
+| Unit size | If 1 unit = 1 dm, the world is 29.5 km across (870 km², the size usually quoted by players); 1 cm would make it 2.9 km | **Unknown**; decimetres fit best (**Observed**: `human_left_arm.mesh` is 6.5 units long, 65 cm at 1 dm) |
 
 ### Other maps in `data/newland/land/`
 

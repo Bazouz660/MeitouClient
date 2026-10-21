@@ -1,3 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
+  <PropertyGroup>
+    <!-- The launcher references this and is published Native AOT: trim/AOT analyzer warnings here are build errors. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
 </Project>

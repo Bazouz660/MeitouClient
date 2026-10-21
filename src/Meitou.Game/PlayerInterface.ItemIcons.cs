@@ -19,18 +19,19 @@ sealed partial class PlayerInterface
     public void SetRenderedIcons(Func<string, (Meitou.Rendering.Gpu.GpuTexture Texture, Meitou.Rendering.Gpu.SampledTexture Sampled)?>? lookup) { if (uiPainter is not null) uiPainter.RenderedIcons = lookup; }
 
     /// <summary>
-    /// An item icon filling <paramref name="area"/> with its quantity in the corner, or a name while the icon loads. <paramref name="extra"/> (a price) appears in the hover tooltip.
+    /// An item icon filling <paramref name="area"/> with its quantity in the corner, or a name while the icon loads. <paramref name="tip"/> is what its hover tooltip lists (the name only when null).
     /// The transparent text control handles picking and carries <paramref name="property"/>.
     /// </summary>
-    void AddItemCell(List<UiControl> controls, string name, UiRect area, string record, string material, string itemName, int quantity, string? extra, string property, int index, UiRect? clip, bool pickable = true, float? charge = null)
+    void AddItemCell(List<UiControl> controls, string name, UiRect area, string record, string material, string itemName, int quantity, ItemTip? tip, string property, int index, UiRect? clip, bool pickable = true, float? charge = null)
     {
+        itemTips[name] = tip ?? ItemTip.NameOnly(record, material, itemName, quantity);
         string count = quantity > 1 ? quantity.ToString(CultureInfo.InvariantCulture) : "";
         Dictionary<string, string>? image = null;
         if (itemIcons?.Choose(record, material) is { } choice && uiPainter is { } painter)
         {
             if (choice is { Source: ItemIconSource.File, File: { } file } && painter.IconReady(file))
                 image = new() { ["ImageTexture"] = UiPainter.IconTexture(file) };
-            else if (choice.Source == ItemIconSource.Render && UiPainter.RenderedIconTexture(record, material) is { } rendered && painter.RenderedIconReady(rendered))
+            else if (choice.Source == ItemIconSource.Render && UiPainter.RenderedIconTexture(record, material, choice.Colour) is { } rendered && painter.RenderedIconReady(rendered))
                 image = new() { ["ImageTexture"] = rendered, ["ImageFlipV"] = "true" };
         }
         bool shown = image is not null;
@@ -48,7 +49,7 @@ sealed partial class PlayerInterface
         }
         string caption = shown ? count : itemName + (count.Length > 0 ? " x" + count : "");
         controls.Add(new(name, "TextBox", area, caption, "", "", true,
-            new Dictionary<string, string> { ["WordWrap"] = "true", ["TextAlign"] = shown ? "Right Bottom" : "Center", ["FontName"] = "Kenshi_StandardFont_Medium", ["ItemTooltip"] = itemName + (extra is null ? "" : "\n" + extra), [property] = index.ToString(CultureInfo.InvariantCulture) },
+            new Dictionary<string, string> { ["WordWrap"] = "true", ["TextAlign"] = shown ? "Right Bottom" : "Center", ["FontName"] = "Kenshi_StandardFont_Medium", [ItemTipKey] = name, [property] = index.ToString(CultureInfo.InvariantCulture) },
             System.Numerics.Vector4.Zero, TextColour: System.Numerics.Vector4.One, Pickable: pickable, TextScale: 0.9f * InventoryScale, Clip: clip));
     }
 }

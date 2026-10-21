@@ -16,6 +16,8 @@ sealed class DecodedObjectMesh
     public required float Radius;
     /// <summary>The mesh's highest local Y (the scaffold clip of an unfinished building scales with it).</summary>
     public float Top;
+    /// <summary>The local bounding box: the file's bounds, else the vertices'.</summary>
+    public Vector3 Min, Max;
     /// <summary>How the levels are picked (<see cref="LodCurve"/>); null: the distances as they are.</summary>
     public LodCurve? Curve;
     /// <summary>The finest level held (0: all of them): see <see cref="ObjectMeshCache.LevelFor"/>.</summary>
@@ -81,6 +83,8 @@ sealed class GpuObjectMesh
     public required float Radius;
     /// <summary>The mesh's highest local Y (the scaffold clip of an unfinished building scales with it).</summary>
     public float Top;
+    /// <summary>The local bounding box (<see cref="DecodedObjectMesh.Min"/>).</summary>
+    public Vector3 Min, Max;
     public long Bytes;
     /// <summary>The finest LOD level whose triangles are held (<see cref="ObjectMeshCache.LevelFor"/>): a draw at a finer level uses this one instead.</summary>
     public int MinLevel;
@@ -300,7 +304,11 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
                     part.Vertices[i].Colour = new Vector4(part.Vertices[i].Colour.X * 1.5f, part.Vertices[i].Colour.Y * 1.5f, part.Vertices[i].Colour.Z * 1.5f, part.Vertices[i].Colour.W);
         var centre = model.Center;
         float radius = model.Radius, top = centre.Y + radius;
-        if (mesh.Bounds is { } b && b.Max.X >= b.Min.X) { centre = (b.Min + b.Max) / 2; radius = Math.Max((b.Max - b.Min).Length() / 2, 1e-3f); top = b.Max.Y; }
+        Vector3 min = new(float.MaxValue), max = new(float.MinValue);
+        if (mesh.Bounds is { } b && b.Max.X >= b.Min.X) { centre = (b.Min + b.Max) / 2; radius = Math.Max((b.Max - b.Min).Length() / 2, 1e-3f); top = b.Max.Y; (min, max) = (b.Min, b.Max); }
+        else
+            foreach (var part in model.Parts)
+                foreach (var v in part.Vertices) { min = Vector3.Min(min, v.Position); max = Vector3.Max(max, v.Position); }
         var levels = MeshLod.Levels(mesh);
         // Generated levels among the file's (docs/render-objects.md, "Generated levels"): a mesh drawn through the normal path, not a distant one, without a skeleton.
         LodCurve? curve = null;
@@ -333,7 +341,7 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
             manual[l] = inner;
         }
         if (minLevel >= levels.Count) minLevel = levels.Count - 1;   // the chain ended earlier than the distances said
-        var result = new DecodedObjectMesh { Model = model, Levels = levels, Manual = manual, Centre = centre, Radius = radius, Top = top, Curve = curve, MinLevel = minLevel };
+        var result = new DecodedObjectMesh { Model = model, Levels = levels, Manual = manual, Centre = centre, Radius = radius, Top = top, Min = min, Max = max, Curve = curve, MinLevel = minLevel };
         foreach (var part in model.Parts) result.Prepared.Add(PreparePart(result, part, keep));
         return result;
     }
@@ -374,6 +382,8 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
         Centre = d.Centre,
         Radius = d.Radius,
         Top = d.Top,
+        Min = d.Min,
+        Max = d.Max,
         MinLevel = d.MinLevel,
     };
 
@@ -692,6 +702,11 @@ sealed class ObjectPartMaterial(SurfaceMaterial? material, WorldTexture? diffuse
         diffuse2?.OfferNow(need);
         normal2?.OfferNow(need);
     }
+
+    /// <summary>Every texture is resident or known to be missing (a picture drawn now will not change as textures arrive).</summary>
+    public bool TexturesSettled => Settled(diffuse) && Settled(normal) && Settled(diffuse2) && Settled(normal2);
+
+    static bool Settled(WorldTexture? t) => t is null || t.Native is not null || t.State == WorldTexture.Residency.Missing;
 }
 
 /// <summary>The materials of a mesh's parts for one placement (parts in the mesh's order).</summary>

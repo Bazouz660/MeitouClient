@@ -96,9 +96,8 @@ public sealed record TownFixture(string Id, string RecordId, bool IsCage, Vector
 }
 
 /// <summary>
-/// The buildings of each placed town, for the AI's homes, beds and nodes (docs/simulation.md "AI", Homes). A placed building belongs to the town its state's
-/// <c>town</c> handle names (at any distance: Squin's reach 4.5 x its radius), else the nearest one (<see cref="BuildingTowns"/>) when it stands within 1.5 x that
-/// town's radius (<b>engine choice</b>: the nearest-town fallback would otherwise hand every lone building in the world to some town). Buildings the level data marks destroyed are kept (the game rebuilds a non-player building on import: <c>FUN_140552b70</c> keeps <c>destroyed</c> only for the player's; the Hub's ruins house its squatters); node markers and resource buildings
+/// The buildings of each placed town, for the AI's homes, beds and nodes (docs/simulation.md "AI", Homes). A placed building belongs to a town as the game's import decides
+/// (<see cref="MemberOf"/>, docs/formats/zones.md "Town membership"). Buildings the level data marks destroyed are kept (the game rebuilds a non-player building on import: <c>FUN_140552b70</c> keeps <c>destroyed</c> only for the player's; the Hub's ruins house its squatters); node markers and resource buildings
 /// (<c>is foliage</c>) are left out. Turrets stay, with their gun and the building they are mounted on (<see cref="TownBuilding.Turret"/>), the AI's turret posts. Beds are interior-layout objects with a BED or SKELETON_BED functionality (docs/game/buildings-production.md, BuildingFunction 6
 /// and 25, found by the type of the referenced records rather than a field name); seats are those with a CHAIR functionality (17); nodes are its <c>is node</c> objects,
 /// their <c>node type</c> kept and their kind read from it (0 shopkeeper, 2 guard post), else from the record name (<see cref="NodeKind(string)"/>).
@@ -118,11 +117,9 @@ public static class TownBuildings
     /// <summary>The buildings by town placement id (<see cref="TownPlacement.InstanceId"/>), each list in placement order.</summary>
     public static Dictionary<string, List<TownBuilding>> Build(GameDatabase db, WorldLevelData levels, BuildingLayouts? layouts, Func<double, double, float> terrainHeight)
     {
-        var towns = new BuildingTowns(db, levels);
-        var radius = new Dictionary<string, float>(StringComparer.Ordinal);
+        var towns = new List<(TownPlacement Placement, Gameplay.TownData Town)>();
         foreach (var t in levels.Towns())
-            if (db.Find(t.TownId) is { Type: FcsRecordType.TOWN } record && Gameplay.TownData.From(record) is var town)
-                radius[t.InstanceId] = MathF.Max(town.SizeRadius * town.TownRadiusMult, 1);
+            if (db.Find(t.TownId) is { Type: FcsRecordType.TOWN } record) towns.Add((t, Gameplay.TownData.From(record)));
         var beds = new Dictionary<string, bool>(StringComparer.Ordinal);
         var functions = new Dictionary<string, GameRecord?>(StringComparer.Ordinal);
         // The instance of each building state's own handle, so a turret's mounted handle names the building it stands on.
@@ -139,9 +136,7 @@ public static class TownBuildings
             var record = resolved.Record;
             if (record.GetBool("is node") || record.GetBool("is foliage")) continue;
             var state = b.StateId is not null && levels.Zones.TryGetValue(b.Zone, out var zoneDb) ? zoneDb.Find(b.StateId) : null;
-            var linked = towns.TownByHandle(state);
-            if ((linked ?? towns.NearestTown(resolved.Position)) is not { } town || !radius.TryGetValue(town.InstanceId, out float r)) continue;
-            if (linked is null && Vector2.Distance(new Vector2(town.Position.X, town.Position.Z), new Vector2(resolved.Position.X, resolved.Position.Z)) > r * 1.5f) continue;
+            if (MemberOf(towns, resolved.Position, record) is not { } town) continue;
             var functionality = FunctionOf(db, record, functions);
             TurretPost? turret = functionality is { } fn && fn.GetInt("function") == ObjectRanges.TurretFunction
                 ? new TurretPost(resolved.Position, YawOf(b.Rotation), fn.GetFloat("use range", 10),
@@ -212,6 +207,35 @@ public static class TownBuildings
         }
         return result;
     }
+
+    /// <summary>
+    /// The town a level-data building belongs to (docs/formats/zones.md "Town membership", Observed: the building import <c>FUN_14057cc70</c>): the nearest town whose
+    /// <see cref="Gameplay.TownData.Radius"/> holds it (X/Z, nest markers left out); else, for a record with <c>interior</c> parts, the nearest town within 10000; else none.
+    /// The state's <c>town</c> handle is not used: the game keeps it only for player towns.
+    /// </summary>
+    static TownPlacement? MemberOf(List<(TownPlacement Placement, Gameplay.TownData Town)> towns, Vector3 position, GameRecord record)
+    {
+        var at = new Vector2(position.X, position.Z);
+        TownPlacement? best = null;
+        float bestD = float.MaxValue;
+        foreach (var (p, t) in towns)
+        {
+            if (t.Type == Gameplay.TownType.NestMarker) continue;
+            float d = Vector2.DistanceSquared(at, new Vector2(p.Position.X, p.Position.Z));
+            if (d <= t.Radius * t.Radius && d < bestD) (best, bestD) = (p, d);
+        }
+        if (best is not null || record.GetReferences("interior").Count == 0) return best;
+        bestD = InteriorReach * InteriorReach;
+        foreach (var (p, _) in towns)
+        {
+            float d = Vector2.DistanceSquared(at, new Vector2(p.Position.X, p.Position.Z));
+            if (d < bestD) (best, bestD) = (p, d);
+        }
+        return best;
+    }
+
+    /// <summary>A building with an interior outside every town's radius goes to the nearest town within this distance (the import's squared bound 1e8).</summary>
+    const float InteriorReach = 10000;
 
     /// <summary>The key of the building a state's <c>mounted</c> handle names; null when the handle is null, not a building, or unknown.</summary>
     static string? MountedOn(Dictionary<(int C, int I), string> instances, GameRecord? state) =>

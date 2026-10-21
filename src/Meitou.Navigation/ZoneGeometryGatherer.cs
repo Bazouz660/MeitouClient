@@ -91,6 +91,7 @@ internal sealed partial class ZoneGeometryGatherer : IDisposable
             ZoneMin = new((float)ox, (float)oz),
             ZoneMax = new((float)ox + WorldLayout.ZoneSize, (float)oz + WorldLayout.ZoneSize),
             Margin = margin,
+            TerrainHeight = (x, z) => (float)map.HeightAt(x, z),
         };
         var sw = Stopwatch.StartNew();
         // Foliage placement is the long pole: it runs on the pool while the terrain and buildings are gathered here.

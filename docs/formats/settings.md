@@ -67,7 +67,7 @@ i.e. everything).
 
 | Key | Type, range | Missing → | Options label | What it does | Restart |
 | --- | --- | --- | --- | --- | --- |
-| `Blood` | bool | 1 | Blood | Gates blood effects ([character-stats.md](../game/character-stats.md)); also read by the decal code (FUN_1408df7d0) | No |
+| `Blood` | bool | 1 | Blood | Gates blood effects ([character-stats.md](../game/character-stats.md)); also read by the decal code (FUN_1408df7d0) and the blood decal sources ([blood-decals.md](../game/blood-decals.md)) | No |
 | `Decal Range` | float (written as int); slider 0 … 5000 | 1000 | Decal Range | Radius passed to `Terrain::getBloodPatches(range, …)`: the terrain patches within it get blood-decal textures (FUN_1408dd860) | No |
 | `Decal Resolution` | int 512 / 1024 / 2048 | 1024 | Decal Resolution: 512, 1024, 2048 (the item data are the sizes) | Side of each `Kenshi_Decal_Texture_<n>` render texture; changing it removes and re-creates them (FUN_1408de890, run when the options close) | No |
 | `harpoonLimit` | int (stored as float); slider 10 … 500 | 60 | Harpoon limit | Most harpoons / arrows left stuck in the world; adding one beyond it removes one (FUN_14043acf0) | No |
@@ -113,8 +113,8 @@ i.e. everything).
 | `font size2` | int (stored as float); slider −10 … 32 | 3 | Font Size | GUI font size: added in points to every font's MyGUI default height ([mygui.md](mygui.md)) |
 | `tutorials` | bool | 1 | Tutorials | In-game tutorials ("Reset Tutorials" is a button, not a key) |
 | `censorship` | bool | 0 | Language censorship | Filters swearing in dialogue (FUN_14067e8b0) |
-| `language` | string, locale code | see text | none in options | The locale folder `locale/<code>/` used for translations |
-| `steam_language` | string, Steam language name | see text | none | The Steam language the `language` was last chosen from |
+| `language` | string, locale code | see text | none in options | The locale folder `locale/<code>/` used for translations; empty falls back to `steam_language`, unknown is `en_GB` ([localisation](localisation.md)). Meitou reads it, never writes it |
+| `steam_language` | string, Steam language name | see text | none | The Steam language the `language` was last chosen from; decides when `language` is empty (**Verified**, FUN_140175a90) |
 
 ### Audio
 
@@ -184,10 +184,12 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 | `camera speed`, `camera zoom` | Constants in `KenshiCamera` / `CameraSettings` (500, 125) |
 | `water reflection`, `reflection range` | Honoured as options (2026-10-06): `--water-reflection <0..4>` (viewer default 4; the game's missing-key default is 2) and the reflection range (viewer default 3; the game's 0.6; Tab slider only, the `--reflection-range` option was removed); `--water-reflection 0` / `R` are the on/off switch (`--no-reflections` was removed). See "Viewer: water reflection" below |
 | `terrain detail`, `terrain distant`, `terrain threshold`, `terrain patch size` | Not honoured, deliberately (2026-10-06): the viewer does not replicate the game's per-node rule above. Its CDLOD (64-quad patches) uses its own resolution-aware screen-space error, measured in pixels of the picture actually rendered (after the upscaler's render scale): `--terrain-error <px>` (default 10, Tab slider "Terrain detail"), no far ramp (the `--terrain-far-error` and `--terrain-ramp` options were removed). See [terrain.md](terrain.md#lod-water-and-sun) |
-| `texture resolution gimping` | Honoured as `--texture-quality <0..4>` (viewer default 0, full size; the game's missing-key default is 1; restart to change, like the game). See "Viewer: texture quality" below |
-| `Decal Range`, `Decal Resolution`, `Blood`, `harpoonLimit` | Not implemented (no decals) |
+| `texture resolution gimping` | Honoured as `--texture-quality <0..4>` and, in the game, the saved Tab slider (applied before the world loads; the option and `--low-end` win). Missing: 0, full size (the game's missing-key default is 1). Object/foliage/character textures reload when the slider moves; the terrain layer arrays take one size, `2048 >> level` (the `Landscape` drop, [dds.md](dds.md) "Terrain layer textures"), at start, so terrain needs a restart like the game. 133 texture pairs (BC3 + BC1, full mips), all allocated up front: 1064 / 266 / 67 / 17 / 4 MiB at levels 0 … 4 |
+| `Blood`, `Decal Range`, `Decal Resolution` | Honoured by the game (read once at start from `settings.cfg`; restart to change): blood decals on the terrain, [blood-decals.md](../game/blood-decals.md). Not in the viewer |
+| `harpoonLimit` | Not implemented |
 | `generate distant towns` | Not honoured: towns without a baked mesh are drawn from their buildings' distant meshes |
-| `npc range`, `mouse speed *`, `invert *`, UI, audio, gameplay keys | Not applicable / not implemented |
+| `mouse speed pan`, `mouse speed tilt` | The game's Controls page has one "Camera rotation speed" slider (2 … 50, default 6) setting both; kept in `meitou.user.json`, `settings.cfg` not read |
+| `npc range`, `mouse speed horizontal` / `vertical`, `invert *`, UI, audio, gameplay keys | Not applicable / not implemented |
 
 ### Viewer: water reflection
 
@@ -206,7 +208,7 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 - What town display state 4 is (set for reflections at levels 3 and 4), and when the water programs are rebuilt after
   `water reflection` changes to or from 0.
 - The reflection camera's far clip before FUN_1403e7490 first runs (Ogre's default assumed).
-- The number and pixel format of the decal textures; the unit of the `attacks` timers.
+- The unit of the `attacks` timers.
 - Whether anything reads `civilians`.
 - In-session effect of `feature range` 7 or 8 (above the loader's clamp).
 

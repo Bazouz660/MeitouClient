@@ -44,8 +44,9 @@ public sealed record PlacedMesh(string MeshPath, Matrix4x4 Transform, GameRecord
 /// <param name="Position">World position.</param>
 /// <param name="Direction">World direction a spot light points in (unit length); also set for point lights.</param>
 /// <param name="Power">The light's power: <c>brightness</c> plus the building's roll in ±<c>variance</c>/2.</param>
+/// <param name="Function">The owner's <c>function</c>, read from its BUILDING_FUNCTIONALITY (-1 without one): the BUILDING itself has no such field.</param>
 public sealed record PlacedLight(GameRecord Light, GameRecord Holder, GameRecord Owner, string PlacementId, string InstanceId, Vector3 Position,
-    Vector3 Direction, float Power);
+    Vector3 Direction, float Power, int Function = -1);
 
 /// <summary>State of a placed building that changes what is drawn (from its GAMESTATE_BUILDING and its town).</summary>
 /// <param name="Destroyed">The state's <c>destroyed</c> flag: parts switch to their <c>destroyed mesh</c>, upper floors and stairs without one go.</param>
@@ -87,10 +88,13 @@ public static class WorldObjectLayout
     /// </summary>
     public static PlacedMesh? Item(GameRecord item, string placementId, Vector3 worldPosition, Quaternion rotation)
     {
-        string mesh = item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
+        string mesh = ItemMesh(item);
         if (mesh.Length == 0) return null;
         return new PlacedMesh(mesh, InstanceTransform(worldPosition, rotation, Vector3.One), item, item, placementId, PlacedKind.Item);
     }
+
+    /// <summary>The mesh a loose item is drawn with: its <c>ground mesh</c>, else its <c>mesh</c>; "" for none.</summary>
+    public static string ItemMesh(GameRecord item) => item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
 
     /// <summary>
     /// Meshes of a placed building and of the doors it lists. <paramref name="worldPosition"/> is the absolute position
@@ -261,7 +265,8 @@ public static class WorldObjectLayout
         var local = Vector3.Transform(-Vector3.UnitY, Normalized(instance.Rotation));
         var direction = Vector3.TransformNormal(local, holderNode);
         direction = direction.LengthSquared() > 1e-12f ? Vector3.Normalize(direction) : -Vector3.UnitY;
-        return new PlacedLight(light, holder, a.Building, a.Identity, instance.Id, position, direction, power);
+        int function = a.Building.GetReferences("functionality") is [var link, ..] && a.Db.Find(link.TargetStringId) is { } fn ? fn.GetInt("function", -1) : -1;
+        return new PlacedLight(light, holder, a.Building, a.Identity, instance.Id, position, direction, power, function);
     }
 
     /// <summary>A part's material (game: Building's part material lookup): its first <c>material</c>, else the building's base, else <see cref="FallbackPartMaterial"/>.</summary>

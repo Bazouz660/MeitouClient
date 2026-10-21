@@ -45,7 +45,7 @@ public static class SpawnBounties
     static int DefaultFaction(PopulationData data)
     {
         for (int f = 0; f < data.Factions.Count; f++)
-            if (data.Factions[f].Name == DefaultEmpire) return f;
+            if (data.Factions[f].BaseName == DefaultEmpire) return f;
         return -1;
     }
 

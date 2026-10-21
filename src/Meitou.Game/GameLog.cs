@@ -3,7 +3,7 @@ using System.Text;
 namespace Meitou.Game;
 
 /// <summary>
-/// log.txt next to meitou.exe: everything the game writes to its output and error, appended across runs. Past <see cref="Cap"/> the
+/// log.txt next to MeitouClient.exe: everything the game writes to its output and error, appended across runs. Past <see cref="Cap"/> the
 /// oldest lines are cut, down to <see cref="Keep"/>. Only one running game writes it; a second one started from the same folder logs nothing.
 /// </summary>
 sealed class GameLog : TextWriter

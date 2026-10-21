@@ -14,7 +14,8 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [character-viewer](character-viewer.md)
 - [characters](characters.md)
 - [impostors](impostors.md)
-- [macos-port](macos-port.md): the macOS port (MoltenVK), what it needed and what it cost
+- [launcher](launcher.md): game release installer, mod list and presets
+- [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes; the native Metal path next to it
 - [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
 - [metal-performance-memory](metal-performance-memory.md): the Metal frame-rate and bounded-memory plan (baseline, targets, order)
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
@@ -47,6 +48,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [fcs-mod](formats/fcs-mod.md)
 - [fogfeatures](formats/fogfeatures.md)
 - [gettext](formats/gettext.md)
+- [localisation](formats/localisation.md): language selection, locale overlay, translations
 - [havok-tagfile](formats/havok-tagfile.md): `.hkt` encoding, navmesh tiles
 - [foliage](formats/foliage.md)
 - [lighting](formats/lighting.md)
@@ -74,6 +76,8 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 
 - [ai-tasks](game/ai-tasks.md)
 - [ai](game/ai.md)
+- [blood-decals](game/blood-decals.md): blood pools, smears and splashes on the terrain
+- [luckyren](game/luckyren.md): Meitou luckyren Mode, characters bursting on a fatal hit (gear, blood, flying bones)
 - [animals](game/animals.md)
 - [buildings-production](game/buildings-production.md)
 - [carry-loot](game/carry-loot.md)

@@ -14,7 +14,7 @@ public static class OgreMeshReader
     public const string Version1_8 = "[MeshSerializer_v1.8]";
     public const string Version1_41 = "[MeshSerializer_v1.41]";
 
-    public static OgreMesh ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static OgreMesh ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     /// <summary>
     /// The mesh's bounds box without reading its geometry: walks the <c>M_MESH</c> sub-chunks by their length fields (seeking over the vertex and index

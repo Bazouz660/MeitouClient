@@ -19,6 +19,34 @@ public sealed record ResearchData
     /// <summary><c>cost</c>: items and counts (v0) paid when it is queued.</summary>
     public IReadOnlyList<(string Item, int Count)> Cost { get; init; } = [];
     public IReadOnlyList<string> EnableBuildings { get; init; } = [];
+    /// <summary><c>repeats</c>: how many more times it can be researched after the first (fcs.def).</summary>
+    public int Repeats { get; init; }
+    /// <summary><c>repeat mult</c>: the cost factor per repetition (<b>Observed</b>, <c>FUN_1408320a0</c>).</summary>
+    public float RepeatMult { get; init; } = 1;
+    /// <summary>The crafts it unlocks (<c>enable item</c>, <c>enable armour</c>, ...): kind, record and the repetition (v0, 0 = the first) that unlocks it.</summary>
+    public IReadOnlyList<(CraftKind Kind, string Id, int Repetition)> EnableCrafts { get; init; } = [];
+
+    /// <summary><c>improve buildings</c>: the BUILDINGs its <see cref="ProductionMult"/>, <see cref="PowerIncrease"/> and <see cref="CapacityIncrease"/> apply to (<b>Observed</b>, <c>FUN_140831a60</c>).</summary>
+    public IReadOnlyList<string> ImproveBuildings { get; init; } = [];
+    /// <summary><c>production mult</c>: replaces the listed buildings' multiplier (the last finished research wins).</summary>
+    public float ProductionMult { get; init; } = 1;
+    /// <summary><c>power increase</c> and <c>power capacity increase</c>: added to the listed buildings' <c>power output</c> and <c>power capacity</c>.</summary>
+    public int PowerIncrease { get; init; }
+    public int CapacityIncrease { get; init; }
+
+    /// <summary>The <c>enable</c> list of each craft kind (fcs.def, <b>Verified</b>); weapon types and models both unlock weapons.</summary>
+    public static readonly (string Field, CraftKind Kind)[] EnableFields =
+    [
+        ("enable item", CraftKind.Item), ("enable armour", CraftKind.Armour), ("enable weapon type", CraftKind.Weapon), ("enable weapon model", CraftKind.Weapon),
+        ("enable crossbow", CraftKind.Crossbow), ("enable backpack", CraftKind.Backpack), ("enable robotics", CraftKind.Robotics),
+    ];
+
+    /// <summary>The cost of its repetition <paramref name="times"/> (0 the first): each count x <c>repeat mult</c>^times, rounded down (engine reading).</summary>
+    public IEnumerable<(string Item, int Count)> CostAt(int times)
+    {
+        float f = MathF.Pow(RepeatMult, times);
+        foreach (var (item, count) in Cost) yield return (item, Math.Max(1, (int)(count * f)));
+    }
 
     /// <summary>
     /// The research hours (<b>Observed</b>, <c>FUN_14082ed10</c>): <c>time x research rate x level increase^(level - 1) / option</c>, the power by repeated multiplication (as the exe).
@@ -43,6 +71,13 @@ public sealed record ResearchData
         Requirements = [.. r.GetReferences("requirements").Select(l => l.TargetStringId)],
         Cost = [.. r.GetReferences("cost").Where(l => l.Values.Value0 > 0).Select(l => (l.TargetStringId, l.Values.Value0))],
         EnableBuildings = [.. r.GetReferences("enable buildings").Select(l => l.TargetStringId)],
+        Repeats = Math.Max(0, r.GetInt("repeats")),
+        RepeatMult = r.GetFloat("repeat mult", 1),
+        ImproveBuildings = [.. r.GetReferences("improve buildings").Select(l => l.TargetStringId)],
+        ProductionMult = r.GetFloat("production mult", 1),
+        PowerIncrease = r.GetInt("power increase"),
+        CapacityIncrease = r.GetInt("power capacity increase"),
+        EnableCrafts = [.. EnableFields.SelectMany(e => r.GetReferences(e.Field).Select(l => (e.Kind, l.TargetStringId, l.Values.Value0)))],
     };
 
     /// <summary>Every RESEARCH record, in the database's order.</summary>

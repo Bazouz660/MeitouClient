@@ -22,6 +22,7 @@ sealed partial class PlayerInterface
         if (key == Meitou.Engine.Input.Key.Escape && CloseContextMenu()) return true;
         if (key == Meitou.Engine.Input.Key.Escape)
         {
+            if (advancedOpen && faithfulScreens.OpenScreens.LastOrDefault() == "new-game") { advancedOpen = false; return true; }
             if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) return true;
             if (EditorOpen && faithfulScreens.OpenScreens[^1] == "editor") { EditorEscape(); UpdateMenuPause(); return true; }
             // Esc presses the last button of the top message box (Return the first, docs/game/ui-input.md section 5).
@@ -30,20 +31,21 @@ sealed partial class PlayerInterface
             UpdateMenuPause();
             return true;
         }
-        if (faithfulScreens.HasKeyboardFocus)
-        {
-            UiEditKey? editing = key switch { Meitou.Engine.Input.Key.Left => UiEditKey.Left, Meitou.Engine.Input.Key.Right => UiEditKey.Right,
-                Meitou.Engine.Input.Key.Home => UiEditKey.Home, Meitou.Engine.Input.Key.End => UiEditKey.End, Meitou.Engine.Input.Key.Backspace => UiEditKey.Backspace,
-                Meitou.Engine.Input.Key.Delete => UiEditKey.Delete, Meitou.Engine.Input.Key.A when ctrl => UiEditKey.SelectAll, _ => null };
-            if (editing is { } editKey) faithfulScreens.EditKey(editKey, shift);
-            if (key == Meitou.Engine.Input.Key.Tab) faithfulScreens.FocusNext(shift);
-            if (key == Meitou.Engine.Input.Key.Enter) faithfulScreens.Submit();
-            return true;
-        }
+        if (faithfulScreens.HasKeyboardFocus && EditFocusKey(key, ctrl, shift)) return true;
         if (key == Meitou.Engine.Input.Key.Tab && faithfulScreens.FocusNext(shift)) return true;
         if (key == Meitou.Engine.Input.Key.Enter && faithfulScreens.Submit()) return true;
+        if (key == Meitou.Engine.Input.Key.Space && faithfulScreens.ActivateFocused()) return true;
+        // The list or combo box last clicked takes the MyGUI ListBox keys (docs/formats/mygui.md "Widget runtime").
+        if (key switch
+            {
+                Meitou.Engine.Input.Key.Up => UiListKey.Up, Meitou.Engine.Input.Key.Down => UiListKey.Down, Meitou.Engine.Input.Key.PageUp => UiListKey.PageUp,
+                Meitou.Engine.Input.Key.PageDown => UiListKey.PageDown, Meitou.Engine.Input.Key.Home => UiListKey.Home, Meitou.Engine.Input.Key.End => UiListKey.End,
+                Meitou.Engine.Input.Key.Enter => UiListKey.Accept, _ => (UiListKey?)null,
+            } is { } listKey && faithfulScreens.ListKey(listKey)) return true;
         if (DialogueKey(key)) return true;
         if (faithfulScreens.HasModal) return true;
+        // change_squad (Tab): the squad bar shows the next squad with members (docs/game/ui-input.md section 6).
+        if (key == Meitou.Engine.Input.Key.Tab && !TitleOpen && !EditorOpen) { Say(new ActiveSquadCommand(-1) { Tick = session.World.Tick }); return true; }
         if (ReservedKeys.Contains(key)) return false;
         if (key is Meitou.Engine.Input.Key.I or Meitou.Engine.Input.Key.C) { ExecuteUiAction(key == Meitou.Engine.Input.Key.I ? "inventory" : "stats", ""); return true; }
         // toggle_map / toggle_research / toggle_crafting (M / T / Y) ask for overview tabs 0 / 2 / 3 (docs/game/ui-input.md section 6); toggle_faction (tab 1) is unbound.
@@ -64,6 +66,7 @@ sealed partial class PlayerInterface
         ArrangeUi();
         if (InventoryWheel(p, steps)) return true;
         if (MapWheel(p, steps)) return true;
+        if (SquadsWheel(p, steps)) return true;
         return EditorWheel(p, steps) || faithfulScreens.Wheel(p, steps);
     }
     void FaithfulAction(MyGuiEvent e)
@@ -74,17 +77,19 @@ sealed partial class PlayerInterface
         if (e.Action.StartsWith("inventory-scroll-page:", StringComparison.Ordinal))
         { ScrollInventoryPage(e.Screen, float.Parse(e.Action[22..], CultureInfo.InvariantCulture)); return; }
         if (e.Screen == "editor") EditorAction(e);
+        else if (e.Screen == "file") FileDialogAction(e);
         else if (HandleFrontendAction(e)) UpdateMenuPause();
         else if (e.Screen == "stats" && e.Action == "select") selectedStat = e.Text;
         else if (e.Screen == "stats" && e.Action.StartsWith("stat:", StringComparison.Ordinal)) selectedStat = e.Action[5..];
         else if (e.Screen == "build") BuildAction(e);
         else if (e.Screen == "dialogue") DialogueAction(e);
-        else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); }
+        else if (e.Screen == "prospect") ProspectScreenAction(e);
+        else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); }
         else if (e.Screen is "building" or "bench") MachineAction(e);
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });
         else if (e.Screen is "inventory" or "bag")
         {
-            if (e.Widget == "OpenBagButton") { faithfulScreens.Open("bag"); if (shownTrader.IsNone) PlaceBagWindow(); else PlaceTradeWindows(); }
+            if (e.Widget == "OpenBagButton") ToggleBag();
             else if (e.Widget == "LimbsButton") faithfulScreens.Open("limbs");
             else if (e.Widget == "ArrangeButton" && Selected().FirstOrDefault() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
         }
@@ -97,8 +102,10 @@ sealed partial class PlayerInterface
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
         if (BindFrontend(id, b)) return b;
         if (id == "editor") { BindEditor(b); return b; }
+        if (id == "file") { BindFileDialog(b); return b; }
         else if (id == "trader") BindTraderScreen(b);
         else if (id == "dialogue") BindDialogueScreen(b);
+        else if (id == "prospect") BindProspectScreen(b);
         else if (id == "build") BindBuildScreen(b);
         else if (id is "building" or "bench") BindMachineScreen(id, b);
         else if (id is "inventory" or "stats" or "bag" or "limbs")
@@ -135,13 +142,14 @@ sealed partial class PlayerInterface
             foreach (var tab in layout.Widgets.Where(w => w.Type == "TabItem")) b.Properties[tab.Name] = new Dictionary<string, string> { ["Visible"] = "true" };
             b.Text["FactionNameText"] = "Player";
             b.Disabled.Add("FactionNameText");
-            b.Text["FactionSizeText"] = PlayerCharacters().Count.ToString(CultureInfo.InvariantCulture);
             b.Text["MessagesTextBox"] = string.Join('\n', uiMessages);
             b.Properties["MessagesTextBox"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top" };
-            b.Lists["SquadsPanel"] = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).Select(c => new UiListItem(c.Id.ToString(), c.Name)).ToArray();
+            BindSquadsTab(b);
             BindResearchTab(b);
+            BindCraftTab(b);
             // Editor preview markers are unrelated to the current camera and orders.
             b.Hidden.Add("CameraMarker"); b.Hidden.Add("MovemementMarker");
+            b.NativeScroll.Add("MapScrollView");   // the map pans and zooms itself (PlayerInterface.Map.cs); the canvas is not the layout's 4096 px
         }
         if (id is "inventory" or "bag" or "limbs" or "trader") BindInventoryGeometry(id, b);
         return b;
@@ -160,7 +168,9 @@ sealed partial class PlayerInterface
             StatsEnumerated.SmithingWeapon, StatsEnumerated.SmithingArmour, StatsEnumerated.SmithingBow, StatsEnumerated.Labouring, StatsEnumerated.Farming, StatsEnumerated.Cooking],
     ];
 
-    static string StatLabel(StatsEnumerated stat) => stat switch
+    static string StatLabel(StatsEnumerated stat) => Loc.Tr(StatLabelEnglish(stat));
+
+    static string StatLabelEnglish(StatsEnumerated stat) => stat switch
     {
         StatsEnumerated.Thieving => "Thievery", StatsEnumerated.HeavyWeapons => "Heavy weapons",
         StatsEnumerated.MeleeAttack => "Melee attack", StatsEnumerated.MeleeDefence => "Melee defence",
@@ -173,12 +183,16 @@ sealed partial class PlayerInterface
     {
         if (id == "title" && UiMode == UiMode.Meitou) { MeitouTitleMenu(controls); return; }
         if (id == "stats") { AddStatsContent(controls); return; }
+        if (id == "new-game") { AddAdvancedContent(controls); return; }
         if (id == "editor") { AddEditorContent(controls); return; }
         if (id == "build") { AddBuildContent(controls); return; }
         if (id == "dialogue") { AddDialogueChoices(controls); return; }
+        if (id == "prospect") { AddProspectContent(controls); return; }
         if (id is "building" or "bench") { AddMachineContent(id, controls); return; }
+        // The bag window has no caption buttons (the vanilla screenshot): OPEN BAG closes it.
+        if (id == "bag") controls.RemoveAll(c => c.Action.StartsWith("mygui:close", StringComparison.Ordinal) || c.Action.StartsWith("mygui:pin", StringComparison.Ordinal));
         AddMapContent(id, controls);
-        if (id == "overview") AddResearchContent(controls);
+        if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); }
         if (id == "trader") { ArrangeTraderWindow(controls); AddTraderContent(controls); return; }
         if (id is not ("inventory" or "bag" or "limbs") || Selected().FirstOrDefault() is not { ItemGrid: { } grid } lead) return;
         string gridSection = id == "bag" ? "backpack_content" : "main";
@@ -193,13 +207,13 @@ sealed partial class PlayerInterface
             var area = slot.Bounds;
             if (item.Section == gridSection && columns > 0 && rows > 0) area = new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows);
             else area = new(area.X + item.X * InventoryCell, area.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell);
-            AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, JoinCaptions(SellCaption(lead.Id, item.Index) ?? $"Weight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg", MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
+            AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
         }
     }
     readonly List<string> uiMessages = [];
     /// <summary>
     /// The orders panel's toggles by the words in their widget names (the layout names only <c>OrdersChaseButton</c>, <c>OrdersMedicButton</c> and <c>OrdersRescueButton</c>
-    /// for certain, docs/game/ui-screens.md section 4; the rest are matched by the button's word, so a differently spelt name still binds). Prospect has no backend.
+    /// for certain, docs/game/ui-screens.md section 4; the rest are matched by the button's word, so a differently spelt name still binds). Prospect is its own action (PlayerInterface.Prospecting.cs).
     /// </summary>
     static readonly (string Word, CharacterOrders Order)[] OrderWords =
     [
@@ -231,18 +245,24 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The jobs list (<c>JobsPanel</c>, docs/game/ui-screens.md section 4): the lead's jobs, one row each with an X that removes it from that character; with none, the
-    /// layout's hint. Meitou's jobs are the medic and rescue jobs, named as their buttons, in that order (the original's row text and order are <b>Unknown</b>).
+    /// layout's hint. The job list (<see cref="Meitou.Simulation.Production.PermaJobs"/>, the medic and rescue jobs included)
+    /// as "&lt;row text&gt;: &lt;building&gt;" (the original's row text is <b>Unknown</b>); rows are dragged to reorder.
     /// </summary>
     void BindJobs(UiBindings b, Meitou.Simulation.CharacterSnapshot? lead)
     {
         var jobs = new List<UiListItem>();
-        if (lead?.Body is { MedicJob: true }) jobs.Add(new("medic", "Medic"));
-        if (lead?.Body is { RescueJob: true }) jobs.Add(new("rescue", "Rescue"));
+        for (int i = 0; i < (lead?.Jobs.Count ?? 0); i++)
+        {
+            var job = lead!.Jobs[i];
+            string text = Loc.Tr(Meitou.Simulation.Production.PermaJobs.Text(job.Type) ?? job.Type.ToString());
+            if (job.Site is { } id && session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { } site) text += ": " + SiteName(site);
+            jobs.Add(new("job:" + i.ToString(CultureInfo.InvariantCulture), text));
+        }
         b.Lists["JobsPanel"] = jobs;
         // A few rows never overflow the box, and MyGUI shows an ItemBox's scroll bars only on overflow.
         foreach (var bar in faithfulHud.Find("JobsPanel")?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
         if (jobs.Count > 0) b.Hidden.Add("JobsPanelInfo");
-        else b.Text["JobsPanelInfo"] = "[No jobs assigned]\n[To add jobs, hold shift key when giving an order]";
+        else b.Text["JobsPanelInfo"] = Loc.Tr("[No jobs assigned]") + "\n" + Loc.Tr("[To add jobs, hold shift key when giving an order]");
     }
 
     /// <summary>The X at the right end of each jobs row (the original's remove button, its tutorial: "remove a job at any time by pressing the X button").</summary>
@@ -256,12 +276,39 @@ sealed partial class PlayerInterface
         }
     }
 
+    /// <summary>The job row (its list index) pressed and being dragged to a new place in the list; null: none.</summary>
+    int? jobDrag;
+
+    /// <summary>The job-list index of the jobs row under a point (not its X), or null.</summary>
+    static int? JobRowAt(IReadOnlyList<UiControl> controls, Vector2 p)
+    {
+        if (controls.Any(c => c.Action == "meitou:job-remove" && c.Bounds.Contains(p.X, p.Y))) return null;
+        var row = controls.FirstOrDefault(c => c.Properties.GetValueOrDefault("ListOwner") == "JobsPanel" && c.Bounds.Contains(p.X, p.Y));
+        return row is not null && row.Argument.StartsWith("job:", StringComparison.Ordinal) && int.TryParse(row.Argument.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out int i) ? i : null;
+    }
+
+    /// <summary>A press on a job row starts dragging it (true: taken).</summary>
+    bool JobDragStart(IReadOnlyList<UiControl> controls, Vector2 p)
+    {
+        jobDrag = JobRowAt(controls, p);
+        return jobDrag is not null;
+    }
+
+    /// <summary>The button let go: a dragged job dropped on another row of the list moves there.</summary>
+    void JobDragEnd(Vector2 p)
+    {
+        if (jobDrag is not { } from) return;
+        jobDrag = null;
+        if (JobRowAt(ArrangeUi(), p) is { } to && to != from && (Selected().FirstOrDefault() ?? Lead()) is { IsPlayer: true } lead)
+            Say(new Meitou.Simulation.Production.MoveJob(lead.Id, from, to) { Tick = session.World.Tick });
+    }
+
     /// <summary>Takes a job (the jobs list's row id) off the lead whose list shows it.</summary>
     void RemoveJob(string job)
     {
         if ((Selected().FirstOrDefault() ?? Lead()) is not { IsPlayer: true } lead) return;
-        if (job == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand([lead.Id], false) { Tick = session.World.Tick });
-        else if (job == "rescue") Say(new Meitou.Simulation.Carrying.RescueJobCommand([lead.Id], false) { Tick = session.World.Tick });
+        if (job.StartsWith("job:", StringComparison.Ordinal) && int.TryParse(job.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out int index))
+            Say(new Meitou.Simulation.Production.RemoveJob(lead.Id, index) { Tick = session.World.Tick });
     }
 
     /// <summary>The speed icon per mode: the <c>Kenshi_CharacterSpeedSet</c> image names, in mode order.</summary>

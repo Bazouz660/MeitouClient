@@ -36,6 +36,7 @@ public sealed partial class PopulationSystem
         }
         stored.Anchor = at;
         stored.StoredTick = world.Tick;
+        stored.StoredHours = world.GameHours;
         return at;
     }
 
@@ -60,12 +61,12 @@ public sealed partial class PopulationSystem
         c.StealthExposureTick = long.MinValue;
         c.TreatTarget = CharacterId.None;
         c.TreatSplint = false;
-        c.MedicJob = false;
+        c.Jobs.Clear();
+        c.JobIndex = -1;
         c.Carrying = CharacterId.None;
         c.CarriedBy = CharacterId.None;
         c.CarryTarget = CharacterId.None;
         c.LiftTime = -1;
-        c.RescueJob = false;
         c.Pending = null;
         c.Ai = null;
         c.PickingLock = null;
@@ -83,7 +84,10 @@ public sealed partial class PopulationSystem
         if (stored.Members.Count == 0) return null;
         var site = data.Sites[p.Origin];
         float radius = site.Town.SizeRadius * site.Town.TownRadiusMult;
-        return SpawnKept(world, stored, p.TemplateId, p.Faction, p.Origin, p.Id, p.Position, new Vector2(site.Position.X, site.Position.Z), Math.Max(radius * 0.8f, 40), p.Size);
+        bool resume = ResidentSchedule && stored.Pinned && world.GameHours - stored.StoredHours >= ScheduleAfterHours;
+        var squad = SpawnKept(world, stored, p.TemplateId, p.Faction, p.Origin, p.Id, p.Position, new Vector2(site.Position.X, site.Position.Z), Math.Max(radius * 0.8f, 40), p.Size);
+        if (squad is not null) squad.Resume = resume;
+        return squad;
     }
 
     /// <summary>Stored characters into the world as a squad of <paramref name="town"/> (-1: a wild one) homed at the given circle, moved along when <paramref name="position"/> is not where they were stored.</summary>
@@ -105,6 +109,8 @@ public sealed partial class PopulationSystem
             HomeRadius = homeRadius,
             HomeBuilding = stored.HomeBuilding,
             Shop = stored.Shop,
+            SavedAi = stored.Ai,
+            NextHomeFillTick = stored.NextHomeFillTick,
         };
         // A stand-in that travelled since takes its members along, each on walkable ground (else at the stand-in).
         var walk = world.Walkability;

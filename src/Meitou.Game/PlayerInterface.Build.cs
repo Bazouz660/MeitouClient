@@ -388,11 +388,12 @@ sealed partial class PlayerInterface
         b.Text["BuildingName"] = building?.Name ?? "";
         b.Text["DescriptionText"] = building is null || buildHost is null ? "" : buildHost.Description(building.Id);
         b.Properties["DescriptionText"] = new Dictionary<string, string> { ["WordWrap"] = "true", ["TextAlign"] = "Left Top", ["TextColour"] = MyGuiColours.InkText };
-        // The pictures of buildings (data/icons/buildings) are not drawn yet.
-        b.Hidden.Add("BuildingImage");
+        // The building's picture (docs/game/ui-screens.md "Building icons"): the game's saved one, else the renderer's drawing; the frame stays empty while it loads.
+        if (BuildingImage(building) is { } image) b.Properties["BuildingImage"] = image;
+        else b.Hidden.Add("BuildingImage");
         b.Text["CommandsTextBox"] = string.Join('\n', BuildCommandLines);
         b.Properties["CommandsTextBox"] = new Dictionary<string, string> { ["WordWrap"] = "true", ["TextAlign"] = "Left Top", ["TextColour"] = MyGuiColours.InkText };
-        b.Text["FloorText"] = $"Floor {Floor?.Get() ?? 0}";
+        b.Text["FloorText"] = Loc.Tr("Floor {1,num}", Floor?.Get() ?? 0);
         Enable("FloorArrowUp", "FloorArrowUp");
         Enable("FloorArrowDown", "FloorArrowDown");
         Enable("BuildButton", "BuildButton");
@@ -404,6 +405,16 @@ sealed partial class PlayerInterface
         if (group is not { Members.Count: > 1 }) { b.Disabled.Add("BuldingTypePrevButton"); b.Disabled.Add("BuldingTypeNextButton"); }
         // The failure the ghost has now, where the original puts its messages.
         b.Properties["MessagePanel"] = new Dictionary<string, string> { ["Visible"] = buildMessage is null ? "false" : "true" };
+    }
+
+    /// <summary>The <c>BuildingImage</c> properties showing <paramref name="building"/>'s picture once it is on the GPU, null until then (or without one).</summary>
+    Dictionary<string, string>? BuildingImage(BuildingBuildData? building)
+    {
+        if (building is null || buildHost is not { } host || uiPainter is not { } painter) return null;
+        if (host.IconFile(building.Id) is { } file)
+            return painter.IconReady(file) ? new() { ["ImageTexture"] = Meitou.Rendering.Ui.UiPainter.IconTexture(file), ["Caption"] = "" } : null;
+        string rendered = Meitou.Rendering.Ui.UiPainter.RenderedBuildingIconTexture(building.Id);
+        return painter.RenderedIconReady(rendered) ? new() { ["ImageTexture"] = rendered, ["ImageFlipV"] = "true", ["Caption"] = "" } : null;
     }
 
     /// <summary>The Commands box: the build map's keys (the original's own text is <b>Unknown</b>).</summary>
@@ -422,7 +433,7 @@ sealed partial class PlayerInterface
             if (controls.FirstOrDefault(c => c.Name == "StatsPanel") is { } panel) AddLines(controls, "StatsPanel", lines, MathF.Max(14, panel.Bounds.Height / 11));
         }
         if (buildMessage is { } message && controls.FirstOrDefault(c => c.Name == "MessagePanel") is { } messagePanel)
-            controls.Add(new("MessageText", "TextBox", messagePanel.Bounds, message, "", "Kenshi_TextboxStandardText", true,
+            controls.Add(new("MessageText", "TextBox", messagePanel.Bounds, Loc.Tr(message), "", "Kenshi_TextboxStandardText", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Left VCenter", ["TextColour"] = "1 0.45 0.38" }, Vector4.Zero, Pickable: false, Clip: messagePanel.Clip));
         if (buildQueue.Count > 0 && controls.FirstOrDefault(c => c.Name == "ButtonPanel") is { } buttons)
             controls.Add(new("QueueText", "TextBox", new(buttons.Bounds.X, buttons.Bounds.Y - 20, buttons.Bounds.Width, 18), $"{buildQueue.Count} placed", "", "Kenshi_TextboxStandardText", true,
@@ -538,7 +549,13 @@ sealed partial class PlayerInterface
         {
             bool open = doors.Any(d => d.Motion == Meitou.Simulation.Locks.DoorMotion.Open);
             verbs.Add((open ? "Close Doors" : "Open Doors", () => Say(new Meitou.Simulation.Locks.ToggleDoorsOrder(site.Id) { Tick = session.World.Tick })));
-            verbs.Add((doors.All(d => d.WantsLock) ? "Unlock Doors" : "Lock Doors", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(site.Id) { Tick = session.World.Tick })));
+            // The Security button's sound (FUN_140547060): Build_Lock is the state being left.
+            bool locked = doors.All(d => d.WantsLock);
+            verbs.Add((locked ? "Unlock Doors" : "Lock Doors", () =>
+            {
+                Sound("Building_Lock_Unlock", "Build_Lock", locked ? "Lock_Building" : "Unlock_Building");
+                Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(site.Id) { Tick = session.World.Tick });
+            }));
         }
         return verbs;
     }
@@ -546,16 +563,27 @@ sealed partial class PlayerInterface
     /// <summary>A right press on a site with characters selected: a click released within the hold time orders the build, held longer it opens the menu (true: taken).</summary>
     bool SitePress(Vector2 p)
     {
-        if (SelectedIds().Count == 0 || PickSite(p) is not { } site || SiteVerbs(site).Count == 0) return false;
+        if (SelectedIds().Count == 0 || PickSite(p) is not { } site) return false;
+        // With Shift a storage takes a job even without verbs.
+        if (SiteVerbs(site).Count == 0 && !(SlowModifier && site.Complete && Machine(site.Id) is { IsStorage: true })) return false;
         sitePending = (site, p, System.Diagnostics.Stopwatch.GetTimestamp());
         return true;
     }
 
-    /// <summary>The right button let go: a press on a site released before the menu opened gives the quick order (Build; a finished building has none).</summary>
+    /// <summary>
+    /// The right button let go: a press on a site released before the menu opened gives the quick order (Build; Operate a finished machine). With Shift a finished machine or storage is
+    /// added to the selection's job lists instead (the original's Perma-Jobs: Operating machine, Hauling to).
+    /// </summary>
     void SiteRelease()
     {
         if (sitePending is not { } pending) return;
         sitePending = null;
+        if (SlowModifier && pending.Site.Complete && Machine(pending.Site.Id) is { } job && (job.Operable || job.IsStorage))
+        {
+            var type = job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
+            Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
+            return;
+        }
         if (!pending.Site.Complete) Say(new BuildOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Operable: true }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
     }

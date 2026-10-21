@@ -49,9 +49,19 @@ sealed partial class GameHost
         if (fullScreen) BorderlessFullScreen.Toggle(window);
         else window.WindowState = WindowState.Maximized;
         BeginLoadingScreen(display);   // its textures and fonts are made before the window shows
-        // The first loading frame is in the swapchain when the window shows, and on screen before the splash closes.
-        LoadingFrame();
-        window.IsVisible = true;
+        // The first loading frame is in the swapchain when the window shows, and on screen before the splash closes. Not on Wayland: a window gets its
+        // shell role when it shows, and a buffer attached to the surface before that makes the compositor drop the client ("attached a buffer before
+        // configure event"), so there the window shows first and takes the compositor's configure before anything is drawn.
+        if (window.Native?.Wayland is not null)
+        {
+            window.IsVisible = true;
+            window.DoEvents();
+        }
+        else
+        {
+            LoadingFrame();
+            window.IsVisible = true;
+        }
         LoadingFrame();
         Splash?.Dispose();
         try
@@ -104,15 +114,20 @@ sealed partial class GameHost
                 LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
                 DoorsCloseChanged = on => { foreach (var locks in session.World.Systems.OfType<Meitou.Simulation.Locks.LockSystem>()) locks.DoorsCloseBehind = on; },
                 AudioChanged = AudioSettingsChanged,
+                CameraRotateSpeedChanged = ApplyCameraRotateSpeed,
                 OffscreenChanged = () =>
                 {
                     foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
-                        (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild) = (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild);
+                        (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild, population.ResidentSchedule) = (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild, config.ResidentSchedule);
                 },
             };
+        void ApplyCameraRotateSpeed(float speed) => session.Camera.Settings.RotateSpeedX = session.Camera.Settings.RotateSpeedY =
+            Math.Clamp(speed, UserConfig.MinCameraRotateSpeed, UserConfig.MaxCameraRotateSpeed);
+        ApplyCameraRotateSpeed(config.CameraRotateSpeed);
         if (panel is not null && !lowEnd)
             foreach (var slider in panel.Sliders)
-                if (!SessionSliders.Contains(slider.Label) && config.Graphics.TryGetValue(slider.Label, out float v) && !(o.Post.Upscale.Explicit && WorldFrame.UpscalerSliders.Contains(slider.Label)))
+                if (!SessionSliders.Contains(slider.Label) && config.Graphics.TryGetValue(slider.Label, out float v) && !(o.Post.Upscale.Explicit && WorldFrame.UpscalerSliders.Contains(slider.Label))
+                    && !(slider.Label == WorldFrame.TextureQualitySlider && Environment.GetCommandLineArgs().Contains("--texture-quality")))   // the saved one was applied before the boot (Program)
                     slider.Set(Math.Clamp(v, slider.Min, slider.Max));
         // The switches as saved, unless the command line chose them (--meitou / --faithful).
         if (panel is not null && !lowEnd && !Environment.GetCommandLineArgs().Any(a => a is "--meitou" or "--faithful"))
@@ -130,7 +145,7 @@ sealed partial class GameHost
             Cinema.GameFile, lensKeysAlways: IsDuel);   // the duel has no floors: PageUp/PageDown zoom the lens there
         bool cinemaHolds = false, interfaceHidden = false;
         cinema.Moved = () => cinemaHolds = true;
-        // PageUp/PageDown are the game's floor keys and never the cinema's (its lens keys are the viewer's); Home puts the lens back in these cameras.
+        // PageUp/PageDown zoom the lens and Home puts it back in these cameras; in the strategy camera PageUp/PageDown are the game's floor keys.
         cinema.LensKeys = () => session.Camera.IsFree || cinemaHolds;
         cinema.Load();
         // Numpad / flies the camera across the squad in portrait order (docs/viewer.md "Squad tour"); it holds the camera like the cinema does.
@@ -164,6 +179,9 @@ sealed partial class GameHost
         };
 
         var silkInput = Silk.NET.Input.InputWindowExtensions.CreateInput(window);
+        // The faithful windows' edit boxes copy and paste through the first keyboard's system clipboard.
+        player.ClipboardRead = () => silkInput.Keyboards.Count > 0 ? silkInput.Keyboards[0].ClipboardText : null;
+        player.ClipboardWrite = text => { if (silkInput.Keyboards.Count > 0) silkInput.Keyboards[0].ClipboardText = text; };
         Vector2? lastMouse = null;
         var windowCursor = Silk.NET.Input.CursorMode.Normal;
         bool panelDrag = false, shiftDown = false;
@@ -201,8 +219,8 @@ sealed partial class GameHost
                     return;
                 }
                 // Ctrl+C copies the free camera's position as a viewer camera code, Ctrl+V flies the free camera to the code in the clipboard.
-                // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning.
-                if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
+                // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning, and so do they in a focused edit box.
+                if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && !player.UiEditing && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
                 {
                     if (k == SilkKey.C)
                     {
@@ -348,7 +366,7 @@ sealed partial class GameHost
             if (actions.Pressed(InputAction.ToggleFps)) fpsVisible = !fpsVisible;
             if (actions.Pressed(InputAction.QuickSave)) quickSaveRequested = true;
             if (actions.Pressed(InputAction.QuickLoad)) quickLoadRequested = true;
-            // PageUp / PageDown step the viewed floor in every camera: the cinema does not take them.
+            // PageUp / PageDown step the viewed floor in the strategy camera: in the free camera and on a held one the cinema takes them for the lens.
             if (actions.Pressed(InputAction.FloorUp)) StepFloor(1);
             if (actions.Pressed(InputAction.FloorDown)) StepFloor(-1);
             if (actions.Pressed(InputAction.CycleProfiler) && profiler is not null) profiler.Showing = (FrameProfiler.Mode)(((int)profiler.Showing + 1) % 3);
@@ -423,6 +441,7 @@ sealed partial class GameHost
             cinema.Advance(cinema.FrameTime(dt));   // a flight through the keys moves the camera (and takes it from the rig)
             if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
             gpu.Ahead = tour.ArrivalEye(TourPosition);   // the streaming loads the landing view during the flight
+            gpu.Kept = config.KeepTexturesAtCharacters ? [.. player.SquadBarMembers().Select(c => TourPosition(c.Id)).OfType<Vector3>()] : [];
             string? takeFile = cinema.TakeFrame();
             // A flight puts the focus on where it lands from the first frame (the towns there populate during the flight), not on the arc.
             SendFocus(tour.Active && tour.Current is { } landing && TourPosition(landing) is { } landingAt ? landingAt : cinemaHolds ? camera.Target : null);
@@ -456,15 +475,18 @@ sealed partial class GameHost
             bool Held(SilkKey a, SilkKey b) => silkInput.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
             player.CtrlHeld = Held(SilkKey.ControlLeft, SilkKey.ControlRight);
             player.AltHeld = Held(SilkKey.AltLeft, SilkKey.AltRight);
-            if (gpu.Objects is { } signObjects)
-                signObjects.HighlightSigns = highlightHeld && windowFocused && !Covered && !session.Camera.IsFree &&
-                    panel?.Visible != true && !interfaceHidden && !cinema.Clean && !cinemaHolds && !cinema.EditorVisible;
+            // The Highlight key (Alt) lights up the signs and outlines the characters near the focus.
+            bool highlighting = highlightHeld && windowFocused && !Covered && !session.Camera.IsFree &&
+                panel?.Visible != true && !interfaceHidden && !cinema.Clean && !cinemaHolds && !cinema.EditorVisible;
+            if (gpu.Objects is { } signObjects) signObjects.HighlightSigns = highlighting;
             bool pointerWorld = pointerMouse is not null && !Covered && !g.NoPopulation && !(PanelLive() && panel?.Visible == true) && !cinema.Contains(pointerAt);
             bool freeLook = pointerWorld && session.Camera.IsFree;
             // Hover outline (Advanced, Meitou only): not in the free camera, with the interface hidden, or in saved pictures.
-            bool outlined = config.HoverOutline && pointerWorld && !freeLook && !interfaceHidden && !cinema.Clean && !screenshotRequested && takeFile is null;
-            gpu.HoverKey = outlined && player.HoverTarget is { } hover ? DrawKey(hover.Id) : null;
-            if (gpu.HoverOutline is { } outline && player.HoverTarget is { } hovered) outline.Colour = hovered.Colour;
+            bool outlining = config.HoverOutline && !session.Camera.IsFree && !interfaceHidden && !cinema.Clean && !screenshotRequested && takeFile is null;
+            if (outlining && highlighting)
+                gpu.HoverKeys = [.. player.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius).Select(t => (DrawKey(t.Id), t.Colour))];
+            else
+                gpu.HoverKeys = outlining && pointerWorld && player.HoverTarget is { } hover ? [(DrawKey(hover.Id), hover.Colour)] : [];
             if (display.BeginFrame(size.X, size.Y))
             {
                 long t0 = Stopwatch.GetTimestamp();
@@ -490,7 +512,11 @@ sealed partial class GameHost
                 screenshotRequested = false;
                 if (ui && overlay is not null && !g.NoPopulation) DrawMarkers(overlay, size.X, size.Y);
                 if (!g.NoPopulation && !covered && panel?.Visible != true) player.Steer();
-                if (ui && overlay is not null && !g.NoPopulation) player.Draw(overlay, size.X, size.Y);
+                if (ui && overlay is not null && !g.NoPopulation)
+                {
+                    player.SelectionRings = config.SelectionRings;
+                    player.Draw(overlay, size.X, size.Y);
+                }
                 if (ui && overlay is not null && IsSandbox) DrawSandbox(overlay, size.X, size.Y);
                 // The debug overlays are left out of saved pictures: the statistics at the top left, the key list below them, the profiler.
                 if (ui && overlay is not null && !shot)
@@ -650,7 +676,7 @@ sealed partial class GameHost
         if (world.Systems.OfType<Meitou.Simulation.Carrying.CarrySystem>().FirstOrDefault() is { Knockouts.Count: > 0 } carry)
             foreach (var k in carry.TakeKnockouts())
                 if (world.Characters.IsAlive(k.Attacker) && world.Characters.Cold(k.Attacker.Slot) is { IsPlayer: true } attacker)
-                    player.Notice($"{attacker.Name}: {(k.Success ? "*Thunk*" : "Failed!")} ({Math.Clamp(k.Chance, 0, 100):0}%)", !k.Success);
+                    player.Notice($"{attacker.Name}: {Loc.Tr(k.Success ? "*Thunk*" : "Failed!")} ({Math.Clamp(k.Chance, 0, 100):0}%)", !k.Success);
         if (population is not null)
             foreach (var line in population.TakeTownLog()) Console.WriteLine($"town      {line}");
         if (population is not null)

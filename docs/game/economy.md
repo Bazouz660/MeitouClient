@@ -52,19 +52,39 @@ money-item branches are scoped in the expressions/field tables and undecoded que
   The base game's CONTAINER `Shopkeepers Backpack` (`910-gamedata.base`) has storage 20 x 20 (raw read of `gamedata.base`); which characters wear it is not traced.
   The window's grid is 18 x 18 for a squad trader and the building containers' merged size for a building shop (**Observed**, `FUN_140953850`; details in ui-screens).
   Meitou's squad shops hold one 18 x 18 stock (`Shop`). The 2026-10-17 reference screenshot's trader (Ronin Construction Trader) shows about 28 columns.
+- **Stock stacks** (**Observed**, `ShopTraderInventory::vfunc_1` = `FUN_140955f50`, the stock section's constructor): stack bonus minimum 1, mult 50, so a stock cell holds
+  50 x the item's `stackable` (Building Material, `stackable` 1: 50). Meitou: `Shop.StockStackMult` on both shop kinds.
+
+### Who trades
+
+- `IS_A_TRADER` (dialogue condition 9, `FUN_1405cff70`) and the stock are the squad's: they read the SQUAD_TEMPLATE `is trader` through the character's platoon (**Observed**, `uses_is_trader`).
+  The CHARACTER field `is trader` (fcs.def) is read by no function through its string (**Observed**: string xrefs list only the three platoon readers).
+- A trade is opened by a dialogue line with effect 1 (DA_TRADE). In the data only the shopkeeper's dialogue has one (**Observed**, walk of the dialogue references): Thieves Guild, Shinobi
+  Trader 3 lines, Thief Boss, Thief, Ninja Guard and the squad's `dialog squad` (TOUGH 1234) none; Skeleton Barman, Smuggler Barman, Stone Camp Trader yes; Shop Guard, Traders Guard, Slaver,
+  Samurai no. Of 125 trader templates with vendors in the probe load order, 89 mark a member CHARACTER `is trader`.
+- Meitou (the right-click Trade verb, engine): a member of a shop squad whose record sets `is trader` or whose dialogue reaches a Trade line (`DialogueSet.Trades`, conditions not checked).
+- Shop squads with no such member (8 in the probe load order: bank, armory UC, holy Armoury, holy General storage, farm shop UC, Crab Man Shop, Shop bar black desert, Cannibal
+  hunter hq) cannot be bought from in the original either (**Observed**, owner's play); their stock is only in their home's containers.
 
 ### Building shops (**Observed**, decompile)
 
-- **Which** (squad factory `FUN_140583a10`): a trader squad (`vendors`) with a home building that made no prisoner or slave squads is filled by `FUN_14095b210` into its home;
-  any other trader by the squad filler `FUN_1404ff5e0`. A faction test (`+0x250 == 0`, meaning **Unknown**) gates both.
+- **Which** (squad factory `FUN_140583a10`): a squad whose template has `vendors` (or passes `FUN_140953f60`, **Unknown**; `is trader` is not tested) with a home building that made no
+  prisoner or slave squads is filled by `FUN_14095b210` into its home; any other by `FUN_1404ff5e0`, which fills a squad stock only for `is trader` and otherwise the home's containers.
+  A faction test (`+0x250 == 0`, meaning **Unknown**) gates both. So a resident without `is trader` (e.g. `flotsam refuge`, vendors `house contents`) gets its home's containers stocked.
+- **Restock** (`ActivePlatoon::vfunc_4` calls `FUN_1404ff5e0(platoon, 0)` once `inventory refresh time` passes): the home branch skips a building whose interior object's `+0x10` is set
+  (meaning **Unknown**); the first fill passes 1 and never skips.
+- Meitou, non-traders (`TradeSystem.FillHome`, engine choices): the stock rolls as a building shop's, then each unit goes into the first stock container with room (their own grids and
+  stack bonus), what fits nowhere is lost, the containers are unlocked, the purse is untouched; refilled every `vendors refresh time` only while every container is empty.
 - **Containers** (`FUN_1409562f0`): the home's interior objects whose functionality is 2 BF_RESOURCE_STORAGE, 9 BF_SHOP or 13 BF_GENERAL_STORAGE and that have an inventory.
   The filler unlocks their locks, sorts them (key **Unknown**), optionally clears them, puts special items first, then the vendor items; what fits nowhere is destroyed.
 - **Count**: n = round(U(0.8, 1.2) x `vendors fill total amount` x wealth), at least 1. Items: the vendor lists share n by weight as for squads (`FUN_140959800`), but every list's
   money roll (`money item prob` against U(0, 1), then U[`money item min`, `money item max`]) is summed into one stack of the money item first.
 - **Purse** (the platoon's money): `vendor money` < 1: trunc(clamp(0.25 x value of the placed items, 3000, 25000) x wealth); else trunc((`vendor money` + r) x wealth) with r an int from
   -0.4 x `vendor money` (the upper bound is not shown by the decompile).
+- **Wealth** = clamp(faction wealth, 0.2, 1), but the faction wealth function (`FUN_1402dd530`) is a stub returning 1.0, so wealth is always 1
+  (**Verified**, kenshi_x64.exe decompile: 9-byte function, constant return). It scales only shop stock count, purse and nest spawn weight; no price reads it.
 - Meitou (`Shop.ForBuilding`, engine choices): the merged stock is the shop's one inventory (no per-container inventories yet), the money stack goes to the purse, r is symmetric,
-  stock is not saved (as squad shops). Observed with real data: Squin's armour shop (Bughouse) 18 x 287, Stack's bars (Storm House) 18 x 88.
+  stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data: Squin's armour shop (Bughouse) 18 x 287, Stack's bars (Storm House) 18 x 88.
 
 ## Crimes, bounties and prisoners
 
@@ -149,6 +169,7 @@ sale, and the same flag selects which price is computed).
 | `vendor money` | the building-shop vendor's purse (building fillers only, see 9.2); 0 = derive from the stock | 0 x954, 1000 x4, 250 x1 (the five non-zero templates all come from mods of the probe load order, none from `gamedata.base`) |
 | `vendors refresh time` | game hours between stock refreshes (<= 0 means 24000) | 24 x874, 12 x15, 48 x13, 72 x13, 70 x10, 99 x10, some 99999 |
 | `buy mult`, `buys stolen`, `buys illegal` | section 6 and 8 | |
+| `robotics levels`, `crossbow levels` | average grade g (ArmourRarity 0..5, editor default 1) of stocked limbs / crossbows. Limbs (`FUN_140955370`, **Verified**): weights g 100, g-2 22 (g > 1), g-1 44 (g > 0), g+1 44 (g < 5), g+2 22 (g < 4), an int roll against the running sums; the grade's 5/20/40/60/80/95 (`FUN_140952320`) is the limb's `level` (the factory's grade argument). Crossbows (`FUN_140955210`, **Verified**) likewise with g-2 20, g-1 33, g+1 33, g+2 5, only g when g is 5; a shop crossbow gets no manufacturer (the factory call passes none) | values not surveyed |
 | `special items`, `special map items` | extra guaranteed stock (`read_special_items_n3` `FUN_140958740`) | not decoded |
 
 ### 11.1 Ledger
@@ -242,7 +263,9 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   the speaker under further tests (`FUN_1405995d0`, `FUN_140599590`, `FUN_14059a920 < 36`). Price `2 * bounty` with a zero faction,
   which through the cage rule of 11.2 is the jail's booking faction; at least 2000 when the prisoner is not of the player's faction.
   Paying (`FUN_1406ae170`) unlocks the cage, erases the jail's entry (`FUN_1408539f0(ledger, 0)`), sets `+0xea = 1`, the prisoner says
-  `EV_BOUGHT_ME_FROM_SLAVERY` and gets 133 `GET_OUT_OF_CAGE_LEGIT`. Base data offers it in law dialogues ("I'm here to bail out a friend.").
+  `EV_BOUGHT_ME_FROM_SLAVERY` and gets 133 `GET_OUT_OF_CAGE_LEGIT`. Only two base dialogues carry DA 43 (**Verified** by probe, 2026-10-21): "Shek law
+  bounty" (shek bounty desk, the reply "I'm here to bail out a friend.") and "Inquisitor heretic bounty" (Holy Nation Inquisitor); no United Cities law
+  dialogue offers bail.
 - **Escape**: leaving by 207/256, or being lifted out, gives a pending Escaping Prison (0xc) and the escaped flag ([locks](locks.md#cages-and-beds));
   a pending crime becomes a bounty only when a booking witness sees it (11.2). Spotting the flag: 11.8.
 - `FUN_140851d10` (a lerp of 350/600 and 450/80-based values by a health fraction) is a different, undecoded function.
@@ -270,11 +293,17 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
   branch on `DC_BOUNTY_AMOUNT_ACTUAL`: "Small bounty" (0 < b < 1050) offers a fine; refusing or lacking money runs `DA_ARREST_TARGET`;
   "small fry" (1050 < b < 25000) and "super high" (> 25000) arrest at once. "Surrender" exists only as these dialogue choices; there is no
   surrender state.
+- **How the fine is reached** (**Verified** by probe of the base load order, 2026-10-21): "Small bounty" is an event-44 monologue (bubbles)
+  for a *leader* (`DC_IS_LEADER` on the speaker); its "I knew it, you're a convict!" line runs `DA_TALK_TO_LEADER` (2: the speaker squad's
+  leader, here itself, gets task 102 and walks up to fire event 1, `FUN_140680560` case 2, **Observed**) and sets `interrupt` "Bounty
+  extortion pay", so that talk opens the fine window. No law package answers event 1 with bounty lines. The other event-44 law roots
+  ("police bounty spotted" b > 500 within talking range, "small fry", "super high", Shek "Shek law spots bounty") say a bubble whose lines
+  run DA 29 (police add DA 33); event 45 roots ("police escaping prisoner", "Law enforcement spots prisoner escaping") likewise.
 - **Fine** (DIALOGUE "Bounty extortion pay", `Npc MILITARY Law 3`; **Verified** by probe of the base load order): one line per bracket,
   `250 < b < 351` -> 400, then +100 per 100 up to `950 < b < 1051` -> 1100; the 300 line (`0 < b < 251`) tests the *speaker's* bounty
   (`who` 0, a data slip: it never shows for a guard without a bounty). Paying needs `DC_PLAYERMONEY > fine` (strict) and runs
   `DA_TAKE_MONEY` (8, the fine) + `DA_CLEAR_BOUNTY` (49); the 1100 line also runs `DA_PAY_BOUNTY` (10). 49 erases two entries, the speaker's booking faction's and the target's town's (or jailer's) ([dialogue](dialogue.md#effects));
-  Meitou clears only the speaker's faction's. As built: [simulation](../simulation.md#arrest-and-jail).
+  As built: [simulation](../simulation.md#arrest-and-jail).
 - **`DA_ARREST_TARGET`** (`FUN_140680560` case 0x1d, **Observed**): when the speaker's ownership town (`Character+0x658 -> +0x30`) is set
   and equals the speaker's status `+0x88` (read as "he is in his own town"), and the target is not an animal (slot `0x248` is `asAnimal`): the speaker gets tasks 240 `LIFT_PERSON_SNATCHING_ALLOWED_IN_TOWN_ONLY`
   ("Capture Target", needs `isTargetDown`) and 112 `FIND_CAGE_AND_PUT_IN` on the target, and the target's squad marks the speaker

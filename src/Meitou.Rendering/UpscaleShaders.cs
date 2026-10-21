@@ -78,6 +78,9 @@ static class UpscaleShaders
         vec3 itm(vec3 c) { return c / max(1.0 - maxc(c), 1e-4); }
         vec3 ycocg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
         vec3 rgb(vec3 y) { return vec3(y.x + y.y - y.z, y.x + y.z, y.x - y.y - y.z); }
+        // NaN and Inf to 0: max() need not drop a NaN (AMD keeps it), and one kept in the history spreads through the taps frame after frame.
+        float finite(float v) { return isnan(v) || isinf(v) ? 0.0 : v; }
+        vec3 finite(vec3 c) { return vec3(finite(c.r), finite(c.g), finite(c.b)); }
 
         // Catmull-Rom in five bilinear taps (the corners dropped).
         vec3 history(vec2 uv)
@@ -97,7 +100,7 @@ static class UpscaleShaders
                    + textureLod(uHistory, vec2(t3.x, t12.y), 0.0).rgb * (w3.x * w12.y)
                    + textureLod(uHistory, vec2(t12.x, t3.y), 0.0).rgb * (w12.x * w3.y);
             float w = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
-            return max(s / w, vec3(0.0));
+            return max(finite(s / w), vec3(0.0));
         }
 
         void main()
@@ -114,7 +117,7 @@ static class UpscaleShaders
                 for (int x = -1; x <= 1; x++)
                 {
                     ivec2 p = clamp(base + ivec2(x, y), ivec2(0), last);
-                    vec3 c = tm(max(texelFetch(uColour, p, 0).rgb, vec3(0.0)));
+                    vec3 c = tm(max(finite(texelFetch(uColour, p, 0).rgb), vec3(0.0)));
                     vec2 d = vec2(base + ivec2(x, y)) - rp;
                     float w = exp(-2.29 * dot(d, d));
                     sum += c * w;
@@ -124,13 +127,13 @@ static class UpscaleShaders
                     m1 += q;
                     m2 += q * q;
                     vec4 m = texelFetch(uMotion, p, 0);
-                    if (m.b < closest) { closest = m.b; motion = m.rg; }
+                    if (m.b < closest) { closest = m.b; motion = vec2(finite(m.r), finite(m.g)); }
                 }
             vec3 current = sum / max(wsum, 1e-5);
             vec2 prevUv = uv - motion;
             if (uReset != 0 || any(lessThan(prevUv, vec2(0.0))) || any(greaterThan(prevUv, vec2(1.0))))
             {
-                fragColour = vec4(itm(current), 1.0);
+                fragColour = vec4(finite(itm(current)), 1.0);
                 return;
             }
             vec3 mean = m1 / 9.0;
@@ -144,7 +147,7 @@ static class UpscaleShaders
             // Reactive pixels (water) lean on the current frame.
             float reactive = texelFetch(uMotion, clamp(base, ivec2(0), last), 0).a;
             float alpha = clamp(max(uBlend * wmax, 0.5 * reactive), 0.0, 1.0);
-            fragColour = vec4(itm(mix(hist, current, alpha)), 1.0);
+            fragColour = vec4(finite(itm(mix(hist, current, alpha))), 1.0);
         }
         """;
 }

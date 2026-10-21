@@ -366,14 +366,14 @@ public sealed partial class PopulationSystem : IStateHashed
         Gather(world, m, c, inst, made);
         if (inst.Men <= inst.Required)
         {
-            if (inst.Enemy == player && player >= 0) world.Post($"Assault to {c.DisplayName} canceled due to faction weakness");
+            if (inst.Enemy == player && player >= 0) world.Post(Loc.Tr("Assault to {1} canceled due to faction weakness", c.DisplayName));
             Disband(world, inst, made);
             Log($"{data.Factions[m.Faction].Name}: {c.Name} against {NameOf(world, target)} canceled ({inst.Men} of {inst.Required} men)");
             return StartResult.Weak;
         }
         m.Actives.Add(inst);
         if (inst.Enemy == player && player >= 0)
-            world.Post(c.IsHostile ? $"Warning: {c.DisplayName} moving towards {NameOf(world, target)}" : $"{c.DisplayName} on the way to {NameOf(world, target)}");
+            world.Post(c.IsHostile ? Loc.Tr("Warning: {1} moving towards {2}", c.DisplayName, NameOf(world, target)) : Loc.Tr("{1} on the way to {2}", c.DisplayName, NameOf(world, target)));
         m.Know(c.Id).LastStart = now;
         Log($"{data.Factions[m.Faction].Name}: {c.Name} against {NameOf(world, target)} from {NameOf(world, home)}, {inst.Platoons.Count} squad(s), {inst.Men} men");
         foreach (var allyId in c.TriggerPlayerAlly)
@@ -704,7 +704,7 @@ public sealed partial class PopulationSystem : IStateHashed
                 if (Vector2.Distance(leader.Position, CentreOf(world, inst.Target)) > 0.8f * RadiusOf(inst.Target)) return false;
                 if (inst.ArrivedAt < 0)
                 {
-                    world.Post($"{c.DisplayName} has arrived at {NameOf(world, inst.Target)}");
+                    world.Post(Loc.Tr("{1} has arrived at {2}", c.DisplayName, NameOf(world, inst.Target)));
                     inst.ArrivedAt = now;
                 }
                 // With an announcement, a loaded leader waits for it, then while its negotiation is pending (engine choice for the Unknown event-2 state: up to
@@ -796,7 +796,7 @@ public sealed partial class PopulationSystem : IStateHashed
     {
         inst.Phase = 2;
         inst.PhaseStart = now;
-        if (c.IsHostile) world.Post($"{c.DisplayName} against {NameOf(world, inst.Target)} has ended");
+        if (c.IsHostile) world.Post(Loc.Tr("{1} against {2} has ended", c.DisplayName, NameOf(world, inst.Target)));
         Log($"{data.Factions[m.Faction].Name}: {c.Name} against {NameOf(world, inst.Target)} won");
         FollowUp(world, m, c.VictoryTriggers, inst, now, 1);
     }
@@ -806,7 +806,7 @@ public sealed partial class PopulationSystem : IStateHashed
         inst.Phase = 2;
         inst.PhaseStart = now;
         string target = NameOf(world, inst.Target);
-        world.Post(!c.IsHostile ? $"{c.DisplayName} was defeated on their way to {target}" : inst.FoughtPlayer ? $"{c.DisplayName} against {target} has been defeated" : $"{c.DisplayName} to {target} has failed");
+        world.Post(!c.IsHostile ? Loc.Tr("{1} was defeated on their way to {2}", c.DisplayName, target) : inst.FoughtPlayer ? Loc.Tr("{1} against {2} has been defeated", c.DisplayName, target) : Loc.Tr("{1} to {2} has failed", c.DisplayName, target));
         Log($"{data.Factions[m.Faction].Name}: {c.Name} against {target} lost");
         if (c.IsHostile && inst.Reached || inst.FoughtPlayer) FollowUp(world, m, c.LossTriggers, inst, now, 2);
         else if (c.IsHostile)
@@ -1048,6 +1048,13 @@ public sealed partial class PopulationSystem : IStateHashed
         squad.War = AssaultTargets(world, p.Campaign!, p.Campaign!.Leader == p.Id);
         if (p.CampaignGoal is not { } goal || !table.TryResolveNext(squad.Leader, out int slot)) return;
         if (p.Campaign!.Leader == p.Id) TryAnnounce(world, p.Campaign, squad.Leader, table.Next[slot].Position);
+        // Retreating, members the column does not move (a carrier, whom the AI leaves alone) mill round their own town again, not round the raid target the squad last
+        // milled at, so a kidnapper takes its captive home (engine choice; the arrival below still mills them round the goal).
+        if (p.Campaign.Phase == 2 && squad.Town >= 0 && Vector2.Distance(p.Position, goal) > (p.Campaign.Leader == p.Id ? settings.RoamArrivalRadius : CampaignFollowDistance))
+        {
+            squad.HomeCentre = SiteCentre(squad.Town);
+            squad.HomeRadius = 60;
+        }
         if (table.Next[slot].Task is (byte)CharacterTask.Attack or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown) return;   // a fight or a lift (a kidnapper) is left to itself
         bool leads = p.Campaign!.Leader == p.Id;
         float arrive = leads ? settings.RoamArrivalRadius : CampaignFollowDistance;

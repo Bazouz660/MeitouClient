@@ -92,7 +92,21 @@ not the game speed, so the camera works while the game is paused. Several inputs
   with no ground smoothing; the eye clearance still lifts it. Panning, `focus_char` and the free camera clear it; zoom and turn keep it.
   While tracking, the pointer at an edge turns the camera instead of panning (**Observed**: x edge ∓3 yaw input, y edge ∓1 tilt input
   per frame). Edge scrolling is also suppressed after some events until the pointer moves right (a quirk, **Observed**).
-- The save's `CAMERA` record keeps the pivot position and orientation, the boom and the tracked handle ([save.md](save.md)).
+- The save's `CAMERA` record keeps the pivot position and orientation, the boom and the tracked handle ([saved camera](#saved-camera)).
+
+## Saved camera
+
+**Verified** (writer `FUN_1406b0740`, reader `FUN_1407ade60` with `FUN_1406ae8e0`; `rot`/`zoom` of four saves decode to views inside the pitch
+limits only in this order, and rebuilding `rot` from the decoded yaw and pitch reproduces them to 1e-4):
+- `pos` (vec3): the pivot node's position. `rot` (vec4): the pivot's orientation, the Ogre quaternion copied as is, so stored **w, x, y, z**.
+  It is yaw about Y then pitch about the pivot's X with no roll: `rot = Ry(yaw + π) · Rx(pitch)` with yaw 0 looking along −Z and pitch below
+  the horizon. `zoom`: the camera node's local z, so −boom (samples −88 to −812). `alt`: a float at +0x60 of the camera, written, then reset to 0 on load (always 0 in the
+  samples). `tracking`: the handle above.
+- Load: orientation and zoom are set together, then `pos` is checked: x or z outside ±147456 puts the pivot at (500, ground height, 51000).
+  Tracking is restored.
+- Meitou (`KenshiCamera.ToSaved` / `FromSaved`, `SaveCamera`): the host saves the strategy camera's view and restores it on load. It never
+  tracks, so it writes a null `tracking`. Its saves from before this kept `pos` 0 and `rot` (0, 0, 0, 1), which is impossible as w, x, y, z
+  (a half turn of roll); `SaveCamera.HasView` takes that as "no view", and such a save puts the camera on the leader.
 
 ## In the viewer
 

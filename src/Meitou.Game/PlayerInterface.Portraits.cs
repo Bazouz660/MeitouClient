@@ -23,8 +23,26 @@ sealed partial class PlayerInterface
     /// <summary>The atlas cells after the squad's: the conversation window's speaker and player character.</summary>
     public const int DialogueNpcCell = PortraitCells - 2, DialoguePlayerCell = PortraitCells - 1;
 
-    /// <summary>The characters the squad bar shows, in order: the host has their portraits drawn into the atlas cells of the same index.</summary>
-    public IReadOnlyList<CharacterSnapshot> SquadBarMembers() => [.. session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).Take(DialogueNpcCell)];
+    /// <summary>The characters the squad bar shows, the active squad's in order: the first atlas cells (<see cref="PortraitMembers"/>).</summary>
+    public IReadOnlyList<CharacterSnapshot> SquadBarMembers()
+    {
+        var byId = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).ToDictionary(c => c.Id);
+        return [.. ActiveSquadMembers().Select(byId.GetValueOrDefault).OfType<CharacterSnapshot>().Take(DialogueNpcCell)];
+    }
+
+    /// <summary>
+    /// The characters whose portraits the host draws, each into the atlas cell of its index: the squad bar's first, then, while the squads screen is open, the other
+    /// squads' members in order. As many as there are cells before the conversation's (30, CONSTANTS <c>max faction size</c>); a modded faction past that shows nameless cells.
+    /// </summary>
+    public IReadOnlyList<CharacterSnapshot> PortraitMembers()
+    {
+        var bar = SquadBarMembers();
+        if (!SquadsShown) return bar;   // the others are drawn (and posed out of range) only while the squads screen shows them
+        var byId = session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).ToDictionary(c => c.Id);
+        var shown = bar.Select(c => c.Id).ToHashSet();
+        var rest = session.CurrentSnapshot.PlayerSquads.SelectMany(s => s.Members).Where(id => shown.Add(id)).Select(byId.GetValueOrDefault).OfType<CharacterSnapshot>();
+        return [.. bar.Concat(rest).Take(DialogueNpcCell)];
+    }
 
     /// <summary>The speaker and the player character of the open conversation, whose portraits the host draws into <see cref="DialogueNpcCell"/> and <see cref="DialoguePlayerCell"/>.</summary>
     public (CharacterId Npc, CharacterId Player)? DialoguePortraitCharacters() =>

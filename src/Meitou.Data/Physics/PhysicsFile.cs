@@ -31,7 +31,7 @@ public sealed class PhysicsFile
     public List<PhysicsBodyActor> Actors { get; } = [];
     public List<PhysicsJoint> Joints { get; } = [];
 
-    public static PhysicsFile ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static PhysicsFile ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     /// <summary>Reads a whole file; throws <see cref="FormatException"/> when the data is cut short, has bad counts or does not end where the layout does.</summary>
     public static PhysicsFile Read(byte[] data)

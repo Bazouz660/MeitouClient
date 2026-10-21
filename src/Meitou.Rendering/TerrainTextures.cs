@@ -339,7 +339,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     /// the eye use, starts decoding the ones not resident (nearest first), queues the uploads of what finished, and
     /// moves the overlay/colour window when the eye has left the middle of it.
     /// </summary>
-    public void Update(Vector3 eye, float materialDistance, UploadQueue uploads, Vector3? ahead = null)
+    public void Update(Vector3 eye, float materialDistance, UploadQueue uploads, Vector3? ahead = null, IReadOnlyList<Vector3>? kept = null)
     {
         frame++;
         while (problems.TryDequeue(out var m))
@@ -347,14 +347,14 @@ public sealed unsafe class TerrainTextures : IDisposable
         if (HasBiomes)
         {
             while (decoded.TryDequeue(out var d)) Install(d, uploads);
-            UpdateBiomes(eye, materialDistance, ahead);
+            UpdateBiomes(eye, materialDistance, ahead, kept);
         }
         UpdateMaps(eye, uploads);
         if (cellsDirty) UploadCells();
     }
 
     /// <summary>The biomes of the cells near <paramref name="eye"/> and, during a character flight, near its arrival eye <paramref name="ahead"/> (kept and loaded alike).</summary>
-    void UpdateBiomes(Vector3 eye, float materialDistance, Vector3? ahead)
+    void UpdateBiomes(Vector3 eye, float materialDistance, Vector3? ahead, IReadOnlyList<Vector3>? kept)
     {
         stamp++;
         needed.Clear();
@@ -380,6 +380,8 @@ public sealed unsafe class TerrainTextures : IDisposable
         }
         if (ahead is { } arrival) Gather(arrival, 0);
         Gather(eye, ahead is null ? 0 : radius);
+        // Kept points (the player's characters) come after the eye's own cells.
+        if (kept is not null) foreach (var k in kept) Gather(k, radius * 2);
         needed.AddRange(nearest.OrderBy(p => p.Value).Select(p => p.Key));
         foreach (int b in needed)
             foreach (var p in state[b].Pairs)

@@ -19,7 +19,7 @@ public static class OgreSkeletonReader
     /// <summary>Chunk header, time, rotation and translation. Ogre's <c>calcKeyFrameSizeWithoutScale</c>.</summary>
     public const int KeyFrameLengthWithoutScale = OgreStream.ChunkHeaderSize + 4 + 4 * 4 + 3 * 4;
 
-    public static OgreSkeleton ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static OgreSkeleton ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     public static OgreSkeleton Read(byte[] data)
     {

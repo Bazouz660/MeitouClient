@@ -63,6 +63,7 @@ sealed partial class PlayerInterface
         // The choices are drawn as buttons and the NPC frame grows to its text, so the two boxes' template scroll bars would only be empty tracks.
         foreach (var name in new[] { "NpcDialog", "PlayerDialog" })
             foreach (var bar in faithfulScreens.Layout("dialogue").Find(name)?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
+        b.NativeScroll.Add("PlayerDialog");   // the choices are drawn against the box, not scrolled by its canvas
         b.Text["MoneyLabelText"] = "Money:";
         b.Text["MoneyAmountText"] = "c." + talk.PlayerMoney.ToString("N0", CultureInfo.InvariantCulture);
     }

@@ -1,33 +1,49 @@
-# Builds the Windows release of the game (src/Meitou.Game, meitou.exe) and the world viewer (meitou-viewer.exe) into a zip that runs as is: self-contained .NET, NVIDIA's DLSS
-# runtime and Streamline plugins and AMD's FidelityFX library next to the exe, their licences in licenses\. The NVIDIA and AMD files
-# come from their official GitHub releases (cached in -Cache); none of them is in the repository.
-#   pwsh -File tools/scripts/package-release.ps1 -Version 0.1.0 [-Output out] [-Cache C:\Temp\release-cache]
+# Builds a release of the game (src/Meitou.Game) and the world viewer (meitou-viewer) for one runtime into a zip that runs as is:
+# self-contained .NET under the single top folder Meitou-<version>-<rid>. The Windows zip also carries NVIDIA's DLSS runtime and Streamline
+# plugins and AMD's FidelityFX library next to the exes, their licences in licenses/; they come from their official GitHub releases (cached
+# in -Cache) and none of them is in the repository. Linux and macOS zips are made on a Unix machine with zip(1), which stores the execute
+# bits; macOS zips on a Mac, which ad-hoc signs the binaries (Apple Silicon refuses unsigned code).
+#   pwsh -File tools/scripts/package-release.ps1 -Version 0.1.0 [-Rid win-x64|linux-x64|osx-x64|osx-arm64] [-Output out] [-Cache C:\Temp\release-cache]
 # (PowerShell 7: Windows PowerShell 5.1 writes the zip with backslashes in its paths, which some unzippers reject.)
 param(
     [Parameter(Mandatory = $true)] [string] $Version,
+    [ValidateSet("win-x64", "linux-x64", "osx-x64", "osx-arm64")] [string] $Rid = "win-x64",
     [string] $Output = "out",
     [string] $Cache = (Join-Path ([IO.Path]::GetTempPath()) "meitou-release-cache")
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$name = "Meitou-$Version-win-x64"
+$root = Resolve-Path (Join-Path $PSScriptRoot "../..")
+$windows = $Rid -like "win-*"
+$mac = $Rid -like "osx-*"
+if (-not $windows -and $IsWindows) { throw "make the $Rid zip on Linux or macOS: a zip made on Windows has no execute bits" }
+if ($mac -and -not $IsMacOS) { throw "make the $Rid zip on macOS: its binaries need an ad-hoc signature" }
+$exe = if ($windows) { ".exe" } else { "" }
+# The game executable's name: Meitou.Game's AssemblyName.
+$game = ([xml](Get-Content (Join-Path $root "src/Meitou.Game/Meitou.Game.csproj"))).Project.PropertyGroup.AssemblyName | Where-Object { $_ } | Select-Object -First 1
+if (-not $game) { throw "no AssemblyName in Meitou.Game.csproj" }
+$name = "Meitou-$Version-$Rid"
 $stage = Join-Path $Output $name
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force $stage, $Cache | Out-Null
 
-# The game (meitou.exe) and the world viewer (meitou-viewer.exe), self-contained (no .NET install needed) and not single-file: the
-# runtime and our Meitou.*.dll lie beside the exes, shared by both (same build, same runtime), so code mods can reference and load
-# them. A numeric version goes into the assembly version too.
+# The game and the world viewer (meitou-viewer), self-contained (no .NET install needed) and not single-file: the runtime and our
+# Meitou.*.dll lie beside the executables, shared by both (same build, same runtime), so code mods can reference and load them. A numeric
+# version goes into the assembly version too.
 $numeric = if ($Version -match '^\d+(\.\d+){1,3}') { $Matches[0] } else { "0.0.0" }
-foreach ($project in @("src\Meitou.Game\Meitou.Game.csproj", "tools\Meitou.ModelViewer\Meitou.ModelViewer.csproj")) {
-    dotnet publish (Join-Path $root $project) -c Release -r win-x64 --self-contained true `
+foreach ($project in @("src/Meitou.Game/Meitou.Game.csproj", "tools/Meitou.ModelViewer/Meitou.ModelViewer.csproj")) {
+    dotnet publish (Join-Path $root $project) -c Release -r $Rid --self-contained true `
         -p:DebugType=embedded -p:Version=$numeric -p:InformationalVersion=$Version -o $stage
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish $project failed" }
 }
-# The viewer loads Streamline only when started with DLSS chosen (the game loads it on every startup).
-Set-Content -Path (Join-Path $stage "meitou-viewer-dlss.bat") -Encoding ASCII -Value "@`"%~dp0meitou-viewer.exe`" --world --town `"The Hub`" --upscaler dlss %*`r`n@if errorlevel 1 pause"
+# The Unix runtime packs carry native debug symbols (*.dbg, *.dwarf, *.dSYM; ~250 MB): not shipped.
+Get-ChildItem $stage -Recurse -Include *.dbg, *.dwarf, *.dSYM | Remove-Item -Recurse -Force
+
+# The settings the launcher's Graphics page shows, under the names this build saves them (docs/launcher.md "Graphics"). The file is the same
+# for every runtime, so the host's own build writes it: the staged exe may be for another one.
+dotnet run --project (Join-Path $root "src/Meitou.Game/Meitou.Game.csproj") -c Release -- --settings-schema (Join-Path (Resolve-Path $stage) "settings-schema.json")
+if ($LASTEXITCODE -ne 0) { throw "writing settings-schema.json failed" }
 
 function Get-Archive([string] $url) {
     $file = Join-Path $Cache ([IO.Path]::GetFileName($url))
@@ -53,28 +69,44 @@ function Copy-Entries([string] $zip, [string[]] $paths, [string] $dir, [string] 
     } finally { $archive.Dispose() }
 }
 
-# NVIDIA Streamline 2.14.1 (the headers src/Meitou.Rendering/Upscalers/Streamline.cs follows): the production (signed) plugins of bin/x64,
-# not bin/x64/development, and the DLSS runtime. Loaded next to the exe (Streamline.cs).
-$sl = Get-Archive "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.14.1/streamline-sdk-v2.14.1.zip"
-Copy-Entries $sl @("bin/x64/sl.interposer.dll", "bin/x64/sl.common.dll", "bin/x64/sl.dlss.dll", "bin/x64/nvngx_dlss.dll", "bin/x64/NvLowLatencyVk.dll") $stage
-Copy-Entries $sl @("license.txt", "3rd-party-licenses.md", "bin/x64/nvngx_dlss.license.txt", "bin/x64/reflex.license.txt") (Join-Path $stage "licenses\NVIDIA") "streamline-"
+if ($windows) {
+    # The viewer loads Streamline only when started with DLSS chosen (the game loads it on every startup).
+    Set-Content -Path (Join-Path $stage "meitou-viewer-dlss.bat") -Encoding ASCII -Value "@`"%~dp0meitou-viewer.exe`" --world --town `"The Hub`" --upscaler dlss %*`r`n@if errorlevel 1 pause"
 
-# AMD FidelityFX SDK 1.1.4 (the FidelityFX API headers FsrUpscaler.cs follows): its signed prebuilt Vulkan library.
-$ffx = Get-Archive "https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/download/v1.1.4/FidelityFX-SDK-v1.1.4.zip"
-Copy-Entries $ffx @("PrebuiltSignedDLL/amd_fidelityfx_vk.dll") $stage
-Copy-Entries $ffx @("sdk/LICENSE.txt") (Join-Path $stage "licenses\AMD") "fidelityfx-"
+    # NVIDIA Streamline 2.14.16 (the headers src/Meitou.Rendering/Upscalers/Streamline.cs follows): the production (signed) plugins of bin/x64,
+    # not bin/x64/development, and the DLSS runtime. Loaded next to the exe (Streamline.cs).
+    $sl = Get-Archive "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.14.16/streamline-sdk-v2.14.16.zip"
+    Copy-Entries $sl @("bin/x64/sl.interposer.dll", "bin/x64/sl.common.dll", "bin/x64/sl.dlss.dll", "bin/x64/nvngx_dlss.dll", "bin/x64/NvLowLatencyVk.dll") $stage
+    Copy-Entries $sl @("license.txt", "3rd-party-licenses.md", "bin/x64/nvngx_dlss.license.txt", "bin/x64/reflex.license.txt") (Join-Path $stage "licenses/NVIDIA") "streamline-"
+
+    # AMD FidelityFX SDK 1.1.4 (the FidelityFX API headers FsrUpscaler.cs follows): its signed prebuilt Vulkan library.
+    $ffx = Get-Archive "https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/download/v1.1.4/FidelityFX-SDK-v1.1.4.zip"
+    Copy-Entries $ffx @("PrebuiltSignedDLL/amd_fidelityfx_vk.dll") $stage
+    Copy-Entries $ffx @("sdk/LICENSE.txt") (Join-Path $stage "licenses/AMD") "fidelityfx-"
+}
 
 # Our licence, the GPL exception for the NVIDIA libraries, the notices, and how to start.
 Copy-Item (Join-Path $root "LICENSE"), (Join-Path $root "LICENSE-EXCEPTION.md"), (Join-Path $root "THIRD_PARTY_NOTICES.md") $stage
-$readme = @"
-Meitou $Version (Windows x64)
-==============================
+$platform = @{ "win-x64" = "Windows x64"; "linux-x64" = "Linux x64"; "osx-x64" = "macOS Intel"; "osx-arm64" = "macOS Apple Silicon" }[$Rid]
+$title = "Meitou $Version ($platform)"
+$requirements = if ($mac) {
+    "Requirements: macOS with a Vulkan loader and MoltenVK installed (they are not included), e.g. from the LunarG Vulkan SDK.`n" +
+    "The macOS build is experimental and untested: MoltenVK may not offer everything the renderer needs (Vulkan 1.3).`n" +
+    "If macOS blocks the program after a browser download, remove the quarantine flag: xattr -dr com.apple.quarantine <this folder>."
+} else {
+    "Requirements: Linux x64 with a Vulkan 1.3 GPU driver and the Vulkan loader (libvulkan.so.1, e.g. the libvulkan1 package), an X11 or`n" +
+    "Wayland session, and PipeWire, PulseAudio or ALSA for sound. OpenAL Soft, GLFW and shaderc are included."
+}
+if ($windows) {
+    $readme = @"
+$title
+$('=' * $title.Length)
 
 A reimplementation of the Kenshi engine. It reads your own Kenshi install; no game files are included.
 
 Two programs
 ------------
-meitou.exe          The game: the world with the Kenshi camera.
+$("$game.exe".PadRight(20))The game: the world with the Kenshi camera.
 meitou-viewer.exe   The world viewer: a free camera over the world, with the Faithful / Meitou switches (F1-F8), frame statistics
                     (F11), the profiler (F12) and every renderer option (meitou-viewer.exe --world --help lists them).
                     meitou-viewer-dlss.bat starts it at The Hub with DLSS.
@@ -82,7 +114,7 @@ meitou-viewer.exe   The world viewer: a free camera over the world, with the Fai
 Start
 -----
 1. Unzip anywhere.
-2. Run meitou.exe or meitou-viewer.exe (both start at The Hub).
+2. Run $game.exe or meitou-viewer.exe (both start at The Hub).
    - A Steam install of Kenshi is found by itself.
    - Otherwise the console asks for your Kenshi folder (the one with kenshi_x64.exe and the data folder) once and keeps it in
      meitou.local.json next to the exe. You can also edit that file, or set the KENSHI_PATH environment variable.
@@ -98,9 +130,62 @@ Meitou is GPL-3.0-or-later (LICENSE) with an additional permission for the NVIDI
 The NVIDIA files (nvngx_dlss.dll, sl.*.dll, NvLowLatencyVk.dll) are NVIDIA's, under the licences in licenses\NVIDIA, not the GPL.
 amd_fidelityfx_vk.dll is AMD's, under the MIT licence in licenses\AMD. Other components: THIRD_PARTY_NOTICES.md.
 "@
+} else {
+    $readme = @"
+$title
+$('=' * $title.Length)
+
+A reimplementation of the Kenshi engine. It reads your own Kenshi install (the Windows game's files, e.g. from Steam with Proton);
+no game files are included.
+
+Two programs
+------------
+$($game.PadRight(16))The game: the world with the Kenshi camera.
+meitou-viewer   The world viewer: a free camera over the world, with the Faithful / Meitou switches (F1-F8), frame statistics (F11),
+                the profiler (F12) and every renderer option (./meitou-viewer --world --help lists them).
+
+Start
+-----
+1. Unzip anywhere (the Meitou launcher does this for you).
+2. Run ./$game or ./meitou-viewer from a terminal (both start at The Hub).
+   - Give it your Kenshi folder (the one with kenshi_x64.exe and the data folder): the KENSHI_PATH environment variable, or the
+     console asks once and keeps it in meitou.local.json next to the program.
+3. Tab opens the settings (draw distances, anti-aliasing: FXAA or TAA). F10 lists the keys. DLSS and FSR are Windows-only.
+
+$requirements
+
+Licences
+--------
+Meitou is GPL-3.0-or-later (LICENSE). Other components: THIRD_PARTY_NOTICES.md.
+"@
+}
 Set-Content -Path (Join-Path $stage "README.txt") -Value $readme -Encoding UTF8
 
 $zipPath = Join-Path $Output "$name.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-[IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $stage), (Join-Path (Resolve-Path $Output) "$name.zip"), [IO.Compression.CompressionLevel]::Optimal, $true)
+if (-not (Test-Path (Join-Path $stage "settings-schema.json"))) { throw "settings-schema.json missing from $stage" }
+foreach ($program in $game, "meitou-viewer") {
+    if (-not (Test-Path (Join-Path $stage "$program$exe"))) { throw "$program$exe missing from $stage" }
+}
+if ($windows) {
+    [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $stage), (Join-Path (Resolve-Path $Output) "$name.zip"), [IO.Compression.CompressionLevel]::Optimal, $true)
+} else {
+    $programs = @($game, "meitou-viewer", "createdump") | ForEach-Object { Join-Path $stage $_ } | Where-Object { Test-Path $_ }
+    chmod +x @programs
+    if ($LASTEXITCODE -ne 0) { throw "chmod failed" }
+    if ($mac) {
+        # Ad-hoc signatures (no Apple identity): enough for Apple Silicon to run the code; Gatekeeper still flags browser downloads.
+        $code = @($programs) + @(Get-ChildItem $stage -Filter *.dylib | ForEach-Object FullName)
+        foreach ($file in $code) {
+            codesign --force --sign - $file
+            if ($LASTEXITCODE -ne 0) { throw "codesign $file failed" }
+        }
+    }
+    # zip(1) keeps the Unix modes; one top folder, as the launcher expects (docs/launcher.md).
+    Push-Location $Output
+    try {
+        zip -qr -X "$name.zip" $name
+        if ($LASTEXITCODE -ne 0) { throw "zip failed" }
+    } finally { Pop-Location }
+}
 Write-Host "release   $zipPath"

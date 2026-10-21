@@ -26,11 +26,20 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
             const ushort Path = (ushort)MoveFlags.AnyPath;
             var d = next[t].Position - n.Position;
-            float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(table.Cold(i)) - CombatTuning.Footprint(table.Cold(t));
+            var cold = table.Cold(i)!;
+            var tc = table.Cold(t);
+            float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
+            // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
+            var tv = next[t].Velocity;
+            bool away = tc is { InCombat: false } && tv.X * tv.X + tv.Z * tv.Z > CombatTuning.FleeingSpeed * CombatTuning.FleeingSpeed;
+            cold.TargetFleeingTime = away ? cold.TargetFleeingTime + dt : 0;
+            if (gap > CombatTuning.RunGap) cold.CombatRunning = true;
+            else if (gap < CombatTuning.FootworkGap) cold.CombatRunning = false;
+            if (cold.TargetFleeingTime >= CombatTuning.FleeingSeconds) cold.CombatRunning = true;
             n.TaskTime -= dt;
             // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
             bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
-            bool holding = Orders.Has(table.Cold(i), CharacterOrders.Hold);
+            bool holding = Orders.Has(cold, CharacterOrders.Hold);
             if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && gap <= CombatTuning.CloseInGap || holding)
             {
                 // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.

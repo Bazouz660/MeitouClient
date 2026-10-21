@@ -6,6 +6,18 @@ namespace Meitou.Simulation.Production;
 public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
 
 /// <summary>
+/// Gives characters (the selection when empty) the job an order of <paramref name="Type"/> on a player building becomes, at the end of their job lists (the original's Shift with an order;
+/// <see cref="PermaJobs.Add"/>).
+/// </summary>
+public sealed record AddJob(IReadOnlyList<CharacterId> Characters, Meitou.Data.Gameplay.Ai.TaskType Type, string Site) : SimCommand;
+
+/// <summary>Takes the job at <paramref name="Index"/> off a character's job list (the list's X button).</summary>
+public sealed record RemoveJob(CharacterId Character, int Index) : SimCommand;
+
+/// <summary>Moves a character's job from <paramref name="From"/> to <paramref name="To"/> in its list (the list's rows are dragged to reorder, the original's tutorial).</summary>
+public sealed record MoveJob(CharacterId Character, int From, int To) : SimCommand;
+
+/// <summary>
 /// A character puts an item of its own into a machine: <paramref name="Slot"/> k into recipe input k (as many units as the input still takes), -1 into the storage grid at
 /// (<paramref name="X"/>, <paramref name="Y"/>) (the whole stack). The character must stand within <see cref="ProductionSettings.TransferReach"/> of the building.
 /// </summary>
@@ -22,3 +34,12 @@ public sealed record QueueResearch(string Research) : SimCommand;
 
 /// <summary>Takes a research off the queue; its progress is kept for when it is queued again.</summary>
 public sealed record CancelResearch(string Research) : SimCommand;
+
+/// <summary>Queues a craft at a crafting bench: an option's key (<see cref="Meitou.Data.Gameplay.Construction.CraftOption.Key"/>), <paramref name="Count"/> times.</summary>
+public sealed record QueueCraft(string Site, string Option, int Count = 1) : SimCommand;
+
+/// <summary>Takes the craft at <paramref name="Index"/> off a bench's queue (its progress is lost, as the original).</summary>
+public sealed record CancelCraft(string Site, int Index) : SimCommand;
+
+/// <summary>Sets a bench's repeat flag: a finished craft goes back to the end of the queue.</summary>
+public sealed record RepeatCrafts(string Site, bool Repeat) : SimCommand;

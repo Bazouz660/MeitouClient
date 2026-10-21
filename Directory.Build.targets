@@ -6,7 +6,7 @@
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MSBuildThisFileDirectory)dlss-runtime</StreamlineRuntimePath>
   </PropertyGroup>
 
-  <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and Exists('$(StreamlineRuntimePath)/sl.interposer.dll')">
+  <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and Exists('$(StreamlineRuntimePath)/sl.interposer.dll') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win-')))">
     <None Include="$(StreamlineRuntimePath)/sl.interposer.dll;$(StreamlineRuntimePath)/sl.common.dll;$(StreamlineRuntimePath)/sl.dlss.dll;$(StreamlineRuntimePath)/nvngx_dlss.dll;$(StreamlineRuntimePath)/NvLowLatencyVk.dll"
           Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

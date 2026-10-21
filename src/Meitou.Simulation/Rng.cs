@@ -35,6 +35,14 @@ public enum RngPurpose : uint
     Dialogue = 17,
     /// <summary>Farms: the planting draws and the harvest rolls (<see cref="Production.ProductionSystem"/>), keyed by the building.</summary>
     Farm = 18,
+    /// <summary>Crafting: the critical (one tier better) roll of each craft, keyed by the bench.</summary>
+    Craft = 19,
+    /// <summary>The random name of a <c>named</c> character at its spawn, keyed like its spawn rolls.</summary>
+    Name = 20,
+    /// <summary>The blood trail's drips (<see cref="BodySystem"/>; display only).</summary>
+    BloodTrail = 21,
+    /// <summary>luckyren Mode: where a burst character's gear falls (<see cref="BodySystem"/>).</summary>
+    Luckyren = 22,
 }
 
 /// <summary>

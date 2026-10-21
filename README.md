@@ -9,16 +9,27 @@ mods and saves unchanged. **No game assets are shipped; an installed legal copy 
 Early playable slice: streamed Vulkan world, characters/animation, movement/combat/body state,
 NPC population/partial AI, inventory/trade, saves and native UI. 
 
-Remaining work: [ROADMAP.md](ROADMAP.md) 
 Architecture/research: [docs index](docs/README.md)
 Website: [meitou.martinvlcek.sk](https://meitou.martinvlcek.sk/).
 
 ## Download and requirements
 
-[Windows releases](https://github.com/VlcekM/MeitouClient/releases): unzip and run meitou.exe
-(game) or meitou-viewer.exe (debug world viewer); prebuilt packages need no separate .NET install.
-Windows10/11, Vulkan1.3 GPU with required descriptor-indexing/indirect-draw features, and Kenshi.
-Other platforms are untested; optional ray-query GI falls back on unsupported GPUs.
+The easiest way to get the game is the [Meitou Launcher](https://github.com/VlcekM/MeitouClient/releases/latest): it installs and
+updates the game and manages mods. Download the newest one for
+
+[Windows](https://github.com/VlcekM/MeitouClient/releases/latest/download/MeitouLauncher-win-x64-Setup.exe) (Setup.exe),
+
+[Linux](https://github.com/VlcekM/MeitouClient/releases/latest/download/MeitouLauncher-linux-x64.AppImage) (AppImage),
+
+[macOS Apple silicon](https://github.com/VlcekM/MeitouClient/releases/latest/download/MeitouLauncher-osx-arm64-Setup.pkg) or
+
+[macOS Intel](https://github.com/VlcekM/MeitouClient/releases/latest/download/MeitouLauncher-osx-x64-Setup.pkg) (unsigned, Gatekeeper warns).
+
+By hand: [releases](https://github.com/VlcekM/MeitouClient/releases) for Windows, Linux and macOS, unzip and run
+
+the game or meitou-viewer (debug world viewer); prebuilt packages need no separate .NET install.
+Needs a Vulkan1.3 GPU with required descriptor-indexing/indirect-draw features, and Kenshi.
+DLSS and FSR are Windows-only; optional ray-query GI falls back on unsupported GPUs. On Linux (checked on KDE, Wayland and X11, NVIDIA driver) a Steam install is found under ~/.local/share/Steam, ~/.steam/steam or the Flatpak folder; macOS is untested.
 Building requires the [.NET10 SDK](https://dotnet.microsoft.com/download).
 
 Steam installs are located automatically; otherwise select the Kenshi folder when prompted,

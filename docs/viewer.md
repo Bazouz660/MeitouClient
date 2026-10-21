@@ -36,7 +36,7 @@ In the game a --low-end run neither applies nor overwrites the sliders and switc
 
 ## Keys
 
-F10 key list is the current authority; F11 stats,F12 profiler,Tab settings,Alt+Enter fullscreen.
+F10 key list is the current authority; F11 stats,F12 profiler,Tab settings,Alt+Enter fullscreen (a borderless window at the monitor's own corner on Windows, since GLFW's bounds are the work area and a taskbar or panel at the top or left would offset it; off Windows the window manager is asked for full screen, **Verified** on KDE: panel covered).
 F11 includes the opaque UI coverage: the share of the screen under fully opaque controls (solid
 backgrounds, alpha-255 atlas slices at alpha 1; `UiPainter.OpaqueCoverage`), overlaps counted once.
 Panel skins have ragged translucent borders around a solid middle, so a slice counts as its largest
@@ -66,7 +66,7 @@ Game only (`SquadTour`, not --duel): numpad / flies the camera over the squad ba
 distance at each; starts at member 1 (flies there first if the view is elsewhere), 1.5 s on each. Hops are inverted brachistochrone
 (cycloid) arches lasting Advanced "Character flight time" (0.5-6 s, default 2), angle linear in time:
 climb first, pitch steepens up to +0.35 rad, fastest at the top, slow landing; the target tracks the moving member. Camera input or / again ends it in
-the strategy camera where it is. Advanced "Character flights" (Meitou, default on): a squad member double click / number double tap more
+the strategy camera where it is. Advanced "Character flights" (Meitou, default off): a squad member double click / number double tap more
 than 10000 units (ground) from the view target does one such hop, then follows the member; nearer, or off, it cuts as the game does.
 Pressing that member again during the hop (a triple tap) cuts to its end.
 

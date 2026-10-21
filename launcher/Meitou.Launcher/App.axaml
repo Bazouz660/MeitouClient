@@ -1,0 +1,499 @@
+<!-- The Meitou UI look (docs/meitou-ui.md, tokens in docs/meitou-ui/tokens.json) drawn without the game's textures: dark plates with a
+     faint rim, charcoal plate buttons, one paper action, brass accents, Exo 2 from the Kenshi install (KenshiFonts). -->
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Meitou.Launcher.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- Tokens -->
+      <Color x:Key="SystemAccentColor">#816635</Color>
+      <Color x:Key="SystemAccentColorLight1">#9a7c45</Color>
+      <Color x:Key="SystemAccentColorLight2">#b08f55</Color>
+      <Color x:Key="SystemAccentColorLight3">#c4a062</Color>
+      <Color x:Key="SystemAccentColorDark1">#6f5730</Color>
+      <Color x:Key="SystemAccentColorDark2">#5c482a</Color>
+      <Color x:Key="SystemAccentColorDark3">#4a3a22</Color>
+      <SolidColorBrush x:Key="Vignette" Color="#0d0a09" />
+      <SolidColorBrush x:Key="Plate" Color="#110f0d" />
+      <SolidColorBrush x:Key="PlateRim" Color="#1fafa68b" />
+      <SolidColorBrush x:Key="MetalEdge" Color="#070605" />
+      <SolidColorBrush x:Key="Main" Color="#afa68b" />
+      <SolidColorBrush x:Key="Quiet" Color="#8a8270" />
+      <SolidColorBrush x:Key="PaperLight" Color="#d9ceb8" />
+      <SolidColorBrush x:Key="Secondary" Color="#140806" />
+      <SolidColorBrush x:Key="Brass" Color="#816635" />
+      <SolidColorBrush x:Key="BrassLight" Color="#c4a062" />
+      <SolidColorBrush x:Key="BadBright" Color="#bf4834" />
+      <SolidColorBrush x:Key="Field" Color="#0b0a09" />
+      <!-- The plate: the kit's rust under its tint, stood in for by a faint warm glow in the top left (the site does the same) -->
+      <RadialGradientBrush x:Key="PlateGlow" Center="25%,0%" GradientOrigin="25%,0%" RadiusX="75%" RadiusY="60%">
+        <GradientStop Offset="0" Color="#1d1613" />
+        <GradientStop Offset="1" Color="#110f0d" />
+      </RadialGradientBrush>
+      <!-- Fluent's focus ring in the kit's brass -->
+      <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="#c4a062" />
+      <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="#140806" />
+      <LinearGradientBrush x:Key="PlateButton" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#2e2a27" />
+        <GradientStop Offset="0.5" Color="#24211e" />
+        <GradientStop Offset="1" Color="#1a1715" />
+      </LinearGradientBrush>
+      <LinearGradientBrush x:Key="PlateButtonHover" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#3a3531" />
+        <GradientStop Offset="0.5" Color="#2e2a26" />
+        <GradientStop Offset="1" Color="#221f1c" />
+      </LinearGradientBrush>
+      <LinearGradientBrush x:Key="PlateButtonPressed" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#0f0d0c" />
+        <GradientStop Offset="1" Color="#1a1715" />
+      </LinearGradientBrush>
+      <LinearGradientBrush x:Key="PaperButton" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#b8aa98" />
+        <GradientStop Offset="0.55" Color="#9a8d7e" />
+        <GradientStop Offset="1" Color="#7f7366" />
+      </LinearGradientBrush>
+      <LinearGradientBrush x:Key="PaperButtonHover" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#c9bba8" />
+        <GradientStop Offset="0.55" Color="#a99c8c" />
+        <GradientStop Offset="1" Color="#8c7f71" />
+      </LinearGradientBrush>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="TransparencyBackgroundFallback" Value="{StaticResource Vignette}" />
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="FontFamily" Value="fonts:Kenshi#Exo 2, $Default" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+    </Style>
+
+    <!-- Surfaces -->
+    <Style Selector="Border.plate">
+      <Setter Property="Background" Value="{StaticResource PlateGlow}" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BoxShadow" Value="0 6 14 0 #8C000000" />
+    </Style>
+    <!-- A page's heading: the kit's window title (24, bleached paper) over a hairline, its count or note at the right end; paper is
+         kept for the one action -->
+    <Style Selector="Border.header">
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="2,2,2,10" />
+    </Style>
+    <Style Selector="Border.header TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.header TextBlock.aside">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+    </Style>
+    <!-- What an empty list says, in the middle of the room it would have filled -->
+    <Style Selector="TextBlock.empty">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="MaxWidth" Value="380" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.post">
+      <Setter Property="Background" Value="#17140f" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="20,16" />
+    </Style>
+    <Style Selector="Border.rule">
+      <Setter Property="Background" Value="{StaticResource PlateRim}" />
+      <Setter Property="Height" Value="1" />
+    </Style>
+    <Style Selector="Border.vrule">
+      <Setter Property="Background" Value="{StaticResource PlateRim}" />
+      <Setter Property="Width" Value="1" />
+    </Style>
+    <Style Selector="Border.row">
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="0,6,0,8" />
+    </Style>
+
+    <!-- Text -->
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="20" />
+    </Style>
+    <Style Selector="TextBlock.name">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <Style Selector="TextBlock.desc">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.caps">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="LetterSpacing" Value="1" />
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+    </Style>
+    <Style Selector="TextBlock.warn">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource BrassLight}" />
+    </Style>
+
+    <!-- Plate buttons (Button, ToggleButton) -->
+    <Style Selector="Button, ToggleButton">
+      <Setter Property="Background" Value="{StaticResource PlateButton}" />
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="16,6" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <!-- A raised plate: a lit top edge and a drop below; pressed or selected it sinks -->
+    <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter, ToggleButton /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1Fffffff, 0 1 3 0 #CC000000" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButtonHover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButtonPressed}" />
+      <Setter Property="BoxShadow" Value="inset 0 2 4 0 #E6000000" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="ToggleButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButtonPressed}" />
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButton}" />
+      <Setter Property="Foreground" Value="#777777" />
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+
+    <!-- Navigation: the kit's menu items, plate toggles in the left column with an icon column and an uppercase, spaced label;
+         the page shown is the sunken one with a brass edge -->
+    <Style Selector="ToggleButton.nav">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="Padding" Value="14,0,12,0" />
+    </Style>
+    <Style Selector="ToggleButton.nav Path">
+      <Setter Property="Width" Value="16" />
+      <Setter Property="Height" Value="16" />
+      <Setter Property="Stretch" Value="Uniform" />
+      <Setter Property="Fill" Value="{StaticResource Quiet}" />
+      <Setter Property="Margin" Value="0,0,12,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.nav TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="LetterSpacing" Value="1.4" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.nav:pointerover Path">
+      <Setter Property="Fill" Value="{StaticResource Main}" />
+    </Style>
+    <Style Selector="ToggleButton.nav:pointerover TextBlock, ToggleButton.nav:checked TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="ToggleButton.nav:checked Path">
+      <Setter Property="Fill" Value="{StaticResource BrassLight}" />
+    </Style>
+    <Style Selector="ToggleButton.nav:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="inset 3 0 0 0 #c4a062, inset 0 2 4 0 #E6000000" />
+    </Style>
+
+    <!-- The one paper action (Play) -->
+    <Style Selector="Button.paper">
+      <Setter Property="Background" Value="{StaticResource PaperButton}" />
+      <Setter Property="Foreground" Value="{StaticResource Secondary}" />
+      <Setter Property="BorderBrush" Value="#E6140806" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="FontSize" Value="21" />
+      <Setter Property="Padding" Value="30,6,36,6" />
+      <Setter Property="MinHeight" Value="50" />
+      <Setter Property="MinWidth" Value="190" />
+    </Style>
+    <Style Selector="Button.paper /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="inset 0 1 0 0 #59ffffff, inset 0 -2 0 0 #33140806, 0 3 10 0 #CC000000" />
+    </Style>
+    <Style Selector="Button.paper Path">
+      <Setter Property="Fill" Value="{StaticResource Secondary}" />
+    </Style>
+    <Style Selector="Button.paper:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PaperButtonHover}" />
+      <Setter Property="BorderBrush" Value="#e6140806" />
+      <Setter Property="Foreground" Value="{StaticResource Secondary}" />
+    </Style>
+    <Style Selector="Button.paper:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PaperButton}" />
+      <Setter Property="BoxShadow" Value="inset 0 2 4 0 #66140806" />
+      <Setter Property="Foreground" Value="{StaticResource Secondary}" />
+    </Style>
+
+    <!-- A new version to install: a plate button with a brass rim and a faint brass glow -->
+    <Style Selector="Button.update">
+      <Setter Property="BorderBrush" Value="{StaticResource Brass}" />
+      <Setter Property="Padding" Value="14,5,18,5" />
+      <Setter Property="MinHeight" Value="44" />
+    </Style>
+    <Style Selector="Button.update /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1Fffffff, 0 0 10 0 #66816635" />
+    </Style>
+    <Style Selector="Button.update:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{StaticResource BrassLight}" />
+      <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1Fffffff, 0 0 14 0 #99c4a062" />
+    </Style>
+    <Style Selector="Button.update Path">
+      <Setter Property="Fill" Value="{StaticResource BrassLight}" />
+    </Style>
+
+    <!-- Fields -->
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{StaticResource Field}" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="BorderBrush" Value="#3a332d" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource Field}" />
+      <Setter Property="BorderBrush" Value="#5a4e40" />
+    </Style>
+    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource Field}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BrassLight}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox:pointerover, TextBox:focus">
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="Background" Value="{StaticResource PlateButton}" />
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ComboBox:pointerover /template/ Border#Background">
+      <Setter Property="Background" Value="{StaticResource PlateButtonHover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+    </Style>
+    <Style Selector="ComboBox /template/ Border#PopupBorder">
+      <Setter Property="Background" Value="{StaticResource Plate}" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="CornerRadius" Value="7" />
+    </Style>
+    <!-- Tooltips and menus are small plates -->
+    <Style Selector="ToolTip">
+      <Setter Property="Background" Value="{StaticResource Plate}" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter">
+      <Setter Property="Background" Value="{StaticResource Plate}" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="4" />
+    </Style>
+    <Style Selector="MenuItem">
+      <Setter Property="Foreground" Value="{StaticResource Main}" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="MenuItem:selected /template/ Border#PART_LayoutRoot">
+      <Setter Property="Background" Value="#1fafa68b" />
+    </Style>
+    <Style Selector="MenuItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="MenuItem Separator">
+      <Setter Property="Background" Value="{StaticResource PlateRim}" />
+    </Style>
+    <Style Selector="ProgressBar">
+      <Setter Property="Foreground" Value="{StaticResource BrassLight}" />
+      <Setter Property="Background" Value="{StaticResource MetalEdge}" />
+      <Setter Property="Height" Value="6" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+
+    <!-- Lists: rows separated by hairlines, the selected one lifted -->
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#0fafa68b" />
+    </Style>
+    <!-- The selected row is lit and wears the same brass edge as the selected page -->
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1fafa68b" />
+      <Setter Property="BoxShadow" Value="inset 2 0 0 0 #c4a062" />
+    </Style>
+    <Style Selector="ListBoxItem.dragging /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#33c4a062" />
+    </Style>
+    <Style Selector="TextBlock.handle">
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+      <Setter Property="Cursor" Value="SizeNorthSouth" />
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <!-- Clickable things show the hand -->
+    <Style Selector="Button, ToggleButton, ComboBox, ComboBoxItem, CheckBox, ListBoxItem">
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <!-- Window buttons: flat on the title bar like the system ones; only hover lights them. -->
+    <Style Selector="Button.chrome">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Width" Value="40" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Button.chrome /template/ ContentPresenter#PART_ContentPresenter, Button.chrome:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chrome:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
+    <Style Selector="Button.chrome:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#1Affffff" />
+    </Style>
+    <Style Selector="Button.chrome:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#0Dffffff" />
+    </Style>
+    <Style Selector="Button.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#4Dc42b1c" />
+    </Style>
+    <Style Selector="Button.chrome Path">
+      <Setter Property="Stroke" Value="{StaticResource Main}" />
+      <Setter Property="StrokeLineCap" Value="Round" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.chrome:pointerover Path">
+      <Setter Property="Stroke" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="Button.close:pointerover Path">
+      <Setter Property="Stroke" Value="{StaticResource BadBright}" />
+    </Style>
+
+    <!-- A text link: no plate, quiet text, underlined when hovered -->
+    <Style Selector="Button.link">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource Quiet}" />
+    </Style>
+    <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter, Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{StaticResource PaperLight}" />
+    </Style>
+    <Style Selector="Button.link:pointerover TextBlock">
+      <Setter Property="TextDecorations" Value="Underline" />
+    </Style>
+
+    <!-- A small icon that shows it is a button only when hovered (the title bar's Kenshi folder) -->
+    <Style Selector="Button.icon">
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="6,5" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.icon /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButtonHover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource MetalEdge}" />
+      <Setter Property="BoxShadow" Value="inset 0 1 0 0 #1Fffffff, 0 1 3 0 #CC000000" />
+    </Style>
+    <Style Selector="Button.icon:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PlateButtonPressed}" />
+      <Setter Property="BoxShadow" Value="inset 0 2 4 0 #E6000000" />
+    </Style>
+    <Style Selector="Button.icon Path">
+      <Setter Property="Fill" Value="{StaticResource Quiet}" />
+    </Style>
+    <Style Selector="Button.icon:pointerover Path">
+      <Setter Property="Fill" Value="{StaticResource PaperLight}" />
+    </Style>
+
+    <!-- Ko-fi support button on Home: Ko-fi's rounded button, white with black text -->
+    <Style Selector="Button.kofi">
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="MinHeight" Value="0" />
+      <!-- Overhangs the header's padding so the bar keeps its height -->
+      <Setter Property="Margin" Value="0,-8" />
+      <Setter Property="CornerRadius" Value="10" />
+    </Style>
+    <!-- Over the header's large pale TextBlock style (later style wins) -->
+    <Style Selector="Button.kofi TextBlock">
+      <Setter Property="Foreground" Value="Black" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.kofi /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="Black" />
+      <Setter Property="BorderBrush" Value="White" />
+      <Setter Property="BoxShadow" Value="0 1 3 0 #CC000000" />
+    </Style>
+    <Style Selector="Button.kofi:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#EBEBEB" />
+      <Setter Property="BorderBrush" Value="#EBEBEB" />
+      <Setter Property="Foreground" Value="Black" />
+    </Style>
+    <Style Selector="Button.kofi:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#D9D9D9" />
+      <Setter Property="BorderBrush" Value="#D9D9D9" />
+      <Setter Property="BoxShadow" Value="none" />
+    </Style>
+  </Application.Styles>
+</Application>

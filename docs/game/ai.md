@@ -20,7 +20,8 @@ condition can add1.25 when score<1 (unknown). Drop nonpositive candidates; B-sat
 branch also drops. Resolve key ties by0.0001 increments. Desire, commitment and crowd factor per
 type: [ai-tasks](ai-tasks.md#desire-and-commitment); exact A/B meanings remain unresolved.
 
-GOAP requests unmet B states, finds tasks/effects and evaluates completion/cost through TaskData.
+The planner (`TaskPathfinder`, [ai-tasks](ai-tasks.md#planner), Observed) chains rows from a goal's effect and unmet B states to the
+rows whose list A achieves them, best-first by desire, and queues the chain leaf first.
 Squad toggles inject sleep/ditch/sit goals; slave obedience uses role4. Player commands and job
 queues must coexist without erasing urgent state. Squad-shared sensing, retreat and off-screen
 routing use [perception](perception.md), [population](factions-squads-towns.md), [pathfinding](pathfinding.md).
@@ -41,7 +42,7 @@ routing use [perception](perception.md), [population](factions-squads-towns.md),
 | SQUAD_TEMPLATE `AI packages` (also 1 of 11 SINGLE_DIPLOMATIC_ASSAULT records, entry (0,100,0)) | 838 of 959 templates; each entry (slot, ...) with slot 0..4 (838 at 0, of which 777 are (0,0,0) and 61 are (0,100,0); 98 at 1, 55 at 2, 8 at 3, 2 at 4), at most 5 packages per template. The slot is a priority: the Blackboard walks slots from the highest to 0. The reader (`FUN_140271620`) passes the entry's first int as the slot to the add-package function `FUN_14026c160`, then resolves every package's `Leads to` among the packages it just loaded (a `Leads to` target that is not one of the squad's own packages stays unlinked) | **Verified** (counts), **Observed** (priority role, `Leads to` resolution) |
 | RACE `AI Goals` | 47 of 53 races; entries (SELF_PRESERVATION x30, HEAL_MY_LEGS x16, IDLE x9, EAT_A_RANDOM_DEAD_BODY x7, ...). Read by `FUN_1405094f0`: only val1 x 0.01 is used (no zero default; the data is mostly val1 = 100, i.e. 1.0), val0 is **not** read (the entries are mostly (4,100,0) or (0,100,0)), the hour window is fixed 0..100, and the target comes only from the legacy bool fields `target leader` / `target self` / `squad mission target`, which no current AI_TASK record has (AI_TASK has only `enum`, `classification`, `targeting`, `ending`), so the `targeting` int is ignored on this path | **Verified** (reader and data), **Observed** (data) |
 | FACTION / FACTION_TEMPLATE `AI fallback` | Packages added at slot 0 (`FUN_140271fd0`); used by 1 FACTION record and 0 FACTION_TEMPLATE records | **Observed** |
-| DIALOGUE_LINE `AI contract` (169 uses; val0 = hours), `change AI` (190 uses), `has package` (751 uses) | See [Dialogue and AI](#packages-and-goals) | **Observed** |
+| DIALOGUE_LINE `AI contract` (169 uses; val0 = hours), `change AI` (190 uses), `has package` (751 uses) | `change AI` replaces the squad's packages, `AI contract` runs one aimed at the dialogue target: [dialogue Effects](dialogue.md#effects) | **Observed** |
 | AI_SCHEDULE | Empty in the base game set (0 records in the merged database); fcs.def says its `packages` list switches packages by hour (val0), but no runtime use was found | **Verified** (count) |
 
 ### Enums
@@ -100,10 +101,10 @@ vtable is the RTTI class named here; the editor's enum names are matched to the 
 
 ## Unknowns
 
-- Roles of the six category sets that flag bits 1, 2, 4, 0x10, 0x20, 0x40 register into; the meaning of the `*` marker on some
+- Which of the six category registries (flag bits 1, 2, 4, 0x10, 0x20, 0x40; [planner](ai-tasks.md#planner)) a character plans with; the meaning of the `*` marker on some
   condition entries (the entry's second flag byte) and of the TaskData flag +0x14.
 - The extra x1.25 under an owner-object condition in scoring; the rule that drops a candidate whose B list holds with no effect.
-- What the extra Tasker list at +0x70 of `OrdersReceiver` holds, and the "AI flag +0xbc" gating urgent jobs.
+- The "AI flag +0xbc" that lets kind-2 (turret) perma-jobs run before urgent tasks; +0x70 of `OrdersReceiver` is the one-shot order list ([perma-jobs](ai-tasks.md#perma-jobs)).
 - Why `clears existing jobs` has no string reference in the exe (editor-only field, or read some other way).
 - Which AI packages use which `unloaded func` value (not surveyed in the data). The unloaded update itself, the keep test `FUN_1407ec570`
   and the 60 s orphan timer are in [off-screen world](factions-squads-towns.md#off-screen-world).
@@ -113,4 +114,3 @@ vtable is the RTTI class named here; the editor's enum names are matched to the 
 - Why 37 task types have no TaskData; types 289 and 290 (no enum name).
 - `ending` events (DA/DC behaviour: [dialogue](dialogue.md#unknowns)).
 - What squad-template slots 1..4 mean beyond descending priority.
-- The planner's search method and costs.

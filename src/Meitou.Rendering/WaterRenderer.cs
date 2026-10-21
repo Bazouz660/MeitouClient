@@ -1071,7 +1071,7 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     static RgbaImage? Load(GameInstall install, string relative)
     {
-        var path = Path.Combine(install.DataDirectory, relative);
+        var path = GameFiles.Resolve(Path.Combine(install.DataDirectory, relative));
         return File.Exists(path) ? TextureLoader.LoadImage(File.ReadAllBytes(path)) : null;
     }
 

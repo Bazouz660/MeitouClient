@@ -58,7 +58,7 @@ sealed partial class GameHost
                 if (techniques.TryGetValue(library.Definitions[i].Id, out var t) && t is { Kinds: WeaponKinds.Unarmed, IsBlock: false, IsDodge: false, Animal: 0 })
                     weapons[i] = (t.Blows >= 2 ? t.Limb2 : t.Limb1) is 0 or 1 ? "HtH_Punch" : "HtH_Kick";   // the last blow's limb: the arms are 0 and 1 (FUN_1402b4570)
             definitionWeapons = weapons;
-            characterSounds = new CharacterSounds(sound.Player, groundSurfaces);
+            characterSounds = new CharacterSounds(sound.Player, groundSurfaces) { Floor = FloorSurface };
         }
         var sounds = characterSounds;
         var world = session.World;
@@ -89,7 +89,7 @@ sealed partial class GameHost
             }
             position += CarriedOffset(c, yaw);
             if (!soundProfiles.TryGetValue(look, out var profile))
-                soundProfiles.Add(look, profile = CharacterSoundProfile.From(look));
+                soundProfiles.Add(look, profile = CharacterSoundProfile.From(look, db));
             soundLayers.Clear();
             foreach (var layer in c.Animations)
             {
@@ -97,7 +97,7 @@ sealed partial class GameHost
                 soundLayers.Add(new SoundLayer(layer.Definition, events, layer.Length > 0 ? layer.Time / layer.Length : 0, layer.Weight, events is null ? null : definitionWeapons![layer.Definition]));
             }
             ulong key = SoundKey(c.Id);
-            var loop = c.Task == CharacterTask.Build ? CharacterLoop.Build : c.Task == CharacterTask.Treat ? CharacterLoop.Medic : c.PickingLock && c.Task != CharacterTask.GoTo ? CharacterLoop.Unlock : CharacterLoop.None;
+            var loop = c.Task == CharacterTask.Build ? CharacterLoop.Build : c.Task == CharacterTask.Treat ? CharacterLoop.Medic : (c.PickingLock || c.WorkingShackles) && c.Task != CharacterTask.GoTo ? CharacterLoop.Unlock : CharacterLoop.None;
             sounds.Update(key, profile, position, yaw, speed, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(soundLayers), loop);
             JobSounds(sounds, key, c);
         }
@@ -136,6 +136,8 @@ sealed partial class GameHost
             case SoundKind.Eat: sounds.Job(subject, "Character_Consume", CharacterSounds.FootstepLimit, "Consume", "Eat"); break;
             case SoundKind.Unlocked: sounds.Job(subject, "Character_Unlock_Success", 0); break;
             case SoundKind.Locked: sounds.Job(subject, "Character_Lock"); break;
+            case SoundKind.PickedUp: sounds.Job(subject, "Character_Pick_Up_Ground"); break;
+            case SoundKind.ShacklesOn: if (e.Item is not null) uiSounds?.Play(new UiSoundEvent("Item_Drop", Item: e.Item)); break;
             case SoundKind.BountyPaid: uiSounds?.Play(new UiSoundEvent("Notifications", "Notifications", "Bounty_Fulfilled")); break;
             case SoundKind.DismantleDone: uiSounds?.Play(new UiSoundEvent("Notifications", "Notifications", "Thing_Complete")); break;
         }

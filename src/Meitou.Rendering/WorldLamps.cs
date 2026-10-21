@@ -11,7 +11,7 @@ namespace Meitou.Rendering;
 /// The game's point and spot lights on the world (docs/render-lights.md): the lamps of every placed building (<see cref="WorldLights"/>,
 /// loaded on a worker), binned each frame into a grid of <see cref="Cells"/>² cells of <see cref="CellSize"/> around the eye and uploaded as three
 /// textures, which <c>kenshiLight</c> (<see cref="LampShaders"/>) and the probe trace read. Interior lamps are clipped to their building's
-/// mask; the probe trace also shadows their bounce contribution. Render thread only.
+/// mask; the probe trace also shadows their bounce contribution. Buildings placed during play add theirs with <see cref="SetRuntime"/>. Render thread only.
 /// </summary>
 internal sealed class WorldLamps : IDisposable
 {
@@ -23,7 +23,11 @@ internal sealed class WorldLamps : IDisposable
 
     readonly GpuContext ctx;
     readonly Task<WorldLight[]> loading;
-    WorldLight[]? lamps;
+    // The lamps binned each frame: the world's (once loaded) and those of buildings placed during play, by building id.
+    WorldLight[]? world, lamps;
+    readonly Dictionary<string, WorldLight[]> runtime = new(StringComparer.Ordinal);
+    readonly Dictionary<string, float> runtimePower = new(StringComparer.Ordinal);
+    bool runtimeChanged;
     readonly GpuTexture[] cells, index, data;
     readonly GpuSampler nearest;
     readonly float[] cellValues = new float[Cells * Cells * 2];
@@ -75,30 +79,76 @@ internal sealed class WorldLamps : IDisposable
     internal Vector4 Grid => grid;
     internal uint Emitter(string placementId) => emitters.GetValueOrDefault(placementId);
 
-    /// <summary>Bins the lamps around <paramref name="eye"/> for this frame (the pulsing and shimmering ones at their power now).</summary>
-    public void Update(Vector3 eye, WorldObjectRenderer? objects = null)
+    /// <summary>Shows the lamps of a building placed during play, replacing any it had (the host calls it when the building is complete).</summary>
+    public void SetRuntime(string building, IEnumerable<WorldLight> lights)
+    {
+        runtime[building] = [.. lights.Where(l => l.Intensity > 0 && l.Radius > 0)];
+        runtimeChanged = true;
+    }
+
+    /// <summary>
+    /// The factor on a placed building's lamps (docs/formats/lights.md "When a light is on": the game's per-update power scale, the building's power share);
+    /// at 0 or below they are hidden. 1 until set.
+    /// </summary>
+    public void SetRuntimePower(string building, float factor) => runtimePower[building] = factor;
+
+    public void RemoveRuntime(string building)
+    {
+        runtimeChanged |= runtime.Remove(building);
+        runtimePower.Remove(building);
+    }
+
+    public void ClearRuntime()
+    {
+        runtimeChanged |= runtime.Count > 0;
+        runtime.Clear();
+        runtimePower.Clear();
+    }
+
+    /// <summary>The power factor of lamp <paramref name="i"/>: 1 for the world's, the building's factor for a placed building's (its placement id is the building id).</summary>
+    float PowerFactor(int i) => i < world!.Length || i >= lamps!.Length ? 1 : runtimePower.GetValueOrDefault(lamps[i].PlacementId, 1);
+
+    /// <summary>Lamp <paramref name="i"/> of this frame: the world's and placed buildings', then <see cref="Moving"/>.</summary>
+    WorldLight Lamp(int i) => i < lamps!.Length ? lamps[i] : Moving[i - lamps.Length];
+
+    /// <summary>This frame's moving lamps (lanterns carried by characters), filled by the frame before <see cref="Update"/>.</summary>
+    public List<WorldLight> Moving { get; } = [];
+
+    /// <summary>
+    /// Bins the lamps around <paramref name="eye"/> for this frame (the pulsing and shimmering ones at their power now). <paramref name="daylight"/> is the game's daylight
+    /// factor (<see cref="WorldLights.DaylightFactor"/>): night-only lamps are left out above <see cref="WorldLights.NightDaylightLimit"/>.
+    /// </summary>
+    public void Update(Vector3 eye, WorldObjectRenderer? objects = null, float daylight = 0)
     {
         slot = ctx.Frame.Slot;
         grid = default;
         InGrid = 0;
         emitters.Clear();
         if (!Enabled) return;
-        if (lamps is null)
+        if (world is null)
         {
             if (!loading.IsCompleted) return;
-            if (loading.IsFaulted) { Console.Error.WriteLine($"lamps     not loaded: {loading.Exception?.InnerException?.Message}"); lamps = []; return; }
-            lamps = loading.Result;
-            Console.WriteLine($"lamps     {lamps.Length} lights ({lamps.Count(l => l.Interior)} interior)");
+            if (loading.IsFaulted) Console.Error.WriteLine($"lamps     not loaded: {loading.Exception?.InnerException?.Message}");
+            world = loading.IsFaulted ? [] : loading.Result;
+            Console.WriteLine($"lamps     {world.Length} lights ({world.Count(l => l.Interior)} interior)");
+            runtimeChanged = true;
         }
-        if (lamps.Length == 0) return;
+        if (runtimeChanged || lamps is null)
+        {
+            lamps = runtime.Count == 0 ? world : [.. world, .. runtime.Values.SelectMany(r => r)];
+            runtimeChanged = false;
+        }
+        int count = lamps.Length + Moving.Count;
+        if (count == 0) return;
 
         float x0 = MathF.Floor(eye.X / CellSize) * CellSize - Cells / 2 * CellSize, z0 = MathF.Floor(eye.Z / CellSize) * CellSize - Cells / 2 * CellSize;
         float x1 = x0 + Cells * CellSize, z1 = z0 + Cells * CellSize;
         near.Clear();
-        for (int i = 0; i < lamps.Length && near.Count < MaxLamps; i++)
+        for (int i = 0; i < count && near.Count < MaxLamps; i++)
         {
-            var l = lamps[i];
+            var l = Lamp(i);
             if (l.Position.X + l.Radius < x0 || l.Position.X - l.Radius > x1 || l.Position.Z + l.Radius < z0 || l.Position.Z - l.Radius > z1) continue;
+            if (!WorldLights.IsLit(l, daylight) || PowerFactor(i) <= 0) continue;
             var room = l.Interior ? objects?.InteriorFor(l.PlacementId) : null;
             // An unloaded or unrepresentable room must not turn its lights into unbounded outdoor lamps.
             if (l.Interior && (room is null || room.Footprint.Length is < 3 or > MaxRoomEdges)) continue;
@@ -112,8 +162,8 @@ internal sealed class WorldLamps : IDisposable
         for (int k = 0; k < near.Count; k++)
         {
             var (lamp, room) = near[k];
-            var l = lamps[lamp];
-            float power = l.Intensity * WorldLights.EffectFactor(l.Effect, t);
+            var l = Lamp(lamp);
+            float power = l.Intensity * WorldLights.EffectFactor(l.Effect, t) * PowerFactor(lamp);
             float inner = MathF.Min(l.InnerAngle, l.OuterAngle), outer = MathF.Max(l.InnerAngle, l.OuterAngle);
             int row = k * DataWidth;
             dataValues[row] = new Vector4(l.Position, l.Radius);
@@ -148,7 +198,7 @@ internal sealed class WorldLamps : IDisposable
             }
             for (int k = 0; k < near.Count; k++)
             {
-                var l = lamps[near[k].Lamp];
+                var l = Lamp(near[k].Lamp);
                 int cx0 = Math.Max((int)MathF.Floor((l.Position.X - l.Radius - x0) / CellSize), 0), cx1 = Math.Min((int)MathF.Floor((l.Position.X + l.Radius - x0) / CellSize), Cells - 1);
                 int cz0 = Math.Max((int)MathF.Floor((l.Position.Z - l.Radius - z0) / CellSize), 0), cz1 = Math.Min((int)MathF.Floor((l.Position.Z + l.Radius - z0) / CellSize), Cells - 1);
                 for (int cz = cz0; cz <= cz1; cz++)

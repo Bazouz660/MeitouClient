@@ -1,10 +1,11 @@
-using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text;
 using Silk.NET.Vulkan;
 using StbTrueTypeSharp;
 
 using Meitou.Rendering.Gpu;
+using Meitou.Rendering.Ui;
 
 namespace Meitou.Rendering;
 
@@ -64,7 +65,7 @@ public sealed unsafe class DebugOverlay : IDisposable
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8).</summary>
     public IGpuContext Gpu { get; }
-    readonly GpuTexture atlas;
+    readonly GpuTexture? atlas;
     readonly SampledTexture atlasSampled;
     readonly LegacyProgram program;
     readonly UniformHandle uScreen;
@@ -72,13 +73,16 @@ public sealed unsafe class DebugOverlay : IDisposable
     SampledTexture? imageBatch;
     readonly SamplerSlot samplerAtlas;
     readonly StbTrueType.stbtt_bakedchar[] glyphs = new StbTrueType.stbtt_bakedchar[CharCount];
-    readonly StbTrueType.stbtt_packedchar[]? packedGlyphs;
-    readonly float[]? kerning;
-    readonly float baselineOffset;
     readonly List<float> batch = [];
     const int Stride = 8;
+    /// <summary>Queued text geometry by caption, position, scale and colour; for a UI font valid for one <see cref="UiFont.Generation"/> of its atlas.</summary>
     readonly Dictionary<(string Text, float X, float Top, float Scale, Vector4 Colour), (float[] Vertices, float Width)> textGeometry = [];
     int cachedTextFloats;
+    /// <summary>The glyph-cache font this overlay draws and measures with (null: the stb_truetype faces).</summary>
+    readonly UiFont? uiFont;
+    int cacheGeneration;
+    /// <summary>Where, in <see cref="batch"/>, the quads of each atlas texture begin (a UI font's atlas can be replaced while quads are queued).</summary>
+    readonly List<(int Start, SampledTexture Texture)> atlasRuns = [];
 
     public float LineHeight { get; }
     public float CharWidth { get; }
@@ -88,54 +92,17 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// <summary>What <see cref="Flush"/> draws into: the frame's final picture (the window's backbuffer, or an offscreen texture). Set by the host.</summary>
     public GpuTexture? Target { get; set; }
 
-    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight = 16) : this(gpu, font, pixelHeight, false) { }
-
-    /// <summary>Glyphs baked without oversampling and placed on whole pixels (<see cref="FromUiFont"/>).</summary>
-    readonly bool snapped;
-
-    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight, bool uiFont, bool snapped = false)
+    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight = 16)
     {
         Gpu = gpu;
-        this.snapped = snapped;
-        (PixelHeight, AtlasSize) = (pixelHeight, pixelHeight > 32 ? 2048 : uiFont ? 1024 : 512);
+        (PixelHeight, AtlasSize) = (pixelHeight, pixelHeight > 32 ? 2048 : 512);
         var pixels = new byte[AtlasSize * AtlasSize];
-        if (uiFont)
-        {
-            packedGlyphs = new StbTrueType.stbtt_packedchar[CharCount];
-            kerning = new float[CharCount * CharCount];
-            fixed (byte* f = font)
-            fixed (byte* p = pixels)
-            fixed (StbTrueType.stbtt_packedchar* g = packedGlyphs)
-            {
-                var pack = new StbTrueType.stbtt_pack_context();
-                if (StbTrueType.stbtt_PackBegin(pack, p, AtlasSize, AtlasSize, 0, 1, null) == 0)
-                    throw new InvalidOperationException("Could not create the UI font atlas.");
-                try
-                {
-                    StbTrueType.stbtt_PackSetOversampling(pack, snapped ? 1u : 2u, snapped ? 1u : 2u);
-                    // Negative sizes specify em pixels, matching UI/CSS font sizes, rather than ascender-to-descender height.
-                    if (StbTrueType.stbtt_PackFontRange(pack, f, 0, -PixelHeight, FirstChar, CharCount, g) == 0)
-                        throw new InvalidOperationException("The UI font atlas is too small.");
-                }
-                finally { StbTrueType.stbtt_PackEnd(pack); }
-                var info = new StbTrueType.stbtt_fontinfo();
-                if (StbTrueType.stbtt_InitFont(info, f, 0) == 0) throw new InvalidDataException("Invalid UI font.");
-                float em = StbTrueType.stbtt_ScaleForMappingEmToPixels(info, PixelHeight);
-                int ascent, descent, gap;
-                StbTrueType.stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
-                baselineOffset = (PixelHeight * 1.25f - (ascent - descent) * em) / 2 + ascent * em;
-                for (int left = 0; left < CharCount; left++)
-                    for (int right = 0; right < CharCount; right++)
-                        kerning[left * CharCount + right] = StbTrueType.stbtt_GetCodepointKernAdvance(info, FirstChar + left, FirstChar + right) * em;
-            }
-        }
-        else
-            fixed (byte* f = font)
-            fixed (byte* p = pixels)
-            fixed (StbTrueType.stbtt_bakedchar* g = glyphs)
-                StbTrueType.stbtt_BakeFontBitmap(f, 0, PixelHeight, p, AtlasSize, AtlasSize, FirstChar, CharCount, g);
+        fixed (byte* f = font)
+        fixed (byte* p = pixels)
+        fixed (StbTrueType.stbtt_bakedchar* g = glyphs)
+            StbTrueType.stbtt_BakeFontBitmap(f, 0, PixelHeight, p, AtlasSize, AtlasSize, FirstChar, CharCount, g);
         LineHeight = PixelHeight * 1.25f;
-        CharWidth = packedGlyphs is { } packed ? packed['M' - FirstChar].xadvance : glyphs['M' - FirstChar].xadvance;
+        CharWidth = glyphs['M' - FirstChar].xadvance;
 
         // The glyphs (R8), sampled as the GL texture was: linear, repeating, no mips.
         using (var upload = gpu.Uploads.Begin())
@@ -144,8 +111,22 @@ public sealed unsafe class DebugOverlay : IDisposable
             upload.Write(atlas, 0, 0, new PixelRect(0, 0, (uint)AtlasSize, (uint)AtlasSize), pixels);
         }
         atlasSampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat,
-            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas.View());
+            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas!.View());
 
+        program = LegacyProgram.Create(gpu, Vertex, Fragment, "debug overlay");
+        uScreen = program.Uniform("uScreen");
+        uImage = program.Uniform("uImage");
+        samplerAtlas = program.Sampler("uAtlas");
+    }
+
+    /// <summary>An overlay that draws and measures with the glyph-cache font <paramref name="font"/> (owned from here on).</summary>
+    DebugOverlay(IGpuContext gpu, UiFont font)
+    {
+        Gpu = gpu;
+        uiFont = font;
+        cacheGeneration = font.Generation;
+        LineHeight = font.LineHeight;
+        CharWidth = font.CharWidth;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "debug overlay");
         uScreen = program.Uniform("uScreen");
         uImage = program.Uniform("uImage");
@@ -162,21 +143,36 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// <param name="pixelHeight">The size the glyphs are baked at: about the size the face is drawn at keeps it sharp.</param>
     public static DebugOverlay FromFont(IGpuContext gpu, string path, float pixelHeight = 16) => new(gpu, File.ReadAllBytes(path), pixelHeight);
 
-    /// <summary>A UI face baked at <paramref name="pixelHeight"/> em pixels. <paramref name="snapped"/>: glyphs baked at 1x and placed on whole pixels, so each texel lands on one screen pixel (sharper; for fonts the original draws with <c>Antialias</c> false).</summary>
-    public static DebugOverlay FromUiFont(IGpuContext gpu, string path, float pixelHeight, bool snapped = false) => new(gpu, File.ReadAllBytes(path), pixelHeight, true, snapped);
+    /// <summary>
+    /// A UI face (<see cref="UiFont"/>: FreeType glyphs for any code point, MyGUI's or Meitou's metrics). The overlay owns <paramref name="font"/>
+    /// and frees it; measuring (<see cref="MeasureText"/>, <see cref="FitText"/>, <see cref="WrapText"/>) and drawing use the same glyph advances.
+    /// </summary>
+    internal static DebugOverlay FromUiFont(IGpuContext gpu, UiFont font) => new(gpu, font);
+
+    /// <summary>The advance of one code point (kerned against <paramref name="previous"/>, -1: none), which becomes the new previous. The stb faces have the baked range only: '?' for the rest.</summary>
+    float Step(int codePoint, ref int previous, float scale)
+    {
+        float advance;
+        if (uiFont is { } ui)
+        {
+            advance = ui.Lookup(codePoint).Advance * scale;
+            if (previous >= 0) advance += ui.Kern(previous, codePoint) * scale;
+        }
+        else
+        {
+            int index = codePoint - FirstChar;
+            if (index < 0 || index >= CharCount) index = '?' - FirstChar;
+            advance = glyphs[index].xadvance * scale;
+        }
+        previous = codePoint;
+        return advance;
+    }
 
     public float MeasureText(string text, float scale = 1)
     {
         float width = 0;
         int previous = -1;
-        foreach (char c in text)
-        {
-            int index = c - FirstChar;
-            if (index < 0 || index >= CharCount) index = '?' - FirstChar;
-            if (previous >= 0 && kerning is { } pairs) width += pairs[previous * CharCount + index] * scale;
-            width += (packedGlyphs is { } packed ? packed[index].xadvance : glyphs[index].xadvance) * scale;
-            previous = index;
-        }
+        foreach (var rune in text.EnumerateRunes()) width += Step(rune.Value, ref previous, scale);
         return width;
     }
 
@@ -186,16 +182,17 @@ public sealed unsafe class DebugOverlay : IDisposable
         const string suffix = "...";
         float available = width - MeasureText(suffix, scale), used = 0;
         if (available <= 0) return "";
-        int count = 0;
-        foreach (char c in text)
+        int count = 0, previous = -1;
+        foreach (var rune in text.EnumerateRunes())
         {
-            used += MeasureText(c.ToString(), scale);
+            used += Step(rune.Value, ref previous, scale);
             if (used > available) break;
-            count++;
+            count += rune.Utf16SequenceLength;
         }
         return text[..count] + suffix;
     }
 
+    /// <summary>Lines of at most <paramref name="width"/>, broken at spaces and, in scripts written without them (CJK), between characters.</summary>
     public IReadOnlyList<string> WrapText(string text, float width, float scale = 1)
     {
         var result = new List<string>();
@@ -204,14 +201,44 @@ public sealed unsafe class DebugOverlay : IDisposable
             string line = "";
             foreach (string word in paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
-                string next = line.Length == 0 ? word : line + " " + word;
-                if (line.Length > 0 && MeasureText(next, scale) > width) { result.Add(FitText(line, width, scale)); line = word; }
-                else line = next;
+                bool glued = false;
+                foreach (string piece in Pieces(word))
+                {
+                    string next = line.Length == 0 ? piece : glued ? line + piece : line + " " + piece;
+                    if (line.Length > 0 && MeasureText(next, scale) > width) { result.Add(FitText(line, width, scale)); line = piece; }
+                    else line = next;
+                    glued = true;
+                }
             }
             result.Add(FitText(line, width, scale));
         }
         return result;
     }
+
+    /// <summary>A word as the pieces a line may break between: the word itself, but each ideograph, kana, hangul syllable or full-width form on its own.</summary>
+    static IEnumerable<string> Pieces(string word)
+    {
+        bool wide = false;
+        foreach (var rune in word.EnumerateRunes())
+            if (IsBreakable(rune.Value)) { wide = true; break; }
+        if (!wide) { yield return word; yield break; }
+        int start = 0;
+        for (int i = 0; i < word.Length;)
+        {
+            var rune = Rune.GetRuneAt(word, i);
+            int next = i + rune.Utf16SequenceLength;
+            if (IsBreakable(rune.Value))
+            {
+                if (i > start) yield return word[start..i];
+                yield return word[i..next];
+                start = next;
+            }
+            i = next;
+        }
+        if (start < word.Length) yield return word[start..];
+    }
+
+    static bool IsBreakable(int cp) => cp is >= 0x2E80 and <= 0x9FFF or >= 0xAC00 and <= 0xD7AF or >= 0xF900 and <= 0xFAFF or >= 0xFF00 and <= 0xFFEF or >= 0x20000 and <= 0x3FFFF;
 
     /// <summary>
     /// The items of a usage text's <c>Keys:</c> section, one per line ("T textures", "Esc quit"...): split at commas and
@@ -256,8 +283,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     public float Panel(int width, int height, string title, IReadOnlyList<string> lines, float top = 0, float scale = 1)
     {
         if (width <= 0 || height <= 0) return top;
-        scale = MathF.Max(scale, 1e-3f);
-        float margin = 16 * scale, pad = 12 * scale, gap = 28 * scale;
+        const float margin = 16, pad = 12, gap = 28;
         float lineHeight = LineHeight * scale, charWidth = CharWidth * scale;
         float y = top + margin;
         int rowsFit = Math.Max((int)((height - y - margin - 2 * pad - lineHeight * 1.5f) / lineHeight), 1);
@@ -322,48 +348,97 @@ public sealed unsafe class DebugOverlay : IDisposable
     {
         if (imageBatch is not null) throw new InvalidOperationException("Flush UI images before queuing text.");
         var key = (s, x, top, scale, colour);
-        // Font atlases are immutable. Bound the cache even for scrolling text and continuously changing counters.
+        if (uiFont is { } ui)
+        {
+            // A new atlas texture or a restart moves glyph rectangles: geometry made before it samples the wrong texels.
+            if (ui.Generation != cacheGeneration) DropCachedGeometry(ui.Generation);
+            if (textGeometry.TryGetValue(key, out var hit))
+            {
+                NoteAtlas(ui);
+                batch.AddRange(hit.Vertices.AsSpan());
+                return hit.Width;
+            }
+            ui.Ensure(s);
+            if (ui.Generation != cacheGeneration) DropCachedGeometry(ui.Generation);
+            return UiText(ui, key);
+        }
+        // The stb faces are immutable. Bound the cache even for scrolling text and continuously changing counters.
         if (textGeometry.TryGetValue(key, out var cached))
         {
             batch.AddRange(cached.Vertices.AsSpan());
             return cached.Width;
         }
         int first = batch.Count;
-        float start = x, baseline = top + (packedGlyphs is null ? PixelHeight : baselineOffset) * scale;
-        int previous = -1;
-        foreach (char c in s)
+        float start = x, baseline = top + PixelHeight * scale;
+        foreach (var rune in s.EnumerateRunes())
         {
-            int index = c - FirstChar;
+            int index = rune.Value - FirstChar;
             if (index < 0 || index >= CharCount) index = '?' - FirstChar;
-            if (previous >= 0 && kerning is { } pairs) x += pairs[previous * CharCount + index] * scale;
-            previous = index;
-            if (packedGlyphs is { } packed)
-            {
-                var pg = packed[index];
-                float gx = snapped ? MathF.Round(x) : x, gy = snapped ? MathF.Round(baseline) : baseline;
-                Quad(gx + pg.xoff * scale, gy + pg.yoff * scale, gx + pg.xoff2 * scale, gy + pg.yoff2 * scale,
-                    pg.x0 / (float)AtlasSize, pg.y0 / (float)AtlasSize, pg.x1 / (float)AtlasSize, pg.y1 / (float)AtlasSize, colour);
-                x += pg.xadvance * scale;
-                continue;
-            }
             var g = glyphs[index];
             float x0 = MathF.Round(x + g.xoff * scale), y0 = MathF.Round(baseline + g.yoff * scale);
             Quad(x0, y0, x0 + (g.x1 - g.x0) * scale, y0 + (g.y1 - g.y0) * scale,
                 g.x0 / (float)AtlasSize, g.y0 / (float)AtlasSize, g.x1 / (float)AtlasSize, g.y1 / (float)AtlasSize, colour);
             x += g.xadvance * scale;
         }
-        float width = x - start;
+        Remember(key, first, x - start);
+        return x - start;
+    }
+
+    /// <summary>Caches the quads queued since <paramref name="first"/> as the geometry of <paramref name="key"/> (bounded in entries and floats).</summary>
+    void Remember((string Text, float X, float Top, float Scale, Vector4 Colour) key, int first, float width)
+    {
         int added = batch.Count - first;
-        if (added <= 16384)
+        if (added > 16384) return;
+        if (textGeometry.Count >= 512 || cachedTextFloats + added > 262144)
         {
-            if (textGeometry.Count >= 512 || cachedTextFloats + added > 262144)
-            {
-                textGeometry.Clear();
-                cachedTextFloats = 0;
-            }
-            textGeometry[key] = (CollectionsMarshal.AsSpan(batch)[first..].ToArray(), width);
-            cachedTextFloats += added;
+            textGeometry.Clear();
+            cachedTextFloats = 0;
         }
+        textGeometry[key] = (CollectionsMarshal.AsSpan(batch)[first..].ToArray(), width);
+        cachedTextFloats += added;
+    }
+
+    void DropCachedGeometry(int generation)
+    {
+        textGeometry.Clear();
+        cachedTextFloats = 0;
+        cacheGeneration = generation;
+    }
+
+    /// <summary>Starts a run of quads for the UI font's current atlas texture when the last quads were queued against another one.</summary>
+    void NoteAtlas(UiFont ui)
+    {
+        var texture = ui.Sampled;
+        if (atlasRuns.Count == 0 || atlasRuns[^1].Texture != texture) atlasRuns.Add((batch.Count, texture));
+    }
+
+    /// <summary>Queues the glyph quads of a UI-font line (every glyph exists: <see cref="UiFont.Ensure"/> ran) and caches them.</summary>
+    float UiText(UiFont ui, (string Text, float X, float Top, float Scale, Vector4 Colour) key)
+    {
+        var (s, x, top, scale, colour) = key;
+        int first = batch.Count, generation = ui.Generation;
+        float start = x, baseline = top + ui.Baseline * scale, side = ui.Side;
+        int previous = -1;
+        foreach (var rune in s.EnumerateRunes())
+        {
+            int codePoint = rune.Value;
+            if (previous >= 0) x += ui.Kern(previous, codePoint) * scale;
+            previous = codePoint;
+            var g = ui.Lookup(codePoint);
+            if (g.PixelWidth > 0)
+            {
+                NoteAtlas(ui);
+                // The atlas can have been replaced by the lookup of a glyph the line needed after all (it was too full): the side is read again.
+                side = ui.Side;
+                float gx = ui.Snapped ? MathF.Round(x) : x, gy = ui.Snapped ? MathF.Round(baseline) : baseline;
+                Quad(gx + g.OffsetX * scale, gy + g.OffsetY * scale, gx + (g.OffsetX + g.Width) * scale, gy + (g.OffsetY + g.Height) * scale,
+                    g.X / side, g.Y / side, (g.X + g.PixelWidth) / side, (g.Y + g.PixelHeight) / side, colour);
+            }
+            x += g.Advance * scale;
+        }
+        float width = x - start;
+        // A line that moved the atlas partway holds quads for two textures: not worth remembering.
+        if (ui.Generation == generation) Remember(key, first, width);
         return width;
     }
 
@@ -374,7 +449,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// <summary>Widget and font batches share one rendering; scissors and draw order still change per flush.</summary>
     internal void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip, OverlayPass? pass)
     {
-        if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; return; }
+        if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; atlasRuns.Clear(); return; }
         // A native segment of its own. It is begun first: the overlay is also drawn after a frame ended (a screenshot's key list), and the
         // segment opens the frame whose constants hold the vertices.
         var t = PassTargets.Of(Target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
@@ -386,10 +461,20 @@ public sealed unsafe class DebugOverlay : IDisposable
             int top = (int)Math.Floor(clipped.Y), bottom = (int)Math.Ceiling(clipped.Y + clipped.Height);
             t = t with { Scissor = new PixelRect(left, height - bottom, (uint)(right - left), (uint)(bottom - top)) };
         }
+        // The atlas texture of run `run` of the batch: a UI font's (it can change within a batch), else the baked one.
+        SampledTexture AtlasAt(int run) => atlasRuns.Count > 0 ? atlasRuns[run].Texture : uiFont is { } ui ? ui.Sampled : atlasSampled;
         if (pass is not null)
         {
-            pass.Add(this, CollectionsMarshal.AsSpan(batch), imageBatch, t.Scissor);
+            var all = CollectionsMarshal.AsSpan(batch);
+            if (atlasRuns.Count <= 1) pass.Add(this, all, imageBatch, t.Scissor, imageBatch is null ? AtlasAt(0) : null);
+            else
+                for (int run = 0; run < atlasRuns.Count; run++)
+                {
+                    int from = run == 0 ? 0 : atlasRuns[run].Start, to = run + 1 < atlasRuns.Count ? atlasRuns[run + 1].Start : all.Length;
+                    pass.Add(this, all[from..to], null, t.Scissor, atlasRuns[run].Texture);
+                }
             batch.Clear();
+            atlasRuns.Clear();
             imageBatch = null;
             return;
         }
@@ -397,10 +482,9 @@ public sealed unsafe class DebugOverlay : IDisposable
         cmd.BeginRendering(t.Rendering);
         program.Set(uScreen, (float)width, height);
         program.Set(uImage, imageBatch is null ? 0 : 1);
-        program.Bind(samplerAtlas, imageBatch ?? atlasSampled);
         var floats = CollectionsMarshal.AsSpan(batch);
-        var vertices = Gpu.Frame.WriteConstants(new byte[floats.Length * 4], 16);
-        MemoryMarshal.AsBytes(floats).CopyTo(vertices.Bytes);
+        var vertices = Gpu.Frame.AllocateConstants((ulong)(floats.Length * 4), 16);
+        MemoryMarshal.AsBytes(floats).CopyTo(new Span<byte>(vertices.Pointer, floats.Length * 4));
         // As the GL version drew: no depth test or culling, blended over by alpha.
         var state = DrawState.For(t.Formats, Gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
         state.Record(cmd, t);
@@ -414,11 +498,24 @@ public sealed unsafe class DebugOverlay : IDisposable
         cmd.BindPipeline(pipeline);
         Span<GpuBufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
         cmd.BindVertexBuffers(0, buffers);
-        program.Flush(cmd);
-        cmd.Draw((uint)(floats.Length / Stride));
+        if (imageBatch is not null || atlasRuns.Count <= 1)
+        {
+            program.Bind(samplerAtlas, imageBatch ?? AtlasAt(0));
+            program.Flush(cmd);
+            cmd.Draw((uint)(floats.Length / Stride));
+        }
+        else
+            for (int run = 0; run < atlasRuns.Count; run++)
+            {
+                int from = run == 0 ? 0 : atlasRuns[run].Start, to = run + 1 < atlasRuns.Count ? atlasRuns[run + 1].Start : floats.Length;
+                program.Bind(samplerAtlas, atlasRuns[run].Texture);
+                program.Flush(cmd);
+                cmd.Draw((uint)((to - from) / Stride), firstVertex: (uint)(from / Stride));
+            }
         cmd.EndRendering();
         Gpu.EndNative(cmd);
         batch.Clear();
+        atlasRuns.Clear();
         imageBatch = null;
     }
 
@@ -438,7 +535,8 @@ public sealed unsafe class DebugOverlay : IDisposable
             return this;
         }
 
-        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, PixelRect clip)
+        /// <param name="atlas">The font atlas texture the glyph quads of <paramref name="data"/> sample (a UI font's can change between runs); null: the owner's baked one.</param>
+        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, PixelRect clip, SampledTexture? atlas = null)
         {
             if (owner.Gpu != gpu || target is not null && target != owner.Target)
                 throw new InvalidOperationException("An overlay pass must share its GPU and target.");
@@ -455,7 +553,7 @@ public sealed unsafe class DebugOverlay : IDisposable
                 solid &= data[i + 2] < 0;
             }
             if (contained) clip = new PixelRect(0, 0, (uint)width, (uint)height);
-            var texture = image ?? owner.atlasSampled;
+            var texture = image ?? atlas ?? owner.atlasSampled;
             bool isImage = image.HasValue;
             int first = vertices.Count / Stride, count = data.Length / Stride;
             vertices.AddRange(data);
@@ -485,8 +583,8 @@ public sealed unsafe class DebugOverlay : IDisposable
                 var state = DrawState.For(targets.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, targets);
                 var data = CollectionsMarshal.AsSpan(vertices);
-                var upload = gpu.Frame.WriteConstants(new byte[data.Length * 4], 16);
-                MemoryMarshal.AsBytes(data).CopyTo(upload.Bytes);
+                var upload = gpu.Frame.AllocateConstants((ulong)(data.Length * 4), 16);
+                MemoryMarshal.AsBytes(data).CopyTo(new Span<byte>(upload.Pointer, data.Length * 4));
                 Span<LegacyProgram.Attribute?> attributes =
                 [
                     new(new GpuBufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),
@@ -592,7 +690,8 @@ public sealed unsafe class DebugOverlay : IDisposable
 
     public void Dispose()
     {
-        atlas.Dispose();
+        atlas?.Dispose();
+        uiFont?.Dispose();
         program.Dispose();
     }
 }

@@ -39,6 +39,10 @@ public sealed record ArmourData
     public float AthleticsMult { get; init; } = 1;
     public float CombatSpeedMult { get; init; } = 1;
     public float StealthMult { get; init; } = 1;
+    /// <summary><c>ranged skill mult</c>: the crossbow and precision-shooting effect shown on the tooltip.</summary>
+    public float RangedSkillMult { get; init; } = 1;
+    /// <summary><c>asassination mult</c> (the field's spelling in the data).</summary>
+    public float AssassinationMult { get; init; } = 1;
     public float WeightKg { get; init; }
     public IReadOnlyList<PartCoverage> Coverage { get; init; } = [];
 
@@ -72,6 +76,8 @@ public sealed record ArmourData
         AthleticsMult = RecordReading.Float(r, "athletics mult", 1),
         CombatSpeedMult = RecordReading.Float(r, "combat speed mult", 1),
         StealthMult = RecordReading.Float(r, "stealth mult", 1),
+        RangedSkillMult = RecordReading.Float(r, "ranged skill mult", 1),
+        AssassinationMult = RecordReading.Float(r, "asassination mult", 1),
         WeightKg = RecordReading.Float(r, "weight kg", 0),
         Coverage = [.. r.GetReferences("part coverage").Select(x => new PartCoverage(x.TargetStringId, x.Values.Value0))],
     };

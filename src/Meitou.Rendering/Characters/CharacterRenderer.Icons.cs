@@ -8,8 +8,8 @@ using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering.Characters;
 
-/// <summary>An inventory icon wanted: the item's record and its <c>material sid</c> ("" none), the pair the game's saved icons are named by.</summary>
-public readonly record struct IconKey(string Record, string Material);
+/// <summary>An inventory icon wanted: the item's record, its <c>material sid</c> ("" none) and the COLOR_DATA it is dyed with ("" undyed), the ids the game's saved icons are named by.</summary>
+public readonly record struct IconKey(string Record, string Material, string Colour = "");
 
 /// <summary>
 /// The inventory icons the game would draw from an item's mesh (docs/game/ui-screens.md "Item icons"), made here when the game's saved picture is not at hand. An icon is the item's
@@ -107,7 +107,7 @@ internal sealed unsafe partial class CharacterRenderer
         if (item is null) { entry.Failed = true; return; }
         var spec = content.IconMaterialOf(item, entry.Key.Material);
         entry.Style = ItemIconStyle.Of(item, spec);
-        entry.Asset = content.BuildIcon(item, spec);
+        entry.Asset = content.BuildIcon(item, spec, entry.Key.Colour.Length > 0 ? content.Database.Find(entry.Key.Colour) : null);
         if (entry.Asset is null) { entry.Failed = true; return; }
         iconByAsset[entry.Asset] = entry;
     }

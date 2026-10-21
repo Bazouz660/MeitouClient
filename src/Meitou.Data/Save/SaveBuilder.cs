@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Meitou.Data.Fcs;
 using Meitou.Data.World;
 
@@ -103,7 +103,8 @@ public sealed class SaveBuilder
         r.Vector3s["pos"] = Vector3.Zero;
         r.Vector3s["sky ambient color mult"] = Vector3.One;
         r.Vector3s["sky ambient color mult speed"] = Vector3.Zero;
-        r.Vector4s["rot"] = new Vector4(0, 0, 0, 1);
+        // The game's own start view: yaw 0, 30 degrees down (w, x, y, z; docs/formats/camera.md "Saved camera"); the host writes the real view over it.
+        r.Vector4s["rot"] = KenshiCamera.ToSaved(0, KenshiCamera.InitialPitchDegrees * MathF.PI / 180, 800).Rot;
         r.Strings["version"] = SaveGame.GameVersion;
         r.Strings["pfaction name"] = "Nameless";
         r.Strings["area"] = "";

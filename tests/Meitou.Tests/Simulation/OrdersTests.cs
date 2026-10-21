@@ -61,7 +61,9 @@ public class OrdersTests
         Assert.True(record.Bools["passive mode"]);
         Assert.False(record.Bools["non combat mode"]);
         Assert.Equal(1, record.Ints["speed mode"]);
-        var back = new CharacterCold();
+        // The jobs switch is not here: it is the AI record's (PermaJobSave).
+        Assert.False(record.Bools.ContainsKey(Orders.JobsKey));
+        var back = new CharacterCold { Orders = CharacterOrders.None };
         Orders.Read(record, back);
         Assert.Equal(cold.Orders, back.Orders);
         Assert.Equal(SpeedMode.Run, back.RunSpeed);

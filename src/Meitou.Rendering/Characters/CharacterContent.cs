@@ -87,6 +87,8 @@ internal sealed class CharacterAsset
     public required SkeletonRig Rig;
     public BodyShapeData? Shape;
     public readonly List<AssetPart> Parts = [];
+    /// <summary>The carried lights (<see cref="CharacterAppearance.Lights"/>): a bone, the offset from it and an attach slot, posed like a bone-attached part.</summary>
+    public readonly List<(int Bone, Matrix4x4 Offset, int AttachIndex, Meitou.Data.World.WorldLight Light)> Lamps = [];
     /// <summary>The posture libraries (<c>postures</c>, <c>neck set</c>, <c>shoulder set</c>) held at the body file's sliders, weight 1.</summary>
     public readonly List<(LayerDef Def, float Time)> Fixed = [];
     public int AttachCount;
@@ -469,6 +471,13 @@ internal sealed class CharacterContent : IDisposable
             }
             asset.Parts.Add(ap);
         }
+        // A carried light hangs at its binding-pose position, held relative to its bone (a bone the skeleton lacks: the root).
+        foreach (var carried in c.Lights)
+        {
+            int bone = rig.Handle(carried.Bone) ?? rig.Skeleton.Bones.FirstOrDefault(b => b.Parent is null)?.Handle ?? 0;
+            var local = Vector3.Transform(carried.Light.Position - rig.BindPosition[bone], rig.BindRotationInverse[bone]) / rig.BindScale[bone];
+            asset.Lamps.Add((bone, Matrix4x4.CreateTranslation(local), asset.AttachCount++, carried.Light));
+        }
 
         if (setup is not null)
         {
@@ -591,19 +600,14 @@ internal sealed class CharacterContent : IDisposable
 
     // ---- item icons ----
 
-    /// <summary>The material record an icon is drawn with: the instance's, else the item's first (likeliest) <c>material</c> reference.</summary>
-    public GameRecord? IconMaterialOf(GameRecord item, string materialId)
-    {
-        static bool IsSpec(GameRecord? r) => r is { Type: FcsRecordType.MATERIAL_SPECS_CLOTHING or FcsRecordType.MATERIAL_SPEC or FcsRecordType.MATERIAL_SPECS_WEAPON };
-        if (materialId.Length > 0 && db.Find(materialId) is { } chosen && IsSpec(chosen)) return chosen;
-        return item.GetReferences("material").OrderByDescending(r => r.Values.Value0).Select(r => db.Find(r.TargetStringId)).FirstOrDefault(IsSpec);
-    }
+    /// <summary>The material record an icon is drawn with (<see cref="ItemIcons.MaterialOf"/>).</summary>
+    public GameRecord? IconMaterialOf(GameRecord item, string materialId) => ItemIcons.MaterialOf(db, item, materialId);
 
     /// <summary>
     /// The asset of <paramref name="item"/>'s inventory icon (docs/game/ui-screens.md "Item icons"): its mesh (a weapon's bare blade) unskinned, with the textures of <paramref name="spec"/>,
-    /// undyed (the game dyes with the instance's colour, which is not known: its saved picture of an armour whose record names a <c>color</c> has no colour part and shows none). Null when the mesh is missing or unreadable.
+    /// dyed with <paramref name="dye"/> (a COLOR_DATA; when the spec has a <c>color map</c>) as worn clothing is. Null when the mesh is missing or unreadable.
     /// </summary>
-    public CharacterAsset? BuildIcon(GameRecord item, GameRecord? spec)
+    public CharacterAsset? BuildIcon(GameRecord item, GameRecord? spec, GameRecord? dye = null)
     {
         string field = ItemIconStyle.MeshOf(item);
         if (field.Length == 0 || FindMesh(field) is not { } path) { Messages.Add($"icon mesh not found: {field}"); return null; }
@@ -618,6 +622,14 @@ internal sealed class CharacterContent : IDisposable
             m.Tex[CharacterShaders.SlotNormal] = Texture(Tex(spec, "normal map"), false);
             m.ClipOnNormalAlpha = Tex(spec, "normal map") is not null;
             m.DoubleSided = spec.GetInt("material type") == 2;
+            if (dye is { Type: FcsRecordType.COLOR_DATA } && Tex(spec, "color map") is not null)
+            {
+                m.Description += $", dye '{dye.Name}'";
+                m.Tex[CharacterShaders.SlotColourMap] = Texture(Tex(spec, "color map"), false);
+                m.Dyed = true;
+                m.Colour1 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 1")), spec.GetFloat("paint factor 1"));
+                m.Colour2 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 2")), spec.GetFloat("paint factor 2"));
+            }
         }
         else
         {

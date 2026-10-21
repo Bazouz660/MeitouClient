@@ -29,10 +29,10 @@ public sealed class AssetLocator
         how = "";
         if (string.IsNullOrWhiteSpace(name)) return null;
         name = name.Trim().Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-        if (Path.IsPathRooted(name) && File.Exists(name)) { how = "path"; return Path.GetFullPath(name); }
+        if (Path.IsPathRooted(name) && GameFiles.Exists(name)) { how = "path"; return Path.GetFullPath(GameFiles.Resolve(name)); }
         if (!Path.IsPathRooted(name))
         {
-            var underInstall = Path.GetFullPath(Path.Combine(install.Root, name));
+            var underInstall = GameFiles.Resolve(Path.GetFullPath(Path.Combine(install.Root, name)));
             if (File.Exists(underInstall)) { how = "install path"; return underInstall; }
             if (File.Exists(name)) { how = "path"; return Path.GetFullPath(name); }
         }

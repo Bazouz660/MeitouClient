@@ -27,7 +27,7 @@ public static class OriginalNavTiles
     /// <summary>The zone's exterior mesh (null when the install has no tile for it).</summary>
     public static OriginalNavMesh? LoadExterior(GameInstall install, ZoneCoordinate zone)
     {
-        string path = PathOf(install, zone);
+        string path = GameFiles.Resolve(PathOf(install, zone));
         return File.Exists(path) ? Exterior(HavokTagfile.ReadFile(path), zone) : null;
     }
 

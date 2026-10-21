@@ -18,6 +18,10 @@ Do not clamp before HDR lighting/composite. FSR/DLSS mip bias=log2(scale)-1; TAA
 Motion uses previous camera/depth plus moving-object/grass paths; near/far depth reconstruction
 must use the corresponding projection. `sun-motion` adds clock-driven sky motion near the sun.
 Reset temporal histories after cuts, target resize or incompatible setting changes.
+DLSS (the default) where Streamline reports it unsupported runs FSR, then TAA. TAA zeroes NaN/Inf
+in its inputs and output: GLSL `max` need not drop NaN (AMD keeps it), and one in the history spreads.
+For FSR/DLSS the merged velocity kernel zeroes them in the scene colour in place and in the motion
+(Observed: the FSR fallback on an RX 9070 XT still flickered without it).
 
 Game/viewer builds and publishes copy the five Streamline/DLSS DLLs from `MEITOU_STREAMLINE_PATH`
 or the git-ignored root `dlss-runtime/` folder when present; `-p:StreamlineRuntimePath=...`
@@ -50,6 +54,16 @@ Weather particle resolution: off/quarter/half/auto/full; density multiplies emis
 appearance/population, not just shading cost. Depth-aware reduced-resolution compositing must
 preserve opaque intersections. Texture anisotropy caps mipmapped samplers, distinct from texture
 resolution/LOD bias. [Particle simulation](formats/particle-universe.md).
+
+## SMAA
+
+Meitou's non-temporal alternative to FXAA (`--smaa`, or anti-aliasing "SMAA" in settings). It runs on the
+composite's LDR picture instead of FXAA, before the heat haze, and only when no upscaler runs. Passes
+(`PostProcessShaders.Smaa*`): luma edges (threshold 0.1, local contrast adaptation 2); blending weights;
+neighbourhood blend. The weights use SMAA 1x's orthogonal L/U/Z revectorization (16-pixel search per side,
+U shapes smoothed below 32 pixels). Unlike reference SMAA, it computes areas analytically instead of using
+AreaTex/SearchTex. It has no diagonal or corner patterns, as SMAA's low/medium presets.
+**Observed**: 0.6 ms at 1280×720 on the low-end laptop; smooths the stair-steps on The Hub's walls and ridges.
 
 ## Tried: UI depth stamp (removed)
 

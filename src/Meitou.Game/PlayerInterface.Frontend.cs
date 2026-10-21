@@ -33,13 +33,13 @@ sealed partial class PlayerInterface
     public void ShowMainMenu() => ShowTitle();
     public void CloseFrontend()
     {
-        foreach (string id in new[] { "title", "menu", "new-game", "advanced", "save", "load", "message", "editor" }) faithfulScreens.Close(id);
+        foreach (string id in new[] { "title", "menu", "new-game", "save", "load", "message", "editor", "file" }) faithfulScreens.Close(id);
         editor = null; previews.Clear();
         confirmation = null; UpdateMenuPause();
     }
     void Confirm(string title, string text, Action action, string yes = "YES", (string Caption, Action Act)? middle = null)
     {
-        confirmation = new(title, text, action, yes, middle); faithfulScreens.Open("message");
+        confirmation = new(UpperTr(title), Loc.Tr(text), action, UpperTr(yes), middle is { } m ? (UpperTr(m.Caption), m.Act) : null); faithfulScreens.Open("message");
     }
     /// <summary>The cancel button of the open message box: ButtonC when it has a middle choice, else ButtonB.</summary>
     string CancelButton => confirmation?.Middle is null ? "ButtonB" : "ButtonC";
@@ -74,7 +74,7 @@ sealed partial class PlayerInterface
             switch (e.Widget)
             {
                 case "ResumeButton": faithfulScreens.Close("menu"); break;
-                case "NewGameButton": faithfulScreens.Open("new-game"); break;
+                case "NewGameButton": NewGameOptions = new(); advancedOpen = false; faithfulScreens.Open("new-game"); break;
                 case "SaveGameButton": OpenSlots("save"); break;
                 case "LoadGameButton": OpenSlots("load"); break;
                 case "OptionsButton": ScreenAction?.Invoke(e); break;
@@ -98,10 +98,11 @@ sealed partial class PlayerInterface
         }
         if (e.Screen == "new-game")
         {
+            if (AdvancedAction(e)) return true;
             if (e.Widget == "CancelButton") faithfulScreens.Close(e.Screen);
             else if (e.Widget == "LeftButton" && starts.Count > 0) startIndex = (startIndex + starts.Count - 1) % starts.Count;
             else if (e.Widget == "RightButton" && starts.Count > 0) startIndex = (startIndex + 1) % starts.Count;
-            else if (e.Widget == "AdvancedButton") faithfulScreens.Open("advanced");
+            else if (e.Widget == "AdvancedButton") advancedOpen = !advancedOpen;
             else if (e.Widget == "BeginButton" && starts.Count > 0)
             {
                 void Start() => ScreenAction?.Invoke(new("new-game", "BeginButton", "new-game", starts[startIndex].Id));
@@ -128,7 +129,7 @@ sealed partial class PlayerInterface
                 try { SaveCatalog.ValidateName(name); }
                 catch (ArgumentException ex) { Notice(ex.Message, true); return true; }
                 void Save() { ScreenAction?.Invoke(new("save", "SaveButton", "save", name)); faithfulScreens.Close("save"); }
-                if (slots.Any(s => s.Writable && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))) Confirm("OVERWRITE SAVE", $"Replace '{name}'?", Save); else Save();
+                if (slots.Any(s => s.Writable && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))) Confirm("OVERWRITE SAVE", Loc.Tr("Overwrite save '{1}'?", name), Save); else Save();
             }
             return true;
         }
@@ -163,6 +164,7 @@ sealed partial class PlayerInterface
         }
         else if (id == "new-game")
         {
+            BindNewGamePanels(b);
             Enable("CancelButton", "AdvancedButton");
             if (starts.Count > 0)
             {
@@ -175,7 +177,12 @@ sealed partial class PlayerInterface
         {
             Enable("CancelButton");
             var visibleSlots = slots.Where(s => id != "save" || s.Writable).ToArray();
-            b.Lists["GamesList"] = visibleSlots.Select(s => new UiListItem(s.Folder, $"{s.Name}   {s.ModifiedUtc.ToLocalTime():yyyy-MM-dd HH:mm}   [{(s.Writable ? "Meitou" : "Kenshi")}]")).ToArray();
+            // The original's save list (LoadSaveWindow, decompile of FUN_140480100, Observed): two columns, the first filling the width, the second fixed at 180; the captions are localised strings
+            // (the pot has "Name" and "Date", Unknown which the window uses). Initially sorted by the second, newest first. Meitou adds the save's origin to the name.
+            b.Columns["GamesList"] = [new("Name", 170, Fill: true), new("Date", 180)];
+            b.Sorts["GamesList"] = (1, false);
+            b.Lists["GamesList"] = visibleSlots.Select(s => new UiListItem(s.Folder, $"{s.Name}   {s.ModifiedUtc.ToLocalTime():yyyy-MM-dd HH:mm}",
+                [$"{s.Name}   [{(s.Writable ? "Meitou" : "Kenshi")}]", s.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)])).ToArray();
             b.SelectedItems["GamesList"] = Array.FindIndex(visibleSlots, s => s == selectedSlot);
             Paragraph("InfoPanel", slotDetails);
             if (id == "save") Enable("SaveButton"); else if (selectedSlot is not null && slotReadable) Enable("LoadButton");
@@ -189,10 +196,6 @@ sealed partial class PlayerInterface
             else { Enable("ButtonA", "ButtonB"); b.Hidden.Add("ButtonC"); b.Text["ButtonB"] = "CANCEL"; }
             b.Properties["MessageText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true" };
             b.Properties["ButtonA"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
-        }
-        else if (id == "advanced")
-        {
-            foreach (var widget in faithfulScreens.Layout(id).Widgets.Where(w => w.Type is "ScrollBar" or "ComboBox" or "EditBox")) b.Disabled.Add(widget.Name);
         }
         else return false;
         return true;

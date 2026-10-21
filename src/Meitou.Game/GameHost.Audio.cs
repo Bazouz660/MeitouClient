@@ -68,10 +68,13 @@ sealed partial class GameHost
         audio.SetPaused(session.Simulation.IsPaused);
         var weather = ActiveWeather;
         var clock = session.Clock;
+        audio.Ambience.FixDelayedSuffix = config.FixAmbienceSuffix;
+        audio.Ambience.FixWindStop = config.FixWindStop;
         audio.Update(weather?.World.RegionAt(target.X, target.Z), weather?.State, clock.HourOfDay, clock.Sunrise, clock.Sunset,
             eye.Y - ActiveGround(eye.X, eye.Z), realSeconds);
         UpdateWorldAudio(audio, target, eye);
         UpdateCharacterAudio(audio, eye);
+        UpdateTurretAudio(audio, eye, realSeconds);
     }
 
     /// <summary>The audio sliders changed in the settings menu: they apply at once.</summary>
@@ -93,6 +96,7 @@ sealed partial class GameHost
         audio.Ambience.Silence();
         ResetWorldAudio();
         ResetCharacterAudio();
+        ResetTurretAudio();
         audio.Music.StartMainTheme();
     }
 

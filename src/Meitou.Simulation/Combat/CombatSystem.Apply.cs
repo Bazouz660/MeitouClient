@@ -97,7 +97,9 @@ public sealed partial class CombatSystem
             {
                 case MedicalEventKind.KnockedOut: knockout = true; break;
                 case MedicalEventKind.Died: death = true; break;
-                case MedicalEventKind.PartSevered: xp.ToughnessFromLimbLoss(dc.Stats, dc.Race); table.LimbsChanged.Enqueue((d, dc.Medical.Parts[ev.Part].Template.LimbSlot)); break;
+                case MedicalEventKind.PartSevered: xp.ToughnessFromLimbLoss(dc.Stats, dc.Race); table.LimbsChanged.Enqueue((d, dc.Medical.Parts[ev.Part].Template.LimbSlot));
+                    world.Defer(new Dialogue.DialogueEvent(table.IdOf(d), CharacterId.None, dc.Medical.Parts[ev.Part].Template.LimbSlot is 2 or 3 ? 70 : 71) { Tick = world.Tick + 1 });   // LOST_LEG / LOST_ARM
+                    break;
             }
         }
         if (dc.Medical.Incapacitated)
@@ -110,6 +112,8 @@ public sealed partial class CombatSystem
         else Stagger(world, ref D, d, dc, damage.Cut + damage.Blunt + damage.Pierce + damage.ExtraStun > DamageFormulas.StumbleThreshold(toughness, combat), now, CombatRolls.BlowCounter(a, seq, blow, 0));
         GainCombatXp(ac, dc, XpEvent.HitDealt, XpEvent.HitTaken);
         Sound(world, SoundKind.Hit, d, a, prev[d].Position, heavy: D.HitHeavy, unarmed: fighter.Unarmed, robot: ac.Race.IsRobot);
+        Splash(world, d, dc, -new Vector2(toAttacker.X, toAttacker.Y), damage.Cut + damage.Blunt + damage.Pierce);
+        if (death && world.Luckyren) dc.Burst = -new Vector2(toAttacker.X, toAttacker.Y);
         if (dc.Medical.Incapacitated) Sound(world, SoundKind.Down, d, a, prev[d].Position, fatal: death);
         // A killing by the player's squad is a murder against the victim's faction (engine choice of the event kind, docs/simulation.md "Combat").
         if (Crimes is { } crimes)

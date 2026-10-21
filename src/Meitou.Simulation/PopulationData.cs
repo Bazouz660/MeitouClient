@@ -18,6 +18,9 @@ public interface IAppearanceSource
     /// <summary>The look of a CHARACTER record drawn from a given loadout (a saved character's appearance and worn items); nothing is rolled. Null: no look.</summary>
     CharacterAppearance? Create(string recordId, Loadout loadout) => null;
 
+    /// <summary>A random name for a <c>named</c> CHARACTER of the sex (<see cref="NamePool"/>); null: none (no lists).</summary>
+    string? RandomName(bool female, ulong roll) => null;
+
     /// <summary>A proposed CHARACTER_APPEARANCE made valid for <paramref name="race"/> (<see cref="CharacterDraft.Sanitize"/>, which needs the install's editor limits). Null: not checked.</summary>
     FcsRecord? Sanitize(FcsRecord proposed, GameRecord race) => null;
 }
@@ -48,6 +51,9 @@ public sealed class GeneratedAppearances(GameDatabase db, string installRoot) : 
 
 
     public FcsRecord? Sanitize(FcsRecord proposed, GameRecord race) => CharacterDraft.Sanitize(db, installRoot, proposed, race);
+
+    readonly Lazy<NamePool> names = new(() => NamePool.Load(installRoot));
+    public string? RandomName(bool female, ulong roll) => names.Value.Pick(female, roll);
     public CharacterAppearance? Create(string recordId, Loadout loadout)
     {
         try
@@ -92,10 +98,25 @@ public sealed class PopulationData
     public IReadOnlyList<int> SiteFactions { get; init; } = [];
     /// <summary>The area sectors and their BIOME_GROUPs (6.2, 6.3): when set, zones get their homeless squads and the biome groups their nests; null: no wild population (the worlds of the pinned tests).</summary>
     public BiomeMap? Biomes { get; init; }
+    /// <summary>The world's mineable rocks (ore mines' yield); null: none known, so ore mines yield nothing.</summary>
+    public Meitou.Data.Gameplay.Construction.IResourceNodes? ResourceNodes { get; set; }
     /// <summary>The road network off-screen squads may travel by (null: none, they go straight).</summary>
     public RoadNetwork? Roads { get; init; }
     /// <summary>The new-game options that change the body mechanics (hunger time, chance of death...).</summary>
-    public BodyOptions BodyOptions { get; init; } = BodyOptions.Default;
+    public BodyOptions BodyOptions { get => bodyOptions; init => bodyOptions = value; }
+    BodyOptions bodyOptions = BodyOptions.Default;
+    /// <summary>
+    /// A new world's body options without changing the data retained by the running world's systems: a shallow copy sharing every other member and cache,
+    /// with only the body factory built again; the same data when the options are unchanged.
+    /// </summary>
+    public PopulationData WithBodyOptions(BodyOptions options)
+    {
+        if (options == bodyOptions) return this;
+        var copy = (PopulationData)MemberwiseClone();
+        copy.bodyOptions = options;
+        copy.bodies = null;
+        return copy;
+    }
     Dictionary<string, int>? factionIndex;
 
     readonly Dictionary<int, IReadOnlyList<TownBuilding>> turrets = [];
@@ -163,7 +184,7 @@ public sealed class PopulationData
         }
         var factions = FactionData.LoadAll(db);
         var byId = BuildFactionIndex(factions);
-        int player = factions.FindIndex(f => f.Name == "Nameless");
+        int player = factions.FindIndex(f => f.BaseName == "Nameless");
         var relations = FactionRelations.Build(factions);
         relations.PlayerFaction = player;
         return new PopulationData
@@ -223,6 +244,11 @@ public sealed class PopulationSettings
     public bool CampaignAncestorsOnce { get; init; } = true;
     /// <summary>Meitou: a wild site keeps its squads' characters while it is unloaded and makes the same ones again. Faithful: they are dropped (and a save's wild platoon despawned on leaving), as the original.</summary>
     public bool KeepWild { get; init; } = true;
+    /// <summary>
+    /// Meitou: a town's residents back from at least <see cref="PopulationSystem.ScheduleAfterHours"/> unloaded are where their schedule puts them now (in bed at night, at
+    /// the counter, at their node or seat). Faithful: where they stood when the town unloaded, as the original, which runs nothing for them off screen.
+    /// </summary>
+    public bool ResidentSchedule { get; init; } = true;
 
     // ---- faction campaigns (docs/game/factions-squads-towns.md "Campaigns") ----
     /// <summary>The original's <c>raidFrequencyMult</c> (settings.cfg, "Town raid events: frequency" 0.25 to 3; default 1): times the roll chance.</summary>

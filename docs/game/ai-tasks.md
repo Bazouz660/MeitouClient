@@ -118,6 +118,12 @@ one of an outstanding item), 51 `buildingHasBuildingMaterials` (`FUN_1405a39c0`:
 when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, auto-job scoring and
 dismantle: [buildings-production](buildings-production.md#construction-tick).
 
+## Prospecting
+
+**Verified** (`Task_Prospecting` vtable `1416bf310`: init `140351c90`, update `140002f04`'s target; the HUD button `FUN_140721800`). Order 150, flags 0x41, condition `!me swim`. It is a `ProgressBarTask` (bar caption "Prospecting"). Each update: plays the `medic`
+animation at speed 1, sets the character's state field (`+0x198`) to 4 (meaning **Unknown**), adds the character's update time (`Character+0xc4`, [game-loop](game-loop.md#the-character-update-budget)) to the progress; at 1.0 it ends the task
+(`FUN_1400522c0`) and hands the character's position, its science stat and its name to the Prospecting window ([ui-screens](ui-screens.md#prospecting)). There is no walking, no XP and no target: it runs where the character stands.
+
 ## TaskData registry
 
 **Verified** (disassembly of the table builder `FUN_140319a60`, each registration call `FUN_14060ea00(type, memberFn, ...)` parsed,
@@ -128,13 +134,11 @@ two unnamed types 289 and 290 are registered; 37 named types are not: 9, 10, 11,
 120, 126, 145, 151, 154, 160, 178, 179, 191, 193, 205, 206, 229, 251, 252, 265, 267, 271.
 Columns: display text (field +0x138), registration flag bits, condition list A (TaskData +0x4c; names prefixed `!` are required
 false; `*` marks an entry whose second flag byte (+5) is set, meaning **Unknown**), condition list B (+0xa8, at most 11) and the
-single effect (+0x128). What list A versus list B mean is **Unknown**: A reads like "done when" conditions (isAtLocation,
-isBuildingComplete) and B like "may start when" ones (isMovementAllowed, hasWeapon) in every row seen (**Observed**). The scorer
-agrees with that reading in part: it drops a candidate whose list A is satisfied (`FUN_14060f570`) and the planner takes the first
-unmet state id from list B (`FUN_14060f940`), but it also drops a candidate whose B holds and that has no effect, so the roles are
-not settled. The `ALWAYS_IMPOSSIBLE_TASK` row's text is the string "null". Two states (33 and 85) are registered with an empty name.
+single effect (+0x128). **List A is what a row achieves, list B what it needs, the effect the state a goal row wants another row
+to achieve** (**Observed**, [planner](#planner)). The `ALWAYS_IMPOSSIBLE_TASK` row's text is the string "null". Two states (33 and 85)
+are registered with an empty name.
 
-A/B/effect use StateType IDs below. `!` and `*` retain their original meanings; literal `none`/`-` remain unchanged. Unmapped or ambiguous names remain literal. Row order is registration order.
+A/B/effect use StateType IDs below; `isAtLocation` is two ids, 1 and 46 (67 Running achieves 46, so it is no provider of 1). `!` and `*` retain their original meanings; literal `none`/`-` remain unchanged. Unmapped or ambiguous names remain literal. Row order is registration order.
 
 | ID | Text | Flags | A | B | Effect |
 | ---: | --- | --- | --- | --- | --- |
@@ -600,6 +604,55 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 | 45 Bodyguard | - | 0.9 |
 | 57, 58, 125, 237, 250 | - | 0.8 |
 
+## Planner
+
+**Observed** (class `TaskPathfinder`: search `FUN_14050f800`, entry `FUN_14050fe10`, pick `FUN_140510650`, node expansion `FUN_14051bae0`, provider maps
+`FUN_14060fe30`, "can run" `FUN_14060f940`). Meitou: [simulation](../simulation.md#planner).
+
+- **Row fields** (builder `FUN_140319a60`, its disassembly read per registration; the two bools **Verified** against a second parse of the same
+  calls). *Acts* (+0x134): the registration's first bool, cleared when an effect is set; rows with neither acts nor an effect: 104, 91, 89, 202, 14,
+  59, 192, 17, 45, 187, 169, 42, 39, 203, 254. *Needs target* (+0x48), the second bool: 1, 29, 67, 82, 163, 121, 123, 290, 272, 87, 221, 152, 124,
+  114, 242, 92, 247, 284, 115, 93, 94, 113, 91, 88, 72, 73, 77, 78, 140, 79, 162, 198, 80, 287, 200, 76, 201, 202, 185, 285, 186, 286, 81, 226, 95,
+  213, 240, 225, 246, 68, 170, 2, 96, 71, 3, 25, 249, 60, 236, 244, 26, 241, 4, 262, 263, 266, 228, 227, 13, 146, 235, 101, 248, 165, 103, 129,
+  159, 161, 12, 102, 164, 17, 45, 44, 253, 40, 31, 289, 166, 181, 182, 174, 30, 51, 119, 55, 5, 61, 97, 98, 258, 99, 106, 100, 134, 231, 220, 196,
+  136, 137, 108, 112, 281, 110, 203. *Target finder* (+0x160): 122, 270, 189, 190, 152, 114, 242, 184, 115, 94, 113, 90, 84, 85, 195, 155, 197, 86,
+  216, 125, 58, 250, 57, 237, 131, 259, 277, 279, 243, 8, 177, 212, 238, 19, 13, 34, 149, 222, 234, 101, 248, 188, 194, 218, 158, 283, 16, 41, 21,
+  144, 32, 183, 260, 167, 173, 217, 245, 168, 15, 288, 143, 20, 38, 268, 157, 47, 37, 118, 214, 43, 255, 275, 24, 55, 153, 239, 105, 148, 106, 142,
+  135, 139, 282, 230, 233, 232, 138, 137, 112, 281, 172, 211, 276, 204, 223, 273, 132. *Not a provider* (+0x40): 29, 186, 286, 226, 213, 240, 225, 246,
+  263, 266, 228, 235, 44, 253, 5, 61, 97, 258. *Restricted* (+0x41): 122, 270, 140, 76, 202, 185, 285. *Keeps the queue* (+0x23): 87, 221. +0x22
+  (28, 65, 147): **Unknown**.
+- **Providers**: six registries, one per category flag bit (1, 2, 4, 0x10, 0x20, 0x40), each map a state and its polarity to the rows of that category,
+  not +0x40, whose list A holds it. Which registry a character plans with is **Unknown** (rows only flagged 0x20 are dog play and animal attacks).
+- **Can run** (memoised per row, target and effect target): the first B entry that does not hold is reported unmet, false; else true without an effect;
+  with one, the effect target (from the finder when asked), false without one; true when the effect holds, else the effect is reported unmet.
+- **Search**: a node is (row, target hand, position), with value g = h = the row's desire when made; a node whose desire is not above 0 is a dead end
+  (a root one fails the plan). A root without a finder that can run is the plan by itself. Otherwise, while open nodes remain, take the one with the
+  **highest** g + h, then accept it when it equals a task already queued or repeats one of its ancestors (up to 50; rows 1 and 67 never count), or
+  when it has no finder, acts and can run. Else expand it: children for the effect (target: the effect target its finder found) and for every B
+  entry that does not hold (target: its own), one child per provider; a restricted provider only when the search is flagged (which caller sets the
+  flag is **Unknown**) or the character has no squad; a needs-target provider only when a target is known; a state without one gets a dead end
+  (row 104 "null"). The children followed are those of the first unmet B entry in list order, else the effect's. A child not yet seen gets
+  g = min(its g, the node's g) and the node as parent; one already closed is accepted from there. A node repeated 4 times is reused, not made again.
+- **Result**: the accepted node's chain up to the root (stopping at a queued task) is the plan. Its value is the least desire on it (from 10); above 0,
+  every node that acts or has an effect becomes a task (factory) in a new queue, leaf first. A failed plan clears the queue unless the root keeps it.
+- **Pick**: candidates are tried by key, highest first; the first whose plan has a value above 0 becomes current, a candidate whose plan fails has its
+  target cleared and the next is tried.
+
+## Combat goals
+
+**Verified** (registrations in `FUN_140319a60`, finder/desire stubs resolved by disassembly); readings of the finders' tests **Observed**.
+
+- 16 ATTACK_ENEMIES: effect state 6 `isNoEnemiesInVicinity` (registered without an evaluator). Finder `FUN_14059f3a0` walks the
+  looker's sensed characters (sense list kind 4) that are seen or heard (entry +0x38 / +0x39), drops those of a faction
+  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (read as
+  enemy tests, **Unknown** in detail); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
+- 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
+  resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
+  each squad mate the looker senses by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
+  hand +0x208); else it falls back to a hand list at +0x2f8. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
+- So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
+  (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
+
 ## Town goals
 
 **Observed** (target finders named; TaskData effects lead the planner to the task that acts them out):
@@ -636,10 +689,66 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 - **24 Wandering** (`FUN_140998040`): the nearest town; list A holds `atATown`, so it is dropped while in a town.
 - **36 Patrolling town**: `Task_PatrolTown`, behaviour **Unknown**.
 
+## Perma-jobs
+
+A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, base of `AITaskSytem`). Meitou: [simulation](../simulation.md#production).
+
+- **Lists** (**Verified**, add function `FUN_1405086d0`, constructor `FUN_140507d20`): `OrdersReceiver` +0x70 holds one-shot orders, +0x88 (count +0x90,
+  data +0x98) the perma-jobs in priority order, +0x35 the jobs switch. Each entry is a Tasker: +0x10 target hand, +0x70 its TaskData (+0x44 task type).
+- **Adding** (**Verified**, `FUN_1405086d0(orders, type, target, position, permanent)`; Shift with an order, tutorial `FUN_14098d8c0`):
+  1. TaskData row +4 set and +0xc set: the type becomes +0xc (orders too).
+  2. Not permanent, or the resulting row's +4 is 0: appended to the order list.
+  3. Else refused when a job of that type exists and the row's +8 is 0, or when one exists with the same target. Otherwise appended, the jobs
+     switch turns on (`FUN_140508210`, which also posts a UI event for a player character), and +0x10, when set, is appended as a second job on the
+     same target with no checks (0x1f becomes 0x121 when character vfunc +0x248 returns non-null; that test is **Unknown**). Type 45 also stores
+     the target at +0x18.
+  4. The planner is re-run (vfunc +0x18).
+- **Ordering** (**Observed**, order dispatcher `FUN_1407fa650`): with Shift held (`DAT_142133449`) an order goes to `FUN_1407f5a90`, which adds it
+  as a job to each selected character, then posts the Wwise event `Permanent_Job`; without Shift it is a one-shot order. Orders 0x2d, 0x111 and 0xdf
+  are always added as jobs; Loot with Shift on a building adds 124 "Hauling to". The Medic and Rescue buttons dispatch 58 and 148 the same way:
+  one-shot, or list entries with Shift.
+- **Row fields** (**Verified**, `FUN_140319a60`; the 36 rows that set +4, all others leave it 0, **Observed**). +4 kind (2 = turret jobs), +8 several
+  targets allowed, +0xc job type, +0x10 companion:
+
+  | Ordered → job (+ companion) | +4 | +8 |
+  |---|---|---|
+  | 87 → 87, 221 → 221, 124 → 124, 97 → 97 | 1 | 1 |
+  | 152 → 152 + 124 | 1 | 1 |
+  | 2, 95 → 125; 25 → 58; 249 → 250; 60 → 57; 26 → 238; 4, 5, 61 → 16 | 1 | 0 |
+  | 146 → 234 | 2 | 0 (234: 1) |
+  | 45 → 45 + 31 (31, 289 rows: +8 1) | 1 | 1 |
+  | 148 → 148 + 106; 223 → 223 + 224; 273 → 273 + 274 | 1 | 0 |
+  | 136, 137 → 137 + 138 | 1 | 1 |
+  | 98, 175, 261 → 153 (153 has no +4: the bed order stays one-shot) | 1 | 0 |
+  | 58, 250, 57, 238, 16, 125, 106, 138, 187 (plain jobs) | 1 | 0 |
+
+- **Choosing** (**Verified**, decision pass `FUN_140510ef0`, job scoring `FUN_14050e5b0`, pick `FUN_140510650`): order list → jobs of kind 2 while
+  the AI flag at +0xbc is set → urgent tier (3) → all jobs → tiers 2, 1 → idle. Within a job pass each job considered gets the key N+8, N+7, ...
+  (N = list length) in list order, kept when its desire is above 0. The pick takes the highest key above 0. **So the first job that can run wins,
+  and a higher job takes over as soon as it can run** at the next re-plan. A job is skipped when: it has no TaskData; the switch is off and its
+  type is not 16, 31, 45, 57, 58 or 250 (`FUN_14050c1c0`: these run regardless, so the medic job ignores the switch and rescue does not); the
+  planner finds an unmet list-B state and the row has no effect (row +0x14 clear; `FUN_14060f940`); its list A holds (done; `FUN_14060f570`,
+  `FUN_14050c8e0`); or desire × target finder is 0. Type 187 (Obedient Slave) has a slave-state branch of its own.
+- **Implicit jobs** (**Verified**, `FUN_14050e5b0` after the list, only for a character with a squad (+0x250), the switch on and not a slave
+  (`FUN_1405c9750`)): lowest keys for the squad AI options at `DAT_142134690` (the overview's AI tab), each kept when its task's desire is above 0:
+  +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60); then, unless three tests hold (`FUN_1402b2b90` on the
+  character's +0x450, its byte +0x348, `FUN_1407f4d20`, a set lookup; meanings **Unknown**), +0x116 "Sleep when injured" → 257 "Getting out of
+  bed once healed" above 153 "Go home and go to bed", and +0x118 "Sit when idle" → 275 "Sitting around" (its task is built with a float 0.5 where the others pass 1, meaning **Unknown**).
+  Tooltips (**Verified**, `FUN_140005e11`): ditch puts excess carried materials into storage when idle; sleep goes to bed when injured and idle;
+  sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**. Saved as CAMERA bools ([save](../formats/save.md)).
+  Same panel: +0x110 Heal Allies, +0x111 Help Allies, +0x112 Rescue Allies, +0x114 Feed Animals, +0x115 Share Food, +0x11a Shoot first.
+- **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
+  `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
+  through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2
+  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`.
+- **UI** (strings, `FUN_14072b540` JobsPanel): "No jobs assigned", "To add jobs, hold shift key when giving an order", the Jobs toggle "If this is
+  disabled then the character won't do any of the jobs listed."; tutorial: jobs are reordered by dragging and removed with X. Row text: **Unknown**.
+- **Unknown:** what +0xbc of the AI flags is; what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not
+  empty, output not full, at the machine); how 124 "Hauling to" gets the items it needs (B 67 `haveSomeResourcesFor`; no row's effect is 67).
+
 ## Unknowns
 
 - Why `taskType` 289 and 290 exist without an enum name (they build `Task_Follow` and `Task_BashDoor`; row 290 of the TaskData table repeats the data of `BASH_GATE`).
 - What the 37 named types without a TaskData row do when an AI_TASK record uses them (the list is in the TaskData registry section), and whether any behaviour of the 147 "goal" types (factory default `Task_Blank`) lives outside this factory.
-- What lists A and B of a TaskData row mean exactly, what the `*` marker on an entry (second flag byte) means, and what the registration flag bits (0x1, 0x21, 0x41, 0x55, 0x61, 0x63, 0x77, ...) select; [ai.md](ai.md#unknowns) lists the six category sets they register into.
+- What the `*` marker on an entry (second flag byte) means, and which category registry a character plans with ([planner](#planner)).
 - What the 18 StateType ids with no registration call and the two ids registered with an empty name (33 and 85) evaluate, and the semantics of most evaluators beyond their names.
-- How the effect column (`!` prefix, single effect per row) is used by the planner: the planner search itself is **Unknown** ([ai.md](ai.md#packages-and-goals)).

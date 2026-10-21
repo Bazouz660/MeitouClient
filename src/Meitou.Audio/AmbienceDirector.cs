@@ -39,6 +39,11 @@ public sealed class AmbienceDirector(WwisePlayer player)
     public bool Raining => raining;
     public bool Windy => windy;
 
+    /// <summary>Fix (default): a biome entered before its bank is loaded gets the right <c>_Day</c> / <c>_Night</c> event. Off: the game's bug, the opposite suffix on that path.</summary>
+    public bool FixDelayedSuffix { get; set; } = true;
+    /// <summary>Fix (default): the wind bed ends with the bank's <c>Weather_Wind_End</c>. Off: the game's <c>Weather_Wind_Stop</c>, which no bank has, so the wind never stops.</summary>
+    public bool FixWindStop { get; set; } = true;
+
     /// <summary>The banks the game loads at start (with Init, the music and the voices, which the viewer does not play; the voices are not played yet).</summary>
     public void Start()
     {
@@ -84,9 +89,10 @@ public sealed class AmbienceDirector(WwisePlayer player)
                 if (state >= 0 && (state & 0xFF) != (int)biome) player.Post($"Leave_{(Ambience)(state & 0xFF)}", AudioSystem.MusicObject);
                 state = next;
                 // The game posts Enter at once when the bank is loaded, otherwise after loading it (and then, by a bug, with the opposite
-                // suffix); the player keeps the event until its bank arrives, so the suffix here is always the right one.
+                // suffix); the player keeps the event until its bank arrives, so with the fix the suffix here is always the right one.
+                bool suffixDay = FixDelayedSuffix || player.IsBankLoaded($"SFX_Amb_{biome}") ? isDay : !isDay;
                 player.LoadBank($"SFX_Amb_{biome}");
-                player.Post($"Enter_{biome}_{(isDay ? "Day" : "Night")}", AudioSystem.MusicObject);
+                player.Post($"Enter_{biome}_{(suffixDay ? "Day" : "Night")}", AudioSystem.MusicObject);
             }
         }
 
@@ -98,8 +104,8 @@ public sealed class AmbienceDirector(WwisePlayer player)
         if (input.Wind > 0 != windy)
         {
             windy = input.Wind > 0;
-            // The game posts Weather_Wind_Stop, which no bank has, so its wind never stops; Meitou posts the bank's Weather_Wind_End.
-            player.Post(windy ? "Weather_Wind_Start" : "Weather_Wind_End", AudioSystem.MusicObject);
+            // The game posts Weather_Wind_Stop, which no bank has, so its wind never stops; the fix posts the bank's Weather_Wind_End.
+            player.Post(windy ? "Weather_Wind_Start" : FixWindStop ? "Weather_Wind_End" : "Weather_Wind_Stop", AudioSystem.MusicObject);
         }
         player.SetParameter("Rain_Intensity", input.Rain);
         player.SetParameter("Intensity", input.Wind);

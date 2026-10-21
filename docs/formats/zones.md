@@ -138,6 +138,17 @@ block:  int32 count, count ×
           float32 qw, qx, qy, qz                 rotation, w first
 ```
 
+## Town membership
+
+**Observed** (building import `FUN_14057cc70`, position lookup `FUN_140928890`, `Town::vfunc_78` / `vfunc_84`; Meitou `TownBuildings.MemberOf`):
+- The state's `town*` handle is kept only for a player town; for any other town it is dropped and the building is placed by position.
+- By position: the nearest town whose radius holds it (X/Z), searching the 3 x 3 area sectors round it, nest markers left out. The radius is
+  [the type table](../game/buildings-production.md#placement) (town 2500, village 937.5, ruins 875, POI 437.5, others 1250, x `town radius mult`); `size radius`
+  is read only by the nest debris scatter (`FUN_140938440`). Meitou does not model the sector window.
+- Else, a record with `interior` references and no parent building takes the nearest non-player town within 10000 (any type); else no town.
+- Meitou with this rule (probe over the level data, 2026-10-20): Sho-Battai claims 169 buildings, The Hub 128, Squin 45, Stack 137, all inside each town's
+  GAMESTATE_TOWN zones; 261 towns hold 9766 buildings. Residents: Squin 37 (save 36), Stack 94 (save 93-95).
+
 ## Open questions
 
 - Meaning of the trailer ints and of the stored record sizes.

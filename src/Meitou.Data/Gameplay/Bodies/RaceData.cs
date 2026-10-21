@@ -22,6 +22,8 @@ public sealed class RaceData
     public float HealRate { get; init; } = 1;
     /// <summary><c>bleed rate</c>: multiplier of blood loss (0 = bloodless).</summary>
     public float BleedRate { get; init; } = 1;
+    /// <summary><c>blood colour</c> (0xRRGGBB, the editor default #800000): the colour of its blood decals on the ground (docs/game/blood-decals.md).</summary>
+    public uint BloodColour { get; init; } = 0x800000;
     /// <summary><c>heal stat</c>: the skill used to treat this race (Medic 9, Hive medic 14, Vet 15, Robotics 6).</summary>
     public StatsEnumerated HealStat { get; init; } = StatsEnumerated.Medic;
     /// <summary><c>hunger rate</c>: multiplier of starvation speed; 0 never starves.</summary>
@@ -120,6 +122,7 @@ public sealed class RaceData
             Name = r.Name,
             HealRate = RecordReading.Float(r, "heal rate", 1),
             BleedRate = RecordReading.Float(r, "bleed rate", 1),
+            BloodColour = unchecked((uint)RecordReading.Int(r, "blood colour", 0x800000)) & 0xFFFFFF,
             HealStat = (StatsEnumerated)RecordReading.Int(r, "heal stat", (int)StatsEnumerated.Medic),
             HungerRate = RecordReading.Float(r, "hunger rate", 1),
             MinBlood = RecordReading.Float(r, "min blood", 75),

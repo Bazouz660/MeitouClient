@@ -105,18 +105,21 @@ public sealed class CharacterAppearance
     /// <summary>Visible meshes besides the body, in attach order.</summary>
     public List<CharacterPart> Parts { get; } = [];
     public List<BodyLayer> BodyLayers { get; } = [];
+    /// <summary>The lanterns it carries (<see cref="CarriedLights"/>): worn clothing, backpacks and belt items, or an animal's backpack.</summary>
+    public List<CarriedLight> Lights { get; } = [];
     /// <summary>Attachment points by name: <c>hands</c> (Bip01 Prop2) plus the race's <c>attachment points</c> file.</summary>
     public Dictionary<string, AttachmentPoint> AttachmentPoints { get; } = new(StringComparer.Ordinal);
     /// <summary>Pose weights from the body file, keyed by pose name (only non-zero values).</summary>
     public Dictionary<string, float> PoseWeights { get; } = new(StringComparer.Ordinal);
     public List<string> Notes { get; } = [];
 
-    /// <summary>Finds a record by string id, else by exact name (case-insensitive) among <paramref name="types"/>.</summary>
+    /// <summary>Finds a record by string id, else by exact name (case-insensitive; the shown name or the data files' English one) among <paramref name="types"/>.</summary>
     public static GameRecord? Find(GameDatabase db, string nameOrId, params FcsRecordType[] types)
     {
         if (db.Find(nameOrId) is { } byId && (types.Length == 0 || types.Contains(byId.Type))) return byId;
         return db.Records.Values.Where(r => (types.Length == 0 || types.Contains(r.Type))
-                && string.Equals(r.Name.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase))
+                && (string.Equals(r.Name.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(r.BaseName.Trim(), nameOrId.Trim(), StringComparison.OrdinalIgnoreCase)))
             .OrderBy(r => Array.IndexOf(types, r.Type)).FirstOrDefault();
     }
 
@@ -280,6 +283,9 @@ public sealed class CharacterAppearance
         int inHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON);
         for (int i = 0; i < weapons.Count; i++)
             result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model, both: !options.WeaponDrawn && i == inHand);
+        var lightRoll = new Random(loadout?.Seed ?? options.Seed ?? 0);
+        foreach (var item in worn.Concat(items.Where(i => i.Type is FcsRecordType.ATTACHMENT or FcsRecordType.CONTAINER)).Concat(loadout?.Carried.Select(c => c.Record) ?? []))
+            if (CarriedLights.From(db, installRoot, item, female, lightRoll) is { } carried) result.Lights.Add(carried);
         return result;
     }
 
@@ -303,6 +309,9 @@ public sealed class CharacterAppearance
         result.Hair = PickHair(db, race, AttachSlot.Hair, null);
         if (result.Hair is not null) result.AddWorn(result.Hair, false, []);
         result.LoadAttachmentPoints(installRoot, race);
+        // The record's backpack (a pack beast's luggage) carries a lantern; only its light is shown (the backpack mesh is not drawn on animals yet).
+        foreach (var pack in animal.GetReferences("backpack").Where(r => r.Values.Value0 > 0).Select(r => db.Find(r.TargetStringId)))
+            if (pack is not null && CarriedLights.From(db, installRoot, pack, false, new Random(0)) is { } carried) result.Lights.Add(carried);
         return result;
     }
 

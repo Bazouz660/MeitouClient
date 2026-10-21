@@ -40,6 +40,13 @@ public sealed record InventoryItemView(int Index, string Record, string Name, st
     public string Material { get; init; } = "";
     /// <summary>How full the item is (0 to 1, <see cref="Items.ItemInstance.ChargeFraction"/>); null: no charge bar.</summary>
     public float? Charge { get; init; }
+    /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), its model level and its charges (what the tooltip shows).</summary>
+    public string Company { get; init; } = "";
+    public int Level { get; init; }
+    public float Charges { get; init; }
+    public float MaxCharges { get; init; }
+    /// <summary>The faction the item counts as stolen from for its holder (<see cref="Items.ItemInstance.IsStolenFor"/>), -1 when it is not stolen.</summary>
+    public int StolenFrom { get; init; } = -1;
 }
 public sealed record InventoryView(int Width, int Height, int BagWidth, int BagHeight, IReadOnlyList<InventoryItemView> Items)
 {
@@ -60,14 +67,14 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool IsPlayer { get; init; }
     /// <summary>A member of a squad with a shop (right click trades).</summary>
     public bool IsTrader { get; init; }
-    /// <summary>What this NPC's plastic surgery costs (its dialogue's character editor line, <see cref="Meitou.Data.Characters.SurgeonDialogues"/>); null: not a surgeon.</summary>
-    public int? SurgeryCost { get; init; }
     public bool Selected { get; init; }
     /// <summary>Another faction's character the HUD shows (<see cref="InspectCommand"/>): it carries the same HUD details as a selected one but is not selected.</summary>
     public bool Inspected { get; init; }
     /// <summary>The orders panel's toggles and the move speed mode (<see cref="CharacterCold.Orders"/>, <see cref="CharacterCold.RunSpeed"/>).</summary>
     public CharacterOrders Orders { get; init; }
     public byte RunSpeed { get; init; } = SpeedMode.Free;
+    /// <summary>The job list (<see cref="CharacterCold.Jobs"/>), first = highest priority.</summary>
+    public IReadOnlyList<Production.PermaJob> Jobs { get; init; } = [];
     /// <summary>The path being followed from the next waypoint, for selected characters only (the host draws it).</summary>
     public IReadOnlyList<Vector3> Path { get; init; } = [];
     /// <summary>Null for a character without a body (an animal).</summary>
@@ -97,6 +104,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterTask Task { get; init; }
     /// <summary>Working on a cage's lock (the picker's order is given and it is in reach or walking there).</summary>
     public bool PickingLock { get; init; }
+    /// <summary>Picking or cutting shackles (a <see cref="Locks.ShackleJob"/> of that work, in reach or walking there): the <c>Character_Unlock</c> loop. Breaking and putting on have none.</summary>
+    public bool WorkingShackles { get; init; }
     /// <summary>Lying in a bed (<see cref="Locks.HeldState.Bed"/>).</summary>
     public bool InBed { get; init; }
     /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>): the portrait's <c>Combat</c> overlay.</summary>
@@ -127,6 +136,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public float? StealthKoChance { get; init; }
     /// <summary>In a cage: whether it is locked and the sentence (null: not imprisoned).</summary>
     public PrisonView? Prison { get; init; }
+    /// <summary>The town turret this character stands at the gun of (the AI's turret goals, arrived and idle); null when it mans none. Read-only, for the host's turret sounds.</summary>
+    public MannedTurret? Turret { get; init; }
     /// <summary>The hostile NPCs that noticed or detected this sneaking player character in the last 4 s.</summary>
     public IReadOnlyList<WatcherView> Watchers { get; init; } = [];
     /// <summary>
@@ -138,9 +149,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 
 /// <summary>
 /// A prisoner's cage and sentence (docs/game/economy.md 11.5): <see cref="Locked"/> the cage is effectively locked; <see cref="Sentence"/> its length in game hours (0: none, so it waits
-/// to be released), <see cref="HoursLeft"/> what remains of it; <see cref="Bail"/> the bail offered for it (<see cref="Crime.ArrestSystem.BailFor"/>; null: none).
+/// to be released), <see cref="HoursLeft"/> what remains of it.
 /// </summary>
-public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft, int? Bail = null);
+public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
+
+/// <summary>A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its <see cref="Meitou.Data.World.TownBuilding"/> key and BUILDING record, where it stands and faces (0 along +Z, turning towards +X) and its GUN_DATA record.</summary>
+public sealed record MannedTurret(string Key, string BuildingId, Vector3 Position, float Yaw, string GunId);
 
 /// <summary>The trained stats the HUD shows for the selection.</summary>
 public readonly record struct SkillSummary(float Attack, float Defence, float Dodge, float Toughness, float Strength, float Athletics);
@@ -165,12 +179,22 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<TownKnowledge> Towns { get; init; } = [];
     /// <summary>The camps and nests the player knows (<see cref="PlayerState.Camps"/>).</summary>
     public IReadOnlyList<CampView> Camps { get; init; } = [];
+    /// <summary>The squad AI options (<see cref="PlayerState.SquadAi"/>).</summary>
+    public SquadAi SquadAi { get; init; } = SquadAi.Defaults;
+    /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads"/>), each with its members in squad order (the first leads).</summary>
+    public IReadOnlyList<SquadView> PlayerSquads { get; init; } = [];
+    /// <summary>The active squad's id (<see cref="PlayerState.Squad"/>; -1 none): the squad bar shows it.</summary>
+    public int ActiveSquad { get; init; } = -1;
     /// <summary>Player-built buildings and construction sites, in creation order (docs/simulation.md "Buildings").</summary>
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
     public long BuildingsRevision { get; init; }
     /// <summary>Loose items lying in the world (<see cref="Items.GroundItems"/>), oldest first.</summary>
     public IReadOnlyList<Items.GroundItemSnapshot> GroundItems { get; init; } = [];
+    /// <summary>The containers with an inventory (a building interior's chests and boxes), where they stand.</summary>
+    public IReadOnlyList<Locks.ContainerSpot> Containers { get; init; } = [];
+    /// <summary>Every door, where its leaf is, for the right click (<see cref="Locks.DoorOrder"/>); its state is in <see cref="Doors"/>.</summary>
+    public IReadOnlyList<Locks.DoorPick> DoorPicks { get; init; } = [];
     /// <summary>Bumped when an item is dropped or goes: the host diffs <see cref="GroundItems"/> by id when it changes.</summary>
     public long GroundItemsRevision { get; init; }
     /// <summary>BUILDING ids the player's research has unlocked (the build menu's list).</summary>
@@ -186,6 +210,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public long MachinesVersion { get; init; }
     /// <summary>The player's research: levels, queue, rate and what may be queued.</summary>
     public Production.ResearchSnapshot Research { get; init; } = Production.ResearchSnapshot.Empty;
+    /// <summary>What each of the player's crafting benches can craft (by site), for the Craft tab.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<Production.CraftOptionView>> Crafts { get; init; } = new Dictionary<string, IReadOnlyList<Production.CraftOptionView>>();
 
     static readonly IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> NoDoors = new Dictionary<(string Building, int Door), Locks.DoorView>();
 
@@ -207,3 +233,6 @@ public interface IProjectileSource
     /// <summary>The projectiles after the tick (a new list; empty when none).</summary>
     IReadOnlyList<ProjectileSnapshot> PublishProjectiles();
 }
+
+/// <summary>One of the player's squads as the squad tabs and the squads screen show it.</summary>
+public sealed record SquadView(int Id, string Name, IReadOnlyList<CharacterId> Members);

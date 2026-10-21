@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Save;
+using Meitou.Data.World;
 using Meitou.Simulation;
 using Meitou.Simulation.Saving;
 
@@ -32,16 +33,23 @@ sealed partial class GameHost
     Task<SaveBuilder>? preparedBase;
     LoadedSave? preparedFor;
     int captures;
+    NewGameSettings difficulty = new();
 
     SaveCaptureOptions CaptureOptions()
     {
         saveDataFiles ??= [.. LoadOrder.FromInstall(install).Entries.Select(e => e.Name)];
-        return new SaveCaptureOptions { DataFiles = saveDataFiles, Placements = townPlacements, Levels = saveLevels, Seed = session.World.Seed ^ (ulong)++captures << 20 };
+        // The strategy camera's view (in free flight: where it was left), as the original saves its camera rig.
+        var view = session.Camera.Strategy;
+        return new SaveCaptureOptions
+        {
+            DataFiles = saveDataFiles, Placements = townPlacements, Levels = saveLevels, Seed = session.World.Seed ^ (ulong)++captures << 20,
+            View = new SavedView(view.Pivot, view.Yaw, view.Pitch, view.Distance),
+        };
     }
 
     /// <summary>The system list and its order are <see cref="StandardSystems"/>' (docs/simulation.md "Threading"); built again for each world.</summary>
-    Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive) =>
-        Meitou.Simulation.StandardSystems.Build(popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
+    Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
+        Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
         {
             // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel scripts its fight.
             Parts = IsSandbox || IsDuel ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
@@ -51,8 +59,11 @@ sealed partial class GameHost
             Population = new Meitou.Simulation.PopulationSettings
             {
                 Background = interactive && !IsDuel, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
-                CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild,
+                CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
+                NestsMultiplier = (settings ?? difficulty)[6],
             },
+            Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5] },
+            Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4] },
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
             SynchronousPaths = !interactive || IsDuel,
             // The duel prints what its measured lap holds (MeasureLap).
@@ -106,7 +117,10 @@ sealed partial class GameHost
             var prepared = ahead ? preparedBase!.Result : null;
             preparedBase = null;   // used, or stale
             game = SaveCapture.Capture(world, popData!, new SaveClock((int)clock.Day, clock.Hour, clock.Minute), loadedSave, CaptureOptions(), prepared);
+            difficulty.Write(game.Camera);
             WriteWeather(game, (int)clock.Day, clock.HourOfDay);
+            WriteDecals(game);
+            player.WriteBiome(game.Camera);
         }
         catch (Exception e)
         {
@@ -189,10 +203,12 @@ sealed partial class GameHost
         var watch = Stopwatch.StartNew();
         LoadedSave? loaded = null;
         StandardSystemSet built;
+        var nextDifficulty = NewGameSettings.Read(read.Result.Camera);
+        var nextData = nextDifficulty.Apply(popData!);
         try
         {
-            built = BuildSystems(interactive);
-            var data = popData!;
+            built = BuildSystems(interactive, nextData, nextDifficulty);
+            var data = nextData;
             // A world that fails to load leaves the old one running (ReplaceWorld drops the half-made one).
             session.ReplaceWorld(built.Systems, world =>
             {
@@ -209,6 +225,8 @@ sealed partial class GameHost
             Console.Error.WriteLine($"load      failed: {e}");
             throw new SceneLoadFailed($"Load failed: {e.Message}");
         }
+        popData = nextData;
+        difficulty = nextDifficulty;
         population = built.Population;
         aggro = built.Aggro;
         if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
@@ -216,6 +234,7 @@ sealed partial class GameHost
         preparedBase = null;
         worldEpoch++;
         var world = session.World;
+        BloodForNewWorld(read.Result.Decals);
         session.Clock.SetTime(loaded!.Clock.Day, loaded.Clock.HourOfDay);
         // The regions' weather the save holds (docs/formats/save.md "BIOMES"); a save without (an old Meitou one) keeps the schedule rolled from day 0.
         if (ActiveWeather is { } weather && read.Result.Biomes is { } biomes && SaveWeather.Read(biomes) is { Count: > 0 } regions)
@@ -226,13 +245,26 @@ sealed partial class GameHost
         playerSquad = world.Squads.Find(world.Player.Squad);
         foreach (var note in loaded.Notes) Console.WriteLine($"load      {note}");
 
-        // The camera on the leader, keeping the view's heading, pitch and boom; the zones round it get their navmesh before the first tick (like a new game's start).
+        // The saved camera (FUN_1407ade60, docs/formats/camera.md "Saved camera"): pivot, orientation and boom, a pivot out of bounds moved to the loader's fallback. A save
+        // without a view (an older Meitou one) puts the camera on the leader, keeping the view's heading, pitch and boom. The zones round the leader get their navmesh
+        // before the first tick (like a new game's start).
         Task navmesh = Task.CompletedTask;
+        var saved = read.Result.Camera;
+        player.ReadBiome(saved);
+        if (saved.HasView)
+        {
+            var (yaw, pitch, distance) = KenshiCamera.FromSaved(saved.Rotation, saved.Zoom);
+            var pivot = KenshiCamera.SavedPivotInBounds(saved.Position) ? new Vector2(saved.Position.X, saved.Position.Z) : KenshiCamera.SavedPivotFallback;
+            session.Camera.Place(pivot, yaw, pitch, distance);
+        }
         if (playerSquad is { } squad && !squad.Leader.IsNone)
         {
             var at = world.Characters.Previous[squad.Leader.Slot].Position;
-            var view = session.Camera.Current;
-            session.Camera.Place(new Vector2(at.X, at.Z), view.Yaw, view.Pitch, view.Distance);
+            if (!saved.HasView)
+            {
+                var view = session.Camera.Current;
+                session.Camera.Place(new Vector2(at.X, at.Z), view.Yaw, view.Pitch, view.Distance);
+            }
             navmesh = NavmeshAround(at);
         }
         summary = $"{readingFolder}: {loaded.PlayerPlatoons.Sum(p => p.Squad.Members.Count)} player character(s), {loaded.RoamingPlatoons.Count} roaming, {loaded.TownBoundPlatoons} town and {loaded.WildPlatoons} wild platoon(s) kept as saved, day {loaded.Clock.Day} {loaded.Clock.Hour:00}:{loaded.Clock.Minute:00}, made in {watch.ElapsedMilliseconds} ms";

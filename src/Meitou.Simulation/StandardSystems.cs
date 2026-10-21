@@ -189,7 +189,7 @@ public static class StandardSystems
         if (Has(StandardParts.Feed)) systems.Add(new FeedSystem(data.Items, o.Feed));
         if (Has(StandardParts.Retaliation)) systems.Add(new RetaliationSystem(combat!));
         AggroSystem? aggro = null;
-        if (Has(StandardParts.Aggro)) systems.Add(aggro = new AggroSystem(data.Relations, o.Aggro));
+        if (Has(StandardParts.Aggro)) systems.Add(aggro = new AggroSystem(data.Relations, o.Aggro) { Combat = combat });
         if (carry is not null) carry.Aggro = aggro;
         if (Has(StandardParts.Flee)) systems.Add(new FleeSystem(data.Relations, combat!, o.Aggro?.SightRange ?? AggroSystem.OutdoorSight));
         Meitou.Simulation.Crime.CrimeSystem? crime = null;
@@ -215,6 +215,7 @@ public static class StandardSystems
         if (Has(StandardParts.Dialogue)) systems.Add(talk = new Meitou.Simulation.Dialogue.DialogueSystem(data, o.Dialogue, population));
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
+        if (arrest is not null) arrest.Talk = talk;
         return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Crime = crime, Arrest = arrest, Locks = locks, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
     }
 }

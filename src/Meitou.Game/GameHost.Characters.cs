@@ -111,7 +111,7 @@ sealed partial class GameHost
     /// <summary>A character's key in the draw list: stable while it exists, new for every world (the renderer keeps its poses by it).</summary>
     long DrawKey(CharacterId id) => (((long)id.Slot << 32 | (uint)id.Generation) + 1) | (long)worldEpoch << 56;
 
-    /// <summary>The squad bar's portraits for the renderer to draw this frame: its members in their cells (docs/character-renderer.md "Portraits").</summary>
+    /// <summary>The portraits for the renderer to draw this frame: the squad bar's and the squads screen's members in their cells (docs/character-renderer.md "Portraits").</summary>
     void FillPortraits()
     {
         if (gpu.Characters is not { } characters) return;
@@ -120,7 +120,7 @@ sealed partial class GameHost
         // The serial turns each portrait's camera.
         if (player.UiVisible)
         {
-            var members = player.SquadBarMembers();
+            var members = player.PortraitMembers();
             for (int i = 0; i < members.Count; i++)
                 characters.PortraitRequests.Add(new PortraitRequest(DrawKey(members[i].Id), i, members[i].PortraitSerial));
         }

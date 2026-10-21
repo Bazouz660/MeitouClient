@@ -74,7 +74,7 @@ public sealed record ExposureConstants(float Min, float Max, float NightDarkness
 
     public static ExposureConstants FromDatabase(GameDatabase db)
     {
-        var c = db.OfType(FcsRecordType.CONSTANTS).FirstOrDefault(r => r.Name == "GLOBAL CONSTANTS") ?? db.OfType(FcsRecordType.CONSTANTS).FirstOrDefault();
+        var c = db.OfType(FcsRecordType.CONSTANTS).FirstOrDefault(r => r.BaseName == "GLOBAL CONSTANTS") ?? db.OfType(FcsRecordType.CONSTANTS).FirstOrDefault();
         if (c is null) return Default;
         return new ExposureConstants(c.GetFloat("exposure min", Default.Min), c.GetFloat("exposure max", Default.Max), c.GetFloat("night darkness", Default.NightDarkness));
     }

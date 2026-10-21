@@ -10,6 +10,7 @@ Resolve race, sex, body/head/hair/beard, body sliders and clothing/weapon/backpa
 references and .bod2 overrides. Keep generated appearance/loadout seed separate from per-frame
 live stats. Record lists' weighted chances, forced equipment, quality/manufacturer rolls and
 race restrictions have distinct semantics; missing references do not imply a universal item.
+Worn records' lanterns (and an animal's backpack lantern) become `CharacterAppearance.Lights` ([lights](formats/lights.md#carried-lanterns)).
 NPC generation order determines random consumption; original RNG sequence is not reproduced.
 
 ### Random appearance
@@ -108,6 +109,14 @@ checks `human_male.mesh`):
 | CONTAINER backpacks | 2 levels at 400 |
 | LIMB_REPLACEMENT, WEAPON (`mesh`, `bare sword`, `sheath`) | none |
 
+## Names
+
+**Observed** (character setup `FUN_14062b210`, pool loader `@ 140641d80`): CHARACTER `named` false → the record's name; true → a uniform pick
+from the look's sex's list (appearance `sex female`): `data/namesM.txt` (men) or `data/namesF.txt` (women), with `data/namesMF.txt` appended to
+both. Lines are trimmed, blank ones skipped; each file is optional. An empty list gives a fixed fallback string (**Unknown**; Meitou: the record
+name). 135 of 639 merged CHARACTERs are `named`, among them most start-squad members (Wanderer, Nobody, start slave; not Citizen, Exile).
+Meitou: `NamePool`, rolled at spawn (`PopulationSystem.SpawnName`, `RngPurpose.Name`); files read from the install, not mods.
+
 ## Character editor
 
 `CharacterEditWindow` (constructor `FUN_1405f4dd0(chars, mode, forceRaces)`, layout `Kenshi_CharacterEditor`). Facts **Observed** from the
@@ -121,14 +130,20 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
   (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel: "Hit Points:", "No bleeding"
   below `bleed rate` 0.1, then each stat multiplier as (m-1)x100 % (Meitou omits the hit points line).
-- **Tabs** (`FUN_1405ebd50`, Body first): FACE = head list (if more than one) + XML Face ranges; BODY = "Idle stance" list slider, XML Body
-  ranges, `Skin Tone` colour slider (vec3 interpolated; only with more than one colour); HAIR = Hair (attach slot 2) and Beard (13) lists with
+- **Tabs** (`FUN_1405ebd50`, Body first): FACE = head list (if more than one) + XML Face ranges + colours; BODY = "Idle stance" slider, then
+  `Skin Tone` (vec3 interpolated; only with more than one colour), then XML Body ranges, then other colours (order also seen in the original's
+  screen); HAIR = Hair (attach slot 2) and Beard (13) lists with
   "None" (if more than one entry), hair colour multi-slider `Hair Colour` / `Hair Saturation` / `Hair Brightness` 0..100. No Personality tab, no
   Age. Plain ranges store the integer as the float key; target ranges store value x 0.01 in `target`, a negative value x -0.01 in
-  `target_opposite` (the editor shows the reverse). Meitou: no idle stance slider yet; women get no beard list (generator rule).
+  `target_opposite` (the editor shows the reverse). Meitou: women get no beard list (generator rule).
+- **Idle stance**: slider 1..n over a list built once (`FUN_14007d480`, from the idle list of `FUN_1405bbd40`): ANIMATION records in data
+  order that are `idle`, not `disabled`, `weather type` < 1, `layer` not `overlay`, `has weapon L` and `R` both 0, not `crouched`. Writes
+  the record name to `idle stance` (`FUN_1405eaa30`); a stance not in the list shows as 1. **Verified** by probe on base data: 8 stances
+  (`idle_stand_relax`, `stand 1`, `idle_stand_guard`, `idle_stand_timid`, `idle_stand_confident`, `idle_stand_normal`, `idle_stand_stiff`,
+  `squat`), so the default `idle_stand_normal` is 6, as the original's screen shows. Whether RANDOMISE rolls it is **Unknown** (Meitou: no).
 - **Buttons**: RANDOMISE = current tab only; RANDOMISE ALL = every randomiser; RESET ALL = the appearance template's defaults (hair, beard,
   colours, `Posture`, idle stance `idle_stand_normal`; slider values **Unknown**, Meitou: XML mid, poses 0, Posture 20); CLOTHES toggles worn
-  clothing in the preview; IMPORT/EXPORT a `.bod2` in `data/character/bodies/export/` (Meitou: not yet). CONFIRM asks first when some
+  clothing in the preview; IMPORT/EXPORT: see [below](#import-and-export). CONFIRM asks first when some
   characters were never shown, closes, unpauses at speed 1; it charges nothing. No cancel widget; Esc **Unknown** (Meitou: Esc leaves a
   surgeon's editor unchanged and unpaid; the new game's must be confirmed).
 - **Preview**: a separate scene. **Verified** (install's compositor files): workspace `Kenshi_Character_Editor` = `GBuffer_Minimal` (characters only,
@@ -156,15 +171,26 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
   clamped to the limits, the name to 30 characters. **Verified** by a scratch round trip on save 2: edit, capture, load gives the edited
   values with the original key set.
 
+### Import and export
+
+Folder `./data/character/bodies/export/` under the install, extension `.bod2` (`FUN_141539ad0`/`b10`). **Observed**: EXPORT (`FUN_1405ea410`)
+needs no dialog: it writes the edited appearance record to the folder as `<NameText>.bod2` and shows "Character '{1}' exported to file {2}".
+IMPORT opens `Kenshi_OpenSaveFileDialog` titled "Import character" on the folder (`FUN_1405f4dd0`); the chosen file must hold a type 66 record,
+else "Error loading appearance file '{1}'. The file is in an old format or invalid." (`FUN_1405f4280`), and its look replaces the editor's;
+what the original does with another race in mode 1 is **Unknown**. **Verified** (FcsReader + FcsWriter on the install's 12 exports): all are
+type 15, one record, id 1, `1--INGAME`, name `default` or `0`, and round-trip byte-exact. Meitou (`CharacterDraft.Import`/`Export`,
+`PlayerInterface.Editor`): export writes that layout, overwriting a file of the same name; import sanitizes the file for its race and refuses a
+race the editor doesn't offer (creation) or another race or sex (surgeon); the dialog lists the folder only (no browsing).
+
 ### Plastic surgeons
 
 **Verified** by probe of the merged data: 9 dialogue lines carry `DA_CHARACTER_EDITOR` (11); the price is a `DA_TAKE_MONEY` (8) effect on the
 same line (val0), gated by `DC_PLAYERMONEY` (2) strictly greater. "plastic surgeon" (CHARACTER 2132 Plastic Surgeon, leader of the bar squads
 "bar plastic surgeon" / "plastic surgeon": Holy Nation, Empire Peasants, United Cities, Deadcat, Waystation, Bark, Sho-Battai...) 200;
 "doctor shop" (hospital squads' `dialog leader` package) 500; Doctor Chung (Mud Town) 200, no money check; Thieves Guild surgeon free
-behind `DC_FACTION_RANK`; Grey free for escaped slaves. Meitou has no dialogue: an NPC whose dialogue offers such a line gated only by money or
-`DC_IS_RECRUITABLE` (`SurgeonDialogues`) gets the context menu verb "Plastic Surgery (c.price)", which opens the editor in mode 1 on the
-first selected character beside it.
+behind `DC_FACTION_RANK`; Grey free for escaped slaves. Meitou: the surgeon is talked to; its line's DA 8 pays and DA 11 opens the editor in
+mode 1, already paid ([dialogue](game/dialogue.md#meitou-design)). An unpaid `EditCharacter` (no UI sends one) is checked against `SurgeonDialogues`:
+a line gated only by money or `DC_IS_RECRUITABLE`.
 
 ## Open questions
 

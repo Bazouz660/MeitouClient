@@ -19,6 +19,8 @@ internal static class SeedSalts
 
     /// <summary>XORed into the key of a homeless squad of an area sector (6.2).</summary>
     public const ulong HomelessSquad = 0x5EC7UL;
+    /// <summary>XORed into the key of a homeless squad's patrol points, and of the area tick's sector picks (<c>PopulationHomeless.cs</c>).</summary>
+    public const ulong HomelessPatrol = 0x5EC8UL, HomelessRefill = 0x5EC9UL;
     /// <summary>XORed into the key of a squad a nest makes (6.3).</summary>
     public const ulong NestSquad = 0x4E57UL;
     /// <summary>XORed into the key of the layout of the nests of a biome group (which nest, which cell, which spots).</summary>

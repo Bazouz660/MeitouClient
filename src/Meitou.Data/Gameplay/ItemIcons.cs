@@ -6,7 +6,8 @@ namespace Meitou.Data.Gameplay;
 /// <summary>What an inventory cell shows of an item (<see cref="ItemIcons.Choose"/>): a PNG file, a picture to draw from the item's mesh, or nothing.</summary>
 public enum ItemIconSource { None, File, Render }
 
-public readonly record struct ItemIconChoice(ItemIconSource Source, string? File = null);
+/// <summary><see cref="Colour"/>: the COLOR_DATA string id a drawn icon is dyed with ("" undyed).</summary>
+public readonly record struct ItemIconChoice(ItemIconSource Source, string? File = null, string Colour = "");
 
 /// <summary>
 /// Where an inventory item's icon comes from (docs/game/ui-screens.md, "Item icons"). The game draws the icon from the item's mesh for a WEAPON or a record with
@@ -36,12 +37,30 @@ public sealed class ItemIcons(GameDatabase database, Func<string, string?> resol
         if (database.Find(record) is not { } r) return default;
         if (Renders(r))
         {
-            if (cache.Find(record, material) is { } saved) return new(ItemIconSource.File, saved);
-            return ItemIconStyle.MeshOf(r).Length > 0 ? new(ItemIconSource.Render) : default;
+            string colour = ColourOf(database, r, MaterialOf(database, r, material))?.StringId ?? "";
+            if (cache.Find(record, material, colour) is { } saved) return new(ItemIconSource.File, saved);
+            return ItemIconStyle.MeshOf(r).Length > 0 ? new(ItemIconSource.Render, Colour: colour) : default;
         }
         if (StaticIconOf(r) is { Length: > 0 } icon && resolve(icon) is { } file) return new(ItemIconSource.File, file);
         return resolve("default_icon.png") is { } fallback ? new(ItemIconSource.File, fallback) : default;
     }
+
+    /// <summary>The material record an icon is drawn with: <paramref name="materialId"/> (the instance's), else the item's first (likeliest) <c>material</c> reference.</summary>
+    public static GameRecord? MaterialOf(GameDatabase db, GameRecord item, string materialId)
+    {
+        static bool IsSpec(GameRecord? r) => r is { Type: FcsRecordType.MATERIAL_SPECS_CLOTHING or FcsRecordType.MATERIAL_SPEC or FcsRecordType.MATERIAL_SPECS_WEAPON };
+        if (materialId.Length > 0 && db.Find(materialId) is { } chosen && IsSpec(chosen)) return chosen;
+        return item.GetReferences("material").OrderByDescending(r => r.Values.Value0).Select(r => db.Find(r.TargetStringId)).FirstOrDefault(IsSpec);
+    }
+
+    /// <summary>
+    /// The COLOR_DATA an icon is dyed with: the item's own <c>color</c>, when its <c>dont colorise</c> is false and <paramref name="material"/> has a <c>color map</c> (the game's rule).
+    /// The game dyes with the instance's colour, which <c>ItemInstance</c> does not carry; the record's stands in for it.
+    /// </summary>
+    public static GameRecord? ColourOf(GameDatabase db, GameRecord item, GameRecord? material) =>
+        material?.GetPath("color map") is { Length: > 0 } && !item.GetBool("dont colorise")
+            ? item.GetReferences("color").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(c => c is { Type: FcsRecordType.COLOR_DATA })
+            : null;
 }
 
 /// <summary>
@@ -155,9 +174,9 @@ public sealed class ItemIconCache
     }
 
     /// <summary>
-    /// The cached icon of <paramref name="item"/> in <paramref name="material"/>: the file of exactly those two ids (no colour part, as an item without a colour is drawn); null when none.
+    /// The cached icon of <paramref name="item"/> in <paramref name="material"/> dyed <paramref name="colour"/> ("" undyed): the file of exactly those ids; null when none.
     /// A picture of another material or colour would show another texture, and the renderer draws the exact one.
     /// </summary>
-    public string? Find(string item, string material) =>
-        byItem.TryGetValue(item, out var list) ? list.FirstOrDefault(f => f.Material == material && f.Colour.Length == 0).Path : null;
+    public string? Find(string item, string material, string colour = "") =>
+        byItem.TryGetValue(item, out var list) ? list.FirstOrDefault(f => f.Material == material && f.Colour == colour).Path : null;
 }

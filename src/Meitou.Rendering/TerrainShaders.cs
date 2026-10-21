@@ -196,6 +196,10 @@ static partial class TerrainShaders
         uniform vec4 uRegion;          // x0, z0, 1/width, 1/depth of the overlay and colour windows (the same square); they wrap: texel = world mod width
         uniform vec2 uCellGrid;        // cells along X and Z
         uniform float uHalfWorld;
+        uniform sampler2DArray uBlood; // the blood decal cells near the eye (TerrainDecalRenderer): one layer each
+        uniform int uBloodCount;       // cells in use (0: no blood)
+        uniform float uBloodCellSize;
+        uniform vec4 uBloodCells[8];   // column, row, layer
 
         vec4 P(int biome, int k) { return texelFetch(uParams, ivec2(k, biome), 0); }
 
@@ -388,6 +392,20 @@ static partial class TerrainShaders
                 absorbance = mix(0.5, absorbance, nearWeight);
             }
 
+            // Blood on the ground (docs/game/blood-decals.md): the cell's decal texture over the albedo, the gloss kept (the game's TerrainBlood pass into the G-buffer).
+            if (uBloodCount > 0)
+            {
+                vec2 bloodUv = (vWorld.xz + uHalfWorld) / uBloodCellSize;
+                vec2 bloodCell = floor(bloodUv);
+                for (int k = 0; k < uBloodCount; k++)
+                {
+                    if (uBloodCells[k].xy != bloodCell) continue;
+                    vec4 blood = textureLod(uBlood, vec3(bloodUv - bloodCell, uBloodCells[k].z), 0.0);
+                    albedo.rgb = mix(albedo.rgb, blood.rgb, clamp(blood.a, 0.0, 1.0));
+                    break;
+                }
+            }
+
             // The game's wetness (common/wet.hlsl, terrainfp4.hlsl): the rain's wetness plus the water line (a 2-unit edge) on an absorbance of 1 - gloss plus
             // the layers'. A rock bake (uWaterHeight far below the world) is without weather, so its impostor does not keep a rain.
             float wetAmount = uWaterHeight > -1.0e5 ? uWeatherWet.x : 0.0;
@@ -500,6 +518,10 @@ static partial class TerrainShaders
             float cliffEps;
             uint interiorMask;
             bool interiorCut;
+            uint blood;
+            int bloodCount;
+            float bloodCellSize;
+            vec4 bloodCells[8];
         } terrain;
 
         """;
@@ -531,6 +553,8 @@ static partial class TerrainShaders
         ["uWorldColour"] = "textures2D[terrain.worldColour]", ["uRegion"] = "terrain.region", ["uCellGrid"] = "terrain.cellGrid",
         ["uHalfWorld"] = "terrain.halfWorld", ["uInteriorMask"] = "textures2D[terrain.interiorMask]",
         ["uInteriorCut"] = "terrain.interiorCut",   // declared by the cut patch variants and the meshes' colour program (InteriorMaskRenderer.WithCut)
+        ["uBlood"] = "textures2DArray[terrain.blood]", ["uBloodCount"] = "terrain.bloodCount", ["uBloodCellSize"] = "terrain.bloodCellSize",
+        ["uBloodCells"] = "terrain.bloodCells",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -618,7 +642,7 @@ static partial class TerrainShaders
 
 /// <summary>The C# side of <see cref="TerrainShaders.ConstantsBlock"/> (std140; offsets checked against the reflection by a test). GLSL bools
 /// are 32-bit (0 / 1).</summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 240)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 384)]
 struct TerrainConstants
 {
     [System.Runtime.InteropServices.FieldOffset(0)] public System.Numerics.Vector4 CoarseRect;
@@ -662,6 +686,17 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(224)] public float CliffEps;
     [System.Runtime.InteropServices.FieldOffset(228)] public uint InteriorMask;
     [System.Runtime.InteropServices.FieldOffset(232)] public uint InteriorCut;
+    [System.Runtime.InteropServices.FieldOffset(236)] public uint Blood;
+    [System.Runtime.InteropServices.FieldOffset(240)] public int BloodCount;
+    [System.Runtime.InteropServices.FieldOffset(244)] public float BloodCellSize;
+    [System.Runtime.InteropServices.FieldOffset(256)] public BloodCells BloodCells;
+}
+
+/// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[8]</c>).</summary>
+[System.Runtime.CompilerServices.InlineArray(8)]
+struct BloodCells
+{
+    System.Numerics.Vector4 cell;
 }
 
 /// <summary>The C# side of <see cref="TerrainShaders.PushMembers"/> (std430 push constants): a patch's <c>uNode</c> and <c>uMorph</c>.</summary>

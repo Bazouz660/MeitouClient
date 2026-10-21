@@ -622,6 +622,7 @@ public sealed partial class CombatSystem : IProjectileSource
         var (part, damage, absorbed) = HitResolver.LandDetailed(dc.Medical, ctx, packet, armour, cover, toughness, false, true, combat, events);
         FloatHit(world, v, dc, p.ShooterIsPlayer, part, damage, absorbed);
         Sound(world, SoundKind.BoltHit, v, p.Shooter, prev[v].Position, armoured: absorbed.Cut + absorbed.Blunt + absorbed.Pierce > 0, robot: false);
+        Splash(world, v, dc, new Vector2(p.Direction.X, p.Direction.Z), damage.Cut + damage.Blunt + damage.Pierce);
 
         D.Taken++;
         D.HitTick = now;
@@ -636,7 +637,9 @@ public sealed partial class CombatSystem : IProjectileSource
             {
                 case MedicalEventKind.KnockedOut: knockout = true; break;
                 case MedicalEventKind.Died: death = true; break;
-                case MedicalEventKind.PartSevered: if (dc.Stats is { } st) xp.ToughnessFromLimbLoss(st, dc.Race); table.LimbsChanged.Enqueue((v, dc.Medical.Parts[ev.Part].Template.LimbSlot)); break;
+                case MedicalEventKind.PartSevered: if (dc.Stats is { } st) xp.ToughnessFromLimbLoss(st, dc.Race); table.LimbsChanged.Enqueue((v, dc.Medical.Parts[ev.Part].Template.LimbSlot));
+                    world.Defer(new Dialogue.DialogueEvent(table.IdOf(v), CharacterId.None, dc.Medical.Parts[ev.Part].Template.LimbSlot is 2 or 3 ? 70 : 71) { Tick = world.Tick + 1 });
+                    break;
             }
         }
         if (dc.Medical.Incapacitated)
@@ -661,6 +664,7 @@ public sealed partial class CombatSystem : IProjectileSource
         }
         if (death && Relations is not null && p.ShooterIsPlayer && !dc.IsPlayer) PlayerRelations.Event(world, Relations, dc.Faction, RelationEventKind.Murder);
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(v)) is { } unique) world.Uniques.Died(unique, p.ShooterIsPlayer);
+        if (death && world.Luckyren) dc.Burst = new Vector2(p.Direction.X, p.Direction.Z);
         if (Settings.RecordLog)
             log.Add(new CombatLogEntry(now, p.Shooter, v, 0, BlowOutcome.Hit, part, damage.Cut, damage.Blunt, damage.Pierce, damage.ExtraStun, knockout, death) { Ranged = true, Intended = intended });
     }

@@ -1,0 +1,88 @@
+using System.Diagnostics;
+using Meitou.Data.Save;
+using Meitou.Data.Ui;
+using Meitou.Data.World;
+
+namespace Meitou.Game;
+
+/// <summary>
+/// The biome banner (docs/game/ui-screens.md "Biome banner", <c>MainBarGUI::vfunc_10</c>): the HUD's <c>BiomeTextPanel</c> fades in with the name of the BIOME_GROUP under the camera pivot when it
+/// changes, holds 5 s and fades out, at most once in 30 s, with the <c>New_Biome</c> sound. Real time, like the original's frame clock; it only follows the pivot and changes nothing in the game.
+/// </summary>
+sealed partial class PlayerInterface
+{
+    /// <summary>The seconds the banner holds (it fades in at 2 per second before, out at 1 per second after) and the least time between two banners (<b>Verified</b>).</summary>
+    const float BiomeHoldSeconds = 5, BiomeCooldownSeconds = 30;
+
+    /// <summary>The host's BIOME_GROUP at a world position: its string id and name; null when there is no weather or areas map.</summary>
+    public Func<float, float, (string Id, string Name)?>? RegionAt { get; set; }
+
+    object? biomeWorld;
+    string? biomeGroup;
+    string biomeName = "";
+    float biomeHold, biomeCooldown, biomeAlpha;
+    bool biomeShown;
+    long biomeAt;
+
+    /// <summary>Once a frame: the banner's timers, its fade and the group it tracks. A new world only takes the group under the pivot (the original does so while its loading window is up).</summary>
+    void PollBiome()
+    {
+        long now = Stopwatch.GetTimestamp();
+        float dt = biomeAt == 0 ? 0 : MathF.Min((float)Stopwatch.GetElapsedTime(biomeAt, now).TotalSeconds, 0.25f);
+        biomeAt = now;
+        if (TitleOpen || EditorOpen || RegionAt is null) return;
+        var pivot = session.Camera.Current.Target;
+        if (RegionAt(pivot.X, pivot.Z) is not { } here) return;
+        if (!ReferenceEquals(biomeWorld, session.World))
+        {
+            biomeWorld = session.World;
+            (biomeGroup, biomeShown, biomeHold, biomeCooldown, pendingBiomeCooldown) = (here.Id, false, 0, pendingBiomeCooldown, 0);
+            return;
+        }
+        biomeHold -= dt;
+        biomeCooldown -= dt;
+        bool blocked = conversationShown;
+        if (here.Id != biomeGroup && biomeCooldown <= 0 && !blocked && here.Name != "NONE" && here.Id != WeatherData.NoneRegionId)
+        {
+            (biomeName, biomeShown, biomeAlpha, biomeHold, biomeCooldown) = (here.Name, true, 0, BiomeHoldSeconds, BiomeCooldownSeconds);
+            Sound("Notifications", "Notifications", "New_Biome");
+        }
+        else if (biomeShown)
+        {
+            if (biomeHold > 0) biomeAlpha = MathF.Min(1, biomeAlpha + dt * 2);
+            else if ((biomeAlpha -= dt) < 0) biomeShown = false;
+        }
+        if (!blocked) biomeGroup = here.Id;
+    }
+
+    /// <summary>The panel over the HUD while the banner shows: the layout's own panel at the fade's alpha with the name in its text box; hidden otherwise.</summary>
+    void BindBiome(UiBindings b)
+    {
+        if (!biomeShown) { b.Hidden.Add("BiomeTextPanel"); return; }
+        b.Properties["BiomeTextPanel"] = new Dictionary<string, string> { ["Visible"] = "true", ["Alpha"] = Math.Clamp(biomeAlpha, 0, 1).ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        b.Text["BiomeTextBox"] = biomeName;
+        // The layout lets the mouse through only the panel (NeedMouse is not inherited): its two lines would otherwise take clicks.
+        foreach (string line in new[] { "BiomeNameTopLine", "BiomeNameBottomLine" }) b.Properties[line] = new Dictionary<string, string> { ["NeedMouse"] = "false" };
+    }
+
+    /// <summary>
+    /// Into a save's CAMERA record (<c>FUN_140728af0</c>, <c>FUN_140375360</c>): the cooldown (the original writes its raw, ever falling value; here never below 0), the group tracked and the name of the
+    /// group under the pivot, empty for NONE.
+    /// </summary>
+    public void WriteBiome(SaveCamera camera)
+    {
+        camera.BiomeTextTimer = MathF.Max(biomeCooldown, 0);
+        camera.BiomeTextGroup = biomeGroup ?? "";
+        var pivot = session.Camera.Current.Target;
+        camera.Area = RegionAt?.Invoke(pivot.X, pivot.Z) is { } here && here.Name != "NONE" && here.Id != WeatherData.NoneRegionId ? here.Name : "";
+    }
+
+    /// <summary>A loaded save's cooldown (<c>FUN_140728c10</c>); the group is the one under the pivot, as the original's loading window sets it.</summary>
+    public void ReadBiome(SaveCamera camera)
+    {
+        biomeWorld = null;
+        pendingBiomeCooldown = camera.BiomeTextTimer;
+    }
+
+    float pendingBiomeCooldown;
+}

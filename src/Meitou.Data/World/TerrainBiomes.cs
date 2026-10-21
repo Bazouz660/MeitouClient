@@ -213,7 +213,7 @@ public static class TerrainMaps
 
     /// <summary><c>new_overlay</c>: R and G grass (the shader takes the larger), B dirt, A road. <c>colour</c>: RGB tint, A multiplies gloss.</summary>
     public static string OverlayTile(GameInstall install, string kind, int x, int z) =>
-        Path.Combine(install.DataDirectory, LandDirectory, "overlaymaps", $"{kind}.{x}.{z}.png");
+        GameFiles.Resolve(Path.Combine(install.DataDirectory, LandDirectory, "overlaymaps", $"{kind}.{x}.{z}.png"));
 }
 
 /// <summary>

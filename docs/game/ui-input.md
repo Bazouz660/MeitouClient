@@ -30,7 +30,7 @@ While a selected character sneaks, an NPC that is up gets the verb "Stealth KO (
 that instead of an attack ([combat](combat.md#stealth-knock-out)); the first sneaking selected character goes.
 
 Original strategy camera actions/zoom flags are in [camera](../formats/camera.md). Engine defaults:
-Space pause,F2/F3/F4=1/2/5,F5 save,F9 load; Tab is the original's change_squad (a no-op with one squad tab; the settings open from the Esc menu, ToggleSettings is unbound by default); current complete keys in [viewer](../viewer.md)
+Space pause,F2/F3/F4=1/2/5,F5 save,F9 load; Tab is the original's change_squad (the settings open from the Esc menu, ToggleSettings is unbound by default); current complete keys in [viewer](../viewer.md)
 and [engine](../engine.md). User bindings and viewer/cinematic bindings have separate lifetimes.
 Settings-tab labels/type/ranges/restart semantics: [settings](../formats/settings.md).
 
@@ -116,14 +116,18 @@ identified; pause 0x12 is only blocked by the second). While the MainBar object 
 | any other id | forwarded to the orders panel handler FUN_1407226e0, which acts on 0x17..0x21 (orders buttons) and ignores the rest |
 | 8 | not in the hotkey function: handled in the action switch by FUN_1406e2a20, which flips the GUI-hidden flag at GUI+0x330 ("toggle whole GUI") |
 
+Squad events (**Observed**): select_0..9 (100..109, `FUN_1407f90b0`) and select_all 0x22 (`FUN_1407f8d00`) act on the active squad's members
+([squad tabs](ui-screens.md#4-hud-mainbargui)); change_squad 0x23 (`FUN_1407f6380`) with more than one squad makes the next one in order (wrapping) that has
+members active, and leaves the selection alone.
+
 Meitou's first aid and rest bindings (2026-10-13, `PlayerInterface`, engine choices; simulation side in [simulation.md](../simulation.md#bodies)). The original's own: `medic` (NUM7, event 0x1f) and `rescue` (NUM8, 0x20) are
-orders-panel toggles forwarded to FUN_1407226e0 (the Medic and Rescue buttons of the panel, [ui-screens.md](ui-screens.md#4-hud-mainbargui)), i.e. job switches, not targeted orders (**Observed**); the targeted order is the context menu
+orders-panel toggles forwarded to FUN_1407226e0 (the Medic and Rescue buttons of the panel, [ui-screens.md](ui-screens.md#4-hud-mainbargui)), which dispatch orders 58 and 148: one-shot, or a job with Shift ([perma-jobs](ai-tasks.md#perma-jobs), **Observed**); the targeted order is the context menu
 verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's context menu also provides it). The numpad belongs to the cinema camera (`Cinema`, docs/viewer.md), so:
 
 | Input | Effect |
 |---|---|
 | right click on one of the player's own characters with something to bandage | the selected characters treat it (`TreatOrder`); a lone selected character on itself treats itself |
-| `H` | medic job on / off for the selection (the original's `medic` toggle: idle characters with a kit treat hurt squad mates by themselves) |
+| `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
 | `L` | the selection rests (sits down; **no binding in the original**); any move order or `R` ends it |
 
 | Input | Effect |
@@ -131,8 +135,10 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 | Ctrl + right click on a knocked-out or dead character | the nearest selected character picks it up (`PickUpOrder`); on a body a selected character carries, puts it down (`PutDownOrder`) |
 | right click on one of the player's own downed characters with nothing to bandage | picks it up (as the original's quick right click; with something to bandage it is first aid, as above) |
 | Alt + right click on a knocked-out or dead character | the nearest selected character takes all that fits from its inventory and backpack (`LootOrder`; no window) |
+| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its pockets open in the container window beside the inventory: items are dragged out of it or into it (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
+| an item dragged out of the inventory window and let go over the world | dropped on the ground 3 units ahead of the character (`DropInventoryItem`; worn gear too, not locked-on items or fitted limbs; engine choice, the original's drop rule is **Unknown**) |
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
-| `J` | rescue job on / off for the selection (the original's `rescue`, NUM8) |
+| `J` | Rescue for the selection (the original's NUM8): each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
 
 ### Movement marker
@@ -174,7 +180,7 @@ hit with no walkable point sets `invalidmove` (`FUN_140800250`). Which other hov
 
 Meitou (`PlayerInterface.Pointer.cs`, engine choices): the window's own cursor is hidden and the pointer drawn last in the frame (not in
 screenshots or cinema takes). It follows the quick right-click order, so it never disagrees with the click: with a selection, over a
-trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
+trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
 `lift`, Alt `search`; otherwise, over the interface, the settings panel or the loading screen, `arrow`. The free camera hides it (as mode 0's
 `invisible`). Interface → Hardware mouse (`HardwareMouse` in meitou.user.json, default off as the game's `hardware_mouse`; settings.cfg is
 not read) shows the Windows cursor instead, applied at once.
@@ -205,8 +211,13 @@ Rendering details: [objects](../render-objects.md#building-sign-highlight).
 Meitou only (Advanced → Hover outline, `HoverOutline`, default on; the game has none). The character under the cursor is drawn alone into a
 mask (colour pass, live pose, picture levels, own depth planes round it) right after the portraits, then after the tone map an outline
 (about 2.5 px at 1080p, 60 % strength fading outward) is blended round the silhouette, through walls, and its visible part tinted at 11 %, visible meaning its
-linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (only for a faction hostile to the player's; a neutral one is white although a right click attacks it), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Off in the free camera, with the interface hidden and in
+linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (only for a faction hostile to the player's; a neutral one is white although a right click attacks it), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Holding the Highlight key (Alt, which also lights up signs) outlines the same way every character (the squad's too, people and animals) within 500 units of the camera's focus, each in the colour hovering it would give (own hurt green, downed or carried blue, trader or someone to talk to gold, hostile red, else white; all white with no selection); one mask per colour, overlapping outline rectangles joined. Off in the free camera, with the interface hidden and in
 screenshots and cinema takes. Not in the Shift+F1 switch list (a game setting, like Attackers per target).
+
+### Selection rings
+
+Each selected character gets a green ground ring (radius 1.6, kept on the water surface for swimmers), hidden in the character editor.
+Advanced → Selection rings (`SelectionRings`, default on) turns them off.
 
 ### Building picking and selection
 
@@ -280,7 +291,7 @@ in order (task numbers are [ai-tasks](ai-tasks.md) taskTypes):
 - No order while every selected character is unconscious ("Your selected character is unconscious", `FUN_1407f6f50`).
 - Holding the command button 0.2 s on the same target opens the context menu instead (`FUN_1407a6bc0`). It opens on the press, without the
   hold, for a building whose function is 8 (BF_CAGE), or 22 (BF_DOOR) whose (first) door is locked and not the player's faction's, unless
-  `DAT_142133449` is set (**Unknown** what it is).
+  `DAT_142133449` (Shift held, [ai-tasks.md](ai-tasks.md)) is set.
 
 **Selection** (`FUN_1407f9000`, `FUN_1407f7f20`, **Observed**). A building does not join the squad selection (+0x208): it goes into the one
 object slot +0x248 (saved as `selected_gui_object`, [save](../formats/save.md)) that also holds an inspected character of another faction.
@@ -302,15 +313,42 @@ prism over the convex hull of the record's collision shapes (`BuildingFootprints
 selectable over its whole hull and there are no interior floors. The character selection stays. The HUD panels show the building as in
 [ui-screens](ui-screens.md#selected-building) (the simulation publishes the selected building's doors, `InspectBuildingCommand`); no outline
 is drawn (as the original). Selecting or inspecting a character clears it, Shift
-included (the original keeps the slot); a site that disappears clears it. Not built: a house's first-door focus, the select sound, the
+included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). Not built: a house's first-door focus, the
 building windows, the Dismantle / pause / door buttons in the panel (the right-click menu has them), the For sale line, the Door and Building
-Condition bars, hover pointers over world buildings, and quick right-click orders on them.
+Condition bars, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
+centre, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
+walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
+and a walk there).
+
+### Edit boxes and keyboard focus
+
+**Verified** against the MyGUI 3.2.2 source (tag `MyGUI3.2.2`: `EditBox`, `InputManager`, `Button`, `TextIterator`; MIT). Kenshi's own `MyGUI.log` says "MyGUI version 3.2.3" (**Observed**; upstream has no 3.2.3 tag, so the 3.2.2 source is the nearest public one and any difference is **Unknown**).
+- A mouse press gives key focus to the nearest widget that needs it; there is no traversal: `InputManager` handles no Tab or arrows, `Button` has no key handling and no key-focus state.
+- **Static** boxes ignore every key. **ReadOnly** boxes take focus, selection and copy (Cut copies only); typing, Backspace, Delete, Enter and Paste do nothing. **Password** boxes copy and cut nothing but paste.
+- Keys (Windows/Linux table; the Apple build uses Meta): Left/Right one character with **no** Ctrl word jump (3.2.2 has none; later versions do); Home/End line start/end, with Ctrl text start/end; Up/Down/PageUp/PageDown
+  move by lines, so in a single-line box to the start or end; Shift extends the selection; Backspace/Delete erase the selection else one character; Enter adds a line in a multi-line box (Ctrl+Enter accepts) and accepts in any other
+  (the `eventEditSelectAccept`); Ctrl+A select all, Ctrl+C / Ctrl+Insert copy, Ctrl+X / Shift+Delete cut, Ctrl+V / Shift+Insert paste, Ctrl+Z undo, Ctrl+Y redo (Shift is not looked at). With Ctrl held a key never types.
+  Escape drops the key focus; Tab types a tab only with `TabPrinting`.
+- Copy with no selection clears MyGUI's clipboard entry. Typed text and pastes delete the selection first, then insert; a box already at `MaxTextLength` (default 2048) rejects the insert, else the text is cut back from the end
+  (`OverflowToTheLeft`: from the start, **Observed**: read from function names). `TextIterator`: CR+LF is one break, and a box that is not multi-line (nor word-wrapped) turns each break into a space; tabs and other controls pass through.
+- Undo keeps 128 steps. A keystroke is one step; deleting a selection and inserting is one step; edits, pastes and cuts clear the redo steps, undo and copy do not; `setText` and a mode change clear both.
+- **Observed** (grep of the installed `data/gui/layout`): `MaxTextLength` is set once (the character editor's `NameText`, 30), `Password` only `false`, `ReadOnly` `true` on 7 boxes (descriptions, the message log), `OverflowToTheLeft` only in the interior-mode layout.
+
+Meitou (`UiTextBuffer`, `MyGuiScreenHost.Keyboard.cs`, `PlayerInterface.Keyboard.cs`; the shortcuts above are all implemented, Ctrl on every system): the clipboard is the window's system clipboard (Silk keyboard `ClipboardText`; the boxes keep their own
+without one); an empty Copy leaves it alone; pasted tabs become spaces and other control characters are dropped; the host gives a box its `MaxTextLength`, else 2048 (`UiTextBuffer` alone defaults to 512); the history is a stack of text
+and caret snapshots with MyGUI's step rules. Read-only boxes can be focused by a click (caret at the end; Ctrl+A, Ctrl+C), take only edit keys, so Tab, Enter and the hotkeys work as without a focus; Esc still closes the window. Ctrl+C / Ctrl+V reach the free camera's code only
+when no box is focused. Not built: caret placing and selecting with the pointer, a password mask (no layout turns it on), `OverflowToTheLeft`, `TabPrinting`, pixel-exact Up/Down in wrapped multi-line boxes (they move by `\n` lines); a focused wrapped box (the read-only descriptions and message log) draws its caret and selection as one unwrapped line, so Ctrl+A shows a bar on the first line only.
+
+**Button traversal (Meitou only)**: Tab / Shift+Tab walk the top window's editable boxes and its enabled, visible buttons (not close/pin, scroll bar parts, tab headers or list rows) in layout order; the first Tab goes to the first edit box, else the first
+button. Buttons are reached on modal windows and on windows with an editable box; any other window leaves Tab to change-squad. Enter presses the focused button (else the `DefaultAction` button), Space too; the press runs as a click on the button's middle. A click or a
+new window ends it (Esc is unchanged). Look: the Meitou UI mode draws a 2 px `brass-light` ring offset 2 ([meitou-ui](../meitou-ui.md)); the Faithful mode draws nothing (the original has no key-focus look: **Unknown**, `Button` has no such state), so the focus is invisible there.
+The settings panel and the native Meitou UI have their own keyboard focus ([native-ui](../native-ui.md)).
 
 ### Debug menu
 
 Meitou only (no original counterpart). F10 (`ToggleDebugMenu`, rebindable) opens a cheat list; while open it takes every key (Up/Down, typing, Enter, Esc).
 Rows send `DebugCommand`s, applied in the next tick's Inputs phase: teleport the selection to the camera target, spawn a character record there
-(own squad, first faction hostile to the player), give an item record (`name x5`) to the first selected, add or remove money (signed number),
+(own squad, first faction hostile to the player), give an item record (`name x5 q80`; quality 0-100: armour's quality, crossbows' and limbs' level, a weapon the `PLAYER_WEAPONS` model of the highest level at or below it (else the lowest) and that level; what does not fit drops at their feet) to the first selected, add or remove money (signed number),
 heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage. Heal, stats and damage fall back to the inspected character. Names match a record's string id,
 its exact name, else the shortest name containing the text. Replaces the game's F10 key list (the viewer keeps its own).
 
@@ -320,7 +358,7 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 - What exactly the version-below-1 branch of the controls loader does with its action set.
 - Identity of the widget behind FUN_1406e1fd0 (GUI+0x20) and of PlayerInterface+0x2f0, which gate most game events.
 - Which window event 7 toggles (taken to be Tutorials); targets of events 1 and 2 inferred from the action names.
-- Building selection: the meaning of slot 107 (+0x198) and `FUN_14004a0cf` in the loot branch, `DAT_142133449`, the lockpick tooltip text,
+- Building selection: the meaning of slot 107 (+0x198) and `FUN_14004a0cf` in the loot branch, the lockpick tooltip text,
   whether the renderer marks the selected building, and what clears the selection when the building is destroyed.
 - Press versus release timing of the command button, and the exact rotation marker condition.
 - Whether a held, steering right click shows it again each order.

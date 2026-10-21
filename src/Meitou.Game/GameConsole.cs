@@ -4,7 +4,7 @@ using System.Text;
 namespace Meitou.Game;
 
 /// <summary>
-/// meitou.exe is a windowed (GUI subsystem) program, so starting it opens no console window. Its output always goes to log.txt
+/// MeitouClient.exe is a windowed (GUI subsystem) program, so starting it opens no console window. Its output always goes to log.txt
 /// next to the exe (<see cref="GameLog"/>); run from a terminal it also writes into that terminal. The one question it may ask
 /// (the Kenshi folder) opens a console of its own for as long as it takes.
 /// </summary>

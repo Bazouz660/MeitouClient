@@ -80,6 +80,8 @@ public sealed partial class PopulationSystem
         var plan = new SquadPlan(template ?? new SquadTemplate { Id = start.Id, Name = start.Name }, first, [], []);
         var built = new BuiltSquad(plan, at, data.PlayerFaction, members);
         var squad = SpawnSquad(world, built, null, radius, player: true);
+        // The first player squad reads like its platoon, the faction's name and 0 ("Nameless_0", docs/game/ui-screens.md "Squad tabs").
+        squad.Name = $"{(data.Factions[data.PlayerFaction].Name is { Length: > 0 } f ? f : "Nameless")}_0";
         world.Player.Faction = data.PlayerFaction;
         world.Player.Money = start.Money;
         world.Research.Set(data.Db, Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch(data.Db, start));

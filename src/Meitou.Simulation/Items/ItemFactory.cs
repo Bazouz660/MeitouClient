@@ -38,7 +38,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             Record = info.Id,
             Name = info.Name,
             Type = info.Type,
-            EquipmentSection = info.Type == FcsRecordType.ARMOUR && Db.Find(info.Id) is { } armour ? SectionOf(armour) : "",
+            EquipmentSection = info.Type is FcsRecordType.ARMOUR or FcsRecordType.ITEM && Db.Find(info.Id) is { } worn ? SectionOf(worn) : "",
             IsLocked = info.Type == FcsRecordType.ARMOUR && Db.Find(info.Id) is { } locked && locked.GetBool("is locked"),
             Lock = info.Type == FcsRecordType.ARMOUR && Db.Find(info.Id) is { } shackles && shackles.GetBool("is locked")
                 ? new Locks.LockState { Level = Math.Clamp(shackles.Ints.GetValueOrDefault("lock level"), 0, 100), Hardness = shackles.Floats.GetValueOrDefault("hardness"), Locked = true }
@@ -119,8 +119,11 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
         inventory.Items.Add(item);
     }
 
-    /// <summary>The section a worn ARMOUR goes to by its <c>slot</c> (the save's section names).</summary>
-    static string SectionOf(GameRecord armour) => (Meitou.Data.Characters.AttachSlot)armour.GetInt("slot") switch
+    /// <summary>
+    /// The section a worn ARMOUR goes to by its <c>slot</c> (the save's section names); an ITEM only to <c>belt</c>, the slot of the two lanterns (the only ITEMs with slot 14 in the
+    /// merged data, docs/formats/lights.md "Carried lanterns").
+    /// </summary>
+    static string SectionOf(GameRecord worn) => worn.Type == FcsRecordType.ITEM && worn.GetInt("slot") != (int)Meitou.Data.Characters.AttachSlot.Belt ? "" : (Meitou.Data.Characters.AttachSlot)worn.GetInt("slot") switch
     {
         Meitou.Data.Characters.AttachSlot.Shirt => "shirt",
         Meitou.Data.Characters.AttachSlot.Hat => "head",

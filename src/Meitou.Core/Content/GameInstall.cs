@@ -108,27 +108,48 @@ public sealed class GameInstall
     /// Writes <c>meitou.local.json</c> with <paramref name="root"/> into <paramref name="directory"/>, so <see cref="Locate"/> finds the
     /// install next time (a release's first start asks for the folder and keeps it this way).
     /// </summary>
-    public static void SaveLocalConfig(string directory, string root) =>
-        File.WriteAllText(Path.Combine(directory, LocalConfigFile),
-            JsonSerializer.Serialize(new Dictionary<string, string> { ["kenshiPath"] = Path.GetFullPath(root) }, new JsonSerializerOptions { WriteIndented = true }));
+    public static void SaveLocalConfig(string directory, string root)
+    {
+        // Written by hand, not JsonSerializer: the launcher is Native AOT, where reflection-based serialization is unavailable.
+        using var file = File.Create(Path.Combine(directory, LocalConfigFile));
+        using var json = new Utf8JsonWriter(file, new JsonWriterOptions { Indented = true });
+        json.WriteStartObject();
+        json.WriteString("kenshiPath", Path.GetFullPath(root));
+        json.WriteEndObject();
+    }
 
     /// <summary>
-    /// The Steam libraries on this machine: Steam's own folder (<c>SteamPath</c> in the user's registry) and every <c>"path"</c> in its
-    /// <c>steamapps/libraryfolders.vdf</c>. Empty off Windows or without Steam.
+    /// The Steam libraries on this machine: Steam's own folder (<c>SteamPath</c> in the user's registry on Windows; <c>~/.local/share/Steam</c>,
+    /// <c>~/.steam/steam</c> or the Flatpak one on Linux) and every <c>"path"</c> in its <c>steamapps/libraryfolders.vdf</c>. Empty without Steam.
     /// </summary>
     static IEnumerable<string> SteamLibraries()
     {
-        if (!OperatingSystem.IsWindows()) yield break;
-        string? steam;
-        try { steam = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string; }
-        catch (Exception e) when (e is System.Security.SecurityException or IOException or UnauthorizedAccessException) { steam = null; }
-        if (string.IsNullOrEmpty(steam)) yield break;
-        yield return steam;
-        string text;
-        try { text = File.ReadAllText(Path.Combine(steam, "steamapps", "libraryfolders.vdf")); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { yield break; }
-        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text, "\"path\"\\s+\"([^\"]+)\""))
-            yield return m.Groups[1].Value.Replace(@"\\", @"\");
+        foreach (var steam in SteamFolders())
+        {
+            yield return steam;
+            string text;
+            try { text = File.ReadAllText(Path.Combine(steam, "steamapps", "libraryfolders.vdf")); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text, "\"path\"\\s+\"([^\"]+)\""))
+                yield return m.Groups[1].Value.Replace(@"\\", @"\");
+        }
+    }
+
+    static IEnumerable<string> SteamFolders()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            string? steam;
+            try { steam = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string; }
+            catch (Exception e) when (e is System.Security.SecurityException or IOException or UnauthorizedAccessException) { steam = null; }
+            if (!string.IsNullOrEmpty(steam)) yield return steam;
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            foreach (var relative in new[] { ".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam" })
+                if (Directory.Exists(Path.Combine(home, relative))) yield return Path.Combine(home, relative);
+        }
     }
 
     static string? ReadLocalConfig(string file)

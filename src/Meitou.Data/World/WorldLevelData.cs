@@ -68,9 +68,9 @@ public sealed class WorldLevelData
                     world.Zones[zone] = db = new GameDatabase();
                 world.Apply(db, path, layer, zone);
             }
-            var level = Path.Combine(layer.Directory, LevelFileName);
+            var level = GameFiles.Resolve(Path.Combine(layer.Directory, LevelFileName));
             if (File.Exists(level)) world.Apply(world.Level, level, layer);
-            var interiors = Path.Combine(layer.Directory, InteriorsFileName);
+            var interiors = GameFiles.Resolve(Path.Combine(layer.Directory, InteriorsFileName));
             if (world.Interiors is not null && File.Exists(interiors)) world.Apply(world.Interiors, interiors, layer);
         }
         return world;

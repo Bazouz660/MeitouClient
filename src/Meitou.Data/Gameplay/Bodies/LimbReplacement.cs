@@ -3,8 +3,8 @@ namespace Meitou.Data.Gameplay.Bodies;
 /// <summary>
 /// A LIMB_REPLACEMENT record: a prosthetic limb (docs/game/character-stats.md "Limb replacements and robots", <b>Verified</b>, 28 base records).
 /// Each multiplier is stored twice, <c>X mult</c> at the lowest quality and <c>X mult 1</c> at the highest, and the item's quality grade
-/// interpolates by t = the item's <c>level</c> x 0.01 (the Gear quality fraction, not the save's <c>quality</c> float; <b>Observed</b>, docs/game/character-stats.md
-/// "Limb replacements and robots"). Every method takes t directly; <see cref="SlotOf"/> names a slot's section.
+/// interpolates by the item's <c>level</c> (t = level x 0.01, not the save's <c>quality</c> float): HP, unarmed bonus and swimming linearly, the skill
+/// multipliers by <see cref="GradeCurve"/>. Every method takes t; <see cref="SlotOf"/> names a slot's section.
 /// </summary>
 public sealed record LimbReplacement
 {
@@ -55,23 +55,39 @@ public sealed record LimbReplacement
     /// <summary>The part's base HP with this limb fitted at quality <paramref name="t"/> (replaces the race's base HP for that slot).</summary>
     public float Hp(float t) => Lerp(HpLow, HpHigh, t);
 
-    public float UnarmedDamageBonus(float t) => Lerp(UnarmedDamageBonusLow, UnarmedDamageBonusHigh, t);
+    /// <summary>The unarmed damage bonus at quality <paramref name="t"/>, truncated to an int as the original stores it.</summary>
+    public int UnarmedDamageBonus(float t) => (int)Lerp(UnarmedDamageBonusLow, UnarmedDamageBonusHigh, t);
 
     /// <summary>
-    /// The multiplier this limb applies to a stat (1 when it has none, <c>FUN_1400cd780</c>): strength, dexterity, thieving and lockpicking
-    /// (the same field), crossbows, athletics, stealth and swimming.
+    /// The multiplier this limb applies to a stat (1 when it has none, <c>FUN_1400cd780</c>): swimming lerps by <paramref name="t"/> like HP; strength,
+    /// dexterity, thieving and lockpicking (the same field), crossbows, athletics and stealth follow <see cref="GradeCurve"/> of the level round(t x 100).
     /// </summary>
-    public float Multiplier(StatsEnumerated stat, float t) => stat switch
+    public float Multiplier(StatsEnumerated stat, float t)
     {
-        StatsEnumerated.Strength => Lerp(StrengthLow, StrengthHigh, t),
-        StatsEnumerated.Dexterity => Lerp(DexterityLow, DexterityHigh, t),
-        StatsEnumerated.Thieving or StatsEnumerated.Lockpicking => Lerp(ThieveryLow, ThieveryHigh, t),
-        StatsEnumerated.Crossbows => Lerp(RangedLow, RangedHigh, t),
-        StatsEnumerated.Athletics => Lerp(AthleticsLow, AthleticsHigh, t),
-        StatsEnumerated.Stealth => Lerp(StealthLow, StealthHigh, t),
-        StatsEnumerated.Swimming => Lerp(SwimmingLow, SwimmingHigh, t),
-        _ => 1,
-    };
+        int level = (int)MathF.Round(t * 100);
+        return stat switch
+        {
+            StatsEnumerated.Strength => GradeCurve(level, StrengthLow, StrengthHigh),
+            StatsEnumerated.Dexterity => GradeCurve(level, DexterityLow, DexterityHigh),
+            StatsEnumerated.Thieving or StatsEnumerated.Lockpicking => GradeCurve(level, ThieveryLow, ThieveryHigh),
+            StatsEnumerated.Crossbows => GradeCurve(level, RangedLow, RangedHigh),
+            StatsEnumerated.Athletics => GradeCurve(level, AthleticsLow, AthleticsHigh),
+            StatsEnumerated.Stealth => GradeCurve(level, StealthLow, StealthHigh),
+            StatsEnumerated.Swimming => Lerp(SwimmingLow, SwimmingHigh, t),
+            _ => 1,
+        };
+    }
+
+    /// <summary>
+    /// A skill multiplier at item level <paramref name="level"/> (<c>FUN_1400cd500</c>, docs/game/character-stats.md "Limb replacements and robots", <b>Verified</b>):
+    /// a field that turns a penalty into a bonus (low &lt; 1 &lt;= high) is 1 at level 40, rising from low at level 5 and on to high at 95; any other lerps by level x 0.01.
+    /// </summary>
+    public static float GradeCurve(int level, float low, float high)
+    {
+        if (low < 1 && high >= 1)
+            return level >= 40 ? Lerp(1, high, (level - 40) / 55f) : Lerp(low, 1, (level - 5) / 35f);
+        return low + (high - low) * (level * 0.01f);
+    }
 
     static float Lerp(float a, float b, float t) => a + (b - a) * Math.Clamp(t, 0, 1);
 

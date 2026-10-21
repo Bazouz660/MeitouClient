@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Meitou launcher: installs game releases from GitHub, edits the mod list (data/mods.cfg) and starts the game. docs/launcher.md. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>meitou-launcher</AssemblyName>
+    <RootNamespace>Meitou.Launcher</RootNamespace>
+    <Version>1.0.1</Version>
+    <ApplicationIcon>../../assets/branding/meitou.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Published as one Native AOT executable: the native libraries are embedded (below, NativeLibraries.cs), symbols stay out. -->
+    <PublishAot>true</PublishAot>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="../../assets/branding/meitou.ico" Link="Assets/meitou.ico" />
+    <AvaloniaResource Include="../../assets/branding/meitou-64.png" Link="Assets/meitou-64.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Meitou.Core\Meitou.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Markdig" Version="1.4.2" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+  <!-- On publish, the runtime's native libraries (Skia, HarfBuzz, ANGLE) go into the executable as native/<file> resources instead of next to it. -->
+  <Target Name="EmbedNativeLibraries" AfterTargets="ResolvePackageAssets" Condition="'$(_IsPublishing)' == 'true' and '$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <EmbeddedResource Include="@(NativeCopyLocalItems)" Condition="'%(Extension)' != '.pdb' and '%(Extension)' != '.dbg'" LogicalName="native/%(Filename)%(Extension)" WithCulture="false" Type="Non-Resx" />
+    </ItemGroup>
+  </Target>
+  <Target Name="UnpublishNativeLibraries" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(_IsPublishing)' == 'true' and '$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.AssetType)' == 'native' or '%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

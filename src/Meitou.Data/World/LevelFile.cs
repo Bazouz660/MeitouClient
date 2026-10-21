@@ -38,7 +38,7 @@ public sealed class LevelFile
 
     public bool IsLegacy => Format < 15;
 
-    public static LevelFile ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static LevelFile ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     public static LevelFile Read(byte[] bytes)
     {

@@ -26,7 +26,7 @@ public static class DdsReader
     const uint Dx10MiscTextureCube = 0x4;
     const int Dx10DimensionTexture3D = 4;
 
-    public static DdsFile ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static DdsFile ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     /// <summary>Parses the headers and lays out every surface. Throws <see cref="DdsFormatException"/> on bad or unsupported data.</summary>
     public static DdsFile Read(byte[] data) => Parse(data.AsSpan(), data.Length, data);

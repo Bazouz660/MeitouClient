@@ -61,12 +61,14 @@ public static class SaveLoader
         int playerIndex = playerFaction is not null && data.FactionIndex(playerFaction.Id) is var pi and >= 0 ? pi : data.PlayerFaction;
         world.Player.Faction = playerIndex;
         world.Player.Money = camera.PlayerMoney;
+        world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
         LoadTownKnowledge(save, data, world.Player);
         LoadUniques(camera.Record, data, world.Uniques);
 
         // Building locks and doors are taken from the zones when their town registers; held characters name their bed or cage by building instance.
         var buildingStates = HeldSave.BuildingStates(save);
         world.Fixtures.Saved = buildingStates;
+        world.Fixtures.Items = data.Items;
         var instanceOf = new Dictionary<Meitou.Data.Fcs.FcsRecord, string>(ReferenceEqualityComparer.Instance);
         foreach (var (instance, record) in buildingStates) instanceOf[record] = instance;
         var handles = save.BuildHandles();
@@ -115,6 +117,12 @@ public static class SaveLoader
         foreach (var h in selected)
             if (!h.IsNull && handles.Character(h) is { } c && bySource.TryGetValue(c, out var id) && !world.Player.Selection.Contains(id))
                 world.Player.Selection.Add(id);
+        // The squad bar shows the selected character's squad, else the first in order with members.
+        if (world.Player.Selection.Count > 0 && world.Characters.Cold(world.Player.Selection[0].Slot) is { } first && world.Squads.Find(first.SquadId) is { PlatoonId: < 0 } shown
+            && shown.Faction == playerIndex)
+            world.Player.Squad = shown.Id;
+        else if (SquadManagement.PlayerSquads(world) is { Count: > 0 } squads)
+            world.Player.Squad = (squads.FirstOrDefault(s => s.Members.Count > 0) ?? squads[0]).Id;
         return loaded;
     }
 
@@ -188,7 +196,10 @@ public static class SaveLoader
         {
             Id = world.Squads.NextId(),
             TemplateId = platoon.SquadTemplate,
-            Name = platoon.Name,
+            // The record's name is what the squad tabs show (a renamed squad's, the original's `platoon->+0x78->+0x18`, Observed); its string id names the file.
+            Name = platoon.Record.Name is { Length: > 0 } shown ? shown : platoon.Name,
+            Index = platoon.Record.Ints.GetValueOrDefault("squad index"),
+            SaveName = platoon.Name,
             Faction = playerIndex,
             Position = platoon.Position,
             HomeCentre = new Vector2(platoon.Position.X, platoon.Position.Z),

@@ -40,11 +40,13 @@ sealed partial class GameHost
         if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
         if (scene.Database is not { } database || NewGameStart.Find(NewGameStart.LoadAll(database), id) is not { } chosen) return;
         StandardSystemSet? built = null;
+        var nextDifficulty = player.NewGameOptions;
+        var nextData = nextDifficulty.Apply(popData!);
         AudioGameStarts();
         StartSceneLoad(player.TitleOpen,
             Stage("build", () =>
             {
-                built = BuildSystems(interactive: true);
+                built = BuildSystems(interactive: true, nextData, nextDifficulty);
                 var at = chosen.StartPosition;
                 if (!chosen.ForceStartPos)
                     foreach (var link in chosen.Towns)
@@ -56,6 +58,7 @@ sealed partial class GameHost
                 Squad? spawned = null;
                 try { session.ReplaceWorld(built!.Systems, world => spawned = built.Population!.StartPlayer(world, chosen)); }
                 catch (Exception e) { Console.Error.WriteLine($"new game  {e}"); throw new SceneLoadFailed($"New game failed: {e.Message}"); }
+                popData = nextData; difficulty = nextDifficulty;
                 population = built.Population; aggro = built.Aggro; playerSquad = spawned;
                 if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
                 loadedSave = null; preparedBase = null; worldEpoch++;

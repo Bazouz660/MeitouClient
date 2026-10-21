@@ -3,7 +3,7 @@ using Meitou.Simulation;
 
 namespace Meitou.Navigation;
 
-/// <summary>Who is asking for a path: the footprint radius (clearance is 2 × radius across every portal) and what the ground costs them.</summary>
+/// <summary>Who is asking for a path: the footprint radius (a portal must leave the radius clear at each end on a wall) and what the ground costs them.</summary>
 public sealed record NavAgent
 {
     /// <summary>RACE <c>pathfind footprint radius</c> × the size factor (humans 4, Garru 7, Leviathan 40).</summary>
@@ -19,7 +19,7 @@ public sealed record NavAgent
 }
 
 /// <summary>
-/// Path queries over a <see cref="NavWorld"/>: A* over the polygons with a portal-width clearance of 2 × radius, the water cost factor and the door
+/// Path queries over a <see cref="NavWorld"/>: A* over the polygons with a portal clearance of the radius per wall end, the water cost factor and the door
 /// rules, then string pulling with the portals pulled in by the radius (docs/game/pathfinding.md, "Path queries" and "What our builder needs").
 /// </summary>
 public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
@@ -136,9 +136,10 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             if (!target.Kept[to.Polygon]) return;
             byte area = target.Areas[to.Polygon];
             if (area == NavArea.Door && (agent.DoorsClosed || IsDoorClosed(target, to.Polygon))) return;
-            if (!Portal(from.Ref, edge, to, out var left, out var right)) return;
+            if (!Portal(from.Ref, edge, to, out var left, out var right, out bool leftWall, out bool rightWall)) return;
+            // Only an end on a wall takes the radius off the portal (as Pull insets it); a tile-border, seam or area-change end has walkable ground beyond.
             float width = Vector2.Distance(new(left.X, left.Z), new(right.X, right.Z));
-            if (width < 2 * agent.Radius) return;
+            if (width < ((leftWall ? 1 : 0) + (rightWall ? 1 : 0)) * agent.Radius) return;
             var mid = BestCrossing(from.Position, left, right, goalPoint);
             float g = from.G + Vector3.Distance(from.Position, mid) * factor;
             if (area == NavArea.Door) g += OpenDoorCost;
@@ -211,7 +212,24 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             float score = Vector3.Distance(mid, (b0 + b1) * 0.5f);
             if (score < bestDistance) { bestDistance = score; bestEdge = k; }
         }
-        if (bestEdge < 0) return true; // no facing edge found (a degenerate stitch): the whole edge
+        if (bestEdge < 0)
+        {
+            // A near-miss seam (docs/game/pathfinding.md, "Inner seams"): the facing edge strays off the line, so take the overlap with a looser gap.
+            for (int k = 0; k < pb.Length; k++)
+            {
+                var b0 = mb.Vertices[pb[k]];
+                var b1 = mb.Vertices[pb[(k + 1) % pb.Length]];
+                if (!NavGeometry.FacingOverlap(a0, a1, b0, b1, NavGeometry.NearMissGap + 0.5f, out float lo, out float hi, out _, out _)) continue;
+                float score = Vector3.Distance(mid, (b0 + b1) * 0.5f);
+                if (score >= bestDistance) continue;
+                bestDistance = score;
+                right = Vector3.Lerp(a0, a1, lo);
+                left = Vector3.Lerp(a0, a1, hi);
+                leftWall = hi < 1 - 1e-4f ? mb.IsWallVertex(pb[k]) : ma.IsWallVertex(pa[(edge + 1) % pa.Length]);
+                rightWall = lo > 1e-4f ? mb.IsWallVertex(pb[(k + 1) % pb.Length]) : ma.IsWallVertex(pa[edge]);
+            }
+            return true; // with no facing edge at all (a degenerate stitch): the whole edge
+        }
         {
             var b0 = mb.Vertices[pb[bestEdge]];
             var b1 = mb.Vertices[pb[(bestEdge + 1) % pb.Length]];

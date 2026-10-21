@@ -210,7 +210,7 @@ no path re-running the initial resident placement was found (**Unknown** whether
   outside 0..5 an error box). `default resident`: the town's, else (no override) the faction's. `bar squads`: the
   faction's (TownType 2 only, no override) then the town's; with override the town's only.
 - **When**: at zone populate (`FUN_140a0e760`) per non-player town, the zone's buildings sorted by handle serial (random-looking).
-- **Candidates**: buildings of the town with an `interior` reference, not player-owned, holding no residents template
+- **Candidates**: buildings of the town ([membership](../formats/zones.md#town-membership)) with an `interior` reference, not player-owned, holding no residents template
   or the default one; walls (`links together`, a vfunc override) never, gates (`is wall gate`) only for entries naming
   `building`s. Level data agrees: 1946 walls, none with a resident.
 - **Driver** (`FUN_1409370d0`): re-owns the buildings to the town's faction; priority 5 down to 0, each entry with count
@@ -272,10 +272,25 @@ no path re-running the initial resident placement was found (**Unknown** whether
 - **Town wipe** (**Observed**, `TownPopulationManager::vfunc_4`): roaming `pop` ≤ 3, ≤ 25 roaming living and no intact resident platoon
   sets `ded`.
 - **Nests** (`NestPopulationManager::vfunc_4`): pool 2 starts at 0.7 × `nest resident population` and grows as above. While the nest's
-  zone is loaded it spawns one squad per tick (weight `max(0, v0 − existing) × faction wealth`, size within the free budget) unless a
+  zone is loaded it spawns one squad per tick (weight `max(0, v0 − existing) × faction wealth`; an entry passes when its size fits the free budget `floor(pop2)` − living, or
+  the pool is empty and more than 4 are free, so a squad bigger than the budget can open a nest: `FUN_1408f7e80`, **Verified** by code) unless a
   player-faction unit is within 1250. With no candidate and no intact squad the nest is `ded` ("wiped out", game hour stored as `tod`,
   **Observed**) and never spawns again. New nests come only from the area tick, up to `num nests` per biome group; whether a dead nest
   frees its count is **Unknown**.
+- **Homeless squads** (area tick `FUN_1408f9240`, every 2 s, per island): the island's load (sum over its loaded sectors of counted +
+  0.5 × imprisoned/dead, clamped to [0, 2] for a sector by a town) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
+  amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved by a town,
+  (w + 1) × 2 when empty, and one squad is made there (`FUN_1408f8060`) if its count is below P × amount, retrying other sectors when that
+  fails. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a town (the template
+  faction's nearest unless any town is 9216 nearer, none beyond 50000); what it is used for is **Unknown** (saved homeless platoons have
+  no `basetown`/`hometown`, [save.md](../formats/save.md)).
+- **Patrol task** (`Task_Patrol`, loaded; **Verified** by code unless marked): its start sets the platoon's patrol state (+0x1e8, made
+  once with the template's `patrol approaches towns`) to loaded mode 1 / unloaded job 2 (PATROL_SHORTRANGE), then orders a move to the
+  state's point. The point (`FUN_1408fc730`): a coin flip takes the four diagonal or the four straight neighbouring sectors of the same
+  biome group, one drawn by a weight `FUN_1408f5ad0` (**Unknown**, its decompile is broken); with `patrol approaches towns` and towns in
+  it, each player town enters at even odds with weight 1 and each other town at 1 in 4 with weight 0.2, and a drawn town is the target;
+  else a placed spot in that sector (`FUN_1408f50d0`); with no neighbour, `FUN_1408fc1a0` picks another sector of the group. Off screen a
+  new point is picked within 500 of the last (`FUN_1407ee790`); the loaded re-pick rule is **Unknown** (Meitou uses the same 500).
 - **Traders**: restocked only while active, when the clock passes the platoon's `inventory refresh time`; an unloaded one catches up at
   its first active tick.
 - **Prisoners** (**Observed**): frozen with their platoon; sentences are absolute timestamps and release is a loaded AI task.
@@ -407,7 +422,7 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 | `Global population multiplier` | 1 | P in 6.2 |
 | `npc range` | settings.cfg value | relevance range, see [game-loop.md](game-loop.md) |
 | `raidFrequencyMult` / `raidSizeMult` (`settings.cfg`; options "Town raid events: frequency" 0.25-3, "size" 0.25-4) | 1 | campaign roll chance; required men = int(`num forces` × size) ([campaigns](#campaigns)) |
-| CONSTANTS `max squads` / `max squad size` / `max faction size` | 10 / 20 / 30 | stored by the constants loader (`FUN_14086b2b0`); **the code that enforces them was not found**, but the Squads tab shows "Maximum number of squads reached." ([ui-screens.md](ui-screens.md#flow-and-data)), so the squad cap is at least checked in the UI (**Observed**) |
+| CONSTANTS `max squads` / `max squad size` / `max faction size` | 10 / 20 / 30 | stored by the constants loader (`FUN_14086b2b0`; the squad screen reads them as `DAT_142133f4c` / `DAT_142133f48`); enforced by the squads screen (ADD SQUAD, portrait drops, [ui-screens.md](ui-screens.md#squads-tab)) and recruiting ([dialogue.md](dialogue.md)) (**Observed**) |
 | area tick | 2 s scaled | 6.2 |
 | min distance of a homeless spawn from the player | 1382.4 | 6.2 |
 
@@ -424,7 +439,6 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 - Unique characters: the `Character +0x279 & 7` gate and the 0.1 roll against a town list at platoon unload, platoon +0xac, the unit of
   `replacement time` (constant 2618.18 from `FUN_14066cd50`), UNIQUE_SQUAD_TEMPLATE `persistent` use and `missions` (DIPLOMATIC_ASSAULTS),
   the polarity of the import handle test; other readers of `unique` (`FUN_14067b070` dialogue conditions, `FUN_1407609e0` / `FUN_140761550`) not opened.
-- Who enforces CONSTANTS `max squads`, `max squad size`, `max faction size`.
 - Which override town wins among several qualifying candidates; what exactly repopulating a town from its override does.
 - Whether the 1250 radius of the proximity helper is squared.
 - Patrol routes: the patrol tasks (`Task_Patrol`, `Task_PatrolTown`, `GoOutOnPatrol*`) were not decoded here (class mapping: [ai-tasks.md](ai-tasks.md#tasktype-to-task-class); packages: [ai.md](ai.md#signal-functions-and-the-package-classes)); no fixed route data

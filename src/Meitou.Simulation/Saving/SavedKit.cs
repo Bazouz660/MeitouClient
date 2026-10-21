@@ -150,6 +150,8 @@ public static class SavedKit
                 loadout.Clothing.Add(new LoadoutItem(record) { Quality = (int)s.Quality, Material = Find(s.MaterialId) });
             else if (s.Section == "backpack_attach")
                 loadout.Backpack = new LoadoutItem(record) { Quality = (int)s.Quality };
+            else if (s.Section == "belt" && record.Type == FcsRecordType.ITEM)
+                loadout.Carried.Add(new LoadoutItem(record));
             else if (s.Section is "hip" or "back" && record.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW)
             {
                 var weapon = new LoadoutWeapon(record) { Section = s.Section, Row = s.Y, Level = s.Level, Manufacturer = Find(s.CompanyId), Model = Find(s.MaterialId) };

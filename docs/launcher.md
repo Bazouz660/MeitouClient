@@ -1,0 +1,138 @@
+# Launcher
+
+`launcher/Meitou.Launcher` (Avalonia, `meitou-launcher`): installs game releases from GitHub, edits the mod list like Kenshi's own
+launcher, keeps mod presets and starts the game. Styled after the Meitou UI kit ([meitou-ui](meitou-ui.md)) with its own title bar; Exo 2
+is read from the Kenshi install, nothing is shipped. Mods come only from disk (`mods/` and downloaded workshop
+items); the launcher never downloads or hosts mods.
+
+## Releases
+
+- One repository, two tag families: the game `v<version>` (`release.yml`), the launcher `launcher-v<version>`
+  (`launcher-release.yml`, changelog `launcher/CHANGELOG.md`). A full launcher release is marked Latest and game releases never
+  are, so `/releases/latest` (README's link) is the newest launcher; README's
+  setup links are `/releases/latest/download/<name>`, so the Setup/AppImage/pkg names must stay free of the version. Full releases of both pass
+  `--notes-start-tag` with the previous tag of their own family, so the generated notes never span the other family's tag.
+- Nightlies: `release.yml` also runs daily (02:00 UTC, or by hand with `nightly`) and publishes `v<X.Y.Z+1>-nightly.<yyyymmdd>`
+  (patch after the newest full release) as a pre-release without a changelog section; its notes list every
+  commit since the newest game tag (GitHub's generated notes cover only merged pull requests, so nightlies don't use them). It is skipped when nothing
+  outside `news/`, `site/`, `launcher/` and their workflows changed since the newest game tag (nightly or full). Only the newest 7
+  nightlies are kept, so the releases page and the launcher's Versions list stay short. Each nightly's commit list is posted to Discord
+  through the `DISCORD_WEBHOOK_URL` repo secret (a channel webhook), when set. The launcher shows them with the Nightly builds checkbox beside Play ticked ("Play latest nightly"; ticking it asks first, with Yes under the pointer, warning of crashes and corrupted saves) (GitHub pre-releases; `IncludePrereleases` in `launcher.json`).
+- Game assets: `Meitou-<version>-<rid>.zip`, `<rid>` as .NET's `RuntimeInformation.RuntimeIdentifier` (`win-x64`, `linux-x64`,
+  `osx-x64`, `osx-arm64`). A release with no zip for the machine's RID is listed but not installable.
+- The list comes from the REST API without a token (60 requests an hour per IP). Every page is read (`per_page=100`, until a short page),
+  cached together with page 1's ETag in `releases-cache.json`; an unchanged page 1 is a 304 that costs no quota and keeps the cache. Downloads use the asset URLs, which don't count
+  against the quota.
+- A download is checked against the asset's `digest` (`sha256:<hex>`) when GitHub lists one. The zip's single top folder becomes
+  `versions/<version>/`. The game is `MeitouClient[.exe]` since 0.15 (`meitou[.exe]` before; the launcher takes either); on Unix
+  it gets its execute bits. Cancelling a download removes the partial zip and unpacked folder.
+
+## One executable (Native AOT)
+
+- `dotnet publish -r <rid>` gives a single Native AOT `meitou-launcher[.exe]` (`PublishAot`, ~45 MB on win-x64, **Verified**
+  2026-10-20) and nothing else: no symbols, no native libraries beside it. `Meitou.Core` is `IsAotCompatible`, so code it or the
+  launcher adds that AOT can't compile (reflection `JsonSerializer`, for one) fails the build; JSON goes through `LauncherJson`.
+- Avalonia's native libraries (`libSkiaSharp`, `libHarfBuzzSharp`, on Windows ANGLE's `av_libglesv2`, on macOS
+  `libAvaloniaNative`) can't be linked in, so the publish embeds them as `native/<file>` resources. `NativeLibraries.Load` (right
+  after Velopack's hooks) writes them once to `native/<16 hex of their SHA-256>/` in the data folder, loads them by full path and
+  points SkiaSharp's, HarfBuzzSharp's and Avalonia.Native's P/Invokes at them; ANGLE is then found by name as an already loaded
+  module (Windows only: macOS dyld doesn't match a bare name to a loaded library, issue #16). Other `native/*` folders are deleted when not in use.
+  Debug builds embed nothing and load them from beside the executable.
+- Statically linked Skia/ANGLE (third-party prebuilt packages, win-x64 only) would avoid the extraction; not used, so all four
+  RIDs share one mechanism on the official binaries.
+- Building it locally needs the platform's native toolchain: the MSVC C++ build tools on Windows (with `vswhere.exe` on `PATH`),
+  `clang` and `zlib1g-dev` on Linux, Xcode on macOS.
+
+## Self-update (Velopack)
+
+- `launcher-release.yml` packs the launcher with `vpk pack` (Velopack, MIT; `vpk` version = the `Velopack` package version) on each
+  runtime's own OS, one channel per RID (`--channel <rid>`, packId `MeitouLauncher`): Windows `-Setup.exe` + `-Portable.zip`,
+  Linux an AppImage, macOS a bundle and installer (Mac-only tooling, unsigned). Every file name carries its channel
+  (**Verified** for win-x64: `MeitouLauncher-<v>-win-x64-full.nupkg`, `releases.win-x64.json`, `assets.win-x64.json`,
+  `RELEASES-win-x64`), so all four go on one `launcher-v<version>` release; the job fails on a name clash.
+- `Program.Main` calls `VelopackApp.Build().Run()` first. `LauncherUpdater` uses `ExplicitChannel = <rid>` and a `GithubSource`
+  whose `GetReleases` returns only `launcher-v*` releases from the launcher's own cached list. Velopack's stock listing reads just
+  the newest 10 releases (`per_page=10`, page 1; **Verified** in its source 2026-10-19), which game releases would crowd out;
+  its `GitBase` merges the feed of every release given and skips releases without one.
+- Checked each time the release list loads (startup). Installed by Setup or AppImage (`UpdateManager.IsInstalled`): the title bar
+  and Settings offer "Update launcher to <v>" / "Update to <v>", which download, apply and restart. Run from anywhere else (a build,
+  a copied folder): the same buttons open the newest `launcher-v*` release page.
+- **Unknown**: the update path end to end (1.0.1 → 1.0.2 is the first real one).
+
+## Game zips per runtime
+
+`release.yml` runs `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
+both osx RIDs on macOS) and attaches all four zips to the one `v<version>` release. Each zip has a single top folder
+`Meitou-<version>-<rid>/` with the game (named by `Meitou.Game`'s `AssemblyName`), `meitou-viewer` and the self-contained .NET runtime. Unix zips are made with
+`zip(1)` (execute bits kept), macOS binaries and dylibs are ad-hoc signed, runtime debug symbols (`*.dbg`, ~250 MB) are dropped.
+
+Native dependencies off Windows:
+- Bundled from NuGet runtimes (**Verified** in the linux-x64 publish output): `libopenal.so`/`.dylib` (OpenAL Soft 1.23.1),
+  `libglfw.so.3`/`.3.dylib` (GLFW 3.4), `libshaderc_shared`.
+- Only in the win-x64 zip: DLSS/Streamline 2.14.16 (`sl.*.dll`, `nvngx_dlss.dll`, `NvLowLatencyVk.dll`) and FSR (`amd_fidelityfx_vk.dll`),
+  copied from the vendor SDK zips by `package-release.ps1`; both load via `NativeLibrary.TryLoad` and report a reason when missing. `FsrUpscaler` also loads the Vulkan loader by name (`vulkan-1.dll`, `libvulkan.1.dylib` on macOS).
+- Linux: the Vulkan loader (`libvulkan.so.1`) and driver come from the system, as do X11/Wayland and the OpenAL backend
+  (PipeWire/PulseAudio/ALSA). **Verified** (KDE on Wayland and X11, RTX 3070 Laptop with the NVIDIA driver, GLFW 3.4): the game starts, loads a large save, renders and plays with sound; other distributions, AMD and Intel GPUs were not run. Case-sensitive file systems need `GameFiles.Resolve` for paths from game data.
+- macOS: no Vulkan loader or MoltenVK is bundled (no `Silk.NET.MoltenVK.Native` reference); the user installs them
+  (Homebrew or the LunarG SDK). Runs on Apple Silicon, see [macos-port](macos-port.md). Browser downloads get
+  Gatekeeper's quarantine flag (no Apple signing or notarisation).
+- Kenshi's Steam folder is found only on Windows (`GameInstall`); elsewhere it comes from `KENSHI_PATH` or the console prompt.
+
+## Files
+
+The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
+folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets) and is the game's working directory.
+The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
+versions. The game gets the Kenshi folder through `KENSHI_PATH`.
+
+`versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
+is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing
+the install folder there or in Settings moves the installed versions (copied, then deleted, across drives).
+
+## Graphics
+
+The Graphics page (`GraphicsPage.cs`, `GameSettings.cs`) shows the settings the version Play starts lists in its
+`settings-schema.json` (`SettingsSchema`, Meitou.Core) and edits the data folder's `meitou.user.json` as a JSON tree, keeping every
+key it does not show. The game writes the schema (`--settings-schema <file>`, `LauncherSchema.cs`; `package-release.ps1` runs it
+for every zip) from the names it saves under: top-level `UserConfig` properties in camelCase (`fullScreen`, `vSync`, `fpsLimit`) and
+Tab panel sliders under `graphics` by label (`WorldFrame.*Slider`), with names and hints from the in-game menu. So a renamed or new
+setting reaches the launcher with its release; the launcher knows none of them. A version without a schema (older), or with a newer
+`format`, gets no page.
+
+- A missing `graphics` key is the game's default for the mode ("Game default"); Default removes it, Reset graphics removes `graphics`
+  (sliders and Faithful / Meitou switches). A top-level Default writes the schema's `default`. Whole values are written as integers.
+- Read-only when the file is unreadable, or its `version` differs from the schema's `settingsVersion` (another layout: the keys may
+  mean something else). Warnings: the game is running (it writes the file on exit), `--low-end` (the game ignores `graphics`).
+
+`meitou.user.json` layout (`UserConfig`; **Verified** by loading crafted files through the built game 2026-10-20):
+- `version` (no key: 1) is raised when a key is renamed, retyped or reinterpreted; `UserConfig.Migrate` converts older files step by
+  step, moving a renamed key only where the new one is missing. A slider whose numbering changes takes a new label instead
+  (`UpscalerSliders`). A newer file keeps its `version` and its unknown top-level keys (`[JsonExtensionData]`) when an older release saves.
+- A value of the wrong type is dropped by its JSON path and takes its default; the rest stay. Unparsable JSON gives all defaults.
+  Either way the file is first copied to `meitou.user.<yyyyMMdd-HHmmss>.bak.json`.
+
+## Mod list
+
+`ModList` (Meitou.Core) holds the discovery and `mods.cfg` rules shared with `LoadOrder`
+([overview](formats/overview.md#load-order)):
+
+- Shown as the original launcher shows it: enabled mods in `mods.cfg` order first, then the rest after their header dependencies.
+  Mods in a dependency cycle are kept at the end, where the original drops them. Mods not in `__mods.list` are new and start enabled.
+- Saving (Save, Play) writes `mods.cfg` (enabled `<name>.mod`, list order, CRLF) and `__mods.list` (every listed name, plus old
+  names not on disk). These are the files the original game reads, so the mod list applies to it too.
+- A preset is a named, ordered list of names with enabled flags. Applying one reorders the list. Mods the preset doesn't name go
+  to the end, disabled, and mods it names that aren't on disk are reported. Applying doesn't save.
+- A mod folder with `RE_Kenshi.json` is marked as a plugin mod whose DLLs Meitou ignores ([RE_Kenshi](formats/rekenshi.md)).
+
+## News
+
+The Home page shows the repository's `news/` folder (format in `news/README.md`): one folder per article,
+`<yyyy-mm-dd>-<slug>/index.md` with an optional front matter block (`title`, `date`, `author`, `image`) and its pictures beside it, newest
+20 first. `news/` is listed through the contents API on `master` (one call, cached with its ETag in `news-cache/`); each
+`index.md` downloads from raw.githubusercontent.com and is kept by its folder's tree hash, images by URL, so the page works
+offline. Relative image and link paths resolve against the article's folder; a folder without `index.md` is skipped.
+Debug builds run from a checkout read its own `news/` from disk instead (found above the executable next to `MeitouClient.slnx`),
+to preview posts before they are pushed; the header then says "Debug: local news/". Markdown is parsed by Markdig and drawn
+by `MarkdownView` (headings, paragraphs, emphasis, code, links, lists, quotes, code blocks, rules, images); raw HTML is dropped
+and links open only for http(s).

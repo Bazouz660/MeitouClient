@@ -29,6 +29,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     readonly ObjProg colourProg, solidProg, depthProg;   // the colour, the colour without a discard (EarlyDepth) and the depth (shadow caster) programs, native
     readonly WorldTextureCache textureCache;
     readonly MaterialResolver resolver;
+    /// <summary>Finds the textures of a mesh's parts (the <see cref="DebrisRenderer"/> shares it).</summary>
+    public MaterialResolver Resolver => resolver;
     readonly UploadQueue uploads = new();
     readonly ObjectMeshCache meshes;
     readonly ObjectStreamer streamer;
@@ -354,6 +356,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         get => streamer.Ahead;
         set { if (value is not null && streamer.Ahead is null) lastMark = 0; streamer.Ahead = value; }
     }
+
+    /// <summary>Points kept loaded besides the eye's (<see cref="ObjectStreamer.Kept"/>).</summary>
+    public IReadOnlyList<Vector3> Kept { get => streamer.Kept; set => streamer.Kept = value; }
 
     public void Update(Vector3 eye) => Update(eye, BudgetMs);
 
@@ -735,6 +740,12 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         }
         return best;
     }
+
+    /// <summary>
+    /// The GroundType a character at <paramref name="feet"/> stands on when the floor under it is a building's: its <c>interior material</c> when <paramref name="inside"/> (the
+    /// character is in a building), else its <c>exterior material</c>; -1 when the ground is not a building's or its floors are still being made (docs/audio.md "Surface").
+    /// </summary>
+    public int FloorMaterialUnder(Vector3 feet, bool inside) => objects.Floors.MaterialUnder(feet, inside);
 
     /// <summary>The loaded mask of a building or one of its layout objects (building id / item id).</summary>
     internal InteriorVolume? InteriorFor(string placementId)
@@ -1433,6 +1444,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public void Dispose()
     {
         if (ObjectLodGen.Built + ObjectLodGen.Cached > 0) Console.WriteLine($"object lods  {ObjectLodGen.Built} meshes generated ({System.Diagnostics.Stopwatch.GetElapsedTime(0, ObjectLodGen.BuildTicks).TotalSeconds:0.0} s of worker time), {ObjectLodGen.Cached} read from the cache, {ObjectLodGen.Skipped} too small or not eligible");
+        DisposeBuildingIcons();
         colourProg.Dispose();
         solidProg.Dispose();
         depthProg.Dispose();

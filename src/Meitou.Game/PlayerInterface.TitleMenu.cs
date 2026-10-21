@@ -16,6 +16,20 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
+    /// <summary>
+    /// An upper-case button or title (<c>NEW GAME</c>, <c>YES</c>) in the active language: the catalog's message of the same text (<c>CONTINUE</c> is one), else of its
+    /// capitalised form (<c>New game</c>) in upper case. Text that is not a message is unchanged.
+    /// </summary>
+    internal static string UpperTr(string upper)
+    {
+        if (!Loc.Translating || upper.Length == 0) return upper;
+        string exact = Loc.Tr(upper);
+        if (exact != upper) return exact;
+        string plain = char.ToUpperInvariant(upper[0]) + upper[1..].ToLowerInvariant();
+        string translated = Loc.Tr(plain);
+        return translated == plain ? upper : translated.ToUpperInvariant();
+    }
+
     const string MenuCard = "meitou:menu:card", MenuCardHover = "meitou:menu:card-hover", MenuPlate = "meitou:menu:plate", MenuPlateHover = "meitou:menu:plate-hover:v2",
         MenuChip = "meitou:menu:chip", MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
     /// <summary>The kit's numbers at 1600×900.</summary>
@@ -96,7 +110,7 @@ sealed partial class PlayerInterface
                 var (squad, line, meta) = ContinueText();
                 art.Add(Image("MeitouMenuChip", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), MenuChip));
                 art.Add(Text("MeitouMenuChipLetter", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), squad.Length > 0 ? squad[..1].ToUpperInvariant() : "?", 22, InkMain, "Center"));
-                art.Add(Text("MeitouMenuContinue", new(b.X + 76 * s, b.Y + 11 * s, b.Width - 140 * s, 26 * s), "CONTINUE", 22, InkPaper));
+                art.Add(Text("MeitouMenuContinue", new(b.X + 76 * s, b.Y + 11 * s, b.Width - 140 * s, 26 * s), UpperTr("CONTINUE"), 22, InkPaper));
                 art.Add(Image("MeitouMenuKey", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), MenuKey));
                 art.Add(Text("MeitouMenuKeyText", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), "ENTER", 10, InkLight, "Center"));
                 art.Add(Text("MeitouMenuSaveLine", new(b.X + 76 * s, b.Y + 37 * s, b.Width - 92 * s, 16 * s), line, 12, InkPaper));
@@ -115,7 +129,7 @@ sealed partial class PlayerInterface
             art.Add(Image("MeitouMenuIcon" + index, new(iconX, iconY, icon.Width * fit, icon.Height * fit), "Kenshi_UI.png",
                 FormattableString.Invariant($"{icon.X} {icon.Y} {icon.Width} {icon.Height}"), FormattableString.Invariant($"1 1 1 {0.8f + 0.2f * hoverAmount}")));
             var ink = !c.Enabled ? Hex(119, 119, 119) : Vector4.Lerp(InkMain, c.Name == "ExitButton" ? InkDanger : InkLight, hoverAmount);
-            art.Add(Text("MeitouMenuLabel" + index, new(b.X + 48 * s, b.Y, b.Width - 60 * s, b.Height), caption, 14, ink));
+            art.Add(Text("MeitouMenuLabel" + index, new(b.X + 48 * s, b.Y, b.Width - 60 * s, b.Height), UpperTr(caption), 14, ink));
             controls[i] = Hollow(c);
         }
         // Drawn first: the buttons themselves are only hit targets now.

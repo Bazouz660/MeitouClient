@@ -1,12 +1,13 @@
 using System.Numerics;
+using Meitou.Rendering.Characters;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
 
 namespace Meitou.Rendering;
 
 /// <summary>
-/// The hover outline (Meitou only, docs/game/ui-input.md "Hover outline"): the character under the mouse, drawn alone into a mask
-/// (<see cref="Characters.CharacterRenderer.DrawHoverMask"/>), is outlined in <see cref="Colour"/> and its visible part tinted in it, over the finished picture.
+/// The hover outline (Meitou only, docs/game/ui-input.md "Hover outline"): the character under the mouse (and, with Alt held, those
+/// near), drawn alone into masks (<see cref="CharacterRenderer.DrawHoverMasks"/>), are outlined in their colours and their visible parts tinted in them, over the finished picture.
 /// The outline shows through walls; the tint only where the scene's depth does not cover the character.
 /// </summary>
 public sealed class HoverOutlineRenderer
@@ -67,9 +68,6 @@ public sealed class HoverOutlineRenderer
     readonly UniformHandle depthScale, maskPlanes, scenePlanes, colour, radius;
     readonly SamplerSlot mask, maskDepth, sceneDepth;
 
-    /// <summary>The outline's and tint's colour (alpha: their strength), set by the game for what a right click would do.</summary>
-    public Vector4 Colour { get; set; } = new(0.95f, 0.92f, 0.8f, 1);
-
     public HoverOutlineRenderer(GpuContext gpu)
     {
         this.gpu = gpu;
@@ -86,43 +84,74 @@ public sealed class HoverOutlineRenderer
     }
 
     /// <summary>
-    /// Blends the outline of <paramref name="hover"/>'s mask over <paramref name="picture"/> (<paramref name="width"/> × <paramref name="height"/>), only inside the
-    /// character's projected bounding sphere (<paramref name="viewProjection"/>, unjittered) widened by the outline. <paramref name="nearDepth"/> is the scene's near slice
-    /// (<paramref name="sceneNear"/>..<paramref name="sceneFar"/>), <paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used.
+    /// Blends the outline of each of <paramref name="masks"/> over <paramref name="picture"/> (<paramref name="width"/> × <paramref name="height"/>) in its tint, only
+    /// inside its characters' projected bounding spheres (<paramref name="viewProjection"/>, unjittered) widened by the outline, the overlapping ones joined so no pixel
+    /// is blended twice. <paramref name="nearDepth"/> is the scene's near slice (<paramref name="sceneNear"/>..<paramref name="sceneFar"/>), <paramref name="renderWidth"/>
+    /// × <paramref name="renderHeight"/> of it used.
     /// </summary>
-    internal void Record(GpuTexture picture, int width, int height, (GpuTexture Colour, GpuTexture Depth, float Near, float Far, Vector3 Centre, float Radius) hover,
+    internal void Record(GpuTexture picture, int width, int height, IReadOnlyList<HoverMask> masks,
         GpuTexture nearDepth, int renderWidth, int renderHeight, float sceneNear, float sceneFar, Matrix4x4 viewProjection)
     {
         int outline = Math.Clamp((int)MathF.Round(2.5f * height / 1080f), 1, 6);
-        if (Bounds(hover.Centre, hover.Radius, viewProjection, width, height, outline + 1) is not { } scissor) return;
-        var cmd = gpu.BeginNative("hover outline");
-        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
-        var over = PassTargets.Of(picture, null).At(viewport, scissor);
-        cmd.BeginRendering(over.Rendering);
         var nearest = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-        program.Bind(mask, new SampledTexture(nearest, hover.Colour.View()));
-        program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View()));
-        program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View()));
-        program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
-        program.Set(maskPlanes, hover.Near, hover.Far);
-        program.Set(scenePlanes, sceneNear, sceneFar);
-        program.Set(colour, Colour.X, Colour.Y, Colour.Z, Colour.W);
-        program.Set(radius, outline);
-        var state = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha));
-        state.Record(cmd, over);
-        cmd.BindPipeline(segment.Get(state, over.Formats, null));
-        program.Flush(cmd);
-        cmd.Draw(3);
-        cmd.EndRendering();
-        gpu.EndNative(cmd);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
+        foreach (var hover in masks)
+        {
+            var rects = new List<PixelRect>();
+            foreach (var (centre, sphereRadius) in hover.Spheres)
+                if (Bounds(centre, sphereRadius, viewProjection, width, height, outline + 1) is { } r) rects.Add(r);
+            Join(rects, height);
+            foreach (var scissor in rects)
+            {
+                var cmd = gpu.BeginNative("hover outline");
+                var over = PassTargets.Of(picture, null).At(viewport, scissor);
+                cmd.BeginRendering(over.Rendering);
+                program.Bind(mask, new SampledTexture(nearest, hover.Colour.View()));
+                program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View()));
+                program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View()));
+                program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
+                program.Set(maskPlanes, hover.Near, hover.Far);
+                program.Set(scenePlanes, sceneNear, sceneFar);
+                program.Set(colour, hover.Tint.X, hover.Tint.Y, hover.Tint.Z, hover.Tint.W);
+                program.Set(radius, outline);
+                var state = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha));
+                state.Record(cmd, over);
+                cmd.BindPipeline(segment.Get(state, over.Formats, null));
+                program.Flush(cmd);
+                cmd.Draw(3);
+                cmd.EndRendering();
+                gpu.EndNative(cmd);
+            }
+        }
+    }
+
+    /// <summary>Replaces overlapping rectangles by their bounding rectangle until none overlap.</summary>
+    static void Join(List<PixelRect> rects, int height)
+    {
+        for (bool joined = true; joined;)
+        {
+            joined = false;
+            for (int i = 0; i < rects.Count && !joined; i++)
+                for (int j = i + 1; j < rects.Count && !joined; j++)
+                {
+                    var (a, b) = (rects[i], rects[j]);
+                    int left = Math.Min(a.X, b.X), right = Math.Max(a.X + (int)a.Width, b.X + (int)b.Width);
+                    int bottom = Math.Min(a.Y, b.Y), top = Math.Max(a.Y + (int)a.Height, b.Y + (int)b.Height);
+                    if (a.X >= b.X + (int)b.Width || b.X >= a.X + (int)a.Width ||
+                        a.Y >= b.Y + (int)b.Height || b.Y >= a.Y + (int)a.Height) continue;
+                    rects[i] = new PixelRect(left, bottom, (uint)(right - left), (uint)(top - bottom));
+                    rects.RemoveAt(j);
+                    joined = true;
+                }
+        }
     }
 
     /// <summary>
     /// The scissor round the sphere's projection, <paramref name="pad"/> pixels wider, in the picture's attachment rows (the UI's top-left rectangle turned
     /// as the overlay turns it); the whole picture when the sphere reaches behind the eye, null when it is off screen.
     /// </summary>
-    static PixelRect? Bounds(Vector3 centre, float radius, Matrix4x4 viewProjection, int width, int height, int pad)
+    internal static PixelRect? Bounds(Vector3 centre, float radius, Matrix4x4 viewProjection, int width, int height, int pad)
     {
         float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
         for (int corner = 0; corner < 8; corner++)

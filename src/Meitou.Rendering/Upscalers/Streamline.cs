@@ -17,7 +17,7 @@ namespace Meitou.Rendering.Upscalers;
 public sealed unsafe class Streamline : IDisposable
 {
     public const string InterposerName = "sl.interposer.dll";
-    const ulong SdkVersion = (2UL << 48) | (14UL << 32) | (1UL << 16) | 0xfedc;   // Streamline 2.14.1 (sl_version.h)
+    const ulong SdkVersion = (2UL << 48) | (14UL << 32) | (16UL << 16) | 0xfedc;  // Streamline 2.14.16 (sl_version.h)
     const uint FeatureDlss = 0;
     // Struct identities (sl_struct.h: a GUID and a version on every structure).
     internal static readonly Guid PreferencesType = new("1ca10965-bf8e-432b-8da1-6716d879fb14"), RequirementsType = new("66714097-ac6d-4bc6-8915-1e0f55a6b61f"),

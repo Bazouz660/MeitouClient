@@ -72,6 +72,7 @@ public sealed partial class World : IDisposable
     readonly List<SystemPhases> phases = [];
     readonly List<SimCommand> deferred = [];
     readonly List<string> messages = [];
+    readonly Dictionary<CharacterId, (string Text, long Until)> barks = [];
     IAnimationSource? animations;
     IProjectileSource? projectiles;
     Trading.ITradeSource? trades;
@@ -268,6 +269,15 @@ public sealed partial class World : IDisposable
     public void Post(string message)
     {
         lock (messages) messages.Add(message);
+    }
+
+    /// <summary>
+    /// A short line said over <paramref name="speaker"/>'s head outside dialogue (an order refused: "I don't have a medkit."); serial phases only. Shown as a medium speech bubble
+    /// for 2 + 0.12 x its length seconds, the ambient bubbles' time. Display only: not saved or hashed.
+    /// </summary>
+    public void Bark(CharacterId speaker, string text)
+    {
+        barks[speaker] = (text, Tick + (long)MathF.Ceiling((2 + 0.12f * text.Length) / TickSeconds));
     }
 
     /// <summary>Takes the messages posted since the last call (the host, between ticks).</summary>

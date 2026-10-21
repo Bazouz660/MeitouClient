@@ -17,7 +17,7 @@ sealed partial class GameHost
 {
     enum DebugRow { Teleport, SpawnNpc, GiveItem, Money, Heal, MaxSkills, Damage }
 
-    static readonly string[] DebugLabels = ["Teleport selected here", "Spawn NPC (hostile)", "Give item (name x5)", "Money (+/- cats)", "Heal", "Max out skills", "Damage (cut)"];
+    static readonly string[] DebugLabels = ["Teleport selected here", "Spawn NPC (hostile)", "Give item (name x5 q80)", "Money (+/- cats)", "Heal", "Max out skills", "Damage (cut)"];
     readonly string[] debugFields = ["", "", "", "1000", "", "", "20"];
     readonly Dictionary<(bool Character, string Text), (string Id, string Name)?> debugMatches = [];
     bool debugMenuOpen;
@@ -63,10 +63,12 @@ sealed partial class GameHost
                 return $"spawned {npc.Name} at {here.X:0}, {here.Z:0}";
             case DebugRow.GiveItem:
                 if (selected.Length == 0) return "select a character first";
-                var (name, quantity) = DebugItemField(field);
+                var (name, quantity, quality) = DebugItemField(field);
                 if (DebugRecord(name, character: false) is not { } item) return $"no item record matches '{name}'";
-                world.Commands.Enqueue(new DebugGiveItem(selected[0], item.Id, quantity) { Tick = tick });
-                return $"gave {quantity} x {item.Name}";
+                world.Commands.Enqueue(new DebugGiveItem(selected[0], item.Id, quantity, quality) { Tick = tick });
+                if (scene.Database is { } db && db.Find(item.Id)?.Type == Meitou.Data.Fcs.FcsRecordType.WEAPON && DebugGiveItem.Grade(db, quality) is { } grade)
+                    return $"gave {quantity} x {grade.Name} {item.Name} (level {grade.Level})";
+                return $"gave {quantity} x {item.Name}{(DebugHasQuality(item.Id) ? $" (quality {quality})" : "")}";
             case DebugRow.Money:
                 if (!long.TryParse(field, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long delta)) return "money: a whole number, e.g. 500 or -500";
                 world.Commands.Enqueue(new DebugMoney(delta) { Tick = tick });
@@ -88,13 +90,20 @@ sealed partial class GameHost
         return "";
     }
 
-    /// <summary>"Hiver Beer x5": the name and the quantity (1 without one, at most 1000).</summary>
-    static (string Name, int Quantity) DebugItemField(string field)
+    /// <summary>"Katana x5 q80": the name, the quantity (1 without one, at most 1000) and the quality (0 without one, 0 to 100); the suffixes in either order.</summary>
+    static (string Name, int Quantity, int Quality) DebugItemField(string field)
     {
-        var m = Regex.Match(field, @"^(.*?)\s+[x*]\s*(\d+)$", RegexOptions.IgnoreCase);
-        if (!m.Success) return (field, 1);
-        return (m.Groups[1].Value, int.TryParse(m.Groups[2].Value, CultureInfo.InvariantCulture, out int n) ? Math.Clamp(n, 1, 1000) : 1);
+        int quantity = 1, quality = 0;
+        for (Match m; (m = Regex.Match(field, @"^(.*?)\s+([x*q])\s*(\d+)$", RegexOptions.IgnoreCase)).Success; field = m.Groups[1].Value)
+        {
+            int n = int.TryParse(m.Groups[3].Value, CultureInfo.InvariantCulture, out int v) ? v : 0;
+            if (m.Groups[2].Value is "q" or "Q") quality = Math.Clamp(n, 0, 100);
+            else quantity = Math.Clamp(n, 1, 1000);
+        }
+        return (field, quantity, quality);
     }
+
+    bool DebugHasQuality(string record) => scene.Database?.Find(record) is { } r && DebugGiveItem.QualityTypes.Contains(r.Type);
 
     /// <summary>The character (or item) record a typed name means: its string id, the name exactly, else the shortest name containing it (ignoring case).</summary>
     (string Id, string Name)? DebugRecord(string text, bool character)

@@ -1,3 +1,4 @@
+using Meitou.Content;
 using Meitou.Data.Fcs;
 using Meitou.Data.Ogre;
 
@@ -661,12 +662,12 @@ public sealed class AnimationLengths
     static string? SkeletonFile(string installRoot, string fcsMesh)
     {
         if (fcsMesh.Length == 0) return null;
-        var mesh = Path.Combine(installRoot, fcsMesh.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
+        var mesh = GameFiles.Resolve(Path.Combine(installRoot, fcsMesh.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar)));
         try
         {
             if (!File.Exists(mesh)) return null;
             if (OgreMeshReader.ReadFile(mesh).SkeletonName is not { Length: > 0 } name) return null;
-            var beside = Path.Combine(Path.GetDirectoryName(mesh)!, name);
+            var beside = GameFiles.Resolve(Path.Combine(Path.GetDirectoryName(mesh)!, name));
             if (File.Exists(beside)) return beside;
             return Directory.EnumerateFiles(Path.Combine(installRoot, "data"), Path.GetFileName(name), SearchOption.AllDirectories).Order(StringComparer.Ordinal).FirstOrDefault();
         }

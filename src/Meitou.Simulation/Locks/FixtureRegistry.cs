@@ -43,6 +43,16 @@ public sealed class FixtureRegistry
     long cagingsTick = -1;
     IDoorGate? doors;
 
+    IReadOnlyList<ContainerSpot>? containerSpots;
+
+    /// <summary>Where the containers with an inventory stand, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
+    public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position))];
+
+    IReadOnlyList<DoorPick>? doorPicks;
+
+    /// <summary>Every door, for the host's picking (<see cref="PublishedDoors"/> leaves closed unlocked town doors out); rebuilt (serial phases) only when a building registers or goes.</summary>
+    public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position))];
+
     public int Count => all.Count;
     /// <summary>Every fixture, in registration order.</summary>
     public IReadOnlyList<Fixture> All => all;
@@ -58,12 +68,16 @@ public sealed class FixtureRegistry
         set
         {
             doors = value;
+            doorPicks = null;
             foreach (var b in buildings) SyncDoors(b);
         }
     }
 
     /// <summary>The GAMESTATE_BUILDING records of a loaded save by building instance id (<see cref="Saving.SaveLoader"/>): a building registered later takes its lock and door state from them.</summary>
     public IReadOnlyDictionary<string, FcsRecord>? Saved { get; set; }
+
+    /// <summary>The item factory a loaded save's container contents are made with (<see cref="ContainerSave"/>); set by the loader.</summary>
+    public Meitou.Simulation.Items.ItemFactory? Items { get; set; }
 
     // ------------------------------------------------------------------ registration
 
@@ -90,8 +104,8 @@ public sealed class FixtureRegistry
             if (Lockable(db, record) is { } own) list.Add(Make(world, db, own, b.Key, b.Key, record, site, owner, faction, b.Position, b.Yaw));
         }
         foreach (var f in b.Fixtures)
-            if (db.Find(f.RecordId) is { } item && Lockable(db, item) is { } kind)
-                list.Add(Make(world, db, kind, f.Id, b.Key, item, site, owner, faction, f.Position, f.Yaw));
+            if (db.Find(f.RecordId) is { } item && (Lockable(db, item) ?? (f.StorageWidth > 0 && f.StorageHeight > 0 ? FixtureKind.Container : null)) is { } kind)
+                list.Add(Make(world, db, kind, f.Id, b.Key, item, site, owner, faction, f.Position, f.Yaw, f.StorageWidth, f.StorageHeight));
         int bed = 0;
         foreach (var spot in b.Spots)
         {
@@ -107,6 +121,8 @@ public sealed class FixtureRegistry
         byBuilding[b.Key] = list;
         buildings.Add(b.Key);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
+        containerSpots = null;
+        doorPicks = null;
         if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(state, b.Key, list);
         SyncDoors(b.Key);
     }
@@ -142,6 +158,8 @@ public sealed class FixtureRegistry
         byBuilding[site.Id] = list;
         buildings.Add(site.Id);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
+        containerSpots = null;
+        doorPicks = null;
         if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(state, site.Id, list);
         SyncDoors(site.Id);
     }
@@ -152,6 +170,8 @@ public sealed class FixtureRegistry
         if (!byBuilding.Remove(buildingInstance, out var list)) return;
         buildings.Remove(buildingInstance);
         foreach (var f in list) { all.Remove(f); byId.Remove(f.Id); }
+        containerSpots = null;
+        doorPicks = null;
         initialApplied.Remove(buildingInstance);
         doors?.SetDoorsBlocked(buildingInstance, false);
     }
@@ -162,14 +182,16 @@ public sealed class FixtureRegistry
         return record.GetBool("has lock") ? FixtureKind.Container : null;
     }
 
-    Fixture Make(World world, GameDatabase db, FixtureKind kind, string id, string building, GameRecord record, int site, int owner, FactionData? faction, Vector3 at, float yaw)
+    Fixture Make(World world, GameDatabase db, FixtureKind kind, string id, string building, GameRecord record, int site, int owner, FactionData? faction, Vector3 at, float yaw, int storageWidth = 0, int storageHeight = 0)
     {
         var functionality = TownBuildings.FunctionOf(db, record, functions);
+        bool locked = kind != FixtureKind.Container || record.GetBool("has lock");
         return new Fixture
         {
             Id = id, Building = building, Kind = kind, RecordId = record.StringId, Site = site, Owner = owner, Position = at, Yaw = yaw,
             Restrains = functionality?.GetBool("restrains movement") ?? false, UseRange = functionality is null ? 25 : FloatOf(functionality, "use range", 25),
-            Lock = new LockState { Level = RollLevel(world.Seed, id, faction, IntOf(record, "lock level bonus"), door: false), Hardness = FloatOf(record, "hardness") },
+            Contents = kind == FixtureKind.Container && storageWidth > 0 && storageHeight > 0 ? new Meitou.Simulation.Items.Inventory(storageWidth, storageHeight) : null,
+            Lock = !locked ? null : new LockState { Level = RollLevel(world.Seed, id, faction, IntOf(record, "lock level bonus"), door: false), Hardness = FloatOf(record, "hardness") },
         };
     }
 
@@ -534,7 +556,7 @@ public sealed class FixtureRegistry
         Clear(c);
         c.Escaped = false;
         SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406add20, FUN_1406ae170)
-        if (c.IsPlayer) world.Post($"{c.Name} has been released from prison.");
+        if (c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
         return true;
     }
 
@@ -587,13 +609,30 @@ public sealed class FixtureRegistry
     /// </summary>
     public static void Enslave(World world, CharacterCold c, int owner) => SetSlave(world, c, 1, owner);
 
+    /// <summary><c>DA_TAG_ESCAPED_SLAVE</c> (25): the character becomes an escaped slave (state 2), keeping its owner (<c>FUN_140680560</c>).</summary>
+    public static void TagEscaped(World world, CharacterCold c) => SetSlave(world, c, 2, c.SlaveOwner);
+
+    /// <summary>
+    /// <c>DA_REMOVE_SLAVE_STATUS</c> (53, <c>FUN_140680560</c>): a character in shackles or slave state is freed with "Free!" (the original floats it in green over the head) and
+    /// <c>Character_Unlock_Success</c>; its slave state is cleared and its worn shackles unlocked.
+    /// </summary>
+    public static void FreeSlave(World world, int slot, CharacterCold c)
+    {
+        var shackles = LockSystem.WornShackles(c);
+        if (shackles is null && c.SlaveState == 0) return;
+        world.Bark(world.Characters.IdOf(slot), Loc.Tr("Free!"));
+        world.EmitSound(SoundKind.Unlocked, slot, world.Characters.Next[slot].Position);
+        SetSlave(world, c, 0, -1);
+        if (shackles?.Lock is { } l) l.Locked = false;
+    }
+
     /// <summary>
     /// The slave state setter (<c>FUN_1405a4940</c>, <b>Observed</b>): free to slave posts "{1} has been enslaved" for a player-faction character; becoming an escaped slave sets the
     /// recently-wanted marker to 250 (status <c>+0x110</c>), so a looker who knows recognises it at once.
     /// </summary>
     static void SetSlave(World world, CharacterCold c, byte state, int owner)
     {
-        if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post($"{c.Name} has been enslaved");
+        if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post(Loc.Tr("{1} has been enslaved", c.Name));
         if (state == 2) c.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         c.SlaveState = state;
         c.SlaveOwner = state == 0 ? -1 : owner;
@@ -615,11 +654,13 @@ public sealed class FixtureRegistry
     /// <c>locked</c> only when the saved <c>lock lvl</c> is above 0; doors by suffix i: <c>state</c>, <c>doa</c>, <c>broken</c>, <c>gatecode</c>, <c>wants lock</c>, <c>lock lvl</c>,
     /// <c>locked</c>, <c>hardness</c>. Interior fixtures (whose save ids are not mapped) keep their rolls but count as restored, apart from Meitou's own <c>meitou lock</c> key (see <see cref="InteriorKey"/>).
     /// </summary>
-    static void Restore(FcsRecord state, string building, List<Fixture> list)
+    void Restore(FcsRecord state, string building, List<Fixture> list)
     {
         foreach (var f in list)
         {
             f.Restored = true;
+            if (f.Contents is { } grid && Items is { } factory && ContainerSave.KeyOf(f, building) is { } contentsKey && state.Strings.TryGetValue(contentsKey, out var saved))
+                ContainerSave.Read(saved, grid, factory);
             if (f.Kind == FixtureKind.Door)
             {
                 string i = f.DoorIndex.ToString(CultureInfo.InvariantCulture);
@@ -665,6 +706,11 @@ public sealed class FixtureRegistry
         if (!byBuilding.TryGetValue(buildingInstance, out var list)) return false;
         foreach (var f in list)
         {
+            if (f.Contents is { } grid && ContainerSave.KeyOf(f, buildingInstance) is { } contentsKey)
+            {
+                state.Strings.Remove(contentsKey);
+                if (ContainerSave.Write(grid) is { } text) state.Strings[contentsKey] = text;
+            }
             if (f.Lock is not { } l) continue;
             if (f.Kind == FixtureKind.Door)
             {
@@ -698,7 +744,7 @@ public sealed class FixtureRegistry
     IReadOnlyDictionary<(string Building, int Door), DoorView> publishedDoors = new Dictionary<(string Building, int Door), DoorView>();
     ulong publishedDoorsKey;
 
-    /// <summary>The doors of the player's buildings and every other door that is not plainly closed and unlocked (open, moving, locked or set to lock), for the snapshot; a new dictionary only when one of them changed.</summary>
+    /// <summary>The doors of the player's buildings and every other door that is not plainly closed and unlocked (open, moving, locked, set to lock or broken), for the snapshot; a new dictionary only when one of them changed.</summary>
     internal IReadOnlyDictionary<(string Building, int Door), DoorView> PublishedDoors()
     {
         ulong key = 0x446F6F72;
@@ -706,17 +752,17 @@ public sealed class FixtureRegistry
         {
             var f = all[i];
             if (f.Kind != FixtureKind.Door || !Shown(f)) continue;
-            key = Rng.Mix(key ^ (ulong)i) ^ BitConverter.SingleToUInt32Bits(f.OpenAmount) ^ ((ulong)f.Motion << 32) ^ (f.Lock is { EffectivelyLocked: true } ? 1UL << 40 : 0) ^ (f.WantsLock ? 1UL << 41 : 0);
+            key = Rng.Mix(key ^ (ulong)i) ^ BitConverter.SingleToUInt32Bits(f.OpenAmount) ^ ((ulong)f.Motion << 32) ^ (f.Lock is { EffectivelyLocked: true } ? 1UL << 40 : 0) ^ (f.WantsLock ? 1UL << 41 : 0) ^ (f.DoorBroken ? 1UL << 42 : 0);
         }
         if (key == publishedDoorsKey) return publishedDoors;
         var doorViews = new Dictionary<(string Building, int Door), DoorView>();
         foreach (var f in all)
             if (f.Kind == FixtureKind.Door && Shown(f))
-                doorViews[(f.Building, f.DoorIndex)] = new DoorView(f.OpenAmount, f.Motion, f.Lock is { EffectivelyLocked: true }, f.WantsLock);
+                doorViews[(f.Building, f.DoorIndex)] = new DoorView(f.OpenAmount, f.Motion, f.Lock is { EffectivelyLocked: true }, f.WantsLock, f.DoorBroken, DoorSpotOf(f)?.Centre ?? f.Position, f.RecordId);
         publishedDoorsKey = key;
         return publishedDoors = doorViews;
 
-        static bool Shown(Fixture f) => f.Site < 0 || f.OpenAmount > 0 || f.Motion != DoorMotion.Closed || f.WantsLock || f.Lock is { EffectivelyLocked: true };
+        static bool Shown(Fixture f) => f.Site < 0 || f.OpenAmount > 0 || f.Motion != DoorMotion.Closed || f.WantsLock || f.DoorBroken || f.Lock is { EffectivelyLocked: true };
     }
 
     /// <summary>The panel's view of a building's doors (null for no building, or one without fixtures).</summary>

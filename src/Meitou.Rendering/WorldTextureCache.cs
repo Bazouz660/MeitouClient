@@ -480,7 +480,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
     // the rest is decoded to RGBA8 on the CPU.
     static TextureData Load(string path, int dropMips, float need, bool streaming, float perDistance, float bias, int extra)
     {
-        using var file = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.SequentialScan);
+        using var file = File.OpenHandle(Meitou.Content.GameFiles.Resolve(path), FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.SequentialScan);
         Span<byte> magic = stackalloc byte[4];
         if (RandomAccess.Read(file, magic, 0) == 4 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(magic) == DdsReader.Magic)
         {
@@ -508,7 +508,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
                 if (!handedOver) ArrayPool<byte>.Shared.Return(dds.Data);
             }
         }
-        return new TextureData(new LoadedTexture([TextureLoader.LoadImage(File.ReadAllBytes(path))], null), null);
+        return new TextureData(new LoadedTexture([TextureLoader.LoadImage(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)))], null), null);
     }
 
     static bool CanUploadCompressed(DdsFile dds) =>

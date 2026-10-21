@@ -5,7 +5,7 @@ namespace Meitou.Data.Characters;
 
 /// <summary>
 /// Plastic surgeons (docs/characters.md "Plastic surgeons"): the NPCs whose dialogue has a line with the effect <c>DA_CHARACTER_EDITOR</c> (11), and what that line
-/// costs (its <c>DA_TAKE_MONEY</c> (8) effect's val0). Meitou has no dialogue yet, so a surgeon is offered as a context menu verb; only lines whose path from their
+/// costs (its <c>DA_TAKE_MONEY</c> (8) effect's val0). The surgeon itself is talked to (DA 11 through the dialogue, paid by its line); this check stands behind an unpaid <c>EditCharacter</c> (tests, scripts): only lines whose path from their
 /// DIALOGUE is gated by nothing but <c>DC_PLAYERMONEY</c> (2) or <c>DC_IS_RECRUITABLE</c> (77) count (the Thieves Guild's rank-gated and Grey's escaped-slave
 /// lines are left out).
 /// </summary>

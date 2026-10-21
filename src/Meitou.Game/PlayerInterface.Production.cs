@@ -36,8 +36,11 @@ sealed partial class PlayerInterface
     {
         if (faithfulScreens is null) return;
         var focus = BuildingFocus();
-        var m = focus?.SiteId is { } id && session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { Complete: true } ? Machine(id) : null;
-        if (m is not null && m.Inputs.Count == 0 && m.Output is null && m.Storage is null) m = null;
+        // A rock's natural site is no registry building: its machine, once mined, is enough.
+        var m = focus?.SiteId is { } id && (ProductionSystem.IsNatural(id) || session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { Complete: true }) ? Machine(id) : null;
+        if (m is not null && m.Inputs.Count == 0 && m.Output is null && m.Storage is null && m.Craft is null) m = null;
+        // An open container takes the window.
+        m = session.CurrentSnapshot.Machines.FirstOrDefault(c => c.IsContainer) ?? m;
         if (closedMachine is not null && closedMachine != m?.Site) closedMachine = null;
         if (shownMachine is not null && (m is null || m.Site != shownMachine))
         {
@@ -48,6 +51,7 @@ sealed partial class PlayerInterface
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
         {
+            if (shown.IsContainer) Say(new Meitou.Simulation.Items.CloseContainer { Tick = session.World.Tick });
             closedMachine = shownMachine;
             shownMachine = null;
             machineDrag = null;
@@ -65,11 +69,12 @@ sealed partial class PlayerInterface
     void BindMachineScreen(string id, UiBindings b)
     {
         var m = Machine(shownMachine);
-        b.Text["Root"] = (selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
+        b.Text["Root"] = (m is { IsContainer: true } ? m.Title ?? buildHost?.ItemName(m.Record) ?? "CONTAINER" : selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
         if (id == "bench")
         {
             b.Disabled.Remove("ResearchButton");
             b.Actions["ResearchButton"] = "ResearchButton";
+            if (m is { IsContainer: true }) b.Hidden.Add("ResearchButton");
             b.Disabled.Remove("ArrangeButton");
             b.Hidden.Add("ArrangeButton");
             if (m?.Storage is { } grid)
@@ -77,8 +82,13 @@ sealed partial class PlayerInterface
             b.TemplateScale = InventoryScale;
             return;
         }
-        // The crafting row is the crafting bench's (no crafting yet).
-        b.Hidden.Add("CraftingPanel");
+        if (m?.Craft is { } craft)
+        {
+            b.Text["CraftingName"] = craft.Queue is [var (_, current, progress, _), ..] ? $"{current}  {(int)(progress * 100)}%" : "Nothing queued";
+            b.Disabled.Remove("QueueButton");
+            b.Actions["QueueButton"] = "QueueButton";
+        }
+        else b.Hidden.Add("CraftingPanel");
         if (m is null) return;
         for (int k = 0; k < 2; k++)
         {
@@ -93,6 +103,11 @@ sealed partial class PlayerInterface
         {
             b.Text["OutputText"] = $"{output.Name}\n{output.Count.ToString(CultureInfo.InvariantCulture)}/{output.Capacity.ToString(CultureInfo.InvariantCulture)}";
             b.Progress["OutputProgressBar"] = m.Farm is { } farm ? farm.Ripeness : output.Fill;
+        }
+        else if (m.Craft is { } done)
+        {
+            b.Text["OutputText"] = done.Done is [var first, ..] ? $"{first.Name}\n{done.Done.Sum(d => d.Quantity).ToString(CultureInfo.InvariantCulture)}" : "";
+            b.Progress["OutputProgressBar"] = done.Queue is [var (_, _, p, _), ..] ? p : 0;
         }
         else b.Hidden.Add("OutputColumn");
         if (m.Inputs.Count == 0) b.Hidden.Add("InputTitleText");
@@ -112,7 +127,7 @@ sealed partial class PlayerInterface
                 if (machineDrag is { Slot: -1 } d && d.Index == item.Index) continue;
                 AddItemCell(controls, $"machine-item-{item.Index}",
                     new(area.X + item.X * area.Width / grid.Width, area.Y + item.Y * area.Height / grid.Height, item.Width * area.Width / grid.Width, item.Height * area.Height / grid.Height),
-                    item.Record, item.Material, item.Name, item.Quantity, $"Weight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg", "MachineItem", 1000 + item.Index,
+                    item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index,
                     slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
             }
             return;
@@ -126,6 +141,12 @@ sealed partial class PlayerInterface
         }
         for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", m.Inputs[k], 10 + k);
         if (m.Output is { } output) Slot("out", output, 8);
+        else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && machineDrag is not { Slot: -2 })
+        {
+            var ob = outSlot.Bounds;
+            float side = MathF.Min(ob.Width, ob.Height);
+            AddItemCell(controls, "machine-out", new(ob.X, ob.Y, side, side), made.Record, made.Material, made.Name, made.Quantity, null, "MachineItem", 8, outSlot.Clip);
+        }
     }
 
     /// <summary>A press on an item of the machine window starts its drag (true: taken).</summary>
@@ -141,6 +162,12 @@ sealed partial class PlayerInterface
             return true;
         }
         int slot = code - 10;
+        if (slot == -2 && m.Craft is { Done: [var crafted, ..] })
+        {
+            machineDrag = (m.Site, -2, 0, crafted.Record, crafted.Name, crafted.Quantity, 1, 1, grab);
+            Sound("Item_Lift", item: crafted.Record);
+            return true;
+        }
         MachineSlotView? view = slot == -2 ? m.Output : slot >= 0 && slot < m.Inputs.Count ? m.Inputs[slot] : null;
         if (view is not { Count: > 0 } v) return false;
         machineDrag = (m.Site, slot, 0, v.Item, v.Name, v.Count, 1, 1, grab);
@@ -152,6 +179,11 @@ sealed partial class PlayerInterface
     void MachineDrop((string Site, int Slot, int Index, string Record, string Name, int Quantity, int Width, int Height, Vector2 Grab) d, string screen)
     {
         if (screen is not ("inventory" or "bag") || Selected().FirstOrDefault() is not { } lead) return;
+        if (Machine(d.Site) is { Body.IsNone: false })
+        {
+            Say(new Meitou.Simulation.Carrying.TakeLootItem(d.Index) { Tick = session.World.Tick });
+            return;
+        }
         Say(new TakeFromMachine(lead.Id, d.Site, d.Slot, d.Index, screen == "bag" ? "backpack_content" : "main") { Tick = session.World.Tick });
     }
 
@@ -162,7 +194,7 @@ sealed partial class PlayerInterface
         if (screen == "bench")
         {
             if (m.Storage is { } grid && DropCell(p, screen, "backpack_content", grid.Width, grid.Height, grab, item.Width, item.Height, grid.Items.Select(i => (i.X, i.Y, i.Width, i.Height)), out int x, out int y))
-                Say(new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick });
+                Say(m.Body.IsNone ? new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick } : new Meitou.Simulation.Carrying.PutLootItem(character, token, x, y) { Tick = session.World.Tick });
             return true;
         }
         var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
@@ -177,6 +209,7 @@ sealed partial class PlayerInterface
     void MachineAction(MyGuiEvent e)
     {
         if (e.Screen == "bench" && e.Widget == "ResearchButton") { faithfulScreens.Open("overview"); faithfulScreens.SetTab("overview", "TabsMain", 2); }
+        else if (e.Screen == "building" && e.Widget == "QueueButton" && shownMachine is not null) OpenCraftTab(shownMachine);
     }
 
     /// <summary>The verb for a complete machine characters work (the original's verb names for wells, farms and benches are <b>Unknown</b>; Meitou says Operate).</summary>
@@ -204,6 +237,29 @@ sealed partial class PlayerInterface
             status = m.Status switch { 2 => "Working", 1 => "Output full", _ => "Idle" };
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
+        }
+        // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
+        if (m.Power is { } pw)
+        {
+            string F(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
+            if (pw.Kind == PowerKind.Battery)
+            {
+                status = pw.Granted > 0 ? "Charging" : pw.Granted < 0 ? "Draining" : pw.Charge <= 0 ? "Empty" : "Stored";
+                bad = pw.Charge <= 0;
+                stats.Add(new("Charge:", P(pw.Store > 0 ? pw.Charge / pw.Store : 0), MainColour));
+            }
+            else if (pw.Kind == PowerKind.Generator)
+            {
+                status = pw.Fueled ? "Running" : "Out of fuel";
+                bad = !pw.Fueled;
+                stats.Add(new("Power:", F(pw.Demand), MainColour));
+                if (m.Inputs.Count > 0) stats.Add(new("Fuel Consumption", P(pw.Usage), MainColour));
+            }
+            else if (pw.Demand > 0)
+            {
+                if (pw.Granted < pw.Demand) { status = pw.Granted <= 0 ? "No power" : "Low power"; bad = true; }
+                stats.Add(new("Power:", $"{F(pw.Granted)}/{F(pw.Demand)}", MainColour, pw.Granted < pw.Demand ? BadColour : null));
+            }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
         if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
@@ -249,7 +305,7 @@ sealed partial class PlayerInterface
             {
                 var r = rows[i];
                 bool queued = research.Queue.Any(q => q.Id == r.Id);
-                string caption = $"{r.Name}  (lvl {r.Level.ToString(CultureInfo.InvariantCulture)})" + (r.Progress > 0 ? $"  {(int)(r.Progress * 100)}%" : "");
+                string caption = $"{r.Name}  ({Loc.Tr("lvl {1,num}", r.Level)})" + (r.Progress > 0 ? $"  {(int)(r.Progress * 100)}%" : "");
                 var colour = queued ? new Vector4(0.6f, 0.6f, 0.6f, 1) : r.BenchTooLow || !r.Affordable ? new Vector4(0.75f, 0.35f, 0.3f, 1) : ink;
                 controls.Add(new($"research-row-{i}", "Button", new(blueprints.Bounds.X + 6, blueprints.Bounds.Y + i * line, blueprints.Bounds.Width - 12, line), caption,
                     queued ? "" : "research-queue:" + r.Id, "", !queued, face, Vector4.Zero, TextColour: colour, HoverColour: new(0, 1, 0, 1), Pickable: true, Clip: blueprints.Bounds));

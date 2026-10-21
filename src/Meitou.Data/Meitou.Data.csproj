@@ -8,6 +8,10 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="Meitou.Localisation" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Meitou.Core\Meitou.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

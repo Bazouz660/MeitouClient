@@ -22,15 +22,78 @@ public sealed class GameDatabase
 
     public IEnumerable<GameRecord> OfType(FcsRecordType type) => records.Values.Where(r => r.Type == type);
 
-    /// <summary>Reads and applies every file of <paramref name="loadOrder"/>.</summary>
+    /// <summary>Translation files applied, by file name, in order (not in <see cref="Files"/>: they are not data files a save depends on).</summary>
+    public List<string> Translations { get; } = [];
+
+    // Ids of records a translation file created because no data file defined them (its entries for mods that are not loaded).
+    readonly HashSet<string> translationOnly = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Reads and applies every file of <paramref name="loadOrder"/>: the core files, the language's core translation, the mods, then the
+    /// translation of the first mod that has one (docs/formats/localisation.md, "Data translation").
+    /// </summary>
     public static GameDatabase Load(LoadOrder loadOrder)
     {
         var db = new GameDatabase();
         db.Issues.AddRange(loadOrder.Issues);
+        bool coreTranslated = false;
         foreach (var entry in loadOrder.Entries)
+        {
+            if (!coreTranslated && !LoadOrder.BaseFiles.Contains(entry.Name))
+            {
+                db.LoadTranslation(loadOrder.Language.CoreTranslationFile);
+                coreTranslated = true;
+            }
             db.Apply(FcsReader.ReadFile(entry.Path), entry.Name);
+        }
+        if (!coreTranslated) db.LoadTranslation(loadOrder.Language.CoreTranslationFile);
+        db.LoadTranslation(loadOrder.Language.ModTranslationFile);
+        db.DropTranslationOnlyRecords();
         db.AddWallMasters();
         return db;
+    }
+
+    /// <summary>
+    /// Applies a <c>.translation</c> file like any data file (the game loads it with the same loader, <b>Verified</b> <c>Fcs_LoadTranslationFile</c> →
+    /// <c>GameDataContainer_Load</c>): its records change the names and text fields of records already loaded. A file that cannot be read is reported
+    /// as an issue and skipped, as the game logs an error and goes on.
+    /// </summary>
+    public void LoadTranslation(string? path)
+    {
+        if (path is null) return;
+        FcsFile file;
+        try { file = FcsReader.ReadFile(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException)
+        {
+            Issues.Add(new GameDataIssue(GameDataIssueKind.TranslationNotLoaded, Path.GetFileName(path), null, e.Message));
+            return;
+        }
+        ApplyTranslation(file, Path.GetFileName(path));
+    }
+
+    /// <summary>
+    /// <see cref="Apply(FcsFile, string)"/> for a translation file. A rename keeps the English name in <see cref="GameRecord.BaseName"/>; the
+    /// <c>_original_*</c> strings (the English text the translator saw) are not kept, nothing reads them.
+    /// </summary>
+    public void ApplyTranslation(FcsFile file, string fileName)
+    {
+        Translations.Add(fileName);
+        foreach (var source in file.Records)
+        {
+            foreach (var key in source.Strings.Keys.Where(k => k.StartsWith("_original_", StringComparison.Ordinal)).ToList())
+                source.Strings.Remove(key);
+            bool known = records.ContainsKey(source.StringId);
+            Apply(source, fileName, translation: true);
+            if (!known && records.ContainsKey(source.StringId)) translationOnly.Add(source.StringId);
+        }
+    }
+
+    // A translation file lists records of mods that may not be loaded; the game creates them from the translation's changes. Meitou drops those
+    // placeholders when no data file touched them, so a record with only a name and a description never reaches a list (Meitou choice, docs/formats/localisation.md).
+    void DropTranslationOnlyRecords()
+    {
+        foreach (var id in translationOnly) records.Remove(id);
+        translationOnly.Clear();
     }
 
     /// <summary>
@@ -56,13 +119,14 @@ public sealed class GameDatabase
             Apply(record, fileName);
     }
 
-    void Apply(FcsRecord source, string fileName)
+    void Apply(FcsRecord source, string fileName, bool translation = false)
     {
         var record = records.GetValueOrDefault(source.StringId);
+        if (!translation) translationOnly.Remove(source.StringId);
         if (record is null)
         {
-            // The game creates the record anyway (FUN_1406c0b50); the editor would skip it.
-            if (source.IsModified)
+            // The game creates the record anyway (FUN_1406c0b50); the editor would skip it. A translation lists records of mods that need not be loaded: no issue for those.
+            if (source.IsModified && !translation)
                 Issue(GameDataIssueKind.ModifiedRecordNotFound, fileName, source.StringId, $"changes record '{source.Name}', which no earlier file defines; created from the change");
             record = new GameRecord(source.StringId, source.RecordType, source.Name, fileName);
             records.Add(source.StringId, record);
@@ -74,7 +138,10 @@ public sealed class GameDatabase
             if (source.RecordType != record.Type)
                 Issue(GameDataIssueKind.ChangedRecordType, fileName, source.StringId, $"type {source.RecordType} differs from {record.Type}; kept {record.Type}");
             if (source.IsRenamed)
-                record.Name = source.Name;
+            {
+                if (translation) record.Translate(source.Name);
+                else record.Name = source.Name;
+            }
             record.ModifiedBy.Add(fileName);
         }
 
@@ -138,6 +205,8 @@ public enum GameDataIssueKind
     MissingFile,
     /// <summary>A record changes a record no earlier file defines; the game creates it from the change.</summary>
     ModifiedRecordNotFound,
+    /// <summary>A translation file could not be read; the game logs an error and goes on without it.</summary>
+    TranslationNotLoaded,
     /// <summary>A record defines an id an earlier file already defined; its fields are merged.</summary>
     RecordAlreadyDefined,
     /// <summary>A record has a different type than the record it changes; the original type is kept.</summary>

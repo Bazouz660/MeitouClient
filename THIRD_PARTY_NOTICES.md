@@ -66,7 +66,7 @@ THE SOFTWARE.
 ## NVIDIA Streamline
 
 `src/Meitou.Rendering/Upscalers/Streamline.cs` and `DlssUpscaler.cs` declare Streamline's structures, enums and
-entry points following its public headers (Streamline 2.14.1). The Streamline libraries and NVIDIA's DLSS runtime are
+entry points following its public headers (Streamline 2.14.16). The Streamline libraries and NVIDIA's DLSS runtime are
 not part of this repository; they are loaded at run time when the user provides them (see
 [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md) for the DLSS runtime).
 
@@ -104,7 +104,11 @@ Used as packages (not copied into this repository); each is distributed under it
 | Silk.NET.Vulkan, .Vulkan.Extensions.KHR, .Vulkan.Extensions.EXT 2.23.0 | `src/Meitou.Rendering` | MIT |
 | Silk.NET.Shaderc 2.23.0 | `src/Meitou.Rendering` (GLSL to SPIR-V at run time) | MIT |
 | Silk.NET.Shaderc.Native 2.23.0 (ships `shaderc_shared.dll`: Google's shaderc with glslang and SPIRV-Tools) | `src/Meitou.Rendering` | Apache-2.0 (shaderc, SPIRV-Tools); glslang under its own BSD-3-Clause / MIT-style terms |
-| StbTrueTypeSharp 1.26.12 | `tools/Meitou.ModelViewer` (key-list overlay text, from a system monospace font; no font is shipped) | Public domain |
+| StbTrueTypeSharp 1.26.12 | `src/Meitou.Rendering` (debug overlay text from a system monospace font, kerning pairs of UI fonts; no font is shipped) | Public domain |
+| FreeTypeSharp 3.1.0 (ships `freetype.dll`, `libfreetype.so`, `libfreetype.dylib`: FreeType 2.13.2) | `src/Meitou.Rendering` (UI font rasterisation and hinting). Portions of this software are copyright The FreeType Project (www.freetype.org). All rights reserved. | MIT (FreeTypeSharp); FreeType License (FTL) or GPLv2, used here under the FTL |
+| Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent 12.1.4 (with SkiaSharp and HarfBuzzSharp) | `launcher/Meitou.Launcher` (UI) | MIT |
+| Velopack 1.2.161 | `launcher/Meitou.Launcher` (install and self-update) | MIT |
+| Markdig 1.4.2 | `launcher/Meitou.Launcher` (news posts) | BSD-2-Clause |
 
 The DDS reader and decoder (`src/Meitou.Data/Textures/`) are written from Microsoft's public DDS and
 block-compression documentation; no code is taken from other implementations.

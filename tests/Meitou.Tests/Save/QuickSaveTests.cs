@@ -230,4 +230,146 @@ public class QuickSaveTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    /// <summary>The player's squads after a load: name, member count and the names of the members, in squad order.</summary>
+    static List<(string Name, string[] Members)> SquadsOf(SimWorld world) =>
+        [.. SquadManagement.PlayerSquads(world).Select(s => (s.Name, s.Members.Select(m => world.Characters.Cold(m.Slot)!.Name).ToArray()))];
+
+    [Fact]
+    public void A_new_empty_squad_and_its_name_survive_a_quicksave_and_load()
+    {
+        var data = SyntheticTown.Data(SyntheticTown.Database(anatomy: true));
+        using var a = Start(data);
+        a.World.Commands.Enqueue(new NewSquadCommand(SyntheticTown.Centre) { Tick = 0 });
+        a.World.RunTicks(2);
+        var fresh = SquadManagement.PlayerSquads(a.World)[1];
+        a.World.Commands.Enqueue(new RenameSquadCommand(fresh.Id, "Raiders") { Tick = a.World.Tick });
+        a.World.RunTicks(1);
+
+        var (_, folder, save) = Quicksave(a, "squad-empty");
+        try
+        {
+            using var b = new Game(NewWorld(data, 1), data, null!);
+            SaveLoader.Load(b.World, save, data);
+            var squads = SquadsOf(b.World);
+            Assert.Equal(2, squads.Count);
+            Assert.Equal(a.Squad.Members.Count, squads[0].Members.Length);
+            Assert.Equal("Raiders", squads[1].Name);
+            Assert.Empty(squads[1].Members);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
+    }
+
+    [Fact]
+    public void A_member_moved_to_another_squad_is_saved_in_that_squads_platoon_through_two_saves()
+    {
+        var data = SyntheticTown.Data(SyntheticTown.Database(anatomy: true));
+        using var a = Start(data);
+        a.World.Commands.Enqueue(new NewSquadCommand(SyntheticTown.Centre) { Tick = 0 });
+        a.World.RunTicks(2);
+        var moved = a.Squad.Members[0];   // the leader: the platoon must not follow its first member
+        string movedName = a.World.Characters.Cold(moved.Slot)!.Name;
+        a.World.Commands.Enqueue(new MoveToSquadCommand(moved, SquadManagement.PlayerSquads(a.World)[1].Id) { Tick = a.World.Tick });
+        a.World.RunTicks(1);
+        var expected = SquadsOf(a.World);
+        Assert.Equal([movedName], expected[1].Members);
+
+        var (_, folder, save) = Quicksave(a, "squad-move");
+        string again = Path.Combine(Temp("squad-move-2"), QuickSave.Name);
+        try
+        {
+            using var b = new Game(NewWorld(data, 1), data, null!);
+            var loaded = SaveLoader.Load(b.World, save, data);
+            Assert.Equal(expected, SquadsOf(b.World), (x, y) => x.Name == y.Name && x.Members.SequenceEqual(y.Members));
+            // Saved again from the loaded world, each squad keeps its own platoon file.
+            var platoons = SquadManagement.PlayerSquads(b.World).Select(s => s.SaveName).ToList();
+            Assert.Equal(platoons.Count, platoons.Distinct().Count());
+            SaveCapture.Capture(b.World, data, loaded.Clock, loaded, new SaveCaptureOptions { Placements = [new Meitou.Data.World.TownPlacement("inst", "30-t", SyntheticTown.Centre, null)] }).Write(again);
+            using var c = new Game(NewWorld(data, 1), data, null!);
+            SaveLoader.Load(c.World, SaveGame.Load(again), data);
+            Assert.Equal(expected, SquadsOf(c.World), (x, y) => x.Name == y.Name && x.Members.SequenceEqual(y.Members));
+            Assert.Equal(platoons, SquadManagement.PlayerSquads(c.World).Select(s => s.SaveName));
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true);
+            if (Directory.Exists(Path.GetDirectoryName(again)!)) Directory.Delete(Path.GetDirectoryName(again)!, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// What Meitou keeps beyond the original's keys (docs/formats/save.md "NPC platoons", docs/game/ragdolls.md "Saves"): a trader's shop (stock, purse, fill count, restock)
+    /// and a knocked-out character's settled ragdoll come back from a save as they were, and a second save writes their keys again.
+    /// </summary>
+    [Fact, Slow]
+    public void A_shops_stock_and_a_settled_ragdoll_survive_a_save_load_and_second_save()
+    {
+        var install = GameInstall.Locate();
+        Assert.SkipWhen(install is null, "Kenshi install not found");
+        var db = InstallData.BaseGame!;
+        var levels = InstallData.Levels!;
+        var data = PopulationData.Create(db, levels.Towns(), new GeneratedAppearances(db, install!.Root));
+        var assets = new Meitou.Rendering.AssetLocator(install);
+        var rigs = new Meitou.Data.Characters.CharacterRigs(db, p => assets.Configured.Find(Path.GetFileName(p.Replace('\\', '/'))) ?? assets.Find(p), n => assets.Find(n));
+        var lengths = AnimationLengths.Load(install.Root, db);
+        var walk = new OpenGroundWalkability((_, _) => 300);
+        SimWorld Make() => new(new WorldSettings { Seed = 5, Threads = 2, PublishSnapshots = false }, walk, StandardSystems.Build(data, walk, new StandardSystemOptions
+        {
+            Parts = StandardParts.Population | StandardParts.Player | StandardParts.Trade | StandardParts.Movement | StandardParts.Body | StandardParts.Animation,
+            SynchronousPaths = true, Population = new PopulationSettings { CheckEveryTicks = 1 }, Ragdolls = rigs, AnimationLengths = lengths,
+        }).Systems);
+        static Meitou.Simulation.Ragdolls.RagdollSystem Ragdolls(SimWorld w) => w.Systems.OfType<Meitou.Simulation.Ragdolls.RagdollSystem>().Single();
+        static List<(string, int, int, int)> Stock(Squad s) => [.. s.Shop!.Stock.Items.Select(i => (i.Record, i.Quantity, i.X, i.Y))];
+
+        using var a = Make();
+        var squad = a.Systems.OfType<PopulationSystem>().Single().StartPlayer(a, NewGameStart.Find(NewGameStart.LoadAll(db), NewGameStart.DefaultName)!);
+        a.Player.Faction = data.PlayerFaction;
+        a.RunTicks(30);
+        var downed = squad.Members[0];
+        a.Characters.Cold(downed.Slot)!.Medical!.KnockOut(600);
+        for (int t = 0; t < 600 && Ragdolls(a).SaveState(downed) is not { Frozen: true }; t++) a.RunTicks(1);
+        var ragdoll = Ragdolls(a).SaveState(downed);
+        Assert.True(ragdoll is { Frozen: true }, "the knocked-out character's ragdoll settles");
+        var shop = a.Squads.All.First(s => s.Shop is { Stock.Items.Count: > 1 });
+        shop.Shop!.Stock.Items.RemoveAt(0);   // a fresh fill would not give this stock
+
+        string root = Temp("meitou-keys");
+        try
+        {
+            var save = SaveCapture.Capture(a, data, new SaveClock(1, 13, 39), null, new SaveCaptureOptions { Placements = levels.Towns().ToList() });
+            string folder = QuickSave.Folder(root);
+            save.Write(folder);
+
+            using var b = Make();
+            var loaded = SaveLoader.Load(b, SaveGame.Load(folder), data, new SaveLoadOptions { Appearances = data.Appearances });
+            b.Player.Faction = data.PlayerFaction;
+            b.RunTicks(300);   // the shop's town loads and makes its saved platoons
+            var again = Ragdolls(b).SaveState(b.Squads.Find(b.Player.Squad)!.Members[0]);
+            Assert.NotNull(again);
+            Assert.Equal((ragdoll!.Frozen, ragdoll.Age), (again!.Frozen, again.Age));
+            Assert.Equal(ragdoll.Pose.Length, again.Pose.Length);
+            for (int i = 0; i < ragdoll.Pose.Length; i++)   // the rotations are normalised again when read
+            {
+                Assert.Equal(ragdoll.Pose[i].Position, again.Pose[i].Position);
+                Assert.True(MathF.Abs(Quaternion.Dot(ragdoll.Pose[i].Rotation, again.Pose[i].Rotation)) > 1 - 1e-5f, $"body {i}");
+            }
+            var shopB = b.Squads.All.Single(s => s.TemplateId == shop.TemplateId && s.Town == shop.Town && s.Shop is not null);
+            Assert.Equal(Stock(shop), Stock(shopB));
+            Assert.Equal((shop.Money, shop.Shop.Fills), (shopB.Money, shopB.Shop!.Fills));
+            // The next restock is the saved game hour.
+            float refresh = save.Platoons.Single(p => p.Record.Strings.ContainsKey(ShopSave.StockKey) && p.SquadTemplate == shop.TemplateId && p.Money == shop.Money)
+                .Record.Floats[ShopSave.RefreshKey];
+            Assert.InRange(b.GameHours + (shopB.Shop.NextRestockTick - b.Tick) * BodySystem.HoursPerTick - refresh, -0.01, 0.01);
+
+            var second = SaveCapture.Capture(b, data, loaded.Clock, loaded, new SaveCaptureOptions { Placements = levels.Towns().ToList() });
+            Assert.Contains(second.Platoons, p => p.Record.Strings.ContainsKey(ShopSave.StockKey) && p.SquadTemplate == shop.TemplateId);
+            Assert.Contains(second.Characters, c => c.GameState?.Strings.ContainsKey(RagdollSave.Key) == true);
+            foreach (var s in b.Systems) (s as IDisposable)?.Dispose();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            foreach (var s in a.Systems) (s as IDisposable)?.Dispose();
+        }
+    }
 }

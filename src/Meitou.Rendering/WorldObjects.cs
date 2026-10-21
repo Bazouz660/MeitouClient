@@ -139,9 +139,49 @@ sealed class WorldObjects : IDisposable
     /// <summary>Whether a runtime placement with this id is still in the store.</summary>
     public bool HasRuntime(string instanceId) { lock (runtimeLock) return runtime.ContainsKey(instanceId); }
 
-    void Reindex() => runtimeByZone = runtime.Values.GroupBy(p => p.Zone).ToDictionary(g => g.Key, g => g.ToArray());
+    void Reindex()
+    {
+        runtimeByZone = runtime.Values.GroupBy(p => p.Zone).ToDictionary(g => g.Key, g => g.ToArray());
+        placementVersion++;
+    }
 
     IEnumerable<BuildingPlacement> RuntimeIn(ZoneCoordinate zone) => runtimeByZone.TryGetValue(zone, out var list) ? list : [];
+
+    volatile int placementVersion;
+    BuildingFloors? floors;
+
+    /// <summary>Changes whenever a runtime placement is added or removed: what <see cref="Floors"/> listed before is stale.</summary>
+    internal int PlacementVersion => placementVersion;
+
+    /// <summary>The building floors under the characters' feet (the footstep surface, docs/audio.md "Surface"); used from the main thread.</summary>
+    internal BuildingFloors Floors => floors ??= new BuildingFloors(this);
+
+    /// <summary>
+    /// The floors of the buildings placed in a zone that characters can stand on: not destroyed ones, nor those whose path mode ignores them or that are furniture (the
+    /// parts the game's ground ray has no group for), with their ground materials. The floor collision itself is made later, per building (<see cref="BuildingFloor.Make"/>).
+    /// Safe from a worker thread.
+    /// </summary>
+    internal BuildingFloor[] FloorsOf(ZoneCoordinate zone)
+    {
+        if (staged is not null || heights?.Value is not { } map || interiorCollisions is not { } collisions) return [];
+        var result = new List<BuildingFloor>();
+        foreach (var placement in (buildingsByZone.GetValueOrDefault(zone) ?? []).Concat(RuntimeIn(zone)))
+        {
+            if (BuildingPlacements.Resolve(placement, Database, Levels, map.HeightAt) is not { Destroyed: false } resolved || resolved.Record.Type != Meitou.Data.Fcs.FcsRecordType.BUILDING) continue;
+            var (b, record, position) = (placement, resolved.Record, resolved.Position);
+            if (record.GetInt("path mode", 2) == 0 || record.GetBool("is exterior furniture") || record.GetBool("is interior furniture")) continue;
+            float scale = record.GetFloat("scale", 1);
+            var node = WorldObjectLayout.InstanceTransform(position, b.Rotation, new Vector3(scale > 0 ? scale : 1));
+            result.Add(new BuildingFloor
+            {
+                Position = position,
+                Interior = record.GetInt("interior material", 3),
+                Exterior = record.GetInt("exterior material", 2),
+                Make = () => FloorSurfaces.For(Database, record, b.Key, position, b.Rotation, node, collisions),
+            });
+        }
+        return [.. result];
+    }
 
     /// <summary>
     /// The sound emitters of the level's buildings (docs/audio.md "Point emitters"): those whose record has <c>sounds</c>, that are not destroyed and whose state does not say

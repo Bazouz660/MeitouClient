@@ -20,6 +20,8 @@ public enum EditorControlKind
     HairHue, HairSaturation, HairBrightness,
     /// <summary>Pickers: the HEAD (<c>head</c>), the hair and the beard ATTACHMENTs (<c>hair style</c>, <c>beard</c>).</summary>
     Head, HairStyle, Beard,
+    /// <summary><c>idle stance</c>: a slider over <see cref="CharacterDraft.IdleStances"/>, 1-based.</summary>
+    IdleStance,
 }
 
 /// <summary>One row of an editor tab: a slider from <see cref="Min"/> to <see cref="Max"/> or a picker (<see cref="IsPicker"/>).</summary>
@@ -79,8 +81,35 @@ public sealed class CharacterDraft
         return copy;
     }
 
-    static GameRecord? RaceOf(GameDatabase db, FcsRecord record) =>
-        record.References.TryGetValue("race", out var refs) && refs.Count > 0 ? db.Find(refs[0].TargetStringId) : null;
+    /// <summary>The RACE an appearance record names, or null.</summary>
+    public static GameRecord? RaceOf(GameDatabase db, FcsRecord record) =>
+        record.References.TryGetValue("race", out var refs) && refs.Count > 0 && db.Find(refs[0].TargetStringId) is { Type: FcsRecordType.RACE } race ? race : null;
+
+    /// <summary>
+    /// IMPORT: takes a body file's whole look, race and sex included, made valid for its race (<see cref="Sanitize"/>); the draft keeps its own record id.
+    /// False (nothing changes) when the file names no known race.
+    /// </summary>
+    public bool Import(FcsRecord appearance)
+    {
+        if (RaceOf(db, appearance) is not { } race) return false;
+        var taken = Sanitize(db, installRoot, appearance, race);
+        (taken.Type, taken.Id, taken.Name, taken.StringId, taken.Flags) = (Record.Type, Record.Id, Record.Name, Record.StringId, Record.Flags);
+        Record = taken;
+        Race = race;
+        Limits = LimitsFor(race, Female);
+        Version++;
+        return true;
+    }
+
+    /// <summary>EXPORT: the look as a body file, laid out as the game's own exports are (type 15, one record, id 1, <c>1--INGAME</c>; docs/characters.md).</summary>
+    public FcsFile Export()
+    {
+        var record = Copy(Record);
+        (record.Id, record.StringId, record.Flags) = (1, "1--INGAME", 0);
+        var file = new FcsFile { FileType = FcsFileType.V15, NextId = 1 };
+        file.Records.Add(record);
+        return file;
+    }
 
     AppearanceLimits? LimitsFor(GameRecord race, bool female)
     {
@@ -122,12 +151,27 @@ public sealed class CharacterDraft
         return limited.Count > 0 ? limited : all;
     }
 
-    /// <summary>The controls of a tab, in the editor limits' order: BODY the body sliders and colours, FACE the head picker and the face sliders, HAIR the hair and beard
-    /// pickers (no beard for women or races without beards) and the hair colour sliders.</summary>
+    /// <summary>
+    /// The choices of the Idle stance slider (the original's list, <c>FUN_14007d480</c> and <c>FUN_1405bbd40</c>, <b>Observed</b>): the record names of the ANIMATIONs,
+    /// in data order, that are <c>idle</c>, not <c>disabled</c>, of no <c>weather type</c>, not on the <c>overlay</c> layer, with no weapon in either hand and not
+    /// <c>crouched</c>.
+    /// </summary>
+    public IReadOnlyList<string> IdleStances => idleStances ??= [.. db.OfType(FcsRecordType.ANIMATION)
+        .Where(a => a.GetBool("idle") && !a.GetBool("disabled") && a.GetInt("weather type") < 1 && a.GetString("layer", "") != "overlay"
+            && a.GetInt("has weapon L") == 0 && a.GetInt("has weapon R") == 0 && !a.GetBool("crouched"))
+        .Select(a => a.Name)];
+    IReadOnlyList<string>? idleStances;
+
+    /// <summary>
+    /// The controls of a tab in the original's order (<c>FUN_1405ebd50</c>): BODY the Idle stance slider, <c>Skin Tone</c> (with more than one colour), the body
+    /// sliders and the other body colours; FACE the head picker, the face sliders and colours; HAIR the hair and beard pickers (no beard for women or races without
+    /// beards) and the hair colour sliders.
+    /// </summary>
     public IReadOnlyList<EditorControl> Controls(EditorTab tab)
     {
         var list = new List<EditorControl>();
         if (tab == EditorTab.Face && Options(EditorControlKind.Head).Count > 1) list.Add(new("Head", EditorControlKind.Head, 0, 0, 0));
+        if (tab == EditorTab.Body && IdleStances.Count > 0) list.Add(new("Idle stance", EditorControlKind.IdleStance, 1, IdleStances.Count, 1));
         if (tab == EditorTab.Hair)
         {
             if (Options(EditorControlKind.HairStyle).Count > 1) list.Add(new("Hair style", EditorControlKind.HairStyle, 0, 0, 0));
@@ -139,9 +183,13 @@ public sealed class CharacterDraft
         }
         if (Limits is null) return list;
         var category = tab == EditorTab.Body ? AppearanceCategory.Body : AppearanceCategory.Face;
+        static bool IsSkin(AppearanceColourRange c) => c.Name == "Skin Tone";
+        if (tab == EditorTab.Body)
+            foreach (var c in Limits.Colours.Where(c => c.Category == category && IsSkin(c) && c.Colours.Count > 1))
+                list.Add(new(c.Name, EditorControlKind.Colour, c.Min, c.Max, c.Mid) { Colour = c });
         foreach (var r in Limits.Ranges.Where(r => r.Category == category))
             list.Add(new(r.Name, r.Target is null ? EditorControlKind.Slider : EditorControlKind.Pose, r.Min, r.Max, r.Mid) { Range = r });
-        foreach (var c in Limits.Colours.Where(c => c.Category == category))
+        foreach (var c in Limits.Colours.Where(c => c.Category == category && !IsSkin(c)))
             list.Add(new(c.Name, EditorControlKind.Colour, c.Min, c.Max, c.Mid) { Colour = c });
         return list;
     }
@@ -162,6 +210,9 @@ public sealed class CharacterDraft
             case EditorControlKind.HairHue: return CharacterGenerator.Round(F("Hair Colour", 0));
             case EditorControlKind.HairSaturation: return CharacterGenerator.Round(F("Hair Saturation", 0));
             case EditorControlKind.HairBrightness: return CharacterGenerator.Round(F("Hair Brightness", 100));
+            // A stance not in the list shows as the first, as in the original.
+            case EditorControlKind.IdleStance:
+                return Math.Max(IdleStances.ToList().IndexOf(Record.Strings.GetValueOrDefault("idle stance") ?? ""), 0) + 1;
             default: return OptionIndex(c.Kind);
         }
     }
@@ -185,7 +236,8 @@ public sealed class CharacterDraft
         if (c.IsPicker) { SetOption(c.Kind, value); return; }
         value = Math.Clamp(value, c.Min, c.Max);
         if (!c.IsPicker && Value(c) == value) return;
-        Write(Record, c, value);
+        if (c.Kind == EditorControlKind.IdleStance) Record.Strings["idle stance"] = IdleStances[value - 1];
+        else Write(Record, c, value);
         Version++;
     }
 
@@ -269,6 +321,8 @@ public sealed class CharacterDraft
                 case EditorControlKind.HairHue: keys.Add("Hair Colour"); break;
                 case EditorControlKind.HairSaturation: keys.Add("Hair Saturation"); break;
                 case EditorControlKind.HairBrightness: keys.Add("Hair Brightness"); break;
+                // Meitou: the stance stays (whether the original's RANDOMISE rolls it is Unknown).
+                case EditorControlKind.IdleStance: break;
                 default: keys.Add(KeyOf(c.Kind)); break;
             }
         foreach (var k in keys)

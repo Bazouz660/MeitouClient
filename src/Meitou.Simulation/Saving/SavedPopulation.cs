@@ -63,6 +63,12 @@ public sealed class SavedPlatoon
     public SavedNest? Nest { get; init; }
     /// <summary>The population's wild site it counts against (set when the wild layout is made; -1: none, e.g. a world without biome data).</summary>
     public int WildSite { get; set; } = -1;
+    /// <summary>Its squad's shop when its characters last left the world (<see cref="ShopSave"/>); null: none, or never in the world (the save's is read when it is made).</summary>
+    public Trading.Shop? Shop { get; set; }
+    /// <summary>Its contract and <c>change AI</c>: the save's until its squad first leaves the world, then the squad's.</summary>
+    public AiSave? Ai { get => aiSet ? ai : AiSave.Read(Source.Record); set { ai = value; aiSet = true; } }
+    AiSave? ai;
+    bool aiSet;
 }
 
 /// <summary>
@@ -214,6 +220,7 @@ internal static class SavedCharacters
                 Yaw = SaveRotation.YawOf(sc.Rotation),
                 Stats = stats,
                 Medical = medical,
+                Ragdoll = RagdollSave.Read(sc.GameState),
             },
         };
         // Bounties: the ledger keys of the character's state record (docs/simulation.md "Crimes and bounties"), or the one it had when its platoon left the world.
@@ -224,6 +231,7 @@ internal static class SavedCharacters
         if (cold.IsPlayer && sc.GameState is { } orders) Orders.Read(orders, cold);
         // In a bed or a cage, and the sentence (docs/simulation.md "Cages, beds and locks"); the fixture binds when its town registers.
         HeldSave.Read(sc.GameState, cold, context.Handles, context.InstanceOf);
+        if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf);
         // The portrait camera's number: the saved one, else the handle's serial (CharacterAnimal::vfunc_18).
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;
         cold.Save.InSomething = cold.InSomething;
@@ -342,6 +350,8 @@ internal static class SavedCharacters
             bool leads = p.Source.IsLeader || !hasLeader && made.Count == 0;
             var task = leads ? (sp.Pinned || sp.Wild is not null ? CharacterTask.Wander : CharacterTask.Idle) : CharacterTask.Follow;
             var id = Make(world, p, sp.Name, squad, platoon.Faction, context.PlayerFaction, false, at, yaw, task, SpeedMode.Walk, data, assembly, context, m.Bounties, notes);
+            // Made again after its platoon left the world: the save's ragdoll is from before that.
+            if (m.Position is not null && world.Characters.Cold(id.Slot)?.Save is { } link) link.Ragdoll = null;
             ref var hot = ref world.Characters.Next[id.Slot];
             hot.TaskTime = 0.5f + Rng.Float(Rng.Hash(world.Seed, (ulong)squad.Id << 8 | (uint)(m.Slot & 0xFF), RngPurpose.Think)) * 3;
             m.Live = id;
@@ -360,6 +370,9 @@ internal static class SavedCharacters
             var at = world.Characters.Next[id.Slot].Position;
             world.Characters.Cold(id.Slot)!.FormationOffset = MovementSystem.OffsetOfPlace(new Vector2(at.X - lead.X, at.Z - lead.Z));
         }
+        // Its shop as it was when it left the world, else the save's (a fresh fill when the save has none).
+        squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);
+        squad.SavedAi = sp.Ai;
         world.Squads.Add(squad);
         sp.Touched = true;
         context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {lead.X:0}, {lead.Z:0}");
@@ -370,6 +383,7 @@ internal static class SavedCharacters
     public static void Store(World world, SavedPlatoon sp, Vector2 anchor)
     {
         var table = world.Characters;
+        if (sp.PlatoonId >= 0 && world.Platoons.Find(sp.PlatoonId) is { } platoon && world.Squads.Find(platoon.SquadId) is { } squad) { sp.Shop = squad.Shop; sp.Ai = AiSave.Of(squad.Ai) ?? squad.SavedAi; }
         foreach (var m in sp.Members)
         {
             if (m.Live.IsNone) continue;

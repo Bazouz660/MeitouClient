@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/launcher/">
+    <Project Path="launcher/Meitou.Launcher/Meitou.Launcher.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Meitou.Audio/Meitou.Audio.csproj" />
     <Project Path="src/Meitou.Core/Meitou.Core.csproj" />

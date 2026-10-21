@@ -63,6 +63,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 case ToggleDoorsOrder or ToggleDoorLocksOrder:
                     DoorInputs(world, command);
                     break;
+                case DoorOrder door:
+                    DoorOrderInput(world, door);
+                    break;
             }
         }
     }
@@ -81,11 +84,12 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
             if (world.Fixtures.Find(id) is not { } f || c.Medical is { Incapacitated: true } || !c.CarriedBy.IsNone) { c.PickingLock = null; continue; }
             if (!c.IsImprisoned)
             {
-                float d = Vector2.Distance(new Vector2(next[s].Position.X, next[s].Position.Z), new Vector2(f.Position.X, f.Position.Z));
-                if (d > f.UseRange + Reach)
+                var (at, reach) = WorkSpot(world, f, new Vector2(next[s].Position.X, next[s].Position.Z));
+                float d = Vector2.Distance(new Vector2(next[s].Position.X, next[s].Position.Z), at);
+                if (d > reach)
                 {
                     // Still walking; another order (a new goal) or a failed path ends it.
-                    if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, new Vector2(f.Position.X, f.Position.Z)) > 1) c.PickingLock = null;
+                    if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, at) > (f.Kind == FixtureKind.Door ? reach : 1)) c.PickingLock = null;
                     continue;
                 }
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
@@ -93,7 +97,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
             switch (Picking.Step(world, s, f, world.TickSeconds, Crimes))
             {
                 case PickOutcome.Open: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); break;
-                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.Post($"{c.Name}: Pick success!"); break;
+                case PickOutcome.Success: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); if (c.IsPlayer) world.Post($"{c.Name}: Pick success!");
+                    if (f.Occupant is { IsNone: false } held && held != table.IdOf(s)) world.Defer(new Dialogue.DialogueEvent(held, table.IdOf(s), UnlockMyCageOrShackles) { Tick = world.Tick + 1 });   // Task_PickLock: the freed character to the picker
+                    break;
                 case PickOutcome.Failed: if (c.IsPlayer) world.Post($"{c.Name}: Pick failed"); break;
                 case PickOutcome.NotAllowed: c.PickingLock = null; if (c.IsPlayer) world.Post($"{c.Name}: I'm not skilled enough..."); break;
             }

@@ -95,6 +95,7 @@ sealed partial class PlayerInterface
 
     void CloseEditor()
     {
+        faithfulScreens.Close("file");
         faithfulScreens.Close("editor");
         editor = null;
         previews.Clear();
@@ -242,6 +243,14 @@ sealed partial class PlayerInterface
             case "ConfirmButton":
                 ConfirmEditor();
                 return;
+            case "ExportButton":
+                ExportLook(draft, data.InstallRoot);
+                return;
+            case "ImportButton":
+                importFiles = ExportedLooks(data.InstallRoot);
+                importChoice = importFiles.FirstOrDefault();
+                faithfulScreens.Open("file");
+                return;
         }
         if (e.Action.StartsWith("editor-slider:", StringComparison.Ordinal) && Control(e.Action[14..]) is { } slider)
             draft.Set(slider, CharacterGenerator.Round(slider.Min + e.Value * (slider.Max - slider.Min)));
@@ -256,17 +265,6 @@ sealed partial class PlayerInterface
     }
 
 
-    /// <summary>
-    /// The surgeon verb: like the dialogue, it needs the patient beside the surgeon and more money than the price (DC_PLAYERMONEY &gt; cost); then the editor opens on the
-    /// patient in surgery mode. Payment happens when the editor is confirmed (<see cref="EditCharacter"/>).
-    /// </summary>
-    void AskSurgery(CharacterId patient, CharacterSnapshot surgeon, int cost)
-    {
-        if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == patient) is not { } p) return;
-        if (Vector3.Distance(p.Position, surgeon.Position) > CharacterEditing.SurgeonReach) { Notice($"{p.Name} has to walk up to {surgeon.Name} first.", true); return; }
-        if (cost > 0 && session.World.Player.Money <= cost) { Notice($"Surgery costs c.{cost.ToString("N0", CultureInfo.InvariantCulture)}: not enough money.", true); return; }
-        OpenEditor(EditKind.Surgery, [patient], surgeon.Id);
-    }
     static int IndexOf(IReadOnlyList<EditorRaceGroup> groups, GameRecord race)
     {
         for (int i = 0; i < groups.Count; i++)
@@ -307,6 +305,76 @@ sealed partial class PlayerInterface
         draft.Name = "Edited " + draft.Name;
         ConfirmEditor(asked: true);
     }
+    /// <summary>The body files IMPORT and EXPORT use, under the install (<c>FUN_141539ad0</c>), and their extension.</summary>
+    const string ExportFolder = "data/character/bodies/export/", BodyExtension = ".bod2";
+    IReadOnlyList<string> importFiles = [];
+    string? importChoice;
+
+    /// <summary>EXPORT (<c>FUN_1405ea410</c>): the look goes to the export folder under the name typed in NameText, replacing a file of that name.</summary>
+    void ExportLook(CharacterDraft draft, string installRoot)
+    {
+        string name = draft.Name.Trim();
+        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) { Notice($"Can't export: '{name}' is not a valid file name.", true); return; }
+        string relative = ExportFolder + name + BodyExtension;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(installRoot, ExportFolder));
+            Meitou.Data.Fcs.FcsWriter.WriteFile(draft.Export(), Path.Combine(installRoot, relative));
+            Notice(Loc.Tr("Character '{1}' exported to file {2}", name, "./" + relative));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice($"Can't export '{name}': {e.Message}", true); }
+    }
+
+    /// <summary>The body files in the export folder, by name.</summary>
+    static IReadOnlyList<string> ExportedLooks(string installRoot)
+    {
+        try { return [.. Directory.EnumerateFiles(Path.Combine(installRoot, ExportFolder), "*" + BodyExtension).Order(StringComparer.OrdinalIgnoreCase)]; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    /// <summary>
+    /// IMPORT (<c>FUN_1405f4280</c>): the chosen file's look replaces the draft's, race and sex included. A file without an appearance record fails with the original's
+    /// message. Meitou: a file of a race the editor doesn't offer, or (at a surgeon, where race and sex are fixed) of another race or sex, is refused.
+    /// </summary>
+    void ImportLook(string path)
+    {
+        if (editor is not { } s || Draft(s.Current) is not { } draft || EditorData is not { } data) return;
+        string file = Path.GetFileNameWithoutExtension(path);
+        Meitou.Data.Fcs.FcsRecord appearance;
+        try { appearance = AppearanceFile.Read(path).Record; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or Meitou.Data.Fcs.FcsFormatException or InvalidDataException)
+        { Notice(Loc.Tr("Error loading appearance file '{1}'. The file is in an old format or invalid.", file), true); return; }
+        bool female = appearance.Bools.TryGetValue("sex female", out var f) && f;
+        bool allowed = CharacterDraft.RaceOf(data.Db, appearance) is { } race && (s.Kind == EditKind.Creation
+            ? IndexOf(EditorRaces(data.Db), race) >= 0
+            : race.StringId == draft.Race.StringId && (female == draft.Female || race.GetBool("single gender")));
+        if (!allowed || !draft.Import(appearance)) { Notice($"Can't import '{file}': this character can't take that race or sex.", true); return; }
+        faithfulScreens.Close("file");
+    }
+
+    void FileDialogAction(MyGuiEvent e)
+    {
+        if (e.Widget == "ButtonCancel") faithfulScreens.Close("file");
+        else if (e.Widget == "ListFiles" && e.Action == "select") importChoice = e.Text;
+        else if (e.Widget == "ButtonOpenSave" && importChoice is { } path) ImportLook(path);
+    }
+
+    /// <summary>The import dialog (<c>Kenshi_OpenSaveFileDialog</c>, titled "Import character", <c>FUN_1405f4dd0</c>): the export folder's body files; no folder browsing.</summary>
+    void BindFileDialog(UiBindings b)
+    {
+        b.Text["Root"] = "Import character";
+        b.Text["ButtonOpenSave"] = "Import";
+        foreach (string name in new[] { "ButtonCancel", "ButtonOpenSave" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
+        if (importChoice is null) b.Disabled.Add("ButtonOpenSave");
+        foreach (string name in new[] { "ButtonUp", "EditFileName" }) b.Hidden.Add(name);
+        b.Text["CurrentFolder"] = "./" + ExportFolder;
+        b.Disabled.Add("CurrentFolder");
+        var files = importFiles.ToArray();
+        b.Lists["ListFiles"] = [.. files.Select(p => new UiListItem(p, Path.GetFileNameWithoutExtension(p)))];
+        b.SelectedItems["ListFiles"] = Array.IndexOf(files, importChoice);
+        b.Properties["ButtonOpenSave"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
+    }
+
     /// <summary>Esc: a surgeon's or recruit's editor is left without changes; the new game's has to be confirmed.</summary>
     bool EditorEscape()
     {
@@ -340,8 +408,7 @@ sealed partial class PlayerInterface
             foreach (string name in new[] { "CharLeftArrow", "CharRightArrow", "CharIndexText", "lbChangeCharacter" }) b.Hidden.Add(name);
             foreach (var frame in faithfulScreens.Layout("editor").Widgets.Where(w => w.Children.Any(c => c.Name == "CharIndexText"))) b.HiddenWidgets.Add(frame);
         }
-        // Import and export (.bod2 files through the file dialog) have no backend yet.
-        foreach (string name in new[] { "ImportButton", "ExportButton" }) b.Disabled.Add(name);
+        foreach (string name in new[] { "ImportButton", "ExportButton" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
         string tabButton = s.Tab switch { EditorTab.Face => "FaceTabButton", EditorTab.Hair => "HairTabButton", _ => "BodyTabButton" };
         b.Properties[tabButton] = new Dictionary<string, string> { ["Checked"] = "true" };
         b.Properties["ClothesButton"] = new Dictionary<string, string> { ["Checked"] = s.Clothes ? "true" : "false", ["StateSelected"] = s.Clothes ? "true" : "false" };
@@ -376,7 +443,7 @@ sealed partial class PlayerInterface
             var c = rows[i];
             float y = area.Y + i * row;
             string index = i.ToString(CultureInfo.InvariantCulture);
-            controls.Add(new($"editor-label-{i}", "TextBox", new(area.X + pad, y, labelWidth - pad, row), c.Label, "", "", true,
+            controls.Add(new($"editor-label-{i}", "TextBox", new(area.X + pad, y, labelWidth - pad, row), Loc.Tr(c.Label), "", "", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MainColour, ["TextAlign"] = "Left VCenter" }, Vector4.Zero, Pickable: false));
             if (c.IsPicker)
             {
@@ -432,7 +499,7 @@ sealed partial class PlayerInterface
             // As the original's "Character_Editor_Race_Stats" table (FUN_1405ebd50 area, Observed): "No bleeding" below a bleed rate of 0.1, then each stat multiplier
             // that is not 1 (RACE stats good / bad, strength, dexterity: RaceData.StatMultipliers) as (m - 1) x 100 %. Its first line, the character's hit points, is left out.
             var r = Meitou.Data.Gameplay.Bodies.RaceData.From(race, data.Db);
-            if (race.GetFloat("bleed rate", 1) < 0.1f) lines.Add(("No bleeding", "", true));
+            if (race.GetFloat("bleed rate", 1) < 0.1f) lines.Add((Loc.Tr("No bleeding"), "", true));
             for (int i = 1; i < r.StatMultipliers.Length; i++)
             {
                 float m = r.StatMultipliers[i];

@@ -30,7 +30,7 @@ Loaded zones near player drive active squad membership. **Observed** active plat
 countdown held4s while relevant,5s without zone; release members outside zone or within600 of
 an outside-zone leader when irrelevant. Unloaded squads update abstract travel/AI, not detailed
 character rendering. Zone timers, player focus and hibernation are separate concepts.
-CONSTANTS max squads10/max squad size20/max faction size30 are data facts; enforcement not decoded.
+CONSTANTS max squads10/max squad size20/max faction size30 are data facts, enforced by the squads screen and recruiting ([ui-screens](ui-screens.md#squads-tab)).
 Autosave/control timing is real, not the same as game-hour simulation.
 
 ### Frame callbacks
@@ -65,7 +65,7 @@ slots 0 to 3 = `frameStarted`, `frameRenderingQueued`, `framePostAnimationUpdate
 |---|---|---|
 | Pause (`pause`, default Space) | action `0x12` (`FUN_1403636c0` maps names to ids, [ui-input.md](ui-input.md#4-action-table); handled in `FUN_140788100` → `FUN_140787fb0`) | Toggle on the paused flag: pausing sets `speed` to 0 and remembers the last non-zero speed (`DAT_142132ed8`); resuming restores it. Other screens call the same function to pause (argument 1: `FUN_1405f03c0`, `FUN_140727820`, `FUN_140770a60`) or un-pause (argument 0: `FUN_14036cb80`, `FUN_1405e9f40`, `FUN_140721f20`, `FUN_1405f5d10`) |
 | `speed_1` (F2) / `speed_2` (F3) / `speed_3` (F4) | actions `0x13` / `0x14` / `0x15` → `FUN_140787e40` | speed **1.0 / 2.0 / 5.0** |
-| Time buttons in the main bar (`Kenshi_MainPanel.layout`: `TimeSpeedButton1` to `4`) | `FUN_14072d3b0` gives their float user data **0, 1, 2, 5**; click handler `FUN_140724920` calls `FUN_140787e40` | pause, 1x, 2x, 5x; the exe holds the tooltip strings "Pause Game", "Normal game speed", "Faster game speed", "Fastest game speed" (they sit in `FUN_1403f0260`, which [ui-input.md](ui-input.md#dispatch-and-selection) identifies as the options-tab builder; that they belong to these four buttons is **Observed** from the wording only) |
+| Time buttons in the main bar (`Kenshi_MainPanel.layout`: `TimeSpeedButton1` to `4`) | `FUN_14072d3b0` gives their float user data **0, 1, 2, 5**; click handler `FUN_140724920` calls `FUN_140787e40` | pause, 1x, 2x, 5x; the exe holds the strings "Pause Game", "Normal game speed", "Faster game speed", "Fastest game speed" next to the key binding names in `FUN_1403f0260` (**Observed**: they name the controls, not tooltips; the HUD builder sets no tooltip on these buttons, [Tooltips](ui-screens.md#tooltips)) |
 
 ### Threads
 

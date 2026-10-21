@@ -2,7 +2,8 @@ using System.Numerics;
 
 namespace Meitou.Data.Ui;
 
-public sealed record UiListItem(string Id, string Caption);
+/// <summary>A list row; <paramref name="Cells"/> are its per-column texts in a MultiListBox (null: the caption is the first column).</summary>
+public sealed record UiListItem(string Id, string Caption, IReadOnlyList<string>? Cells = null);
 
 public sealed record UiControl(string Name, string Type, UiRect Bounds, string Caption, string Action,
     string Skin, bool Enabled, IReadOnlyDictionary<string, string> Properties, Vector4 Background,
@@ -10,11 +11,17 @@ public sealed record UiControl(string Name, string Type, UiRect Bounds, string C
     bool? Pickable = null, string Argument = "", float? TextScale = null, UiRect? Clip = null);
 
 /// <summary>A frame shared by both frontends; bindings supply data and visibility without changing source documents.</summary>
-public sealed class UiBindings
+public sealed partial class UiBindings
 {
     /// <summary>Scale pixel-based template chrome along with viewport-relative layouts.</summary>
     public float TemplateScale { get; set; } = 1;
     public Dictionary<string, string> Text { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The text the code set for <paramref name="key"/>, in the active language when it is a message of the game's catalog (the original sets such
+    /// captions through gettext; a layout's own captions stay as written). Null when the code set nothing.
+    /// </summary>
+    public string? Coded(string key) => Text.TryGetValue(key, out var text) ? Localisation.Loc.Tr(text) : null;
     public Dictionary<string, string> Actions { get; } = new(StringComparer.Ordinal);
     public HashSet<string> Hidden { get; } = new(StringComparer.Ordinal);
     public HashSet<string> Disabled { get; } = new(StringComparer.Ordinal);
@@ -23,6 +30,8 @@ public sealed class UiBindings
     /// <summary>Parent-relative runtime geometry, including anonymous layout panels.</summary>
     public Dictionary<MyGuiWidget, UiRect> RelativePositions { get; } = [];
     public Dictionary<string, int> SelectedTabs { get; } = new(StringComparer.Ordinal);
+    /// <summary>A TabControl whose buttons are made at run time (one per player squad): their captions; the selected button shows the first page (MyGUI adds TabItems so).</summary>
+    public Dictionary<string, IReadOnlyList<string>> TabCaptions { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, float> Progress { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> States { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, IReadOnlyDictionary<string, string>> Properties { get; } = new(StringComparer.Ordinal);
@@ -31,11 +40,12 @@ public sealed class UiBindings
     public Dictionary<string, float> ScrollOffsets { get; } = new(StringComparer.Ordinal);
 }
 
-public static class MyGuiPresentation
+public static partial class MyGuiPresentation
 {
     public static IReadOnlyList<UiControl> Arrange(MyGuiLayout layout, int width, int height, UiBindings bindings, IReadOnlyList<string> layers)
     {
         var result = new List<UiControl>();
+        var deferred = new List<Action>();   // popups (combo lists), visited after every root so they draw last
         void Visit(MyGuiWidget w, UiRect parent, UiRect clip, bool parentEnabled = true, float parentAlpha = 1)
         {
             if (bindings.Hidden.Contains(w.Name) || bindings.HiddenWidgets.Contains(w)) return;
@@ -53,10 +63,10 @@ public static class MyGuiPresentation
                         .AlignTo(parent, float.Parse(rw, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, float.Parse(rh, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, w.Align)
                     : w.Position.RelativeTo(parent, false);
             if (bindings.Progress.TryGetValue(w.Name, out float fraction)) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
-            string caption = bindings.Text.GetValueOrDefault(w.Name) ?? props.GetValueOrDefault("Caption") ?? "";
+            string caption = bindings.Coded(w.Name) ?? PartText(bindings, props) ?? props.GetValueOrDefault("Caption") ?? "";
             if (props.TryGetValue("CaptionOwner", out string? owner))
             {
-                caption = bindings.Text.GetValueOrDefault(owner) ?? layout.Find(owner)?.Properties.GetValueOrDefault("Caption") ?? "";
+                caption = bindings.Coded(owner) ?? layout.Find(owner)?.Properties.GetValueOrDefault("Caption") ?? "";
                 // An EditBox's WordWrap is its text's, which the template's client draws.
                 if (!props.ContainsKey("WordWrap") && ((bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault("WordWrap")) ?? layout.Find(owner)?.Properties.GetValueOrDefault("WordWrap")) is { } wrap)
                     props["WordWrap"] = wrap;
@@ -73,39 +83,28 @@ public static class MyGuiPresentation
             if (w.Type == "TabControl")
             {
                 var pages = w.Children.Where(c => c.Type == "TabItem" && !bindings.Hidden.Contains(c.Name) && !bindings.HiddenWidgets.Contains(c)).ToArray();
-                int selected = Math.Clamp(bindings.SelectedTabs.GetValueOrDefault(w.Name), 0, Math.Max(0, pages.Length - 1));
+                var captions = bindings.TabCaptions.GetValueOrDefault(w.Name);
+                int buttons = captions?.Count ?? pages.Length;
+                int selected = Math.Clamp(bindings.SelectedTabs.GetValueOrDefault(w.Name), 0, Math.Max(0, buttons - 1));
                 foreach (var child in w.Children.Where(c => c.Type != "TabItem")) Visit(child, bounds, childClip, enabled, alpha);
                 // The buttons go in the skin's HeaderPlace (MyGUI's TabControl part), ButtonWidth wide unless ButtonAutoWidth.
                 var header = result.LastOrDefault(c => c.Properties.GetValueOrDefault("TemplateOwner") == w.Name && c.Properties.GetValueOrDefault("TemplatePart") == "HeaderPlace")?.Bounds
                     ?? new UiRect(bounds.X, bounds.Y, bounds.Width, 30);
-                float tabWidth = pages.Length == 0 ? 0 : props.GetValueOrDefault("ButtonAutoWidth") == "false" && float.TryParse(props.GetValueOrDefault("ButtonWidth"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fixedWidth)
-                    ? Math.Min(fixedWidth, header.Width / pages.Length) : header.Width / pages.Length;
-                for (int i = 0; i < pages.Length; i++)
+                float tabWidth = buttons == 0 ? 0 : props.GetValueOrDefault("ButtonAutoWidth") == "false" && float.TryParse(props.GetValueOrDefault("ButtonWidth"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fixedWidth)
+                    ? Math.Min(fixedWidth, header.Width / buttons) : header.Width / buttons;
+                for (int i = 0; i < buttons; i++)
                     result.Add(new(w.Name + "@tab" + i, "Button", new(header.X + i * tabWidth, header.Y, tabWidth, header.Height),
-                        bindings.Text.GetValueOrDefault(w.Name + "@tab" + i) ?? pages[i].Properties.GetValueOrDefault("Caption") ?? pages[i].Name, $"mygui:tab:{w.Name}:{i}", "Kenshi_SquadTabButton1Skin", enabled,
+                        captions?[i] ?? bindings.Coded(w.Name + "@tab" + i) ?? pages[i].Properties.GetValueOrDefault("Caption") ?? pages[i].Name, $"mygui:tab:{w.Name}:{i}", "Kenshi_SquadTabButton1Skin", enabled,
                         new Dictionary<string, string> { ["State"] = i == selected ? "normal_checked" : "normal", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, Clip: clip));
-                if (pages.Length > 0) Visit(pages[selected], bounds, childClip, enabled, alpha);
+                if (pages.Length > 0) Visit(pages[captions is null ? selected : 0], bounds, childClip, enabled, alpha);
             }
-            else foreach (var child in w.Children) Visit(child, bounds, childClip, enabled, alpha);
-            if (bindings.Lists.TryGetValue(w.Name, out var items))
-            {
-                var client = result.LastOrDefault(c => c.Properties.GetValueOrDefault("TemplateOwner") == w.Name && c.Properties.GetValueOrDefault("TemplatePart") == "Client");
-                var area = client?.Bounds ?? bounds;
-                var rowClip = area.Intersect(clip);
-                float offset = bindings.ScrollOffsets.GetValueOrDefault(w.Name);
-                for (int i = 0; i < items.Count; i++)
-                {
-                    var row = new UiRect(area.X + 3, area.Y + i * 22 - offset, Math.Max(0, area.Width - 6), 22);
-                    if (row.Intersect(rowClip).Height <= 0) continue;
-                    result.Add(new(w.Name + "@row" + i, "Button", row, items[i].Caption, $"mygui:list:{w.Name}:{i}", "", enabled,
-                        new Dictionary<string, string> { ["ListOwner"] = w.Name, ["ListCount"] = items.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter",
-                            ["TextColour"] = props.GetValueOrDefault("TextColour") ?? MyGuiColours.InkText, ["TextPadding"] = "4 2 4 2" },
-                        bindings.SelectedItems.GetValueOrDefault(w.Name, -1) == i ? new(0.25f, 0.24f, 0.16f, 0.95f) : default, Argument: items[i].Id, Clip: rowClip));
-                }
-            }
+            else if (w.Type == "ScrollView") VisitScrollView(result, bindings, w, props, bounds, childClip, enabled, alpha, Visit);
+            else foreach (var child in w.Children) Visit(child, ChildParent(props, bounds), childClip, enabled, alpha);
+            AddWidgetContent(result, bindings, w, props, bounds, clip, enabled, alpha, new(0, 0, width, height), Visit, deferred);
         }
         foreach (var root in layout.Roots.OrderBy(w => { int i = layers.IndexOfLayer(w.Layer); return i < 0 ? 0 : i; }))
             Visit(root, new(0, 0, width, height), new(0, 0, width, height));
+        for (int i = 0; i < deferred.Count; i++) deferred[i]();
         return result;
     }
 

@@ -19,6 +19,12 @@ public enum FixtureKind : byte
     Bed,
 }
 
+/// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record and position.</summary>
+public sealed record ContainerSpot(string Id, string Record, Vector3 Position);
+
+/// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction and where its leaf is (else its building's origin).</summary>
+public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position);
+
 /// <summary>The door's motion state as saved in <c>state&lt;i&gt;</c> (docs/game/locks.md "Doors"; not the DoorState enum): 0 closed, 1 open, 2 opening, 3 closing.</summary>
 public enum DoorMotion : byte { Closed = 0, Open = 1, Opening = 2, Closing = 3 }
 
@@ -70,8 +76,10 @@ public sealed class Fixture
     /// <summary>Where an occupant is held, and which way it faces (the item's origin: the cage's attach node is not read, an engine choice).</summary>
     public Vector3 Position { get; init; }
     public float Yaw { get; init; }
-    /// <summary>Null for beds.</summary>
+    /// <summary>Null for beds, and for a container with no <c>has lock</c>.</summary>
     public LockState? Lock { get; init; }
+    /// <summary>A container's own inventory (<c>has inventory</c>; docs/game/locks.md "Containers"): null for the rest. Starts empty (what the original puts in is <b>Unknown</b>).</summary>
+    public Items.Inventory? Contents { get; init; }
 
     /// <summary>Doors: the index in the building's <c>doors</c> list (the save's suffix), the motion state, the open amount 0..1, the door's own broken flag, <c>gatecode</c> (kept as read) and <c>wants lock</c>.</summary>
     public int DoorIndex { get; init; } = -1;
@@ -106,11 +114,15 @@ public sealed class Fixture
         if (Lock is { } l) l.Hash(ref h); else h.Add(-1);
         if (Kind == FixtureKind.Door) { h.Add((int)Motion); h.Add(OpenAmount); h.Add(DoorBroken); h.Add(WantsLock); if (AutoOpened) h.Add(LastPass); }
         h.Add(Occupant);
+        Contents?.Hash(ref h);
     }
 }
 
-/// <summary>A door as the snapshot shows it (<see cref="WorldSnapshot.Doors"/>): its open amount 0..1, motion, whether it is effectively locked and whether it wants to lock.</summary>
-public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock);
+/// <summary>
+/// A door as the snapshot shows it (<see cref="WorldSnapshot.Doors"/>): its open amount 0..1, motion, whether it is effectively locked and whether it wants to lock; for the sounds,
+/// whether it is broken, where it is (the leaf's centre once known, else its building's origin) and its own BUILDING record (<c>door type</c>).
+/// </summary>
+public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock, bool Broken = false, Vector3 Position = default, string Record = "");
 
 /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say.</summary>
 public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors);

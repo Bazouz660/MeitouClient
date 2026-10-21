@@ -30,8 +30,7 @@ public sealed partial class World
         foreach (var s in Player.Selection)
             if (table.TryResolveNext(s, out int k) && table.Cold(k) is { } c && Carrying.CarrySystem.CanKnockOut(c)) { koSlot = k; break; }
         var aggro = koSlot >= 0 ? systems.OfType<AggroSystem>().FirstOrDefault() : null;
-        var arrest = systems.OfType<Crime.ArrestSystem>().FirstOrDefault();
-        var surgeons = systems.OfType<PlayerSystem>().FirstOrDefault()?.Data?.Surgeons;
+        var talk = systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault();
         for (int i = 0; i < state.Length; i++)
         {
             if (!state[i].Alive) continue;
@@ -49,8 +48,7 @@ public sealed partial class World
                 Name = cold?.Name ?? "",
                 SquadId = cold?.SquadId ?? -1,
                 IsPlayer = cold?.IsPlayer ?? false,
-                IsTrader = cold is { IsPlayer: false, SquadId: >= 0 } && Squads.Find(cold.SquadId)?.Shop is not null,
-                SurgeryCost = cold is { IsPlayer: false } && surgeons is not null ? Editing.CharacterEditing.SurgeryCost(this, surgeons, id, cold) : null,
+                IsTrader = talk?.Trades(this, i) ?? (cold is { IsPlayer: false, SquadId: >= 0 } && Squads.Find(cold.SquadId)?.Shop is not null),
                 Selected = selected,
                 Inspected = inspected,
                 Skills = detailed && cold!.Stats is { } sk ? new SkillSummary(sk[StatsEnumerated.MeleeAttack], sk[StatsEnumerated.MeleeDefence], sk[StatsEnumerated.Dodge], sk.Toughness, sk.Strength, sk.Athletics) : null,
@@ -60,7 +58,8 @@ public sealed partial class World
                 Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats) : null,
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy))).ToArray()) : [],
                 ItemGrid = selected && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
-                    Array.AsReadOnly(grid.All().Select((item, index) => new InventoryItemView(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId, Charge = item.ChargeFraction }).ToArray()))
+                    Array.AsReadOnly(grid.All().Select((item, index) => new InventoryItemView(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId, Charge = item.ChargeFraction, Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges,
+                        StolenFrom = item.IsStolenFor(cold.Faction) ? item.StolenFrom : -1 }).ToArray()))
                     { TotalWeight = grid.ContentWeight(), CarryCapacity = cold.Stats is { } strength && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
                         ? Bodies.Encumbrance.Capacity(bodies.Constants, strength.Strength, cold.Medical?.StatMultiplier(StatsEnumerated.Strength) ?? 1) : null } : null,
                 Bounties = detailed && cold!.Bounties is not null ? Crime.CrimeSystem.Lines(cold, Tick, TickSeconds) : [],
@@ -71,6 +70,7 @@ public sealed partial class World
                 Carrying = cold?.Carrying ?? CharacterId.None,
                 Task = (CharacterTask)state[i].Task,
                 PickingLock = cold?.PickingLock is not null,
+                WorkingShackles = cold?.Shackles is { Work: Locks.ShackleWork.Pick or Locks.ShackleWork.Cut },
                 InBed = cold is { InSomething: Locks.HeldState.Bed },
                 InCombat = cold?.InCombat ?? false,
                 Shackled = cold?.Inventory is { } worn && worn.Items.Any(item => item.IsLocked && item.Section != "main"),
@@ -80,23 +80,68 @@ public sealed partial class World
                 CarriesShackles = selected && Locks.LockSystem.CarriedShackles(cold) is not null,
                 Orders = cold?.Orders ?? CharacterOrders.None,
                 RunSpeed = cold?.RunSpeed ?? SpeedMode.Free,
+                Jobs = cold is { Jobs.Count: > 0 } ? cold.Jobs.ToArray() : [],
                 Scale = cold is { Fighter.IsAnimal: true, Medical: { } size } ? size.ScaleK : 1,
                 Activity = cold is { Ai.Goal: { } goal } && Ai.AiSystem.Holds(state[i], cold) ? Ai.TaskBehaviours.Text(goal.Task.Type) : null,
+                // At the gun of the turret its squad gave it: the AI's turret goal, walked to and stood at (derived from the claims, not hashed).
+                Turret = cold is { Ai: { Behaviour: Ai.AiBehaviour.Turret, Squad.Ai: { } board } } && (CharacterTask)state[i].Task == CharacterTask.Idle && Ai.AiSystem.Holds(state[i], cold)
+                    && board.TurretClaims.TryGetValue(i, out int claimed) && (uint)claimed < (uint)board.Turrets.Count && board.Turrets[claimed] is { Turret: { } post } building
+                    ? new MannedTurret(building.Key, building.BuildingId, post.Position, post.Yaw, post.GunId) : null,
                 Stealth = sneaking ? watchers.Length == 0 ? StealthExposure.Unobserved : watchers.Max(w => w.Level) : null,
                 Watchers = watchers,
-                Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours, arrest?.BailFor(this, cold)) : null,
+                Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours) : null,
                 Ragdoll = ragdolls?.Publish(id),
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
                     ? Carrying.CarrySystem.StealthKoChance(table.Cold(koSlot)!, cold, aggro?.Spotted(i, table.IdOf(koSlot)) == true) : null,
             });
         }
         PreviousSnapshot = Snapshot;
-        Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), Speech = dialogues?.PublishSpeech() ?? [], DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps,
-            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), InspectedBuilding = Fixtures.DetailOf(Player.InspectedBuilding),
-            Machines = production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty };
+        Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), Speech = PublishSpeech(), DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Squad,
+            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, DoorPicks = Fixtures.DoorPicks, InspectedBuilding = Fixtures.DetailOf(Player.InspectedBuilding),
+            Machines = (OpenContainerView() ?? OpenLootView()) is { } container ?[.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty,
+            Crafts = production?.CraftsView(this) ?? Snapshot.Crafts };
+    }
+
+    /// <summary>The dialogue's speech bubbles, then the <see cref="Bark"/>s still due whose speaker has no dialogue line on show; expired barks are dropped.</summary>
+    IReadOnlyList<Dialogue.SpeechBubble> PublishSpeech()
+    {
+        var speech = dialogues?.PublishSpeech() ?? [];
+        if (barks.Count == 0) return speech;
+        foreach (var gone in barks.Where(b => Tick >= b.Value.Until || !Characters.TryResolveNext(b.Key, out _)).Select(b => b.Key).ToArray()) barks.Remove(gone);
+        if (barks.Count == 0) return speech;
+        var all = new List<Dialogue.SpeechBubble>(speech);
+        foreach (var (who, (text, _)) in barks)
+            if (!speech.Any(s => s.Speaker == who)) all.Add(new Dialogue.SpeechBubble(who, text, false));
+        return all;
+    }
+
+    /// <summary>
+    /// The open container (<see cref="PlayerState.OpenContainer"/>) shaped as a machine with a storage grid, so the host shows it in the storage window the research bench uses.
+    /// <c>Site</c> is the fixture id, <c>Record</c> its BUILDING record. Null when none is open.
+    /// </summary>
+    Production.MachineSnapshot? OpenContainerView()
+    {
+        if (Player.OpenContainer is not { } id || Fixtures.Find(id) is not { Contents: { } grid } f) return null;
+        var storage = new InventoryView(grid.Width, grid.Height, 0, 0,
+            Array.AsReadOnly(grid.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
+                { Material = item.MaterialId, Charge = item.ChargeFraction, Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges }).ToArray()));
+        return new Production.MachineSnapshot(id, f.RecordId, [], null, storage, null, 0, 0, 0) { IsContainer = true };
+    }
+
+    /// <summary>The open loot (<see cref="PlayerState.OpenLoot"/>) as a container: the body's main grid, each item indexed by its place in the inventory's items (what <see cref="Carrying.TakeLootItem"/> takes).</summary>
+    Production.MachineSnapshot? OpenLootView()
+    {
+        if (!Characters.TryResolveNext(Player.OpenLoot, out int slot) || Characters.Cold(slot) is not { Inventory: { } grid } body) return null;
+        var items = grid.Items.Select((item, index) => (item, index)).Where(p => p.item.Section == "main")
+            .Select(p => new InventoryItemView(p.index, p.item.Record, p.item.Name, "main", p.item.X, p.item.Y, p.item.Width, p.item.Height, p.item.Quantity, p.item.Weight, p.item.Quality)
+                { Material = p.item.MaterialId, Charge = p.item.ChargeFraction, Company = p.item.CompanyId, Level = p.item.Level, Charges = p.item.Charges, MaxCharges = p.item.MaxCharges }).ToArray();
+        return new Production.MachineSnapshot($"loot:{Player.OpenLoot}", "", [], null, new InventoryView(grid.Width, grid.Height, 0, 0, Array.AsReadOnly(items)), null, 0, 0, 0)
+            { IsContainer = true, Body = Player.OpenLoot, Title = body.Name };
     }
 
     /// <summary>The sneaker's watchers of the last <see cref="AggroSystem.WatcherSeconds"/> that are still about, where they stand now.</summary>
+    SquadView[] PublishSquads() => [.. SquadManagement.PlayerSquads(this).Select(s => new SquadView(s.Id, s.Name, [.. s.Members]))];
+
     WatcherView[] WatchersOf(CharacterCold cold)
     {
         if (cold.Watchers is not { Count: > 0 } list) return [];

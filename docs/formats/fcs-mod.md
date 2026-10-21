@@ -33,11 +33,11 @@ Silently truncate at NUL and byte limits: keys64, names/IDs/ref/instance identit
 string/filename4096. Prior types have integer IDs/extra tags and older refs; partial support is
 not a complete old-format specification. Error mid-record behaviour unverified.
 
-Core files→core translation→ordered mods→mod translations→postpasses→world leveldata.
+Core files→core translation→ordered mods→first mod translation→postpasses→world leveldata.
 GLOBAL CONSTANTS lookup by name AND type27. Postpass resolves refs. **Verified** (`FUN_1406c34f0`, `GameDatabase.AddWallMasters`):
 each BUILDING with `link type` != 3 sets-or-appends on every loaded record of its `wall subsections` a `wall master`
 ref (0,0,0) back to itself; missing subsections are skipped. Translation files are ordinary record layers;
-language-folder selection untraced. Game skips editor merge/delete bookkeeping; provenance file
+language selection: [localisation](localisation.md). Game skips editor merge/delete bookkeeping; provenance file
 indices track creation/last update but their full uses unknown.
 
 ## Record types and schema

@@ -46,7 +46,7 @@ public sealed class BuildMenu(IReadOnlyList<BuildingBuildData> catalog)
         var lines = new List<(string, string)> { ("Materials cost:", building.Materials.Count == 0 ? "Nothing" : "") };
         foreach (var m in building.Materials)
             lines.Add(("  " + itemName(m.Item), "x" + m.Required.ToString("0.##", CultureInfo.InvariantCulture)));
-        lines.Add(("Estimated build time:", EstimatedHours(building).ToString(CultureInfo.InvariantCulture) + " hrs"));
+        lines.Add(("Estimated build time:", Loc.Plural("{1,num} hr", "{1,num} hrs", EstimatedHours(building), EstimatedHours(building))));
         return lines;
     }
 }
@@ -67,6 +67,8 @@ public sealed class BuildServices
     public required Func<string, string> Description { get; init; }
     /// <summary>A BUILDING's parts laid out at the origin with no rotation (the same list for the same record).</summary>
     public required Func<string, IReadOnlyList<PlacedMesh>> Parts { get; init; }
+    /// <summary>The game's saved picture of a BUILDING (<c>data/icons/buildings</c>), null when none: the window then shows the renderer's drawing.</summary>
+    public Func<string, string?> IconFile { get; init; } = _ => null;
     public required PlacementServices Placement { get; init; }
     /// <summary>The placed towns, for <c>PlacementRules.TownBlock</c>.</summary>
     public required Func<IReadOnlyList<PlacementTown>> Towns { get; init; }

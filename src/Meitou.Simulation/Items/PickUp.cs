@@ -58,8 +58,14 @@ namespace Meitou.Simulation
                 c.PickingUpItem = null;
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
                 // What does not fit stays on the ground (Inventory.Add leaves it in the item).
-                if (inventory.Add(item.Item)) world.GroundItems.Take(id);
-                else world.Post($"{c.Name}: Not enough room in my inventory");
+                int before = item.Item.Quantity;
+                if (inventory.Add(item.Item)) { world.GroundItems.Take(id); world.EmitSound(SoundKind.PickedUp, s, next[s].Position); }
+                else
+                {
+                    // Task_Pickup sounds when any of the stack went in.
+                    if (item.Item.Quantity < before) world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
+                    world.Post($"{c.Name}: Not enough room in my inventory");
+                }
             }
         }
     }

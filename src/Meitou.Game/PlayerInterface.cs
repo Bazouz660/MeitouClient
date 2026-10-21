@@ -39,6 +39,18 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     IReadOnlyList<CharacterId> PlayerCharacters() =>
         [.. session.CurrentSnapshot.Characters.Where(c => c.IsPlayer).Select(c => c.Id)];
 
+    /// <summary>
+    /// The active squad's members in squad order, the first leading (the squad bar's; the number keys and select_all pick from them, the original's <c>UiSelectSquadMember</c> /
+    /// <c>UiSelectAllInSquad</c>). Every player character when there is no squad list (a world without a player squad).
+    /// </summary>
+    IReadOnlyList<CharacterId> ActiveSquadMembers()
+    {
+        var snapshot = session.CurrentSnapshot;
+        if (snapshot.PlayerSquads.FirstOrDefault(s => s.Id == snapshot.ActiveSquad) is not { } squad) return PlayerCharacters();
+        var present = PlayerCharacters().ToHashSet();
+        return [.. squad.Members.Where(present.Contains)];
+    }
+
     // ---- commands ----
 
     void Say(SimCommand command)
@@ -62,6 +74,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     public bool MouseDown(MouseButton button, Vector2 p, bool shift, bool ctrl = false, bool alt = false)
     {
         mouse = p;
+        HideTooltip();   // a press captures the mouse, which hides a tooltip (MyGUI)
         if (EditorPointerDown(button, p)) return true;
         if (button == MouseButton.Right && CancelInventoryDrag()) return true;
         if (button == MouseButton.Right && !OverHud(p) && WallCancel()) return true;
@@ -91,11 +104,14 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
                 Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick });
             else if (ctrl && downed is { } lift && SelectedIds() is { Count: > 0 })
                 Say(new Meitou.Simulation.Carrying.PickUpOrder([], lift) { Tick = session.World.Tick });
-            // On a character: the quick order (trade with a trader, attack anyone else, treat a hurt ally, pick up a downed one of yours) is given when the button comes up
+            // On a character: the quick order (trade with a trader, attack anyone else, treat a hurt ally, pick up a downed one of yours, loot anyone else's) is given when the button comes up
             // before the context menu's hold time; held longer, the menu opens instead (PlayerInterface.ContextMenu.cs).
             else if (QuickOrder(p)?.Do is var quick && ContextPress(p, quick)) { }
             else if (quick is not null) quick();
             else if (GroundItemClick(p)) { }
+            else if (ContainerClick(p)) { }
+            else if (DoorClick(p, alt)) { }
+            else if (RockClick(p, shift)) { }
             else if (Ray(p) is { } ray && MoveHit(ray.Origin, ray.Direction) is { } hit)
             {
                 Move(hit, shift);
@@ -125,6 +141,8 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (PickTarget(p) is { } victim && Hostile(victim)) return ("attk", victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim) { Tick = session.World.Tick }));
         if (PickHurtAlly(p) is { } patient) return ("med", patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick }));
         if (PickDowned(p, ownOnly: true) is { } ally) return ("lift", ally, () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], ally) { Tick = session.World.Tick }));
+        // Anyone else's knocked-out or dead body: the nearest walks over and its inventory opens to take from (Alt + right click takes all at once).
+        if (PickDowned(p) is { } body) return ("search", body, () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], body) { Tick = session.World.Tick }));
         return null;
     }
 
@@ -142,7 +160,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     {
         mouse = p;
         EditorPointerUp(button);
-        if (button == MouseButton.Left) { InventoryPointerUp(p); faithfulScreens.PointerUp(); mapDrag = null; }
+        if (button == MouseButton.Left) { InventoryPointerUp(p); JobDragEnd(p); SquadPointerUp(p, shift); faithfulScreens.PointerUp(); mapDrag = null; }
         if (button == MouseButton.Middle) mapDrag = null;
         if (button == MouseButton.Right && MapRightUp(p)) return;
         if (button == MouseButton.Right) { ContextRelease(); SiteRelease(); }
@@ -218,7 +236,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     /// <summary>Selects the squad's <paramref name="index"/>th member (<paramref name="shift"/> adds); the second press within half a second centres the camera on it and follows.</summary>
     void SelectMember(int index, bool shift, bool doubleTap)
     {
-        var members = PlayerCharacters();
+        var members = ActiveSquadMembers();
         if (index < 0 || index >= members.Count) return;
         Select([members[index]], shift);
         if (!doubleTap) SkipFlight?.Invoke(members[index]);
@@ -252,12 +270,12 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         else if (key == Meitou.Engine.Input.Key.B && !session.Camera.IsFree && !TitleOpen && !EditorOpen) ToggleBuildMode();
         // focus_char (F): put the pivot on the lead selected character without following it (the free camera's F is its down key).
         else if (key == Meitou.Engine.Input.Key.F && !session.Camera.IsFree && Selected().FirstOrDefault() is { } lead) CentreOn(lead.Id, follow: false);
-        else if (key == Meitou.Engine.Input.Key.Grave) Select(PlayerCharacters(), shift);
+        else if (key == Meitou.Engine.Input.Key.Grave) Select(ActiveSquadMembers(), shift);
         else if (key == Meitou.Engine.Input.Key.R && !session.Camera.IsFree) Say(new StopCommand(SelectedIds()) { Tick = session.World.Tick });
-        else if (key == Meitou.Engine.Input.Key.H && !session.Camera.IsFree) Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds()) { Tick = session.World.Tick });
+        else if (key == Meitou.Engine.Input.Key.H && !session.Camera.IsFree) Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), shift) { Tick = session.World.Tick });
         else if (key == Meitou.Engine.Input.Key.L && !session.Camera.IsFree) Say(new Meitou.Simulation.FirstAid.RestOrder(SelectedIds()) { Tick = session.World.Tick });
-        // Rescue job (the original's NUM8 rescue toggle; the numpad is the cinema camera's) and put down (the original's context menu verb "Put Down").
-        else if (key == Meitou.Engine.Input.Key.J && !session.Camera.IsFree) Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds()) { Tick = session.World.Tick });
+        // Rescue (the original's NUM8; the numpad is the cinema camera's; with Shift a job, as Medic on H) and put down (the original's context menu verb "Put Down").
+        else if (key == Meitou.Engine.Input.Key.J && !session.Camera.IsFree) Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds(), shift) { Tick = session.World.Tick });
         else if (key == Meitou.Engine.Input.Key.K && !session.Camera.IsFree) Say(new Meitou.Simulation.Carrying.PutDownOrder(SelectedIds()) { Tick = session.World.Tick });
     }
 }

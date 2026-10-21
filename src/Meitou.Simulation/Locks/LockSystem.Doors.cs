@@ -9,6 +9,13 @@ public sealed record ToggleDoorsOrder(string Building) : SimCommand;
 public sealed record ToggleDoorLocksOrder(string Building) : SimCommand;
 
 /// <summary>
+/// A quick right click on a door (docs/game/ui-input.md "Building hover and click"): the nearest of the characters (the selection when empty) walks to it and opens a closed one or closes an
+/// open one (72 OPEN_DOOR / 73 CLOSE_DOOR; a locked one: "It's locked."). Another faction's locked door: with <see cref="PickLock"/> (Alt) its lock is picked (76 PICK_LOCK), else the
+/// hint and a walk to it.
+/// </summary>
+public sealed record DoorOrder(IReadOnlyList<CharacterId> Characters, string Door, bool PickLock = false) : SimCommand;
+
+/// <summary>
 /// The doors (docs/simulation.md "Cages, beds and locks"; the original's rules in docs/game/locks.md "Doors"): every tick the opening and closing leaves move (<see cref="FixtureRegistry.StepDoors"/>);
 /// every <see cref="WalkerEveryTicks"/> ticks a character whose path runs through a closed door opens it, or stops at a locked one ("It's locked."); the player's finished buildings
 /// get their doors registered (<see cref="FixtureRegistry.RegisterPlayerBuilding"/>) and the player's door orders are applied. Serial phases only.
@@ -70,6 +77,69 @@ public sealed partial class LockSystem
         }
     }
 
+    /// <summary>Where a character works a fixture from, and how near counts: a door's side nearer <paramref name="from"/>, out from the leaf; anything else its own place.</summary>
+    static (Vector2 At, float Reach) WorkSpot(World world, Fixture f, Vector2 from)
+    {
+        if (f.Kind != FixtureKind.Door || world.Fixtures.DoorSpotOf(f) is not { } spot) return (Flat(f.Position), f.UseRange + Reach);
+        var outside = StandSpot(f, spot);
+        var centre = new Vector2(spot.Centre.X, spot.Centre.Z);
+        var inside = 2 * centre - outside;
+        return (Vector2.DistanceSquared(from, inside) < Vector2.DistanceSquared(from, outside) ? inside : outside, BashReach);
+    }
+
+    void DoorOrderInput(World world, DoorOrder order)
+    {
+        if (world.Fixtures.Find(order.Door) is not { Kind: FixtureKind.Door, DoorBroken: false } door) return;
+        var table = world.Characters;
+        int best = -1;
+        float bestDistance = float.MaxValue;
+        foreach (var id in Who(world, order.Characters))
+        {
+            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+            float d = Vector2.Distance(Flat(table.Next[s].Position), WorkSpot(world, door, Flat(table.Next[s].Position)).At);
+            if (d < bestDistance) (best, bestDistance) = (s, d);
+        }
+        if (best < 0) return;
+        var walker = table.Cold(best)!;
+        var player = world.Player;
+        var (at, _) = WorkSpot(world, door, Flat(table.Next[best].Position));
+        walker.Shackles = null;
+        walker.PickingLock = null;
+        player.DoorTarget = null;
+        if (door.Lock is { EffectivelyLocked: true } && door.Motion == DoorMotion.Closed && door.Owner != world.Player.Faction)
+        {
+            if (order.PickLock) walker.PickingLock = door.Id;
+            else world.Post("Hold down the ALT key to pick the lock.");
+        }
+        else (player.DoorTarget, player.DoorWalker) = (door.Id, table.IdOf(best));
+        MovementSystem.GoTo(table, best, at, walker.RunSpeed);
+    }
+
+    /// <summary>Each tick: the door walker in reach opens or closes its door; one given another order, downed or gone gives up.</summary>
+    static void DoorWalkers(World world)
+    {
+        var player = world.Player;
+        if (player.DoorTarget is not { } wanted) return;
+        var table = world.Characters;
+        if (world.Fixtures.Find(wanted) is not { DoorBroken: false } door || !table.TryResolveNext(player.DoorWalker, out int s) || table.Cold(s) is not { Medical.Incapacitated: false } c || !c.CarriedBy.IsNone)
+        {
+            player.DoorTarget = null;
+            return;
+        }
+        ref var n = ref table.Next[s];
+        var (at, reach) = WorkSpot(world, door, Flat(n.Position));
+        if (Vector2.Distance(Flat(n.Position), at) > reach)
+        {
+            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, at) > reach) player.DoorTarget = null;
+            return;
+        }
+        if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+        player.DoorTarget = null;
+        if (door.Motion is DoorMotion.Open or DoorMotion.Opening) { if (door.Motion == DoorMotion.Open) FixtureRegistry.CloseDoor(door); }
+        else if (door.Lock is { EffectivelyLocked: true }) world.Post($"{c.Name}: It's locked.");
+        else FixtureRegistry.OpenDoor(door);
+    }
+
     /// <summary>The door fixtures of a building the player's faction owns (none for any other).</summary>
     static List<Fixture> PlayerDoors(World world, string building)
     {
@@ -83,6 +153,7 @@ public sealed partial class LockSystem
     {
         SyncPlayerBuildings(world);
         world.Fixtures.StepDoors(world.TickSeconds);
+        DoorWalkers(world);
         if (world.Tick % WalkerEveryTicks == 0) OpenForWalkers(world);
     }
 

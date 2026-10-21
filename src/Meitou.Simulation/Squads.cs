@@ -14,7 +14,12 @@ public sealed class Squad
     public required int Id { get; init; }
     /// <summary>The SQUAD_TEMPLATE it was made from.</summary>
     public required string TemplateId { get; init; }
-    public string Name { get; init; } = "";
+    /// <summary>The name the squad tabs and the squads screen show (a player's squad can be renamed, <see cref="RenameSquadCommand"/>; saved as its PLATOON record's name).</summary>
+    public string Name { get; set; } = "";
+    /// <summary>A player's squad's place in the squad order (the PLATOON's <c>squad index</c>, the original's platoon +0x1f2): the tabs and the squads screen go by it, then by id.</summary>
+    public int Index { get; set; }
+    /// <summary>The <c>platoon stringID</c> of the saved player platoon the squad was loaded from (its file); null for a squad made since, which a save writes as a new platoon.</summary>
+    public string? SaveName { get; init; }
     /// <summary>The owner faction, a position in the world's faction list (-1: none).</summary>
     public int Faction { get; init; } = -1;
     /// <summary>The town it belongs to (a position in the population's site list; -1: none).</summary>
@@ -35,6 +40,8 @@ public sealed class Squad
     public bool Pinned { get; init; }
     /// <summary>One of its town's own squads: the town made it, or a save holds it as the town's.</summary>
     public bool TownOwn => Town >= 0 && (PlatoonId < 0 || Pinned);
+    /// <summary>Back from its town's time unloaded: its members' minds take up their schedule where it puts them (<see cref="PopulationSettings.ResidentSchedule"/>); cleared once they have minds.</summary>
+    public bool Resume { get; set; }
     /// <summary>How many it was made with (its town's regeneration measures losses against it; not part of the state).</summary>
     public int SpawnSize { get; set; }
     public List<CharacterId> Members { get; } = [];
@@ -44,8 +51,12 @@ public sealed class Squad
     public long Money { get; set; }
     /// <summary>The squad's shop, when it is a trader (<see cref="Trading.TradeSystem"/>); null otherwise.</summary>
     public Trading.Shop? Shop { get; set; }
+    /// <summary>When a squad that is no trader but has <c>vendors</c> next fills its home's containers (<see cref="Trading.TradeSystem"/>). Not hashed and not saved: the containers are.</summary>
+    public long NextHomeFillTick { get; set; }
     /// <summary>The squad's AI packages and the one running (<see cref="Ai.AiSystem"/>); null for a squad the AI does not run.</summary>
     public Ai.Blackboard? Ai { get; set; }
+    /// <summary>The dialogue-given AI a save or its stored state held, until the AI attaches a blackboard and applies it (then null).</summary>
+    public Saving.AiSave? SavedAi { get; set; }
     /// <summary>Whom a campaign squad in its assault also treats as enemies (<see cref="WarTargets"/>; written by the population's serial look, read by the aggro).</summary>
     public WarTargets War { get; set; } = WarTargets.None;
 }
@@ -103,6 +114,8 @@ public sealed class SquadRegistry
             hasher.Add(s.HomeRadius);
             hasher.Add(s.Position);
             hasher.Add(s.Leader);
+            if (s.Index != 0) hasher.Add(0x51647800 + s.Index);   // nothing for a squad in the first place, so the pinned hashes stay
+            if (s.Resume) hasher.Add(0x52657375);
             hasher.Add(s.Members.Count);
             foreach (var m in s.Members)
             {

@@ -797,6 +797,169 @@ static class PostProcessShaders
         """;
 
     /// <summary>
+    /// SMAA (Jimenez et al., "SMAA: Enhanced Subpixel Morphological Antialiasing") on the final LDR picture, Meitou's alternative to the game's FXAA
+    /// (docs/render-post.md "SMAA"), pass 1 of 3: luma edges. R marks a pixel's left edge, G its top edge, where the luma step to that neighbour
+    /// passes the threshold and is at least half of the largest step round it (SMAA's local contrast adaptation).
+    /// </summary>
+    public const string SmaaEdges = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        uniform sampler2D uImage;
+        const float THRESHOLD = 0.1, CONTRAST_ADAPTATION = 2.0;
+        ivec2 size;
+
+        float luma(ivec2 p) { return dot(texelFetch(uImage, clamp(p, ivec2(0), size - 1), 0).rgb, vec3(0.2126, 0.7152, 0.0722)); }
+
+        void main()
+        {
+            size = textureSize(uImage, 0);
+            ivec2 p = ivec2(vUv * vec2(size));
+            float l = luma(p), left = luma(p + ivec2(-1, 0)), top = luma(p + ivec2(0, -1));
+            vec2 delta = abs(l - vec2(left, top));
+            vec2 edges = step(THRESHOLD, delta);
+            if (edges.x + edges.y == 0.0) { fragColour = vec4(0.0); return; }
+            vec2 maxDelta = max(delta, abs(l - vec2(luma(p + ivec2(1, 0)), luma(p + ivec2(0, 1)))));
+            maxDelta = max(maxDelta, abs(vec2(left, top) - vec2(luma(p + ivec2(-2, 0)), luma(p + ivec2(0, -2)))));
+            edges *= step(max(maxDelta.x, maxDelta.y), CONTRAST_ADAPTATION * delta);
+            fragColour = vec4(edges, 0.0, 0.0);
+        }
+        """;
+
+    /// <summary>
+    /// SMAA pass 2: blending weights, orthogonal patterns (as SMAA's low and medium presets: no diagonal or corner patterns). For each edge of a
+    /// pixel the run of that edge is searched both ways (up to 16 pixels) until it ends or a crossing edge breaks it; the crossing edges at the
+    /// two ends give the shape (L, U or Z), revectorized as SMAA's area texture is (lines through the ends' half-pixel steps, U shapes
+    /// smoothed when short), with the areas computed exactly here instead of from the lookup textures. The area under the line on the pixel's
+    /// own side is how much it takes of its neighbour, the area on the other side how much the neighbour takes of it: R / G for the top edge
+    /// (this pixel, the one above), B / A for the left edge (this pixel, the one to the left).
+    /// </summary>
+    public const string SmaaWeights = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        uniform sampler2D uEdges;
+        const int MAX_SEARCH = 16;
+        const float SMOOTH_DISTANCE = 32.0;
+        ivec2 size;
+
+        vec2 edge(ivec2 p) { return any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size)) ? vec2(0.0) : texelFetch(uEdges, p, 0).rg; }
+
+        // The crossing edges (channel 1 - c) at the boundary stored in b: bit 0 on the run's own row / column, bit 1 on the neighbour's (b + n).
+        int crossing(ivec2 b, ivec2 n, int c) { return int(edge(b)[1 - c]) | (int(edge(b + n)[1 - c]) << 1); }
+
+        // The run of the edge in channel c (0 left, 1 top) from p back along -u: the pixels it goes on for, and the crossing edges at its end.
+        ivec2 searchBack(ivec2 p, ivec2 u, ivec2 n, int c)
+        {
+            int k = 0;
+            for (; k < MAX_SEARCH; k++)
+            {
+                ivec2 b = p - k * u;
+                if (crossing(b, n, c) != 0 || edge(b - u)[c] == 0.0) break;
+            }
+            return ivec2(k, crossing(p - k * u, n, c));
+        }
+
+        // The same forward along +u: the boundary past pixel p + k u is stored in the next pixel.
+        ivec2 searchForward(ivec2 p, ivec2 u, ivec2 n, int c)
+        {
+            int k = 0;
+            for (; k < MAX_SEARCH; k++)
+            {
+                ivec2 b = p + (k + 1) * u;
+                if (crossing(b, n, c) != 0 || edge(b)[c] == 0.0) break;
+            }
+            return ivec2(k, crossing(p + (k + 1) * u, n, c));
+        }
+
+        // The area between the line p1-p2 and the edge (y = 0) over the pixel [x, x + 1], within the line's span: x where the line runs on the
+        // pixel's own side (y < 0), y where it runs on the neighbour's.
+        vec2 lineArea(vec2 p1, vec2 p2, float x)
+        {
+            float a = max(x, p1.x), b = min(x + 1.0, p2.x);
+            if (b <= a) return vec2(0.0);
+            float slope = (p2.y - p1.y) / (p2.x - p1.x);
+            float ya = p1.y + slope * (a - p1.x), yb = p1.y + slope * (b - p1.x);
+            vec2 s = vec2(0.5 * (ya + yb) * (b - a), 0.0);
+            if (ya * yb < 0.0)
+            {
+                float z = a + (b - a) * ya / (ya - yb);   // where the line crosses the edge: a triangle on each side
+                s = vec2(0.5 * ya * (z - a), 0.5 * yb * (b - z));
+            }
+            return vec2(max(-s.x, 0.0) + max(-s.y, 0.0), max(s.x, 0.0) + max(s.y, 0.0));
+        }
+
+        vec2 smoothArea(float d, vec2 a) { return mix(sqrt(2.0 * a) * 0.5, a, clamp(d / SMOOTH_DISTANCE, 0.0, 1.0)); }
+
+        // The pixel `near` pixels from the run's start and `far` from its end, with crossing codes e1 / e2 at the start / end (1 own side, 2 the
+        // neighbour's, 3 both): an end with one crossing edge pulls the line half a pixel to that side, an end with none or both leaves it on the edge.
+        vec2 area(int e1, int e2, float near, float far)
+        {
+            float d = near + far + 1.0, h = 0.5 * d;
+            float y1 = e1 == 1 ? -0.5 : 0.5, y2 = e2 == 1 ? -0.5 : 0.5;
+            bool one1 = e1 == 1 || e1 == 2, one2 = e2 == 1 || e2 == 2;
+            if (one1 && one2 && e1 == e2)   // U: the halves of a step out and back
+                return smoothArea(d, lineArea(vec2(0.0, y1), vec2(h, 0.0), near)) + smoothArea(d, lineArea(vec2(h, 0.0), vec2(d, y2), near));
+            if (one1 && one2) return lineArea(vec2(0.0, y1), vec2(d, y2), near);   // Z
+            if (one1 && e2 == 3) return lineArea(vec2(0.0, y1), vec2(d, -y1), near);   // Z, the end with both taken as the other side
+            if (e1 == 3 && one2) return lineArea(vec2(0.0, -y2), vec2(d, y2), near);
+            if (one1 && e2 == 0) return lineArea(vec2(0.0, y1), vec2(h, 0.0), near);   // L: only the half nearer the step
+            if (e1 == 0 && one2) return lineArea(vec2(h, 0.0), vec2(d, y2), near);
+            return vec2(0.0);
+        }
+
+        void main()
+        {
+            size = textureSize(uEdges, 0);
+            ivec2 p = ivec2(vUv * vec2(size));
+            vec2 e = edge(p);
+            vec4 w = vec4(0.0);
+            if (e.g > 0.0)
+            {
+                ivec2 a = searchBack(p, ivec2(1, 0), ivec2(0, -1), 1), b = searchForward(p, ivec2(1, 0), ivec2(0, -1), 1);
+                w.rg = area(a.y, b.y, float(a.x), float(b.x));
+            }
+            if (e.r > 0.0)
+            {
+                ivec2 a = searchBack(p, ivec2(0, 1), ivec2(-1, 0), 0), b = searchForward(p, ivec2(0, 1), ivec2(-1, 0), 0);
+                w.ba = area(a.y, b.y, float(a.x), float(b.x));
+            }
+            fragColour = w;
+        }
+        """;
+
+    /// <summary>
+    /// SMAA pass 3: neighbourhood blending. A pixel's four weights (taking of the right, left, lower and upper neighbour: from the weights of the
+    /// pixel to the right and below and its own) pick the axis with the larger one; it is blended with both neighbours on that axis by bilinear
+    /// lookups moved that far towards each, weighted by the two.
+    /// </summary>
+    public const string SmaaBlend = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        uniform sampler2D uImage, uWeights;
+
+        void main()
+        {
+            ivec2 size = textureSize(uWeights, 0);
+            ivec2 p = ivec2(vUv * vec2(size));
+            vec2 texel = 1.0 / vec2(size);
+            vec4 own = texelFetch(uWeights, p, 0);
+            float right = p.x + 1 < size.x ? texelFetch(uWeights, p + ivec2(1, 0), 0).a : 0.0;
+            float below = p.y + 1 < size.y ? texelFetch(uWeights, p + ivec2(0, 1), 0).g : 0.0;
+            vec4 a = vec4(right, own.b, below, own.r);   // towards the right, left, lower, upper neighbour
+            if (dot(a, vec4(1.0)) < 1e-5) { fragColour = vec4(texelFetch(uImage, p, 0).rgb, 1.0); return; }
+            bool horizontal = max(a.x, a.y) > max(a.z, a.w);
+            vec2 w = horizontal ? a.xy : a.zw;
+            vec2 o1 = horizontal ? vec2(a.x * texel.x, 0.0) : vec2(0.0, a.z * texel.y);
+            vec2 o2 = horizontal ? vec2(-a.y * texel.x, 0.0) : vec2(0.0, -a.w * texel.y);
+            vec2 uv = (vec2(p) + 0.5) * texel;
+            vec3 c = w.x * textureLod(uImage, uv + o1, 0.0).rgb + w.y * textureLod(uImage, uv + o2, 0.0).rgb;
+            fragColour = vec4(c / (w.x + w.y), 1.0);
+        }
+        """;
+
+    /// <summary>
     /// The game's heat haze on the final LDR picture (docs/formats/post-processing.md "Heat haze"), written from the facts there: a
     /// flow map (at 3.341 × the screen) gives a scroll direction; three layers of a normal map (at 7.341 × the screen, offset by
     /// (0.1, 0.3) and (0.4, 0.7)) scroll along it over phases <c>fract(gameTime · 100 + 0, 0.33, 0.66)</c>, each weighted by a

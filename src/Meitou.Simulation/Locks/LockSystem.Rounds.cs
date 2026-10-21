@@ -413,7 +413,9 @@ public sealed partial class LockSystem : IStateHashed
         {
             case RoundKind.Release:
                 world.Fixtures.SetLocked(f, false);
-                world.Fixtures.Release(world, r.Prisoner, r.Faction, Crimes);
+                // A releaser of a faction that books bounties tells the prisoner it may go (EV_PRISONER_FREE_TO_GO, Task_ReleasePrisoner, economy.md 11.5).
+                if (world.Fixtures.Release(world, r.Prisoner, r.Faction, Crimes) && Crimes?.Factions.Books(r.Faction) == true)
+                    world.Defer(new Dialogue.DialogueEvent(r.Worker, r.Prisoner, PrisonerFreeToGo) { Tick = world.Tick + 1 });
                 break;
             case RoundKind.LockDoors:
                 f.Motion = DoorMotion.Closed;   // locking closes the door first

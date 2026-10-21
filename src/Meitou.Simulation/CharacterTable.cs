@@ -103,6 +103,11 @@ public sealed class CharacterCold
     /// <summary>The water state 0..3 (<see cref="Meitou.Simulation.Bodies.Speed.WaterState"/>) <see cref="MovementSystem"/> found at the character's position, and its swim speed (<see cref="Meitou.Simulation.Bodies.Speed.Swim"/>) <see cref="BodySystem"/> keeps up to date. Derived each tick: not hashed, not saved.</summary>
     public byte WaterState { get; set; }
     public float SwimSpeed { get; set; }
+    /// <summary>Where the last blood decal of its trail was left, and the drip build-up while it bleeds being carried (<see cref="BodySystem"/>, docs/game/blood-decals.md). Display only: not hashed, not saved.</summary>
+    public System.Numerics.Vector3 BloodMark { get; set; }
+    public float BloodDrip { get; set; }
+    /// <summary>Burst by a fatal hit in luckyren Mode (<see cref="World.Luckyren"/>): the blow's direction (X/Z); <see cref="BodySystem"/> removes it at the end of the tick. Not saved.</summary>
+    public System.Numerics.Vector2? Burst { get; set; }
     /// <summary>What it carries (null for animals and anything without a race): <see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
     public Meitou.Simulation.Items.Inventory? Inventory { get; set; }
     /// <summary>The tick from which a hungry NPC without food may be given a ration again.</summary>
@@ -117,6 +122,10 @@ public sealed class CharacterCold
     public float FootprintRadius { get; set; }
     /// <summary>The character is in a fight (set by the combat system): the animation stance takes the combat clips.</summary>
     public bool InCombat { get; set; }
+    /// <summary>A fighter running at its target out of the combat stance (set by the <see cref="PursuitSystem"/>, docs/game/combat.md "Combat stance").</summary>
+    public bool CombatRunning { get; set; }
+    /// <summary>Seconds the fighter's target has been moving away out of a fight (the <see cref="PursuitSystem"/>'s fleeing check).</summary>
+    public float TargetFleeingTime { get; set; }
     /// <summary>
     /// The number that turns its portrait camera (docs/game/ui-screens.md "Portrait cells"): the save's <c>portrait_serial</c>, else its handle's serial; a character the game makes
     /// gets random × 4e9 at <see cref="CharacterTable.Spawn"/>, as the original rolls one per character.
@@ -143,8 +152,8 @@ public sealed class CharacterCold
     public bool TreatSplint { get; set; }
     /// <summary>The task a self-started treatment goes back to when it ends (<see cref="CharacterTask.Wander"/>, <see cref="CharacterTask.Follow"/> or Idle).</summary>
     public CharacterTask ResumeTask { get; set; }
-    /// <summary>The medic job (the original's <c>medic</c> toggle): an idle character with a kit treats hurt squad mates by itself. NPCs with a kit do so without it (an engine rule until the AI).</summary>
-    public bool MedicJob { get; set; }
+    /// <summary>The medic job (58 <c>JOB_MEDIC</c>) is in <see cref="Jobs"/>: an idle character with a kit treats hurt squad mates by itself. NPCs with a kit do so without it (an engine rule until the AI).</summary>
+    public bool MedicJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC);
     /// <summary>The character this one carries on its left shoulder (none: not carrying); the original's <c>isCarrying</c> with the partner handle. Set and cleared by <see cref="Carrying.CarrySystem"/> in serial phases only, together with <see cref="CarriedBy"/> of the other.</summary>
     public CharacterId Carrying { get; set; } = CharacterId.None;
     /// <summary>The character carrying this one (none: not carried); the original's <c>isBeingCarried</c> with the partner handle.</summary>
@@ -153,8 +162,8 @@ public sealed class CharacterCold
     public CharacterId CarryTarget { get; set; } = CharacterId.None;
     /// <summary>Seconds into the <c>shoulder lift left</c> clip of a pick-up or put-down, or the <c>knockout</c> swing of a stealth KO, in progress (-1: not yet; the animation system plays the clip at this time).</summary>
     public float LiftTime { get; set; } = -1;
-    /// <summary>The rescue job (the original's <c>rescue</c> toggle, NUM8): an idle character picks up a downed member of its faction by itself.</summary>
-    public bool RescueJob { get; set; }
+    /// <summary>The rescue job (148 <c>FIND_AND_RESCUE_IF_THERES_BEDS</c>, NUM8) is in <see cref="Jobs"/>: an idle character picks up a downed member of its faction by itself.</summary>
+    public bool RescueJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
     /// <summary>The orders panel's toggles (<see cref="Simulation.Orders"/>); the player's characters only.</summary>
     public CharacterOrders Orders { get; set; } = CharacterOrders.Jobs;
     /// <summary>The speed mode the character's move orders use (the original's saved <c>speed mode</c>: walk, run or no cap); no cap by default.</summary>
@@ -227,6 +236,20 @@ public sealed class CharacterCold
     public float BuildBar { get; set; }
     /// <summary>The building the <see cref="CharacterTask.Operate"/> task works (<see cref="Construction.BuildSite.Id"/>; null: none). Serial phases only. Hashed only while set.</summary>
     public string? OperateSite { get; set; }
+    /// <summary>The progress (0 to 1) of the <see cref="CharacterTask.Prospect"/> task (null: not prospecting). Serial phases only; not saved. Hashed only while set.</summary>
+    public float? Prospecting { get; set; }
+    /// <summary>The storage an operator walks to, to store its machine's output or fetch an input (<see cref="Production.ProductionSystem"/> "Hauling"; null: at its machine). Not saved. Hashed only while set.</summary>
+    public string? HaulSite { get; set; }
+    /// <summary>The ITEM a hauling operator fetches from <see cref="HaulSite"/>; null: it stores what it carries.</summary>
+    public string? HaulFetch { get; set; }
+    /// <summary>The job list (Perma-Jobs, <see cref="Production.PermaJobs"/>), first = highest priority. Serial phases only. Hashed only while not empty.</summary>
+    public List<Production.PermaJob> Jobs { get; } = [];
+    /// <summary>The <see cref="Jobs"/> entry the current task was started from (-1: none, the task was ordered). Hashed with <see cref="Jobs"/>.</summary>
+    public int JobIndex { get; set; } = -1;
+    /// <summary>The implicit job (a squad AI option, <see cref="SquadAi"/>) the current task was started from: 242 ditching, 153 going to bed, 275 sitting; null: none. Hashed only while set.</summary>
+    public Meitou.Data.Gameplay.Ai.TaskType? Implicit { get; set; }
+    /// <summary>The storage a <see cref="CharacterTask.Haul"/> trip ends at (a "Hauling to" job's, or the one an implicit ditch picked). Hashed with <see cref="HaulSite"/>.</summary>
+    public string? HaulTo { get; set; }
     /// <summary>The clip the operator plays while it works (the functionality's <c>animation</c>).</summary>
     public string? OperateClip { get; set; }
     /// <summary>The operator did work this tick (it plays <see cref="OperateClip"/>); derived, not hashed.</summary>
@@ -422,18 +445,17 @@ public sealed class CharacterTable
             hasher.Add(k.NextProvisionTick);
             hasher.Add(k.DiedTick);
             hasher.Add(k.InCombat);
+            if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
             if (k.Animation is { } anim) anim.Hash(ref hasher); else hasher.Add(-1);
             hasher.Add(k.Name.Length);
             // First aid state adds to the hash only while it is set, so worlds that never use it hash as before.
             if (c.Task == (byte)CharacterTask.Treat) { hasher.Add(k.TreatTarget); hasher.Add((int)k.ResumeTask); if (k.TreatSplint) hasher.Add(0x53706C74); }
-            if (k.MedicJob) hasher.Add(true);
             if (k.Fleeing) hasher.Add(0x466C6565);   // only while set, so worlds without fleeing hash as before
             if (k.StealthExposureTick != long.MinValue) { hasher.Add((int)k.StealthExposure); hasher.Add(k.StealthExposureTick); }   // likewise, once a sneaker was exposed
             // Carrying, looting and the rescue job add to the hash only while set, so worlds without them hash as before.
             if (!k.Carrying.IsNone) { hasher.Add(0x43617272); hasher.Add(k.Carrying); }
             if (!k.CarriedBy.IsNone) { hasher.Add(0x42726E65); hasher.Add(k.CarriedBy); }
             if (c.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo) { hasher.Add(k.CarryTarget); hasher.Add(k.LiftTime); hasher.Add((int)k.ResumeTask); }
-            if (k.RescueJob) hasher.Add(0x52657363);
             // Orders add to the hash only while set, so worlds without them hash as before.
             if (k.Orders != CharacterOrders.None) { hasher.Add(0x4F726473); hasher.Add((int)k.Orders); }
             if (k.RunSpeed != SpeedMode.Free) { hasher.Add(0x52756E53); hasher.Add((int)k.RunSpeed); }
@@ -464,6 +486,17 @@ public sealed class CharacterTable
             // A builder's site, bar and the task it goes back to add to the hash only while it works one, so worlds without sites hash as before.
             if (k.BuildSite is { } site) { hasher.Add(0x4275696C); hasher.Add(Rng.StableHash(site)); hasher.Add(k.BuildBar); hasher.Add((int)k.ResumeTask); }
             if (k.OperateSite is { } machine) { hasher.Add(0x4F706572); hasher.Add(Rng.StableHash(machine)); }
+            if (k.Prospecting is { } prospected) { hasher.Add(0x50726F73); hasher.Add(prospected); }
+            if (k.HaulSite is { } haul) { hasher.Add(0x4861756C); hasher.Add(Rng.StableHash(haul)); hasher.Add(Rng.StableHash(k.HaulFetch ?? "")); }
+            if (k.HaulTo is { } haulTo) hasher.Add(Rng.StableHash(haulTo));
+            if (k.Implicit is { } implicitJob) { hasher.Add(0x496D706C); hasher.Add((int)implicitJob); hasher.Add((int)k.ResumeTask); }
+            if (k.Jobs.Count > 0)
+            {
+                hasher.Add(0x4A6F6273);
+                hasher.Add(k.JobIndex);
+                hasher.Add((int)k.ResumeTask);
+                foreach (var perma in k.Jobs) { hasher.Add((int)perma.Type); hasher.Add(Rng.StableHash(perma.Site ?? "")); }
+            }
         }
         hasher.Add(free.Count);
         foreach (int slot in free) hasher.Add(slot);

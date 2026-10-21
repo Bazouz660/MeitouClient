@@ -1,0 +1,363 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:Meitou.Launcher"
+        x:Class="Meitou.Launcher.MainWindow"
+        Title="Meitou Launcher" Icon="avares://meitou-launcher/Assets/meitou.ico"
+        WindowDecorations="None" TransparencyLevelHint="Transparent"
+        WindowStartupLocation="CenterScreen" Width="1200" Height="780" MinWidth="760" MinHeight="540">
+  <!-- No system frame: the plate floats on a transparent window with its own title bar; the margin holds its shadow and the resize grips. -->
+  <Panel>
+    <Border x:Name="Plate" Classes="plate" Margin="8" Padding="16,0,16,12">
+    <DockPanel>
+      <!-- Title bar: drag to move, double-click to maximise -->
+      <DockPanel x:Name="TitleBar" DockPanel.Dock="Top" Height="46" Background="Transparent" PointerPressed="TitleBar_PointerPressed">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Classes="chrome" Click="Minimize_Click" ToolTip.Tip="Minimise"><Path Data="M0,0 H10" StrokeThickness="1.6" /></Button>
+          <Button x:Name="MaximizeButton" Classes="chrome" Click="Maximize_Click" ToolTip.Tip="Maximise"><Path x:Name="MaximizeIcon" Data="M0,0 H10 V10 H0 Z" StrokeThickness="1.4" /></Button>
+          <Button Classes="chrome close" Click="Close_Click" ToolTip.Tip="Close"><Path Data="M0,0 L10,10 M10,0 L0,10" StrokeThickness="1.8" /></Button>
+        </StackPanel>
+        <!-- A newer launcher: the same action as Settings' update button, seen from every page -->
+        <Button x:Name="TitleLauncherUpdateButton" DockPanel.Dock="Right" Classes="update" Click="LauncherUpdate_Click" VerticalAlignment="Center"
+                Margin="0,0,14,0" IsVisible="False">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Path Data="M6,0 H11 V8 H16 L8.5,16 L1,8 H6 Z M0,18 H17 V20 H0 Z" VerticalAlignment="Center" />
+            <TextBlock x:Name="TitleLauncherUpdateText" FontSize="13" Foreground="{StaticResource BrassLight}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Margin="0,0,14,0">
+          <TextBlock x:Name="KenshiBadge" Classes="desc" VerticalAlignment="Center" />
+          <Button Classes="icon" Click="BrowseKenshi_Click" ToolTip.Tip="Change the Kenshi folder">
+            <Path Data="M0,1 H5 L6.5,3 H14 V12 H0 Z" />
+          </Button>
+        </StackPanel>
+        <Image DockPanel.Dock="Left" Source="avares://meitou-launcher/Assets/meitou-64.png" Width="24" Height="24" Margin="0,0,6,0"
+               VerticalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality" />
+        <!-- The site's wordmark: white, a heavy "Meitou" and a lighter "Client" (Exo 2 SemiBold and Medium, the lightest loaded) -->
+        <TextBlock Classes="title" Foreground="White" VerticalAlignment="Center">
+          <Run Text="Meitou" FontWeight="SemiBold" /><Run Text="Client" FontWeight="Medium" />
+        </TextBlock>
+      </DockPanel>
+      <Border DockPanel.Dock="Top" Classes="rule" Margin="0,0,0,12" />
+
+      <!-- Footer: launcher version and status left, the version to start and the one paper action right (Install latest
+           while no version is installed) -->
+      <StackPanel DockPanel.Dock="Bottom">
+        <Border Classes="rule" Margin="0,12,0,10" />
+        <DockPanel>
+          <Button x:Name="InstallLatestButton" DockPanel.Dock="Right" Classes="paper" Click="InstallLatest_Click" Margin="12,0,0,0"
+                  MinWidth="352" IsVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+              <Path Data="M6,0 H11 V8 H16 L8.5,16 L1,8 H6 Z M0,18 H17 V20 H0 Z" VerticalAlignment="Center" />
+              <TextBlock x:Name="InstallLatestText" Text="Install latest" VerticalAlignment="Center" Foreground="{StaticResource Secondary}" />
+            </StackPanel>
+          </Button>
+          <!-- Play the newest installed version, or the one picked from the arrow's menu (or on Versions) -->
+          <StackPanel x:Name="PlayPanel" DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+            <!-- A fixed least width (with the arrow, Install latest's 352) so "Play latest" / "Play latest nightly" do not move the footer -->
+            <Button x:Name="PlayButton" Classes="paper" Click="Play_Click" CornerRadius="7,0,0,7" MinWidth="312">
+              <!-- Playing the latest while a newer release is not installed, it is the update button: download icon, "Update to v…" -->
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Path x:Name="PlayIcon" Data="M0,0 L0,18 L15,9 Z" VerticalAlignment="Center" />
+                <Path x:Name="UpdateIcon" Data="M6,0 H11 V8 H16 L8.5,16 L1,8 H6 Z M0,18 H17 V20 H0 Z" VerticalAlignment="Center" IsVisible="False" />
+                <TextBlock x:Name="PlayText" Text="Play latest" VerticalAlignment="Center" Foreground="{StaticResource Secondary}" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="PlayVersionButton" Classes="paper" CornerRadius="0,7,7,0" MinWidth="0" Padding="13,6" Margin="-1,0,0,0"
+                    ToolTip.Tip="Choose the version to play">
+              <Path Data="M0,0 H12 L6,7 Z" VerticalAlignment="Center" />
+            </Button>
+          </StackPanel>
+          <!-- Nightly builds (GitHub pre-releases, config.IncludePrereleases): listed on Versions and offered as the latest -->
+          <!-- The label in the quiet text colour (set on the TextBlock, so the check box's hover state does not brighten it) -->
+          <CheckBox x:Name="NightlyBox" DockPanel.Dock="Right" Click="Nightly_Click" VerticalAlignment="Center" Margin="12,0,0,0"
+                    ToolTip.Tip="Unstable: daily builds of the newest code, untested. They may crash or corrupt save files; off, only full releases are offered.">
+            <TextBlock Text="Nightly builds" FontSize="13" FontWeight="Medium" Foreground="{StaticResource Quiet}" />
+          </CheckBox>
+          <Button x:Name="SkipButton" DockPanel.Dock="Right" Classes="link" Click="SkipVersion_Click" VerticalAlignment="Center"
+                  Margin="0,0,4,0" IsVisible="False" ToolTip.Tip="Don't offer this version again; a newer one will be">
+            <TextBlock x:Name="SkipText" />
+          </Button>
+          <Button x:Name="UpdateButton" DockPanel.Dock="Right" Classes="update" Click="InstallLatest_Click" VerticalAlignment="Center" Margin="0,0,12,0" IsVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Path Data="M6,0 H11 V8 H16 L8.5,16 L1,8 H6 Z M0,18 H17 V20 H0 Z" VerticalAlignment="Center" />
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="UpdateTitle" FontSize="14" Foreground="{StaticResource BrassLight}" />
+                <TextBlock x:Name="UpdateHint" Classes="desc" FontSize="11" Text="Click to install" />
+              </StackPanel>
+            </StackPanel>
+          </Button>
+          <StackPanel DockPanel.Dock="Left" Spacing="4" Margin="4,0,0,0" VerticalAlignment="Center">
+            <TextBlock Classes="caps" Text="MEITOU LAUNCHER" />
+            <TextBlock x:Name="LauncherVersionText" Classes="desc" />
+          </StackPanel>
+          <!-- The status line, and under it the running download's progress (seen from any page, not just Versions) -->
+          <StackPanel VerticalAlignment="Center" Spacing="6" Margin="24,0,16,0">
+            <TextBlock x:Name="StatusText" Classes="desc" />
+            <ProgressBar x:Name="StatusProgress" Minimum="0" Maximum="1" MaxWidth="320" HorizontalAlignment="Left" IsVisible="False" />
+          </StackPanel>
+        </DockPanel>
+      </StackPanel>
+
+      <!-- Navigation -->
+      <DockPanel DockPanel.Dock="Left" Width="176">
+        <StackPanel Spacing="6">
+          <ToggleButton x:Name="NavHome" Classes="nav" Click="Nav_Click" IsChecked="True">
+            <StackPanel Orientation="Horizontal">
+              <Path Data="F1 M8,0 L16,7 H13.5 V16 H9.5 V10.5 H6.5 V16 H2.5 V7 H0 Z" />
+              <TextBlock Text="HOME" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="NavMods" Classes="nav" Click="Nav_Click">
+            <StackPanel Orientation="Horizontal">
+              <!-- A checklist: the mod list's boxes and names -->
+              <Path Data="F1 M0,0.5 H4 V4.5 H0 Z M6,1.5 H16 V3.5 H6 Z M0,6 H4 V10 H0 Z M6,7 H16 V9 H6 Z M0,11.5 H4 V15.5 H0 Z M6,12.5 H16 V14.5 H6 Z" />
+              <TextBlock Text="MODS" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="NavVersions" Classes="nav" Click="Nav_Click">
+            <StackPanel Orientation="Horizontal">
+              <!-- The download tray the Install buttons wear -->
+              <Path Data="F1 M6,0 H10 V7 H14 L8,13 L2,7 H6 Z M0,14 H16 V16 H0 Z" />
+              <TextBlock Text="VERSIONS" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="NavGraphics" Classes="nav" Click="Nav_Click">
+            <StackPanel Orientation="Horizontal">
+              <!-- A monitor on its stand -->
+              <Path Data="F1 M0,1 H16 V11 H0 Z M2,3 V9 H14 V3 Z M7,11 H9 V13 H7 Z M4,13.5 H12 V15.5 H4 Z" />
+              <TextBlock Text="GRAPHICS" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="NavSettings" Classes="nav" Click="Nav_Click">
+            <StackPanel Orientation="Horizontal">
+              <!-- Three sliders -->
+              <Path Data="F1 M0,2 H16 V4 H0 Z M10,0 H13 V6 H10 Z M0,7 H16 V9 H0 Z M3,5 H6 V11 H3 Z M0,12 H16 V14 H0 Z M11,10 H14 V16 H11 Z" />
+              <TextBlock Text="SETTINGS" />
+            </StackPanel>
+          </ToggleButton>
+        </StackPanel>
+      </DockPanel>
+      <Border DockPanel.Dock="Left" Classes="vrule" Margin="18,0" />
+
+      <Panel>
+        <!-- Home: news posts from the repository's news/ folder -->
+        <DockPanel x:Name="HomePage">
+          <Border DockPanel.Dock="Top" Classes="header" Margin="0,0,0,10">
+            <Panel>
+              <DockPanel>
+                <TextBlock x:Name="NewsCount" DockPanel.Dock="Right" Classes="aside" />
+                <TextBlock Text="News" />
+              </DockPanel>
+              <!-- Ko-fi's own button, in white, centred on the bar -->
+              <Button Classes="kofi" Click="Kofi_Click" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      ToolTip.Tip="It supports me in the development of Meitou. ko-fi.com/martinvlcek">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <!-- The Ko-fi logo: a black-rimmed white cup with a D handle and an orange heart -->
+                  <Viewbox Height="18" VerticalAlignment="Center">
+                    <Canvas Width="32" Height="26">
+                      <Path Stroke="Black" StrokeThickness="3.6" Fill="White" Data="M22,5 H26 A5,5 0 0 1 26,15 H22" />
+                      <Path Stroke="Black" StrokeThickness="3.6" Fill="White"
+                            Data="M4.8,1.8 H20.2 A3,3 0 0 1 23.2,4.8 V16.2 A8,8 0 0 1 15.2,24.2 H9.8 A8,8 0 0 1 1.8,16.2 V4.8 A3,3 0 0 1 4.8,1.8 Z" />
+                      <Path Fill="#FF5A16"
+                            Data="M12.5,18.5 C6.5,14.5 6,11 6,9.5 C6,7.5 7.6,6 9.4,6 C10.8,6 11.9,6.8 12.5,8 C13.1,6.8 14.2,6 15.6,6 C17.4,6 19,7.5 19,9.5 C19,11 18.5,14.5 12.5,18.5 Z" />
+                    </Canvas>
+                  </Viewbox>
+                  <TextBlock Text="Support me on Ko-fi" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Panel>
+          </Border>
+          <ScrollViewer>
+            <StackPanel x:Name="NewsPanel" Spacing="14" Margin="0,0,14,4" />
+          </ScrollViewer>
+        </DockPanel>
+
+        <!-- Mods -->
+        <DockPanel x:Name="ModsPage" IsVisible="False">
+          <Border DockPanel.Dock="Top" Classes="header" Margin="0,0,0,10">
+            <DockPanel>
+              <TextBlock x:Name="ModCount" DockPanel.Dock="Right" Classes="aside" />
+              <TextBlock Text="Mods" />
+            </DockPanel>
+          </Border>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+              <ComboBox x:Name="PresetBox" MinWidth="170" PlaceholderText="Presets" />
+              <Button Content="Apply" Click="ApplyPreset_Click" />
+              <Button Content="Delete" Click="DeletePreset_Click" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Content="Select all" Click="SelectAll_Click" />
+              <Button Content="Select none" Click="SelectNone_Click" />
+              <Button Content="Refresh" Click="RefreshMods_Click" />
+            </StackPanel>
+          </DockPanel>
+          <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <Button DockPanel.Dock="Left" Content="Save mod list" Click="SaveMods_Click" ToolTip.Tip="Write data/mods.cfg (Play does this too)" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+              <TextBox x:Name="PresetName" Width="240" PlaceholderText="New preset name" />
+              <Button Content="Save as preset" Click="SavePreset_Click" />
+            </StackPanel>
+          </DockPanel>
+          <TextBlock x:Name="ModDetails" DockPanel.Dock="Bottom" Classes="desc" Margin="0,8,0,0" MaxLines="2" TextTrimming="CharacterEllipsis" />
+          <Panel>
+          <TextBlock x:Name="ModsEmpty" Classes="empty" IsVisible="False" />
+          <ListBox x:Name="ModListBox" SelectionChanged="ModListBox_SelectionChanged" KeyDown="ModListBox_KeyDown">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="l:ModRow">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Left" Classes="handle" Text="≡" VerticalAlignment="Center" Margin="0,0,10,0"
+                             PointerPressed="DragHandle_PointerPressed" ToolTip.Tip="Drag to change the load order" />
+                  <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="name" Text="{Binding Name}" />
+                    <TextBlock Classes="desc" Text="{Binding Detail}" />
+                    <TextBlock Classes="warn" Text="{Binding Notes}" IsVisible="{Binding HasNotes}" />
+                  </StackPanel>
+                </DockPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          </Panel>
+        </DockPanel>
+
+        <!-- Versions -->
+        <DockPanel x:Name="VersionsPage" IsVisible="False">
+          <Border DockPanel.Dock="Top" Classes="header" Margin="0,0,0,10">
+            <DockPanel>
+              <TextBlock x:Name="VersionCount" DockPanel.Dock="Right" Classes="aside" />
+              <TextBlock Text="Versions" />
+            </DockPanel>
+          </Border>
+          <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,10,0,0">
+            <ProgressBar x:Name="DownloadProgress" Minimum="0" Maximum="1" IsVisible="False" />
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                <Button Content="Release page" Click="OpenReleasePage_Click" />
+                <Button x:Name="OpenFolderButton" Content="Open folder" Click="OpenVersionFolder_Click" ToolTip.Tip="Open the installed version's folder" IsEnabled="False" />
+                <Button x:Name="UninstallButton" Content="Uninstall" Click="Uninstall_Click" IsEnabled="False" />
+                <Button x:Name="SelectVersionButton" Content="Select" Click="SelectVersion_Click" IsEnabled="False" MinWidth="96"
+                        ToolTip.Tip="Play this version" />
+                <Button x:Name="InstallButton" Content="Install" Click="Install_Click" MinWidth="110" IsEnabled="False" />
+              </StackPanel>
+              <Button Content="Check for releases" Click="RefreshReleases_Click" />
+            </DockPanel>
+          </StackPanel>
+          <Grid ColumnDefinitions="*,22,*">
+            <TextBlock x:Name="ReleasesEmpty" Classes="empty" IsVisible="False" />
+            <ListBox x:Name="ReleaseListBox" SelectionChanged="ReleaseListBox_SelectionChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="l:ReleaseRow">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Classes="warn" Text="{Binding State}" VerticalAlignment="Center" />
+                    <StackPanel>
+                      <TextBlock Classes="name" Text="{Binding Title}" />
+                      <TextBlock Classes="desc" Text="{Binding Detail}" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Border Grid.Column="1" Classes="vrule" HorizontalAlignment="Center" />
+            <TextBlock Grid.Column="2" x:Name="NotesEmpty" Classes="empty" Text="Select a release to read its notes." />
+            <ScrollViewer Grid.Column="2">
+              <!-- The notes' Markdown, drawn like the news posts (MarkdownView) -->
+              <ContentControl x:Name="ReleaseNotes" Margin="0,0,14,0" />
+            </ScrollViewer>
+          </Grid>
+        </DockPanel>
+
+        <!-- Graphics: the game's display settings and main sliders (GraphicsPage.cs), rows built in code -->
+        <ScrollViewer x:Name="GraphicsPage" IsVisible="False">
+          <StackPanel Margin="0,0,14,0">
+            <Border Classes="header" Margin="0,0,0,10">
+              <DockPanel>
+                <TextBlock x:Name="GraphicsFileText" DockPanel.Dock="Right" Classes="aside" />
+                <TextBlock Text="Graphics" />
+              </DockPanel>
+            </Border>
+            <StackPanel x:Name="GraphicsPanel" />
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Settings: one row per option, name and description left, control right -->
+        <ScrollViewer x:Name="SettingsPage" IsVisible="False">
+          <StackPanel>
+            <Border Classes="header" Margin="0,0,0,10">
+              <TextBlock Text="Settings" />
+            </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,460">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Kenshi folder" />
+                  <TextBlock x:Name="KenshiStatus" Classes="desc" />
+                </StackPanel>
+                <DockPanel Grid.Column="1">
+                  <Button DockPanel.Dock="Right" Content="Find" Click="DetectKenshi_Click" Margin="6,0,0,0" />
+                  <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseKenshi_Click" Margin="6,0,0,0" />
+                  <TextBox x:Name="KenshiPathBox" LostFocus="KenshiPath_LostFocus" />
+                </DockPanel>
+              </Grid>
+            </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,460">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Install folder" />
+                  <TextBlock x:Name="InstallStatus" Classes="desc" Text="Where versions are installed; changing it moves them." />
+                </StackPanel>
+                <DockPanel Grid.Column="1">
+                  <Button DockPanel.Dock="Right" Content="Open" Click="OpenInstallFolder_Click" Margin="6,0,0,0" />
+                  <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseInstall_Click" Margin="6,0,0,0" />
+                  <TextBox x:Name="InstallPathBox" IsReadOnly="True" />
+                </DockPanel>
+              </Grid>
+            </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,460">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Launch arguments" />
+                  <TextBlock Classes="desc" Text="Passed to the game, e.g. --faithful or --windowed." />
+                </StackPanel>
+                <TextBox Grid.Column="1" x:Name="ArgumentsBox" LostFocus="Arguments_LostFocus" />
+              </Grid>
+            </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,150">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Data folder" />
+                  <TextBlock x:Name="DataFolderText" Classes="desc" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Open" HorizontalAlignment="Stretch" Click="OpenDataFolder_Click" />
+              </Grid>
+            </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Launcher" />
+                  <TextBlock x:Name="LauncherAbout" Classes="desc" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="LauncherUpdateButton" Click="LauncherUpdate_Click" IsVisible="False" />
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </Panel>
+    </DockPanel>
+    </Border>
+
+    <!-- First start: the folders dialog over the dimmed plate, below the title bar so the window can still be moved and closed -->
+    <Border x:Name="SetupHost" Margin="8,54,8,8" CornerRadius="0,0,10,10" Background="#B3000000" IsVisible="False" />
+
+    <!-- Resize grips over the plate's visible edge: 4 px outside it, 6 px inside (hidden while maximised) -->
+    <Panel x:Name="Grips">
+      <Border Tag="North" Height="10" VerticalAlignment="Top" Margin="18,4,18,0" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="South" Height="10" VerticalAlignment="Bottom" Margin="18,0,18,4" Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="West" Width="10" HorizontalAlignment="Left" Margin="4,18,0,18" Background="Transparent" Cursor="SizeWestEast" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="East" Width="10" HorizontalAlignment="Right" Margin="0,18,4,18" Background="Transparent" Cursor="SizeWestEast" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="NorthWest" Width="18" Height="18" Margin="4,4,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Background="Transparent" Cursor="TopLeftCorner" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="NorthEast" Width="18" Height="18" Margin="0,4,4,0" HorizontalAlignment="Right" VerticalAlignment="Top" Background="Transparent" Cursor="TopRightCorner" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="SouthWest" Width="18" Height="18" Margin="4,0,0,4" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="Grip_PointerPressed" />
+      <Border Tag="SouthEast" Width="18" Height="18" Margin="0,0,4,4" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner" PointerPressed="Grip_PointerPressed" />
+    </Panel>
+  </Panel>
+</Window>

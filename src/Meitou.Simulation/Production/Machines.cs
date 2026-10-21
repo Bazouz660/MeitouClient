@@ -7,6 +7,10 @@ namespace Meitou.Simulation.Production;
 public sealed class InputSlot(RecipeInput recipe)
 {
     public RecipeInput Recipe { get; } = recipe;
+    /// <summary>The item the section takes: the recipe's, or for a crafting bench the current craft's ingredient (docs/game/buildings-production.md "Crafting").</summary>
+    public string Item { get; set; } = recipe.Item;
+    /// <summary>Units drawn per unit of work (the recipe's rate, or the craft's ingredient rate).</summary>
+    public float Rate { get; set; } = recipe.Rate;
     /// <summary>Items held in the section (no quality: inputs and crops have none, engine choice).</summary>
     public int Count { get; set; }
     /// <summary>The level taken from items, one item = 1 (the save's <c>consumption amount-&lt;k&gt;</c>).</summary>
@@ -47,6 +51,29 @@ public sealed class FarmState(int plants)
     public int Rolls { get; set; }
 }
 
+/// <summary>One queued craft (docs/game/buildings-production.md "Crafting"): what, its recipe, the work seconds it takes (hours x G/24), its progress 0..1 and its critical roll.</summary>
+public sealed class CraftJob(CraftRecipe recipe)
+{
+    public CraftRecipe Recipe { get; } = recipe;
+    public CraftOption Option => Recipe.Option;
+    public float Seconds => Recipe.Hours * (MachineData.DaySeconds / 24);
+    public float Progress { get; set; }
+    /// <summary>The save's <c>crit</c>: 2 not rolled yet, 1 a critical, 0 none (<b>Observed</b>, <c>CraftingBuilding::vfunc_17</c>).</summary>
+    public byte Critical { get; set; } = 2;
+}
+
+/// <summary>A crafting bench's queue, its repeat flag (the save's <c>repeat</c>) and the finished items waiting in its output.</summary>
+public sealed class CraftState
+{
+    public List<CraftJob> Queue { get; } = [];
+    public bool Repeat { get; set; }
+    public List<ItemInstance> Done { get; } = [];
+    /// <summary>The craft the input sections are set for (its key), so they are rebound when the first job changes.</summary>
+    public string? Bound { get; set; }
+    /// <summary>Critical rolls made so far, the roll counter.</summary>
+    public int Rolls { get; set; }
+}
+
 /// <summary>
 /// A complete player building that works or stores (docs/simulation.md "Production"): its recipe slots, storage grid and farm. Made by <see cref="ProductionSystem"/> when the site completes
 /// (or loads complete) and dropped with the site; serial phases only.
@@ -62,6 +89,8 @@ public sealed class Machine
     /// <summary>The storage grid of a building with <c>has inventory</c> (a research bench's books).</summary>
     public Inventory? Storage { get; init; }
     public FarmState? Farm { get; init; }
+    /// <summary>A crafting bench's queue and output.</summary>
+    public CraftState? Craft { get; init; }
     /// <summary>The resource yield (<c>resource mult</c>): 1 without a resource, else the ground's value (0 becomes 0.5); for a farm its fertility factor.</summary>
     public float Yield { get; set; } = 1;
     /// <summary>A farm's crop match with the biome (C).</summary>
@@ -72,12 +101,36 @@ public sealed class Machine
     public byte Status { get; set; }
     /// <summary>Characters working it this tick (derived; not saved, not hashed).</summary>
     public int Operators { get; set; }
+    /// <summary>Operators last tick: what a consumer's draw is scaled by (the grid runs after the operators, so its result applies one tick later).</summary>
+    public int LastOperators { get; set; }
+    /// <summary>The power factor its work is scaled by: granted / demand for a consumer (1 with no demand), building health being 1 (docs/game/buildings-production.md "Power").</summary>
+    public float Power { get; set; } = 1;
+    /// <summary>A consumer's demand and the share granted, a generator's output, a battery's flow (+ charging, - draining).</summary>
+    public float Demand { get; set; }
+    public float Granted { get; set; }
+    /// <summary>A generator's load (<c>vfunc_167</c>): the share of its output the grid uses; fuel burns at this rate.</summary>
+    public float Usage { get; set; }
+    /// <summary>A battery's store in seconds at its rate (the save's <c>batterycharge</c>).</summary>
+    public float Charge { get; set; }
+    /// <summary>A battery's capacity now (data + research), for the view.</summary>
+    public float Store { get; set; }
+    /// <summary>The save's <c>gets battery</c>: a consumer short of generator power draws from batteries (default on).</summary>
+    public bool GetsBattery { get; set; } = true;
+    /// <summary>The save's <c>power on</c> (default on; no UI switch yet).</summary>
+    public bool PowerOn { get; set; } = true;
+    /// <summary>
+    /// What the machine tells its sound emitter (docs/audio.md "Point emitters"): the exe's efficiency (<c>FarmBuilding::vfunc_108</c>) and whether it has power (<c>FUN_140299370</c>). Derived
+    /// every tick for the host's display; not saved, not hashed.
+    /// </summary>
+    public float Efficiency { get; set; }
+    public bool HasPower { get; set; }
 
     internal void Hash(ref StateHasher h)
     {
         h.Add(Rng.StableHash(Site));
         h.Add(Yield);
         h.Add(Status);
+        h.Add(Power); h.Add(Charge); h.Add(Granted);
         foreach (var i in Inputs) { h.Add(i.Count); h.Add(i.Level); }
         if (Output is { } o) { h.Add(o.Count); h.Add(o.Progress); }
         if (Storage is { } s) { h.Add(s.Items.Count); foreach (var item in s.Items) { h.Add(Rng.StableHash(item.Record)); h.Add(item.Quantity); h.Add(item.X); h.Add(item.Y); } }
@@ -85,6 +138,12 @@ public sealed class Machine
         {
             h.Add(f.Growth); h.Add(f.Death); h.Add(f.Start); h.Add(f.Harvested); h.Add(f.HarvestProgress); h.Add(f.ClearProgress); h.Add((byte)f.Status);
             foreach (var p in f.Plants) h.Add(p);
+        }
+        if (Craft is { } c)
+        {
+            h.Add(c.Queue.Count); h.Add(c.Repeat ? 1 : 0); h.Add(c.Done.Count);
+            foreach (var j in c.Queue) { h.Add(Rng.StableHash(j.Option.Key)); h.Add(j.Progress); h.Add(j.Critical); }
+            foreach (var d in c.Done) { h.Add(Rng.StableHash(d.Record)); h.Add(d.Quantity); h.Add(d.Quality); }
         }
     }
 }

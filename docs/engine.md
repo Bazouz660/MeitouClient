@@ -18,7 +18,7 @@ KenshiCamera follows pivot/boom/zoom/pitch/ground constraints from [camera](form
 Engine choices: pivot500*clamp(boom/600,0.1,1), keys1.5rad/s, mouse0.005rad/pixel; terrain-ground
 pivot rather than building support. Free-camera ; follows smoothed flight, exits at ground hit.
 InputState consumes events once per tick; commands apply at world boundaries, not UI callbacks.
-meitou.user.json persists fps/vsync/fullscreen/tickRate/simThreads/graphics/bindings; renderer
+meitou.user.json persists fps/vsync/fullscreen/tickRate/simThreads/graphics/bindings (layout and versioning: [launcher](launcher.md#graphics)); renderer
 settings and current key list belong in viewer. Quicksave F5/loadF9; cinematic F6/hideUI F7.
 
 ## Host and loading
@@ -28,7 +28,7 @@ PlayerInterface owns picking/HUD/panels/commands. StandardSystems supplies order
 bridges Navigation; never let UI/rendering duplicate simulation state.
 GUI executable attaches a caller's console; folder prompt creates its own when necessary.
 Native splash precedes Vulkan; worker loading and render-thread GPU steps keep the window
-responsive. Scene transitions draw loading between stages, wait on asynchronous results, and
+responsive. On Wayland the window is shown and its first configure taken before the first loading frame is presented: a buffer attached before the shell role makes the compositor drop the client (**Verified** natively on KDE Wayland, GLFW 3.4). Scene transitions draw loading between stages, wait on asynchronous results, and
 preserve world on failure. Gameplay warm-up waits for nearby population, terrain, scenery, character
 assets and used textures (including deferred loads), then <40ms frames for0.5s (max5s for frame pacing).
 After 5s of continuous `VramGuard` pressure, content it holds back is no longer waited for (it cannot load until the use falls).
@@ -37,23 +37,24 @@ navmesh-gated spawns are retried while loading. Warm-up and the flight hold the 
 The Meitou title waits for terrain, scenery, character assets and used textures (including deferred loads), then
 one full second of <40ms frames (max5s of ready content for frame pacing, so slow GPUs reach the menu). Its menu artwork/fonts/pipelines warm under the opaque cover too;
 streaming uploads retire and a compacting GC completes before that final smooth run.
-**GC: Satori** (github.com/VSadov/Satori, experimental low-pause collector) is the default in the self-contained publish: the `PublishWithSatoriGC`
-MSBuild SDK line in `Meitou.Game.csproj` and `Meitou.ModelViewer.csproj` swaps `coreclr`, `clrjit` and `System.Private.CoreLib` (both exes share one
-runtime in the release zip, so both carry it). Plain `dotnet build` keeps the stock runtime (server GC, four heaps); `-p:UseSatoriGC=false` publishes
-stock. The startup `gc` line names the collector (`GcName`); **Verified** `satori` from a published build (2026-10-18). **Observed** earlier A/B (RTX 4070,
-10.0.13 Satori vs stock 10.0.12 fast flight): longest GC pause 15-21 ms stock vs 1-18 ms Satori, frames unchanged (long frames are foliage updates, docs/viewer.md).
-Satori reports `LowLatency` whatever the latency mode.
-**Pooled buffers** (allocation is the GC lever): streaming garbage is mostly LOH arrays, whose budget triggers the blocking gen2s that make the long pauses
-(**Observed** in flight traces: `NonConcurrentGC` gen2 for `AllocSmall`/`AllocLarge`, tens to hundreds of ms; gen0/gen1 pauses are a few ms). Pooled now:
+**GC:** the stock runtime (server GC, four heaps) in builds and release zips alike; the startup `gc` line names the collector (`GcName`). The
+experimental Satori GC (github.com/VSadov/Satori, `PublishWithSatoriGC` SDK) is not used in official builds. **Observed** earlier A/B (RTX 4070, 10.0.13
+Satori vs stock 10.0.12 fast flight): longest GC pause 15-21 ms stock vs 1-18 ms Satori, frames unchanged (long frames are foliage updates, docs/viewer.md).
+**Pooled buffers** (allocation is the GC lever): streaming garbage is mostly LOH arrays from worker jobs. **Observed** in flights: gen0/gen1 pauses under
+~40 ms; single blocking gen2s (`NonConcurrentGC`, reason `AllocSmall`) of 0.3-1.7 s in some runs despite SustainedLowLatency, with or without pooling;
+what triggers them is **Unknown**. Pooled now:
 DDS file bytes of `WorldTextureCache.Load` (`DdsReader.ReadKept(..., pool)`, `ArrayPool<byte>.Shared`; returned in `Load` after an RGBA8 decode or
 by the last upload step of a stored BC upload), the GI terrain grid's samples (one array per `TerrainGrid`), the card trimmer's clip/hull scratch
 (`FoliageCardTrimmer.Hull`) and the grass generator (`[ThreadStatic]` `FoliageRandom`, reseeded). Contract: a rented array may be longer than asked,
 so its length is never the logical size (pass counts; `DdsFile.TrailingBytes` is meaningless on a pooled file); return it in a `finally` or at the
 one point after its last reader, never while anything keeps it; a buffer that is dropped instead (a texture never pumped) just goes to the GC.
+`ArrayPool<byte>.Shared` rounds up to a power of two (a 4.2 MB file rents 8 MB) and trims idle arrays on gen2; textures in flight bound what it holds.
 **Observed** (swamp, 1920x1080, 3000-frame flight, 4 alternating pairs, 2026-10-21): allocated 6.2 GB to 4.8 GB (2.1 to 1.6 MB a frame), gen0+gen1
 45 to 35 in total, gen2 count unchanged; frame percentiles unchanged within noise.
 The Metal path also drops the impostor atlas CPU levels after the last upload (docs/metal-backend.md, "Live performance and memory"); Vulkan keeps
 them with `ImpostorTextures`. How to rank allocation sites: docs/bench.md.
+Not pooled, kept by their owners: `HeightWindow` arrays (read through `HeightSnapshot` on workers), impostor atlas levels (`ImpostorTextures`
+holds the atlas), grass blade arrays (kept as `PendingBlades`). How to rank allocation sites: docs/bench.md.
 Cancel on window close. Helpers/services dispose/join with their owning scene/session.
 After warm-up, loading panels ease off the left/right edges over 0.7s while the loading image fades to the live scene and UI.
 Input remains blocked through this reveal. A new game ends warm-up as soon as the squad's characters are drawable, skips the sky arrival and opens the
@@ -137,7 +138,7 @@ Own GLSL compiles through bundled shaderc, explicit native resource/state record
 secondary jobs. [Native API](renderer-native.md).
 
 Single-sample jittered HDR reconstruction, separate near/far depth, unjittered reflection/shadows.
-FSR Vulkan SDK1.1.4 runtime DLL; Streamline2.14.1 manual hook, initialize before Vulkan, request
+FSR Vulkan SDK1.1.4 runtime DLL; Streamline2.14.16 manual hook, initialize before Vulkan, request
 features and proxy present. Bottom-up images require matching clip matrices/presentation.
 Vendor DLLs are not committed; paths/packaging/licensing: [notices](../THIRD_PARTY_NOTICES.md).
 Mip biases and temporal/GI contracts: [post](render-post.md). GI requested by default unless

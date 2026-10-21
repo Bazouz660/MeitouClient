@@ -53,6 +53,8 @@ public sealed class Loadout
 
     public List<LoadoutItem> Clothing { get; } = [];
     public LoadoutItem? Backpack { get; set; }
+    /// <summary>Worn ITEMs (the belt's lantern), which show only through their <c>physics attachment</c>.</summary>
+    public List<LoadoutItem> Carried { get; } = [];
     public LoadoutWeapon? Crossbow { get; set; }
     /// <summary>Weapons in equip order (hip first, then back).</summary>
     public List<LoadoutWeapon> Weapons { get; } = [];

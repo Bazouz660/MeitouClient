@@ -42,7 +42,7 @@ sealed partial class PlayerInterface
             tradeDrag = null;
             shownTrader = trade.Trader;
             tradeCloseSent = false;
-            inventoryScroll.Remove("trader");
+            faithfulScreens.ResetScroll("trader");
             if (!faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
             faithfulScreens.Open("trader");
             PlaceTradeWindows();
@@ -112,16 +112,22 @@ sealed partial class PlayerInterface
         if (session.CurrentSnapshot.Trade is { } trade && layout.Find("Root") is { } root)
         {
             var r = root.Position.RelativeTo(new(0, 0, Width, Height), root.RealPosition);
-            var (dx, dy) = TraderGrowth(Math.Max(1, trade.StockWidth));
+            int columns = Math.Max(1, trade.StockWidth), rows = Math.Max(1, trade.StockHeight);
+            var (dx, dy) = TraderGrowth(columns);
             b.Positions["Root"] = new(0, 0, r.Width + dx, r.Height + dy);
+            // The scroll view grows with the window (its frame in fractions of the content area) and scrolls the stock grid as its canvas: the host's generic ScrollView draws the template's bars.
+            if (layout.Find("Content") is { } content && layout.Find("scrollview_backpack_content") is { } view)
+            {
+                float contentW = content.Position.Width * (r.Width + dx), contentH = content.Position.Height * (r.Height + dy), w0 = content.Position.Width * r.Width, h0 = content.Position.Height * r.Height;
+                b.RelativePositions[view] = new(view.Position.X * w0 / contentW, view.Position.Y * h0 / contentH, (view.Position.Width * w0 + dx) / contentW, (view.Position.Height * h0 + dy) / contentH);
+                b.Canvas[view.Name] = (columns * InventoryCell, rows * InventoryCell);
+            }
         }
-        // The scroll view keeps its frame; its bars are drawn by AddScrollBar.
-        foreach (var part in layout.Find("scrollview_backpack_content")?.Children ?? []) b.HiddenWidgets.Add(part);
     }
 
     /// <summary>
-    /// Places the trader window's parts after the growth: the scroll view grows with the window, the money box keeps its size at the top left, ARRANGE stays centred at the bottom.
-    /// The stock grid is the scroll view's canvas inside its client (the <c>Kenshi_ScrollView</c> template: 10 px in from the left and top, the bar's 20 px and 5 px off the right).
+    /// Places the trader window's parts after the growth: the money box keeps its size at the top left, ARRANGE stays centred at the bottom. The scroll view grows with the window (<see cref="BindTraderGeometry"/>)
+    /// and the stock grid is its canvas: it sits where the generic ScrollView (<c>Kenshi_ScrollView</c> template: client, bar, offset) put the canvas, clipped to the client.
     /// </summary>
     void ArrangeTraderWindow(List<UiControl> controls)
     {
@@ -131,15 +137,11 @@ sealed partial class PlayerInterface
         if (contentIndex < 0 || viewIndex < 0 || layout.Find("Content") is not { } contentWidget) return;
         int columns = Math.Max(1, trade.StockWidth), rows = Math.Max(1, trade.StockHeight);
         var (dx, dy) = TraderGrowth(columns);
-        float scale = InventoryScale, cell = InventoryCell;
+        float cell = InventoryCell;
         var c = controls[contentIndex].Bounds;
         float w0 = c.Width - contentWidget.Position.Width * dx, h0 = c.Height - contentWidget.Position.Height * dy;
         UiRect Fixed(MyGuiWidget w, UiRect parent, float pw, float ph) => new(parent.X + w.Position.X * pw, parent.Y + w.Position.Y * ph, w.Position.Width * pw, w.Position.Height * ph);
         void Move(string name, UiRect bounds) { int i = controls.FindIndex(x => x.Name == name); if (i >= 0) controls[i] = controls[i] with { Bounds = bounds }; }
-
-        var view = Fixed(layout.Find("scrollview_backpack_content")!, c, w0, h0);
-        view = view with { Width = view.Width + dx, Height = view.Height + dy };
-        controls[viewIndex] = controls[viewIndex] with { Bounds = view };
         if (layout.Find("datapanel") is { } panel && contentWidget.Children.FirstOrDefault(w => w.Children.Contains(panel)) is { } box)
         {
             var boxBounds = Fixed(box, c, w0, h0);
@@ -153,26 +155,20 @@ sealed partial class PlayerInterface
             Move("ArrangeButton", new(c.X + (c.Width - bw) / 2, c.Y + c.Height - (1 - arrange.Position.Y) * h0, bw, bh));
         }
 
-        var client = new UiRect(view.X + 10 * scale, view.Y + 10 * scale, Math.Max(0, view.Width - 35 * scale), Math.Max(0, view.Height - 20 * scale));
-        float canvas = rows * cell, maximum = Math.Max(0, canvas - client.Height);
-        if (maximum < 0.01f) maximum = 0;
-        float scroll = Math.Clamp(inventoryScroll.GetValueOrDefault("trader"), 0, maximum);
-        inventoryScroll["trader"] = scroll;
-        inventoryViews["trader"] = (client, maximum);
+        // The scroll view (the generic ScrollView, bars and offset included) has the canvas where it put it; the grid is that canvas, so it draws over the view's frame, under its bars.
+        var scrollView = controls[viewIndex];
+        var client = controls.FirstOrDefault(x => x.Properties.GetValueOrDefault("TemplateOwner") == scrollView.Name && x.Properties.GetValueOrDefault("TemplatePart") == "Client")?.Bounds ?? scrollView.Bounds;
         int gridIndex = controls.FindIndex(x => x.Name == "backpack_content");
         if (gridIndex < 0) return;
         var slot = controls[gridIndex];
-        // The grid is the scroll view's canvas, so it draws over the view's frame.
         controls.RemoveAt(gridIndex);
         viewIndex = controls.FindIndex(x => x.Name == "scrollview_backpack_content");
         controls.Insert(viewIndex + 1, slot with
         {
-            Bounds = new(client.X, client.Y - scroll, columns * cell, canvas), Clip = client.Intersect(slot.Clip ?? client),
+            Bounds = new(MyGuiPresentation.Num(scrollView.Properties, "CanvasX", client.X), MyGuiPresentation.Num(scrollView.Properties, "CanvasY", client.Y), columns * cell, rows * cell),
+            Clip = client.Intersect(slot.Clip ?? client),
             Properties = new Dictionary<string, string>(slot.Properties) { ["TileSize"] = FormattableString.Invariant($"{cell} {cell}") },
         });
-        if (maximum <= 0) { inventoryTracks.Remove("trader"); return; }
-        AddScrollBar("trader", controls, new(view.X + view.Width - 25 * scale, view.Y + 10 * scale, 17 * scale, Math.Max(0, view.Height - 20 * scale)), client.Height, canvas, scroll, maximum,
-            controls[viewIndex].Clip);
     }
 
     /// <summary>The money line and the stock in the trader window's grid.</summary>
@@ -188,23 +184,16 @@ sealed partial class PlayerInterface
             if (tradeDrag?.Item.Index == item.Index) continue;
             AddItemCell(controls, $"trade-item-{item.Index}",
                 new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows),
-                item.Record, item.Material, item.Name, item.Quantity, TradeTooltip(item), "TradeItem", item.Index, slot.Clip, charge: item.Charge);
+                item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "TradeItem", item.Index, slot.Clip, charge: item.Charge);
         }
     }
 
     /// <summary>
-    /// The trade lines of an item's tooltip (<c>FUN_14079e7a0</c>, <b>Observed</b> by decompile): "Value" (what the shop asks for the stack) and "Sell value" (what it pays), then the weight
-    /// (<c>FUN_1407ae130</c>) and, for a stolen item, "Stolen" (<c>FUN_1407a0ea0</c>). A tab separates a line's label from its value.
+    /// While trading, the trade item behind one of the customer's inventory items: its tooltip gains the prices (Value, Sell value; <c>FUN_14079e7a0</c>, <b>Observed</b> by decompile, see
+    /// <see cref="ItemLines"/>). Null: no trade, or another character's grid.
     /// </summary>
-    static string TradeTooltip(TradeItemView item) =>
-        $"Value\tc.{Money(item.Value)}\nSell value\tc.{Money(item.SellValue)}\nWeight\t{item.Weight.ToString("0.#", CultureInfo.InvariantCulture)} kg" + (item.Stolen ? "\nStolen" : "");
-
-    /// <summary>While trading, the tooltip lines of one of the customer's items (null: no trade, or another character's grid).</summary>
-    string? SellCaption(CharacterId owner, int index)
-    {
-        if (session.CurrentSnapshot.Trade is not { } trade || trade.Customer != owner || trade.Goods.FirstOrDefault(g => g.Index == index) is not { } goods) return null;
-        return TradeTooltip(goods);
-    }
+    TradeItemView? SellTip(CharacterId owner, int index) =>
+        session.CurrentSnapshot.Trade is { } trade && trade.Customer == owner ? trade.Goods.FirstOrDefault(g => g.Index == index) : null;
 
     /// <summary>
     /// The fencing prompt beside a stolen item dragged over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile): stolen from the trader's own faction, "Fencing chance:" and the

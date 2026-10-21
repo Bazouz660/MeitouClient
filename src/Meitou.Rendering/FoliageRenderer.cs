@@ -240,7 +240,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public int Pending => runningWhole + runningFar + zonesWaiting + grassWaiting + decoding.Count + uploads.Count + lodRunning + lodWaiting + textures.PendingCount + textures.UnresidentUsedCount + zones.Values.Sum(z => z.GrassRunning) + ImpostorPending;
 
     /// <summary>What <see cref="Pending"/> is made of, for the loading log.</summary>
-    public string PendingDetail => $"layouts {runningWhole + runningFar + zonesWaiting}, grass {grassWaiting + zones.Values.Sum(z => z.GrassRunning)}, meshes {decoding.Count + uploads.Count}, lods {lodRunning + lodWaiting}, textures {textures.PendingCount} loading {textures.UnresidentUsedCount} deferred, impostors {ImpostorPending}";
+    public string PendingDetail => $"layouts {runningWhole + runningFar + zonesWaiting}, grass {grassWaiting + zones.Values.Sum(z => z.GrassRunning)}, meshes {decoding.Count} decoding {uploads.Count} upload steps, lods {lodRunning + lodWaiting}, textures {textures.PendingCount} loading {textures.UnresidentUsedCount} deferred, impostors {ImpostorPending}";
 
     /// <summary>GPU memory held by foliage meshes, textures and grass pages.</summary>
     public long ResidentBytes => residentMeshBytes + textures.ResidentBytes + GrassBytes() + impostorBytes;
@@ -522,11 +522,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         Prune();
         TrimResident(eye, force: settling);
         textures.Pump(wait: settling, max: settling ? 64 : 1);
+        // The budget counts from here: the work above can take it all on a slower machine, and the uploads would then never run.
         int ranSteps = 0;
-        while (uploads.Count > 0 && watch.Elapsed.TotalMilliseconds < budget)
+        double uploadStart = watch.Elapsed.TotalMilliseconds;
+        while (uploads.Count > 0 && (ranSteps == 0 || watch.Elapsed.TotalMilliseconds - uploadStart < budget))
         {
             // The first step always runs; a later one waits for the next frame when steps of its kind have cost more than what is left plus StepCosts.Slack.
-            if (ranSteps > 0 && !stepCosts.Fits(uploads.Peek().Method, watch.Elapsed.TotalMilliseconds, budget)) break;
+            if (ranSteps > 0 && !stepCosts.Fits(uploads.Peek().Method, watch.Elapsed.TotalMilliseconds - uploadStart, budget)) break;
             var step = uploads.Dequeue();
             var one = Stopwatch.StartNew();
             step();

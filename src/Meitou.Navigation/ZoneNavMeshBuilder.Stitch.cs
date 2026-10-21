@@ -28,6 +28,9 @@ internal static partial class ZoneNavMeshBuilder
         int climbCells = (int)MathF.Floor(s.MaxClimb / s.CellHeight);
         var open = new Dictionary<(int, int, int, int), (int Polygon, int Edge, int Ia, int Ib)>();
         var seams = new List<(int P, int E, int Q, int F)>();
+        // Contour simplification can also leave a T at such a seam: one edge against two whose middle vertex is off its line. Those join as links.
+        var nearSeams = new List<(int P, int E, int Q, int F)>();
+        float climb = s.MaxClimb + 0.5f;
 
         for (int tile = 0; tile < meshes.Length; tile++)
         {
@@ -85,7 +88,30 @@ internal static partial class ZoneNavMeshBuilder
                 neighbours.Add(nb);
                 areas.Add((byte)m.areas[p]);
             }
+            JoinNearMisses(vBase);
         }
+
+        // Open edges of the tile still unjoined that face each other off line: opposite directions, sharing one end in X/Z (so not two floors either
+        // side of a thin wall), the other overlap end within NavGeometry.NearMissGap of the line, and within the climb at both overlap ends.
+        void JoinNearMisses(int vBase)
+        {
+            var left = open.Values.ToArray();
+            for (int i = 0; i < left.Length; i++)
+                for (int j = i + 1; j < left.Length; j++)
+                {
+                    var (p, e, ia, ib) = left[i];
+                    var (q, f, ja, jb) = left[j];
+                    if (p == q) continue;
+                    Vector3 a0 = vertices[vBase + ia], a1 = vertices[vBase + ib], b0 = vertices[vBase + ja], b1 = vertices[vBase + jb];
+                    if (!SameXZ(a0, b1) && !SameXZ(a1, b0)) continue;
+                    if (!NavGeometry.FacingOverlap(a0, a1, b0, b1, NavGeometry.NearMissGap, out float lo, out float hi, out float yLo, out float yHi)) continue;
+                    if ((hi - lo) * Vector2.Distance(new(a0.X, a0.Z), new(a1.X, a1.Z)) < s.CellSize / 2) continue;
+                    if (Math.Abs(float.Lerp(a0.Y, a1.Y, lo) - yLo) > climb || Math.Abs(float.Lerp(a0.Y, a1.Y, hi) - yHi) > climb) continue;
+                    nearSeams.Add((p, e, q, f));
+                }
+        }
+
+        static bool SameXZ(Vector3 a, Vector3 b) => a.X == b.X && a.Z == b.Z;
 
         foreach (var (p, e, q, f) in seams)
             if (areas[p] != NavArea.Null && areas[q] != NavArea.Null) { neighbours[p][e] = q; neighbours[q][f] = p; }
@@ -135,8 +161,17 @@ internal static partial class ZoneNavMeshBuilder
                     be.B = vertices[p[(be.Edge + 1) % p.Length]];
                 }
 
+        // Near-miss seams were found before the flip: their edge indices follow the same reversal.
+        foreach (var (p, e, q, f) in nearSeams)
+        {
+            if (areas[p] == NavArea.Null || areas[q] == NavArea.Null) continue;
+            int np = polygons[p].Length, nq = polygons[q].Length;
+            int ep = flip ? (np - 2 - e + np) % np : e, fq = flip ? (nq - 2 - f + nq) % nq : f;
+            (links[p] ??= []).Add(ep); links[p]!.Add(q);
+            (links[q] ??= []).Add(fq); links[q]!.Add(p);
+        }
+
         // Link facing border edges of neighbouring tiles where they overlap along the shared line.
-        float climb = s.MaxClimb + 0.5f;
         for (int tz = 0; tz < tilesPerSide; tz++)
             for (int tx = 0; tx < tilesPerSide; tx++)
             {

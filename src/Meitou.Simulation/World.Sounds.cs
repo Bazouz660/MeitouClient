@@ -25,6 +25,10 @@ public enum SoundKind : byte
     Unlocked,
     /// <summary>The subject locked a door or cage: <c>Character_Lock</c>.</summary>
     Locked,
+    /// <summary>The subject picked up a ground item (all or part of it fitted): <c>Character_Pick_Up_Ground</c> (<c>Task_Pickup</c>).</summary>
+    PickedUp,
+    /// <summary>The player put shackles on someone: the interface's <c>Item_Drop</c> with <c>Inventory_Items</c> of <see cref="SoundEvent.Item"/> (the exe's drag onto the armour slot).</summary>
+    ShacklesOn,
     /// <summary>The player was paid a bounty: the interface's <c>Notifications</c> = <c>Bounty_Fulfilled</c>.</summary>
     BountyPaid,
     /// <summary>A building finished being taken apart: <c>Notifications</c> = <c>Thing_Complete</c>.</summary>
@@ -42,8 +46,9 @@ public enum SoundKind : byte
 /// <param name="AttackerRobot">The attacker's race is a robot.</param>
 /// <param name="Armoured">A bolt: some armour covers the part it hit.</param>
 /// <param name="Fatal">A <see cref="SoundKind.Down"/> that is a death, not a knock-out.</param>
+/// <param name="Item">An item's record id (<see cref="SoundKind.ShacklesOn"/>: the shackles).</param>
 public readonly record struct SoundEvent(SoundKind Kind, CharacterId Subject, CharacterId Other, Vector3 Position,
-    bool Heavy = false, bool AttackerUnarmed = false, bool AttackerRobot = false, bool Armoured = false, bool Fatal = false);
+    bool Heavy = false, bool AttackerUnarmed = false, bool AttackerRobot = false, bool Armoured = false, bool Fatal = false, string? Item = null);
 
 public sealed partial class World
 {
@@ -56,8 +61,8 @@ public sealed partial class World
     public System.Collections.Concurrent.ConcurrentQueue<SoundEvent>? Sounds { get => sounds; set => sounds = value; }
 
     /// <summary>Queues a sound-worthy happening for the host (nothing while <see cref="Sounds"/> is null); <paramref name="slot"/> is the character it happens to (-1 none). Display only.</summary>
-    public void EmitSound(SoundKind kind, int slot, Vector3 at)
+    public void EmitSound(SoundKind kind, int slot, Vector3 at, string? item = null)
     {
-        if (sounds is { } queue) queue.Enqueue(new SoundEvent(kind, slot >= 0 ? Characters.IdOf(slot) : CharacterId.None, CharacterId.None, at));
+        if (sounds is { } queue) queue.Enqueue(new SoundEvent(kind, slot >= 0 ? Characters.IdOf(slot) : CharacterId.None, CharacterId.None, at, Item: item));
     }
 }

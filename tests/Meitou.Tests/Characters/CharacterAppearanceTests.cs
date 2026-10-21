@@ -64,7 +64,7 @@ public class CharacterAppearanceTests
         int missing = 0, old = 0, read = 0;
         foreach (var body in bodies)
         {
-            var path = Path.Combine(install.Root, body.TrimStart('.', '\\', '/'));
+            var path = Path.Combine(install.Root, body.Replace('\\', '/').TrimStart('.', '/'));
             if (!File.Exists(path)) { missing++; continue; }
             int type = BitConverter.ToInt32(File.ReadAllBytes(path), 0);
             if (type < 15) { old++; continue; } // legacy FCS layouts (types 5-13), not read
@@ -108,5 +108,35 @@ public class CharacterAppearanceTests
         Assert.All(mesh.Poses, p => Assert.Equal(1, p.Target));
         int vertices = (int)mesh.SubMeshes[0].VertexData!.VertexCount;
         Assert.All(mesh.Poses, p => Assert.All(p.Vertices, v => Assert.True(v.Index < vertices)));
+    }
+
+    /// <summary>The editor's EXPORT writes a body file in the game's layout that IMPORT reads back into another character's draft unchanged (docs/characters.md "Import and export").</summary>
+    [Fact]
+    [Slow]
+    public void Exported_look_imports_back_unchanged()
+    {
+        var install = GameInstall.Locate();
+        Assert.SkipWhen(install is null, "Kenshi install not found");
+        var db = Database(install);
+        var ruka = AppearanceFile.Read(DataFile(install, "character", "bodies", "Ruka.bod2")).Record;
+        var source = new CharacterDraft(db, install.Root, ruka, "Ruka");
+        Assert.True(source.Import(ruka));
+        var stream = new MemoryStream();
+        FcsWriter.Write(source.Export(), stream);
+        stream.Position = 0;
+        var file = FcsReader.Read(stream);
+        Assert.Equal(FcsFileType.V15, file.FileType);
+        var exported = Assert.Single(file.Records);
+        Assert.Equal((FcsRecordType.CHARACTER_APPEARANCE, 1, "1--INGAME"), (exported.RecordType, exported.Id, exported.StringId));
+
+        var other = AppearanceFile.Read(DataFile(install, "character", "bodies", "Beep.bod2")).Record;
+        var target = new CharacterDraft(db, install.Root, other, "Beep");
+        Assert.True(target.Import(exported));
+        Assert.Equal(source.Race.StringId, target.Race.StringId);
+        Assert.Equal(source.Female, target.Female);
+        Assert.Equal(source.Record.Floats, target.Record.Floats);
+        Assert.Equal(source.Record.Strings, target.Record.Strings);
+        Assert.Equal(source.Record.Vector3s, target.Record.Vector3s);
+        Assert.Equal(other.StringId, target.Record.StringId);
     }
 }

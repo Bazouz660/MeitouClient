@@ -39,14 +39,22 @@ sealed partial class PlayerInterface
     {
         UiMode = mode;
         uiResolve = resolve;
-        statHelp = StatHelpCatalog.Read(resolve("locale/en_GB/LC_MESSAGES/main.pot")
+        var template = PotTemplate.Read(resolve("locale/en_GB/LC_MESSAGES/main.pot")
             ?? (Meitou.Content.GameInstall.Locate() is { } install ? Path.Combine(install.Root, "locale/en_GB/LC_MESSAGES/main.pot") : null));
+        advancedHelp = NewGameHelpCatalog.From(template);
+        statHelp = StatHelpCatalog.From(template);
+        MyGuiColours.LoadPalette(resolve("kenshi_colours.xml"));
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
         faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
-        faithfulScreens = new(uiResources);
+        squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
+        faithfulScreens = new(uiResources) { ClipboardReader = () => ClipboardRead?.Invoke(), ClipboardWriter = text => ClipboardWrite?.Invoke(text) };
         foreach (var (id, file, modal) in FaithfulScreenFiles)
-            faithfulScreens.Register(id, MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file)), modal,
-                centreRoot: id is "new-game" or "save" or "load");
+        {
+            var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
+            if (id == "new-game") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            faithfulScreens.Register(id, layout, modal, centreRoot: id is "save" or "load" or "file");
+        }
+        faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
         faithfulScreens.Activated += FaithfulAction;
         uiHost.Diagnostic += d => Console.Error.WriteLine($"ui        {d.Extension} {d.Operation}: {d.Error.Message}");
         uiRegistration = uiHost.Register(new PlayerUiExtension(ExecuteUiAction));
@@ -58,18 +66,19 @@ sealed partial class PlayerInterface
         ("inventory", "Kenshi_InventoryCharacterWindow", false), ("stats", "Kenshi_StatsWindow", false),
         ("overview", "Kenshi_OverviewWindow", false), ("menu", "Kenshi_MainMenuPopupPanel", true),
         ("title", "Kenshi_MainMenu", true), ("new-game", "Kenshi_NewGamePanel", true),
-        ("advanced", "Kenshi_AdvancedOptionsWindow", true), ("save", "Kenshi_SaveGamePanel", true),
+        ("save", "Kenshi_SaveGamePanel", true),
         ("load", "Kenshi_LoadGamePanel", true), ("message", "Kenshi_MessageBox", true),
         ("bag", "Kenshi_InventoryGenericWindow", false), ("limbs", "Kenshi_LimbReplacementWindow", false), ("trader", "Kenshi_InventoryTraderWindow", false),
         ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false),
         ("build", "Kenshi_BuildWindow", false), ("editor", "Kenshi_CharacterEditor", true), ("dialogue", "Kenshi_ConversationPanel", true),
+        ("file", "Kenshi_OpenSaveFileDialog", true), ("prospect", "Kenshi_ProspectingWindow", false),
     ];
 
     /// <summary>The expanded layout and the current bindings of the HUD (<c>"hud"</c>) or of a faithful screen, for the layout audit test.</summary>
     internal (MyGuiLayout Layout, UiBindings Bindings) FaithfulBindings(string id) =>
         id == "hud" ? (faithfulHud, BindUi()) : (faithfulScreens.Layout(id), BindFaithfulScreen(id));
 
-    public void CreateUiPainter(DebugOverlay overlay, Func<string, string?> resolve) { uiPainter = new(overlay, uiResources, resolve); findAsset = resolve; }
+    public void CreateUiPainter(DebugOverlay overlay, Func<string, string?> resolve) { uiPainter = new(overlay, uiResources, resolve) { Mode = UiMode }; findAsset = resolve; }
     public void DisposeUi() { uiPainter?.Dispose(); uiPainter = null; uiRegistration?.Dispose(); uiRegistration = null; }
     /// <summary>Future code-mod loader entry point; disposal removes the extension's owned registrations.</summary>
     public IDisposable RegisterUiExtension(IUiExtension extension) => uiHost.Register(extension);
@@ -83,6 +92,7 @@ sealed partial class PlayerInterface
     public void SetUiMode(UiMode mode)
     {
         UiMode = mode;
+        if (uiPainter is not null) uiPainter.Mode = mode;
         dragFrom = null;
         dragging = false;
         steering = false;
@@ -125,11 +135,13 @@ sealed partial class PlayerInterface
         foreach (string name in new[] { "ShortcutMapButton", "ShortcutTechButton", "ShortcutSquadButton" }) b.Actions[name] = "faithful:" + name;
         b.Actions["OrdersMedicButton"] = "meitou:medic";
         b.Actions["OrdersRescueButton"] = "meitou:rescue";
+        b.Actions["OrdersProspectButton"] = "meitou:prospect";
         var own = Selected().FirstOrDefault() ?? lead;   // the orders, jobs and squad tab stay the player's while another faction's character is inspected
         BindOrders(b, own);
-        foreach (string name in new[] { "LoadingPanel", "TownPanel", "TooltipPanel", "MessagePanel", "BiomeTextPanel" }) b.Hidden.Add(name);
+        foreach (string name in new[] { "LoadingPanel", "TownPanel", "TooltipPanel", "MessagePanel" }) b.Hidden.Add(name);
+        BindBiome(b);
         // The viewed floor (the exe's "Floor {1,num}", docs/game/ui-screens.md section 4; docs/formats/zones.md "Interior view"); the arrows step it as PageUp / PageDown do.
-        b.Text["FloorText"] = $"Floor {Floor?.Get() ?? 0}";
+        b.Text["FloorText"] = Loc.Tr("Floor {1,num}", Floor?.Get() ?? 0);
         b.Actions["FloorArrowUp"] = "meitou:floor-up";
         b.Actions["FloorArrowDown"] = "meitou:floor-down";
         b.Actions["BuildButton"] = "meitou:build";
@@ -156,27 +168,16 @@ sealed partial class PlayerInterface
             b.Properties["HealthText"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = bad ? BadColour : MyGuiColours.InkText };
         }
         BindJobs(b, own);
-        // The squad bar has one tab per squad of the player's; Meitou has one squad, so the first page shows, captioned with its name.
-        foreach (var widget in faithfulHud.Find("SquadPanel")?.Children.Where(w => w.Type == "TabItem").Skip(1) ?? []) b.HiddenWidgets.Add(widget);
-        b.Text["SquadPanel@tab0"] = SquadTabCaption(own);
+        BindSquadTabs(b);
         if (lead is null && !buildingFocus) b.Hidden.Add("InformationPanel");
         if (lead is null && !buildingFocus) b.Hidden.Add("MedicalPanel");
         // Buttons without a backend are disabled, except those the original never greys out (the build and floor buttons look live there in the open).
         foreach (var w in faithfulHud.Widgets.Where(w => w.Type == "Button" && !b.Actions.ContainsKey(w.Name) && w.Name is not ("BuildButton" or "FloorArrowUp" or "FloorArrowDown"))) b.Disabled.Add(w.Name);
+        if (Selected().Count == 0 && !faithfulScreens.IsOpen("prospect")) b.Disabled.Add("OrdersProspectButton");
         if (Selected().Count == 0)
             foreach (string name in new[] { "OrdersMedicButton", "OrdersRescueButton", "medic", "rescue", "stop" }) b.Disabled.Add(name);
+        BindTooltips(b);
         return b;
-    }
-
-    /// <summary>
-    /// The squad tab's caption. The original captions a tab with its squad's name, which for the player's first squad reads like <c>Nameless_0</c>: the faction's
-    /// name and the squad's number (<b>Observed</b>; where the original makes it is <b>Unknown</b>). Meitou's player squad keeps its start's template name, so the
-    /// tab shows the faction's name and 0.
-    /// </summary>
-    string SquadTabCaption(Meitou.Simulation.CharacterSnapshot? lead)
-    {
-        string? faction = FactionName?.Invoke(lead?.Faction ?? session.World.Player.Faction);
-        return string.IsNullOrEmpty(faction) ? "Squad 1" : faction + "_0";
     }
 
     IReadOnlyList<UiControl> ArrangeUi()
@@ -186,7 +187,8 @@ sealed partial class PlayerInterface
         SyncDialogueScreen();
         ValidateInventoryDrag();
         var b = BindUi();
-        bool hud = !TitleOpen && !EditorOpen && !conversationShown;   // the conversation panel covers the HUD bar (engine reading of its layout)
+        faithfulScreens.FocusRing = UiMode == UiMode.Meitou;
+        bool hud =!TitleOpen && !EditorOpen && !conversationShown;   // the conversation panel covers the HUD bar (engine reading of its layout)
         var controls = hud ? MyGuiPresentation.Arrange(faithfulHud, Width, Height, b, uiResources.Layers).ToList() : [];
         UiRect FaithfulSlot(string name) => controls.FirstOrDefault(c => c.Name == name)?.Bounds ?? default;
         var slots = new Dictionary<string, UiRect>
@@ -233,8 +235,11 @@ sealed partial class PlayerInterface
         var controls = ArrangeUi();
         if (InventoryPointerDown(p)) return true;
         if (MapPointerDown(p)) return true;
+        if (SquadPointerDown(p)) return true;
         if (faithfulScreens.PointerDown(p)) { UpdateMenuPause(); return true; }
+        if (JobDragStart(controls, p)) return true;
         if (MyGuiPresentation.HitTest(controls, p.X, p.Y) is not { } c) return false;
+        if (SquadTabClick(c)) return true;
         if (c.Action.StartsWith("faithful:", StringComparison.Ordinal))
         {
             faithfulScreens.Open("overview");
@@ -262,7 +267,7 @@ sealed partial class PlayerInterface
         else if (action is "floor-up" or "floor-down") Floor?.Step(action == "floor-up" ? 1 : -1);
         else if (action == "build") ToggleBuildMode();
         else if (action == "context") ContextAction(argument);
-        else if (action == "squad") Select(PlayerCharacters(), false);
+        else if (action == "squad") Select(ActiveSquadMembers(), false);
         else if (action == "member")
         {
             // A portrait click selects, a double click centres and follows (docs/game/ui-input.md section 7).
@@ -273,8 +278,9 @@ sealed partial class PlayerInterface
             SelectMember(index, false, doubleClick);
         }
         else if (action == "stop") Say(new StopCommand(SelectedIds()) { Tick = session.World.Tick });
-        else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds()) { Tick = session.World.Tick });
-        else if (action == "rescue") Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds()) { Tick = session.World.Tick });
+        else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
+        else if (action == "rescue") Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
+        else if (action == "prospect") ProspectAction();
         else if (action == "job-remove") RemoveJob(argument);
         else if (action.StartsWith("order.", StringComparison.Ordinal) && Enum.TryParse(action[6..], out CharacterOrders order))
             Say(new OrdersCommand(SelectedIds(), order) { Tick = session.World.Tick });

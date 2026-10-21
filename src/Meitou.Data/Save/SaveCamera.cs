@@ -26,10 +26,20 @@ public sealed class SaveCamera(FcsRecord record)
 
     public Vector3 Position { get => Record.Vector3s.GetValueOrDefault("pos"); set => Record.Vector3s["pos"] = value; }
 
-    /// <summary>x, y, z, w.</summary>
-    public Vector4 Rotation { get => Record.Vector4s.GetValueOrDefault("rot", new Vector4(0, 0, 0, 1)); set => Record.Vector4s["rot"] = value; }
+    /// <summary>The camera pivot's orientation as the game stores it: <b>w, x, y, z</b> (the Ogre quaternion copied as is; <see cref="World.KenshiCamera.FromSaved"/>).</summary>
+    public Vector4 Rotation { get => Record.Vector4s.GetValueOrDefault("rot", new Vector4(1, 0, 0, 0)); set => Record.Vector4s["rot"] = value; }
+
+    /// <summary>
+    /// Whether the record holds a camera view. Meitou saves written before it kept the camera have <c>pos</c> 0 and <c>rot</c> (0, 0, 0, 1), which read as w, x, y, z is a
+    /// half turn of roll the game's camera cannot make, so that exact value marks "no view".
+    /// </summary>
+    public bool HasView => Record.Vector3s.ContainsKey("pos") && Record.Vector4s.TryGetValue("rot", out var rot) && rot != new Vector4(0, 0, 0, 1);
     public float Zoom { get => Record.Floats.GetValueOrDefault("zoom"); set => Record.Floats["zoom"] = value; }
     public string Area { get => Record.Strings.GetValueOrDefault("area", ""); set => Record.Strings["area"] = value; }
+
+    /// <summary>The region banner's cooldown in seconds (<c>biome_text_timer</c>; the original writes its raw, ever falling value) and the BIOME_GROUP it last tracked (<c>biome_text_groud</c>; empty: none).</summary>
+    public float BiomeTextTimer { get => Record.Floats.GetValueOrDefault("biome_text_timer"); set => Record.Floats["biome_text_timer"] = value; }
+    public string BiomeTextGroup { get => Record.Strings.GetValueOrDefault("biome_text_groud", ""); set => Record.Strings["biome_text_groud"] = value; }
 
     public float SkyUpdateCurrentTime { get => Record.Floats.GetValueOrDefault("sky update current time"); set => Record.Floats["sky update current time"] = value; }
     public float SkyUpdateTotalTime { get => Record.Floats.GetValueOrDefault("sky update total time"); set => Record.Floats["sky update total time"] = value; }

@@ -44,6 +44,17 @@ public static class KenshiFontSize
         return ascent + descent;
     }
 
+    /// <summary>
+    /// The OS/2 table's typographic (sTypo) and Windows (usWin) ascent and descent in font units, which MyGUI raises its line height to; null without the table.
+    /// </summary>
+    public static (int TypoAscender, int TypoDescender, int WinAscent, int WinDescent)? Os2Metrics(ReadOnlySpan<byte> ttf)
+    {
+        var os2 = Table(ttf, "OS/2");
+        if (os2.Length < 78) return null;
+        return (BinaryPrimitives.ReadInt16BigEndian(os2[68..]), BinaryPrimitives.ReadInt16BigEndian(os2[70..]),
+            BinaryPrimitives.ReadUInt16BigEndian(os2[74..]), BinaryPrimitives.ReadUInt16BigEndian(os2[76..]));
+    }
+
     static ReadOnlySpan<byte> Table(ReadOnlySpan<byte> ttf, string tag)
     {
         if (ttf.Length < 12) return default;

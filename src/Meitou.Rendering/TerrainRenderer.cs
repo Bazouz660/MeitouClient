@@ -317,6 +317,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// </summary>
     internal InteriorMaskRenderer? InteriorCut { get; set; }
 
+    /// <summary>The blood on the ground the patches lay over their albedo (docs/game/blood-decals.md; null: none). The host records it before the scene.</summary>
+    public TerrainDecalRenderer? Decals { get; set; }
+
     PatchDraw[] cutDraws = new PatchDraw[64];
     int plainCount, cutCount;
     uint cutMask;
@@ -501,7 +504,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             FineCells = new Vector2(fine.Columns - 1f, fine.Rows - 1f), FineBand = fineBand, HasFine = 1,
             HeightCoarse = Index(coarseTexture, BindlessKind.Texture2D, standIn2D),
             HeightFine = Index(fineTexture, BindlessKind.Texture2D, standIn2D),
-            Diffuse = standInArray, Normal = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
+            Diffuse = standInArray, Normal = standInArray, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
         };
         if (material)
@@ -522,6 +525,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             bool cut = patches ? cutCount > 0 : meshCut is { Active: true };
             c.InteriorMask = !cut ? standIn2D : patches ? cutMask : meshCut!.Index;
             c.InteriorCut = cut ? 1u : 0u;
+            if (patches) Decals?.Apply(ref c);
             c.FarStart = options.MaterialDistance * 0.8f;
             c.FarEnd = options.MaterialDistance;
             var t = textures;

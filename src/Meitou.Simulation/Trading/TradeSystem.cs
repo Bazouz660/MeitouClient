@@ -35,6 +35,14 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public string Material { get; init; } = "";
     /// <summary>How full the item is (0 to 1); null: no charge bar.</summary>
     public float? Charge { get; init; }
+    /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), model level and charges, and the trader factor of its price (<c>FUN_14079e6d0</c>, 1: none).</summary>
+    public string Company { get; init; } = "";
+    public int Level { get; init; }
+    public float Charges { get; init; }
+    public float MaxCharges { get; init; }
+    public float PriceFactor { get; init; } = 1;
+    /// <summary>The faction a stolen item was stolen from, -1 when it is not stolen.</summary>
+    public int StolenFrom { get; init; } = -1;
     /// <summary>The tooltip's two prices of the whole stack (<c>FUN_14079e7a0</c>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
     public long Value { get; init; }
     public long SellValue { get; init; }
@@ -93,7 +101,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 {
     readonly PopulationData data;
     readonly CharacterAssembly assembly;
-    readonly Dictionary<string, SquadTemplate?> templates = new(StringComparer.Ordinal);
+    readonly Dictionary<string, SquadTemplate?> templates = new(StringComparer.Ordinal), homeTemplates = new(StringComparer.Ordinal);
     Market? market;
     CharacterId customer = CharacterId.None, trader = CharacterId.None;
     bool open, traderWandered;
@@ -219,7 +227,38 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                     ?? new Shop { Terms = terms };
                 Refill(world, squad, squad.Shop, template);
             }
+            else if (squad.HomeBuilding is { } home && HomeTemplateOf(squad.TemplateId) is { } contents) FillHome(world, squad, contents, home);
         }
+    }
+
+    SquadTemplate? HomeTemplateOf(string id)
+    {
+        if (!homeTemplates.TryGetValue(id, out var t))
+            homeTemplates[id] = t = data.Db.Find(id) is { } r && SquadFactory.IsTemplate(r) && SquadTemplate.From(r) is { IsTrader: false, Vendors.Count: > 0 } fill ? fill : null;
+        return t;
+    }
+
+    /// <summary>
+    /// A housed squad with <c>vendors</c> that is no trader (a resident's <c>house contents</c>): the building filler fills its home's storage containers as a trader's (the squad factory
+    /// <c>FUN_140583a10</c> tests <c>vendors</c>, not <c>is trader</c>, <b>Observed</b>), unlocking them; here each unit goes into the first container with room and what fits nowhere is
+    /// lost. Engine choice: again every <c>vendors refresh time</c> hours, but only while every container is empty (a loaded save keeps what they hold); the purse is not touched.
+    /// </summary>
+    void FillHome(World world, Squad squad, SquadTemplate template, Meitou.Data.World.TownBuilding home)
+    {
+        if (world.Tick < squad.NextHomeFillTick) return;
+        squad.NextHomeFillTick = world.Tick + (long)(template.VendorsRefreshTime / BodySystem.HoursPerTick);
+        var boxes = new List<Locks.Fixture>();
+        foreach (var f in home.Fixtures)
+            if (f.HoldsShopStock && world.Fixtures.Find(f.Id) is { Contents: not null } box) boxes.Add(box);
+        if (boxes.Count == 0 || boxes.Any(b => b.Contents!.Items.Count > 0)) return;
+        if (Shop.ForBuilding(home, new Trader(squad.Town, squad.Faction, template.BuyMult, template.BuysStolen, template.BuysIllegal)) is not { } merged) return;
+        merged.Fills = (int)world.Tick;
+        ShopFiller.Fill(merged, template, Market(world), data, world.Seed, (ulong)squad.Id);
+        foreach (var item in merged.Stock.Items)
+            foreach (var box in boxes)
+                if (box.Contents!.Add(item)) break;
+        foreach (var box in boxes)
+            if (box.Lock is { } l) l.Locked = false;
     }
 
     void Refill(World world, Squad squad, Shop shop, SquadTemplate template)
@@ -419,7 +458,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
                 item.Quality, sell ? sellValue : value, m.UnitPrice(item.Quantity == 1 ? item : item.WithQuantity(1), sell, shop.Terms, holder), stolen)
             {
-                Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight,
+                Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
+                Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceChance(thievery, item.StolenFrom == squad.Faction) is < 1 and var odds ? Math.Max(odds, 0) : null,
             };

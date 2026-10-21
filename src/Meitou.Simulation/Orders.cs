@@ -72,7 +72,7 @@ public static class Orders
     ];
 
     public const string SpeedModeKey = "speed mode";
-    // Meitou extension: the original's jobs-switch save key is not established.
+    /// <summary>The jobs switch as older Meitou saves wrote it (GAMESTATE_CHARACTER): read, never written; the original's key is GAMESTATE_AI <c>jobs</c> (<see cref="Saving.PermaJobSave"/>).</summary>
     public const string JobsKey = "meitou jobs enabled";
     public const CharacterOrders PlayerDefaults = CharacterOrders.Jobs | CharacterOrders.Ranged;
 
@@ -82,9 +82,8 @@ public static class Orders
     public static void Write(FcsRecord state, CharacterCold cold)
     {
         foreach (var (order, key) in SaveKeys) state.Bools[key] = (cold.Orders & order) != 0;
-        // Meitou's own key only when it says something: jobs off, or a save that has it (absent reads as the default, on).
-        bool jobs = Has(cold, CharacterOrders.Jobs);
-        if (!jobs || state.Bools.ContainsKey(JobsKey)) state.Bools[JobsKey] = jobs;
+        // The jobs switch is the AI record's (Saving.PermaJobSave); the key older Meitou saves wrote is dropped.
+        state.Bools.Remove(JobsKey);
         state.Ints[SpeedModeKey] = cold.RunSpeed;
     }
 

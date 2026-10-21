@@ -130,7 +130,7 @@ public sealed class Market
             }
         }
         var info = Items.Info(item.Record);
-        if (item.Type == FcsRecordType.ITEM && info?.Name == MoneyItemName) return info.Value;
+        if (item.Type == FcsRecordType.ITEM && info?.BaseName == MoneyItemName) return info.Value;
         int u = BaseValue(item);
         if (trader.Site >= 0) u = (int)(u * MarketFactor(trader.Site, item.Record));
         if (sell && !(info is { TradeItem: true } && !item.IsStolenFor(holderFaction))) u = (int)(u * k.LootPriceMult);

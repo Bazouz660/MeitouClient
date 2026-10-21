@@ -40,7 +40,7 @@ public sealed class WwiseBank
     /// <summary>The bytes of an embedded WEM.</summary>
     public ReadOnlyMemory<byte> MediaBytes(WwiseMedia media) => data.AsMemory(media.Offset, media.Length);
 
-    public static WwiseBank ReadFile(string path) => Read(File.ReadAllBytes(path));
+    public static WwiseBank ReadFile(string path) => Read(File.ReadAllBytes(Meitou.Content.GameFiles.Resolve(path)));
 
     public static WwiseBank Read(byte[] data)
     {

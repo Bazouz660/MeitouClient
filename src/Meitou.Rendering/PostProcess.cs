@@ -69,7 +69,8 @@ public sealed unsafe partial class PostProcess : IDisposable
     int giDivisor;
     long frameIndex;
     Target2D? aoA, aoB;
-    Target2D? ldr, ldrFxaa;   // the composite's LDR picture that FXAA or the heat haze reads, and FXAA's when the heat haze follows it
+    Target2D? ldr, ldrFxaa;   // the composite's LDR picture that FXAA or the heat haze reads, and FXAA's (or SMAA's) when the heat haze follows it
+    Target2D? smaaEdges, smaaWeights;   // SMAA's edges and blending weights
     GpuTexture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
     Target2D? luminance, adaptA, adaptB;   // Kenshi's exposure: the luminance measure (mipmapped) and the adapted value (1 × 1, ping-pong)
     bool adaptedValid;
@@ -83,6 +84,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     readonly AdaptPass adaptPass;
     readonly CompositePass compositePass;
     readonly FxaaPass fxaaPass;
+    readonly SmaaPasses smaaPasses;
     readonly HeatHazePass hazePass;
     readonly VelocityPass velocityPass;
     readonly TaaPass taaPass;
@@ -153,6 +155,23 @@ public sealed unsafe partial class PostProcess : IDisposable
         public readonly SamplerSlot Image;
         public readonly UniformHandle Texel;
         public FxaaPass(GpuContext gpu) : base(gpu, PostProcessShaders.Fxaa, "post fxaa") => (Image, Texel) = (P.Sampler("uImage"), P.Uniform("uTexel"));
+    }
+
+    /// <summary>SMAA's three passes (<see cref="PostProcessShaders.SmaaEdges"/>, <see cref="PostProcessShaders.SmaaWeights"/>, <see cref="PostProcessShaders.SmaaBlend"/>).</summary>
+    sealed class SmaaPasses
+    {
+        public readonly LegacyProgram Edges, Weights, Blend;
+        public readonly SamplerSlot EdgesImage, WeightsEdges, BlendImage, BlendWeights;
+        public SmaaPasses(GpuContext gpu)
+        {
+            Edges = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, PostProcessShaders.SmaaEdges, "post smaa edges");
+            Weights = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, PostProcessShaders.SmaaWeights, "post smaa weights");
+            Blend = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, PostProcessShaders.SmaaBlend, "post smaa blend");
+            (EdgesImage, WeightsEdges) = (Edges.Sampler("uImage"), Weights.Sampler("uEdges"));
+            (BlendImage, BlendWeights) = (Blend.Sampler("uImage"), Blend.Sampler("uWeights"));
+        }
+
+        public void Dispose() { Edges.Dispose(); Weights.Dispose(); Blend.Dispose(); }
     }
 
     sealed class HeatHazePass : FullscreenProgram
@@ -315,6 +334,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         Options = options;
         (ssao, blur, luminancePass, adaptPass) = (new SsaoPass(gpu), new BlurPass(gpu), new LuminancePass(gpu), new AdaptPass(gpu));
         (compositePass, fxaaPass, hazePass) = (new CompositePass(gpu), new FxaaPass(gpu), new HeatHazePass(gpu));
+        smaaPasses = new SmaaPasses(gpu);
         (velocityPass, taaPass, fogPass) = (new VelocityPass(gpu), new TaaPass(gpu), new FogPass(gpu));
         (particleDepthPass, particleCompositePass, particleCoveragePass) = (new ParticleDepthPass(gpu), new ParticleCompositePass(gpu), new ParticleCoveragePass(gpu));
     }
@@ -329,7 +349,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     // ---- targets ----
 
     IEnumerable<Target2D> Targets() =>
-        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, ldr, ldrFxaa, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
+        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, ldr, ldrFxaa, smaaEdges, smaaWeights, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
 
     void Free()
     {
@@ -337,7 +357,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         foreach (var t in Targets()) t.Texture.Dispose();   // released after the frames in flight
         sceneColour = sceneDepth = farDepth = motion = upscaleDepth = reactive = historyA = historyB = rateDistance = rateImage = null;
         rateBuiltFrame = long.MinValue;
-        aoA = aoB = ldr = ldrFxaa = luminance = adaptA = adaptB = null;
+        aoA = aoB = ldr = ldrFxaa = smaaEdges = smaaWeights = luminance = adaptA = adaptB = null;
         foreach (var l in lowTargets) l.Accum = l.Depth = null;
         giAlbedo = giLow = shaftInjected = shaftLight = null;
         adaptedValid = historyValid = false;
@@ -392,9 +412,11 @@ public sealed unsafe partial class PostProcess : IDisposable
                 historyB = Make(batch, displayW, displayH, InternalFormat.Rgba16f, TextureMinFilter.Linear, "post taa history");
             }
             // FXAA and the heat haze read the composite's LDR picture, as the game's run on its A8R8G8B8 buffers after the HDR composite
-            // (both always made, so switching either at run time needs no new targets).
+            // (all always made, SMAA's too, so switching either at run time needs no new targets).
             ldr = Make(batch, displayW, displayH, InternalFormat.Rgba8, TextureMinFilter.Linear, "post ldr");
             ldrFxaa = Make(batch, displayW, displayH, InternalFormat.Rgba8, TextureMinFilter.Linear, "post ldr fxaa");
+            smaaEdges = Make(batch, displayW, displayH, InternalFormat.Rgba8, TextureMinFilter.Nearest, "post smaa edges");
+            smaaWeights = Make(batch, displayW, displayH, InternalFormat.Rgba8, TextureMinFilter.Nearest, "post smaa weights");
             int hw = Math.Max((w + 1) / 2, 1), hh = Math.Max((h + 1) / 2, 1);
             aoA = Make(batch, hw, hh, InternalFormat.RG16f, TextureMinFilter.Linear, "post ssao");
             aoB = Make(batch, hw, hh, InternalFormat.RG16f, TextureMinFilter.Linear, "post ssao");
@@ -528,9 +550,21 @@ public sealed unsafe partial class PostProcess : IDisposable
     public Func<UpscalerKind, IUpscaler?>? UpscalerFactory { get; set; }
     readonly HashSet<UpscalerKind> unavailable = [];
 
+    /// <summary>The vendor upscaler for <paramref name="kind"/>; DLSS where it is missing (not an NVIDIA card) is FSR, then TAA.</summary>
     IUpscaler? ExternalFor(UpscalerKind kind)
     {
         if (kind is not (UpscalerKind.Fsr or UpscalerKind.Dlss)) return null;
+        var external = Create(kind);
+        if (external is null && kind == UpscalerKind.Dlss && (external = Create(UpscalerKind.Fsr)) is not null && !warnedFallback)
+        {
+            Console.WriteLine("upscaler  DLSS is not available here; using FSR");
+            warnedFallback = true;
+        }
+        return external;
+    }
+
+    IUpscaler? Create(UpscalerKind kind)
+    {
         if (External?.Kind == kind) return External;
         if (unavailable.Contains(kind) || UpscalerFactory is null) return null;
         External?.Dispose();
@@ -677,8 +711,9 @@ public sealed unsafe partial class PostProcess : IDisposable
         if (auto) RunExposure();
         if (auto) Stamp("exposure");
 
-        // Composite: to the target, or to the LDR picture FXAA and / or the heat haze then read (the game's order: FXAA, HeatHaze).
-        bool fxaa = o.Fxaa && !Temporal && ldr is not null;
+        // Composite: to the target, or to the LDR picture FXAA (or SMAA) and / or the heat haze then read (the game's order: FXAA, HeatHaze).
+        bool smaa = o.Smaa && !Temporal && smaaWeights is not null;
+        bool fxaa = o.Fxaa && !smaa && !Temporal && ldr is not null;
         bool haze = HeatHazeRuns;
         var c = compositePass;
         Bind(c.P, c.Scene, postColour);
@@ -698,7 +733,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         c.P.Set(c.Contrast, PostOptions.Contrast);
         c.P.Set(c.Night, auto ? Math.Clamp(o.NightGradeStrength, 0, 1) : 0f);
         c.P.Set(c.Balance, o.Balance);
-        if (fxaa || haze) Draw(c.P, ldr!); else DrawFinal(c.P, final);
+        if (fxaa || smaa || haze) Draw(c.P, ldr!); else DrawFinal(c.P, final);
         Stamp("composite");
         var picture = ldr;
         if (fxaa)
@@ -708,6 +743,11 @@ public sealed unsafe partial class PostProcess : IDisposable
             f.P.Set(f.Texel, 1f / displayWidth, 1f / displayHeight);
             if (haze) Draw(f.P, ldrFxaa!); else DrawFinal(f.P, final);
             Stamp("fxaa");
+            picture = ldrFxaa;
+        }
+        if (smaa)
+        {
+            RunSmaa(haze, final);
             picture = ldrFxaa;
         }
         if (haze) RunHeatHaze(picture!, final);
@@ -731,6 +771,20 @@ public sealed unsafe partial class PostProcess : IDisposable
             stamps = null;
         }
         (previousRotation, previousEye, previousFov, previousAspect, previousValid) = (viewRotation, eyeNow, fovNow, aspectNow, Temporal);
+    }
+
+    /// <summary>SMAA on the composite's LDR picture (docs/render-post.md "SMAA"): edges, blending weights, then the blend into the heat haze's input or the target.</summary>
+    void RunSmaa(bool haze, PassTargets final)
+    {
+        var s = smaaPasses;
+        Bind(s.Edges, s.EdgesImage, ldr);
+        Draw(s.Edges, smaaEdges!);
+        Bind(s.Weights, s.WeightsEdges, smaaEdges);
+        Draw(s.Weights, smaaWeights!);
+        Bind(s.Blend, s.BlendImage, ldr);
+        Bind(s.Blend, s.BlendWeights, smaaWeights);
+        if (haze) Draw(s.Blend, ldrFxaa!); else DrawFinal(s.Blend, final);
+        Stamp("smaa");
     }
 
     // ---- fog volumes ----
@@ -996,7 +1050,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         var external = ExternalFor(Options.Upscale.Kind);
         bool merged = MergeVelocity && MergeSupported;
         PrepareSunMotion();
-        if (merged) VelocityMerged(motion!, external is null ? null : upscaleDepth!, external is null || WaterHeight is null ? null : reactive!);
+        if (merged) VelocityMerged(motion!, external is null ? null : upscaleDepth!, external is null || WaterHeight is null ? null : reactive!, cleanColour: external is not null);
         else Velocity(motion!, 0);
         if (ObjectMotion is { } objectMotion)
         {
@@ -1334,6 +1388,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         DisposeMerged();
         Hiz?.Dispose();
         foreach (var p in new FullscreenProgram[] { ssao, blur, luminancePass, adaptPass, compositePass, fxaaPass, hazePass, velocityPass, taaPass, fogPass, particleDepthPass, particleCompositePass, particleCoveragePass }) p.P.Dispose();
+        smaaPasses.Dispose();
         giResolvePass?.P.Dispose();
         giApplyPass?.P.Dispose();
         aoApplyPass?.P.Dispose();

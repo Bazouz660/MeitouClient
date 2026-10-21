@@ -80,12 +80,15 @@ public sealed class OgreScriptResources
     }
 
     /// <summary>
-    /// <c>resources.cfg</c> plus the folders of the mods in <paramref name="loadOrder"/> (core files excluded), as
-    /// <see cref="AddModFolder"/> registers them.
+    /// <c>resources.cfg</c>, then the active language's folder <c>locale/&lt;code&gt;</c> (<b>Verified</b> <c>Ogre_RegisterResourceLocations</c>: it heads
+    /// the list of mod folders, so its fonts, <c>tips.txt</c> and <c>names*.txt</c> replace the base game's and a mod's replace its own), then the folders of
+    /// the mods in <paramref name="loadOrder"/> (core files excluded), as <see cref="AddModFolder"/> registers them.
     /// </summary>
     public static OgreScriptResources ForInstall(GameInstall install, LoadOrder loadOrder)
     {
         var result = ReadConfig(Path.Combine(install.Root, "resources.cfg"), install.Root);
+        if (loadOrder.Language.OverlayFolder is { } overlay)
+            result.AddModFolder(overlay);
         foreach (var entry in loadOrder.Entries.Where(e => !LoadOrder.BaseFiles.Contains(e.Name)))
             result.AddModFolder(Path.GetDirectoryName(entry.Path)!);
         return result;
@@ -180,11 +183,12 @@ public sealed class OgreScriptResources
     {
         if (!groups.TryGetValue(location.Group, out var index))
             groups[location.Group] = index = new(StringComparer.OrdinalIgnoreCase);
-        if (location.Type != "FileSystem" || !Directory.Exists(location.Path))
+        if (location.Type != "FileSystem" || GameFiles.ExistingDirectory(location.Path) is not { } existing)
         {
             Skipped.Add(location);
             return;
         }
+        location = location with { Path = existing };
         Locations.Add(location);
         foreach (var file in Files(location.Path, "*", SearchOption.TopDirectoryOnly))
             index[Path.GetFileName(file)] = file;

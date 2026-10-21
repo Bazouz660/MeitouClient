@@ -119,6 +119,32 @@ internal static class NavGeometry
         return false;
     }
 
+    /// <summary>How far (units) the facing edge of an inner near-miss seam may lie off an edge's line (docs/game/pathfinding.md, "Inner seams").</summary>
+    public const float NearMissGap = 1.5f;
+
+    /// <summary>
+    /// Whether <paramref name="b0"/> <paramref name="b1"/> runs opposite <paramref name="a0"/> <paramref name="a1"/>, overlaps it along that line and lies
+    /// within <paramref name="maxGap"/> of it (on X/Z) at both ends of the overlap. <paramref name="lo"/>, <paramref name="hi"/>: the overlap as fractions of
+    /// a0 a1; <paramref name="yLo"/>, <paramref name="yHi"/>: b's heights there.
+    /// </summary>
+    public static bool FacingOverlap(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1, float maxGap, out float lo, out float hi, out float yLo, out float yHi)
+    {
+        lo = hi = yLo = yHi = 0;
+        var d = a1 - a0;
+        float len2 = d.X * d.X + d.Z * d.Z;
+        if (len2 < 1e-9f) return false;
+        float t0 = ((b0.X - a0.X) * d.X + (b0.Z - a0.Z) * d.Z) / len2, t1 = ((b1.X - a0.X) * d.X + (b1.Z - a0.Z) * d.Z) / len2;
+        if (t1 >= t0) return false;
+        lo = Math.Max(0, t1); hi = Math.Min(1, t0);
+        if (hi - lo < 1e-4f) return false;
+        var bLo = Vector3.Lerp(b0, b1, (lo - t0) / (t1 - t0));
+        var bHi = Vector3.Lerp(b0, b1, (hi - t0) / (t1 - t0));
+        float len = MathF.Sqrt(len2);
+        if (MathF.Abs((bLo.X - a0.X) * d.Z - (bLo.Z - a0.Z) * d.X) / len > maxGap || MathF.Abs((bHi.X - a0.X) * d.Z - (bHi.Z - a0.Z) * d.X) / len > maxGap) return false;
+        yLo = bLo.Y; yHi = bHi.Y;
+        return true;
+    }
+
     /// <summary>An edge's extent along the border line (sorted) and its heights at those two ends.</summary>
     public static (float From, float To, float YFrom, float YTo) Span(Vector3 a, Vector3 b, bool alongX)
     {

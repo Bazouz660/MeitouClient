@@ -8,6 +8,9 @@ namespace Meitou.Simulation.Items;
 /// <summary>What an item record says about carrying and eating it (docs/game/economy.md "item instances", character-stats.md "Encumbrance and carrying").</summary>
 public sealed record ItemInfo(string Id, string Name, FcsRecordType Type)
 {
+    /// <summary>The record's name in the data files (<see cref="GameRecord.BaseName"/>): for finding an item by its English name, whatever the language.</summary>
+    public string BaseName { get => baseName ?? Name; init => baseName = value; }
+    string? baseName;
     /// <summary><c>weight kg</c>.</summary>
     public float Weight { get; init; }
     /// <summary><c>inventory footprint width</c> / <c>height</c>: cells in a grid.</summary>
@@ -54,6 +57,7 @@ public sealed record ItemInfo(string Id, string Name, FcsRecordType Type)
 
     public static ItemInfo From(GameRecord r) => new(r.StringId, r.Name, r.Type)
     {
+        BaseName = r.BaseName,
         Weight = r.GetFloat("weight kg"),
         Width = Math.Max(r.GetInt("inventory footprint width", 1), 1),
         Height = Math.Max(r.GetInt("inventory footprint height", 1), 1),

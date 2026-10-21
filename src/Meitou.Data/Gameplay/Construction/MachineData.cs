@@ -17,7 +17,7 @@ public sealed record MachineData
     /// <summary>The game day at speed 1 in seconds, G (<b>Verified</b>, <c>FUN_14066cd50</c>): 24 x 1200/11.</summary>
     public const float DaySeconds = 24 * 1200f / 11f;
 
-    public const int MineFunction = 1, ResearchFunction = 3;
+    public const int MineFunction = 1, ResourceStorageFunction = 2, GeneralStorageFunction = 13, ResearchFunction = 3, RefineryFunction = 4, GeneratorFunction = 5, ItemFurnaceFunction = 14, BatteryFunction = 23, RainCollectorFunction = 26, NaturalMineFunction = 27;
     /// <summary><c>MiningResource</c> WATER and GROUND (<b>Verified</b>, editor enum).</summary>
     public const int WaterResource = 5, GroundResource = 6;
 
@@ -49,13 +49,44 @@ public sealed record MachineData
     public bool HasInventory { get; init; }
     public int StorageWidth { get; init; } = 18;
     public int StorageHeight { get; init; } = 18;
-    /// <summary><c>power output</c> (negative consumes). Power is not modelled: every building runs as if powered (engine gap).</summary>
+    /// <summary><c>limit inventory</c>: the only ITEMs the storage takes (empty: any).</summary>
+    public IReadOnlyList<string> StorageLimit { get; init; } = [];
+    /// <summary><c>itemtype limit</c>: the record type the storage takes (fcs.def default ITEM).</summary>
+    public FcsRecordType ItemTypeLimit { get; init; } = FcsRecordType.ITEM;
+    /// <summary><c>stackable bonus mult</c>: stacks inside are this many times larger (fcs.def).</summary>
+    public float StackBonusMult { get; init; } = 1;
+    /// <summary>A storage building (function 2 or 13 with an inventory) operators haul to and from (docs/game/buildings-production.md "Hauling").</summary>
+    public bool IsStorage => HasInventory && Function is ResourceStorageFunction or GeneralStorageFunction;
+    /// <summary>Whether the storage takes an item of this record and type.</summary>
+    public bool Accepts(string item, FcsRecordType type) => type == ItemTypeLimit && (StorageLimit.Count == 0 || StorageLimit.Contains(item));
+    /// <summary><c>power output</c>: a generator's output, a battery's discharge and charge rate, a consumer's draw when negative (docs/game/buildings-production.md "Power").</summary>
     public float PowerOutput { get; init; }
+    /// <summary><c>power capacity</c>: a battery's store, in seconds at its rate (fcs.def).</summary>
+    public float PowerCapacity { get; init; }
+    /// <summary>The raw <c>max operators</c> (building, else functionality; 0 none): a consumer's draw is x operators / this when it is above 0 (<b>Observed</b>, <c>vfunc_163</c>).</summary>
+    public int PowerOperators { get; init; }
+    /// <summary>A wind generator: function 5 without <c>consumes</c> (<b>Observed</b>, the factory <c>FUN_14057cc70</c>).</summary>
+    public bool IsWind { get; init; }
+    /// <summary>The BUILDING's raw <c>output rate</c> (the exe's <c>+0x1a8</c>), a factor of the efficiency its sound emitter is told (docs/audio.md "Point emitters"); 1 without one.</summary>
+    public float OutputRate { get; init; } = 1;
+    public bool IsBattery => PowerCapacity > 0;
+    public bool IsGenerator => PowerOutput > 0 && !IsBattery;
+    public bool IsConsumer => PowerOutput < 0;
 
     public bool IsResearch => Function == ResearchFunction;
-    public bool IsProducer => Function == MineFunction && Farm is null && Output is not null;
+    /// <summary>A mine, well or refinery: inputs (if any) into one output (functions 1, 4 and 27, <b>Verified</b> enum; the stone and ore processors are 4).</summary>
+    public bool IsProducer => Function is MineFunction or RefineryFunction or NaturalMineFunction && Farm is null && Output is not null;
+    /// <summary>A crafting bench (function 10): its crafts lists.</summary>
+    public CraftBench? Craft { get; init; }
+    public bool IsCrafting => Craft is not null;
     /// <summary>A building characters can operate.</summary>
-    public bool Operable => IsResearch || Farm is not null || IsProducer;
+    public bool Operable => IsResearch || Farm is not null || IsProducer || IsCrafting;
+    /// <summary>
+    /// Whether the exe's class updates its sound emitter every frame (<c>ProductionBuilding::vfunc_28</c>: mines, wells, refineries, generators, batteries, furnaces, rain collectors); the
+    /// others (benches, research, farms, anything else) power it once when built (<c>FarmBuilding::vfunc_72</c>). <b>Observed</b>: the class follows the function (the factory <c>FUN_14057cc70</c>).
+    /// </summary>
+    public bool PowersEmitterEachFrame => !IsCrafting && !IsResearch
+        && (Function == MineFunction ? Farm is null : Function is RefineryFunction or GeneratorFunction or ItemFurnaceFunction or BatteryFunction or RainCollectorFunction or NaturalMineFunction);
 
     public static MachineData? From(GameDatabase db, GameRecord building)
     {
@@ -79,7 +110,20 @@ public sealed record MachineData
             if (function.GetReferences("produces") is [var p, ..] && db.Find(p.TargetStringId) is not null) output = new RecipeOutput(p.TargetStringId, p.Values.Value0);
         }
         int maxOperators = building.GetInt("max operators", -1);
+        int powerOperators = maxOperators > 0 ? maxOperators : Math.Max(0, function?.GetInt("max operators") ?? 0);
+        bool wind = fn == GeneratorFunction && inputs.Count == 0;
         if (maxOperators <= 0) maxOperators = Math.Max(1, function?.GetInt("max operators", 1) ?? 1);
+        var craft = function is not null ? CraftBench.From(db, function) : null;
+        // A crafting bench's rate is shared by its operators (Observed, FUN_1402b9aa0).
+        if (craft is not null && maxOperators > 1) rate /= maxOperators;
+        // A bench gets a section per ingredient of its widest recipe when it lists fewer (engine choice: the original's section count for such benches is Unknown).
+        if (craft is not null && !craft.OverridesIngredients)
+        {
+            int capacity = inputs.Count > 0 ? inputs[0].Capacity : 5;
+            foreach (var option in craft.Options.Where(o => o.Kind != CraftKind.Armour))
+                if (db.Find(option.Item)?.GetReferences("ingredients") is { } list)
+                    for (int k = inputs.Count; k < list.Count; k++) inputs.Add(new RecipeInput(list[k].TargetStringId, capacity, 0));
+        }
         return new MachineData
         {
             Id = building.StringId,
@@ -95,10 +139,18 @@ public sealed record MachineData
             Inputs = inputs,
             Output = output,
             Farm = farm,
+            Craft = craft,
             HasInventory = stores,
             StorageWidth = Math.Max(1, building.GetInt("storage size width", 18)),
             StorageHeight = Math.Max(1, building.GetInt("storage size height", 18)),
+            StorageLimit = [.. building.GetReferences("limit inventory").Select(r => r.TargetStringId)],
+            ItemTypeLimit = (FcsRecordType)building.GetInt("itemtype limit", (int)FcsRecordType.ITEM),
+            StackBonusMult = building.GetFloat("stackable bonus mult", 1),
             PowerOutput = building.GetInt("power output"),
+            PowerCapacity = building.GetInt("power capacity"),
+            PowerOperators = powerOperators,
+            IsWind = wind,
+            OutputRate = building.GetFloat("output rate", 1),
         };
     }
 }
@@ -179,12 +231,67 @@ public sealed class ResourceField
 {
     readonly BiomeMap? map;
     readonly GameDatabase db;
+    readonly IResourceNodes? nodes;
     readonly Dictionary<int, GameRecord?> resourcesOf = [];
 
-    public ResourceField(GameDatabase db, BiomeMap? map)
+    /// <summary>How far a mine finds a rock of its resource (<b>Observed</b>, <c>uses_resources</c>: 1500², 2.25e6).</summary>
+    public const float NodeRange = 1500;
+    public const int IronResource = 1, StoneResource = 2, CopperResource = 3, CarbonResource = 4;
+
+    public ResourceField(GameDatabase db, BiomeMap? map, IResourceNodes? nodes = null)
     {
         this.db = db;
         this.map = map;
+        this.nodes = nodes;
+    }
+
+    /// <summary>The field prefix of a MiningResource (<c>read_stone_n3</c>).</summary>
+    static string Prefix(int resource) => resource switch
+    {
+        IronResource => "iron", StoneResource => "stone", CopperResource => "copper", CarbonResource => "carbon", MachineData.WaterResource => "water", MachineData.GroundResource => "farming", _ => "",
+    };
+
+    /// <summary>
+    /// A player building's <c>world resource mining</c> yield at a position (<b>Observed</b>, <c>uses_world_resource_mining</c> -> <c>uses_resources</c>): WATER and GROUND as
+    /// <see cref="Value"/>; STONE the coverage noise (<c>Foliage_NoiseHashC</c>: scale <c>stone noise zoom</c> x 1000, cutoff <c>stone noise cutoff</c>, boost 3 and cap 1,
+    /// <b>Verified</b> bytes) x <c>stone mult</c>; IRON, COPPER and CARBON the nearest rock of the resource within <see cref="NodeRange"/>: its own yield x (1 - falloff), falloff
+    /// = (d² - r²) / (1500² - r²) clamped, r² at least 625. Nothing (0) without a resources record or a rock; the original's 0.5 for nothing applies to buildings not the player's.
+    /// </summary>
+    public float Yield(int resource, System.Numerics.Vector3 at)
+    {
+        if (resource is MachineData.WaterResource or MachineData.GroundResource) return Value(resource, at.X, at.Y, at.Z);
+        if (Resources(at.X, at.Z) is not { } r) return 0;
+        if (resource == StoneResource)
+            return World.FoliageNoise.Coverage(at.X, at.Z, r.GetFloat("stone noise zoom") * 1000, r.GetFloat("stone noise cutoff"), 3, 1) * r.GetFloat("stone mult");
+        if (nodes is null || Prefix(resource).Length == 0) return 0;
+        ResourceNode? best = null;
+        float bestD = float.MaxValue;
+        foreach (var node in nodes.Near(resource, at.X, at.Z, NodeRange))
+        {
+            float d = System.Numerics.Vector3.DistanceSquared(node.Position, at);
+            if (d < bestD) (best, bestD) = (node, d);
+        }
+        const float Range2 = NodeRange * NodeRange;
+        if (best is not { } n || bestD > Range2) return 0;
+        float r2 = Math.Min(Range2, MathF.Max(625, n.Radius * n.Radius));
+        float falloff = Math.Clamp((bestD - r2) / (Range2 - r2), 0, 1);
+        return NodeYield(resource, n.Position) * (1 - falloff);
+    }
+
+    /// <summary>
+    /// A rock's own yield (its natural site's, <c>FarmBuilding::vfunc_92</c>; <b>Observed</b>, <c>uses_world_resource_mining</c> -> <c>FUN_140a12ff0</c>): WATER and GROUND as
+    /// <see cref="Value"/>, STONE the stone noise x <c>stone mult</c> as <see cref="Yield"/>, the others the resources record's <c>&lt;p&gt; mult</c> where it stands; at least 0.1.
+    /// </summary>
+    public float NodeYield(int resource, System.Numerics.Vector3 at)
+    {
+        float v;
+        if (resource is MachineData.WaterResource or MachineData.GroundResource or StoneResource) v = Yield(resource, at);
+        else
+        {
+            string key = Prefix(resource) + " mult";
+            v = Resources(at.X, at.Z) is { } r && r.Floats.ContainsKey(key) ? r.GetFloat(key) : 0;
+        }
+        return MathF.Max(0.1f, v);
     }
 
     GameRecord? Group(float x, float z)
@@ -231,6 +338,13 @@ public sealed class ResourceField
         if (Resources(x, z) is not { } r) return 0;
         return farm.Arid * r.GetFloat("arid") + farm.Green * r.GetFloat("green") + farm.Swamp * r.GetFloat("swamp");
     }
+
+    /// <summary>The name of the BIOME_GROUP at a position (null without an areas map): what the prospecting window shows as the zone.</summary>
+    public string? ZoneName(float x, float z) => Group(x, z)?.Name;
+
+    /// <summary>The crop coverages (<c>green</c>, <c>arid</c>, <c>swamp</c>) of the ground at a position (<b>Observed</b>, the prospecting window's Environment); all 0 without a resources record.</summary>
+    public (float Green, float Arid, float Swamp) Coverage(float x, float z) =>
+        Resources(x, z) is { } r ? (r.GetFloat("green"), r.GetFloat("arid"), r.GetFloat("swamp")) : default;
 
     /// <summary>The biome group's <c>farm water usage</c> (1 without a group).</summary>
     public float WaterUsage(float x, float z) => Group(x, z) is { } g && g.Floats.ContainsKey("farm water usage") ? g.GetFloat("farm water usage") : 1;

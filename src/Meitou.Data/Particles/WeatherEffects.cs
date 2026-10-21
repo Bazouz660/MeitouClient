@@ -36,6 +36,11 @@ public sealed record EffectRecord(string Name, EffectType Type, string ParticleS
     public IReadOnlyList<EffectFogVolume> FogVolumes { get; init; } = [];
     /// <summary>The LIGHT records attached (names): none of the base game's lightning has one.</summary>
     public IReadOnlyList<string> Lights { get; init; } = [];
+    /// <summary>
+    /// The looping sound of every unit of the effect (<c>sound</c>, its first entry; docs/audio.md "Point emitters"): null for none. An effect's emitter is made without a game object
+    /// of a building or character, so it never needs power and ignores the efficiency multiplier (<c>FUN_140259a80</c>).
+    /// </summary>
+    public World.AmbientSound? Sound { get; init; }
 
     public static EffectRecord From(GameRecord r, GameDatabase? db = null) => new(r.Name, (EffectType)Math.Clamp(r.GetInt("type"), 0, (int)EffectType.GlobalPoint), r.GetString("particle system"),
         r.GetBool("wind affected"), r.GetBool("wind direction emission"), r.GetFloat("wind speed mult", 1), r.GetFloat("min wind span rate"), r.GetFloat("max wind span rate"),
@@ -47,6 +52,7 @@ public sealed record EffectRecord(string Name, EffectType Type, string ParticleS
         FogFadeIn = r.GetFloat("fog fade in duration"), FogFadeOut = r.GetFloat("fog fade out duration"),
         FogVolumes = db is null ? [] : [.. r.GetReferences("fog volumes").Select(f => db.Find(f.TargetStringId)).Where(f => f is { Type: FcsRecordType.EFFECT_FOG_VOLUME }).Select(f => EffectFogVolume.From(f!))],
         Lights = db is null ? [] : [.. r.GetReferences("lights").Select(l => db.Find(l.TargetStringId)?.Name ?? "?")],
+        Sound = db is null ? null : World.AmbientSound.FirstOf(db, r, "sound") is { } sound ? sound with { NeedsPower = false, EfficiencyMultiplier = 0 } : null,
     };
 
     internal static Vector3 UnpackRgb(int rgb) => new(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f);

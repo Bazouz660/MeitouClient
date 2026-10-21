@@ -1,0 +1,76 @@
+namespace Meitou.Data.World;
+
+/// <summary>The four kinds of terrain blood decal (docs/game/blood-decals.md), the folders of the <c>Blood</c> resource group in this order.</summary>
+public enum TerrainDecalType : byte
+{
+    Line = 0,
+    Splash = 1,
+    Pool = 2,
+    Smear = 3,
+}
+
+/// <summary>
+/// One blood decal as the game keeps it per decal cell (<c>TerrainDecalsManager::DecalInfo</c>, 24 bytes; the fields of a TERRAIN_DECALS instance, docs/formats/save.md).
+/// A decal that crosses cell edges is stored once in every cell its corners touch, each copy placed relative to its own cell.
+/// </summary>
+/// <param name="Key">The cell (<see cref="TerrainDecalCells.Key(float, float)"/>).</param>
+/// <param name="Variant">Index of the texture within the type's folder.</param>
+/// <param name="LocalX">The centre's X in the cell, 1/1000 of the cell (outside 0..1000 for the copies in neighbouring cells).</param>
+/// <param name="LocalZ">The centre's Z, likewise.</param>
+/// <param name="HalfWidth">Size × the texture's width × 10.</param>
+/// <param name="HalfHeight">Size × the texture's height × 10.</param>
+/// <param name="Rotation">The angle in radians × 1000: the texture's width axis points along (sin, cos) in X/Z.</param>
+/// <param name="Colour">ABGR (A in the top byte, R in the bottom): the race's blood colour and the decal's opacity.</param>
+/// <param name="Life">Seconds of game time left (99 when made); the opacity is at most this.</param>
+public record struct TerrainDecal(uint Key, TerrainDecalType Type, byte Variant, short LocalX, short LocalZ, short HalfWidth, short HalfHeight, short Rotation,
+    uint Colour, float Life);
+
+/// <summary>
+/// The cells blood decals are kept and drawn in: the terrain quadtree's level 10, 1024 × 1024 squares of 288 units over the world (docs/game/blood-decals.md).
+/// A cell's key is 1 &lt;&lt; 20 with the cell's column bits on the even bits and its row bits on the odd ones (the quadtree path, <b>Verified</b> against save keys).
+/// </summary>
+public static class TerrainDecalCells
+{
+    public const int Level = 10;
+    public const int PerSide = 1 << Level;
+    public const float Size = (float)WorldLayout.WorldSize / PerSide;
+    const uint Marker = 1u << (2 * Level);
+
+    /// <summary>The cell holding X/Z (clamped to the world).</summary>
+    public static uint Key(float x, float z) => Key(Column(x), Column(z));
+
+    public static uint Key(int column, int row) => Marker | Spread((uint)column) | Spread((uint)row) << 1;
+
+    /// <summary>The column (or row) of a coordinate, clamped to the world.</summary>
+    public static int Column(float x) => Math.Clamp((int)MathF.Floor((x + WorldLayout.HalfWorldSize) / Size), 0, PerSide - 1);
+
+    /// <summary>The column and row of <paramref name="key"/>.</summary>
+    public static (int Column, int Row) Cell(uint key) => ((int)Gather(key), (int)Gather(key >> 1));
+
+    /// <summary>The X/Z corner of <paramref name="key"/>'s cell nearest the world's negative corner.</summary>
+    public static (float X, float Z) Origin(uint key)
+    {
+        var (c, r) = Cell(key);
+        return (c * Size - WorldLayout.HalfWorldSize, r * Size - WorldLayout.HalfWorldSize);
+    }
+
+    static uint Spread(uint v)
+    {
+        v &= 0x3FF;
+        v = (v | v << 8) & 0x00FF00FF;
+        v = (v | v << 4) & 0x0F0F0F0F;
+        v = (v | v << 2) & 0x33333333;
+        v = (v | v << 1) & 0x55555555;
+        return v;
+    }
+
+    static uint Gather(uint v)
+    {
+        v &= 0x55555;
+        v = (v | v >> 1) & 0x33333333;
+        v = (v | v >> 2) & 0x0F0F0F0F;
+        v = (v | v >> 4) & 0x00FF00FF;
+        v = (v | v >> 8) & 0x0000FFFF;
+        return v & 0x3FF;
+    }
+}

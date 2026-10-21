@@ -1,4 +1,3 @@
-using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Data.Textures;
@@ -9,15 +8,81 @@ using Silk.NET.Vulkan;
 namespace Meitou.Rendering.Ui;
 
 /// <summary>Native alpha-composited MyGUI atlas slices and styled native control frames.</summary>
-public sealed class UiPainter : IDisposable
+public sealed partial class UiPainter : IDisposable
 {
     readonly DebugOverlay overlay;
     readonly MyGuiResources resources;
     readonly Func<string, string?> resolve;
     DebugOverlay? standardFont, paintedFont, titleFont;
-    Dictionary<int, DebugOverlay>? pixelFonts;
-    readonly Dictionary<(string Source, int Pixels, bool Snapped), DebugOverlay> resourceFonts = [];
+    readonly Dictionary<UiFontKey, DebugOverlay> uiFonts = [];
+    readonly Dictionary<string, MyGuiTrueTypeFont?> fontSpecs = new(StringComparer.Ordinal);
     readonly Dictionary<(string Path, float Size, float Resolution), float> fontSizes = [];
+    bool freeTypeWarned, standardSourceKnown;
+    (string Path, MyGuiTrueTypeFont? Spec)? standardSource;
+
+    /// <summary>
+    /// How text is drawn (docs/formats/mygui.md "Fonts"). <see cref="UiMode.Faithful"/>: MyGUI's own rendering of the font resources (FreeType native
+    /// hinting, the resource's <c>Codes</c> and substitute glyph, its line metrics, whole pixels). <see cref="UiMode.Meitou"/> (the default):
+    /// any glyph the face has, light hinting or oversampling, Meitou's line box. Set by the host; fonts of the other mode are made when it changes.
+    /// </summary>
+    public UiMode Mode { get; set; } = UiMode.Meitou;
+
+    /// <summary>A font made for one resource, file, size, dpi and look.</summary>
+    readonly record struct UiFontKey(string Resource, string Path, long Size64, uint Dpi, bool Faithful, bool Snapped);
+
+    /// <summary>The most glyph-cache fonts kept (each holds an atlas of 0.25 to 4 MiB): beyond it a size already made, the nearest, is used instead.</summary>
+    const int MaxUiFonts = 48;
+
+    MyGuiTrueTypeFont? FontSpec(string name)
+    {
+        if (!fontSpecs.TryGetValue(name, out var spec))
+            fontSpecs[name] = spec = resources.Resources.TryGetValue(name, out var resource) ? MyGuiTrueTypeFont.Read(resource) : null;
+        return spec;
+    }
+
+    /// <summary>The file and resource that standard-face text of an explicit pixel size (<c>FontPixels</c>) is drawn from: the standard font resource (a locale's own font), else Exo2.</summary>
+    (string Path, MyGuiTrueTypeFont? Spec)? StandardSource()
+    {
+        if (standardSourceKnown) return standardSource;
+        standardSourceKnown = true;
+        var spec = FontSpec("Kenshi_StandardFont_Medium");
+        if (spec is not null && FontPath(spec.Source) is { } path) standardSource = (path, spec);
+        else if (FontPath("Exo2-SemiBold.ttf") is { } exo) standardSource = (exo, null);
+        return standardSource;
+    }
+
+    DebugOverlay UiFontFor(string resource, MyGuiTrueTypeFont? spec, string path, long size64, uint dpi, bool faithful, bool snapped)
+    {
+        var key = new UiFontKey(resource, path, size64, dpi, faithful, snapped);
+        if (uiFonts.TryGetValue(key, out var known)) return known;
+        if (uiFonts.Count >= MaxUiFonts)
+        {
+            // Continuous resizing asks for ever new sizes: reuse the nearest one made (fonts are never freed while the UI runs).
+            DebugOverlay? nearest = null;
+            long distance = long.MaxValue;
+            foreach (var (other, font) in uiFonts)
+                if (other.Resource == resource && other.Path == path && other.Dpi == dpi && other.Faithful == faithful && other.Snapped == snapped
+                    && Math.Abs(other.Size64 - size64) is var gap && gap < distance) (nearest, distance) = (font, gap);
+            if (nearest is not null) return nearest;
+        }
+        return uiFonts[key] = CreateUiOverlay(new UiFontOptions(path, size64, dpi, faithful, snapped, spec));
+    }
+
+    /// <summary>A glyph-cache overlay; if FreeType cannot be used on this machine, a Latin-only stb_truetype one (once reported).</summary>
+    DebugOverlay CreateUiOverlay(UiFontOptions options)
+    {
+        try { return DebugOverlay.FromUiFont(overlay.Gpu, new UiFont(overlay.Gpu, options)); }
+        catch (Exception e) when (e is DllNotFoundException or FileLoadException or BadImageFormatException or EntryPointNotFoundException
+            or InvalidOperationException or InvalidDataException)
+        {
+            if (!freeTypeWarned)
+            {
+                freeTypeWarned = true;
+                Console.Error.WriteLine($"ui        FreeType is unavailable ({e.Message}); text uses the Latin-only fallback.");
+            }
+            return DebugOverlay.FromFont(overlay.Gpu, options.Path, options.Size64 / 64f * options.Dpi / 72f);
+        }
+    }
 
     /// <summary>The point size the original draws font resource <paramref name="path"/> at (<see cref="KenshiFontSize"/>).</summary>
     float EffectiveFontSize(string path, float size, float resolution)
@@ -73,16 +138,18 @@ public sealed class UiPainter : IDisposable
         // Upload before rendering starts. Missing atlas files remain an explicit diagnostic.
         try
         {
+            // The fallback faces (a control whose font is not a TrueType resource): glyph-cache fonts in Meitou's look, 2x oversampled so that scaled text stays smooth.
+            DebugOverlay Fallback(string path, int pixels) => CreateUiOverlay(new UiFontOptions(path, pixels * 64L, 72, false, false, null));
             if (resolve("Exo2-SemiBold.ttf") is { } standard)
             {
-                standardFont = DebugOverlay.FromFont(overlay.Gpu, standard);
-                standardLarge = DebugOverlay.FromFont(overlay.Gpu, standard, LargePixels);
+                standardFont = Fallback(standard, 16);
+                standardLarge = Fallback(standard, (int)LargePixels);
             }
             if (resolve("Sentencia_1.ttf") is { } painted)
             {
-                paintedFont = DebugOverlay.FromFont(overlay.Gpu, painted);
-                paintedLarge = DebugOverlay.FromFont(overlay.Gpu, painted, LargePixels);
-                titleFont = DebugOverlay.FromFont(overlay.Gpu, painted, 144);
+                paintedFont = Fallback(painted, 16);
+                paintedLarge = Fallback(painted, (int)LargePixels);
+                titleFont = DebugOverlay.FromFont(overlay.Gpu, painted, 144);   // a stamp of Latin capitals, baked large for the title
             }
             foreach (string name in resources.Skins.Values.Select(s => s.Texture).Where(s => s.Length > 0).Distinct())
             {
@@ -120,9 +187,8 @@ public sealed class UiPainter : IDisposable
             {
                 var loaded = LoadTexture(image.Texture);
                 var source = image.Source.Width > 0 && image.Source.Height > 0 ? image.Source : new UiRect(0, 0, loaded.Texture.Desc.Width, loaded.Texture.Desc.Height);
-                // ImageFlipV: an image drawn by the renderer. Vulkan's targets are bottom-up, so sampling v must be flipped;
-                // Metal's targets keep row 0 at the top, so the stored image is already the right way up.
-                bool flip = c.Properties.GetValueOrDefault("ImageFlipV") == "true" && overlay.Gpu.RenderTargetsBottomUp;
+                // ImageFlipV: an image drawn by the renderer (bottom row first, as its targets keep it) shown the right way up.
+                bool flip = c.Properties.GetValueOrDefault("ImageFlipV") == "true";
                 float v0 = source.Y / loaded.Texture.Desc.Height, v1 = (source.Y + source.Height) / loaded.Texture.Desc.Height;
                 if (flip) (v0, v1) = (v1, v0);
                 var tint = Colour(c.Properties.GetValueOrDefault("Colour"), Vector4.One) * new Vector4(1, 1, 1, Alpha(c.Properties));
@@ -223,34 +289,19 @@ public sealed class UiPainter : IDisposable
             font.Target = overlay.Target;
             float scale = c.TextScale ?? (c.Skin.Length > 0 ? Math.Clamp(height / 1080f, 0.5f, 1.5f) : 1);
             // Settings request a font baked at its physical pixel size rather than scaling the 16px atlas.
-            if (int.TryParse(c.Properties.GetValueOrDefault("FontPixels"), out int pixels) && FontPath("Exo2-SemiBold.ttf") is { } fontPath)
+            if (int.TryParse(c.Properties.GetValueOrDefault("FontPixels"), out int pixels) && StandardSource() is { } standardFace)
             {
                 pixels = Math.Clamp(Math.Max(pixels, (int)MathF.Round(minimumTextPixels)), 8, 96);
-                var fonts = pixelFonts ??= [];
-                int key = pixels + 1000; // Keep old cached atlases distinct during hot reload.
-                if (!fonts.TryGetValue(key, out var exact)) fonts[key] = exact = DebugOverlay.FromUiFont(overlay.Gpu, fontPath, pixels);
-                font = exact;
+                // An explicit pixel size is Meitou's own text in either mode: oversampled and freely placed.
+                font = UiFontFor("", standardFace.Spec, standardFace.Path, pixels * 64L, 72, false, false);
                 font.Target = overlay.Target;
                 scale = 1;
             }
-            else if (resources.Resources.TryGetValue(fontName, out var fontResource)
-                && (string?)fontResource.Attribute("type") == "ResourceTrueTypeFont")
+            else if (ResourceFont(fontName, c.TextScale ?? height / 1080f, minimumTextPixels) is { } resourceFont)
             {
-                string? Property(string key) => fontResource.Elements("Property").FirstOrDefault(p => (string?)p.Attribute("key") == key)?.Attribute("value")?.Value;
-                float Number(string key, float fallback) => float.TryParse(Property(key), System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out float number) && float.IsFinite(number) && number > 0 ? number : fallback;
-                if (Property("Source") is { } source && FontPath(source) is { } sourcePath)
-                {
-                    // TrueType resource sizes are points at the resource's DPI, resized as the original does on load. Bake at the resulting em pixel size.
-                    float resolution = Number("Resolution", 50);
-                    int resourcePixels = Math.Clamp((int)MathF.Round(Math.Max(minimumTextPixels,
-                        EffectiveFontSize(sourcePath, Number("Size", 20), resolution) * resolution / 72 * (c.TextScale ?? height / 1080f))), 6, 192);
-                    var key = (sourcePath, resourcePixels, Property("Antialias") == "false");
-                    if (!resourceFonts.TryGetValue(key, out var exact)) resourceFonts[key] = exact = DebugOverlay.FromUiFont(overlay.Gpu, sourcePath, resourcePixels, key.Item3);
-                    font = exact;
-                    font.Target = overlay.Target;
-                    scale = 1;
-                }
+                font = resourceFont;
+                font.Target = overlay.Target;
+                scale = 1;
             }
             if (minimumTextPixels > 0)
             {
@@ -446,19 +497,30 @@ public sealed class UiPainter : IDisposable
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> failedIcons = new(StringComparer.Ordinal);
 
     /// <summary>The <c>ImageTexture</c> name of the icon the renderer draws from an item's mesh (<see cref="RenderedIcons"/>), shown once it exists; flip it (<c>ImageFlipV</c>), as the renderer's targets are upside down.</summary>
-    public static string RenderedIconTexture(string record, string material) => RenderedIconPrefix + record + "|" + material;
+    public static string RenderedIconTexture(string record, string material, string colour = "") => RenderedIconPrefix + record + "|" + material + "|" + colour;
     public const string RenderedIconPrefix = "meitou:icon:";
 
-    /// <summary>The record and material of a <see cref="RenderedIconTexture"/> name.</summary>
-    public static bool TryParseRenderedIcon(string name, out string record, out string material)
+    /// <summary>The <c>ImageTexture</c> name of the picture the renderer draws of a BUILDING (<see cref="RenderedIcons"/> looks it up too); flip it like <see cref="RenderedIconTexture"/>.</summary>
+    public static string RenderedBuildingIconTexture(string record) => RenderedBuildingIconPrefix + record;
+    public const string RenderedBuildingIconPrefix = "meitou:building-icon:";
+
+    /// <summary>The record of a <see cref="RenderedBuildingIconTexture"/> name.</summary>
+    public static bool TryParseRenderedBuildingIcon(string name, out string record)
     {
-        (record, material) = ("", "");
-        if (!name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.IndexOf('|') is not (>= 0 and var bar)) return false;
-        (record, material) = (name[RenderedIconPrefix.Length..bar], name[(bar + 1)..]);
+        record = name.StartsWith(RenderedBuildingIconPrefix, StringComparison.Ordinal) ? name[RenderedBuildingIconPrefix.Length..] : "";
         return record.Length > 0;
     }
 
-    /// <summary>Looks up the texture of a <see cref="RenderedIconTexture"/> name, asking for it to be made when it is not (the host sets this; null: no icons are drawn).</summary>
+    /// <summary>The record, material and colour of a <see cref="RenderedIconTexture"/> name.</summary>
+    public static bool TryParseRenderedIcon(string name, out string record, out string material, out string colour)
+    {
+        (record, material, colour) = ("", "", "");
+        if (!name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.Split('|') is not [var r, var m, var c]) return false;
+        (record, material, colour) = (r[RenderedIconPrefix.Length..], m, c);
+        return record.Length > 0;
+    }
+
+    /// <summary>Looks up the texture of a <see cref="RenderedIconTexture"/> or <see cref="RenderedBuildingIconTexture"/> name, asking for it to be made when it is not (the host sets this; null: no icons are drawn).</summary>
     public Func<string, (GpuTexture Texture, SampledTexture Sampled)?>? RenderedIcons { get; set; }
 
     /// <summary>Whether the rendered icon <paramref name="name"/> can be drawn now (this asks for it too).</summary>
@@ -494,7 +556,7 @@ public sealed class UiPainter : IDisposable
     (GpuTexture Texture, SampledTexture Sampled) LoadTexture(string name)
     {
         if (external.TryGetValue(name, out var given) || textures.TryGetValue(name, out given)) return given;
-        if (name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
+        if ((name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.StartsWith(RenderedBuildingIconPrefix, StringComparison.Ordinal)) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
         string path = resolve(name) ?? throw new FileNotFoundException($"MyGUI texture not found: {name}");
         return Upload(name, TextureLoader.LoadFile(path, allMips: false).Levels[0]);
     }
@@ -516,9 +578,8 @@ public sealed class UiPainter : IDisposable
         foreach (var t in textures.Values) t.Texture.Dispose();
         textures.Clear();
         masks.Clear();
-        if (pixelFonts is { } fonts) { foreach (var font in fonts.Values) font.Dispose(); fonts.Clear(); }
-        foreach (var font in resourceFonts.Values) font.Dispose();
-        resourceFonts.Clear();
+        foreach (var font in uiFonts.Values) font.Dispose();
+        uiFonts.Clear();
         standardFont?.Dispose(); paintedFont?.Dispose(); titleFont?.Dispose(); standardLarge?.Dispose(); paintedLarge?.Dispose();
         standardFont = null; paintedFont = null; titleFont = null; standardLarge = null; paintedLarge = null;
     }

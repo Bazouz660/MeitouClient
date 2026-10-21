@@ -127,7 +127,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
             simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
             systems: systems, walkability: walkability);
-        BootPlayer(display, heights, interactive);
+        BootPlayer(display, interactive);
     }
 
     /// <summary>
@@ -173,6 +173,15 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
             var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root), biomes: biomes, buildings: buildings, roads: levels?.Roads());
+            // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
+            if (levels is not null)
+            {
+                var foliageCatalog = Meitou.Data.World.FoliageCatalog.Load(gameDb);
+                Meitou.Data.World.FoliageLayoutCache? layoutCache = null;
+                try { layoutCache = new Meitou.Data.World.FoliageLayoutCache(install, foliageCatalog, Meitou.Data.World.FoliageWorld.ReadTowns(gameDb, levels)); }
+                catch (IOException e) { Console.Error.WriteLine($"resource rocks without the layout cache: {e.Message}"); }
+                data.ResourceNodes = new Meitou.Data.Gameplay.Construction.FoliageResourceNodes(new Meitou.Data.World.FoliageWorld(install, gameDb, levels, foliageCatalog, cache: layoutCache), gameDb);
+            }
             // One set of skeleton rigs for the ragdolls and the renderer, so a ragdoll starts from the drawn pose.
             characterRigs = CharacterRenderer.CreateRigs(gameDb, assets);
             animationLengths = Meitou.Data.Gameplay.AnimationLengths.Load(install.Root, gameDb);   // with the animals' own skeletons
@@ -192,13 +201,15 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     }
 
     /// <summary>The rest of <see cref="Boot"/> once the session exists: bindings, the player's interface, the start (a new game's squad, the sandbox, the duel), the camera, a <c>--load</c> save.</summary>
-    void BootPlayer(VulkanDisplay display, Meitou.Data.World.GroundHeights heights, bool interactive)
+    void BootPlayer(VulkanDisplay display, bool interactive)
     {
         var context = display.Context;
         var target = camera.Target;
         foreach (var problem in session.Bindings.Apply(config.Bindings)) Console.Error.WriteLine($"config    binding skipped: {problem}");
         // Right is the command button now; older saved configs bound it to orbit.
         session.Bindings.Set(InputAction.Orbit, [.. session.Bindings.Get(InputAction.Orbit).Where(b => !(b.IsMouse && b.Button == EngineButton.Right))]);
+        // Ctrl orbits as the middle button does; older saved configs had the middle button alone.
+        if (session.Bindings.Get(InputAction.Orbit).SequenceEqual([Binding.Of(EngineButton.Middle)])) session.Bindings.Set(InputAction.Orbit, EngineButton.Middle, EngineKey.LeftControl, EngineKey.RightControl);
         // F12 is the profiler now (as in the viewer); older saved configs took it for the screenshot.
         if (session.Bindings.Get(InputAction.Screenshot).SequenceEqual([Binding.Of(EngineKey.F12)])) session.Bindings.Set(InputAction.Screenshot, EngineKey.F8, EngineKey.PrintScreen);
         // F9 is the game's quickload now (F5 quicksave); older saved configs took F9 for the fps counter, which is on Ctrl+F9 and unbound here.
@@ -206,11 +217,16 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         // Tab is the game's change_squad, not the settings (they open from the Esc menu); older saved configs bound Tab to them.
         if (session.Bindings.Get(InputAction.ToggleSettings).SequenceEqual([Binding.Of(EngineKey.Tab)])) session.Bindings.Set(InputAction.ToggleSettings);
         LoadingStep("interface");
-        player = new PlayerInterface(session, heights.HeightAt, DrawnPosition);
+        // Picks against the drawn terrain (the streamed fine window): the boot window's heights fall back to a 144-unit grid away from the start.
+        player = new PlayerInterface(session, gpu.Terrain.HeightAt, DrawnPosition);
         player.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
+        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
+        player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
         player.MoveMarker = gpu.MoveMarker ??= MoveMarkerRenderer.Create(context, assets.Find);
+        SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
         gpu.NavmeshOverlay ??= new NavmeshOverlayRenderer(context);
         player.MeshHit = (id, origin, direction) => gpu.Characters?.RayHit(DrawKey(id), origin, direction);
@@ -218,8 +234,10 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);
         player.SurfaceMoveHit = SurfaceMoveHit;
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
-        player.BuildHost = MakeBuildServices(heights);
+        player.BuildHost = MakeBuildServices();
         player.FactionName = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        player.SquadLimits = () => popData?.Bodies.Constants;
+        player.Rocks = () => popData?.ResourceNodes;
         player.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
         player.MapTowns = () => popData?.Sites ?? [];
         player.MapFactionOf = id =>
@@ -231,6 +249,10 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
             return new MapFaction(faction.Name, relation, standing, faction.NotReal);
         };
+        player.ArmourOf = record => popData?.Combat.Armour(record);
+        player.RecordName = id => popData?.Db.Find(id)?.Name;
+        player.ItemRecordOf = id => popData?.Db.Find(id);
+        player.CombatOf = () => popData?.Combat;
         player.MapItemTowns = record =>
         {
             if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
@@ -358,6 +380,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             weather.Paused = sim.IsPaused || skyArrival is not null;
             weather.GameSpeed = (float)(sim.Speed > 0 ? sim.Speed : sim.LastNonZeroSpeed);
         }
+        UpdateBlood();
         UpdateInteriorView();
         WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, (float)seconds / 600f, o.FogDistance,
             weatherHour: (float)session.Clock.HourOfDay);

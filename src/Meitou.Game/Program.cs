@@ -9,6 +9,8 @@ static class Program
     static int Main(string[] args)
     {
         GameConsole.AttachToParent();
+        // The launcher's settings description (package-release.ps1): no log, window or game files.
+        if (args is ["--settings-schema", var schema]) return LauncherSchema.Write(schema);
         GameConsole.StartLog();
         RenderJobs.RaiseRenderThread();
         GameOptions game;
@@ -54,6 +56,11 @@ static class Program
         // A native splash at once, until the game window draws (docs/engine.md "Loading"); not for pictures or a listing.
         using var splash = world.Screenshot is null && !game.ListStarts ? SplashWindow.Show(install.DataDirectory) : null;
         var config = UserConfig.Load();
+        Meitou.Localisation.Loc.Use(install);   // the language of settings.cfg: texts from locale/<code>/LC_MESSAGES/main.mo (docs/formats/localisation.md)
+        // The saved texture quality before the world loads: the terrain's layer arrays are sized from it once (the Tab panel's restore after
+        // the boot reaches only the other textures). --texture-quality and --low-end choose it for this run instead.
+        if (!args.Contains("--texture-quality") && !args.Contains("--low-end") && config.Graphics.TryGetValue(WorldFrame.TextureQualitySlider, out float savedQuality))
+            world.TextureQuality = Math.Clamp((int)MathF.Round(savedQuality), 0, Meitou.Data.Textures.TextureQuality.Maximum);
         Meitou.Data.GameDatabase? db = null;
         Meitou.Data.Gameplay.NewGameStart? start = null;
         if (game.Sandbox > 0)
