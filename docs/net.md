@@ -544,4 +544,87 @@ Pending (package N11).
 
 ## Client and jitter buffer
 
-Pending (package N12).
+`Session/Client/`: `NetClient` (headless, frame thread; owns and disposes its transport), `JitterBuffer`, `ClientEvents`.
+States `Idle -> Connecting -> Authenticating -> Joined -> Playing -> Closed`. Frame use: `BeginFrame(dt)` before
+`session.Advance` (poll, assemble, present, clock, events), `EndFrame()` after (uplink).
+
+**What the client sends** (every message passes its codec's writer limits, so the host's reader never refuses it):
+
+| Channel | Message | When |
+|---|---|---|
+| connect payload | `Magic + u16 Version` (LE) | `Connect` |
+| Control | `Hello` (`ProtocolCodec`; proof only when the Challenge needs a password) | on `Challenge` |
+| Control | `Ready(Epoch)` | `Ready()`, only while `Joined` |
+| Control | `0x20` + `CommandBatchCodec` body (Epoch, FirstSeq, <= 64 commands), Control string table | `EndFrame` while `Playing` |
+| Control | `ChatRequest` (cut to 200 chars, no split surrogate; blank lines not sent) | `SendChat` while `Joined`/`Playing` |
+| Control | `ClockRequest` (a non-finite speed becomes 0) | `IClockAuthority.Request` while `Joined`/`Playing` |
+| Snapshots | `ClientFrame` (`ClientMirror.WriteFrame`: acks, `SetView`'s `ViewState`, resync) | `EndFrame` while `Playing`, when parts arrived since the last frame, else every 100 ms |
+| drop payload | `Reject(Left, "Left the game.")` / `Reject(ProtocolError, "Bad data from the host.")` / `Reject(Password, ...)` | `Leave` / bad host data / password needed and none given |
+
+Commands: `EndFrame` drains the attached replica's `World.Commands.TakeDue(long.MaxValue)` every frame and sends them only
+while `Playing` (else they are dropped). Seq starts at 1 per connection (kept across epochs) and grows by the commands
+sent. Never written, because the host's reader would drop the peer: host-only commands (`CommandOrigin.HostOnly`), debug
+commands while `NetRules.Cheats` is false (`Message("Cheats are off in this game.", true)`), untagged types. A batch the
+codec refuses (over `MaxReliableMessage`, an unencodable command) is halved until the command at fault is dropped (logged).
+
+**What it expects**: Control `Challenge` (only while `Connecting`), `Welcome` (only after `Hello`: `Player`, `Rules`,
+`Roster`, state `Joined`), `WorldReset` (after `Welcome`), `Roster`, `ClockState` (this epoch only), `Rules`, `Weather`,
+`0x21` + `CommandResult` body (`Message(reason, true)`), `Reject` (closes with its code and reason); Roster, Rules, Weather,
+ClockState and CommandResult before the `Welcome` are ignored. Snapshots and Views go to `ClientMirror.Receive` (a bad
+part is dropped there). Events: `EventBatch` (`0x40` peeked, `EventCodec.Read` + end check). Any other type, a handshake
+message out of order or a `NetFormatException` (Control, Views, Events) closes with `ProtocolError, "Bad data from the
+host."`. A drop: its `Reject` payload; else a timeout while `Connecting` or a socket error is `Unreachable` ("Could not
+reach {host}."), a refusal without payload `Protocol`, anything else `Timeout` ("Lost connection to the host.").
+`Disconnected` is raised for every close except `Leave`; a close clears the replica's `ClockAuthority`.
+
+**WorldReset** (join and every host world swap): `Epoch`, `Player`, `SessionRules`, clock stored; mirror `Reset(epoch)`,
+jitter and pending events cleared, `HasPresented = false`, the replica detached (it stays the clock authority), state
+`Joined`, then the `WorldReset` event (the game builds the replica, `Attach`, `Ready`), then the clock change if any.
+`Weather` and `RulesChanged` are raised only for their own messages, not for the reset's fields.
+
+**Presenting** (`BeginFrame`, attached `Replica` session): `TryAssemble` -> `JitterBuffer.Add(tick, now, snapshot)`
+(`Newest`, snapshot age); `Advance(now, dt)` -> `session.Present(older, newer, alpha, motionAlpha)` -> `HasPresented`.
+
+**Clock follow** (each `BeginFrame` with a `ClockState`): jitter rate `30 x min(AchievedSpeed, Speed)` (`Speed` when
+`AchievedSpeed <= 0`), 0 when `Speed == 0` or `HostBusy`; the replica's `SimulationClock` gets `SetSpeed(LastSpeed`, 1 when
+not 1/2/5`)`, then `SetSpeed(0)` when paused, and `RequestedPause = HostBusy`. After presenting at point `P`:
+`H = AnchorHours + (P - AnchorTick) / 30 / SecondsPerGameHour`, `d = (H - Clock.TotalHours) x SecondsPerGameHour`;
+`0 <= d < 3600` advances, `-1 < d < 0` holds, else `SetTime(floor(H/24), H mod 24)`; `World.GameHours = Clock.TotalHours`.
+`ClockChanged(change, roster name)` is raised for a received change with `Player >= 0`, kind not `None`, and different
+from the last one raised (periodic resends repeat it).
+
+**Events** (`ClientEvents`): spatial events (kinds 1-3) of this epoch wait (at most 4096, oldest dropped) and are released
+in arrival order into the replica world's `Sounds`/`BloodMarks`/`Floaters` (null queue: dropped) once `floor(P) >= batch.Tick`
+or after 1 s of real time. `ChatNet`, `NoticeNet` and `MessageNet` are raised at once whatever their epoch (the Events and
+Control channels are not ordered together, so a batch can overtake its `WorldReset`); `KnockoutNet` only for this epoch.
+
+**`JitterBuffer`** (pure; times passed in). Engine constants: start delay 0.10 s, bounds 0.05-0.5 s, extrapolation cap
+0.1 s, snap 0.5 s (at least 30 ticks' worth), correction +-10 %, sample window 1 s, lateness decay 2 s, starvation step
+0.02 s, delay fall 0.005 s/s, teleport 500 units per game second + 20 units.
+- **Add**: a tick already held is replaced (a rebuild with newer views); only a new newest tick is an arrival sample, with
+  lateness `max(0, (L - tick) / rate)` raising the peak `J`.
+- **Advance**: live estimate `L` = max over the window's samples of `tick + age x rate` (newest tick when paused or without
+  samples); target `L - delay x rate`. The point snaps to the target when unset or too far (the threshold keeps the rate
+  before a slow-down until caught up, so a slow-down catches up instead of jumping); else it runs at
+  `rate x (1 + clamp(0.5 x error / rate, +-10 %))`; paused it finishes the buffered motion up to the newest tick and holds.
+  A resume or speed-up holds the point until the target passes it (the delay is rebuilt at the new rate, no starvation).
+  Then `P <= newest + min(0.1 s x rate, newest - previous)`, so `MotionAlpha <= 2`.
+- **Pair**: the snapshots around `P` with `Alpha = MotionAlpha = (P - T0) / (T1 - T0)`; past the newest, the last two with
+  `Alpha = 1`, `MotionAlpha = 1 + (P - Tn) / (Tn - Tn-1)`; one snapshot: `(1, 1)`; before the oldest: `(oldest, oldest, 0, 0)`.
+  Running past the newest is one starvation episode (`Starved++`, delay `+0.02 s`).
+- **Delay**: `clamp(1.25 / sendRate + J + 0.01)`, `J` decaying by `exp(-dt / 2 s)`; rises at once, falls at most 5 ms per
+  second. `SetRate` with a new rate forgets the samples. `Clear` (epoch change) forgets snapshots, samples and the point;
+  delay and `J` stay.
+- **Teleport**: a character that moved more than `500 x ticks / 30 + 20` units between the pair is shown at the newer
+  position (the older snapshot is copied with its newer entry), cached per pair so the renderer's reference-keyed index holds.
+
+**Stats**: round trip and loss from the transport, bytes per second over >= 1 s windows, `DelayMs`, `Starved`, seconds since
+the newest assembled snapshot (0 before one).
+
+**Verified** (`JitterBufferTests`, 20 Hz host stream, 60 fps client): a steady stream plays at 30 +- 1 ticks/s 70-110 ms
+behind without starving; 120 ms of jitter grows the delay to >= 140 ms with at most 2 starvations after the first 2 s, and
+calm then lowers it by <= 5 ms/s back to 50-110 ms; a 0.6 s outage extrapolates exactly to the cap, holds, counts one
+episode and recovers; a teleported character is shown at its newer position (cached per pair) and `Clear` empties the
+buffer; a pause finishes the motion, holds at the newest tick and resumes without starving; 1x -> 5x -> 1x changes the
+rate without a jump or starvation. The client's wire behaviour against a host is **Unknown** until the in-process
+host+client tests (T1).
