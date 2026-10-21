@@ -130,8 +130,10 @@ This is the largest CPU win and the main reason Vulkan still leads:
 
 ### A4. Upscaler and post, only after A1-A3
 
-- TAA at 0.50 is the current macOS reference and the first target.
-- MetalFX behind `IUpscaler` (and 0.33/quality scales) is a later lever; it will not fix a CPU/present-bound frame.
+- TAA at 0.50 is the current macOS reference and the first target. Its Metal motion-projection ghosting is a
+  separate bug; native/no-TAA and MetalFX remain the clean comparison views.
+- MetalFX temporal is available opt-in (`--upscaler metalfx`, 0.50+); measured slower than TAA at the same scale,
+  so it is not a frame-budget lever and does not belong in the performance baseline.
 - Add the rest of the Vulkan post chain (SSAO, shafts, particles, FXAA, GI resolve) after the frame has CPU/GPU
   headroom; do not let new effects consume the gains.
 

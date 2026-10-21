@@ -274,7 +274,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         // A cube's six faces are the type's own (arrayLength 1); only a cube *array* counts layers.
         d.ArrayLength = (ulong)(desc.Kind == TextureKind.Cube ? 1 : desc.Layers);
         d.SampleCount = (ulong)samples;
-        d.StorageMode = MTLStorageMode.Shared;   // unified memory: the device's own, and CPU-writable (docs/metal-backend.md)
+        // Unified memory: shared where the CPU writes or reads, private where an external producer (MetalFX) requires it.
+        d.StorageMode = desc.Private ? MTLStorageMode.Private : MTLStorageMode.Shared;
         MTLTextureUsage usage = 0;
         if (desc.Use.HasFlag(TextureUse.Sampled)) usage |= MTLTextureUsage.ShaderRead;
         if (desc.Use.HasFlag(TextureUse.Storage)) usage |= MTLTextureUsage.ShaderWrite;
@@ -282,7 +283,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         if (desc.Use.HasFlag(TextureUse.TransferDst)) usage |= MTLTextureUsage.ShaderWrite;
         usage |= MTLTextureUsage.PixelFormatView;   // the engine's views (levels, layers, swizzles) are Metal texture views
         d.Usage = usage;
-        d.ResourceOptions = MTLResourceOptions.ResourceStorageModeShared;
+        d.ResourceOptions = desc.Private ? MTLResourceOptions.ResourceStorageModePrivate : MTLResourceOptions.ResourceStorageModeShared;
         var texture = new MetalTexture { Image = Device.NewTexture(d), Desc = desc };
         textures.Add(texture);
         return new GpuTexture(this, desc, textures.Count - 1);

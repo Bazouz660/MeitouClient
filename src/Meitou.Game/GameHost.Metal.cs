@@ -54,7 +54,15 @@ sealed partial class GameHost
         ctx.Samplers.MaxAnisotropy = o.Anisotropy;
         // Same scale as the Vulkan path's TAA/upscaler setting: the scene is rendered smaller and TAA reconstructs it.
         // The macOS Vulkan reference runs at 0.50 (36-40 fps on an M1 Pro); 0.83 is the Windows/Meitou default.
-        ctx.RenderScale = o.Post.Upscale.Explicit ? o.Post.Upscale.EffectiveScale : 0.5f;
+        // MEITOU_METAL_NO_TAA is a diagnostic view: native size, no jitter and no temporal resolve.
+        bool noTaa = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TAA") is "1" or "true";
+        // `--upscaler metalfx` is the command-line form; MEITOU_METALFX stays usable for launch scripts.
+        bool metalFxRequested = !noTaa && (o.Post.Upscale.Kind == UpscalerKind.MetalFx ||
+            Environment.GetEnvironmentVariable("MEITOU_METALFX") is "1" or "true");
+        // MetalFX is a 2x-class upscaler here: keep its default at 0.50 rather than the generic 0.83.
+        ctx.RenderScale = noTaa ? 1f
+            : metalFxRequested && o.Post.Upscale.Scale is null ? 0.5f
+            : o.Post.Upscale.Explicit ? o.Post.Upscale.EffectiveScale : 0.5f;
 
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
@@ -98,6 +106,13 @@ sealed partial class GameHost
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         var taa = new PostTaa(ctx);
+        if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
+        // MetalFX temporal upscaling is opt-in while it is being validated; without it the TAA path is unchanged.
+        if (metalFxRequested)
+        {
+            if (MetalFxUpscaler.TryCreate(ctx) is { } metalFx) taa.External = metalFx;
+            else Console.WriteLine("metal     MetalFX requested but unavailable; using TAA");
+        }
         // The text/quad painter, shared by the HUD and the optional frame-stats lines. It is created even for a screenshot:
         // the game's HUD is part of the picture. MEITOU_METAL_OVERLAY=1 adds the stats lines to a still.
         var overlay = DebugOverlay.TryCreate(ctx);
@@ -415,14 +430,14 @@ sealed partial class GameHost
             long recordStart = Stopwatch.GetTimestamp();
             var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
             // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
-            ctx.LodBias = MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
+            ctx.LodBias = noTaa ? 0 : MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
             if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
             streamer?.Update(camera.Eye);
             foliage?.Update(camera.Eye);
 
-            var taaJitter = PostTaa.Offset(frames + 1, sceneSize.X, size.X);
+            var taaJitter = noTaa ? Vector2.Zero : PostTaa.Offset(frames + 1, sceneSize.X, size.X);
             if (objects is not null) { objects.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView); objects.Update(camera.Eye); }
             if (characters is not null)
             {
@@ -526,9 +541,14 @@ sealed partial class GameHost
             ctx.EndNative(cmd);
 
             // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
-            var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
-            var resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter, size.X, size.Y);
-            ctx.EndNative(taaCmd);
+            GpuTexture resolved;
+            if (noTaa) resolved = sceneColour;
+            else
+            {
+                var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
+                resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter, size.X, size.Y, (float)dt);
+                ctx.EndNative(taaCmd);
+            }
 
             // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
             var post = (MetalCommandList)ctx.BeginNative("post composite");

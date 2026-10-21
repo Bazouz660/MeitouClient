@@ -100,7 +100,7 @@ public sealed class PostOptions
             case "--no-heat-haze": HeatHaze = false; return true;
             case "--upscaler":
                 Upscale.Explicit = true;
-                Upscale.Kind = Enum.TryParse<UpscalerKind>(next(), true, out var k) ? k : throw new ArgumentException("--upscaler must be off, taa, fsr or dlss");
+                Upscale.Kind = Enum.TryParse<UpscalerKind>(next(), true, out var k) ? k : throw new ArgumentException("--upscaler must be off, taa, fsr, dlss or metalfx");
                 if (Upscale.Kind != UpscalerKind.Off) Upscale.Preferred = Upscale.Kind;
                 return true;
             case "--render-scale": Upscale.Scale = UpscaleOptions.ParseScale(next()); Upscale.Explicit = true; return true;

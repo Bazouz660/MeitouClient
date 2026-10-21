@@ -23,12 +23,29 @@ sealed class PostTaa : IDisposable
     readonly Dictionary<(GpuProgram Program, InternalFormat Format), GraphicsPipelineDesc> pipelines = [];
     readonly SampledTexture pointSampler, linearSampler;
 
-    GpuTexture? motion, historyA, historyB;
+    GpuTexture? motion, historyA, historyB, externalOutput;
     int width, height, displayWidth, displayHeight;
-    bool historyValid, previousValid;
+    bool historyValid, previousValid, externalValid;
+    IUpscaler? external;
     Vector3 previousEye;
     Matrix4x4 previousRotation;
     float previousFov, previousAspect;
+
+    /// <summary>
+    /// An upscaler outside the TAA (the Metal host's MetalFX): when set, the velocity pass still runs and the external
+    /// scaler receives the scene, depth and motion in <see cref="UpscaleInputs"/>; TAA runs when it is null or fails.
+    /// </summary>
+    public IUpscaler? External
+    {
+        get => external;
+        set
+        {
+            if (ReferenceEquals(external, value)) return;
+            external = value;
+            externalValid = false;
+            historyValid = false;
+        }
+    }
 
     public PostTaa(IGpuContext ctx)
     {
@@ -83,9 +100,10 @@ sealed class PostTaa : IDisposable
     /// <paramref name="jitterPixels"/> is the offset the scene's projection used. Returns the TAA picture (at the scene's size).
     /// </summary>
     public GpuTexture Draw(IGpuCommandList cmd, GpuTexture scene, GpuTexture depth, Vector3 eye, Matrix4x4 view, float fov, float aspect,
-        float near, float far, Vector2 jitterPixels, int outputWidth, int outputHeight)
+        float near, float far, Vector2 jitterPixels, int outputWidth, int outputHeight, float deltaSeconds = 1f / 60f)
     {
         Ensure(scene.Desc.Width, scene.Desc.Height, outputWidth, outputHeight);
+        EnsureExternalOutput();
         var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
         var projection = Jitter.Apply(Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, near, far), jitterPixels, width, height);
         var previousProjection = previousValid ? Matrix4x4.CreatePerspectiveFieldOfView(previousFov, previousAspect, near, far) : projection;
@@ -116,6 +134,43 @@ sealed class PostTaa : IDisposable
         v.Set(sun, 0f, 0f, 0f, 0f);       // the sky's sun motion is off in this slice
         v.Set(sunMotion, 0f, 0f, 0f, 0f);
         Fullscreen(cmd, velocity, motion!, width, height);
+
+        if (External is { } upscaler && externalOutput is { } externalTarget)
+        {
+            var fullProjection = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, near, far);
+            var previousFullProjection = previousValid
+                ? Matrix4x4.CreatePerspectiveFieldOfView(previousFov, previousAspect, near, far)
+                : fullProjection;
+            bool resetExternal = !externalValid || !previousValid;
+            bool done = upscaler.Dispatch(new UpscaleInputs
+            {
+                Colour = scene, Depth = depth, Motion = motion!, Output = externalTarget,
+                RenderWidth = width, RenderHeight = height, DisplayWidth = displayWidth, DisplayHeight = displayHeight,
+                JitterPixels = jitterPixels, Near = near, Far = far, FieldOfView = fov,
+                DeltaSeconds = Math.Clamp(deltaSeconds, 0.001f, 0.25f), Sharpness = 0, Reset = resetExternal,
+                ViewToClip = fullProjection,
+                ClipToPreviousClip = previousValid
+                    ? Reprojection.ClipToPrevious(rotation, eye, fullProjection, previousRotation, previousEye, previousFullProjection)
+                    : Matrix4x4.Identity,
+                Eye = eye, Right = new Vector3(rotation.M11, rotation.M21, rotation.M31),
+                Up = new Vector3(rotation.M12, rotation.M22, rotation.M32), Forward = -new Vector3(rotation.M13, rotation.M23, rotation.M33),
+                Aspect = aspect,
+            });
+            if (done)
+            {
+                externalValid = true;
+                historyValid = false;   // returning to TAA starts a fresh history
+                previousEye = eye;
+                previousRotation = rotation;
+                previousFov = fov;
+                previousAspect = aspect;
+                previousValid = true;
+                return externalTarget;
+            }
+            Console.WriteLine($"upscaler  {upscaler.Name} failed; using TAA");
+            upscaler.Dispose();
+            External = null;
+        }
 
         // The TAA: this frame's scene and motion against the previous history, into the other history target.
         var previous = historyA!;
@@ -157,7 +212,18 @@ sealed class PostTaa : IDisposable
         historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
         historyValid = false;
+        externalValid = false;
         previousValid = false;
+    }
+
+    void EnsureExternalOutput()
+    {
+        if (External is null) return;
+        if (externalOutput is not null && externalOutput.Desc.Width == displayWidth && externalOutput.Desc.Height == displayHeight) return;
+        externalOutput?.Dispose();
+        externalOutput = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, displayWidth, displayHeight,
+            Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.Storage, Name: "post external upscale", Private: true));
+        externalValid = false;
     }
 
     /// <summary>One fullscreen triangle of <paramref name="program"/> into <paramref name="target"/>.</summary>
@@ -188,11 +254,14 @@ sealed class PostTaa : IDisposable
         motion?.Dispose();
         historyA?.Dispose();
         historyB?.Dispose();
-        motion = historyA = historyB = null;
+        externalOutput?.Dispose();
+        motion = historyA = historyB = externalOutput = null;
     }
 
     public void Dispose()
     {
+        external?.Dispose();
+        external = null;
         DisposeTargets();
         velocity.Dispose();
         taa.Dispose();

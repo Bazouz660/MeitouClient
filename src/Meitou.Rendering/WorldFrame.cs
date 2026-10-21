@@ -245,7 +245,7 @@ sealed class WorldOptions
           --terrain-error <px>     terrain LOD: the height error allowed near the eye, in pixels of the rendered picture (the reach switch, F8: default 16 in Meitou, 10 in Faithful; Tab slider)
           --wireframe
           --post <meitou|kenshi|off>   post-processing preset (default meitou), before the options below: HDR scene, SSAO
-          --upscaler <off|taa|fsr|dlss>   temporal upscaling (default taa in Meitou, off in Faithful; FSR and DLSS need the vendor library, else TAA)
+          --upscaler <off|taa|fsr|dlss|metalfx>   temporal upscaling (default taa in Meitou, off in Faithful; FSR and DLSS need the vendor library; MetalFX is the Metal backend's opt-in, else TAA)
           --render-scale <0.25..1|native|ultra-quality|quality|balanced|performance|ultra>   render size per axis (Meitou default 0.83 with an upscaler, else 1)
           --no-fxaa                the game's FXAA off when no upscaler runs (the game's own FXAA setting, default on)
           --particle-divisor <0|1|2|4>   the weather's alpha and additive particles drawn at 1/n of the render size (0, the default: by sprite size; `--faithful particles` draws them full size)

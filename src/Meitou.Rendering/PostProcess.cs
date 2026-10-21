@@ -1046,7 +1046,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         }
         if (!done)
         {
-            if (Options.Upscale.Kind is UpscalerKind.Fsr or UpscalerKind.Dlss && !warnedFallback)
+            if (Options.Upscale.Kind is UpscalerKind.Fsr or UpscalerKind.Dlss or UpscalerKind.MetalFx && !warnedFallback)
             {
                 Console.WriteLine($"upscaler  {Options.Upscale.Kind.ToString().ToUpperInvariant()} is not available here; using TAA");
                 warnedFallback = true;
