@@ -349,6 +349,9 @@ sealed partial class GameHost
                 Lod = o.FoliageLod,
                 Terrain = terrain,
                 Guard = memoryGuard,
+                // The Metal impostor atlas still comes out corrupt (red/black bands, and a gray
+                // full-screen card under MetalFX); keep the meshes and grass until that path is fixed.
+                Impostors = false,
             };
             if (o.LargeRange is { } largeRange)
             {
