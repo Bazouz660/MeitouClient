@@ -357,7 +357,7 @@ public sealed unsafe partial class ShadowPass
         {
             var c = cascades[i];
             float world = c.Size.X;   // world units per unit of tile UV
-            Put(data, i * 16, c.OriginToTile(origin));
+            Put(data, i * 16, ReceiverTile(c, origin));
             Put(data, RectAt + i * 4, c.Tile);
             Put(data, CascadeAt + i * 4, new Vector4(c.FarDepth, c.FilterRadius, c.Size.X, c.Size.Y));
             Put(data, ExtentAt + i * 4, new Vector4(c.Size.Z, 1f / tile, 0, 0));
@@ -385,7 +385,7 @@ public sealed unsafe partial class ShadowPass
         if (landmarkBox is { } box)
         {
             // The landmark map: (p - origin) -> (u, v, depth); its filter radius (UV) and normal offset (world: one and a half texels).
-            Put(ms, P + 16, box.OriginToTile(origin));
+            Put(ms, P + 16, ReceiverTile(box, origin));
             Put(ms, P + 32, new Vector4(box.FilterRadius, (float)(box.Texel * 1.5), 0, 1));
             landmarkPublished = true;
         }

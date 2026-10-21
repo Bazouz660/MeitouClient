@@ -234,6 +234,20 @@ public sealed unsafe partial class ShadowPass : IDisposable
         Upload(data);
     }
 
+    /// <summary>
+    /// The receiver's tile matrix for this backend. The cascade maps are rendered with a world-to-clip matrix whose y points up. Vulkan's
+    /// framebuffer is bottom-up (the present flips the backbuffer once), so its raw target has light-space +y at the texture's top (v = 1),
+    /// which is what <see cref="ShadowCascade.OriginToTile"/> produces. Metal's render targets are top-down (they land in the backbuffer the
+    /// right way up), so light-space +y is at v = 0: flip the tile's v row or every world-derived shadow lookup is mirrored.
+    /// </summary>
+    Matrix4x4 ReceiverTile(ShadowCascade c, Vector3 origin)
+    {
+        var m = c.OriginToTile(origin);
+        if (Gpu.RenderTargetsBottomUp) return m;
+        // v' = 1 - v, for the row-vector matrix: p * m.
+        return m with { M12 = -m.M12, M22 = -m.M22, M32 = -m.M32, M42 = 1f - m.M42 };
+    }
+
     void Publish(ShadowView view, ShadowCascade[] cascades)
     {
         var data = new float[ReceiverBytes / 4];
@@ -242,7 +256,7 @@ public sealed unsafe partial class ShadowPass : IDisposable
         for (int i = 0; i < count; i++)
         {
             var c = cascades[i];
-            Put(data, i * 16, c.OriginToTile(origin));
+            Put(data, i * 16, ReceiverTile(c, origin));
             Put(data, RectAt + i * 4, c.Tile);
             Put(data, CascadeAt + i * 4, new Vector4(c.SelectDepth, c.FilterRadius, c.Size.X, c.Size.Y));
             Put(data, ExtentAt + i * 4, new Vector4(c.Size.Z, 1f / Settings.TileSize, 0, 0));

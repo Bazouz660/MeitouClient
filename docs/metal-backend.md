@@ -625,7 +625,9 @@ depth from `gl_FragCoord.z` with `uShadowBias.w`: 2 for Vulkan's −1..1 depth-c
 0..1 NDC (`IGpuContext.ClipDepthZeroToOne`). Before this Metal applied the Vulkan recovery, so every caster's depth
 was shifted toward the sun: cast shadows were misplaced or missing and moved with the view. The Metal host now also
 passes the sky's real sun height, the fog/atmosphere range caps, far-cascade coarse casters to terrain and objects,
-the landmark shadow map, and the temporal shadow noise. The shadow map is still drawn before the scene, after the
+the landmark shadow map, and the temporal shadow noise. The map's world-derived lookup also flips v on Metal: Vulkan's raw
+render targets are bottom-up (its present flips the backbuffer once), Metal's are top-down, so the cascade and landmark
+receiver matrices otherwise sample the maps vertically mirrored. The shadow map is still drawn before the scene, after the
 interior view, so upper-floor casters are hidden with their floors.
 
 ### 5. The UI (plan step 8)
