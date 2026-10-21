@@ -368,9 +368,10 @@ public sealed unsafe class ImpostorBaker : IDisposable
             return (kept.Large, kept.Depth, kept.Small);
         }
         int f = size.FramePixels, samples = 2 * f, width = size.Grid * samples;
-        return (pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target")),
+        return (pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "impostor bake target")),
             pre.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target")),
-            pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target")));
+            // Metal halves the rows with a sampling render pass (BlitScaled), so the half-size atlas is a colour target as well as a copy source.
+            pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.ColourTarget | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target")));
     }
 
     /// <summary>Takes a bake's set back (the rows recorded into it are ahead of any later use in the queue).</summary>
