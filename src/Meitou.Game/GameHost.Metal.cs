@@ -1121,10 +1121,12 @@ sealed partial class GameHost
                 lastManagedTrim = now;
                 var before = GC.GetGCMemoryInfo();
                 // Compacting the LOH is a stop-the-world move of every large object: on a 4+ GB heap it stalled
-                // this loop for 1.6 s. Only do it where the loading screen or a menu can cover the pause; in the
-                // field, a background full collection reclaims the dead streaming arrays without the move.
+                // this loop for 1.6 s. Do it where a loading screen or a menu covers the pause, or when the heap
+                // has grown past 4 GB and the streamers are quiet anyway; otherwise a background collection is
+                // enough and does not move the live arrays.
                 bool safePoint = TitleVisible || settings?.Visible == true || sceneLoad is not null || loading?.Exiting == true;
-                if (safePoint)
+                bool compact = safePoint || before.HeapSizeBytes > 4L << 30;
+                if (compact)
                 {
                     GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
@@ -1133,7 +1135,7 @@ sealed partial class GameHost
                 var after = GC.GetGCMemoryInfo();
                 long loh = after.GenerationInfo.Length > 3 ? after.GenerationInfo[3].SizeAfterBytes : 0;
                 if (trace)
-                    Console.WriteLine($"metal     idle trim ({(safePoint ? "compacting" : "background")}): " +
+                    Console.WriteLine($"metal     idle trim ({(compact ? "compacting" : "background")}): " +
                         $"heap {before.HeapSizeBytes / 1048576} -> {after.HeapSizeBytes / 1048576} MB, LOH {loh / 1048576} MB");
             }
             if (screenshotNow)
