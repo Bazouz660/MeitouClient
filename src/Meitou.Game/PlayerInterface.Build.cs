@@ -203,6 +203,20 @@ sealed partial class PlayerInterface
         ShowGhosts();
     }
 
+    /// <summary>
+    /// The host's check of a client's planned building (the command gate's <c>Placeable</c>, docs/net.md "Host"): the placement rules against the sites, without
+    /// characters (the client's view lags) or queued ghosts; walls and a host whose build data is not loaded pass, an unknown record fails.
+    /// </summary>
+    internal bool PlanPlaceable(Meitou.Simulation.Construction.PlannedBuilding plan)
+    {
+        if (buildHost is not { } host) return true;
+        if (BuildData(plan.Record) is not { } data) return false;
+        if (data.LinksTogether) return true;
+        var failure = PlacementCheck.Evaluate(new PlacementQuery(data, plan.Position, plan.Rotation, PlacementCheck.YawOf(plan.Rotation), plan.Floor, host.Parts(data.Id), [],
+            [], session.CurrentSnapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement));
+        return failure == PlacementFailure.None;
+    }
+
     // ---- walls ----
 
     BuildingBuildData? BuildData(string id)

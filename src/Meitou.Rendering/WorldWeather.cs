@@ -43,6 +43,13 @@ public sealed class WorldWeather
     /// <summary>Writes the weather change lines to the console.</summary>
     public bool Log { get; set; } = true;
 
+    /// <summary>
+    /// Moves when the weather is set rather than scheduled: a save's regions restored, a weather chosen or forced (a net host resends its state then;
+    /// docs/net.md "Host"). The schedule's own changes do not move it.
+    /// </summary>
+    public int Revision { get; private set; }
+    string? revisionForced;
+
 
     /// <summary>
     /// One frame: the scheduler at the camera, the game day and <paramref name="hour"/> of day. <paramref name="held"/> holds every timer still (a screenshot);
@@ -51,6 +58,11 @@ public sealed class WorldWeather
     public WeatherState Update(Vector3 eye, double hour, float sunHeight, bool held)
     {
         this.eye = eye;
+        if (World.ForcedWeather?.Name != revisionForced)
+        {
+            revisionForced = World.ForcedWeather?.Name;
+            Revision++;
+        }
         float real = held || !clock.IsRunning ? 0 : (float)Math.Min(clock.Elapsed.TotalSeconds, 0.25);
         clock.Restart();
         var times = FrameTimes.FromClock(real, GameSpeed, Paused);
@@ -88,6 +100,7 @@ public sealed class WorldWeather
         }
         World.Restore(regions, now);
         last = now;
+        Revision++;
     }
 
     WeatherRegion? Here => World.CameraRegion ?? (eye is { } e ? World.RegionAt(e.X, e.Z) : null);
@@ -112,6 +125,7 @@ public sealed class WorldWeather
         string before = region.Weather.Name;
         region.Pick(World.Time, entry);
         World.Snap();
+        Revision++;
         Console.WriteLine($"weather   chose {region.Def.Name}: {before} -> {region.Weather.Name}");
         return $"{region.Def.Name}: {before} -> {region.Weather.Name}, strength {region.Strength:0.00}, for {FormatMinutes(region.WeatherEndMinute - World.Time.Minutes)}.";
     }

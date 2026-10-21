@@ -154,7 +154,26 @@ host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Proto
 
 ### Host
 
-Pending (package G2).
+`GameHost.Hosting.cs`. `HostGame(settings, start, folder)` (Multiplayer window, Esc menu) remembers the settings and, for a new
+game or a save, runs the usual new-game or load flow; the hosting starts on the first frame the game is ready: uncovered, no
+scene load, a player faction and population, the new game's editor closed, not the duel or sandbox, a local session. A failed
+scene load forgets the request; asking to host the running game with none running is refused with a notice.
+- **Start**: `NetHost(session, LiteNetTransport, options, NetIdentity(), link, catalog)` with the window's port, players,
+  password, clock policy (`ClientsControlTime` → `AnyPlayer`, else `HostOnly`) and the host's name; a port that cannot be bound
+  logs and shows `Cannot host on port {port}: …` and the game stays single-player. Then the role, `player.Net`, the modal pause
+  (`EnterNet`), the settings saved to the config, `Hosting on UDP port {port}: up to {n} more players`.
+- **`IHostGame`**: `Gate` = cheats from the window and `Placeable` = `PlayerInterface.PlanPlaceable` (the placement rules against
+  the sites, no characters or queued ghosts; walls and a host without build data pass; an unknown record fails); `Rules` = this
+  game's simulation settings (`CurrentRules`); `Weather()` = revision, forced weather, day, hour and every region's state,
+  rebuilt when `WorldWeather.Revision` moves (a save's weather restored, a weather chosen or forced) or once a second.
+- **Looks**: every run's appearance source is a `RecordingAppearances` round `GeneratedAppearances`, so characters made before
+  hosting have recipes for the clients.
+- **Saves**: a load while hosting passes `SaveLoadOptions.LocalPlayer = PlayerId` (the save's players keep numbers and squads,
+  this game is 0); a single-player load passes `Guid.Empty` (every squad to 0). A finished save sends `The host saved the game.`
+  to every client. Clients' save and load requests are refused (`Only the host can save or load.`).
+- **Stop**: `StopHosting` (Esc menu), the main menu and quitting drop every client (`HostClosed`) and dispose the host; the game
+  goes on single-player (`ClockAuthority` null, the extra sessions stay).
+
 
 ### Client
 

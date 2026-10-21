@@ -150,7 +150,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                 Console.WriteLine($"homes     {buildings.Values.Sum(l => l.Count)} town buildings, {buildings.Values.Sum(l => l.Sum(b => b.Beds))} beds, " +
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
-            var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root), biomes: biomes, buildings: buildings, roads: levels?.Roads());
+            var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Net.Replication.RecordingAppearances(new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root)), biomes: biomes, buildings: buildings, roads: levels?.Roads());
             // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
             if (levels is not null)
             {

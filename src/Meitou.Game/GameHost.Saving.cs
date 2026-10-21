@@ -77,6 +77,13 @@ sealed partial class GameHost
     {
         while (saveNotices.TryDequeue(out var notice)) player.Notice(notice.Text, notice.Error);
         PrintSavedLog();
+        if (role == NetRole.Client && (quickSaveRequested || quickLoadRequested || saveRequestedFolder is not null || loadRequestedFolder is not null))
+        {
+            quickSaveRequested = quickLoadRequested = false;
+            saveRequestedFolder = loadRequestedFolder = null;
+            player.Notice("Only the host can save or load.", true);
+            return;
+        }
         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
         if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
@@ -133,6 +140,7 @@ sealed partial class GameHost
                 game.Write(folder);
                 Console.WriteLine($"save      {folder}: captured in {captureMs:0.0} ms{(ahead ? "" : " (the base made on the spot)")}, written in {written.ElapsedMilliseconds} ms");
                 saveNotices.Enqueue(("Saved", false));
+                savedForClients = true;
             }
             catch (Exception e)
             {
@@ -198,6 +206,9 @@ sealed partial class GameHost
         var watch = Stopwatch.StartNew();
         LoadedSave? loaded = null;
         StandardSystemSet built;
+        // While hosting, the save's players keep their numbers and squads and this game's id becomes player 0; a single-player load gives every squad to player 0.
+        bool hosting = role == NetRole.Host;
+        var localPlayer = config.PlayerId;
         try
         {
             built = BuildSystems(interactive);
@@ -205,7 +216,7 @@ sealed partial class GameHost
             // A world that fails to load leaves the old one running (ReplaceWorld drops the half-made one).
             session.ReplaceWorld(built.Systems, world =>
             {
-                loaded = SaveLoader.Load(world, read.Result, data, new SaveLoadOptions { Appearances = data.Appearances });
+                loaded = SaveLoader.Load(world, read.Result, data, new SaveLoadOptions { Appearances = data.Appearances, LocalPlayer = hosting ? localPlayer : Guid.Empty });
                 if (world.Squads.Find(world.Player.Local.Squad) is { Members.Count: > 0 } squad)
                 {
                     world.Player.Local.Selection.Clear();

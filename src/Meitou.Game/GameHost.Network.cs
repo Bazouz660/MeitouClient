@@ -52,6 +52,7 @@ sealed partial class GameHost
     {
         netHost?.EndFrame(Covered);
         netClient?.EndFrame();
+        HostFrameCore();
         ClientFrameCore();
     }
 
@@ -107,6 +108,13 @@ sealed partial class GameHost
         player.RefreshMenuPause();
     }
 
+    /// <summary>The application is closing: every client is told the host closed, or the host that this client left.</summary>
+    void ShutdownNet()
+    {
+        if (role == NetRole.Host) StopHostingCore("The host closed the game.");
+        else if (role == NetRole.Client) LeaveClientCore(new NetDisconnect(RejectCode.Left, NetClient.LeftText), quit: true);
+    }
+
     /// <summary>Back to single-player: the net objects are forgotten (the caller stopped or disposed them), the interface's view cleared.</summary>
     void ExitNet()
     {
@@ -142,6 +150,8 @@ sealed partial class GameHost
 
     /// <summary>G2: host the running game, a new game or a save; a port that cannot be bound leaves the game single-player with an error notice.</summary>
     partial void StartHostingCore(HostSettings settings, string? newGameStart, string? saveFolder);
+    /// <summary>G2: start the hosting asked for once the game is ready; tell the clients about a finished save.</summary>
+    partial void HostFrameCore();
     /// <summary>G2: drop every client with <paramref name="reason"/>; the game goes on single-player.</summary>
     partial void StopHostingCore(string reason);
     /// <summary>G3: connect, wait for the host's world, build the replica.</summary>

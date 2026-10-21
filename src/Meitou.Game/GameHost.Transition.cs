@@ -83,6 +83,7 @@ sealed partial class GameHost
             sceneLoad = null;
             skyArrival = null;
             presentationHour = null;
+            hostPending = null;   // the game to host did not come
             if (e is not SceneLoadFailed) Console.Error.WriteLine($"scene     load failed: {e}");
             player.Notice(e is SceneLoadFailed ? e.Message : $"Load failed: {e.Message}", true);
         }

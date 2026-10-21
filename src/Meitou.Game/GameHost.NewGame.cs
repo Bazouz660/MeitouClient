@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Gameplay;
+using Meitou.Net.Session;
 using Meitou.Simulation;
 
 namespace Meitou.Game;
@@ -17,6 +18,7 @@ sealed partial class GameHost
     {
         if (!mainMenuRequested) return;
         mainMenuRequested = false;
+        if (role == NetRole.Host) StopHostingCore(NetHost.ClosedText);
         if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
         StartSceneLoad(mainMenuTransition: true, Stage("build", () =>
         {

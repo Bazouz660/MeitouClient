@@ -616,6 +616,7 @@ sealed partial class GameHost
                 Console.WriteLine($"smoke     {totalFrames} frames in {now:0.0} s: {totalFrames / now:0} fps on average, {session.Ticks.TotalTicks} control ticks, {session.Simulation.TotalTicks} simulation ticks, game time {session.Clock.TimeText}"); quit = true; }
             if (!display.VSync && fpsLimit > 0) Limit(frame, now, 1.0 / fpsLimit);
         }
+        ShutdownNet();
         SaveSettings();
         profiler?.Dispose();
         player.DisposeUi();
