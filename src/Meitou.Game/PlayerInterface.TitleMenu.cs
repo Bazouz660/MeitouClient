@@ -19,10 +19,11 @@ sealed partial class PlayerInterface
     const string MenuCard = "meitou:menu:card", MenuCardHover = "meitou:menu:card-hover", MenuPlate = "meitou:menu:plate", MenuPlateHover = "meitou:menu:plate-hover:v2",
         MenuChip = "meitou:menu:chip", MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
     /// <summary>The kit's numbers at 1600×900.</summary>
-    const float MenuLeft = 56, MenuBottom = 36, MenuWidth = 320, MenuButton = 38, MenuGap = 6, MenuExitGap = 4, MenuCardGap = 8, MenuCardHeight = 78, MenuShadow = 22;
+    const float MenuLeft = 56, MenuBottom = 36, MenuWidth = 320, MenuButton = 38, MenuGap = 6, MenuExitGap = 4, MenuCardGap = 8, MenuCardHeight = 78, MenuShadow = 22, MenuVignetteHeight = 520;
     static readonly (string Widget, string Caption, UiRect Icon)[] MenuButtons =
     [
         ("NewGameButton", "NEW GAME", new(108, 90, 31, 32)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 34)),
+        ("ImportGameButton", "MULTIPLAYER", new(1250, 765, 50, 50)),
         ("OptionsButton", "OPTIONS", new(146, 90, 32, 32)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 35)),
     ];
     static Vector4 Hex(int r, int g, int b, float a = 1) => new(r / 255f, g / 255f, b / 255f, a);
@@ -78,7 +79,7 @@ sealed partial class PlayerInterface
         UiControl Text(string name, UiRect at, string text, float pixels, Vector4 colour, string align = "Left VCenter") =>
             new(name, "TextBox", at, text, "", "", true, new Dictionary<string, string> { ["TextAlign"] = align }, Vector4.Zero, colour, Pickable: false, TextScale: pixels * s / 16);
         // The vignette behind the stack (kit: an ellipse 620×470 at 4% across, on the bottom edge).
-        art.Add(Image("MeitouMenuVignette", new(0, Height - 470 * 0.8f * s, Width * 0.04f + 620 * 0.8f * s, 470 * 0.8f * s), MenuVignette));
+        art.Add(Image("MeitouMenuVignette", new(0, Height - MenuVignetteHeight * 0.8f * s, Width * 0.04f + 620 * 0.8f * s, MenuVignetteHeight * 0.8f * s), MenuVignette));
         for (int i = 0; i < controls.Count; i++)
         {
             var c = controls[i];

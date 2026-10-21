@@ -103,7 +103,25 @@ sessions: [net](net.md), [simulation](simulation.md#multiplayer-host-authoritati
 
 ### Title entry and Multiplayer window
 
-Pending (package U2).
+- Title: MULTIPLAYER sits between LOAD GAME and OPTIONS in the Meitou stack (`MenuButtons`, icon `Kenshi_CharacterSpeedSet`
+  group at 1250,765 50x50 in `Kenshi_UI.png`: **Verified**, `kenshi_images.xml`; it is dark, so it reads dim on the plate).
+  The stack grows by 44 kit units, so the vignette behind it is 520 tall (the kit's 470 cut the card).
+- Window `multiplayer` (modal, centred): a MyGUI layout string (`PlayerInterface.Multiplayer.cs`, `MyGuiReader.ParseLayout`)
+  using installed skins and fonts only, identical in both UI modes. Name box (shared by both tabs; `PlayerName`, default the
+  user name filtered to letters, digits, space, `-`, `_`, else "Drifter"); HOST and JOIN tabs.
+  - Host: games list ("New game" then the load list's saves), port (1024-65535), players 2-8, password, clients control
+    time, allow cheats, info panel. The button reads HOST. New game closes the window and opens the new-game panel; its
+    Begin raises `HostGame(settings, startId, null)` (`BeginHostedNewGame`). A save raises `HostGame(settings, null,
+    folder)`, behind a confirm when a game is running.
+  - Join: address (`JoinAddress`, default port 40120), password, recent games (selecting one fills the address). The button
+    reads JOIN and raises `JoinGame`; the window stays open with the phase as status ("Connecting to host:port... N s",
+    "Joining...", "Loading the world...") and only Cancel works (`CancelJoin`). Esc while connecting is a Cancel. An ended
+    session shows `EndText(...).Text` in red and re-enables the controls; once Playing the game goes first into
+    `RecentGames`. A world load covers the screen and closes the window itself.
+  - `OpenMultiplayer(true)` (Esc menu): Host tab only, no games list, button OPEN, `HostGame(settings, null, null)`.
+  - Validation errors show in the status line: name 1-24 characters without control characters and not starting with `/` or
+    `#`; port; address. Name, host port, max players and the two ticks are saved to `meitou.user.json`; passwords never.
+    `MultiplayerRequested` unhandled: "Multiplayer is not available in this build.".
 
 ### Chat
 
