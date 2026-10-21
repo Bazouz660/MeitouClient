@@ -95,7 +95,7 @@ public sealed class ClientReplicator
 
     static readonly ConditionalWeakTable<LookRegistry, WireCache> Caches = [];
 
-    readonly int player;
+    int player;
     readonly SnapshotEncoderOptions options;
     readonly LookRegistry looks;
     readonly AnimationLibrary animations;
@@ -152,8 +152,12 @@ public sealed class ClientReplicator
     }
 
     /// <summary>A new epoch: no baselines, no sent parts, every view resent. The sent-look set and the string tables are kept (they belong to the connection).</summary>
-    public void Reset(ushort epoch)
+    public void Reset(ushort epoch) => Reset(epoch, player);
+
+    /// <summary>A new epoch for a client whose player number changed with a host world swap; otherwise as <see cref="Reset(ushort)"/>.</summary>
+    public void Reset(ushort epoch, int player)
     {
+        this.player = player;
         Epoch = epoch;
         entities.Clear();
         bolts.Clear();

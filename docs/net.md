@@ -540,7 +540,64 @@ about 26 B per send once nothing changes. Real scenes are **Unknown** (wave 7 lo
 
 ## Host
 
-Pending (package N11).
+`Session/Host/` (`Meitou.Net.Session`): `NetHost(session, transport, options, self, game, catalog, clock?)` runs on the caller's
+frame thread with no game types; the game is reached through `IHostGame` (`Gate`, `Rules`, `Weather()`). It owns and disposes
+the transport. `NetHostOptions`: port 40120, 4 players (clamped 2..8, host included), password, host name, clock policy,
+send rate 20 (paused 5), 256 KB/s per client, event radius 10 000, build mismatch off, Hello timeout 10 s, load timeout 180 s.
+
+- **Start**: `Listen` (a `SocketException` propagates, nothing changed); the world's session 0 takes the host's GUID and name
+  (again after every world swap); `ClockAuthority = this`; `RequestedPause = false`; subscribes `WorldReplaced`.
+- **BeginFrame** (just before `session.Advance`): `Poll` (every transport event), Hello and load timeouts, then the event tap
+  hooks the world's queues. **EndFrame(hostBusy)**: tap drain, owed `WorldReset`s, `ClockState`, `Rules`, `Weather`, then
+  unless `hostBusy` (only Control traffic while the host is covered) events and snapshots, then the roster.
+- **Joining**: `CheckRequest` counts every connection not being dropped. On connect a 16-byte random nonce goes out in
+  `Challenge`. `Hello` → `CheckHello`; the game is full again if `others + 1 >= MaxPlayers`; number = the world roster's
+  for the GUID, else an away player's, else `NextNumber` past any roster number (0 → `Duplicate`, > 255 → `NoSlot`); a live
+  connection with that number is dropped (`Duplicate`, `Signed in from another place.`). `Player.Join(n, guid, name)` with
+  `SanitizeName` and " (2)", " (3)"... against the host's and other GUIDs' names (case-insensitive). Colour: the away
+  entry's when still free, else `PlayerColourRule.Assign` (0 taken by the host). Then `Welcome(n, rules, roster)`,
+  `WorldReset(epoch, n, seed, focus, clock, game.Rules, game.Weather())` and a `Joined` notice. Focus = the player's first
+  living character, else their session focus, else the join point (the host's first character, else its focus, else the
+  host camera target). `Ready(epoch)` of a loading peer: `Playing`, replicator reset, snapshots start at once, and
+  `JoinPlayer(null, joinPoint)` is enqueued with the player's number (the paused path takes it too).
+- **Commands**: every `CommandBatch` is read (so its string definitions are kept), with `tick = world.Tick` and
+  `allowDebug = Gate.Cheats`; a bad batch drops the peer (`ProtocolError`, `Bad data from the client.`), as does any message
+  that does not parse or is not a client's. Only a playing peer's batch of this epoch is applied: a token bucket of 200/s,
+  burst 400 (excess dropped, `Too many commands: some were dropped.` at most once a second), then `CommandGate.Admit`; an
+  admitted command is enqueued with `Tick = world.Tick` and the sender's number, a refusal answers `CommandResult(seq,
+  reason)` at most twice a second.
+- **Clock** (`IClockAuthority`, the host's input as player 0, and `ClockRequest` messages): `HostOnly` refuses others with
+  `Only the host can change the game speed.`; a speed outside 0/1/2/5 is ignored; an unchanged clock does nothing; else
+  `ClockChange(player, Paused | Resumed | Speed, speed)` (speed: the new one, or the one to resume at) and `ClockChanged`
+  with the name. `ClockState` goes to every in-game peer on a change, when the busy flag changes, when the game clock moved
+  other than by ticks since the last anchor (`TimeSet`, player -1), else every 2 s; each send re-anchors (tick, hours).
+- **Events** (`HostEventTap`): `BeginFrame` remembers each consumer queue on the world (null = off) and installs the tap's;
+  `EndFrame` drains the tap's queues into the frame's batch, re-enqueues each item into its consumer, and restores the
+  consumers on the current world and on the hooked one if a swap happened in between, so the host's own sound, blood and
+  floater consumers get every event (**Verified**, `EventTapTests`). Per peer one or more `EventBatch(epoch, world.Tick)`
+  (≤ 256 events, halved until under `MaxReliableMessage`): a playing peer's spatial events passing `EventFilter.Wants`
+  with its replicator's view and interest, plus its targeted events (`Send`, chat, notices, refusal texts); loading
+  peers get the targeted ones. Ticks the host runs outside `Advance` are not tapped (engine choice).
+- **Snapshots**: per playing peer when due, `world.PublishFor(n)` → `ClientReplicator.Send` through a `PeerSink`; next due
+  `+1/SendRate` s (`1/PausedSendRate` while the clock is paused), reset to now + interval when a whole interval behind.
+- **Chat**: control characters removed, trimmed, 200 characters; 5 lines per 5 s per client; `ChatNet(from, name, text)` to
+  every in-game peer and the host's `Chat` event (the host's own lines too, as player 0).
+- **Leaving**: a dropped in-game peer's player becomes `Away` in the roster (number, name, colour and squads kept);
+  `CloseTrade`, `EndConversation`, `CloseContainer` are enqueued for them; a `Left`, `TimedOut`, `Kicked` or `Banned` notice
+  goes out. `Kick(n, reason)` → `Kicked by the host: {reason}`; `Ban(n, reason)` bans the GUID for the host's lifetime
+  (`You are banned from this game.`). `Stop(reason)` drops everyone with `HostClosed`, polls once and gives the clock back
+  (`ClockAuthority = null`); `Dispose` = `Stop("The host ended the game.")` and disposes the transport.
+- **World swap** (`WorldReplaced`): epoch + 1; connected players take the new world's number for their GUID, else the next
+  free one, and `Join` it; their replicators reset (`ClientReplicator.Reset(epoch, player)`, as the number may change);
+  `Loading`; a `WorldReset` is owed and sent at the next `EndFrame` (after the game set its clock). Away players keep their
+  number only where the new world does not give it to someone else.
+- **Roster**: host first, then remote players by number (`Away` kept), with round trip, colour and owned squads; sent on
+  change and every 2 s. `Players` adds link figures (`NetPeerStats`); `StatsLine()` is one line for the overlay.
+
+**Verified** (`NetHostTests`, loopback with a hand-driven client): a good Hello gets number 1, the rules, a `WorldReset` of
+this epoch and a `Joined` notice; a wrong password, another protocol version and a full game are refused with their reasons;
+the same GUID signing in again drops the older connection and keeps the number; a kick drops with the reason, leaves the
+player `Away` and the GUID comes back as the same number.
 
 ## Client and jitter buffer
 
