@@ -48,7 +48,7 @@ sealed partial class GameHost
         Console.WriteLine(made is not null
             ? $"audio     {made.DeviceName}, ambience and music from the Wwise banks{(o.AudioGainDb != 0 ? $", gain {o.AudioGainDb:+0.#;-0.#} dB" : "")} (--no-audio turns it off)"
             : $"audio     off: {error}");
-        if (audio is not null && player.TitleOpen) audio.Music.StartMainTheme();
+        if (audio is not null && player is not null && player.TitleOpen) audio.Music.StartMainTheme();
         AttachUiSounds();
     }
 
@@ -59,17 +59,17 @@ sealed partial class GameHost
     /// </summary>
     void UpdateAudio(double realSeconds)
     {
-        if (audio is null || player.TitleOpen) return;
+        if (audio is null || player is null || player.TitleOpen) return;
         var target = camera.Target;
         var eye = camera.Eye;
         var front = camera.Forward;
         var right = Vector3.Normalize(Vector3.Cross(front, Vector3.UnitY));
         audio.SetListener(eye, front, Vector3.Cross(right, front));
         audio.SetPaused(session.Simulation.IsPaused);
-        var weather = gpu.Weather;
+        var weather = ActiveWeather;
         var clock = session.Clock;
         audio.Update(weather?.World.RegionAt(target.X, target.Z), weather?.State, clock.HourOfDay, clock.Sunrise, clock.Sunset,
-            eye.Y - gpu.Terrain.HeightAt(eye.X, eye.Z), realSeconds);
+            eye.Y - ActiveGround(eye.X, eye.Z), realSeconds);
         UpdateWorldAudio(audio, target, eye);
         UpdateCharacterAudio(audio, eye);
     }

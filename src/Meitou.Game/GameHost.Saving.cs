@@ -146,7 +146,7 @@ sealed partial class GameHost
     /// </summary>
     void WriteWeather(SaveGame game, int day, double hour)
     {
-        if (gpu.Weather is not { } weather || game.Biomes is not { } biomes || weather.World.ForcedWeather is not null) return;
+        if (ActiveWeather is not { } weather || game.Biomes is not { } biomes || weather.World.ForcedWeather is not null) return;
         SaveWeather.Write(biomes, weather.World.Snapshot(), new Meitou.Data.World.WeatherTime(day, hour), popData?.Db);
         var camera = game.Camera;
         var state = weather.State;
@@ -218,7 +218,7 @@ sealed partial class GameHost
         var world = session.World;
         session.Clock.SetTime(loaded!.Clock.Day, loaded.Clock.HourOfDay);
         // The regions' weather the save holds (docs/formats/save.md "BIOMES"); a save without (an old Meitou one) keeps the schedule rolled from day 0.
-        if (gpu.Weather is { } weather && read.Result.Biomes is { } biomes && SaveWeather.Read(biomes) is { Count: > 0 } regions)
+        if (ActiveWeather is { } weather && read.Result.Biomes is { } biomes && SaveWeather.Read(biomes) is { Count: > 0 } regions)
         {
             weather.Restore(regions, loaded.Clock.Day, loaded.Clock.HourOfDay);
             Console.WriteLine($"load      weather of {regions.Count} region(s) from the save");

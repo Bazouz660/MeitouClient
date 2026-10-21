@@ -51,6 +51,17 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     PlayerInterface player = null!;
     Meitou.Simulation.Squad? playerSquad;
     WorldFrame.Gpu gpu = null!;
+    // The Metal host owns its renderers outside WorldFrame.Gpu; these are the same services the shared title, audio and save code asks the host for.
+    WorldWeather? hostWeather = null;
+    WorldObjectRenderer? hostObjects = null;
+    FoliageRenderer? hostFoliage = null;
+    CharacterRenderer? hostCharacters = null;
+    Func<float, float, float>? hostGround = null;
+    WorldWeather? ActiveWeather => gpu is null ? hostWeather : gpu.Weather ?? hostWeather;
+    WorldObjectRenderer? ActiveObjects => gpu is null ? hostObjects : gpu.Objects ?? hostObjects;
+    FoliageRenderer? ActiveFoliage => gpu is null ? hostFoliage : gpu.Foliage ?? hostFoliage;
+    CharacterRenderer? ActiveCharacters => gpu is null ? hostCharacters : gpu.Characters ?? hostCharacters;
+    float ActiveGround(float x, float z) => hostGround?.Invoke(x, z) ?? gpu.Terrain.HeightAt(x, z);
     WorldCamera camera = null!;
     WorldRenderOptions render = null!;
     readonly Stopwatch realTime = Stopwatch.StartNew();

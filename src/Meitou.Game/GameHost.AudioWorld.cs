@@ -33,7 +33,7 @@ sealed partial class GameHost
         }
 
         // The building whose indoor volume lies under the pivot, whatever the pivot's height (a ray cast straight down from far above).
-        var volume = gpu.Objects?.InteriorUnder(pivot.X, pivot.Z);
+        var volume = ActiveObjects?.InteriorUnder(pivot.X, pivot.Z);
         interiorSounds!.Update(volume is null ? null : new InteriorHit(volume.PlacementId, volume.Ambience, volume.Integrity, volume.Cavernous));
 
         UpdateEmitters();

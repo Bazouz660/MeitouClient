@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Numerics;
+using Meitou.Data.Save;
 using Meitou.Data.Textures;
 using Meitou.Data.World;
 using Meitou.Engine;
@@ -17,6 +18,8 @@ using Meitou.Rendering.Characters;
 using Meitou.Rendering.Display;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Ui;
+using Meitou.Simulation.Editing;
+using Meitou.Simulation.Saving;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 using EngineKey = Meitou.Engine.Input.Key;
@@ -34,6 +37,8 @@ sealed partial class GameHost
     /// </summary>
     int Metal()
     {
+        // The banks and the output device load on a worker while the window, the world and the renderers are made.
+        BeginAudio();
         var loaded = LoadScene is not null ? LoadScene() : scene;
         if (loaded is null)
         {
@@ -102,6 +107,7 @@ sealed partial class GameHost
             }
             Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
         }
+        hostWeather = weather;
         var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
         // The placed fog volumes (docs/formats/fogfeatures.md): CPU culling and the frame globals every world shader reads.
         var fogVolumes = new FogVolumes(ctx, o.NoFogFeatures ? [] : Meitou.Data.World.FogFeatures.Load(install));
@@ -280,6 +286,7 @@ sealed partial class GameHost
                 SortNearestFirst = o.MeitouReach,
                 LodBias = 1 / o.ObjectLod,
             };
+            hostObjects = objects;
             Console.WriteLine("metal     objects ready");
         }
         // The world's foliage (the catalog's meshes, the grass pages and the TERRAIN-mode rocks), as WorldFrame.CreateGpu makes it. The
@@ -301,6 +308,7 @@ sealed partial class GameHost
                 (foliage.SmallRange, foliage.MediumRange, foliage.LargeRange) = (foliage.SmallRange * k, foliage.MediumRange * k, largeRange);
             }
             if (o.GrassDensity is { } grassDensity) foliage.GrassDensitySetting = grassDensity;
+            hostFoliage = foliage;
             Console.WriteLine($"metal     foliage ready ({foliage.LoadMs:0} ms)");
         }
         // The water: the game's faithful quad first (the Meitou grid's ocean FFT and shore field are Vulkan-typed still).
@@ -318,6 +326,7 @@ sealed partial class GameHost
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
         var heights = new Meitou.Data.World.GroundHeights(scene.Window, scene.Coarse, scene.CoarseSize, WorldFrame.CoarseStep);
+        hostGround = heights.HeightAt;
         var (walkability, systems, constants) = BootSimulation(heights, interactive: true);
         (camera, render) = WorldFrame.Setup(scene, o);
         session = new WorldSession(scene.Focus, (scene.X0, scene.Z0, scene.X1, scene.Z1), heights.HeightAt, o.Hour, config.TickRate,
@@ -368,13 +377,15 @@ sealed partial class GameHost
                 characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0 };
                 Console.WriteLine("metal     characters ready (population draw list)");
             }
+            hostCharacters = characters;
         }
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
         PlayerInterface? hud = null;
         if (overlay is not null)
         {
-            hud = new PlayerInterface(session, heights.HeightAt, DrawnPosition) { SpeedUnit = config.SpeedUnit };
+            hud = new PlayerInterface(session, heights.HeightAt, DrawnPosition) { SpeedUnit = config.SpeedUnit, Floaters = config.Floaters };
+            player = hud;
             hud.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
             hud.CreateUiPainter(overlay, assets.Find);
             if (popData is { } data)
@@ -406,6 +417,10 @@ sealed partial class GameHost
                 hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material)
                     && characters.TryGetIcon(new IconKey(record, material), out var icon) ? icon : null);
             }
+            hud.ConfigureFrontend(scene.Database,
+                () => SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
+                assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
             // A still or a run can open one of the shared layouts by name for review.
             if (g.UiPanel is { Length: > 0 } selectedPanel)
                 hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
@@ -435,6 +450,7 @@ sealed partial class GameHost
                     foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
                         (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild) = (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild);
                 },
+                AudioChanged = AudioSettingsChanged,
             };
             // The saved graphics values are the same keys the Vulkan panel uses. The Metal display choices have their own
             // config fields, and a command-line upscaler/scale stays explicit for this run.
@@ -451,6 +467,48 @@ sealed partial class GameHost
                     toggle.Set(value >= 0.5f);
             if (openSettingsForStill) settings.Visible = true;
         }
+        // The loading screen is backend-neutral: the same Kenshi layout, picture and tips the Vulkan host draws.
+        if (overlay is not null)
+        {
+            try { loading = LoadingScreen.Create(overlay, assets.Find, install.DataDirectory); }
+            catch (Exception e) { Console.Error.WriteLine($"loading   the loading screen did not load: {e.Message}"); }
+        }
+        bool quit = false;
+        // The title opens unless a start, a save or a picture chose the world; --title-preview opens it for a still.
+        bool showTitle = hud is not null && (g.TitlePreview || o.Screenshot is null && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation);
+        if (hud is not null)
+        {
+            hud.ScreenAction += e =>
+            {
+                if (e.Action == "save") saveRequestedFolder = SaveCatalog.Folder(QuickSave.DefaultRoot, e.Text);
+                else if (e.Action == "load") loadRequestedFolder = e.Text;
+                else if (e.Action == "new-game") newGameRequested = e.Text;
+                else if (e.Action == "main-menu") mainMenuRequested = true;
+                else if (e.Widget == "OptionsButton" && settings is not null) settings.Visible = true;
+                else if (e.Widget == "ExitGameButton" || e.Action == "exit") quit = true;
+            };
+            if (showTitle) hud.ShowTitle();
+        }
+        // --load starts in the save: the same swap the menu's load uses, with the world already read around its camera.
+        if (hud is not null && StartSave is { } startSave)
+        {
+            readingFolder = g.Load ?? "";
+            try
+            {
+                var navmesh = SwapInSave(Task.FromResult(startSave), interactive: true, out string summary);
+                navmesh.Wait();
+                SettleNewWorld();
+                FinishLoadNotice(summary);
+                ApplyCamera(session.Camera.Current);
+            }
+            catch (SceneLoadFailed e)
+            {
+                Console.Error.WriteLine($"load      {e.Message}");
+                hud.Notice(e.Message, true);
+            }
+        }
+        // The audio device is up before the first frame; the title theme starts here when the menu is open.
+        AttachAudio();
         SettingsPanel CreateMetalSettings()
         {
             var sliders = new List<Slider>();
@@ -583,6 +641,11 @@ sealed partial class GameHost
             {
                 if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; if (hud is not null) hud.SlowModifier = true; }
                 if (key == SilkKey.Enter && Alt()) { ToggleFullScreen(); return; }
+                if (Covered)
+                {
+                    if (key is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
+                    return;
+                }
                 if (key == SilkKey.F10 && settings is not null) { settings.Visible = !settings.Visible; return; }
                 // The full settings dialog (Metal's F10 used to be a preset overlay; the preset now lives in Display).
                 if (settings?.Visible == true)
@@ -619,6 +682,7 @@ sealed partial class GameHost
             };
             keyboard.KeyChar += (_, value) =>
             {
+                if (Covered) return;
                 if (settings?.Visible == true) settings.TextInput(value);
                 else hud?.UiText(value);
             };
@@ -627,6 +691,7 @@ sealed partial class GameHost
         {
             mouse.MouseMove += (_, p) =>
             {
+                if (Covered) { lastMouse = p; return; }
                 var at = Pixels(p);
                 if (settings?.Visible == true) { settings.MouseMove(at); lastMouse = p; return; }
                 hud?.MouseMove(at);
@@ -637,6 +702,7 @@ sealed partial class GameHost
             };
             mouse.MouseDown += (_, button) =>
             {
+                if (Covered) return;
                 if (KeyMap.Map(button) is not { } mapped) return;
                 var at = Pixels(mouse.Position);
                 if (settings?.Visible == true) { settings.MouseDown(at, mapped); return; }
@@ -646,6 +712,7 @@ sealed partial class GameHost
             };
             mouse.MouseUp += (_, button) =>
             {
+                if (Covered) return;
                 if (settings?.Visible == true) { settings.MouseUp(); return; }
                 if (KeyMap.Map(button) is not { } mapped) return;
                 hud?.MouseUp(mapped, Pixels(mouse.Position), shiftDown);
@@ -653,6 +720,7 @@ sealed partial class GameHost
             };
             mouse.Scroll += (_, wheel) =>
             {
+                if (Covered) return;
                 if (settings?.Visible == true) { settings.Scroll(wheel.Y); return; }
                 var at = Pixels(mouse.Position);
                 // A panel's own scroll wins; over any HUD rectangle the wheel does not zoom the camera, as in the Vulkan host.
@@ -668,6 +736,14 @@ sealed partial class GameHost
             shiftDown = false;
             lastMouse = null;
         };
+        // The game's quick save/load keys are control actions, as in the Vulkan host (F5/F9 by default).
+        session.Ticked += actions =>
+        {
+            if (actions.Pressed(InputAction.QuickSave)) quickSaveRequested = true;
+            if (actions.Pressed(InputAction.QuickLoad)) quickLoadRequested = true;
+        };
+        // Put the title's camera and staging up before the streamers settle, so the menu's first frame is already the staged view.
+        if (hud is not null) ApplyTitleCamera();
         // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
         streamer?.Settle(camera.Eye);
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
@@ -696,7 +772,7 @@ sealed partial class GameHost
         // before the interactive loop (its title and FPS are watched there).
         display.Activate();
         if (BorderlessFullScreen.IsOn(window)) display.SetFullScreenPresentation(true);
-        while (!window.IsClosing)
+        while (!window.IsClosing && !quit)
         {
             window.DoEvents();
             if (window.IsClosing) break;
@@ -728,10 +804,33 @@ sealed partial class GameHost
                 fpsFrames = 0;
             }
             // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
-            session.Camera.Strategy.EdgePointer = settings?.Visible == true || hud is { UiVisible: false } or { UiCapturesPointer: true }
-                ? null : WindowPointer.InWindow(window);
-            session.Advance(dt);
+            session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
+                hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
+            if (!Covered) session.Advance(dt);
+            if (hud is not null)
+            {
+                HandleSaves();
+                HandleNewGame();
+                HandleMainMenu();
+            }
+            StepSceneLoad();
+            AdvanceSkyArrival(dt);
+            // Metal has no character editor yet: finish the start's creation after its world is in, rather than leaving the squad in creation.
+            if (pendingCreation is not null && sceneLoad is null)
+            {
+                session.World.Commands.Enqueue(new FinishCreation { Tick = session.World.Tick });
+                pendingCreation = null;
+            }
             ApplyCamera(session.CameraAt());
+            if (hud is not null) ApplyTitleCamera();
+            if (!Covered && hud is not null && TitleVisible) titleBattle?.Advance(dt);
+            if (skyArrival is not null)
+            {
+                ApplyCamera(session.Camera.Current);
+                if (hud is not null) ApplyTitleCamera();
+                ApplySkyArrival();
+            }
+            if (!Covered) UpdateAudio(dt);
             SendFocus();
             UpdateNav();
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
@@ -763,25 +862,49 @@ sealed partial class GameHost
             }
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
-            float hour = (float)session.Clock.HourOfDay;
+            bool titleLook = hud is not null && TitleVisible;
+            float hour = presentationHour ?? (titleLook ? TitleHour : (float)session.Clock.HourOfDay);
             var aspect = sceneSize.X / (float)Math.Max(sceneSize.Y, 1);
             var eye = camera.Eye;
             var view = camera.View;
             var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
             var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
+            // The title stages the world as the poster: clear morning light, the sun right of the view, the moons full and the ruin
+            // beside the logo. Save the gameplay values and put them back after the world pass.
+            var savedClock = scene.Clock;
+            var savedSkyWeather = sky.Weather;
+            float? savedCloudCoverage = sky.CloudCoverage;
+            var savedCloudWind = sky.CloudWind;
+            var savedPlanetTurn = sky.PlanetTurn;
+            float savedPlanetFill = sky.PlanetFill;
+            var savedFill = characters?.Fill ?? default;
+            bool savedHidePlaced = fogVolumes.HidePlaced;
+            if (titleLook)
+            {
+                float fill = Math.Clamp(scene.Clock.SunDirection(hour).Y / MathF.Max(scene.Clock.SunDirection(TitleHour).Y, 1e-3f), 0, 1);
+                fill = fill * fill * (3 - 2 * fill);
+                sky.Weather = Meitou.Data.World.SkyWeather.Default;
+                sky.CloudCoverage = 0.38f;
+                sky.CloudWind = TitleComposition.CloudWind(camera);
+                sky.PlanetTurn = TitleComposition.MoonTurn(camera);
+                sky.PlanetFill = 0.8f * fill;
+                scene.Clock = scene.Clock with { SunTurn = TitleComposition.SunTurn(scene.Clock, hour, camera) };
+                if (characters is not null) characters.Fill = new Vector3(0.064f, 0.052f, 0.04f) * fill;
+                fogVolumes.HidePlaced = true;
+            }
             var sun = scene.Clock.SunDirection(hour);
             const bool held = true;   // a still picture: the weather's timers snap, as the post chain's InstantAdaptation does
-            if (weather is { } current)
+            if (!titleLook && weather is { } current)
             {
                 current.Update(eye, hour, sun.Y, held);
                 current.Apply(sky);
             }
-            if (surfaces is { } weatherSurfaces)
+            if (!titleLook && surfaces is { } weatherSurfaces)
             {
                 weatherSurfaces.GameTime = hour;
                 weatherSurfaces.Apply(weather?.State ?? Meitou.Data.World.WeatherState.Clear);
             }
-            var weatherState = weather?.State ?? Meitou.Data.World.WeatherState.Clear;
+            var weatherState = titleLook ? Meitou.Data.World.WeatherState.Clear : weather?.State ?? Meitou.Data.World.WeatherState.Clear;
             water?.Animate(session.Clock.HoursSinceStart, weatherState.WindDirection, weatherState.WindSpeed);
             sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
             sky.Eye = eye;
@@ -791,7 +914,8 @@ sealed partial class GameHost
             sky.StarHours = session.Clock.HoursSinceStart;
             sky.StarSeconds = (float)(now % 3600);
             var (colours, light) = sky.Prepare(sun, eye.Y, o.FogDistance + 3 * Math.Max(eye.Y, 0));
-            if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
+            if (titleLook) sky.StepClouds((float)dt);
+            else if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
             // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
             camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
             fogVolumes.Update(eye, camera.Forward, camera.FieldOfView, aspect, camera.ViewDistance, sun.Y, true, null, sky.FogCullDistance);
@@ -865,6 +989,17 @@ sealed partial class GameHost
             var post = (MetalCommandList)ctx.BeginNative("post composite");
             composite.Draw(post, resolved, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
             ctx.EndNative(post);
+            if (titleLook)
+            {
+                scene.Clock = savedClock;
+                sky.Weather = savedSkyWeather;
+                sky.CloudCoverage = savedCloudCoverage;
+                sky.CloudWind = savedCloudWind;
+                sky.PlanetTurn = savedPlanetTurn;
+                sky.PlanetFill = savedPlanetFill;
+                if (characters is not null) characters.Fill = savedFill;
+                fogVolumes.HidePlaced = savedHidePlaced;
+            }
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
@@ -905,8 +1040,16 @@ sealed partial class GameHost
                     wrote = true;
                 }
                 if (wrote) overlay.Flush(size.X, size.Y);
+                // The scene changes use the same Kenshi loading screen as Vulkan; it covers the world until the sky arrival is done.
+                if (loading is not null && (sceneLoad is not null || loading.Exiting))
+                {
+                    overlay.Target = backbuffer;
+                    loading.Draw(size.X, size.Y);
+                }
             }
             ctx.EndFrame();
+            // Mark the covered frame: the next one may run the next stage (which can hold the thread).
+            if (sceneLoad is { } pendingLoad) pendingLoad.Shown = true;
             lastWait = drawableWait;
             lastRecord = Stopwatch.GetElapsedTime(recordStart).TotalMilliseconds;
             frames++;
@@ -985,6 +1128,8 @@ sealed partial class GameHost
         // streaming upload otherwise freed resources the GPU was still reading and could fault on the way out.
         SaveSettings();
         display.SetFullScreenPresentation(false);
+        loading?.Dispose();
+        loading = null;
         ctx.Finish();
         hud?.DisposeUi();
         overlay?.Dispose();

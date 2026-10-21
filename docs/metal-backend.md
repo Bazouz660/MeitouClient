@@ -3,7 +3,8 @@
 A second native path for the renderer, next to Vulkan. Status: **the world draws on Metal**
 (`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
 uniform block, the scene, shadows, faithful water, skinned characters, the HUD and the faithful panels. The
-interactive camera/selection, the title/save flows and the Meitou water/effects are not there yet.
+interactive camera/selection, title, New Game, save/load and audio are in; the Meitou water/effects, trade/dialogue/
+build/editor hosts and the free camera are not there yet.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
 runtime). `Silk.NET.GLFW` has no `glfwGetCocoaWindow`, so the `NSWindow*` comes from the same
@@ -465,8 +466,10 @@ move the strategy camera; edge scrolling, left click/box select, right-click mov
 F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
 The shared settings menu is now wired on Metal too (F10; Display, Graphics, Interface, Controls, Advanced and Audio),
 including the MetalFX preset and render scale, VSync, frame limit and borderless full screen, persisted in
-`meitou.user.json`. Still missing: the title/new-game/save/load flows, trade/dialogue/build/editor hosts, audio, the
-pointer sprite, the free camera and the profiler chart.
+`meitou.user.json`. The frontend shell is in: the staged Meitou title (or the faithful title image), New Game with the
+start chooser, save/load slots and confirmations, the in-game Esc menu, the loading screen and sky transitions, and the
+audio system (main theme, interface sounds, ambience, music and world emitters, with the saved volume sliders).
+Still missing: trade/dialogue/build/editor hosts, the pointer sprite and the free camera.
 
 **Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
 headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
@@ -477,29 +480,25 @@ The measurements, targets and acceptance gates stay in [metal-performance-memory
 setting and drawable trace, released the map-tile/source caches, added the idle LOH trim, fixed the frame
 autorelease pool and added the Metal settings/FX presets; the plan document records the numbers and what remains.
 
-**What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
-host services the panels call:
+**What we do next.** The HUD, the main faithful panels, the title, New Game, save/load, the in-game menu and audio
+are in. The remaining UI work is the host services the panels call:
 
-1. **Title, new game, save/load.** `PlayerInterface.ShowTitle`, the frontend layouts and their
-   `ScreenAction` callbacks need the Metal host's save/new-game/load path; the settings panel is wired (F10) and
-   persists its display/renderer choices.
-2. **Trade, dialogue, build, editor.** These need the simulation/host services `BootPlayer` supplies (trade
+1. **Trade, dialogue, build, editor.** These need the simulation/host services `BootPlayer` supplies (trade
    commands, building/editor hosts, item icons already connected); `--ui-panel` can open their layouts once the
    state exists.
-3. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; the loop now also
+2. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; the loop now also
    feeds the camera, selection, box select, move orders, F8/F11/F12, F10 settings and Alt+Enter. Still missing:
-   tooltips over the world, the pointer sprite, the free camera and the frontend actions.
-4. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
+   tooltips over the world, the pointer sprite and the free camera.
+3. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
    sequence still needs the same loop here.
-5. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
+4. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
    need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
 **After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
 refraction); the character motion pass and the hover/stage host calls; the effects (weather particles, lamps,
 hover/move/navmesh overlays, interior mask, Meitou clouds); the full post chain (SSAO, light shafts, `FogRate`,
-dynamic motion, MetalFX/upscaler, GPU culls/grass); the interactive loop (camera/selection input, title, resize,
-HDR/EDR, `WorldFrame`/`SceneHost` on `IGpuContext`); then the GI decision, parity, memory/tone and the macOS
-default.
+dynamic motion, MetalFX/upscaler, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on
+`IGpuContext`; then the GI decision, parity, memory/tone and the macOS default.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
@@ -508,12 +507,12 @@ Vulkan at default settings, the remaining scope is:
    left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
    unify the bespoke loop with `WorldFrame`/`SceneHost` on `IGpuContext` (or keep the duplicate, which doubles every
    future feature); the free camera, context menus, building selection/hover, mesh/building/surface hits, build
-   host, floor stepping and fly-to; title -> new game -> play, save/load/quickload, options, `ScreenAction`
-   callbacks, the new-world rebuild, trade/dialogue/build/editor hosts, audio/UI sounds, the loading screen,
-   warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
-2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu and title render; still missing the
-   title/new-game/save/load actions, trade, dialogue, build, editor, world tooltips, the pointer sprite, full
-   selection/orders input and a Metal `--ui-showcase`.
+   host, floor stepping and fly-to; trade/dialogue/build/editor hosts, warm-up, resize/fullscreen, HDR/EDR and the
+   remaining present details. Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world
+   rebuild, the loading screen, audio/UI sounds and the sky transitions are wired.
+2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu, title, New Game, save/load and the
+   in-game menu render and act; still missing trade, dialogue, build, editor, world tooltips, the pointer sprite,
+   full selection/orders input and a Metal `--ui-showcase`.
 3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
    `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
    move marker, navmesh overlay, interior mask); post (SSAO, light shafts, `FogRate`, full TAA with character/grass
@@ -527,11 +526,12 @@ Vulkan at default settings, the remaining scope is:
 6. **Parity and the default.** Window comparisons, tone/timing, resize/HDR, memory, then make `--renderer metal`
    the macOS default and remove the duplicate host.
 
-**Practical order:** the [performance and memory plan](metal-performance-memory.md) runs first (same-window
-benchmark, present pacing, GPU culls/indirect, cache/native lifetime, memory soak); then the shared interactive host +
-input + UI actions + audio; Meitou water; effects; post/GI; parity and default. If no-GI and faithful clouds/water
-are accepted as the macOS look, the GI and Meitou water/clouds items leave the target; the upscaler and timestamps
-are quality/performance work, not correctness blockers.
+**Practical order:** the frontend shell (title, New Game, save/load, audio) is in; next are the remaining host
+services (trade, dialogue, build, editor) and effects, then the [performance and memory plan](metal-performance-memory.md)
+(same-window benchmark, present pacing, GPU culls/indirect, cache/native lifetime, memory soak), Meitou water,
+post/GI, parity and default. If no-GI and faithful clouds/water are accepted as the macOS look, the GI and Meitou
+water/clouds items leave the target; the upscaler and timestamps are quality/performance work, not correctness
+blockers.
 
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
@@ -624,9 +624,9 @@ are drawn into the character renderer's atlas and the item icons come from the i
 `RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal) makes the runtime images (portraits,
 icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
 
-**What is not wired:** title/new-game/save/load, trade, dialogue, build and editor need their host callbacks and
-simulation state. The settings panel is wired; the panel keys and pointer hover/clicks/scroll work, and camera
-movement, selection, orders and the pointer sprite belong to the interactive loop.
+**What is not wired:** trade, dialogue, build and editor need their host callbacks and simulation state. The
+settings panel, title, New Game, save/load and audio are wired; the panel keys and pointer hover/clicks/scroll work,
+and camera movement, selection, orders and the pointer sprite belong to the interactive loop.
 
 ### 6. The remaining effects
 
@@ -637,9 +637,9 @@ already works. Decide the default between the faithful and Meitou look.
 
 ### 7. The full game loop (plan step 10)
 
-The interactive host: input and camera controls (`MetalDisplay` events), the title screen, resize, HDR/EDR and
-the present details, warm-up frames, `--screenshot`/`--ui` parity, and the real `GameHost` render flow
-(`WorldFrame`, `SceneHost`) widened to `IGpuContext` instead of the bespoke Metal loop.
+The interactive host: input and camera controls (`MetalDisplay` events), the title/New Game/save/load and audio
+paths, resize, HDR/EDR and the present details, warm-up frames, `--screenshot`/`--ui` parity, and the real
+`GameHost` render flow (`WorldFrame`, `SceneHost`) widened to `IGpuContext` instead of the bespoke Metal loop.
 
 ### 8. Parity and the default (plan step 11)
 
@@ -715,8 +715,8 @@ default.
 - **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
   portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
   F7, F10 settings, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll),
-  selection/box select and right-click move orders. Title/new-game/save/load, trade, dialogue, build and editor host
-  callbacks are still unset; settings are wired.
+  selection/box select and right-click move orders. Title, new game, save/load and audio are wired; trade, dialogue,
+  build and editor host callbacks are still unset.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).

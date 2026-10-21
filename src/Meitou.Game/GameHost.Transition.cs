@@ -92,6 +92,9 @@ sealed partial class GameHost
     void BeginWarm()
     {
         if (loading is null) { skyArrival?.Arrive(); return; }
+        // The Metal host draws its own frames and has no Vulkan loading display to measure a warm-up with: let the loading screen
+        // slide away and start the sky's descent at once.
+        if (loadingDisplay is null) { loading.Finish(); skyArrival?.Arrive(); return; }
         (warming, smoothSeconds, warmSeconds, readySeconds, guardSeconds) = (true, 0, 0, 0, 0);
         nextWarmReport = 5;
         titleWarmFinalized = false;
