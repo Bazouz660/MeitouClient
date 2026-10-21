@@ -651,3 +651,12 @@ older place is shown at its newer one. **Verified** (`JitterBufferTests`: steady
 smoothly 2-6 ticks behind with no starvation; 150 ms jitter grows the delay and then never starves; a 1 s loss extrapolates
 at most the cap, holds, counts once and recovers; a 3000-tick jump snaps; teleports; a pause plays out then holds without
 starving; a 5x speed change settles at 150 ticks/s without counted starvation).
+
+**Verified end to end** (`SessionTests` with `SessionHarness`: a SyntheticTown host and replica guests over `LoopbackNetwork` on a
+`ManualNetClock`, frames in the game's order): a guest's `MoveOrder` moves its own character on the host and in its replica, one
+for the host's character is refused with the gate's reason (`Not your characters.`); the guest's newest assembled snapshot equals
+the host's `PublishFor(guest)` at that tick after quantization (ids, wires, owners, selection, squads, header); one player's
+trade, conversation and selection do not show in the other's view; a guest's pause stops the host and both raise
+`ClockChanged` with the guest's name, and `HostOnly` refuses it with a message; a guest who leaves is `Away`, keeps its squads
+and comes back as the same number with no new squad; a guest joining a paused game gets its squad (in creation) while the
+host's tick stays put.

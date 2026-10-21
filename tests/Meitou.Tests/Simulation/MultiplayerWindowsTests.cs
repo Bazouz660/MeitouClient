@@ -27,7 +27,7 @@ public class MultiplayerWindowsTests
     /// Villagers who say "Hello." (event 1), a drifter who joins with the editor (DA 3), a surgeon whose line opens the character editor (DA 11), a trader template selling cloth,
     /// and a town with a store whose one container has an inventory.
     /// </summary>
-    static PopulationData Data() => PopulationData.Create(Db([
+    internal static PopulationData Data() => PopulationData.Create(Db([
         Rec("p-w", FcsRecordType.FACTION, r => r.Name = "Nameless"),
         Rec("f-w", FcsRecordType.FACTION, r => r.Name = "Villagers"),
         Rec("npc-w", FcsRecordType.CHARACTER, r => { r.Name = "Villager"; r.References["dialogue"] = [Ref("hello-d")]; }),

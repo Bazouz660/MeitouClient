@@ -89,6 +89,8 @@ public sealed class NetClient : IClockAuthority, IDisposable
     public bool HasPresented { get; private set; }
     /// <summary>The host's clock as last received.</summary>
     public ClockState? Clock => clockState;
+    /// <summary>The newest snapshot the mirror assembled (before the jitter buffer); null before the first.</summary>
+    internal WorldSnapshot? LastAssembled { get; private set; }
     /// <summary>Where diagnostics go; null: nowhere.</summary>
     public Action<string>? Log { get; set; }
 
@@ -162,6 +164,7 @@ public sealed class NetClient : IClockAuthority, IDisposable
         {
             jitter.Add(assembled.Tick, now, assembled);
             lastSnapshotUs = now;
+            LastAssembled = assembled;
         }
         if (attached && session is { } replica && State == NetClientState.Playing)
         {
@@ -351,6 +354,7 @@ public sealed class NetClient : IClockAuthority, IDisposable
         events.Clear();
         HasPresented = false;
         presentedTick = double.NaN;
+        LastAssembled = null;
         teleportCache = null;
         attached = false;
         State = NetClientState.Joined;
