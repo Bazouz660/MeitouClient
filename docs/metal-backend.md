@@ -466,6 +466,12 @@ F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps 
 Still missing: the title/new-game/save/load/options flows, trade/dialogue/build/editor hosts, audio, the pointer
 sprite, the settings/free camera and the profiler chart.
 
+**Current priority: frame rate and bounded memory.** The clean Release window is ~30-32 fps at 0.50, while the macOS
+Vulkan reference is 36-40; Metal's GPU is already faster, so the gap is CPU/present and cache/native retention. The
+measurements, targets, two tracks and acceptance gates are in
+[metal-performance-memory](metal-performance-memory.md). Performance and memory come before the remaining UI and
+rendering features; `--render-scale` and `MEITOU_METAL_TRACE=1` remain the comparison tools.
+
 **What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
 host services the panels call:
 
@@ -516,10 +522,11 @@ Vulkan at default settings, the remaining scope is:
 6. **Parity and the default.** Window comparisons, tone/timing, resize/HDR, memory, then make `--renderer metal`
    the macOS default and remove the duplicate host.
 
-**Practical order:** shared interactive host + input + UI actions + audio; Meitou water; effects; post/GI; parity
-and default; performance cleanup last. If no-GI and faithful clouds/water are accepted as the macOS look, the GI
-and Meitou water/clouds items leave the target; the upscaler and timestamps are quality/performance work, not
-correctness blockers.
+**Practical order:** the [performance and memory plan](metal-performance-memory.md) runs first (same-window
+benchmark, present pacing, GPU culls/indirect, cache/native lifetime, memory soak); then the shared interactive host +
+input + UI actions + audio; Meitou water; effects; post/GI; parity and default. If no-GI and faithful clouds/water
+are accepted as the macOS look, the GI and Meitou water/clouds items leave the target; the upscaler and timestamps
+are quality/performance work, not correctness blockers.
 
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
