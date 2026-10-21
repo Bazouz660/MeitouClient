@@ -324,9 +324,10 @@ public sealed class NetHost : IClockAuthority, IDisposable
                     throw new NetFormatException($"clients do not send on {channel}");
             }
         }
-        catch (NetFormatException e)
+        catch (Exception e) when (e is not OutOfMemoryException)
         {
-            Log?.Invoke($"net: player {peer.Player} ({peer.Address}) sent bad data: {e.Message}");
+            // A reader refusal, or anything else a client's bytes set off (a codec or gate fault): that client goes, the host carries on.
+            Log?.Invoke($"net: player {peer.Player} ({peer.Address}) sent bad data: {e.GetType().Name}: {e.Message}");
             DropPeer(peer, RejectCode.ProtocolError, BadData, NoticeKind.Left);
         }
     }
@@ -447,6 +448,24 @@ public sealed class NetHost : IClockAuthority, IDisposable
         if (ending.ContainsKey(peer.Id)) return;
         ending[peer.Id] = (kind, detail ?? "");
         transport.Drop(peer.Id, Encode(new Reject(code, reason)));
+    }
+
+    /// <summary>Writes one message into the shared writer; false (logged) when the codec refuses it or it exceeds <see cref="NetLimits.MaxReliableMessage"/>.</summary>
+    bool TryWrite(Action<NetWriter> write, string what)
+    {
+        writer.Reset();
+        try
+        {
+            write(writer);
+        }
+        catch (ArgumentException e)
+        {
+            Log?.Invoke($"net: {what} not sent: {e.Message}");
+            return false;
+        }
+        if (writer.Length <= NetLimits.MaxReliableMessage) return true;
+        Log?.Invoke($"net: {what} of {writer.Length} bytes not sent");
+        return false;
     }
 
     static byte[] Encode(Reject reject)
@@ -639,8 +658,11 @@ public sealed class NetHost : IClockAuthority, IDisposable
         peer.ResetOwed = false;
         peer.SinceUs = now;
         var focus = HostWorldLink.FocusOf(world, peer.Player, session.Camera.Current.Target);
-        writer.Reset();
-        ProtocolCodec.Write(writer, new WorldReset(epoch, peer.Player, world.Seed, focus, MakeClock(world, busy, pendingChange), game.Rules, game.Weather()));
+        if (!float.IsFinite(focus.X) || !float.IsFinite(focus.Y) || !float.IsFinite(focus.Z)) focus = Vector3.Zero;   // the reader refuses a non-finite vector
+        var reset = new WorldReset(epoch, peer.Player, world.Seed, focus, MakeClock(world, busy, pendingChange), game.Rules, game.Weather());
+        // Weather the codec refuses (a non-finite number) must not keep the client out: the reset goes without it.
+        if (!TryWrite(w => ProtocolCodec.Write(w, reset), "WorldReset") && (reset.Weather is null || !TryWrite(w => ProtocolCodec.Write(w, reset with { Weather = null }), "WorldReset")))
+            return;
         transport.Send(peer.Id, NetChannel.Control, writer.Written);
     }
 
@@ -696,9 +718,7 @@ public sealed class NetHost : IClockAuthority, IDisposable
         if (weather is null || (!due && weather.Revision == weatherRevision)) return;
         weatherRevision = weather.Revision;
         lastWeatherUs = now;
-        writer.Reset();
-        ProtocolCodec.Write(writer, weather);
-        BroadcastControl();
+        if (TryWrite(w => ProtocolCodec.Write(w, weather), "Weather")) BroadcastControl();
     }
 
     void BroadcastControl()
@@ -729,15 +749,15 @@ public sealed class NetHost : IClockAuthority, IDisposable
         for (int start = 0; start < scratch.Count;)
         {
             int count = Math.Min(EventsPerMessage, scratch.Count - start);
+            bool written;
             while (true)
             {
-                writer.Reset();
-                EventCodec.Write(writer, new EventBatch(epoch, world.Tick, scratch.GetRange(start, count)));
-                if (writer.Length <= NetLimits.MaxReliableMessage || count == 1) break;
+                // A batch the codec refuses (an event it cannot carry) or one over the reliable limit is halved until the event at fault is alone.
+                written = TryWrite(w => EventCodec.Write(w, new EventBatch(epoch, world.Tick, scratch.GetRange(start, count))), "EventBatch");
+                if (written || count == 1) break;
                 count = Math.Max(1, count / 2);
             }
-            if (writer.Length <= NetLimits.MaxReliableMessage) transport.Send(peer.Id, NetChannel.Events, writer.Written);
-            else Log?.Invoke($"net: an event of {writer.Length} bytes was not sent");
+            if (written) transport.Send(peer.Id, NetChannel.Events, writer.Written);
             start += count;
         }
     }

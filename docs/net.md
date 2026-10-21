@@ -562,7 +562,7 @@ send rate 20 (paused 5), 256 KB/s per client, event radius 10 000, build mismatc
   `JoinPlayer(null, joinPoint)` is enqueued with the player's number (the paused path takes it too).
 - **Commands**: every `CommandBatch` is read (so its string definitions are kept), with `tick = world.Tick` and
   `allowDebug = Gate.Cheats`; a bad batch drops the peer (`ProtocolError`, `Bad data from the client.`), as does any message
-  that does not parse or is not a client's. Only a playing peer's batch of this epoch is applied: a token bucket of 200/s,
+  that does not parse or is not a client's, or anything else a client's bytes make throw (the host never crashes on client input). Only a playing peer's batch of this epoch is applied: a token bucket of 200/s,
   burst 400 (excess dropped, `Too many commands: some were dropped.` at most once a second), then `CommandGate.Admit`; an
   admitted command is enqueued with `Tick = world.Tick` and the sender's number, a refusal answers `CommandResult(seq,
   reason)` at most twice a second.
@@ -575,7 +575,7 @@ send rate 20 (paused 5), 256 KB/s per client, event radius 10 000, build mismatc
   `EndFrame` drains the tap's queues into the frame's batch, re-enqueues each item into its consumer, and restores the
   consumers on the current world and on the hooked one if a swap happened in between, so the host's own sound, blood and
   floater consumers get every event (**Verified**, `EventTapTests`). Per peer one or more `EventBatch(epoch, world.Tick)`
-  (≤ 256 events, halved until under `MaxReliableMessage`): a playing peer's spatial events passing `EventFilter.Wants`
+  (≤ 256 events, halved until the codec takes it and it is under `MaxReliableMessage`; a lone event that still fails is logged and dropped): a playing peer's spatial events passing `EventFilter.Wants`
   with its replicator's view and interest, plus its targeted events (`Send`, chat, notices, refusal texts); loading
   peers get the targeted ones. Ticks the host runs outside `Advance` are not tapped (engine choice).
 - **Snapshots**: per playing peer when due, `world.PublishFor(n)` → `ClientReplicator.Send` through a `PeerSink`; next due
@@ -589,7 +589,8 @@ send rate 20 (paused 5), 256 KB/s per client, event radius 10 000, build mismatc
   (`ClockAuthority = null`); `Dispose` = `Stop("The host ended the game.")` and disposes the transport.
 - **World swap** (`WorldReplaced`): epoch + 1; connected players take the new world's number for their GUID, else the next
   free one, and `Join` it; their replicators reset (`ClientReplicator.Reset(epoch, player)`, as the number may change);
-  `Loading`; a `WorldReset` is owed and sent at the next `EndFrame` (after the game set its clock). Away players keep their
+  `Loading`; a `WorldReset` is owed and sent at the next `EndFrame` (after the game set its clock). A non-finite focus becomes 0, and weather the codec refuses is left out of the
+  reset (and not resent alone): host data never keeps a client out or throws out of `EndFrame`. Away players keep their
   number only where the new world does not give it to someone else.
 - **Roster**: host first, then remote players by number (`Away` kept), with round trip, colour and owned squads; sent on
   change and every 2 s. `Players` adds link figures (`NetPeerStats`); `StatsLine()` is one line for the overlay.
