@@ -349,7 +349,9 @@ and adds them as cascade casters. Two backend facts this surfaced:
 seam gained `IGpuFrame.PreFrame` (Metal's frame list, recorded before its passes), `IGpuReadback` with
 `CreateReadback`/`FrameCompleted`, and `CopyTextureToBuffer`. Metal implements the bake's halving blit as a fullscreen
 sampling pass (Metal's blit cannot scale), copies the row into a shared readback buffer, and reports a frame completed
-when the drawable ring has turned. Two Metal fixes the bake surfaced:
+when the drawable ring has turned. **Temporarily disabled in the Metal host:** the bake now validates, but some atlases
+still draw as red/black bands or a gray full-screen card, so `GameHost.Metal` sets `Impostors = false` and draws the
+meshes instead. Re-enable when the atlas content is fixed. Two Metal fixes the bake surfaced:
 
 - **Argument buffers are padded to 16 bytes.** A one-member set was allocated 8 bytes and failed Metal's validation;
   the set size is rounded up.
@@ -454,8 +456,9 @@ the baseline, not one.
 
 **Drawing on Metal today:** the sky, weather and atmosphere; the terrain (heights, biomes, the streamer); the
 objects and buildings; the sun's shadows (terrain, objects, foliage and character casters); foliage meshes, grass
-and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
-billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
+and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the foliage meshes and grass (the
+impostor bakes and far billboards are disabled until their atlas is fixed); the scene's HDR target, the game's tone map,
+auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
 population and navmesh now run in the live loop); the world's lamps and room lights; the weather's and map placers'
 particles (full size for now; the low-resolution targets and the near-plane close pass are Vulkan-only); the HUD and the faithful panels
@@ -729,8 +732,9 @@ default.
   drawable sleeps 1 ms rather than spinning the main thread.
 - **Debug text scale.** The HUD scales with the screen; the fixed-pixel debug overlay (F11/F12) must be scaled by
   framebuffer/points (2 on the Retina test display), or it is half size.
-- **Far foliage.** The purple/red far trees are the impostor atlases (some assets are red, e.g.
-  `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. Not a Metal regression.
+- **Far foliage.** When impostors are re-enabled, the purple/red far trees are the impostor atlases (some assets are
+  red, e.g. `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. With the current
+  `Impostors = false` workaround the far trees are drawn as meshes.
 - **Population and navmesh.** The live Metal loop boots the simulation with `interactive: true`, loads the navmesh
   zones round the start and calls `UpdateNav` each frame. The Hub shows its wall guards and residents again; the
   background population costs frames, so measure the live window rather than the still's first-frames average.
