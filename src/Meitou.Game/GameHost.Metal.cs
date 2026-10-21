@@ -389,6 +389,8 @@ sealed partial class GameHost
                 nativeAt = now;
                 Console.WriteLine($"metal     native {display.NativeWindowState()}");
                 Console.WriteLine($"metal     resources {ctx.ResourceSummary()}");
+                Console.WriteLine($"metal     streaming terrain {streamer?.Pending ?? 0} ({(streamer is null || streamer.Idle ? "idle" : "busy")}), " +
+                    $"objects {objects?.Pending ?? 0}, foliage {foliage?.Pending ?? 0}");
             }
             var size = window.FramebufferSize;
             // The counter is the mean over the last quarter second, so one late frame does not read as a drop.

@@ -1,8 +1,9 @@
 # Metal performance and memory plan
 
 Status: **partially implemented** (2026-10-21): presentation diagnostics and vsync wiring, the map-tile/source memory
-releases and an idle LOH trim are in. The GPU cull/indirect port and the remaining frame-rate work are not. Read this
-with [metal-backend](metal-backend.md); the macOS Vulkan numbers are in [macos-port](macos-port.md) section 7.
+releases, an idle LOH trim, retired-texture lifetime and a three-cycle soak are in. The GPU cull/indirect port and the
+remaining frame-rate work are not. Read this with [metal-backend](metal-backend.md); the macOS Vulkan numbers are in
+[macos-port](macos-port.md) section 7.
 
 ## Baseline
 
@@ -43,12 +44,20 @@ commitment, not a proven single leak.
 - **Result:** over a 75 s Release run at the Hub, managed LOH fell from ~1.8 GB to **~0.67-0.69 GB**, managed heap to
   ~1.3-1.6 GB and RSS stayed ~0.9-1.7 GB without OOM or monotonic growth. The overview/map screenshot and the
   `MTL_DEBUG_LAYER=1` gate are clean.
+- **Soak:** Release, 1280x856, TAA 0.50, vsync; Hub -> four zones east (~18.4k units) -> Hub, three cycles, a
+  12 s settle at every endpoint. 260 s / 7,725 frames at 30 fps. GPU allocation **2.81-3.20 GB** (final 2.91), with
+  **0 retired views** at idle; LOH after the four trims was 805, 736, 656 and **584 MB**; managed heap 1.2-1.4 GB;
+  RSS 1.0-2.3 GB. No OOM or crash. A separate `MTL_DEBUG_LAYER=1` one-zone round trip also exited 0.
+- **Retired textures:** `MetalContext.ReleaseTexture` now retains the command buffer that was current at release and
+  disposes the views and parent only after the three-frame ring and that command have completed, at most 64 views a
+  frame. Before it: 890 retired views and ~4.5 GB GPU; after: 0 retired views and ~2.9 GB, stable across the soak.
 - **Also:** the large per-frame foliage/object/terrain matrix arrays are written directly into the frame constants
   (`IGpuFrame.AllocateConstants`) instead of being allocated and copied twice; the GLFW API lookup for edge scrolling
-  is cached.
+  is cached; the trace prints terrain/object/foliage streaming pending work.
 - **Gate:** build 0/0; tests 424/425 (the known arm64 `GoldenHashTests.Scripted_scenarios_hash_as_pinned` pin).
 - **Still open:** the same-window vsync >40 fps gate, GPU culls/indirect draws/grass, CPU culling/recording (foliage
-  ~4 ms and shadow recording ~2 ms per frame in the steady profile), and a multi-zone soak.
+  ~4 ms and shadow recording ~2 ms per frame in the steady profile), a longer 60 s-per-idle/multi-direction soak, and
+  the mip-bake `levelViews` / `DeferDelete` lifetime (`retiredViews` itself is now bounded).
 
 ## Targets
 
@@ -154,9 +163,9 @@ RSS alone is not enough: it includes native, GPU, driver and compressed pages th
 
 ### B2. Fix native Metal resource lifetime
 
-- `retiredViews` and `levelViews` currently live until context teardown. Drain them after the frame ring or a
-  command-buffer completion, when no recorded frame can reference them.
-- Dispose texture views and buffers when a texture is unloaded; do not only null the table slot.
+- `retiredViews` now drains after the frame ring and command completion (see the soak result above); `levelViews`
+  (mip-bake level views) still live until context teardown. `DeferDelete` is still immediate at
+  `MetalContext`; use the same completion rule if a caller starts deferring GPU objects there.
 - Trim `MetalFrame` constant chunks to the observed high-water and release unused chunks.
 - Use `MTLHeap`/purgeable resources for large transient targets if the driver keeps freed allocations; verify with
   `MTLDevice.CurrentAllocatedSize`, not RSS.
@@ -182,6 +191,7 @@ managed LOH, GPU allocation, resident textures and per-cache counts after each i
 - **RSS high with small managed heap:** native/GPU/driver retention; drain views/buffers and check Metal allocation.
 
 **Track B gate:** three-cycle soak plateaus, LOH after idle <1 GB, footprint <8 GB, no OOM, no monotonic growth.
+The 2026-10-21 run met the managed/GPU plateau with 12 s endpoint settles; the 60 s endpoint variant is still to run.
 
 ## Order
 
@@ -197,7 +207,8 @@ managed LOH, GPU allocation, resident textures and per-cache counts after each i
 
 - Commits on `metal-spike`: `658456a` (zoom/layer reattach), `137582b` (view cache, impostor CPU release,
   0.50 TAA upscaling), `3cf2151` (upstream pooled buffers).
-- `MetalContext.View` caches by texture and level/layer/swizzle; released views are retired until teardown.
+- `MetalContext.View` caches by texture and level/layer/swizzle; released views are retired after the command and
+  frame ring have passed, then their parent texture is freed.
 - `ImpostorTextures.DropCpu` keeps only metadata after the last upload; `PostTaa` uses a display-size history and a
   render-size motion target; Metal defaults to 0.50 with `--render-scale` overriding.
 - The remaining LOH is terrain source/resident texture data; the old view and impostor leaks are fixed.

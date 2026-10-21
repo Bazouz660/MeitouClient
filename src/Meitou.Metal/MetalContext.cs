@@ -154,6 +154,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
     static extern double Time_objc_msgSend(IntPtr receiver, IntPtr selector);
 
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_retain")]
+    static extern IntPtr Retain_objc_retain(IntPtr obj);
+
     static readonly Selector GpuStartTime = new("GPUStartTime");
     static readonly Selector GpuEndTime = new("GPUEndTime");
 
@@ -169,17 +172,20 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>Debug trace: resource-table and frame-chunk counts (a per-frame leak shows as a count that keeps rising).</summary>
     public string ResourceSummary()
     {
-        int tex = 0, liveViews = 0, liveBuffers = 0;
+        int tex = 0, liveViews = 0, liveBuffers = 0, retired = 0;
         foreach (var t in textures) if (t is not null) tex++;
         foreach (var v in views) if (v is not null) liveViews++;
         foreach (var b in buffers) if (b is not null) liveBuffers++;
+        foreach (var r in retiredTextures) retired += r.Views.Length;
         long chunkBytes = 0;
         int chunkCount = 0;
         foreach (var f in frames) { chunkBytes += f.ChunkBytes; chunkCount += f.ChunkCount; }
         var managed = GC.GetGCMemoryInfo();
         long loh = managed.GenerationInfo.Length > 3 ? managed.GenerationInfo[3].SizeAfterBytes : 0;
         long rss = Process.GetCurrentProcess().WorkingSet64;
-        return $"textures {tex}/{textures.Count} views {liveViews}/{views.Count} retiredViews {retiredViews.Count} buffers {liveBuffers}/{buffers.Count} " +
+        long oldest = retiredTextures.Count > 0 ? frameNumber - retiredTextures[0].Frame : 0;
+        return $"textures {tex}/{textures.Count} views {liveViews}/{views.Count} retiredViews {retired} retiredTextures {retiredTextures.Count} " +
+            $"oldest {oldest} buffers {liveBuffers}/{buffers.Count} " +
             $"sets {sets.Count} chunks {chunkCount} ({chunkBytes / 1048576} MB); managed {managed.HeapSizeBytes / 1048576} MB " +
             $"(LOH {loh / 1048576} MB), RSS {rss / 1048576} MB, GPU {Device.CurrentAllocatedSize / 1048576} MB";
     }
@@ -332,15 +338,59 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public void ReleaseTexture(GpuTexture texture)
     {
         var of = textures[texture.Index]!;
-        foreach (var view in of.Views)
+        var images = new MTLTexture[of.Views.Count];
+        for (int i = 0; i < images.Length; i++)
         {
-            views[view.ViewIndex] = null;
-            retiredViews.Add(view.Image);
+            views[of.Views[i].ViewIndex] = null;
+            images[i] = of.Views[i].Image;
         }
         of.Views.Clear();
         of.ViewCache.Clear();
-        of.Release();
         textures[texture.Index] = null;
+        // A texture view retains its parent. Releasing both at once while an earlier command buffer still names either can
+        // fault the driver; retain the command buffer that could name them and retire the texture once it completes.
+        if (slot < 0) ReleaseTextureNow(images, of);
+        else
+        {
+            var command = frames[slot].Command;
+            if (command.NativePtr != IntPtr.Zero &&
+                command.Status is not (MTLCommandBufferStatus.Completed or MTLCommandBufferStatus.Error))
+                Retain_objc_retain(command.NativePtr);
+            else
+                command = default;   // already complete (or forgotten by Finish): no command check is needed
+            retiredTextures.Add((frameNumber, command, images, of));
+        }
+    }
+
+    void ReleaseTextureNow(MTLTexture[] images, MetalTexture texture)
+    {
+        foreach (var image in images) image.Dispose();
+        texture.Release();
+    }
+
+    void ReleaseRetired(bool force = false)
+    {
+        if (retiredTextures.Count == 0) return;
+        int budget = force ? int.MaxValue : 64;
+        for (int i = 0; i < retiredTextures.Count && budget > 0;)
+        {
+            var retired = retiredTextures[i];
+            if (!force)
+            {
+                // Keep the views through the bindless table's own three-frame release (it still holds the view until its
+                // index is handed back), then release once the command buffer that recorded them has completed.
+                if (frameNumber - retired.Frame < FrameRingDepth) { i++; continue; }
+                if (retired.Command.NativePtr != IntPtr.Zero)
+                {
+                    var status = retired.Command.Status;
+                    if (status is not (MTLCommandBufferStatus.Completed or MTLCommandBufferStatus.Error)) { i++; continue; }
+                }
+            }
+            ReleaseTextureNow(retired.Views, retired.Texture);
+            if (retired.Command.NativePtr != IntPtr.Zero) retired.Command.Dispose();
+            retiredTextures.RemoveAt(i);
+            budget -= Math.Max(1, retired.Views.Length);
+        }
     }
 
     public GpuBuffer CreateBuffer(ulong size, BufferUse use, string name)
@@ -472,6 +522,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// </summary>
     public bool BeginFrame()
     {
+        // Free what the previous rings no longer name before asking for another drawable; a frame's worth at a time.
+        ReleaseRetired();
         if (!display.TryBeginFrame(out var command, out var drawable)) return false;
         if (slot >= 0) { double gpu = CompletedGpuMs(frames[slot]); if (gpu > 0) LastGpuMilliseconds = gpu; }
         var size = display.Window.FramebufferSize;
@@ -689,6 +741,11 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         var marker = Queue.CommandBuffer();
         marker.Commit();
         marker.WaitUntilCompleted();
+        // The frame buffers are complete and are not referenced again; a later release must not retain a stale pointer.
+        foreach (var frame in frames) frame.ForgetCommand();
+        // Do not force the queue here: Finish is also used for mid-run readbacks, and the bindless table may still hold
+        // an index for another ring. Dispose forces the remainder once no frame can run again.
+        ReleaseRetired();
     }
 
     /// <inheritdoc/>
@@ -737,7 +794,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     }
 
     readonly List<MTLTexture> levelViews = [];
-    readonly List<MTLTexture> retiredViews = [];
+    /// <summary>Released textures kept until the command that could name them has completed; see <see cref="ReleaseRetired"/>.</summary>
+    readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views, MetalTexture Texture)> retiredTextures = [];
 
     unsafe void BlitScaled(MTLCommandBuffer command, MTLTexture source, MTLTexture target, MTLPixelFormat format, int width, int height, TextureMinFilter filter)
     {
@@ -935,10 +993,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         foreach (var p in clearPipelines.Values) p.Dispose();
         clearPipelines.Clear();
         clearLibrary?.Dispose();
+        ReleaseRetired(force: true);
         foreach (var v in levelViews) v.Dispose();
         levelViews.Clear();
-        foreach (var v in retiredViews) v.Dispose();
-        retiredViews.Clear();
         bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();
         dummyTextures.Clear();

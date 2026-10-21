@@ -121,6 +121,10 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     internal void End() => Open = false;
 
+    /// <summary>The command buffer completed and the slot will be reused: drop the pointer so teardown releases do not retain
+    /// a command object the queue may already have freed.</summary>
+    internal void ForgetCommand() => Command = default;
+
     internal int ChunkCount => chunks.Count;
     internal long ChunkBytes
     {
