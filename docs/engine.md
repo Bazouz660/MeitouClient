@@ -139,9 +139,9 @@ host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Proto
 
 - **Frame order** (`GameHost.Interactive.cs`): `DoEvents → CoveredFrame → … → NetBeginFrame(frameDt) → if (!Covered)
   session.Advance → DuelHoldClock → WorldNews → NetEndFrame → HandleSaves → HandleNewGame → HandleMainMenu → StepSceneLoad`.
-  `NetBeginFrame` = `netHost.BeginFrame()` / `netClient.BeginFrame(dt)` (transport events, also while covered; the client's
-  presentation and clock); `NetEndFrame` = `netHost.EndFrame(Covered)` / `netClient.EndFrame()` and the client's frame step,
-  before a save or load can swap the world. Only `session.Advance` ticks the world.
+  `NetBeginFrame` = Steam's callbacks, then `netHost.BeginFrame()` / `netClient.BeginFrame(dt)` (transport events, also while
+  covered; the client's presentation and clock); `NetEndFrame` = `netHost.EndFrame(Covered)` / `netClient.EndFrame()`, the client's
+  frame step and the Steam step (`GameHost.Steam.cs`: rich presence, a Steam "Join game"), before a save or load can swap the world. Only `session.Advance` ticks the world.
 - **Identity**: the config's `PlayerId` (made and saved on first use), `SanitizeName(--name ?? PlayerName ?? user name)`, build
   `Tag (Commit)`, and the data set hashed once on a worker (`DataSetIdentity.Compute(LoadOrder.FromInstall)`), started by the
   first multiplayer request.
@@ -153,7 +153,7 @@ host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Proto
   (`SettingsMenu.HostRules`).
 
 - **Command line** (`GameOptions`): `--host [port]` (0 or none: the settings' port) hosts once a game runs, at once with
-  `--new-game`/`--load`; `--join <addr[:port]>` joins from the title after the boot's loading screen lifts; `--name` (this run
+  `--new-game`/`--load`; `--join <addr[:port]>` (or `steam:<steamid64>`, also `+meitou_join <id>`) joins from the title after the boot's loading screen lifts; `--name` (this run
   only), `--password`, `--config <file>` (another settings file, so a second instance has its own player id). Refused (exit 2,
   `NetProblem`): `--host` with `--join`; `--join` with `--new-game`, `--load`, `--list-starts`; either with `--sandbox`, `--duel`,
   `--no-population`, `--title-preview`, `--ui-showcase`, `--move-to` or `--screenshot`; a bad address or port; a name that is
@@ -166,10 +166,12 @@ host, join, cancel, stop hosting, leave; `LeaveGame(Quit)` ends the loop). Proto
 game or a save, runs the usual new-game or load flow; the hosting starts on the first frame the game is ready: uncovered, no
 scene load, a player faction and population, the new game's editor closed, not the duel or sandbox, a local session. A failed
 scene load forgets the request; asking to host the running game with none running is refused with a notice.
-- **Start**: `NetHost(session, LiteNetTransport, options, NetIdentity(), link, catalog)` with the window's port, players,
+- **Start**: `NetHost(session, transport, options, NetIdentity(), link, catalog)` with the window's port, players,
   password, clock policy (`ClientsControlTime` → `AnyPlayer`, else `HostOnly`) and the host's name; a port that cannot be bound
   logs and shows `Cannot host on port {port}: …` and the game stays single-player. Then the role, `player.Net`, the modal pause
-  (`EnterNet`), the settings saved to the config, `Hosting on UDP port {port}: up to {n} more players`.
+  (`EnterNet`), the settings saved to the config, `Hosting on UDP port {port}: up to {n} more players`. The transport is
+  `LiteNetTransport`, or with Steam running `CompositeServerTransport(LiteNetTransport, SteamNetTransport)`, and a second notice
+  says `Steam: friends can join you from their Multiplayer window` or why Steam is off ([net](net.md#steam-transport)).
 - **`IHostGame`**: `Gate` = cheats from the window and `Placeable` = `PlayerInterface.PlanPlaceable` (the placement rules against
   the sites, no characters or queued ghosts; walls and a host without build data pass; an unknown record fails); `Rules` = this
   game's simulation settings (`CurrentRules`); `Weather()` = revision, forced weather, day, hour and every region's state,
@@ -185,7 +187,8 @@ scene load forgets the request; asking to host the running game with none runnin
 
 ### Client
 
-`GameHost.Client.cs`. `JoinGame` → `NetClient(LiteNetTransport, NetIdentity(), catalog)` and `Connect`; connecting and the
+`GameHost.Client.cs`. `JoinGame` → `NetClient(LiteNetTransport, NetIdentity(), catalog)` (a `steam:<id>` host:
+`SteamNetTransport`; refused with a notice when Steam is off) and `Connect`; connecting and the
 handshake run behind the Multiplayer window (no scene load, so closing the window still cancels), with 60 s for the host's first
 `WorldReset` (`The host did not send its world.`). Engine choice against the contract's "connect"/"host" scene-load stages.
 - **Each `WorldReset`** (the join, then every host world swap) loads under the loading screen: "world" (`ReplaceWorld([],

@@ -3,13 +3,14 @@ using Meitou.Net.Events;
 using Meitou.Net.Replication;
 using Meitou.Net.Session;
 using Meitou.Net.Transport;
+using Meitou.Net.Transport.Steam;
 using Meitou.Simulation;
 
 namespace Meitou.Game;
 
 /// <summary>
 /// Host mode (docs/engine.md "Multiplayer", Host): the running game, a new game or a save opened to other players. A request waits until the game is
-/// ready to host (<see cref="HostReady"/>), then a <see cref="NetHost"/> on UDP takes the session's clock; stopping (or the main menu, or quitting)
+/// ready to host (<see cref="HostReady"/>), then a <see cref="NetHost"/> on UDP (and Steam when it runs) takes the session's clock; stopping (or the main menu, or quitting)
 /// drops every client and the game goes on single-player.
 /// </summary>
 sealed partial class GameHost
@@ -87,7 +88,9 @@ sealed partial class GameHost
             Port = settings.Port, MaxPlayers = settings.MaxPlayers, Password = settings.Password.Length == 0 ? null : settings.Password, HostName = identity.Name,
             ClockPolicy = settings.ClientsControlTime ? ClockPolicy.AnyPlayer : ClockPolicy.HostOnly,
         };
-        var host = new NetHost(session, new LiteNetTransport(), options, identity, new HostGameLink(this, settings), new ReplicaCatalog(db, animations, looks));
+        // UDP always; Steam beside it when it runs (one id space through the composite).
+        INetServerTransport transport = steam is { } s ? new CompositeServerTransport(new LiteNetTransport(), new SteamNetTransport(s)) : new LiteNetTransport();
+        var host = new NetHost(session, transport, options, identity, new HostGameLink(this, settings), new ReplicaCatalog(db, animations, looks));
         host.Log = line => Console.WriteLine($"net       {line}");
         try
         {
@@ -106,6 +109,11 @@ sealed partial class GameHost
         config.Save();
         Console.WriteLine($"net       hosting on UDP port {host.Rules.Port}: up to {host.Rules.MaxPlayers - 1} more players");
         player.Notice($"Hosting on UDP port {host.Rules.Port}: up to {host.Rules.MaxPlayers - 1} more players");
+        if (SteamHostingNotice() is { Length: > 0 } steamNotice)
+        {
+            Console.WriteLine($"net       {steamNotice}");
+            player.Notice(steamNotice, steam is null);
+        }
     }
 
     partial void StopHostingCore(string reason)

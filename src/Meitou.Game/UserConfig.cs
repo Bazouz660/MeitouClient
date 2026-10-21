@@ -110,6 +110,8 @@ sealed class UserConfig
     public bool HostClientsControlTime { get; set; } = true;
     /// <summary>Whether joined players may use the F10 debug menu in a hosted game.</summary>
     public bool HostAllowCheats { get; set; }
+    /// <summary>Hosting and joining through Steam as Kenshi (app 233860; docs/net.md "Steam transport"); false keeps Meitou off Steam (UDP only).</summary>
+    public bool Steam { get; set; } = true;
     /// <summary>The games joined, newest first, at most <see cref="MaxRecentGames"/>, unique by <see cref="RecentGame.Address"/> (ignoring case); see <see cref="RememberGame"/>.</summary>
     public List<RecentGame> RecentGames { get; set; } = [];
     public const int MaxRecentGames = 8;

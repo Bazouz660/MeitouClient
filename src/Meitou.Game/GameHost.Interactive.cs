@@ -343,6 +343,7 @@ sealed partial class GameHost
         int frames = 0, totalFrames = 0;
         bool quit = false;
         player.Config = config;
+        StartSteam();
         player.MultiplayerRequested += request => { if (OnMultiplayerRequest(request)) quit = true; };
         player.ScreenAction += e =>
         {

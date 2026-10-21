@@ -33,7 +33,7 @@ sealed class GameOptions
     public string? Load;
     /// <summary><c>--host [port]</c>: host the game once one runs; 0 is the port from the settings (docs/engine.md "Multiplayer").</summary>
     public int? Host;
-    /// <summary><c>--join</c>: the host's address (<see cref="JoinAddress"/>); <c>--name</c>, <c>--password</c> and <c>--config</c> (a second instance's settings file).</summary>
+    /// <summary><c>--join</c>: the host's address (<see cref="JoinAddress"/>, or <c>steam:&lt;id&gt;</c>); <c>--name</c>, <c>--password</c> and <c>--config</c> (a second instance's settings file).</summary>
     public string? Join, Name, Password, ConfigFile;
 
     public const string Usage = """
@@ -57,7 +57,7 @@ sealed class GameOptions
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
           --host [port]              share the game: hosts once a game runs (at once with --new-game / --load); port from meitou.user.json (40120)
-          --join <addr[:port]>       join a host's game from the title instead of starting one
+          --join <addr[:port]>       join a host's game from the title instead of starting one; steam:<steamid64> joins a Steam friend hosting
           --name <n>, --password <p> your player name for this run (default from meitou.user.json) and the host's password
           --config <file>            settings file instead of meitou.user.json (a second instance on one machine needs its own player id)
           --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
@@ -80,7 +80,8 @@ sealed class GameOptions
         if (Host is not null && Join is not null) return "--host and --join do not go together.";
         if (Join is not null)
         {
-            if (!JoinAddress.TryParse(Join, MultiplayerDefaults.Port, out _, out _)) return $"--join {Join}: not an address (host, host:port, [v6]:port).";
+            if (!Meitou.Net.Transport.Steam.SteamPresence.TryParseAddress(Join, out _) && !JoinAddress.TryParse(Join, MultiplayerDefaults.Port, out _, out _))
+                return $"--join {Join}: not an address (host, host:port, [v6]:port).";
             var drop = Clash(includeGameStart: true, screenshot);
             if (drop.Count > 0) return $"--join plays the host's game: drop {string.Join(", ", drop)}.";
         }
@@ -158,6 +159,8 @@ sealed class GameOptions
                         g.Host = int.TryParse(args[++i], NumberStyles.None, CultureInfo.InvariantCulture, out int hostPort) ? hostPort : -1;
                     break;
                 case "--join": g.Join = Next(); break;
+                // What Steam's "Join game" passes a game it launches (the host's rich presence "connect").
+                case Meitou.Net.Transport.Steam.SteamPresence.JoinCommand: g.Join = Meitou.Net.Transport.Steam.SteamPresence.AddressPrefix + Next(); break;
                 case "--name": g.Name = Next(); break;
                 case "--password": g.Password = Next(); break;
                 case "--config": g.ConfigFile = Next(); break;

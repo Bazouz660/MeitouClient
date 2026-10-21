@@ -1,5 +1,6 @@
 using Meitou.Net;
 using Meitou.Net.Session;
+using Meitou.Net.Transport.Steam;
 
 namespace Meitou.Game;
 
@@ -50,6 +51,17 @@ public interface IMultiplayerView
     void Ban(int player);
 }
 
+/// <summary>Steam as the Multiplayer window reads it (docs/meitou-ui.md "Title entry and Multiplayer window"): off with a reason, or the friends hosting.</summary>
+public interface ISteamDirectory
+{
+    /// <summary>Why Steam is off, for the friends list's caption; null when it is on.</summary>
+    string? Off { get; }
+    /// <summary>The friends hosting a Meitou game, as of the last <see cref="Refresh"/>.</summary>
+    IReadOnlyList<SteamHostEntry> Hosts { get; }
+    /// <summary>Reads the friends' rich presence again; <paramref name="request"/> asks Steam to fetch it first (the window just opened).</summary>
+    void Refresh(bool request);
+}
+
 /// <summary>What the host chose in the Multiplayer window; <paramref name="Password"/> "" is none.</summary>
 public sealed record HostSettings(int Port, int MaxPlayers, string Password, bool ClientsControlTime, bool AllowCheats);
 
@@ -57,6 +69,7 @@ public sealed record HostSettings(int Port, int MaxPlayers, string Password, boo
 public abstract record MultiplayerRequest;
 /// <summary>Host a new game from <paramref name="NewGameStart"/>, a save from <paramref name="SaveFolder"/>, or with both null the running game.</summary>
 public sealed record HostGame(HostSettings Settings, string? NewGameStart, string? SaveFolder) : MultiplayerRequest;
+/// <summary>Join <paramref name="Host"/>:<paramref name="Port"/> over UDP, or a Steam friend when <paramref name="Host"/> is <c>steam:&lt;id&gt;</c> (the port is then unused).</summary>
 public sealed record JoinGame(string Host, int Port, string Password) : MultiplayerRequest;
 /// <summary>Stop a join still connecting or loading.</summary>
 public sealed record CancelJoin() : MultiplayerRequest;

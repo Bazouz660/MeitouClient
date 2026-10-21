@@ -79,13 +79,15 @@ sealed class SessionHarness : IDisposable
     public PopulationSystem? Population { get; private init; }
     readonly ReplicaCatalog catalog;
 
-    public SessionHarness(WorldSession hostSession, GameDatabase database, NetHostOptions? options = null, int latencyMs = 10)
+    /// <param name="serverTransport">The host's transport made from the harness's network and clock (null: the loopback server).</param>
+    public SessionHarness(WorldSession hostSession, GameDatabase database, NetHostOptions? options = null, int latencyMs = 10,
+        Func<LoopbackNetwork, ManualNetClock, INetServerTransport>? serverTransport = null)
     {
         HostSession = hostSession;
         Database = database;
         Network = new LoopbackNetwork(new LoopbackOptions { LatencyMs = latencyMs }, Clock);
         catalog = new ReplicaCatalog(database, Animations, new NoLooks());
-        Host = new NetHost(hostSession, Network.Server(), options ?? new NetHostOptions(), Self, HostGame, catalog, Clock);
+        Host = new NetHost(hostSession, serverTransport?.Invoke(Network, Clock) ?? Network.Server(), options ?? new NetHostOptions(), Self, HostGame, catalog, Clock);
         Host.ClockChanged += (c, n) => HostClockChanges.Add((c, n));
         Host.Start();
     }
@@ -94,7 +96,8 @@ sealed class SessionHarness : IDisposable
     /// A SyntheticTown host: the population, player and movement systems, the host's start squad, the camera on it; publishing every tick.
     /// <paramref name="database"/> and <paramref name="towns"/> replace the synthetic town's records and placements.
     /// </summary>
-    public static SessionHarness SyntheticTownHost(NetHostOptions? options = null, GameDatabase? database = null, IEnumerable<TownPlacement>? towns = null)
+    public static SessionHarness SyntheticTownHost(NetHostOptions? options = null, GameDatabase? database = null, IEnumerable<TownPlacement>? towns = null,
+        Func<LoopbackNetwork, ManualNetClock, INetServerTransport>? serverTransport = null)
     {
         var db = database ?? SyntheticTown.Database();
         var data = towns is null ? SyntheticTown.Data(db) : PopulationData.Create(db, towns);
@@ -104,14 +107,17 @@ sealed class SessionHarness : IDisposable
             simulation: new WorldSettings { Seed = 4, PublishSnapshots = true }, systems: systems.Systems, walkability: walk);
         session.World.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = 0 });
         systems.Population!.StartPlayer(session.World, NewGameStart.From(db.Find("40-t")!));
-        return new SessionHarness(session, db, options) { Population = systems.Population };
+        return new SessionHarness(session, db, options, serverTransport: serverTransport) { Population = systems.Population };
     }
 
-    /// <summary>A guest that connects now; it joins over the next frames (its replica is built at the <c>WorldReset</c>, then Ready).</summary>
-    public Guest Connect(string name, Guid? id = null, string? password = null)
+    /// <summary>
+    /// A guest that connects now; it joins over the next frames (its replica is built at the <c>WorldReset</c>, then Ready). <paramref name="transport"/>
+    /// and <paramref name="host"/> replace the loopback client and its address.
+    /// </summary>
+    public Guest Connect(string name, Guid? id = null, string? password = null, INetClientTransport? transport = null, string host = "localhost")
     {
         var guestId = id ?? Guid.NewGuid();
-        var client = new NetClient(Network.Client(), Self with { PlayerId = guestId, Name = name }, catalog, Clock);
+        var client = new NetClient(transport ?? Network.Client(), Self with { PlayerId = guestId, Name = name }, catalog, Clock);
         var guest = new Guest { Client = client, Session = new WorldSession(Vector3.Zero, (-20000, -20000, 20000, 20000), SyntheticTown.Ground), Id = guestId };
         client.WorldReset += reset =>
         {
@@ -125,15 +131,15 @@ sealed class SessionHarness : IDisposable
         client.Message += (text, error) => (error ? guest.Errors : guest.Messages).Add(text);
         client.ClockChanged += (c, n) => guest.ClockChanges.Add((c, n));
         client.Notice += guest.Notices.Add;
-        client.Connect("localhost", NetProtocol.DefaultPort, password);
+        client.Connect(host, NetProtocol.DefaultPort, password);
         Guests.Add(guest);
         return guest;
     }
 
     /// <summary>Connects a guest and runs frames until it shows a snapshot of its own.</summary>
-    public Guest Join(string name, Guid? id = null, int maxFrames = 120)
+    public Guest Join(string name, Guid? id = null, int maxFrames = 120, INetClientTransport? transport = null, string host = "localhost")
     {
-        var guest = Connect(name, id);
+        var guest = Connect(name, id, transport: transport, host: host);
         RunUntil(() => guest.Client.HasPresented, maxFrames);
         return guest;
     }

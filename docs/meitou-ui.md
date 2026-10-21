@@ -97,9 +97,10 @@ sessions: [net](net.md), [simulation](simulation.md#multiplayer-host-authoritati
 - Settings (`meitou.user.json`, new keys, no version bump): `playerName`, `playerId` (made on first use; a second
   instance on one machine uses `--config <file>`), `hostPort` 40120, `hostMaxPlayers` 4 (2-8),
   `hostClientsControlTime` true, `hostAllowCheats` false, `recentGames` (address, host, last joined; newest first,
-  at most 8, unique by address ignoring case). Passwords are never stored.
+  at most 8, unique by address ignoring case), `steam` true (false keeps Meitou off Steam). Passwords are never stored.
 - Join address (`JoinAddress`): `host`, `host:port`, `[v6]`, `[v6]:port`, or a bare IPv6 address (host only); port
-  1-65535 in digits, default 40120.
+  1-65535 in digits, default 40120. `steam:<steamid64>` (`SteamPresence.TryParseAddress`) joins a Steam host
+  ([net](net.md#steam-transport)).
 
 ### Title entry and Multiplayer window
 
@@ -113,8 +114,12 @@ sessions: [net](net.md), [simulation](simulation.md#multiplayer-host-authoritati
     time, allow cheats, info panel. The button reads HOST. New game closes the window and opens the new-game panel; its
     Begin raises `HostGame(settings, startId, null)` (`BeginHostedNewGame`). A save raises `HostGame(settings, null,
     folder)`, behind a confirm when a game is running.
-  - Join: address (`JoinAddress`, default port 40120), password, recent games (selecting one fills the address). The button
-    reads JOIN and raises `JoinGame`; the window stays open with the phase as status ("Connecting to host:port... N s",
+  - Join: address (`JoinAddress`, default port 40120), password, recent games (selecting one fills the address), then
+    "Steam friends hosting" (`SteamFriendsList`: friend's persona name, players `present/max`, "(other version)" for another
+    protocol; selecting one fills the address with `steam:<id>`). `PlayerInterface.Steam` (`ISteamDirectory`, set by the game
+    host) is read again every 2 s while the Join tab shows, the first read asking Steam for the friends' rich presence; with
+    Steam off the caption says why and a `steam:` address fails with `Steam is off (...): join by address.`. The button
+    reads JOIN and raises `JoinGame`; the window stays open with the phase as status ("Connecting to host:port... N s" or the friend's name,
     "Joining...", "Loading the world...") and only Cancel works (`CancelJoin`). Esc while connecting is a Cancel. An ended
     session shows `EndText(...).Text` in red and re-enables the controls; once Playing the game goes first into
     `RecentGames`. A world load covers the screen and closes the window itself.

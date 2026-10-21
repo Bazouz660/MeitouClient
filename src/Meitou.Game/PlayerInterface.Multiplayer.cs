@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Meitou.Data.Ui;
 using Meitou.Net.Session;
+using Meitou.Net.Transport.Steam;
 using Meitou.Ui;
 
 namespace Meitou.Game;
@@ -9,7 +10,7 @@ namespace Meitou.Game;
 /// <summary>
 /// The Multiplayer window (docs/meitou-ui.md "Title entry and Multiplayer window"): a MyGUI layout parsed from <see cref="MultiplayerLayout"/> with installed skins and
 /// fonts only, shown in both UI modes. The Host tab starts a new game, loads a save or (from the Esc menu) opens the running game; the Join tab connects to
-/// <see cref="JoinAddress"/>. Both raise <see cref="MultiplayerRequested"/> and persist the player's choices in <see cref="Config"/>.
+/// <see cref="JoinAddress"/> or a Steam friend hosting (<see cref="Steam"/>). Both raise <see cref="MultiplayerRequested"/> and persist the player's choices in <see cref="Config"/>.
 /// </summary>
 sealed partial class PlayerInterface
 {
@@ -45,7 +46,9 @@ sealed partial class PlayerInterface
            <Widget type="TextBox" skin="Kenshi_GenericTextBoxFlat" position_real="0 0.12 0.2 0.1" name="lbJoinPassword"><Property key="Caption" value="Password"/></Widget>
            <Widget type="EditBox" skin="Kenshi_EditBox" position_real="0.21 0.12 0.55 0.1" name="JoinPasswordEditBox"><Property key="Password" value="true"/><Property key="MaxTextLength" value="32"/></Widget>
            <Widget type="TextBox" skin="Kenshi_GenericTextBoxFlat" position_real="0 0.25 0.4 0.08" name="lbRecent"><Property key="Caption" value="Recent games"/></Widget>
-           <Widget type="MultiListBox" skin="Kenshi_MultiListBox" position_real="0 0.34 1 0.66" name="RecentList"/>
+           <Widget type="MultiListBox" skin="Kenshi_MultiListBox" position_real="0 0.34 1 0.3" name="RecentList"/>
+           <Widget type="TextBox" skin="Kenshi_GenericTextBoxFlat" position_real="0 0.66 1 0.08" name="lbSteamFriends"/>
+           <Widget type="MultiListBox" skin="Kenshi_MultiListBox" position_real="0 0.75 1 0.25" name="SteamFriendsList"/>
           </Widget>
           <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.02 0.86 0.6 0.12" name="StatusText"><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left VCenter"/></Widget>
           <Widget type="Button" skin="Kenshi_Button1" position_real="0.64 0.88 0.17 0.09" name="ConnectButton"/>
@@ -72,6 +75,11 @@ sealed partial class PlayerInterface
     long mpJoinStarted;
     /// <summary>The settings chosen for a new game still to be started from the new-game panel (<see cref="BeginHostedNewGame"/>).</summary>
     HostSettings? hostIntent;
+    /// <summary>When the Steam friends list was last read (0: not since the window opened, so the next read asks Steam for their rich presence).</summary>
+    long mpSteamPolled;
+
+    /// <summary>Steam for the Join tab's friends list; set by the game host (null: a build without it, the list says Steam is off).</summary>
+    public ISteamDirectory? Steam { get; set; }
 
     void RegisterMultiplayerScreen() => faithfulScreens.Register("multiplayer", MyGuiReader.ParseLayout(MultiplayerLayout), modal: true, centreRoot: true);
 
@@ -95,6 +103,7 @@ sealed partial class PlayerInterface
         mpCheats = config?.HostAllowCheats ?? false;
         mpStatus = ("", false);
         mpJoining = null;
+        mpSteamPolled = 0;
         var recent = config?.RecentGames ?? [];
         mpTab = runningGame || recent.Count == 0 ? MpTab.Host : MpTab.Join;
         faithfulScreens.Open("multiplayer");
@@ -105,6 +114,7 @@ sealed partial class PlayerInterface
         faithfulScreens.SetText("multiplayer", "JoinPasswordEditBox", "");
         faithfulScreens.SetSelected("multiplayer", "GamesList", runningGame ? -1 : 0);
         faithfulScreens.SetSelected("multiplayer", "RecentList", -1);
+        faithfulScreens.SetSelected("multiplayer", "SteamFriendsList", -1);
         if (faithfulScreens.GetText("multiplayer", "NameEditBox").Length == 0) faithfulScreens.FocusBox("multiplayer", "NameEditBox");
         UpdateMenuPause();
     }
@@ -148,6 +158,13 @@ sealed partial class PlayerInterface
         b.Lists["RecentList"] = (Config?.RecentGames ?? []).Select(g => new UiListItem(g.Address, g.Address,
             [g.Address, g.Host, g.LastJoinedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)])).ToArray();
 
+        // Steam friends hosting: name and players; selecting one puts steam:<id> in the address box.
+        string? steamOff = Steam is null ? "not in this build" : Steam.Off;
+        b.Text["lbSteamFriends"] = steamOff is null ? "Steam friends hosting" : $"Steam friends hosting: Steam is off ({steamOff})";
+        b.Columns["SteamFriendsList"] = [new("Friend", 200, Fill: true), new("Players", 160)];
+        b.Lists["SteamFriendsList"] = (Steam?.Hosts ?? []).Select(h => new UiListItem(SteamPresence.Address(h.Id), h.Name,
+            [h.Name, h.Compatible ? $"{h.Present}/{h.Max}" : $"{h.Present}/{h.Max} (other version)"])).ToArray();
+
         b.Text["StatusText"] = mpStatus.Text;
         b.Properties["StatusText"] = new Dictionary<string, string> { ["TextColour"] = mpStatus.Error ? MultiplayerErrorInk : "0.93 0.9 0.8" };
     }
@@ -170,6 +187,7 @@ sealed partial class PlayerInterface
             case "CheatsTickBox": mpCheats = !mpCheats; break;
             case "GamesList" when e.Action == "select": mpGame = e.Text; break;
             case "RecentList" when e.Action == "select": faithfulScreens.SetText("multiplayer", "AddressEditBox", e.Text); break;
+            case "SteamFriendsList" when e.Action == "select": faithfulScreens.SetText("multiplayer", "AddressEditBox", e.Text); break;
             case "CancelButton":
                 if (ValidName(faithfulScreens.GetText("multiplayer", "NameEditBox")) is { } name && Config is { } config) { config.PlayerName = name; config.Save(); }
                 faithfulScreens.Close("multiplayer");
@@ -206,10 +224,16 @@ sealed partial class PlayerInterface
             }
             settings = new(port, mpMaxPlayers, faithfulScreens.GetText("multiplayer", "HostPasswordEditBox"), mpClientsTime, mpCheats);
         }
+        else if (SteamPresence.TryParseAddress(faithfulScreens.GetText("multiplayer", "AddressEditBox"), out ulong steamHost))
+        {
+            if ((Steam is null ? "not in this build" : Steam.Off) is { } off) { Fail($"Steam is off ({off}): join by address."); return; }
+            address = SteamPresence.Address(steamHost);
+            joinPassword = faithfulScreens.GetText("multiplayer", "JoinPasswordEditBox");
+        }
         else
         {
             if (!JoinAddress.TryParse(faithfulScreens.GetText("multiplayer", "AddressEditBox"), MultiplayerDefaults.Port, out address, out port))
-            { Fail($"Enter an address such as 192.168.1.20:{MultiplayerDefaults.Port}."); return; }
+            { Fail($"Enter an address such as 192.168.1.20:{MultiplayerDefaults.Port}, or choose a Steam friend."); return; }
             joinPassword = faithfulScreens.GetText("multiplayer", "JoinPasswordEditBox");
         }
         if (Config is { } config)
@@ -223,7 +247,7 @@ sealed partial class PlayerInterface
         {
             mpJoining = new(address, port, joinPassword);
             mpJoinStarted = Stopwatch.GetTimestamp();
-            mpStatus = ($"Connecting to {JoinText(mpJoining)}…", false);
+            mpStatus = ($"Connecting to {JoinName(mpJoining)}…", false);
             if (!Request(mpJoining)) { mpJoining = null; Fail("Multiplayer is not available in this build."); }
             return;
         }
@@ -248,8 +272,13 @@ sealed partial class PlayerInterface
         }
     }
 
-    /// <summary>"host:port" for a status line or a recent-games entry (an IPv6 host in brackets).</summary>
-    static string JoinText(JoinGame join) => join.Host.Contains(':') ? $"[{join.Host}]:{join.Port}" : $"{join.Host}:{join.Port}";
+    /// <summary>"host:port" for a status line or a recent-games entry (an IPv6 host in brackets); a Steam host as <c>steam:&lt;id&gt;</c>.</summary>
+    static string JoinText(JoinGame join) => SteamPresence.TryParseAddress(join.Host, out _) ? join.Host
+        : join.Host.Contains(':') ? $"[{join.Host}]:{join.Port}" : $"{join.Host}:{join.Port}";
+
+    /// <summary>The status line's name of a join: the Steam friend's name when the list knows it, else <see cref="JoinText"/>.</summary>
+    string JoinName(JoinGame join) => SteamPresence.TryParseAddress(join.Host, out ulong id) && Steam?.Hosts.FirstOrDefault(h => h.Id == id) is { Name.Length: > 0 } friend
+        ? friend.Name : JoinText(join);
 
     void CancelMultiplayerJoin()
     {
@@ -271,6 +300,13 @@ sealed partial class PlayerInterface
     void MultiplayerScreenFrame()
     {
         if (hostIntent is not null && !faithfulScreens.IsOpen("new-game")) hostIntent = null;
+        // The friends list follows their rich presence every 2 s while the Join tab shows.
+        if (Steam is { Off: null } steam && mpTab == MpTab.Join && faithfulScreens.IsOpen("multiplayer")
+            && (mpSteamPolled == 0 || Stopwatch.GetElapsedTime(mpSteamPolled).TotalSeconds >= 2))
+        {
+            steam.Refresh(request: mpSteamPolled == 0);
+            mpSteamPolled = Stopwatch.GetTimestamp();
+        }
         if (mpJoining is not { } join) return;
         var phase = Net?.Phase ?? NetPhase.Idle;
         if (phase == NetPhase.Playing)
@@ -296,7 +332,7 @@ sealed partial class PlayerInterface
                 mpStatus = (Net?.Ended is { } end ? EndText(end, reachedPlay: false).Text : "The connection failed.", true);
                 mpJoining = null;
                 break;
-            default: mpStatus = ($"Connecting to {JoinText(join)}… {seconds} s", false); break;
+            default: mpStatus = ($"Connecting to {JoinName(join)}… {seconds} s", false); break;
         }
     }
 }

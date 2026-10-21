@@ -44,6 +44,7 @@ sealed partial class GameHost
     /// <summary>Immediately before <c>session.Advance</c>: the transport's events (also while covered), the client's presentation and clock.</summary>
     void NetBeginFrame(double dt)
     {
+        steam?.RunCallbacks();
         netHost?.BeginFrame();
         netClient?.BeginFrame(dt);
     }
@@ -62,6 +63,7 @@ sealed partial class GameHost
         netClient?.EndFrame();
         HostFrameCore();
         ClientFrameCore();
+        SteamFrame();
     }
 
     /// <summary>
@@ -116,11 +118,12 @@ sealed partial class GameHost
         player.RefreshMenuPause();
     }
 
-    /// <summary>The application is closing: every client is told the host closed, or the host that this client left.</summary>
+    /// <summary>The application is closing: every client is told the host closed, or the host that this client left; Steam shuts down.</summary>
     void ShutdownNet()
     {
         if (role == NetRole.Host) StopHostingCore("The host closed the game.");
         else if (role == NetRole.Client) LeaveClientCore(new NetDisconnect(RejectCode.Left, NetClient.LeftText), quit: true);
+        StopSteam();
     }
 
     /// <summary>Back to single-player: the net objects are forgotten (the caller stopped or disposed them), the interface's view cleared.</summary>

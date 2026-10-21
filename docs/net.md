@@ -1,10 +1,11 @@
 # Multiplayer network layer
 
 `src/Meitou.Net` is the wire format and session code of host-authoritative co-op: one listen-server host, up to
-`NetProtocol.MaxPlayers` (8, host included) clients, UDP through LiteNetLib. Sessions, the command gate, per-viewer
+`NetProtocol.MaxPlayers` (8, host included) clients, UDP through LiteNetLib and, when Steam runs, Steam P2P. Sessions, the command gate, per-viewer
 publish and replica worlds are in [simulation](simulation.md) ("Multiplayer"); frame order and client boot in
 [engine](engine.md); windows and keys in [meitou-ui](meitou-ui.md). `Meitou.Net` references Core, Data, Simulation and
-Engine only, never Rendering, Audio, Ui or Game; only `Transport/LiteNetTransport.cs` touches LiteNetLib types.
+Engine only, never Rendering, Audio, Ui or Game; only `Transport/LiteNetTransport.cs` touches LiteNetLib types and only
+`Transport/Steam/SteamNative.cs` and `SteamCallbacks.cs` touch Steam's DLL.
 
 This is the engine's own protocol, not a Kenshi format. **Verified** below means a test in `tests/Meitou.Tests/Net/`
 pins it; everything else is the contract the codecs are written to. Traffic is unencrypted; a password is only an HMAC
@@ -218,8 +219,108 @@ times out one round trip later, and requests in flight to a disposed server one 
 (`LoopbackTransportTests`: accept and refusal with payloads, complete per-channel order under 30 % loss and jitter, sequencing never
 delivers an older packet, drops reach both sides once).
 
+**`CompositeServerTransport(params INetServerTransport[])`**: one host on several transports (UDP and Steam). Each inner connection gets
+the composite's own id (from 1, never reused); `Listen(port)` starts the first transport (its `SocketException` propagates, nothing else
+started), then the others; `Port` is the first one's; events are forwarded with the ids mapped. **Verified** (`SteamTransportTests`: a
+host on loopback and Steam takes a guest over each).
+
 **Clocks**: `INetClock.NowMicroseconds`; `StopwatchNetClock` (monotonic, 0 at construction), `ManualNetClock` (`NowMicroseconds` settable,
 `Advance(TimeSpan)`).
+
+## Steam transport
+
+`Transport/Steam/` (`Meitou.Net.Transport.Steam`): friends connect by Steam id, through Steam's NAT traversal and relays, with no port
+forwarding. The game runs on Steam as Kenshi (app 233860) by the user's decision; Valve's DLL is the one in the player's own Kenshi
+install, loaded at run time, never shipped or linked, and no Steamworks header is in the repo (`THIRD_PARTY_NOTICES.md`). Without Steam
+(not running, DLL missing, `"steam": false` in `meitou.user.json`, or not Windows: Kenshi ships only `steam_api64.dll`) everything is
+UDP as before.
+
+**Kenshi's `steam_api64.dll`** (**Verified**: its PE export table and the version strings in it and `kenshi_x64.exe`):
+- Steamworks of about SDK 1.37-1.41. Interface versions Kenshi requests, and Meitou requests exactly (each flat thunk calls through
+  the vtable of the version it was built for): `SteamClient017`, `SteamUser019`, `SteamFriends015`, `SteamNetworking005`,
+  `SteamUtils008` (Kenshi also asks for `SteamMatchMaking009`, `SteamMatchMakingServers002`, `SteamController003`).
+- No `ISteamNetworkingSockets`/`Messages`; the old P2P flat API (`SteamAPI_ISteamNetworking_SendP2PPacket`, `IsP2PPacketAvailable`,
+  `ReadP2PPacket`, `AcceptP2PSessionWithUser`, `CloseP2PSessionWithUser`, `GetP2PSessionState`, `AllowP2PPacketRelay`, ...);
+  `SteamAPI_Init`/`Shutdown`/`IsSteamRunning`/`RunCallbacks`/`RegisterCallback`/`UnregisterCallback`, `SteamInternal_CreateInterface`,
+  `SteamClient`, `SteamAPI_GetHSteamUser`/`Pipe`, `SteamAPI_ISteamClient_GetISteamUser`/`Friends`/`Networking`/`Utils`,
+  `SteamAPI_ISteamUser_GetSteamID`, `SteamAPI_ISteamUtils_GetAppID` and the `ISteamFriends` persona, friend, game-played and rich
+  presence functions (`RequestFriendRichPresence` included). No `Steam_BGetCallback`: callbacks need a C++ `CCallbackBase` object.
+- The install's `steam_appid.txt` holds 233860.
+
+**Start** (`SteamNative.TryStart(kenshiRoot, out reason)`, once per interactive run before the frame loop, `GameHost.Steam.cs`): sets
+`SteamAppId` and `SteamGameId` = 233860 in the process before loading the DLL (nothing is written into the install), loads it with
+`NativeLibrary`, resolves every export (a missing one is the reason), then `SteamAPI_IsSteamRunning`, `SteamAPI_Init`, the client from
+`SteamInternal_CreateInterface("SteamClient017")` (else `SteamClient()`), the four interfaces above, `AllowP2PPacketRelay(true)`, and
+registers callbacks 1202, 1203 and 337. Flat calls take the interface pointer first; a `CSteamID` argument and a returned id are a
+`uint64`, a C++ `bool` is a byte. `RunCallbacks` runs at the start of each frame and of each Steam transport poll; everything runs on
+the frame thread. `Dispose` (at exit) unregisters, clears the rich presence, closes sessions and calls `SteamAPI_Shutdown`; the DLL
+stays loaded. **Verified** against the running Steam client on Windows 11 (a throwaway console run, not a test): `SteamAPI_Init`
+succeeds as 233860 outside Steam, `GetAppID` gives 233860, the SteamID (universe 1, individual) and persona name read back, 46 friends
+enumerate with names, rich presence is set, read back through `GetFriendRichPresence` of the own id, and cleared. **Observed**:
+`SteamAPI_Init` loads `gameoverlayrenderer64.dll` into the process; whether the overlay draws over the Vulkan renderer is **Unknown**.
+
+**Callback shim** (`SteamCallbacks`): unmanaged objects laid out as MSVC x64 lays out `CCallbackBase`: vtable pointer (0),
+`m_nCallbackFlags` byte (8; `SteamAPI_RegisterCallback` sets bit 0 `k_ECallbackFlagsRegistered`, 2 is GameServer), `m_iCallback` int
+(12), then the payload size (16, ours). The vtable is `Run(void*)`, `Run(void*, bool, SteamAPICall_t)`, `GetCallbackSizeBytes()`; MSVC
+may order the two `Run` overloads either way, so both slots point at one `[UnmanagedCallersOnly]` handler that reads only `this` and the
+parameter. Objects and vtable live in native memory, freed after unregistering. **Verified** (throwaway run): registration sets the
+flag and `m_iCallback`, and 47 `FriendRichPresenceUpdate_t` (336) callbacks were dispatched through the shim after
+`RequestFriendRichPresence`. Payloads (pack 8; **Observed**, from Steamworks knowledge): `P2PSessionRequest_t` 1202 {`CSteamID`
+remote}, 8 bytes; `P2PSessionConnectFail_t` 1203 {`CSteamID`, `uint8` error}, 16; `GameRichPresenceJoinRequested_t` 337 {`CSteamID`
+friend, `char[256]` connect}, 264.
+
+**P2P rules used** (**Observed**, Steamworks documentation as remembered, not checked between two accounts): a receiver must call
+`AcceptP2PSessionWithUser` in the 1202 callback or the sender's packets are dropped; sending to a user opens the session for their
+replies; send types `Unreliable` 0, `UnreliableNoDelay` 1 (dropped when it cannot leave at once), `Reliable` 2 (ordered per channel,
+up to 1 MB), `ReliableWithBuffering` 3; unreliable packets up to about 1200 bytes; channels are ints. **Verified** (throwaway run, the
+account sending to its own id, which loops back without a 1202): the transport below connects, 40 reliable packets up to 65 536 bytes
+arrive whole and in order per channel, 50 snapshot packets of 1155 bytes pass, and a drop payload arrives. Between two accounts (NAT
+traversal, relay, the 1202 accept) it is **Unknown** until two players test it.
+
+**`SteamNetTransport(ISteamP2P, INetClock?)`** (both sides; the same event contract as `LiteNetTransport`, so `NetHost`/`NetClient` are
+unchanged). Every packet starts with a kind byte and the connection's u16 tag (little-endian), chosen at random (1-65535) by the
+connecting side; a packet whose tag is not the live connection's is ignored, so a reconnecting user's stale packets cannot reach the
+new connection.
+
+| Kind | Body | Send type, P2P channel |
+|---|---|---|
+| 1 Connect | connect data (`Magic + Version`) | Reliable, 1 |
+| 2 Accept | - | Reliable, 1 |
+| 3 Reject | refusal payload (at most `MaxDropPayload`) | Reliable, 1 |
+| 4 Disconnect | drop payload | Reliable, 1 |
+| 5 Ping / 6 Pong | u32 send time in ms (echoed) | UnreliableNoDelay, 0 |
+| 0x10 + n | data of `NetChannel` n; `Snapshots` first a u16 sequence | `Snapshots` UnreliableNoDelay, others Reliable; P2P channel n |
+
+- **Connect**: the host is `steam:<steamid64>` or the digits; the port is ignored; an unparsable host ends in `Dropped(Error)`. A connect
+  to a user already connecting or connected returns that id. No Accept within 15 s is `Timeout`, a 1203 before it `Error`.
+- **Server**: `Listen` only starts accepting (port ignored, `Port` 0); a 1202 is accepted only while listening (or from the user a
+  client connects to). A Connect asks `Request("steam:<id>", data)`: a refusal answers Reject, else Accept and `Connected` in the same
+  poll. The same tag again re-sends Accept; a new tag from a connected user drops the old connection (`Closed`) first.
+- **Liveness**: a Ping each second per open connection; RTT is a 1/8 moving average of answered pings; loss is the share of the last
+  16 pings at least 3 s old that were never answered. 15 s without any packet (or a 1203 after the accept) is `Timeout`.
+- **Order and limits**: control packets share P2P channel 1 with `Control`, so the Accept arrives before the host's Challenge; a
+  Disconnect can overtake data still in flight on other channels (lost, as the contract allows). A snapshot not newer than the newest
+  delivered (signed 16-bit difference) is dropped. `MaxUnreliablePayload` = 1150 (`MaxUnreliable`, 1155 on the wire); a reliable
+  payload over `MaxReliableMessage` throws on send and is ignored on receipt.
+- **Drop**/**Dispose** send Disconnect, then `CloseSession`, which `SteamNative` defers 3 s (cancelled by a send) so the parting packet
+  still leaves (engine choice: whether an immediate close discards queued packets is **Unknown**).
+- Only one Steam transport reads an `ISteamP2P` at a time (a game is host or client).
+
+**Verified** (`SteamTransportTests`, an in-memory `FakeSteam` with the session rules above): a listening host accepts the session in
+the request callback, sees `steam:<id>` and the connect payload, and a refusal reaches the client with its payload; a host not
+listening never accepts and the connect times out; an unparsable id fails; 90 reliable packets up to `MaxReliableMessage` over three
+channels arrive in order under 20 ms latency; snapshots pass up to 1150 bytes and one older than a delivered one is dropped; a drop
+payload arrives once, the dropping side gets `Closed` with no data, ids are not reused, and 15 s of silence times both sides out;
+pings keep a quiet link up for 30 s and measure an 80 ms round trip; a `NetHost` on loopback and Steam (composite) takes one guest
+over each and both reach `Playing` with their own and the host's characters.
+
+**Rich presence and joining** (`SteamPresence`, `GameHost.Steam.cs`): while hosting with Steam the host sets, every 2 s when changed,
+`meitou` = `host <NetProtocol.Version> <present>/<max>` (present: roster entries not away, host included), `status` = `Hosting Meitou
+co-op (<present>/<max>)` and `connect` = `+meitou_join <steamid64>` (what Steam's "Join game" hands the friend), and clears them when not
+hosting. The Multiplayer window lists friends (`k_EFriendFlagImmediate`) whose game is the same app and whose `meitou` parses as a host
+([meitou-ui](meitou-ui.md#title-entry-and-multiplayer-window)). Callback 337 with a connect string holding `+meitou_join <id>` starts
+`JoinGame("steam:<id>")` from the title (elsewhere a notice asks to return to the main menu). For a friend not running Meitou, Steam would
+start Kenshi itself with that string (**Unknown**, untested); `+meitou_join <id>` on Meitou's command line is read as `--join steam:<id>`.
 
 ## Snapshot core
 

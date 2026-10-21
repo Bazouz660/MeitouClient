@@ -18,7 +18,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
-- [net](net.md): multiplayer wire format, channels, limits, sessions (`Meitou.Net`)
+- [net](net.md): multiplayer wire format, channels, limits, sessions, UDP and Steam transports (`Meitou.Net`)
 - [render-clouds](render-clouds.md)
 - [render-distance-benchmark](render-distance-benchmark.md)
 - [render-foliage](render-foliage.md)

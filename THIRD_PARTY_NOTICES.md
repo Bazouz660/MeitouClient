@@ -3,6 +3,9 @@
 MeitouClient is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE)). Parts of it are derived
 from the following projects, whose licenses require these notices.
 
+No Steam (Steamworks) code or headers are distributed: the Steam transport loads the `steam_api64.dll` of the
+player's own Kenshi install at run time ([docs/net.md](docs/net.md#steam-transport)).
+
 ## OGRE
 
 `src/Meitou.Data/Ogre/` reads Ogre file formats following the structure of OGRE's serializers

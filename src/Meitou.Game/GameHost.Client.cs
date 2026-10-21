@@ -4,6 +4,7 @@ using Meitou.Engine;
 using Meitou.Net.Replication;
 using Meitou.Net.Session;
 using Meitou.Net.Transport;
+using Meitou.Net.Transport.Steam;
 using Meitou.Simulation;
 
 namespace Meitou.Game;
@@ -40,7 +41,20 @@ sealed partial class GameHost
             player.Notice("Cannot join now.", true);
             return;
         }
-        var client = new NetClient(new LiteNetTransport(), NetIdentity(), new ReplicaCatalog(db, animations, looks)) { Log = line => Console.WriteLine($"net       {line}") };
+        INetClientTransport transport;
+        string address;
+        if (SteamPresence.TryParseAddress(target.Host, out ulong steamHost))
+        {
+            if (steam is null) { player.Notice($"Steam is off ({steamOff}): cannot join a Steam friend.", true); return; }
+            transport = new SteamNetTransport(steam);
+            address = SteamPresence.Address(steamHost);
+        }
+        else
+        {
+            transport = new LiteNetTransport();
+            address = target.Host.Contains(':') ? $"[{target.Host}]:{target.Port}" : $"{target.Host}:{target.Port}";
+        }
+        var client = new NetClient(transport, NetIdentity(), new ReplicaCatalog(db, animations, looks)) { Log = line => Console.WriteLine($"net       {line}") };
         client.WorldReset += reset => clientReset = reset;
         client.Disconnected += end => clientEnded = end;
         client.Message += (text, error) =>
@@ -54,7 +68,6 @@ sealed partial class GameHost
             player.Notice(KnockoutText(name, k.Entry), !k.Entry.Success);
         };
         client.Weather += ApplyHostWeather;
-        string address = target.Host.Contains(':') ? $"[{target.Host}]:{target.Port}" : $"{target.Host}:{target.Port}";
         (clientReset, builtEpoch, clientEnded, presented, creationAsked, relationsShown, endedViewFrames) = (null, -1, null, null, -1, (-1, -1), 0);
         joinStarted = Stopwatch.GetTimestamp();
         EnterNet(client, address);

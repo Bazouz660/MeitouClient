@@ -157,7 +157,9 @@ static class Program
             {
                 StartSave = save, Splash = splash, LoadScene = () => WorldFrame.Load(install, world, db),
                 HostOnStart = game.Host is { } port ? new HostSettings(port > 0 ? port : config.HostPort, config.HostMaxPlayers, game.Password ?? "", config.HostClientsControlTime, config.HostAllowCheats) : null,
-                JoinOnStart = game.Join is { } join && JoinAddress.TryParse(join, config.HostPort, out var joinHost, out var joinPort) ? new JoinGame(joinHost, joinPort, game.Password ?? "") : null,
+                JoinOnStart = game.Join is not { } join ? null
+                    : Meitou.Net.Transport.Steam.SteamPresence.TryParseAddress(join, out ulong steamHost) ? new JoinGame(Meitou.Net.Transport.Steam.SteamPresence.Address(steamHost), 0, game.Password ?? "")
+                    : JoinAddress.TryParse(join, config.HostPort, out var joinHost, out var joinPort) ? new JoinGame(joinHost, joinPort, game.Password ?? "") : null,
                 NameOverride = game.Name?.Trim(),
             }.Run();
         using var scene = WorldFrame.Load(install, world, db);
