@@ -601,4 +601,52 @@ player `Away` and the GUID comes back as the same number.
 
 ## Client and jitter buffer
 
-Pending (package N12).
+`Session/Client/` (`Meitou.Net.Session`): `NetClient(transport, self, catalog, clock?)` runs on the caller's frame thread with no game
+types and owns the transport. States: `Idle → Connecting → Authenticating → Joined → Playing`, `Closed` at the end.
+
+- **Join**: `Connect(host, port, password)` sends `Magic + Version`. `Challenge`: a game that needs a password and none given
+  ends at once (`Password`, `This game needs a password.`); else `Hello(Version, Build, PlayerId, Name, Proof, Data,
+  AnimationHash)`. `Welcome` → `Joined` (number, `NetRules`, roster). Each `WorldReset` (the first is the join, later ones the
+  host's world swaps) sets epoch, number, session rules and clock, resets the mirror, jitter buffer and pending events,
+  detaches, returns to `Joined` and raises `WorldReset`; the game builds the replica, then `Attach(replica)` (a
+  `SessionMode.Replica` session; it becomes its `ClockAuthority`) and `Ready()` (`Ready(epoch)`, `Playing`).
+- **Receiving**: Snapshots and Views go to the `ClientMirror` (Views before the welcome, or any message that does not parse,
+  ends the connection: `ProtocolError`, `Bad data from the host.`). Control: `Roster`, `ClockState` (this epoch only; a change by
+  a player raises `ClockChanged` with the roster name), `Rules` (`RulesChanged`), `Weather`, `CommandResult` (`Message(reason,
+  true)`). Events: chat, notices, messages and knock-outs are raised at once whatever the epoch; spatial ones of this epoch
+  wait in `ClientEvents` (≤ 4096, oldest dropped) until the presented tick reaches the batch's tick or 1 s passed, then go
+  into the replica world's own `Sounds`/`BloodMarks`/`Floaters` queues (null: that consumer is off, dropped).
+- **Ending**: a drop with a `Reject` payload gives its code and reason; else a timeout before the connection opened or a
+  socket error is `Unreachable` (`Could not reach the host.`), any other drop `Timeout` (`Lost connection to the host.`).
+  `Disconnected` is raised; the replica's `ClockAuthority` is cleared. `Leave()` sends `Reject(Left)` and closes without
+  raising it. `Dispose` = `Leave` and the transport disposed.
+- **BeginFrame(realSeconds)**: `Poll`; the newest assembled snapshot goes into the jitter buffer; when attached and playing:
+  the jitter rate follows the clock, `Advance` gives the pair, the older snapshot loses teleported characters
+  (`JitterBuffer.Unteleport`, cached per pair), `session.Present(older, newer, alpha, motionAlpha)`, `HasPresented`; due
+  events are released and the clock followed.
+- **Clock follow**: the replica's `SimulationClock` gets `LastSpeed` (1 when not 1, 2 or 5), then 0 when the host is paused,
+  and `RequestedPause = HostBusy` (HUD, paused panel, audio). Game time: `H = AnchorHours + (presentedTick - AnchorTick) / 30 /
+  SecondsPerGameHour`; the clock advances when `0 <= d < 3600` game seconds behind, holds when less than 1 s ahead, else jumps
+  (`SetTime`); `World.GameHours` follows. Requests (`IClockAuthority`) go to the host as `ClockRequest`.
+- **EndFrame**: the replica's queued commands (`TakeDue(long.MaxValue)`) are sent while playing, else dropped: untagged
+  (local-only) and host-only types never, debug types only when `Rules.Cheats`; batches of ≤ 64 with consecutive sequence
+  numbers, halved when the codec refuses a batch (an unencodable single command is logged and skipped). A `ClientFrame` (acks,
+  `SetView`'s `ViewState`, resyncs) goes out when parts arrived since the last one, else every 100 ms.
+- **Chat**: `SendChat` cleans and clamps the line as the host does and sends `ChatRequest`; it comes back as `Chat`.
+- **Stats**: round trip and loss from the transport, payload bytes per second, playback delay, starvations, snapshot age.
+
+**`JitterBuffer`** (presentation clock in host ticks; constants are engine choices): snapshots keyed by tick (same tick
+replaces), at most 64. Rate `r` = 30 x `AchievedSpeed` (0 while paused or busy); `SetRate` with a new rate clears the arrival
+samples. Each `Advance(now, dt)`: live estimate `L` = max over the last 1 s of samples of `tick + (now - arrival) x r` (the
+newest tick when `r` is 0 or no sample); target `L - delay x r`; the point snaps to the target when off by more than
+`0.5 s x max(r, 30)`, else moves `dt x r x (1 + clamp(2 x (target - P) / r, -0.5, +0.1))` (paused: on to the newest tick, then
+holds); never beyond `newest + 0.1 s x r`. Pair: the last snapshot at or before P and the next, `Alpha = MotionAlpha` the
+fraction; past the newest: the last two, `Alpha` 1, `MotionAlpha = 1 + (P - Tn) / (Tn - Tn-1)` (≤ 2), one starvation per
+episode adding 0.02 s of delay (not within 1 s after a rate change: the delay in ticks is then built by slowing down); before
+the oldest: the oldest twice. Delay: starts at 0.1 s; target `clamp(1.25 / sendRate + J + 0.01, 0.05, 0.5)` where `J` is the
+peak arrival lateness `(L - tick) / r`, decaying with a 2 s time constant; it rises at once and falls at most 0.005 s per
+second. Snapshots before the pair are dropped. `Unteleport`: a character farther than `500 x ticks / 30 + 20` units from its
+older place is shown at its newer one. **Verified** (`JitterBufferTests`: steady 20 Hz stream with 30 ms travel plays
+smoothly 2-6 ticks behind with no starvation; 150 ms jitter grows the delay and then never starves; a 1 s loss extrapolates
+at most the cap, holds, counts once and recovers; a 3000-tick jump snaps; teleports; a pause plays out then holds without
+starving; a 5x speed change settles at 150 ticks/s without counted starvation).
