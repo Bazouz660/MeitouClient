@@ -145,6 +145,22 @@ public sealed unsafe class MetalDisplay : IDisposable
         ObjectiveC.objc_msgSend(app, "activateIgnoringOtherApps:", true);
     }
 
+    /// <summary>
+    /// Borderless full screen still leaves the macOS menu bar and the Dock above the window. Hide both while the game is
+    /// full screen (the window itself already covers the monitor's video mode); restore them for the windowed mode and on exit.
+    /// </summary>
+    public void SetFullScreenPresentation(bool fullScreen)
+    {
+        var app = ObjectiveC.IntPtr_objc_msgSend(ObjectiveC.objc_getClass("NSApplication"), "sharedApplication");
+        // NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar.
+        SetPresentationOptions(app, PresentationOptionsSelector.SelPtr, fullScreen ? 10UL : 0UL);
+    }
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    static extern void SetPresentationOptions(IntPtr receiver, IntPtr selector, ulong options);
+
+    static readonly Selector PresentationOptionsSelector = new("setPresentationOptions:");
+
     long noDrawableStamp;
 
     /// <summary>How long the last <see cref="TryBeginFrame"/> waited in <c>CAMetalLayer.nextDrawable</c> (ms). The trace

@@ -2,11 +2,14 @@
 // Metal exists on macOS only; the file is compiled only there (the csproj's MEITOU_METAL constant).
 #pragma warning disable CA1416
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Numerics;
 using Meitou.Data.Textures;
+using Meitou.Data.World;
 using Meitou.Engine;
+using Meitou.Engine.Input;
 using Meitou.Engine.Time;
 using Meitou.Metal;
 using Meitou.Rendering;
@@ -16,6 +19,7 @@ using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Ui;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
+using EngineKey = Meitou.Engine.Input.Key;
 using SilkKey = Silk.NET.Input.Key;
 
 namespace Meitou.Game;
@@ -51,18 +55,25 @@ sealed partial class GameHost
         Console.WriteLine($"metal     vsync {(display.VSync ? "on" : "off")}, frame cap {(fpsLimit > 0 ? $"{fpsLimit} fps" : "off")}");
         using var ctx = new MetalContext(display);
         var window = display.Window;
+        // The shared window setting: borderless full screen as the Vulkan path starts; --windowed keeps the window for one run.
+        bool fullScreen = config.FullScreen && !o.Windowed;
+        void ToggleFullScreen()
+        {
+            BorderlessFullScreen.Toggle(window);
+            display.SetFullScreenPresentation(BorderlessFullScreen.IsOn(window));
+        }
+        if (fullScreen) ToggleFullScreen();
+        else display.SetFullScreenPresentation(false);
         ctx.Samplers.MaxAnisotropy = o.Anisotropy;
-        // Same scale as the Vulkan path's TAA/upscaler setting: the scene is rendered smaller and TAA reconstructs it.
-        // The macOS Vulkan reference runs at 0.50 (36-40 fps on an M1 Pro); 0.83 is the Windows/Meitou default.
+        // Same scale as the Vulkan path's TAA/upscaler setting: the scene is rendered smaller and an upscaler reconstructs it.
+        // The Metal default is MetalFX Balanced at 0.50; Native at 1.00 is the fallback when MetalFX is unavailable.
         // MEITOU_METAL_NO_TAA is a diagnostic view: native size, no jitter and no temporal resolve.
-        bool noTaa = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TAA") is "1" or "true";
+        bool noTaaRequested = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TAA") is "1" or "true";
         // `--upscaler metalfx` is the command-line form; MEITOU_METALFX stays usable for launch scripts.
-        bool metalFxRequested = !noTaa && (o.Post.Upscale.Kind == UpscalerKind.MetalFx ||
+        bool metalFxRequested = !noTaaRequested && (o.Post.Upscale.Kind == UpscalerKind.MetalFx ||
             Environment.GetEnvironmentVariable("MEITOU_METALFX") is "1" or "true");
-        // MetalFX is a 2x-class upscaler here: keep its default at 0.50 rather than the generic 0.83.
-        ctx.RenderScale = noTaa ? 1f
-            : metalFxRequested && o.Post.Upscale.Scale is null ? 0.5f
-            : o.Post.Upscale.Explicit ? o.Post.Upscale.EffectiveScale : 0.5f;
+        bool noTaa = false;
+        bool spatial = false;
 
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
@@ -106,80 +117,136 @@ sealed partial class GameHost
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         var taa = new PostTaa(ctx);
-        if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
-        // MetalFX temporal upscaling is opt-in while it is being validated; without it the TAA path is unchanged.
+        // MetalFX temporal is the default; spatial covers the performance tier, where temporal at 2.5x/3x darkens.
         var metalFx = MetalFxUpscaler.TryCreate(ctx);
         var metalFxSpatial = MetalFxSpatialUpscaler.TryCreate(ctx);
-        bool spatial = Environment.GetEnvironmentVariable("MEITOU_METALFX_SPATIAL") is "1" or "true";
-        if (spatial && metalFxSpatial is null) spatial = false;
-        if (metalFxRequested && !spatial)
+        MetalUpscalerMode mode = config.MetalUpscaler;
+        float scale = Math.Clamp(config.MetalRenderScale, 0.33f, 1f);
+        if (noTaaRequested)
         {
-            if (metalFx is not null) taa.External = metalFx;
-            else Console.WriteLine("metal     MetalFX requested but unavailable; using TAA");
+            mode = MetalUpscalerMode.Native;
+            scale = 1f;
         }
-        if (spatial && metalFxSpatial is not null)
+        else if (Environment.GetEnvironmentVariable("MEITOU_METALFX_SPATIAL") is "1" or "true")
         {
-            noTaa = false;
-            taa.External = metalFxSpatial;
-            ctx.RenderScale = 0.4f;
+            mode = MetalUpscalerMode.Spatial;
+            scale = 0.4f;
         }
-        bool presetPanel = Environment.GetEnvironmentVariable("MEITOU_METAL_PRESETS") is "1" or "true";
-        int preset = noTaa ? 0
-            : spatial && metalFxSpatial is not null ? 3
-            : metalFxRequested && metalFx is not null ? (ctx.RenderScale >= 0.6f ? 1 : 2)
-            : 4;
+        else if (metalFxRequested)
+        {
+            mode = MetalUpscalerMode.Temporal;
+            // --upscaler metalfx without a scale means the balanced default; an explicit --render-scale wins.
+            scale = o.Post.Upscale.Scale is null ? 0.5f : o.Post.Upscale.EffectiveScale;
+        }
+        else if (o.Post.Upscale.Explicit)
+            scale = o.Post.Upscale.EffectiveScale;
+
+        if (mode == MetalUpscalerMode.Temporal && metalFx is null)
+        {
+            Console.WriteLine("metal     MetalFX temporal unavailable; using Native");
+            mode = MetalUpscalerMode.Native;
+            scale = 1f;
+        }
+        if (mode == MetalUpscalerMode.Spatial && metalFxSpatial is null)
+        {
+            Console.WriteLine("metal     MetalFX spatial unavailable; using " + (metalFx is null ? "Native" : "MetalFX temporal"));
+            mode = metalFx is null ? MetalUpscalerMode.Native : MetalUpscalerMode.Temporal;
+            scale = mode == MetalUpscalerMode.Native ? 1f : Math.Clamp(scale, 0.5f, 1f);
+        }
+        if (mode == MetalUpscalerMode.Temporal && scale < 0.5f && metalFxSpatial is not null)
+            mode = MetalUpscalerMode.Spatial;   // the temporal scaler's reliable range is 0.50 and up
+        if (mode == MetalUpscalerMode.Spatial && scale >= 0.5f && metalFx is not null)
+            mode = MetalUpscalerMode.Temporal;
+        scale = Math.Clamp(scale, 0.33f, 1f);
+        ctx.RenderScale = scale;
+
+        void ApplyMode(MetalUpscalerMode next)
+        {
+            mode = next;
+            noTaa = mode == MetalUpscalerMode.Native;
+            spatial = mode == MetalUpscalerMode.Spatial;
+            taa.External = mode switch
+            {
+                MetalUpscalerMode.Temporal => metalFx,
+                MetalUpscalerMode.Spatial => metalFxSpatial,
+                _ => null,
+            };
+            config.MetalUpscaler = mode;
+        }
+        ApplyMode(mode);
+        if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
+
+        int CurrentPresetIndex()
+        {
+            if (mode == MetalUpscalerMode.Native) return 0;
+            if (mode == MetalUpscalerMode.Taa) return 4;
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.67f) < 0.005f) return 1;
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.50f) < 0.005f) return 2;
+            if (mode == MetalUpscalerMode.Spatial && MathF.Abs(ctx.RenderScale - 0.40f) < 0.005f) return 3;
+            return 5;   // a custom scale/upscaler combination
+        }
+        void SetRenderScale(float value)
+        {
+            value = Math.Clamp(value, 0.33f, 1f);
+            ctx.RenderScale = value;
+            config.MetalRenderScale = value;
+            // Native means full size; moving the scale engages the MetalFX tier that supports it. TAA keeps its own scale.
+            if (mode == MetalUpscalerMode.Native && value < 1f)
+            {
+                if (value >= 0.5f && metalFx is not null) ApplyMode(MetalUpscalerMode.Temporal);
+                else if (metalFxSpatial is not null) ApplyMode(MetalUpscalerMode.Spatial);
+            }
+            else if (mode == MetalUpscalerMode.Temporal && value < 0.5f && metalFxSpatial is not null)
+                ApplyMode(MetalUpscalerMode.Spatial);
+            else if (mode == MetalUpscalerMode.Spatial && value >= 0.5f && metalFx is not null)
+                ApplyMode(MetalUpscalerMode.Temporal);
+        }
         void SetPreset(int index)
         {
-            if (index is 1 or 2 && metalFx is null)
+            MetalUpscalerMode next = index switch
+            {
+                0 => MetalUpscalerMode.Native,
+                1 or 2 => MetalUpscalerMode.Temporal,
+                3 => MetalUpscalerMode.Spatial,
+                4 => MetalUpscalerMode.Taa,
+                _ => mode,
+            };
+            float nextScale = index switch { 0 => 1f, 1 => 0.67f, 2 => 0.50f, 3 => 0.40f, 4 => 0.50f, _ => ctx.RenderScale };
+            SetRenderScaleForPreset(next, nextScale);
+        }
+        void SetRenderScaleForPreset(MetalUpscalerMode next, float nextScale)
+        {
+            if (next == MetalUpscalerMode.Temporal && metalFx is null)
             {
                 Console.WriteLine("metal     MetalFX temporal is unavailable on this device");
-                return;
+                next = MetalUpscalerMode.Native;
+                nextScale = 1f;
             }
-            if (index == 3 && metalFxSpatial is null)
+            if (next == MetalUpscalerMode.Spatial && metalFxSpatial is null)
             {
                 Console.WriteLine("metal     MetalFX spatial is unavailable on this device");
-                return;
+                next = metalFx is null ? MetalUpscalerMode.Native : MetalUpscalerMode.Temporal;
+                nextScale = next == MetalUpscalerMode.Native ? 1f : Math.Clamp(nextScale, 0.5f, 1f);
             }
-            switch (index)
-            {
-                case 0:
-                    noTaa = true;
-                    spatial = false;
-                    taa.External = null;
-                    ctx.RenderScale = 1f;
-                    break;
-                case 1:
-                    noTaa = false;
-                    spatial = false;
-                    taa.External = metalFx;
-                    ctx.RenderScale = 0.67f;
-                    break;
-                case 2:
-                    noTaa = false;
-                    spatial = false;
-                    taa.External = metalFx;
-                    ctx.RenderScale = 0.5f;
-                    break;
-                case 3:
-                    noTaa = false;
-                    spatial = true;
-                    taa.External = metalFxSpatial;
-                    ctx.RenderScale = 0.4f;
-                    break;
-                default:
-                    noTaa = false;
-                    spatial = false;
-                    taa.External = null;
-                    ctx.RenderScale = 0.5f;
-                    break;
-            }
-            preset = index;
+            ApplyMode(next);
+            ctx.RenderScale = Math.Clamp(nextScale, 0.33f, 1f);
+            config.MetalRenderScale = ctx.RenderScale;
         }
+        string UpscalerStatusText() => mode switch
+        {
+            MetalUpscalerMode.Native => "Native",
+            MetalUpscalerMode.Temporal => $"MetalFX temporal {ctx.RenderScale:0.00}",
+            MetalUpscalerMode.Spatial => $"MetalFX spatial {ctx.RenderScale:0.00}",
+            _ => $"TAA {ctx.RenderScale:0.00} (experimental)",
+        };
+        bool openSettingsForStill = Environment.GetEnvironmentVariable("MEITOU_METAL_SETTINGS") is "1" or "true";
+        Console.WriteLine($"metal     upscaler {mode.ToString().ToLowerInvariant()} at {ctx.RenderScale:0.00}");
         // The text/quad painter, shared by the HUD and the optional frame-stats lines. It is created even for a screenshot:
         // the game's HUD is part of the picture. MEITOU_METAL_OVERLAY=1 adds the stats lines to a still.
         var overlay = DebugOverlay.TryCreate(ctx);
         bool showFrameStats = o.Screenshot is null || Environment.GetEnvironmentVariable("MEITOU_METAL_OVERLAY") == "1";
         display.Activate();
+        if (BorderlessFullScreen.IsOn(window)) display.SetFullScreenPresentation(true);
         Splash?.Dispose();
 
         // The terrain: the whole-world heights, the quadtree's patch grid, and (unless textures are off) the biomes' layers and maps.
@@ -260,6 +327,8 @@ sealed partial class GameHost
         session.Camera.Place(new Vector2((float)(o.X ?? scene.Focus.X), (float)(o.Z ?? scene.Focus.Z)), (float)(o.Yaw ?? 30) * MathF.PI / 180,
             (float)(o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180,
             (float)(o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance));
+        // The saved key bindings feed the same settings dialog and camera/order input as Vulkan.
+        foreach (var problem in session.Bindings.Apply(config.Bindings)) Console.Error.WriteLine($"config    binding skipped: {problem}");
         // The game's new-game shortcut: the player's squad in the simulation, which the world draw list then shows.
         if (start is not null && population is not null)
         {
@@ -346,6 +415,158 @@ sealed partial class GameHost
             hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
         }
+        // The shared settings layout: Metal supplies the settings it can change live (window, upscaler, distances,
+        // shadows, sky and the composite); the Interface/Controls/Advanced/Audio pages are the game's own.
+        SettingsPanel? settingsValues = null;
+        SettingsMenu? settings = null;
+        if (overlay is not null && hud is not null)
+        {
+            settingsValues = CreateMetalSettings();
+            settings = new SettingsMenu(hud, settingsValues, session.Bindings, SaveSettings,
+                new Slider("Frame limit", 0, 360, () => fpsLimit, v => fpsLimit = (int)MathF.Round(v / 5) * 5, "0",
+                    Text: v => v <= 0 ? "Unlimited" : $"{v:0} fps"), config)
+            {
+                UpscalerStatus = UpscalerStatusText,
+                AttackSlotsChanged = slots => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.AttackSlots = slots; },
+                LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
+                DoorsCloseChanged = on => { foreach (var locks in session.World.Systems.OfType<Meitou.Simulation.Locks.LockSystem>()) locks.DoorsCloseBehind = on; },
+                OffscreenChanged = () =>
+                {
+                    foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
+                        (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild) = (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild);
+                },
+            };
+            // The saved graphics values are the same keys the Vulkan panel uses. The Metal display choices have their own
+            // config fields, and a command-line upscaler/scale stays explicit for this run.
+            var metalDisplayKeys = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "VSync", "Full screen", SettingsMenu.MetalPresetSlider, WorldFrame.UpscalerSliders[1],
+            };
+            foreach (var slider in settingsValues.Sliders)
+                if (!SessionSliders.Contains(slider.Label) && !metalDisplayKeys.Contains(slider.Label) &&
+                    config.Graphics.TryGetValue(slider.Label, out float value))
+                    slider.Set(Math.Clamp(value, slider.Min, slider.Max));
+            foreach (var toggle in settingsValues.Toggles)
+                if (config.Graphics.TryGetValue("Meitou: " + toggle.Label, out float value) && (value >= 0.5f) != toggle.Get())
+                    toggle.Set(value >= 0.5f);
+            if (openSettingsForStill) settings.Visible = true;
+        }
+        SettingsPanel CreateMetalSettings()
+        {
+            var sliders = new List<Slider>();
+            var toggles = new List<Toggle>();
+            // Display: the same labels the shared settings menu knows (VSync, Full screen, render scale and filtering), plus
+            // the Metal preset. The frame limit is added by SettingsMenu itself.
+            sliders.Add(new Slider("VSync", 0, 1, () => display.VSync ? 1 : 0, v => display.VSync = v >= 0.5f,
+                Text: v => v >= 0.5f ? "on" : "off (uncapped)"));
+            sliders.Add(new Slider("Full screen", 0, 1, () => BorderlessFullScreen.IsOn(window) ? 1 : 0,
+                v => { if (v >= 0.5f != BorderlessFullScreen.IsOn(window)) ToggleFullScreen(); },
+                Text: v => v >= 0.5f ? "borderless" : "window"));
+            sliders.Add(new Slider(SettingsMenu.MetalPresetSlider, 0, 5, () => CurrentPresetIndex(), v =>
+            {
+                int index = (int)MathF.Round(v);
+                if (index is >= 0 and <= 4) SetPreset(index);
+            }, "0"));
+            sliders.Add(new Slider(WorldFrame.UpscalerSliders[1], 0.33f, 1, () => ctx.RenderScale, SetRenderScale, "0.00",
+                Text: v => v.ToString("0.00", CultureInfo.InvariantCulture)));
+            sliders.Add(new Slider(WorldFrame.FilteringSlider, 0, 4, () => MathF.Log2(ctx.Samplers.MaxAnisotropy),
+                v => ctx.Samplers.MaxAnisotropy = 1 << (int)MathF.Round(v), "0",
+                Text: v => (1 << (int)MathF.Round(v)) + "x"));
+            sliders.Add(new Slider(WorldFrame.TextureQualitySlider, 0, TextureQuality.Maximum, () => TextureQuality.Level,
+                v => TextureQuality.Level = (int)MathF.Round(v), "0", Text: v => TextureQuality.Labels[Math.Clamp((int)MathF.Round(v), 0, TextureQuality.Maximum)]));
+
+            // World: the distances the Metal renderers actually read every frame.
+            if (objects is not null)
+            {
+                sliders.Add(new Slider("Object draw distance", 1000, 400000, () => objects.ObjectDistance, v => objects.ObjectDistance = v, "0", Logarithmic: true,
+                    Faithful: Enhancements.FaithfulObjectDistance, Meitou: Enhancements.MeitouObjectDistance));
+                if (objects.HasLandmarks)
+                    sliders.Add(new Slider("Landmark distance (Meitou)", 1000, 400000, () => objects.LandmarkDistance,
+                        v => objects.LandmarkDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
+                sliders.Add(new Slider("Distant towns (zones)", 0, ObjectRanges.MaxDistantTownRangeZones * 10,
+                    () => objects.DistantRange / Meitou.Data.World.WorldLayout.ZoneSize,
+                    v => objects.DistantRange = MathF.Round(v) * Meitou.Data.World.WorldLayout.ZoneSize, "0"));
+                sliders.Add(new Slider("Object LOD distance x", 0.25f, 4, () => 1 / objects.LodBias,
+                    v => objects.LodBias = 1 / v, "0.00", Logarithmic: true));
+            }
+            if (foliage is not null)
+            {
+                sliders.Add(new Slider("Foliage draw distance x", 0.25f, 80, () => foliage.RangeSetting,
+                    v => foliage.RangeSetting = v, "0.00", Logarithmic: true));
+                sliders.Add(new Slider("Grass draw distance x", 0.25f, 80, () => foliage.GrassRangeSetting,
+                    v => foliage.GrassRangeSetting = v, "0.00", Logarithmic: true));
+                sliders.Add(new Slider("Grass density x", 0.1f, 2, () => foliage.GrassDensitySetting,
+                    v => foliage.GrassDensitySetting = v, "0.00"));
+                sliders.Add(new Slider("Foliage LOD distance x (lod Meitou)", 0.25f, 8,
+                    () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
+                    v => foliage.LodTolerance = FoliageRenderer.DefaultLodTolerance / v, "0.00", Logarithmic: true));
+                toggles.Add(new Toggle("Foliage ranges", () => foliage.MeitouRange, v => foliage.MeitouRange = v));
+                toggles.Add(new Toggle("Far impostors", () => foliage.Impostors, v => foliage.Impostors = v));
+            }
+            sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => render.TerrainPixelError,
+                v => render.TerrainPixelError = v, "0.0", Logarithmic: true,
+                Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
+
+            // Lighting: the same shadow controls the Vulkan settings expose, and the sky switches the Metal sky reads.
+            const float shadowsOff = Meitou.Data.World.KenshiShadows.MinRange * 0.9f;
+            sliders.Add(new Slider("Shadow distance (game 1k-9k, 0 off)", shadowsOff, 200000,
+                () => shadow.Enabled ? shadow.Settings.Range : shadowsOff, v =>
+                {
+                    shadow.Enabled = v >= Meitou.Data.World.KenshiShadows.MinRange;
+                    if (shadow.Enabled) shadow.Settings = shadow.Settings with { Range = MathF.Round(v / 100) * 100 };
+                }, "0", Logarithmic: true, Text: v => shadow.Enabled ? v.ToString("0", CultureInfo.InvariantCulture) : "0 (off)",
+                Faithful: Meitou.Data.World.KenshiShadows.DefaultRange, Meitou: Enhancements.MeitouShadowRange));
+            sliders.Add(new Slider("Shadow map size (game quality 0-2)", 0, 2,
+                () => Array.IndexOf(Meitou.Data.World.KenshiShadows.QualitySizes, shadow.Settings.MapSize),
+                v => shadow.Settings = shadow.Settings with { MapSize = Meitou.Data.World.KenshiShadows.MapSize((int)MathF.Round(v)) }, "0",
+                Text: v => Meitou.Data.World.KenshiShadows.MapSize((int)MathF.Round(v)).ToString(CultureInfo.InvariantCulture) + "²"));
+            if (shadow.Meitou)
+            {
+                sliders.Add(new Slider("Shadow filter 0-2 (Meitou; 0 low-end)", 0, 2, () => shadow.FilterQuality,
+                    v => shadow.FilterQuality = (int)MathF.Round(v), "0"));
+                toggles.Add(new Toggle("Shadow cascade 5 (Meitou)", () => shadow.MeitouCascades >= 5,
+                    v => shadow.MeitouCascades = v ? 5 : 4));
+            }
+            sliders.Add(new Slider("Haze strength (1 = game)", 0, 3, () => sky.HazeStrength,
+                v => sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
+            sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => sky.PlanetshineStrength,
+                v => sky.PlanetshineStrength = MathF.Round(v), "0"));
+            toggles.Add(new Toggle("Cloud shadows", () => sky.CloudShadows, v => sky.CloudShadows = v));
+            toggles.Add(new Toggle("Night air", () => sky.NightAir, v => sky.NightAir = v));
+            toggles.Add(new Toggle("Planetshine", () => sky.Planetshine, v => sky.Planetshine = v));
+            toggles.Add(new Toggle("Night sky", () => sky.MeitouStars, v => sky.MeitouStars = v));
+            toggles.Add(new Toggle("Clouds", () => sky.LitClouds, v => sky.LitClouds = v));
+
+            // Water: the faithful water's clarity controls (the Metal path has no reflection pass yet).
+            if (water is not null)
+            {
+                sliders.Add(new Slider("Water clarity x (Meitou)", 0.25f, 8, () => water.Clarity,
+                    v => water.Clarity = v, "0.00", Logarithmic: true));
+                sliders.Add(new Slider("Far water clarity (Meitou)", 0, 1, () => water.FarClarity,
+                    v => water.FarClarity = v, "0.00", Text: v => v <= 0 ? "0 (true slant)" : v.ToString("0.00", CultureInfo.InvariantCulture)));
+                sliders.Add(new Slider("Water see-through distance (Meitou, game 4000)", 1000, 100000,
+                    () => water.ClearDistance, v => water.ClearDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
+            }
+
+            // Effects: the composite already supports the game's exposure/tone-map/grading path, even before the rest of
+            // the Vulkan post chain is ported.
+            sliders.Add(new Slider("Tone map (0 = game)", 0, 3, () => (int)o.Post.ToneMap,
+                v => o.Post.ToneMap = (ToneMapOperator)(int)MathF.Round(v), "0",
+                Text: v => (ToneMapOperator)(int)MathF.Round(v) switch
+                {
+                    ToneMapOperator.Shoulder => "shoulder",
+                    ToneMapOperator.Aces => "ACES",
+                    ToneMapOperator.Hybrid => "hybrid (clamp + ACES)",
+                    _ => "clamp (as the game)",
+                }));
+            sliders.Add(new Slider("Hybrid tone map: ACES share", 0, 1, () => o.Post.ToneMix,
+                v => o.Post.ToneMix = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider("Grading (0 = game)", 0, 1, () => o.Post.Grade ? 1 : 0,
+                v => o.Post.Grade = v >= 0.5f,
+                Text: v => v >= 0.5f ? $"saturation {PostOptions.Saturation:0.00}, contrast {PostOptions.Contrast:0.00}" : "off (as the game)"));
+            toggles.Add(new Toggle("Dithering", () => o.Post.Dither, v => o.Post.Dither = v));
+            return new SettingsPanel(overlay!, "Settings   (Tab hides this)", sliders, toggles, "Metal switches", [], null, null);
+        }
         // The real input path: the window's keys and pointer go to PlayerInterface first (its panels, builds and the world's
         // selection/order clicks), then to the session's bindings so the strategy camera pans, turns and zooms.
         using var input = Silk.NET.Input.InputWindowExtensions.CreateInput(window);
@@ -361,16 +582,23 @@ sealed partial class GameHost
             keyboard.KeyDown += (_, key, _) =>
             {
                 if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; if (hud is not null) hud.SlowModifier = true; }
-                if (key == SilkKey.Enter && Alt()) { BorderlessFullScreen.Toggle(window); return; }
-                if (key == SilkKey.F10) { presetPanel = !presetPanel; return; }
-                if (presetPanel)
+                if (key == SilkKey.Enter && Alt()) { ToggleFullScreen(); return; }
+                if (key == SilkKey.F10 && settings is not null) { settings.Visible = !settings.Visible; return; }
+                // The full settings dialog (Metal's F10 used to be a preset overlay; the preset now lives in Display).
+                if (settings?.Visible == true)
                 {
-                    if (key == SilkKey.Escape) { presetPanel = false; return; }
-                    if (key is SilkKey.Number1 or SilkKey.Number2 or SilkKey.Number3 or SilkKey.Number4 or SilkKey.Number5)
+                    if ((key == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(key)) is { } settingsKey)
                     {
-                        SetPreset((int)key - (int)SilkKey.Number1);
-                        return;
+                        if (settingsKey is EngineKey.F8 or EngineKey.PrintScreen) screenshotNow = true;
+                        else settings.KeyDown(settingsKey, shiftDown, Ctrl());
                     }
+                    return;
+                }
+                if (settings is not null && KeyMap.Map(key) is { } settingsToggle &&
+                    session.Bindings.Get(InputAction.ToggleSettings).Contains(Binding.Of(settingsToggle)))
+                {
+                    settings.Visible = !settings.Visible;
+                    return;
                 }
                 // F11 lists the frame; F12 is the small frame-rate line (the profiler chart waits for Metal timestamps).
                 if (key == SilkKey.F11) { statsVisible = !statsVisible; return; }
@@ -389,13 +617,18 @@ sealed partial class GameHost
                 if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = false; if (hud is not null) hud.SlowModifier = false; }
                 if (KeyMap.Map(key) is { } mapped) { session.Input.SetKey(mapped, false); hud?.BuildKeyUp(mapped); }
             };
-            keyboard.KeyChar += (_, value) => hud?.UiText(value);
+            keyboard.KeyChar += (_, value) =>
+            {
+                if (settings?.Visible == true) settings.TextInput(value);
+                else hud?.UiText(value);
+            };
         }
         foreach (var mouse in input.Mice)
         {
             mouse.MouseMove += (_, p) =>
             {
                 var at = Pixels(p);
+                if (settings?.Visible == true) { settings.MouseMove(at); lastMouse = p; return; }
                 hud?.MouseMove(at);
                 // The panels and their drags own the pointer: the camera must not also turn under them.
                 if (hud is { UiCapturesPointer: true }) { lastMouse = p; return; }
@@ -405,18 +638,22 @@ sealed partial class GameHost
             mouse.MouseDown += (_, button) =>
             {
                 if (KeyMap.Map(button) is not { } mapped) return;
+                var at = Pixels(mouse.Position);
+                if (settings?.Visible == true) { settings.MouseDown(at, mapped); return; }
                 // PlayerInterface sees every click: it takes the HUD's controls, selects, starts a drag box or gives a move order.
-                if (hud is not null && hud.MouseDown(mapped, Pixels(mouse.Position), shiftDown, Ctrl(), Alt())) return;
+                if (hud is not null && hud.MouseDown(mapped, at, shiftDown, Ctrl(), Alt())) return;
                 session.Input.SetMouseButton(mapped, true);
             };
             mouse.MouseUp += (_, button) =>
             {
+                if (settings?.Visible == true) { settings.MouseUp(); return; }
                 if (KeyMap.Map(button) is not { } mapped) return;
                 hud?.MouseUp(mapped, Pixels(mouse.Position), shiftDown);
                 session.Input.SetMouseButton(mapped, false);
             };
             mouse.Scroll += (_, wheel) =>
             {
+                if (settings?.Visible == true) { settings.Scroll(wheel.Y); return; }
                 var at = Pixels(mouse.Position);
                 // A panel's own scroll wins; over any HUD rectangle the wheel does not zoom the camera, as in the Vulkan host.
                 if (hud is not null && (hud.UiScroll(at, wheel.Y) || hud.ContainsUi(at))) return;
@@ -453,12 +690,12 @@ sealed partial class GameHost
             watchdog.Start();
         }
         var statsLines = new List<string>();
-        var presetLines = new List<string>();
         GpuTexture? sceneColour = null;
         double streamingIdleSince = 0, lastManagedTrim = double.NegativeInfinity;
         // Loading can take long enough for the terminal that started the game to take focus back: bring the game forward again
         // before the interactive loop (its title and FPS are watched there).
         display.Activate();
+        if (BorderlessFullScreen.IsOn(window)) display.SetFullScreenPresentation(true);
         while (!window.IsClosing)
         {
             window.DoEvents();
@@ -491,7 +728,8 @@ sealed partial class GameHost
                 fpsFrames = 0;
             }
             // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
-            session.Camera.Strategy.EdgePointer = hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
+            session.Camera.Strategy.EdgePointer = settings?.Visible == true || hud is { UiVisible: false } or { UiCapturesPointer: true }
+                ? null : WindowPointer.InWindow(window);
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
             SendFocus();
@@ -661,18 +899,9 @@ sealed partial class GameHost
                         (16 + overlay.LineHeight) * textScale, DebugOverlay.TextColour, textScale);
                     wrote = true;
                 }
-                if (presetPanel)
+                if (settings?.Visible == true)
                 {
-                    presetLines.Clear();
-                    presetLines.Add("1  Native (no TAA/MetalFX)");
-                    presetLines.Add($"2  MetalFX Quality 0.67{(metalFx is null ? " (unavailable)" : "")}");
-                    presetLines.Add($"3  MetalFX Balanced 0.50{(metalFx is null ? " (unavailable)" : "")}");
-                    presetLines.Add($"4  MetalFX Performance 0.40{(metalFxSpatial is null ? " (unavailable)" : "")} (spatial)");
-                    presetLines.Add("5  TAA 0.50 (experimental: ghosts)");
-                    presetLines.Add($"Current: {preset switch { 0 => "native", 1 => "MetalFX quality", 2 => "MetalFX balanced", 3 => "MetalFX performance (spatial)", _ => "TAA" }}");
-                    presetLines.Add($"Render: {ctx.SceneWidth}x{ctx.SceneHeight} -> {size.X}x{size.Y}");
-                    presetLines.Add("F10/Esc closes   1-5 applies");
-                    overlay.Panel(size.X, size.Y, "Metal display (F10)", presetLines, 8 * textScale, textScale);
+                    settings.Draw(size.X, size.Y);
                     wrote = true;
                 }
                 if (wrote) overlay.Flush(size.X, size.Y);
@@ -729,8 +958,33 @@ sealed partial class GameHost
             if (!display.VSync && fpsLimit > 0) Limit(clock, frameStart, 1.0 / fpsLimit);
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
+        void SaveSettings()
+        {
+            config.VSync = display.VSync;
+            config.FpsLimit = fpsLimit;
+            config.FullScreen = BorderlessFullScreen.IsOn(window);
+            config.MetalUpscaler = mode;
+            config.MetalRenderScale = ctx.RenderScale;
+            if (hud is not null) config.UiMode = hud.UiMode;
+            config.Bindings = session.Bindings.ToDictionary();
+            if (settingsValues is not null)
+            {
+                foreach (var slider in settingsValues.Sliders)
+                {
+                    // These have their own config fields; the rest use the same graphics keys as the Vulkan settings.
+                    if (SessionSliders.Contains(slider.Label) || slider.Label is SettingsMenu.MetalPresetSlider ||
+                        slider.Label == WorldFrame.UpscalerSliders[1]) continue;
+                    config.Graphics[slider.Label] = slider.Get();
+                }
+                foreach (var toggle in settingsValues.Toggles)
+                    config.Graphics["Meitou: " + toggle.Label] = toggle.Get() ? 1 : 0;
+            }
+            config.Save();
+        }
         // Let the queue finish before the renderers release views, buffers and bindless entries; a quit during a
         // streaming upload otherwise freed resources the GPU was still reading and could fault on the way out.
+        SaveSettings();
+        display.SetFullScreenPresentation(false);
         ctx.Finish();
         hud?.DisposeUi();
         overlay?.Dispose();

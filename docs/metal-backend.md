@@ -431,8 +431,8 @@ screenshot unchanged, and a Metal shot compared with the Vulkan one at the same 
 7. **Characters and skinning (medium).** The skinning buffers and the character draw list through the
    seam; the animation data already uses storage buffers.
 8. **UI (started).** The HUD, inventory, stats, overview/map and menu draw on Metal through the shared
-   `DebugOverlay`/`UiPainter`; the pointer/keyboard controls for those panels work. Title/save/new-game flows,
-   trade/dialogue/build/editor/settings and full camera/selection input remain.
+   `DebugOverlay`/`UiPainter`; the pointer/keyboard controls for those panels and the shared settings menu work.
+   Title/save/new-game flows, trade/dialogue/build/editor hosts and the free camera remain.
 9. **The physical sky (small).** `SkyRenderer`'s uniforms come from a Vulkan `GpuContext`; the
    atmosphere model (CPU) must become something both backends build their uniforms from.
 10. **The full game loop (broad, mechanical).** The Metal game path is a minimal frame (sky +
@@ -463,29 +463,32 @@ overview/map, menu), with portraits, item icons and the panels' own pointer/keyb
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
 move the strategy camera; edge scrolling, left click/box select, right-click move orders and the HUD keys work;
 F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
-Still missing: the title/new-game/save/load/options flows, trade/dialogue/build/editor hosts, audio, the pointer
-sprite, the settings/free camera and the profiler chart.
+The shared settings menu is now wired on Metal too (F10; Display, Graphics, Interface, Controls, Advanced and Audio),
+including the MetalFX preset and render scale, VSync, frame limit and borderless full screen, persisted in
+`meitou.user.json`. Still missing: the title/new-game/save/load flows, trade/dialogue/build/editor hosts, audio, the
+pointer sprite, the free camera and the profiler chart.
 
-**Current priority: frame rate and bounded memory.** The clean Release window is ~30-32 fps at 0.50, while the macOS
-Vulkan reference is 36-40; Metal's GPU is already faster, so the gap is CPU/present and cache/native retention. The
-measurements, targets, two tracks and acceptance gates are in
-[metal-performance-memory](metal-performance-memory.md). Performance and memory come before the remaining UI and
-rendering features; `--render-scale` and `MEITOU_METAL_TRACE=1` remain the comparison tools. The 2026-10-21 slice
-wired the real vsync setting and drawable trace, released the map-tile/source caches and added the idle LOH trim;
-the plan document records the before/after numbers and what remains.
+**Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
+headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
+game rather than moving the benchmark. The clean Release window remains ~30-32 fps at 0.50, while the macOS Vulkan
+reference is 36-40; Metal's GPU is already faster, so the remaining gap is CPU/present and cache/native retention.
+The measurements, targets and acceptance gates stay in [metal-performance-memory](metal-performance-memory.md);
+`--render-scale` and `MEITOU_METAL_TRACE=1` remain the comparison tools. The 2026-10-21 slice wired the real vsync
+setting and drawable trace, released the map-tile/source caches, added the idle LOH trim, fixed the frame
+autorelease pool and added the Metal settings/FX presets; the plan document records the numbers and what remains.
 
 **What we do next.** The HUD and the main faithful panels are in. The remaining UI work is the frontend and the
 host services the panels call:
 
-1. **Title, new game, save/load, options.** `PlayerInterface.ShowTitle`, the frontend layouts and their
-   `ScreenAction` callbacks need the Metal host's save/new-game/load path; the title logo/scene and the settings
-   panel are not wired yet.
+1. **Title, new game, save/load.** `PlayerInterface.ShowTitle`, the frontend layouts and their
+   `ScreenAction` callbacks need the Metal host's save/new-game/load path; the settings panel is wired (F10) and
+   persists its display/renderer choices.
 2. **Trade, dialogue, build, editor.** These need the simulation/host services `BootPlayer` supplies (trade
    commands, building/editor hosts, item icons already connected); `--ui-panel` can open their layouts once the
    state exists.
 3. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; the loop now also
-   feeds the camera, selection, box select, move orders, F8/F11/F12 and Alt+Enter. Still missing: tooltips over the
-   world, the pointer sprite, the free camera/settings panel and the frontend actions.
+   feeds the camera, selection, box select, move orders, F8/F11/F12, F10 settings and Alt+Enter. Still missing:
+   tooltips over the world, the pointer sprite, the free camera and the frontend actions.
 4. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
    sequence still needs the same loop here.
 5. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
@@ -509,8 +512,8 @@ Vulkan at default settings, the remaining scope is:
    callbacks, the new-world rebuild, trade/dialogue/build/editor hosts, audio/UI sounds, the loading screen,
    warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu and title render; still missing the
-   title/new-game/save/load/options actions, trade, dialogue, build, editor, settings, world tooltips, the pointer
-   sprite, full selection/orders input and a Metal `--ui-showcase`.
+   title/new-game/save/load actions, trade, dialogue, build, editor, world tooltips, the pointer sprite, full
+   selection/orders input and a Metal `--ui-showcase`.
 3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
    `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
    move marker, navmesh overlay, interior mask); post (SSAO, light shafts, `FogRate`, full TAA with character/grass
@@ -559,8 +562,8 @@ this order:
    a render-size RGBA16F motion target, two RGBA16F histories, the same 8-phase `Jitter` on the scene projection and the
    pass, `uBlend` 0.1 and a reset on the first frame/cut. The Metal host now renders the scene jittered and composites
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
-   spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA). It is opt-in and
-   not the default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
+   spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
+   settings choose it, balanced by default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
    sun-motion term, moving geometry's motion (grass/characters) and widening the rest of `PostProcess` (SSAO, particles,
    FXAA, heat haze, GI resolve).
 2. **Fog volumes and light shafts.** The **fog-volume data slice is done**: `FogVolumes` takes `IGpuContext`, the Metal
@@ -621,9 +624,9 @@ are drawn into the character renderer's atlas and the item icons come from the i
 `RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal) makes the runtime images (portraits,
 icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
 
-**What is not wired:** title/new-game/save/load/options, trade, dialogue, build, editor and the settings panel need
-their host callbacks and simulation state. The panel keys and pointer hover/clicks/scroll work; camera movement,
-selection, orders and the pointer sprite belong to the interactive loop.
+**What is not wired:** title/new-game/save/load, trade, dialogue, build and editor need their host callbacks and
+simulation state. The settings panel is wired; the panel keys and pointer hover/clicks/scroll work, and camera
+movement, selection, orders and the pointer sprite belong to the interactive loop.
 
 ### 6. The remaining effects
 
@@ -651,14 +654,15 @@ default.
   accept the no-GI look as the macOS baseline.
 - **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
   step 6.
-- **Upscaler**: TAA at render scale 0.5 is the Metal macOS default, but its motion reprojection ghosts when the
-  camera moves (known; fix pending). MetalFX temporal is available opt-in with `--upscaler metalfx` or
-  `MEITOU_METALFX=1`: it is reliable at 0.50 (and falls back to TAA below 0.50), but is slower than TAA and is not
-  the default. `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve). The Metal
-  host also has a small **F10 display-preset panel**: Native / MetalFX Quality 0.67 / MetalFX Balanced 0.50 /
-  MetalFX Performance 0.40 (spatial) / TAA 0.50, showing the internal → output size. The performance tier uses
-  MetalFX Spatial because temporal 2.5x/3x darkens on this device. `MEITOU_METAL_PRESETS=1` starts the panel open for
-  screenshots; `MEITOU_METALFX_SPATIAL=1` starts in the performance tier.
+- **Upscaler**: MetalFX Balanced at render scale 0.50 is the Metal default, with Native as the fallback when
+  MetalFX is unavailable; the choice is saved in `meitou.user.json`. TAA remains available for comparison but its
+  motion reprojection still ghosts when the camera moves (known; fix pending). The **F10 settings panel** exposes
+  Native 1.00 / MetalFX Quality 0.67 / MetalFX Balanced 0.50 / MetalFX Performance 0.40 (spatial) / TAA 0.50 and a
+  custom render scale, along with VSync, frame limit, borderless full screen and the live Metal graphics controls.
+  The performance tier uses MetalFX Spatial because temporal 2.5x/3x darkens on this device.
+  `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve);
+  `MEITOU_METALFX_SPATIAL=1` starts in the performance tier; `MEITOU_METAL_SETTINGS=1` opens the settings panel for
+  a still.
 
 ### Resume notes (facts already established)
 
@@ -710,9 +714,9 @@ default.
   background population costs frames, so measure the live window rather than the still's first-frames average.
 - **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
   portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
-  F7, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll), selection/box
-  select and right-click move orders. Title/new-game/save/load/options, trade, dialogue, build, editor and
-  settings host callbacks are still unset.
+  F7, F10 settings, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll),
+  selection/box select and right-click move orders. Title/new-game/save/load, trade, dialogue, build and editor host
+  callbacks are still unset; settings are wired.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
@@ -797,9 +801,10 @@ plumbing, profiling, docs) need no Vulkan run.
   translation; Metal's ray tracing is a different programming model. The engine already runs
   without GI where the device has no ray queries (macOS today), so a Metal path starts with GI
   off, like the Vulkan path on macOS.
-- **Upscaler**: MetalFX is implemented behind `IUpscaler` as an opt-in: `MetalFxUpscaler` is the temporal scaler at
-  0.50+, `MetalFxSpatialUpscaler` is the 0.40 performance tier; temporal below 0.50 falls back to TAA. The FSR path
-  stays for Vulkan.
+- **Upscaler**: MetalFX is the Metal default (balanced, 0.50) and is implemented behind `IUpscaler`:
+  `MetalFxUpscaler` is the temporal scaler at 0.50+, `MetalFxSpatialUpscaler` is the 0.40 performance tier; Native
+  is the fallback when MetalFX is unavailable, and temporal below 0.50 falls back to TAA. The FSR path stays for
+  Vulkan.
 
 ## Open questions
 
