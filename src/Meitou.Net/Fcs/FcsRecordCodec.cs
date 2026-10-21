@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Meitou.Data.Fcs;
 
 namespace Meitou.Net;
@@ -8,6 +9,8 @@ namespace Meitou.Net;
 /// The layout follows the record's own sections: type, id, name, string id, flags, byte size; the bool map (keys, then the values packed 8 to a byte,
 /// low bit first); floats, ints, vectors and quaternions; strings and filenames; references by category; instances with their states.
 /// Map keys and most values go through the string table, map order is kept, and a reader refuses duplicate keys and over-long maps.
+/// The writer enforces the reader's limits (counts, <see cref="NetLimits.MaxName"/> for names, keys and ids, <see cref="NetLimits.MaxString"/> for string
+/// values, null strings, non-finite floats, vectors and quaternions) with <see cref="ArgumentException"/>, so a reader never refuses what a writer produced.
 /// </summary>
 public static class FcsRecordCodec
 {
@@ -18,14 +21,14 @@ public static class FcsRecordCodec
     {
         w.WriteVarUInt((uint)record.Type);
         w.WriteVarInt(record.Id);
-        strings.Write(w, record.Name, intern: false);
-        strings.Write(w, record.StringId);
+        WriteString(w, strings, record.Name, NetLimits.MaxName, nameof(record.Name), intern: false);
+        WriteString(w, strings, record.StringId, NetLimits.MaxName, nameof(record.StringId));
         w.WriteVarUInt(record.Flags);
         w.WriteVarUInt(record.ByteSize);
 
         CheckCount(record.Bools.Count, nameof(record.Bools));
         w.WriteVarUInt((uint)record.Bools.Count);
-        foreach (var (key, _) in record.Bools) strings.Write(w, key);
+        foreach (var (key, _) in record.Bools) WriteString(w, strings, key, NetLimits.MaxName, "a bool key");
         byte packed = 0;
         int bit = 0;
         foreach (var (_, value) in record.Bools)
@@ -40,10 +43,10 @@ public static class FcsRecordCodec
         }
         if (bit != 0) w.WriteByte(packed);
 
-        WriteMap(w, strings, record.Floats, nameof(record.Floats), (output, _, v) => output.WriteSingle(v));
+        WriteMap(w, strings, record.Floats, nameof(record.Floats), (output, _, v) => output.WriteSingle(Finite(v)));
         WriteMap(w, strings, record.Ints, nameof(record.Ints), (output, _, v) => output.WriteVarInt(v));
-        WriteMap(w, strings, record.Vector3s, nameof(record.Vector3s), (output, _, v) => CommonCodec.WriteVector3(output, v));
-        WriteMap(w, strings, record.Vector4s, nameof(record.Vector4s), (output, _, v) => CommonCodec.WriteVector4(output, v));
+        WriteMap(w, strings, record.Vector3s, nameof(record.Vector3s), (output, _, v) => CommonCodec.WriteVector3(output, Finite(v)));
+        WriteMap(w, strings, record.Vector4s, nameof(record.Vector4s), (output, _, v) => CommonCodec.WriteVector4(output, Finite(v)));
         WriteMap(w, strings, record.Strings, nameof(record.Strings), WriteText);
         WriteMap(w, strings, record.Filenames, nameof(record.Filenames), WriteText);
 
@@ -51,12 +54,12 @@ public static class FcsRecordCodec
         w.WriteVarUInt((uint)record.References.Count);
         foreach (var (category, references) in record.References)
         {
-            strings.Write(w, category);
+            WriteString(w, strings, category, NetLimits.MaxName, "a reference category");
             if (references.Count > NetLimits.MaxListItems) throw new ArgumentException($"A reference list of {references.Count} exceeds the limit of {NetLimits.MaxListItems}.", nameof(record));
             w.WriteVarUInt((uint)references.Count);
             foreach (var reference in references)
             {
-                strings.Write(w, reference.TargetStringId);
+                WriteString(w, strings, reference.TargetStringId, NetLimits.MaxName, "a reference target");
                 w.WriteVarInt(reference.Value0);
                 w.WriteVarInt(reference.Value1);
                 w.WriteVarInt(reference.Value2);
@@ -67,13 +70,13 @@ public static class FcsRecordCodec
         w.WriteVarUInt((uint)record.Instances.Count);
         foreach (var instance in record.Instances)
         {
-            strings.Write(w, instance.Id);
-            strings.Write(w, instance.Target);
-            CommonCodec.WriteVector3(w, instance.Position);
-            CommonCodec.WriteQuaternion(w, instance.Rotation);
+            WriteString(w, strings, instance.Id, NetLimits.MaxName, "an instance id");
+            WriteString(w, strings, instance.Target, NetLimits.MaxName, "an instance target");
+            CommonCodec.WriteVector3(w, Finite(instance.Position));
+            CommonCodec.WriteQuaternion(w, Finite(instance.Rotation));
             if (instance.States.Count > NetLimits.MaxListItems) throw new ArgumentException($"{instance.States.Count} states exceed the limit of {NetLimits.MaxListItems}.", nameof(record));
             w.WriteVarUInt((uint)instance.States.Count);
-            foreach (var state in instance.States) strings.Write(w, state);
+            foreach (var state in instance.States) WriteString(w, strings, state, NetLimits.MaxName, "an instance state");
         }
     }
 
@@ -141,7 +144,7 @@ public static class FcsRecordCodec
         w.WriteVarUInt((uint)map.Count);
         foreach (var (key, value) in map)
         {
-            strings.Write(w, key);
+            WriteString(w, strings, key, NetLimits.MaxName, $"a key of {name}");
             write(w, strings, value);
         }
     }
@@ -156,7 +159,25 @@ public static class FcsRecordCodec
         }
     }
 
-    static void WriteText(NetWriter w, StringTableWriter strings, string value) => strings.Write(w, value, value.Length <= MaxInternedLength);
+    static void WriteText(NetWriter w, StringTableWriter strings, string value) =>
+        WriteString(w, strings, value, NetLimits.MaxString, "a string value", value?.Length <= MaxInternedLength);
+
+    /// <summary>Writes <paramref name="value"/> through the table when it is non-null and at most <paramref name="maxBytes"/> UTF-8 bytes; else <see cref="ArgumentException"/>.</summary>
+    static void WriteString(NetWriter w, StringTableWriter strings, string? value, int maxBytes, string what, bool intern = true)
+    {
+        if (value is null) throw new ArgumentException($"{what} is null.");
+        if (value.Length > maxBytes || (value.Length * 3L > maxBytes && Encoding.UTF8.GetByteCount(value) > maxBytes))
+            throw new ArgumentException($"{what} exceeds the limit of {maxBytes} bytes.");
+        strings.Write(w, value, intern);
+    }
+
+    static float Finite(float v) => float.IsFinite(v) ? v : throw new ArgumentException("A record float is not finite.");
+
+    static Vector3 Finite(Vector3 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z) ? v : throw new ArgumentException("A record vector is not finite.");
+
+    static Vector4 Finite(Vector4 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z) && float.IsFinite(v.W) ? v : throw new ArgumentException("A record vector is not finite.");
+
+    static Quaternion Finite(Quaternion q) => float.IsFinite(q.X) && float.IsFinite(q.Y) && float.IsFinite(q.Z) && float.IsFinite(q.W) ? q : throw new ArgumentException("A record quaternion is not finite.");
 
     static string ReadText(ref NetReader r, StringTableReader strings) => Text(strings.Read(ref r, NetLimits.MaxString));
 

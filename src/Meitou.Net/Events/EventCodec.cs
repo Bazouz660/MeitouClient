@@ -9,7 +9,7 @@ namespace Meitou.Net.Events;
 
 /// <summary>
 /// <see cref="EventBatch"/> as the <see cref="MessageType.EventBatch"/> message on the Events channel (docs/net.md, "Events"). Writing clamps what the
-/// reader would refuse: texts are cut to their byte limit on a character boundary, non-finite numbers become 0 and a batch is cut to <see cref="MaxEvents"/> events.
+/// reader would refuse: texts are cut to their byte limit on a character boundary, non-finite numbers become 0, an undefined enum value throws <see cref="ArgumentException"/> and a batch is cut to <see cref="MaxEvents"/> events.
 /// </summary>
 public static class EventCodec
 {
@@ -47,7 +47,7 @@ public static class EventCodec
         {
             case SoundNet { Sound: var s }:
                 w.WriteByte(KindSound);
-                w.WriteEnum(s.Kind);
+                WriteKind(w, s.Kind);
                 CommonCodec.WriteId(w, s.Subject);
                 CommonCodec.WriteId(w, s.Other);
                 WritePosition(w, s.Position);
@@ -56,7 +56,7 @@ public static class EventCodec
                 break;
             case BloodNet { Mark: var m }:
                 w.WriteByte(KindBlood);
-                w.WriteEnum(m.Kind);
+                WriteKind(w, m.Kind);
                 CommonCodec.WriteId(w, m.Who);
                 WritePosition(w, m.Position);
                 WriteHalf(w, m.Direction.X);
@@ -70,7 +70,7 @@ public static class EventCodec
                 break;
             case FloaterNet { Floater: var f }:
                 w.WriteByte(KindFloater);
-                w.WriteEnum(f.Kind);
+                WriteKind(w, f.Kind);
                 CommonCodec.WriteId(w, f.Target);
                 WritePosition(w, f.Position);
                 w.WriteByte((byte)((f.TargetIsPlayer ? 1 : 0) | (f.SourceIsPlayer ? 2 : 0)));
@@ -105,7 +105,7 @@ public static class EventCodec
                 break;
             case NoticeNet n:
                 w.WriteByte(KindNotice);
-                w.WriteEnum(n.Kind);
+                WriteKind(w, n.Kind);
                 w.WriteVarInt(n.Player);
                 WriteText(w, n.Name, NetLimits.MaxName);
                 WriteText(w, n.Detail, NetLimits.MaxMessageText);
@@ -190,6 +190,13 @@ public static class EventCodec
 
     static Vector3 ReadPosition(ref NetReader r) =>
         new(Quant.FromQ64(r.ReadVarInt32()), Quant.FromQ64(r.ReadVarInt32()), Quant.FromQ64(r.ReadVarInt32()));
+
+    /// <summary>An enum value that is a defined member, so the reader's check never refuses it; else <see cref="ArgumentException"/>.</summary>
+    static void WriteKind<T>(NetWriter w, T value) where T : struct, Enum
+    {
+        if (!Enum.IsDefined(value)) throw new ArgumentException($"{value} is not a defined {typeof(T).Name}.");
+        w.WriteEnum(value);
+    }
 
     static void WriteFinite(NetWriter w, float v) => w.WriteSingle(float.IsFinite(v) ? v : 0);
 

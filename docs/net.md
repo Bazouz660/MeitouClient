@@ -113,7 +113,8 @@ nullable is a presence byte then the value, except `NullableInt`: varint 0 for n
 first); `Floats`, `Ints`, `Vector3s`, `Vector4s`, `Strings`, `Filenames` (count, then key and value each); `References`
 (category count; per category its key, a count, then target and three zigzag values); `Instances` (count; id, target,
 position, rotation x/y/z/w, states). Keys and ids are interned, text values over 128 chars are literals. Map order is kept;
-a reader refuses a duplicate key and a map over `MaxFcsMapEntries`. Floats are read finite. **Verified**
+a reader refuses a duplicate key and a map over `MaxFcsMapEntries`. Floats are read finite. The writer throws `ArgumentException` for what the reader
+would refuse: a name, key or id over `MaxName`, a string value over `MaxString`, a null string, a non-finite float, vector or quaternion. **Verified**
 (`FcsRecordCodecTests`: a record with every section filled round-trips through reliable-table codecs, twice, field by field).
 
 ## Keyed views
@@ -397,7 +398,8 @@ kind byte and its fields (**Verified**: `EventCodecTests`):
 
 Ids are `CommonCodec.WriteId`; Position is three zigzag varints of `Quant.Q64` (1/64 unit). Unknown kinds, unknown flag bits and
 non-finite numbers are `NetFormatException`. The writer clamps instead: texts are cut to their byte limit on a character
-boundary, NaN/infinite floats become 0, halves saturate, and a batch is cut to 1024 events.
+boundary, NaN/infinite floats become 0, halves saturate, and a batch is cut to 1024 events. An enum value that is not a defined member
+is an `ArgumentException` on write.
 
 `EventFilter` (**Verified**): kinds 1-3 are spatial; a client wants one when its Position is within the radius of `ViewState.Eye`
 (straight-line, `NetHostOptions.EventRadius`) or when its Subject, Other, Who or Target is in the client's interest set. Every other
@@ -408,7 +410,8 @@ kind is wanted by whoever the host module sent it to.
 `Session/ProtocolCodec.cs` writes and reads the Control messages: `Write` puts the `MessageType` byte first, the caller
 reads it (`ReadType`), and `ReadX` reads the rest and demands the end. `NetRules` and `SessionRules` overloads write
 bodies only (flag bits packed in one byte). Writers clamp texts to the reader limit at a character boundary and throw
-`ArgumentException` for a wrong-size fixed field (nonce 16 bytes, proof 0 or 32), so a reader never refuses what a writer
+`ArgumentException` for a wrong-size fixed field (nonce 16 bytes, proof 0 or 32) or a non-finite clock or weather number; a Reject reason is cut to
+`MaxRejectReason` (996 bytes) so an encoded Reject fits `MaxDropPayload`, so a reader never refuses what a writer
 produced. Doubles are read with a finite check. Limits: build 64 bytes, data set 1024 files, roster 256, weather
 regions 256. **Verified** (`ProtocolCodecTests`: every message round-trips, including `WorldReset`, `SessionRules` and
 `WeatherSync`; clamping, trailing bytes, NaN, bad type bytes).
