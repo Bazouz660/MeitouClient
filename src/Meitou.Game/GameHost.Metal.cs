@@ -341,9 +341,22 @@ sealed partial class GameHost
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
 
         var clock = Stopwatch.StartNew();
-        double last = 0, fpsWindow = 0, titleTimer = 0;
+        double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0;
         int frames = 0, fpsFrames = 0;
         string fpsText = "";
+        bool trace = Environment.GetEnvironmentVariable("MEITOU_METAL_TRACE") == "1";
+        if (trace)
+        {
+            var watchdog = new Thread(() =>
+            {
+                while (true)
+                {
+                    Thread.Sleep(2000);
+                    Console.WriteLine($"metal     trace watchdog: main loop at frame {Volatile.Read(ref frames)}");
+                }
+            }) { IsBackground = true, Name = "metal trace" };
+            watchdog.Start();
+        }
         var statsLines = new List<string>();
         GpuTexture? sceneColour = null;
         while (!window.IsClosing)
@@ -352,6 +365,16 @@ sealed partial class GameHost
             if (window.IsClosing) break;
             double now = clock.Elapsed.TotalSeconds, dt = now - last;
             last = now;
+            if (trace && now - traceAt >= 1)
+            {
+                traceAt = now;
+                Console.WriteLine($"metal     trace t={now:0.0}s frame {frames}, window {window.Size.X}x{window.Size.Y} points, framebuffer {window.FramebufferSize.X}x{window.FramebufferSize.Y} pixels");
+            }
+            if (trace && now - nativeAt >= 5)
+            {
+                nativeAt = now;
+                Console.WriteLine($"metal     native {display.NativeWindowState()}");
+            }
             var size = window.FramebufferSize;
             // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
             fpsWindow += dt;

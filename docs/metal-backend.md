@@ -507,8 +507,9 @@ Vulkan at default settings, the remaining scope is:
    `ReflectionPass`, refraction); effects (Meitou volumetric clouds/fog, weather particles, lamps, hover outline,
    move marker, navmesh overlay, interior mask); post (SSAO, light shafts, `FogRate`, full TAA with character/grass
    motion, MetalFX/upscaler); and the character motion/stage/hover passes.
-4. **GI decision.** The Vulkan path on this Mac traces GI; Metal has no ray queries. Either port `GiScene`/
-   `GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline and adjust the parity target.
+4. **GI decision.** On this Mac Vulkan also reports `gi off: the device has no ray queries (VK_KHR_ray_query)`,
+   so the local parity shots are no-GI; on a machine where Vulkan traces GI the target includes it. Either port
+   `GiScene`/`GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline.
 5. **Performance and robustness.** GPU culls and grass kernels, VRAM/texture budgets, Metal timestamps, the
    intermittent `encoding in progress` validation assertion at the inland water view, and the known arm64
    `GoldenHashTests` failure.
@@ -633,9 +634,10 @@ default.
 
 ### Decisions still open
 
-- **GI**: the probe GI needs ray queries; Metal's ray tracing is a different model. The parity shots use `--no-gi`
-  and the Vulkan path on this Mac does trace GI. Either port `GiScene`/`GiProbes` to Metal ray queries (a project
-  of its own) or accept the no-GI look as the macOS baseline.
+- **GI**: the probe GI needs ray queries; Metal's ray tracing is a different model. Vulkan on this Mac reports GI
+  off (MoltenVK exposes no `VK_KHR_ray_query`), so local parity is no-GI; on a machine where Vulkan has ray
+  queries the target includes GI. Either port `GiScene`/`GiProbes` to Metal ray queries (a project of its own) or
+  accept the no-GI look as the macOS baseline.
 - **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
   step 6.
 - **Upscaler**: MetalFX vs FSR, and whether TAA alone is the first target.
@@ -665,10 +667,12 @@ default.
 - **Window present and sizing.** The present fragment divides the drawable pixel position by the **drawable** size,
   not the backbuffer size: on a scaled display the drawable is larger, and dividing by the backbuffer showed only
   its top-left part in the window. `--screenshot` reads the backbuffer, so it cannot catch this; the live window is
-  the gate. `MetalDisplay.SyncLayer` sets the CAMetalLayer's frame to the window's points and its `contentsScale`
-  from the framebuffer, before every `NextDrawable`; a resize updates the drawable, backbuffer and HUD. Tested
-  1280x856 points (2560x1712) -> 900x600 (1800x1200) -> back, with the loop drawing throughout. A missing drawable
-  sleeps 1 ms rather than spinning the main thread.
+  the gate. `MetalDisplay.SyncLayer` sets the CAMetalLayer's frame, bounds, contentsScale and `drawableSize`
+  explicitly before every `NextDrawable` (a frame-only change leaves `drawableSize` at its old pixel size). A
+  title-bar zoom/fullscreen can make AppKit replace the content view's layer without a GLFW size event; the same
+  function detects the replacement, reattaches the Metal layer and restores the picture. Tested with a drag
+  (1280x856 -> 900x600 -> back) and with AppKit's zoom; the zoom's restored frame/HUD was captured. A missing
+  drawable sleeps 1 ms rather than spinning the main thread.
 - **Debug text scale.** The HUD scales with the screen; the fixed-pixel debug overlay (F11/F12) must be scaled by
   framebuffer/points (2 on the Retina test display), or it is half size.
 - **Far foliage.** The purple/red far trees are the impostor atlases (some assets are red, e.g.

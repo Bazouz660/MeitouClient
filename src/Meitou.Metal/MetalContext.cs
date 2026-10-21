@@ -431,6 +431,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         int width = size.X, height = size.Y;
         if (backbuffer is not { } target || target.Desc.Width != width || target.Desc.Height != height)
         {
+            Console.WriteLine($"metal     backbuffer {width}x{height}, drawable {drawable.Texture.Width}x{drawable.Texture.Height}");
             backbuffer?.Dispose();
             backbuffer = CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "backbuffer"));
