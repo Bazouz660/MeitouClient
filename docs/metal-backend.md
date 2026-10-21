@@ -553,8 +553,8 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 
 ### 2. The post chain's rest
 
-`PostComposite` (exposure + tone map) was the only post pass on Metal; `PostProcess` is still Vulkan-typed. Port, in
-this order:
+`PostComposite` now runs exposure, the tone map and grade, the fog volumes, SSAO, FXAA and the heat haze on Metal.
+`PostProcess` is still Vulkan-typed for the passes that remain. Port, in this order:
 
 1. **TAA and the upscaler.** The **TAA slice is done** in `PostTaa` (seam-only): the game's velocity and TAA shaders,
    a render-size RGBA16F motion target, two RGBA16F histories, the same 8-phase `Jitter` on the scene projection and the
@@ -562,13 +562,13 @@ this order:
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
    settings choose it, balanced by default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
-   sun-motion term, moving geometry's motion (grass/characters) and widening the rest of `PostProcess` (SSAO, particles,
-   FXAA, heat haze, GI resolve).
-2. **Fog volumes and light shafts.** The **fog-volume data slice is done**: `FogVolumes` takes `IGpuContext`, the Metal
-   host builds the placed volumes and publishes `uFogVolumeData` / `uFogVolumeEye` / `uFogVolumeInfo` every frame (the
-   world shaders' look). The weather's effect spheres wait for the particle renderer. Still to do: the light-shaft
-   passes (`PostProcess.Shafts`) and the fog-rate target (`PostProcess.FogRate`), which the shafts and the volumetric
-   fog read.
+   sun-motion term, moving geometry's motion (grass/characters) and the remaining `PostProcess` passes (light shafts,
+   particles, FogRate, GI resolve).
+2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
+   (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA and the heat
+   haze run there too. Still to do: the light-shaft passes (`PostProcess.Shafts`) and the fog-rate target
+   (`PostProcess.FogRate`), which the shafts and the volumetric fog read. Metal has no fragment-shading-rate
+   attachment, so the FogRate path stays Vulkan-only unless a non-VRS fallback is added.
 3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
    `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
    variant (a per-frame bump allocator over shared buffers), and drive them with the indirect draws of step 1.

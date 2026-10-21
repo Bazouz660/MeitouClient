@@ -137,6 +137,7 @@ sealed partial class GameHost
         shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
+        composite.LoadHeatHaze(assets);
         var taa = new PostTaa(ctx);
         // MetalFX temporal is the default; spatial covers the performance tier, where temporal at 2.5x/3x darkens.
         var metalFx = MetalFxUpscaler.TryCreate(ctx);
@@ -1032,6 +1033,15 @@ sealed partial class GameHost
             cmd.EndRendering();
             ctx.EndNative(cmd);
 
+            var postInputs = new PostComposite.SceneInputs(eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance,
+                characters is not null && characters.DrawnCharacters > 0, water is not null ? Meitou.Data.World.WorldWater.Height : null);
+            composite.HeatHazeAmount = titleLook ? 0 : weatherState.HeatHaze;
+            composite.HeatHazeHours = session.Clock.HoursSinceStart;
+            // Fog volumes and SSAO are scene effects: they run before the temporal resolve, as the Vulkan chain does them.
+            var sceneEffects = (MetalCommandList)ctx.BeginNative("post scene effects");
+            composite.ApplyScene(sceneEffects, sceneColour, depth, postInputs, fogVolumes.UsedData > 0, o.Post.Ssao);
+            ctx.EndNative(sceneEffects);
+
             // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
             GpuTexture resolved;
             if (noTaa) resolved = sceneColour;
@@ -1044,7 +1054,7 @@ sealed partial class GameHost
 
             // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
             var post = (MetalCommandList)ctx.BeginNative("post composite");
-            composite.Draw(post, resolved, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance));
+            composite.Draw(post, resolved, depth, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance), postInputs, temporal: !noTaa);
             ctx.EndNative(post);
             if (titleLook)
             {
