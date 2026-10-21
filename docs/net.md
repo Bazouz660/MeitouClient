@@ -451,7 +451,88 @@ ended the game.`, `Lost connection to the host.`, `Took too long to load.`.
 
 ## Interest, delta, replicator and mirror
 
-Pending (package N10).
+`Replication/Delta/`: `ClientReplicator` (host, one per client), `ClientMirror` (client), `ClientFrame`/`ClientFrameCodec`,
+`SnapshotEncoderOptions` (SendHz 20, BytesPerSecond 262 144, BaselineWindow 60, History 128, KeepAliveHz 5) and
+`ReplicaCatalog`. `ClientReplicator.Send(view, now, sink)` sends the interest set's look definitions, then changed views
+(Views), then snapshot parts (Snapshots). Codec `ArgumentException`s (unencodable host data) and messages over
+`MaxReliableMessage` are withdrawn (writer truncated, string table rolled back) and reported once through `Log`.
+
+**Interest** (`InterestSet`, every send): every `IsPlayer` character; what the viewer's UI names (Selected, Inspected,
+trade customer and trader, conversation and dialogue-request ids, `PlayerSquads` members); characters within
+`R = min(DrawDistance, 8000) + 300` of the eye on X/Z, kept until beyond `R + 300`; one step of carrier/carried closure.
+Weights: 1 for UI references, the viewer's own characters (`Owner`) and anything under 1500; 0.5 under 3500; else 0.25.
+Projectiles use the same radius and hysteresis. Before the first `ClientFrame` the view is the origin with distance 0.
+
+**SnapshotPart**: `0x10 | Epoch u16 | Seq | Tick (zigzag) | ViewSeq (last ViewUpdate sent) | PartIndex byte |
+PartCount byte | removals: count, CharacterIds | projectiles: removal count, ids (zigzag), record count, records |
+characters: count, records`. Character record: `slot (zigzag gap from the previous record) | length | back (0: no
+baseline, the generation follows; else the baseline is Seq - back) | mask | groups` (`CharacterWireCodec`). Projectile
+record: `id (zigzag gap) | length | back | ProjectileWire body`. Seq is per client, +1 per send that sends a part.
+
+- **Baselines.** An entity deltas against the state the client acked for it when the ack is at most `BaselineWindow` Seqs
+  old, or when nothing was sent for it since that ack (the mirror always keeps an entity's newest state). Otherwise, for a
+  new entity, a resync request or a removal cancelled before its ack, the record is full (`back` 0, groups against
+  `CharacterWire.Default`). An entity whose wire equals its baseline is not sent and its priority resets.
+- **Order and budget.** Projectiles, then characters: full records first, then by accumulated weight (each send adds the
+  weight to a changed entity, sending resets it). A send stops at `BytesPerSecond / SendHz` bytes (doubled for 2 s after
+  a reset); what is left keeps its weight for the next send.
+- **Packetizing.** Each record is encoded under a string-table mark; one that does not fit `MaxUnreliablePayload` rolls
+  back and starts a new part (at most `MaxParts`). A record bigger than an empty part leaves its Ragdoll group out (the
+  client keeps its pose); still too big, it is skipped. Pending removals ride in part 0 until a part carrying them is
+  acked. With nothing to send, a header-only part goes out when views were sent or at `KeepAliveHz`, so the newest Tick
+  can lag the host's by up to `SendHz / KeepAliveHz - 1` ticks while nothing changes.
+- **Acks** (`OnClientFrame`, frames of another epoch ignored): each acked (Seq, part) still in the ring of the last
+  `History` parts moves its entities' baselines forward (never back), finishes its removals (only those sent since the
+  entity last left, so a late ack from before a return cannot end a newer removal) and `Confirm`s its string
+  definitions. Resync slots drop the baseline and force a full record. Acks of parts sent before an entity (re)started
+  (new, back from a pending removal, or resynced) set no baseline, so baselines only move forward.
+- **Writer limits.** A part section never holds more than `MaxIdList` removals or records, and negative slots,
+  generations or projectile ids are logged and skipped, so the mirror never refuses a part the host wrote.
+- **Wire cache.** Quantized wires are cached per `CharacterSnapshot` object, shared by every client of one `LookRegistry`.
+
+**ClientFrame**: `0x11 | Epoch u16 | FrameSeq | acks: count (<= 8), (Seq, 64-bit part mask) varints | Eye, Focus as Q64
+zigzag | DrawDistance u16 | resync: count (<= 32), zigzag ints` (character slots; projectile id `n` as `-1 - n`). The
+mirror acks its newest 8 Seqs every frame; `HasNewParts` tells the client a frame is due.
+
+**Views** (`ViewSender`/`ViewReceiver`): `0x30 | Epoch u16 | kind | ViewSeq | Tick (zigzag) | body`, ViewSeq +1 per message
+for the connection. Kinds 1, 2, 11, 15, 17, 23-25 use `WorldSingleSync`, 16 `ConversationViewWriter`, the rest the keyed
+syncs; Speech lists only speakers in interest, detail views (19-22) only characters in interest. Buildings, GroundItems
+and Machines append their revision (zigzag) after the body; a Buildings or GroundItems revision bump with no list change
+sends an empty keyed body. After `Reset(epoch)` every view is sent again. `LookDefinition`s go before the first part that
+names the look; the sent-look set is kept for the connection.
+
+**Mirror** (`ClientMirror`):
+- **Storage.** Per entity a Seq-ordered history of (Seq, Tick, id, wire or removal): the newest state is always kept,
+  older ones while within 64 Seqs of the newest, and states older than a baseline a record names are dropped.
+- **Decoding.** A part of another epoch is ignored, one that does not parse is dropped whole (`DroppedParts`). A record
+  whose baseline is not held, or that does not decode, is skipped by its length and its slot asked for in full
+  (`SkippedRecords`); its part is applied but not acked, so the host keeps its baselines and redefines the part's
+  strings. Duplicates are ignored and parts may arrive in any order (plain unreliable delivery works too); a part 64 or
+  more Seqs older than the newest is ignored.
+- **Removals** apply unless a state at their Seq or newer, or a newer generation, is held for the slot. They are kept
+  even for a character not held yet, so a late older part cannot bring back one the host has forgotten. A state at the
+  same Seq replaces a removal, so a slot's new generation replaces the old character.
+- **Assembly** (`TryAssemble`). A Seq is ready when all its parts arrived or a newer Seq has a part; the newest ready Seq
+  is assembled: each entity's newest state at or before it, characters by slot, projectiles by id, detail views merged by
+  `CharacterId`, the views whose Tick it reached committed first (in arrival order). Looks resolve through
+  `ILookResolver`; until a look is built the character keeps its last one. An unchanged slot keeps its
+  `CharacterSnapshot` reference. `TickOf(id)` is the Tick of the newest state held (an unchanged entity keeps its older
+  Tick).
+- **Views** are decoded on arrival and queued; a view of another epoch is decoded into throwaway decoders (so its string
+  definitions are kept) and dropped. A malformed view throws (the client disconnects).
+- **Reset(epoch)** clears entities, Seqs, views and resync requests on both ends; string tables and looks are kept.
+
+**Verified** (`ReplicationTests`): over a seeded link losing 20 % of parts and frames, delaying 15 % of parts a round
+(older Seqs after newer), duplicating 10 % and holding views back, 300 sends of a churning world (moves, renames, spawns,
+despawns, slot reuse, bolts, view changes) then 40 quiet sends leave the mirror equal to the host's quantized interest set,
+projectiles and views (header, towns, squads, buildings and revision, ground items and revision, speech, doors,
+relations, talkable, stats and path details); a lost removal is resent until acked, a reused slot replaces the old
+character, a cancelled removal sends a full record; a lost string definition is redefined until acked and then only
+referenced; under a 700 B/send budget every character is updated within 20 ticks and the mirror catches up.
+`WireCoverageTests`: every public `WorldSnapshot` and `CharacterSnapshot` property is claimed by a part, a character group
+or a view kind, every group and kind carries something, and N6's covered lists agree. **Observed** (synthetic, 83 of 125
+characters in interest, half moving each tick): about 1.2 KB of parts and 40 B of views per send on the lossy link,
+about 26 B per send once nothing changes. Real scenes are **Unknown** (wave 7 logs them).
 
 ## Host
 
