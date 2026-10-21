@@ -168,8 +168,10 @@ Esc row.
 - Starving (client, `Quality.SnapshotAgeSeconds` above 0.5 s): the bars turn red and a plate at `0.16H` reads "Waiting
   for the host... {age} s". The session's own timeout belongs to the game host.
 - Paused: under the original `PausedPanel`, "{name} paused the game" ("You ..." for oneself) in the pauser's colour, from
-  `IMultiplayerView.PausedBy`. Another player's pause, resume or speed event shows a 3 s banner
-  (`Kenshi_FloatinglPanelSmallSkin`, `0.115H`, lower while paused, fading over its last 0.5 s).
+  `IMultiplayerView.PausedBy`, centred on the panel at the line's width. Another player's resume or speed change shows a 3 s
+  banner (`Kenshi_FloatinglPanelSmallSkin`, `0.115H`, fading over its last 0.5 s); a pause has none, the line names the pauser.
+- Session text (notices, banners, chat rows) is sized with the painter's `MeasureText` for its Kenshi font and scales with
+  the window; sized by the 16 px standard face it came out narrower than drawn and was cut with an ellipsis.
 - Time buttons: `TimeSpeedButton1..` are disabled while `!CanControlTime(LocalPlayer)`.
 - Esc menu (`Kenshi_MainMenuPopupPanel`; rows re-laid on the layout's pitch and the panel resized about its centre;
   geometry **Verified** from the installed layout): single-player NEW GAME, SAVE GAME, LOAD GAME, OPTIONS, MULTIPLAYER,

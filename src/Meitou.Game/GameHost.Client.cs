@@ -173,9 +173,12 @@ sealed partial class GameHost
     void FollowHostRelations(WorldSnapshot snapshot)
     {
         if ((worldEpoch, snapshot.RelationsRevision) == relationsShown || popData?.Relations is not { } table) return;
-        relationsShown = (worldEpoch, snapshot.RelationsRevision);
         int p = snapshot.PlayerFaction;
         var row = snapshot.Relations;
+        // The first snapshots on show can come before the Relations and Header views (no player faction, no row): wait for them instead of taking
+        // this revision as shown, or the host's row of the same revision is never applied.
+        if (p < 0 || row.Count == 0) return;
+        relationsShown = (worldEpoch, snapshot.RelationsRevision);
         if (!table.Contains(p) || row.Count != table.Count || table.PlayerFaction != p)
         {
             Console.Error.WriteLine($"net       host relations not shown: player faction {p} (here {table.PlayerFaction}), {row.Count} of {table.Count} factions");

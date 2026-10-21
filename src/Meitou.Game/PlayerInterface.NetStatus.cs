@@ -28,10 +28,10 @@ sealed partial class PlayerInterface
     {
         foreach (var e in events)
         {
-            if (e.Player == LocalPlayer || e.Kind is not (MultiplayerEventKind.Paused or MultiplayerEventKind.Resumed or MultiplayerEventKind.Speed)) continue;
+            // A pause needs no banner: the line under the paused panel names who paused for as long as it lasts.
+            if (e.Player == LocalPlayer || e.Kind is not (MultiplayerEventKind.Resumed or MultiplayerEventKind.Speed)) continue;
             banner = e.Kind switch
             {
-                MultiplayerEventKind.Paused => $"{e.Name} paused the game",
                 MultiplayerEventKind.Resumed => $"{e.Name} resumed the game",
                 _ => string.Create(CultureInfo.InvariantCulture, $"{e.Name} set the speed to {e.Speed:0.##}x"),
             };
@@ -66,13 +66,19 @@ sealed partial class PlayerInterface
         for (int i = 0; i < ButtonSpeeds.Length; i++) b.Disabled.Add($"TimeSpeedButton{i + 1}");
     }
 
-    float MeasureStandard(string text, float em) => uiPainter?.MeasureStandard(text, em) ?? text.Length * em * 0.5f;
+    /// <summary>
+    /// The width <paramref name="text"/> is drawn at in font resource <paramref name="font"/> (the painter's own measuring, as the tooltips use): sized by the standard face instead, a
+    /// box came out narrower than its Kenshi font and the text was cut with an ellipsis.
+    /// </summary>
+    float MeasureNet(string font, string text) =>
+        uiPainter?.MeasureText(font, text, (int)Height, 0, TitleOpen ? 0 : StandardTextPixels * Height / 1080f).Width ?? text.Length * StandardTextPixels * Height / 1080f * 0.6f;
 
+    /// <summary>A text box of the session's UI; its lettering scales with the window as its bounds do (no fixed <c>TextScale</c>).</summary>
     static UiControl NetText(string name, UiRect bounds, string text, string font, string align, string colour, string skin = "", float alpha = 1)
     {
         var properties = new Dictionary<string, string> { ["FontName"] = font, ["TextAlign"] = align, ["TextShadow"] = "true", ["TextColour"] = colour };
         if (alpha < 1) properties["Alpha"] = alpha.ToString("R", CultureInfo.InvariantCulture);
-        return new(name, "TextBox", bounds, text, "", skin, true, properties, Vector4.Zero, Pickable: false, TextScale: 1);
+        return new(name, "TextBox", bounds, text, "", skin, true, properties, Vector4.Zero, Pickable: false);
     }
 
     /// <summary>Notices and indicators over the HUD (drawn before the windows).</summary>
@@ -87,8 +93,11 @@ sealed partial class PlayerInterface
         {
             var who = PlayerInfo(pauser);
             string name = pauser == net.LocalPlayer ? "You" : who?.Name ?? $"Player {pauser}";
-            controls.Add(NetText("net-paused-by", new(panel.Bounds.X, panel.Bounds.Y + panel.Bounds.Height + 2 * s, panel.Bounds.Width, 0.026f * Height),
-                $"{name} paused the game", "Kenshi_StandardFont_Medium", "Center", PlayerColours.MyGui(who?.Colour ?? -1)));
+            string line = $"{name} paused the game";
+            // Centred on the panel at the line's own width: a long name runs past the panel's edges instead of being cut.
+            float w = Math.Max(panel.Bounds.Width, MeasureNet("Kenshi_StandardFont_Medium", line) + 16 * s);
+            controls.Add(NetText("net-paused-by", new(panel.Bounds.X + (panel.Bounds.Width - w) / 2, panel.Bounds.Y + panel.Bounds.Height + 2 * s, w, 0.026f * Height),
+                line, "Kenshi_StandardFont_Medium", "Center", PlayerColours.MyGui(who?.Colour ?? -1)));
         }
 
         // The banner for another player's clock change.
@@ -101,7 +110,7 @@ sealed partial class PlayerInterface
             else
             {
                 bannerShown = true;
-                float em = 20 * 50f / 72f * s, w = MeasureStandard(text, em) + 24 * s;
+                float w = MeasureNet("Kenshi_StandardFont_Medium", text) + 32 * s;
                 float y = (0.115f + (paused ? 0.03f : 0)) * Height;
                 controls.Add(NetText("net-banner", new((Width - w) / 2, y, w, 0.04f * Height), text, "Kenshi_StandardFont_Medium", "Center", "0.902 0.902 0.902",
                     "Kenshi_FloatinglPanelSmallSkin", (float)Math.Clamp(left / BannerFade, 0, 1)));
@@ -132,7 +141,7 @@ sealed partial class PlayerInterface
         if (starving)
         {
             string wait = $"Waiting for the host... {quality.SnapshotAgeSeconds:0} s";
-            float w = MeasureStandard(wait, 20 * 50f / 72f * s) + 24 * s;
+            float w = MeasureNet("Kenshi_StandardFont_Medium", wait) + 32 * s;
             controls.Add(NetText("net-starving", new((Width - w) / 2, (bannerShown ? 0.21f : 0.16f) * Height, w, 0.05f * Height), wait, "Kenshi_StandardFont_Medium", "Center", inkText,
                 "Kenshi_FloatingPanelSkin"));
         }

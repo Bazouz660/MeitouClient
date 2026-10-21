@@ -42,10 +42,15 @@ public sealed partial class UiBindings
 
 public static partial class MyGuiPresentation
 {
+    /// <summary>The properties an EditBox or TextBox passes to the text its template's client draws (besides WordWrap).</summary>
+    static readonly string[] OwnerTextKeys = ["TextColour", "TextAlign", "FontName", "TextShadow", "TextShadowColour"];
+
     public static IReadOnlyList<UiControl> Arrange(MyGuiLayout layout, int width, int height, UiBindings bindings, IReadOnlyList<string> layers)
     {
         var result = new List<UiControl>();
         var deferred = new List<Action>();   // popups (combo lists), visited after every root so they draw last
+        string? OwnerProperty(string owner, string key) =>
+            bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault(key) ?? layout.Find(owner)?.Properties.GetValueOrDefault(key);
         void Visit(MyGuiWidget w, UiRect parent, UiRect clip, bool parentEnabled = true, float parentAlpha = 1)
         {
             if (bindings.Hidden.Contains(w.Name) || bindings.HiddenWidgets.Contains(w)) return;
@@ -68,8 +73,13 @@ public static partial class MyGuiPresentation
             {
                 caption = bindings.Coded(owner) ?? layout.Find(owner)?.Properties.GetValueOrDefault("Caption") ?? "";
                 // An EditBox's WordWrap is its text's, which the template's client draws.
-                if (!props.ContainsKey("WordWrap") && ((bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault("WordWrap")) ?? layout.Find(owner)?.Properties.GetValueOrDefault("WordWrap")) is { } wrap)
+                if (!props.ContainsKey("WordWrap") && OwnerProperty(owner, "WordWrap") is { } wrap)
                     props["WordWrap"] = wrap;
+                // So are its text colour, alignment and font (MyGUI's EditBox passes them to its text): the message box's Kenshi_WordWrapEmpty body
+                // set them on the EditBox, and without this its client drew the skin's dark ink, top left.
+                if (layout.Find(owner)?.Type is "EditBox" or "TextBox")
+                    foreach (string key in OwnerTextKeys)
+                        if (OwnerProperty(owner, key) is { } value) props[key] = value;
             }
             if (props.GetValueOrDefault("SkipCaption") == "true") caption = "";
             string action = bindings.Actions.GetValueOrDefault(w.Name) ?? "";

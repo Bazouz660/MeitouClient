@@ -22,6 +22,7 @@ sealed partial class PlayerInterface
 {
     const int ChatMaxLines = 100, ChatMaxSent = 20, ChatClosedVisualLines = 8, ChatOpenVisualLines = 14;
     const double ChatShowSeconds = 12, ChatFadeSeconds = 2;
+    const string ChatFont = "Kenshi_StandardFont_Medium";
 
     /// <summary>The entry sits under the history (<c>y = 0.47·H</c>); the HUD's InformationPanel starts at 0.5176·H (Verified, <c>Kenshi_MainPanel.layout</c>).</summary>
     const string ChatLayout = """
@@ -176,9 +177,10 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddChatHistory(List<UiControl> controls)
     {
-        if (chatLines.Count == 0 || uiPainter is not { } painter) return;
+        if (chatLines.Count == 0 || uiPainter is null) return;
         bool open = faithfulScreens.IsOpen("chat");
         float s = Height / 1080f, em = 20 * 50f / 72f * s, rowHeight = em * 1.25f, left = Width * 0.008f + 4 * s, bottom = Height * 0.47f - 6 * s, width = Width * 0.30f;
+        float Measure(string text) => MeasureNet(ChatFont, text);
         long now = Stopwatch.GetTimestamp();
         var rows = new List<(ChatLine Line, string Text, bool First, float Alpha)>();
         foreach (var line in chatLines)
@@ -188,7 +190,7 @@ sealed partial class PlayerInterface
             if (alpha <= 0) continue;
             string prefix = line.Tone == ChatTone.Player ? line.Name + ": " : "";
             bool first = true;
-            foreach (string visual in Wrap(prefix + line.Text, w => painter.MeasureStandard(w, em), width))
+            foreach (string visual in Wrap(prefix + line.Text, Measure, width))
             {
                 rows.Add((line, visual, first, alpha));
                 first = false;
@@ -207,18 +209,20 @@ sealed partial class PlayerInterface
                 if (text.StartsWith(prefix, StringComparison.Ordinal)) { name = prefix; rest = text[prefix.Length..].TrimStart(); }
                 else { name = text; rest = ""; }   // a name longer than the row
             }
-            float nameWidth = name.Length == 0 ? 0 : painter.MeasureStandard(name + " x", em) - painter.MeasureStandard("x", em);
-            float restWidth = rest.Length == 0 ? 0 : painter.MeasureStandard(rest, em);
-            controls.Add(new($"chat-back-{i}", "Widget", new(left - 4 * s, y, nameWidth + restWidth + 12 * s, rowHeight), "", "", "", true,
+            float nameWidth = name.Length == 0 ? 0 : Measure(name + " x") - Measure("x");
+            float restWidth = rest.Length == 0 ? 0 : Measure(rest);
+            // The boxes get a few pixels more than the measured text (shadow, rounding), so the painter never shortens a line with an ellipsis.
+            float slack = 8 * s;
+            controls.Add(new($"chat-back-{i}", "Widget", new(left - 4 * s, y, nameWidth + restWidth + slack + 8 * s, rowHeight), "", "", "", true,
                 new Dictionary<string, string> { ["Alpha"] = a }, new Vector4(0, 0, 0, 0.4f * alpha), Pickable: false));
-            var font = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter", ["TextShadow"] = "true", ["Alpha"] = a };
+            var font = new Dictionary<string, string> { ["FontName"] = ChatFont, ["TextAlign"] = "Left VCenter", ["TextShadow"] = "true", ["Alpha"] = a };
             if (name.Length > 0)
-                controls.Add(new($"chat-name-{i}", "TextBox", new(left, y, nameWidth + 4, rowHeight), name, "", "", true,
-                    new Dictionary<string, string>(font) { ["TextColour"] = PlayerColours.MyGui(PlayerInfo(line.Player)?.Colour ?? -1) }, Vector4.Zero, Pickable: false, TextScale: 1));
+                controls.Add(new($"chat-name-{i}", "TextBox", new(left, y, nameWidth + slack, rowHeight), name, "", "", true,
+                    new Dictionary<string, string>(font) { ["TextColour"] = PlayerColours.MyGui(PlayerInfo(line.Player)?.Colour ?? -1) }, Vector4.Zero, Pickable: false));
             if (rest.Length > 0)
-                controls.Add(new($"chat-text-{i}", "TextBox", new(left + nameWidth, y, restWidth + 4, rowHeight), rest, "", "", true,
+                controls.Add(new($"chat-text-{i}", "TextBox", new(left + nameWidth, y, restWidth + slack, rowHeight), rest, "", "", true,
                     new Dictionary<string, string>(font) { ["TextColour"] = line.Tone switch { ChatTone.Error => BadColour, ChatTone.System => "0.85 0.81 0.72", _ => "0.92 0.89 0.83" } },
-                    Vector4.Zero, Pickable: false, TextScale: 1));
+                    Vector4.Zero, Pickable: false));
         }
     }
 }

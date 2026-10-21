@@ -222,6 +222,8 @@ Code: `UiDocument.Widgets.cs` (layout), `MyGuiScreenHost.Widgets.cs` (input). **
   The source passes the cross-axis view size as ViewPage (as read); Meitou pages by the view along the axis (**Unknown** which is intended). Children of the client are placed against the scrolled canvas.
   A screen that scrolls a view itself lists it in `NativeScroll` (the map). Without a canvas nothing scrolls and the bars hide: the Overview's `RelationsPanel` (no `CanvasSize` in the layout) loses its static bars.
   Multi-line EditBox scroll bars are not done.
+- **Templated EditBox / TextBox text** (Observed, `Kenshi_MessageBox`'s `MessageText`, skin `Kenshi_WordWrapEmpty`): the owner's `WordWrap`, `TextColour`, `TextAlign`, `FontName`
+  and text shadow properties apply to the text its template's `Client` draws (MyGUI passes them to the EditBox's text); the layout sets the message body light and centred.
 - **Slider** (Observed): no installed layout uses `Kenshi_Slider`, `Kenshi_ListSlider` or `Kenshi_MultiSlider(Small)`; they are supported as templates. `Kenshi_Slider`'s bar has `Range` 100 and no
   `MoveToClick` (so a track press pages by one), giving positions 0 to 99 although its example caption reads 100. Text of template parts is set with `Text["<owner>.NumberText"]`
   (also `ElementText`, `ElementValueText`). `Kenshi_ListSlider`'s Start / End arrows raise `step` (`Text`: start / end, `Value`: -1 / +1). The character editor's own slider tracks keep the old
