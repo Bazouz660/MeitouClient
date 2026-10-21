@@ -40,6 +40,7 @@ sealed partial class GameHost
 
         // Same setting as VulkanDisplay: Metal used to always present with display sync, even under --no-vsync.
         bool vsync = g.VSync ?? config.VSync;
+        int fpsLimit = g.FpsLimit ?? config.FpsLimit;
         using var display = new MetalDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
@@ -47,7 +48,7 @@ sealed partial class GameHost
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
         }, vsync);
-        Console.WriteLine($"metal     vsync {(display.VSync ? "on" : "off")}");
+        Console.WriteLine($"metal     vsync {(display.VSync ? "on" : "off")}, frame cap {(fpsLimit > 0 ? $"{fpsLimit} fps" : "off")}");
         using var ctx = new MetalContext(display);
         var window = display.Window;
         ctx.Samplers.MaxAnisotropy = o.Anisotropy;
@@ -374,7 +375,7 @@ sealed partial class GameHost
         {
             window.DoEvents();
             if (window.IsClosing) break;
-            double now = clock.Elapsed.TotalSeconds, dt = now - last;
+            double now = clock.Elapsed.TotalSeconds, frameStart = now, dt = now - last;
             last = now;
             if (trace && now - traceAt >= 1)
             {
@@ -614,6 +615,9 @@ sealed partial class GameHost
                     $"{session.Clock.TimeText} {session.Clock.DayText} | {s.Target.X:0}, {s.Target.Z:0}";
                 titleTimer = 0;
             }
+            // The Vulkan loop's cap: only without vsync (vsync already paces the present); the same 30 fps cap in
+            // both comparison runs isolates tearing from the much higher uncapped frame rate.
+            if (!display.VSync && fpsLimit > 0) Limit(clock, frameStart, 1.0 / fpsLimit);
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
         // Let the queue finish before the renderers release views, buffers and bindless entries; a quit during a
