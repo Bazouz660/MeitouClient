@@ -108,10 +108,45 @@ sealed partial class GameHost
         var taa = new PostTaa(ctx);
         if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
         // MetalFX temporal upscaling is opt-in while it is being validated; without it the TAA path is unchanged.
+        var metalFx = MetalFxUpscaler.TryCreate(ctx);
         if (metalFxRequested)
         {
-            if (MetalFxUpscaler.TryCreate(ctx) is { } metalFx) taa.External = metalFx;
+            if (metalFx is not null) taa.External = metalFx;
             else Console.WriteLine("metal     MetalFX requested but unavailable; using TAA");
+        }
+        bool presetPanel = Environment.GetEnvironmentVariable("MEITOU_METAL_PRESETS") is "1" or "true";
+        int preset = noTaa ? 0 : metalFxRequested && metalFx is not null ? (ctx.RenderScale >= 0.6f ? 2 : 1) : 3;
+        void SetPreset(int index)
+        {
+            if (index is 1 or 2 && metalFx is null)
+            {
+                Console.WriteLine("metal     MetalFX is unavailable on this device");
+                return;
+            }
+            switch (index)
+            {
+                case 0:
+                    noTaa = true;
+                    taa.External = null;
+                    ctx.RenderScale = 1f;
+                    break;
+                case 1:
+                    noTaa = false;
+                    taa.External = metalFx;
+                    ctx.RenderScale = 0.5f;
+                    break;
+                case 2:
+                    noTaa = false;
+                    taa.External = metalFx;
+                    ctx.RenderScale = 0.67f;
+                    break;
+                default:
+                    noTaa = false;
+                    taa.External = null;
+                    ctx.RenderScale = 0.5f;
+                    break;
+            }
+            preset = index;
         }
         // The text/quad painter, shared by the HUD and the optional frame-stats lines. It is created even for a screenshot:
         // the game's HUD is part of the picture. MEITOU_METAL_OVERLAY=1 adds the stats lines to a still.
@@ -300,6 +335,16 @@ sealed partial class GameHost
             {
                 if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; if (hud is not null) hud.SlowModifier = true; }
                 if (key == SilkKey.Enter && Alt()) { BorderlessFullScreen.Toggle(window); return; }
+                if (key == SilkKey.F10) { presetPanel = !presetPanel; return; }
+                if (presetPanel)
+                {
+                    if (key == SilkKey.Escape) { presetPanel = false; return; }
+                    if (key is SilkKey.Number1 or SilkKey.Number2 or SilkKey.Number3 or SilkKey.Number4)
+                    {
+                        SetPreset((int)key - (int)SilkKey.Number1);
+                        return;
+                    }
+                }
                 // F11 lists the frame; F12 is the small frame-rate line (the profiler chart waits for Metal timestamps).
                 if (key == SilkKey.F11) { statsVisible = !statsVisible; return; }
                 if (key == SilkKey.F12) { frameStatsVisible = !frameStatsVisible; return; }
@@ -381,6 +426,7 @@ sealed partial class GameHost
             watchdog.Start();
         }
         var statsLines = new List<string>();
+        var presetLines = new List<string>();
         GpuTexture? sceneColour = null;
         double streamingIdleSince = 0, lastManagedTrim = double.NegativeInfinity;
         // Loading can take long enough for the terminal that started the game to take focus back: bring the game forward again
@@ -588,6 +634,19 @@ sealed partial class GameHost
                         (16 + overlay.LineHeight) * textScale, DebugOverlay.TextColour, textScale);
                     wrote = true;
                 }
+                if (presetPanel)
+                {
+                    presetLines.Clear();
+                    presetLines.Add("1  Native (no TAA/MetalFX)");
+                    presetLines.Add($"2  MetalFX Balanced 0.50{(metalFx is null ? " (unavailable)" : "")}");
+                    presetLines.Add($"3  MetalFX Quality 0.67{(metalFx is null ? " (unavailable)" : "")}");
+                    presetLines.Add("4  TAA 0.50 (experimental: ghosts)");
+                    presetLines.Add($"Current: {preset switch { 0 => "native", 1 => "MetalFX balanced", 2 => "MetalFX quality", _ => "TAA" }}");
+                    presetLines.Add($"Render: {ctx.SceneWidth}x{ctx.SceneHeight} -> {size.X}x{size.Y}");
+                    presetLines.Add("F10/Esc closes   1-4 applies");
+                    overlay.Panel(size.X, size.Y, "Metal display (F10)", presetLines, 8 * textScale, textScale);
+                    wrote = true;
+                }
                 if (wrote) overlay.Flush(size.X, size.Y);
             }
             ctx.EndFrame();
@@ -657,6 +716,7 @@ sealed partial class GameHost
         shadow.Dispose();
         composite.Dispose();
         taa.Dispose();
+        metalFx?.Dispose();   // PostTaa owns it while selected; safe to dispose again after a preset switch
         surfaces?.Dispose();
         sky.Dispose();
         double elapsed = clock.Elapsed.TotalSeconds;

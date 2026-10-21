@@ -653,7 +653,9 @@ default.
 - **Upscaler**: TAA at render scale 0.5 is the Metal macOS default, but its motion reprojection ghosts when the
   camera moves (known; fix pending). MetalFX temporal is available opt-in with `--upscaler metalfx` or
   `MEITOU_METALFX=1`: it is reliable at 0.50 (and falls back to TAA below 0.50), but is slower than TAA and is not
-  the default. `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve).
+  the default. `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve). The Metal
+  host also has a small **F10 display-preset panel** (Native / MetalFX Balanced / MetalFX Quality / TAA) showing the
+  internal → output size; `MEITOU_METAL_PRESETS=1` starts it open for screenshots.
 
 ### Resume notes (facts already established)
 
