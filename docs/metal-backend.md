@@ -457,9 +457,10 @@ the baseline, not one.
 objects and buildings; the sun's shadows (terrain, objects, foliage and character casters); foliage meshes, grass
 and the terrain-shader rocks (the CPU cull and CPU grass, not the compute ones); the impostor bakes and far
 billboards; the scene's HDR target, the game's tone map, auto exposure and a seam-only TAA; the faithful water;
-skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list); the HUD
-and the faithful panels (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own
-pointer/keyboard controls. `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
+skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
+population and navmesh now run in the live loop); the HUD and the faithful panels (inventory, stats,
+overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls.
+`GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
 move the strategy camera; edge scrolling, left click/box select, right-click move orders and the HUD keys work;
 F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
 Still missing: the title/new-game/save/load/options flows, trade/dialogue/build/editor hosts, audio, the pointer
@@ -661,10 +662,20 @@ default.
 - **Cube stand-ins.** A dummy cube's `TextureDesc.Layers` is 1: its six faces are the cube type's slices, not array
   layers. Passing 6 made `GpuTexture.View` ask for 36 slices and `MTL_DEBUG_LAYER=1` abort at the first cube
   sampler (the UI's first frame after the painter was added). `MetalContext.Dummy` now passes 1.
-- **Window present.** The present fragment divides the drawable pixel position by the **drawable** size, not the
-  backbuffer size: on a scaled display the drawable is larger, and dividing by the backbuffer showed only its
-  top-left part in the window. `--screenshot` reads the backbuffer, so it cannot catch this; the live window is the
-  gate.
+- **Window present and sizing.** The present fragment divides the drawable pixel position by the **drawable** size,
+  not the backbuffer size: on a scaled display the drawable is larger, and dividing by the backbuffer showed only
+  its top-left part in the window. `--screenshot` reads the backbuffer, so it cannot catch this; the live window is
+  the gate. `MetalDisplay.SyncLayer` sets the CAMetalLayer's frame to the window's points and its `contentsScale`
+  from the framebuffer, before every `NextDrawable`; a resize updates the drawable, backbuffer and HUD. Tested
+  1280x856 points (2560x1712) -> 900x600 (1800x1200) -> back, with the loop drawing throughout. A missing drawable
+  sleeps 1 ms rather than spinning the main thread.
+- **Debug text scale.** The HUD scales with the screen; the fixed-pixel debug overlay (F11/F12) must be scaled by
+  framebuffer/points (2 on the Retina test display), or it is half size.
+- **Far foliage.** The purple/red far trees are the impostor atlases (some assets are red, e.g.
+  `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. Not a Metal regression.
+- **Population and navmesh.** The live Metal loop boots the simulation with `interactive: true`, loads the navmesh
+  zones round the start and calls `UpdateNav` each frame. The Hub shows its wall guards and residents again; the
+  background population costs frames (about 16 fps at 3024x1712 in the still, versus 20 before it).
 - **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
   portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
   F7, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll), selection/box

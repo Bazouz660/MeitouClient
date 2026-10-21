@@ -166,7 +166,7 @@ sealed partial class GameHost
 
         // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
         var heights = new Meitou.Data.World.GroundHeights(scene.Window, scene.Coarse, scene.CoarseSize, WorldFrame.CoarseStep);
-        var (walkability, systems, constants) = BootSimulation(heights, interactive: false);
+        var (walkability, systems, constants) = BootSimulation(heights, interactive: true);
         (camera, render) = WorldFrame.Setup(scene, o);
         session = new WorldSession(scene.Focus, (scene.X0, scene.Z0, scene.X1, scene.Z1), heights.HeightAt, o.Hour, config.TickRate,
             clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
@@ -180,10 +180,22 @@ sealed partial class GameHost
         {
             try
             {
-                var squad = population.StartPlayer(session.World, start);
-                Console.WriteLine($"metal     player squad: {squad.Members.Count} characters");
+                playerSquad = population.StartPlayer(session.World, start);
+                Console.WriteLine($"metal     player squad: {playerSquad.Members.Count} characters");
             }
             catch (InvalidOperationException e) { Console.WriteLine($"metal     player squad skipped: {e.Message}"); }
+        }
+        // The population's zones: the background towns activate the zones round the player, and a walker's path may cross one
+        // that has to be built first. The interactive loop keeps this table current (UpdateNav), as the Vulkan host does.
+        if (nav is not null && population is not null)
+        {
+            population.ZoneGate = zone => nav.Walkability.World.Contains(zone);
+            var around = playerSquad is not null ? session.World.Characters.Previous[playerSquad.Leader.Slot].Position : session.Focus;
+            var zones = Meitou.Simulation.ZoneActivation.ZonesAround(around, 0);
+            var watch = Stopwatch.StartNew();
+            Task.WaitAll([.. zones.Select(z => (Task)nav.LoadZone(z))]);
+            foreach (var z in zones) navZones[z] = Stopwatch.GetTimestamp();
+            Console.WriteLine($"metal     navmesh {zones.Count} zone(s) round the start ready in {watch.ElapsedMilliseconds} ms");
         }
         ApplyCamera(session.Camera.Current);
         SendFocus();
@@ -355,7 +367,10 @@ sealed partial class GameHost
             session.Advance(dt);
             ApplyCamera(session.CameraAt());
             SendFocus();
-            if (!ctx.BeginFrame()) continue;
+            UpdateNav();
+            // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
+            // the main thread (the window would stop responding to its own resize).
+            if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
             if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
@@ -488,6 +503,8 @@ sealed partial class GameHost
                     if (hud.UiVisible) hud.Draw(overlay, size.X, size.Y);
                 }
                 bool wrote = false;
+                // The framebuffer is 2x the window's points on a Retina display: the fixed-pixel debug text would be half size.
+                float textScale = MathF.Max(1, size.X / (float)Math.Max(window.Size.X, 1));
                 if (statsVisible)
                 {
                     statsLines.Clear();
@@ -496,13 +513,14 @@ sealed partial class GameHost
                     statsLines.Add($"camera {camera.Target.X:0}, {camera.Target.Y:0}, {camera.Target.Z:0}  yaw {camera.Yaw * 180 / MathF.PI:0}  pitch {camera.Pitch * 180 / MathF.PI:0}  boom {camera.Distance:0}");
                     if (characters is not null) statsLines.Add(characters.Statistics());
                     if (foliage is not null) statsLines.Add($"foliage {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
-                    overlay.Panel(size.X, size.Y, "Metal frame (F11 hides this)", statsLines, (hud is { UiVisible: true } ? hud.HudBottom : 0) + 8);
+                    overlay.Panel(size.X, size.Y, "Metal frame (F11 hides this)", statsLines, (hud is { UiVisible: true } ? hud.HudBottom : 0) + 8, textScale);
                     wrote = true;
                 }
                 if (frameStatsVisible)
                 {
-                    overlay.Text("Meitou - Metal", 16, 16, DebugOverlay.TextColour);
-                    overlay.Text($"{frames + 1} frames  {fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}", 16, 36, DebugOverlay.TextColour);
+                    overlay.TextScaled("Meitou - Metal", 16 * textScale, 16 * textScale, DebugOverlay.TextColour, textScale);
+                    overlay.TextScaled($"{frames + 1} frames  {fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}", 16 * textScale,
+                        (16 + overlay.LineHeight) * textScale, DebugOverlay.TextColour, textScale);
                     wrote = true;
                 }
                 if (wrote) overlay.Flush(size.X, size.Y);

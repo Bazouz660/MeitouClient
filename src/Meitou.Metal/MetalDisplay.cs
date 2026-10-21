@@ -52,6 +52,26 @@ public sealed unsafe class MetalDisplay : IDisposable
         layer.PixelFormat = MTLPixelFormat.BGRA8Unorm;
         layer.FramebufferOnly = true;
         Layer = layer;
+        SyncLayer();
+    }
+
+    int layerWidth, layerHeight, layerPixelWidth, layerPixelHeight;
+
+    /// <summary>
+    /// Fits the layer to the window: its frame in points and its contents scale from the framebuffer's pixels. The window can
+    /// change size during play, and a layer left at its first size either keeps the old drawable (a resized window shows black)
+    /// or leaves the new area untouched (the desktop shows through at the edge).
+    /// </summary>
+    public void SyncLayer()
+    {
+        var size = Window.Size;
+        var pixels = Window.FramebufferSize;
+        if (size.X == layerWidth && size.Y == layerHeight && pixels.X == layerPixelWidth && pixels.Y == layerPixelHeight) return;
+        (layerWidth, layerHeight, layerPixelWidth, layerPixelHeight) = (size.X, size.Y, pixels.X, pixels.Y);
+        if (size.X <= 0 || size.Y <= 0) return;
+        ObjectiveC.objc_msgSend(Layer.NativePtr, "setFrame:", new NSRect(0, 0, size.X, size.Y));
+        ObjectiveC.objc_msgSend(Layer.NativePtr, "setContentsScale:", pixels.X / (double)size.X);
+        Console.WriteLine($"metal     window {size.X}x{size.Y} points, {pixels.X}x{pixels.Y} pixels (scale {pixels.X / (double)size.X:0.##})");
     }
 
     /// <summary>Brings the app to the front, so a screenshot of the screen shows the window.</summary>
@@ -64,6 +84,7 @@ public sealed unsafe class MetalDisplay : IDisposable
     /// <summary>Begins a frame: the drawable to draw into and the command buffer to record it in.</summary>
     public bool TryBeginFrame(out MTLCommandBuffer command, out CAMetalDrawable drawable)
     {
+        SyncLayer();
         command = default;
         drawable = default;
         var next = Layer.NextDrawable;

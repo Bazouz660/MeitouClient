@@ -253,31 +253,33 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// Draws a titled panel at the left edge, below <paramref name="top"/>, listing <paramref name="lines"/> in as many
     /// columns as the height left needs; returns the panel's bottom (where a next panel can start).
     /// </summary>
-    public float Panel(int width, int height, string title, IReadOnlyList<string> lines, float top = 0)
+    public float Panel(int width, int height, string title, IReadOnlyList<string> lines, float top = 0, float scale = 1)
     {
         if (width <= 0 || height <= 0) return top;
-        const float margin = 16, pad = 12, gap = 28;
+        scale = MathF.Max(scale, 1e-3f);
+        float margin = 16 * scale, pad = 12 * scale, gap = 28 * scale;
+        float lineHeight = LineHeight * scale, charWidth = CharWidth * scale;
         float y = top + margin;
-        int rowsFit = Math.Max((int)((height - y - margin - 2 * pad - LineHeight * 1.5f) / LineHeight), 1);
+        int rowsFit = Math.Max((int)((height - y - margin - 2 * pad - lineHeight * 1.5f) / lineHeight), 1);
         // Lines wider than the window wrap (the resident memory lines run long); with more than one column, to the column's share of it.
         float usable = width - 2 * margin - 2 * pad;
         var source = lines;
-        lines = Wrap(source, (int)(usable / CharWidth));
+        lines = Wrap(source, (int)(usable / charWidth));
         int columns = (lines.Count + rowsFit - 1) / rowsFit;
         for (int pass = 0; pass < 2 && columns > 1; pass++)
         {
-            lines = Wrap(source, (int)((usable - (columns - 1) * gap) / columns / CharWidth));
+            lines = Wrap(source, (int)((usable - (columns - 1) * gap) / columns / charWidth));
             columns = (lines.Count + rowsFit - 1) / rowsFit;
         }
         int rows = (lines.Count + columns - 1) / Math.Max(columns, 1);
-        float columnWidth = (lines.Count == 0 ? 0 : lines.Max(l => l.Length)) * CharWidth;
-        float panelW = Math.Max(columns * columnWidth + (columns - 1) * gap, title.Length * CharWidth) + 2 * pad;
-        float panelH = (rows + 1.5f) * LineHeight + 2 * pad;
+        float columnWidth = (lines.Count == 0 ? 0 : lines.Max(l => l.Length)) * charWidth;
+        float panelW = Math.Max(columns * columnWidth + (columns - 1) * gap, title.Length * charWidth) + 2 * pad;
+        float panelH = (rows + 1.5f) * lineHeight + 2 * pad;
 
         Rect(margin, y, margin + panelW, y + panelH, PanelColour);
-        Text(title, margin + pad, y + pad, TextColour);
+        TextScaled(title, margin + pad, y + pad, TextColour, scale);
         for (int i = 0; i < lines.Count; i++)
-            Text(lines[i], margin + pad + i / rows * (columnWidth + gap), y + pad + (i % rows + 1.5f) * LineHeight, TextColour);
+            TextScaled(lines[i], margin + pad + i / rows * (columnWidth + gap), y + pad + (i % rows + 1.5f) * lineHeight, TextColour, scale);
         Flush(width, height);
         return y + panelH;
     }
