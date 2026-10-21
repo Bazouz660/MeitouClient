@@ -107,6 +107,9 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     internal void Begin(long number, MTLCommandBuffer command, CAMetalDrawable drawable)
     {
+        // The context retains this command for its slot (the queue's autorelease would otherwise end it after
+        // one frame); the slot is reused only after the three-frame ring has advanced.
+        if (Command.NativePtr != IntPtr.Zero) Command.Dispose();
         Number = number;
         Command = command;
         Commands.Rebind(command);
@@ -123,7 +126,11 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     /// <summary>The command buffer completed and the slot will be reused: drop the pointer so teardown releases do not retain
     /// a command object the queue may already have freed.</summary>
-    internal void ForgetCommand() => Command = default;
+    internal void ForgetCommand()
+    {
+        if (Command.NativePtr != IntPtr.Zero) Command.Dispose();
+        Command = default;
+    }
 
     internal int ChunkCount => chunks.Count;
     internal long ChunkBytes

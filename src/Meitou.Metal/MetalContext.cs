@@ -125,6 +125,10 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     MTLRenderPipelineState presentPipeline;
     long frameNumber;
     int slot = -1;
+    // Objective-C objects returned by the frame's APIs (nextDrawable, commandBuffer, descriptors) are autoreleased.
+    // Without a per-frame pool they accumulate for the whole process: 16k CAMetalLayer drawables after eight minutes.
+    NSAutoreleasePool framePool;
+    bool framePoolOpen;
     // The host pass open now (the guests' targets and state), and the segments of the recording model.
     PassTargets? passTargets;
     DrawState? passState;
@@ -571,11 +575,21 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// </summary>
     public bool BeginFrame()
     {
+        // Every frame needs its own pool: CAMetalLayer's nextDrawable and the command buffer are autoreleased, and a
+        // pool held until quit keeps every drawable and its IOSurface alive (the travel footprint grew to 15 GB).
+        if (framePoolOpen) { framePool.Dispose(); framePoolOpen = false; }
+        framePool = new NSAutoreleasePool();
+        framePoolOpen = true;
         // Free what the previous rings no longer name before asking for another drawable; a frame's worth at a time.
         ReleaseRetired();
         ReleaseRetiredLevelViews();
         ReleaseDeferred();
-        if (!display.TryBeginFrame(out var command, out var drawable)) return false;
+        if (!display.TryBeginFrame(out var command, out var drawable))
+        {
+            framePool.Dispose();
+            framePoolOpen = false;
+            return false;
+        }
         if (slot >= 0) { double gpu = CompletedGpuMs(frames[slot]); if (gpu > 0) LastGpuMilliseconds = gpu; }
         var size = display.Window.FramebufferSize;
         int width = size.X, height = size.Y;
@@ -600,6 +614,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
         frameNumber++;
         slot = (slot + 1) % FrameRingDepth;
+        Retain_objc_retain(command.NativePtr);   // the frame pool drains at the end of this frame
         frames[slot].Begin(frameNumber, command, drawable);
         bindless.BeginFrame(slot);
         if (pendingUploadBytes > 0) { frames[slot].Stats.UploadBytes = pendingUploadBytes; pendingUploadBytes = 0; }
@@ -630,6 +645,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         frame.End();
         timestamps.End();
         Present(frame);
+        if (framePoolOpen) { framePool.Dispose(); framePoolOpen = false; }
     }
 
     /// <summary>The present: the backbuffer's picture into the drawable, y flipped (a five-line MSL pass; Metal's blit can do neither the flip nor the format).</summary>
@@ -1056,6 +1072,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public void Dispose()
     {
+        if (framePoolOpen) { framePool.Dispose(); framePoolOpen = false; }
         foreach (var p in blitPipelines.Values) p.Dispose();
         blitPipelines.Clear();
         foreach (var p in clearPipelines.Values) p.Dispose();
