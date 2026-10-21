@@ -170,6 +170,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public int DrawnBlades { get; private set; }
     public int DrawCalls { get; private set; }
     public double LastDrawCpuMs { get; private set; }
+    /// <summary>The groups the last CPU cull tested (diagnostics for the parallel path).</summary>
+    public int LastCullGroups { get; private set; }
     /// <summary>With <see cref="WorldFrame.DetailedStats"/>: the last depth draw's and the frame's main draws' CPU time by step (culling, upload, meshes, grass, TERRAIN-mode rocks).</summary>
     internal string DepthDetail = "", MainDetail = "";
     /// <summary>GPU time of the foliage draws of one frame (the main camera's draw, grass included), from timestamp queries a frame or two old.</summary>
@@ -1412,17 +1414,26 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             if ((parts & FoliageCull.ImpostorPart) != 0) ImpostorBatchOf(g.Asset);
         }
         while (cullOutputs.Count < cullWork.Count) cullOutputs.Add(new FoliageCullOutput());
+        LastCullGroups = cullWork.Count;
         var eyeXz = new Vector2(eye.X, eye.Z);
         var view = cullView;
-        RenderJobs.For(cullWork.Count, k =>
+        // The Hub has well over a thousand groups; one work item per group spends more time in the job queue than in the
+        // short cull. Each chunk writes its groups' own outputs, so the order and results are unchanged.
+        const int CullChunk = 16;
+        int chunks = (cullWork.Count + CullChunk - 1) / CullChunk;
+        RenderJobs.For(chunks, chunk =>
         {
-            var (g, range, parts) = cullWork[k];
-            if (!g.SpheresReady)
+            int start = chunk * CullChunk, end = Math.Min(start + CullChunk, cullWork.Count);
+            for (int k = start; k < end; k++)
             {
-                FoliageCull.FillSpheres(g.Instances, g.Asset.Centre, g.Asset.Radius);   // the mesh's bounds are known once it is resident, and never change
-                g.SpheresReady = true;
+                var (g, range, parts) = cullWork[k];
+                if (!g.SpheresReady)
+                {
+                    FoliageCull.FillSpheres(g.Instances, g.Asset.Centre, g.Asset.Radius);   // the mesh's bounds are known once it is resident, and never change
+                    g.SpheresReady = true;
+                }
+                FoliageCull.CullGroup(g.Instances, range, eyeXz, view, record, cullOutputs[k], parts, record ? null : FogCull);
             }
-            FoliageCull.CullGroup(g.Instances, range, eyeXz, view, record, cullOutputs[k], parts, record ? null : FogCull);
         });
         for (int k = 0; k < cullWork.Count; k++)
         {

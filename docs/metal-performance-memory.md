@@ -54,12 +54,15 @@ commitment, not a proven single leak.
 - **Mip views and deferred frees:** mip-bake level views are retained by the command that encoded them and disposed
   once it completes; `DeferDelete` now waits for the frame ring instead of releasing immediately. The trace prints
   `levelViews` and `deferredDeletes`; the short one-zone route ended with both at 0 and a clean teardown.
+- **Foliage cull:** the CPU cull now feeds the render jobs in chunks of 16 groups instead of 1,404 separate work
+  items at the Hub. Cull outputs and batch order are unchanged; the same 45 s Release trace dropped record time from
+  **6.15 ms to 5.23 ms** (~0.9 ms/frame). The trace prints the last cull group count.
 - **Also:** the large per-frame foliage/object/terrain matrix arrays are written directly into the frame constants
   (`IGpuFrame.AllocateConstants`) instead of being allocated and copied twice; the GLFW API lookup for edge scrolling
   is cached; the trace prints terrain/object/foliage streaming pending work.
 - **Gate:** build 0/0; tests 424/425 (the known arm64 `GoldenHashTests.Scripted_scenarios_hash_as_pinned` pin).
-- **Still open:** the same-window vsync >40 fps gate, GPU culls/indirect draws/grass, CPU culling/recording (foliage
-  ~4 ms and shadow recording ~2 ms per frame in the steady profile), and a longer 60 s-per-idle/multi-direction soak.
+- **Still open:** the same-window vsync >40 fps gate, GPU culls/indirect draws/grass, remaining shadow recording
+  (~2 ms per frame in the steady profile), and a longer 60 s-per-idle/multi-direction soak.
 
 ## Targets
 
