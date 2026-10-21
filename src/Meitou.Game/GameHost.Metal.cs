@@ -59,6 +59,20 @@ sealed partial class GameHost
         }, vsync);
         Console.WriteLine($"metal     vsync {(display.VSync ? "on" : "off")}, frame cap {(fpsLimit > 0 ? $"{fpsLimit} fps" : "off")}");
         using var ctx = new MetalContext(display);
+        // The Metal path has no single GPU allocator with a global budget: every cache has its own high-water mark.
+        // Travelling through the world can fill the object, foliage and character caches at the same time, so keep the
+        // whole device allocation under a conservative share of what Metal recommends. The guard pauses/evicts caches
+        // and shortens the ranges as the ceiling approaches, exactly as it does on Vulkan.
+        ulong memoryBudget = ctx.VideoMemoryBudget > 0 ? Math.Min(ctx.VideoMemoryBudget, 5UL << 30) : 5UL << 30;
+        if (ulong.TryParse(Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_BUDGET_MB"), NumberStyles.None,
+                CultureInfo.InvariantCulture, out ulong budgetMb) && budgetMb > 0)
+            memoryBudget = budgetMb << 20;
+        VramGuard? memoryGuard = null;
+        if (Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0")
+        {
+            memoryGuard = new VramGuard(() => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget));
+            Console.WriteLine($"metal     memory guard: {memoryBudget / 1048576} MB of GPU allocation");
+        }
         var window = display.Window;
         // The shared window setting: borderless full screen as the Vulkan path starts; --windowed keeps the window for one run.
         bool fullScreen = config.FullScreen && !o.Windowed;
@@ -118,6 +132,7 @@ sealed partial class GameHost
             Meitou = o.MeitouShadows,
             FilterQuality = o.ShadowFilter,
             Enabled = !o.ShadowsOff,
+            Guard = memoryGuard,
         };
         shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
@@ -285,6 +300,7 @@ sealed partial class GameHost
                 LoadBudget = 0,
                 SortNearestFirst = o.MeitouReach,
                 LodBias = 1 / o.ObjectLod,
+                Guard = memoryGuard,
             };
             hostObjects = objects;
             Console.WriteLine("metal     objects ready");
@@ -304,6 +320,7 @@ sealed partial class GameHost
                 MeitouRange = o.MeitouRange,
                 Lod = o.FoliageLod,
                 Terrain = terrain,
+                Guard = memoryGuard,
             };
             if (o.LargeRange is { } largeRange)
             {
@@ -381,7 +398,11 @@ sealed partial class GameHost
                 Console.WriteLine("metal     characters ready (population draw list)");
             }
             hostCharacters = characters;
-            if (characters is not null) characters.InteriorObjects = objects;
+            if (characters is not null)
+            {
+                characters.Guard = memoryGuard;
+                characters.InteriorObjects = objects;
+            }
         }
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
@@ -800,6 +821,10 @@ sealed partial class GameHost
                 Console.WriteLine($"metal     resources {ctx.ResourceSummary()}");
                 Console.WriteLine($"metal     streaming terrain {streamer?.Pending ?? 0} ({(streamer is null || streamer.Idle ? "idle" : "busy")}), " +
                     $"objects {objects?.Pending ?? 0}, foliage {foliage?.Pending ?? 0}, cull groups {foliage?.LastCullGroups ?? 0}");
+                if (memoryGuard is not null) Console.WriteLine($"metal     memory guard {memoryGuard.Status}");
+                if (objects is not null) Console.WriteLine($"metal     objects resident: {objects.ResidentDescription}");
+                if (foliage is not null) Console.WriteLine($"metal     foliage resident: {foliage.ResidentDescription}");
+                if (characters is not null) Console.WriteLine($"metal     characters: {characters.Describe()}");
             }
             var size = window.FramebufferSize;
             // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
@@ -844,6 +869,7 @@ sealed partial class GameHost
             // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
             // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
             UpdateInteriorView();
+            memoryGuard?.Tick();
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
