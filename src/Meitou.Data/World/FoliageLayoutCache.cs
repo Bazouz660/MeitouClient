@@ -176,34 +176,26 @@ public sealed class FoliageLayoutCache
         var path = PathFor(zone, farOnly);
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         byte[]? bytes = null;
+        int length;
         try
         {
-            int length;
-            try
-            {
-                if (!System.IO.File.Exists(path)) return Miss(false);
-                (bytes, length) = ReadPooled(path);
-            }
-            catch (IOException) { return Miss(true); }
-            catch (UnauthorizedAccessException) { return Miss(true); }
-            Decoded? result;
-            try { result = Decode(bytes, length, zone, farOnly, grouped); }
-            catch (Exception e) when (e is ArgumentException or IndexOutOfRangeException or InvalidDataException or KeyNotFoundException or OverflowException or EndOfStreamException) { result = null; }
-            if (result is null) return Miss(true);
-            Interlocked.Increment(ref hits);
-            TouchOnce();
-            Interlocked.Add(ref bytesRead, length);
-            Interlocked.Add(ref savedMicros, (long)(result.Value.ComputeMs * 1000));
-            long took = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-            Interlocked.Add(ref loadTicks, took);
-            Interlocked.Add(ref savedMicros, -(long)(took * 1e6 / System.Diagnostics.Stopwatch.Frequency));
-            return result;
+            if (!System.IO.File.Exists(path)) return Miss(false);
+            (bytes, length) = ReadFile(path);
         }
-        finally
-        {
-            // Nothing decoded refers to the file's bytes (strings, heights, densities and records are copies).
-            if (bytes is not null) System.Buffers.ArrayPool<byte>.Shared.Return(bytes);
-        }
+        catch (IOException) { return Miss(true); }
+        catch (UnauthorizedAccessException) { return Miss(true); }
+        Decoded? result;
+        try { result = Decode(bytes, length, zone, farOnly, grouped); }
+        catch (Exception e) when (e is ArgumentException or IndexOutOfRangeException or InvalidDataException or KeyNotFoundException or OverflowException or EndOfStreamException) { result = null; }
+        if (result is null) return Miss(true);
+        Interlocked.Increment(ref hits);
+        TouchOnce();
+        Interlocked.Add(ref bytesRead, length);
+        Interlocked.Add(ref savedMicros, (long)(result.Value.ComputeMs * 1000));
+        long took = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        Interlocked.Add(ref loadTicks, took);
+        Interlocked.Add(ref savedMicros, -(long)(took * 1e6 / System.Diagnostics.Stopwatch.Frequency));
+        return result;
 
         Decoded? Miss(bool bad)
         {
@@ -213,29 +205,25 @@ public sealed class FoliageLayoutCache
         }
     }
 
-    /// <summary>The whole file in a pooled buffer (a file is 300 KB on average, a large object the size of a zone's records; files over 1 MB are not pooled by the shared pool).</summary>
-    static (byte[] Buffer, int Length) ReadPooled(string path)
+    /// <summary>
+    /// The whole file in a fresh buffer. A file is 300 KB on average; the shared ArrayPool keeps such arrays for the
+    /// life of the worker threads, which adds up to gigabytes over a tour of the world's zones. The decode copies
+    /// everything it keeps, so the file bytes can go back to the GC immediately.
+    /// </summary>
+    static (byte[] Buffer, int Length) ReadFile(string path)
     {
         using var file = System.IO.File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, FileOptions.SequentialScan);
         long size = RandomAccess.GetLength(file);
         if (size > int.MaxValue) throw new IOException("cache file too large");
-        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent((int)size);
-        try
+        var buffer = GC.AllocateUninitializedArray<byte>((int)size);
+        int read = 0;
+        while (read < size)
         {
-            int read = 0;
-            while (read < size)
-            {
-                int n = RandomAccess.Read(file, buffer.AsSpan(read, (int)size - read), read);
-                if (n == 0) break;
-                read += n;
-            }
-            return (buffer, read);   // a file that shrank meanwhile fails its checksum
+            int n = RandomAccess.Read(file, buffer.AsSpan(read, (int)size - read), read);
+            if (n == 0) break;
+            read += n;
         }
-        catch
-        {
-            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
-            throw;
-        }
+        return (buffer, read);   // a file that shrank meanwhile fails its checksum
     }
 
     /// <summary>Parses and verifies one file's bytes; null when it is not a valid entry for this key, zone and kind.</summary>
