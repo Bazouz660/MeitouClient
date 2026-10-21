@@ -482,8 +482,12 @@ record: `id (zigzag gap) | length | back | ProjectileWire body`. Seq is per clie
   acked. With nothing to send, a header-only part goes out when views were sent or at `KeepAliveHz`, so the newest Tick
   can lag the host's by up to `SendHz / KeepAliveHz - 1` ticks while nothing changes.
 - **Acks** (`OnClientFrame`, frames of another epoch ignored): each acked (Seq, part) still in the ring of the last
-  `History` parts moves its entities' baselines forward (never back), finishes its removals and `Confirm`s its string
-  definitions. Resync slots drop the baseline and force a full record.
+  `History` parts moves its entities' baselines forward (never back), finishes its removals (only those sent since the
+  entity last left, so a late ack from before a return cannot end a newer removal) and `Confirm`s its string
+  definitions. Resync slots drop the baseline and force a full record. Acks of parts sent before an entity (re)started
+  (new, back from a pending removal, or resynced) set no baseline, so baselines only move forward.
+- **Writer limits.** A part section never holds more than `MaxIdList` removals or records, and negative slots,
+  generations or projectile ids are logged and skipped, so the mirror never refuses a part the host wrote.
 - **Wire cache.** Quantized wires are cached per `CharacterSnapshot` object, shared by every client of one `LookRegistry`.
 
 **ClientFrame**: `0x11 | Epoch u16 | FrameSeq | acks: count (<= 8), (Seq, 64-bit part mask) varints | Eye, Focus as Q64
@@ -503,9 +507,11 @@ names the look; the sent-look set is kept for the connection.
 - **Decoding.** A part of another epoch is ignored, one that does not parse is dropped whole (`DroppedParts`). A record
   whose baseline is not held, or that does not decode, is skipped by its length and its slot asked for in full
   (`SkippedRecords`); its part is applied but not acked, so the host keeps its baselines and redefines the part's
-  strings. Duplicates are ignored and parts may arrive in any order (plain unreliable delivery works too).
-- **Removals** apply when the newest state held is that live character; a state at the same Seq replaces a removal, so a
-  slot's new generation replaces the old character.
+  strings. Duplicates are ignored and parts may arrive in any order (plain unreliable delivery works too); a part 64 or
+  more Seqs older than the newest is ignored.
+- **Removals** apply unless a state at their Seq or newer, or a newer generation, is held for the slot. They are kept
+  even for a character not held yet, so a late older part cannot bring back one the host has forgotten. A state at the
+  same Seq replaces a removal, so a slot's new generation replaces the old character.
 - **Assembly** (`TryAssemble`). A Seq is ready when all its parts arrived or a newer Seq has a part; the newest ready Seq
   is assembled: each entity's newest state at or before it, characters by slot, projectiles by id, detail views merged by
   `CharacterId`, the views whose Tick it reached committed first (in arrival order). Looks resolve through

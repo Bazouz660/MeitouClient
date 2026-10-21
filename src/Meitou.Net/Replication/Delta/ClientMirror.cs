@@ -12,8 +12,9 @@ namespace Meitou.Net.Replication;
 /// part's Seq in a per-entity history (the newest state is always kept, older ones for 64 Seqs, and states older than a named baseline are dropped). A
 /// record whose baseline is missing (or that does not decode) is skipped by its length, its slot asked for in full (<see cref="ClientFrame.Resync"/>),
 /// and its part is not acked, so the host keeps its old baselines and redefines the part's strings. A part that does not parse is dropped whole.
-/// Duplicates are ignored; parts may arrive in any order.</item>
-/// <item><b>Removals</b> apply when nothing newer is held for that entity; a new generation in a slot replaces the entity.</item>
+/// Duplicates are ignored; parts may arrive in any order (one 64 Seqs older than the newest is ignored).</item>
+/// <item><b>Removals</b> apply when nothing at their Seq or newer (nor a newer generation) is held for the slot, and are kept even for an entity not held
+/// yet, so a late older part cannot bring it back; a new generation in a slot replaces the entity.</item>
 /// <item><b>Assembly.</b> A Seq is ready when all its parts arrived or a newer Seq has a part. <see cref="TryAssemble"/> takes the newest ready Seq,
 /// commits the views whose Tick it reached, and builds every entity's newest state at or before that Seq, characters by slot and projectiles by id, with
 /// the detail views merged and looks resolved through the <see cref="ILookResolver"/> (a look not built yet keeps the character's last one).</item>
@@ -201,6 +202,7 @@ public sealed class ClientMirror(AnimationLibrary animations, ILookResolver look
         if (epoch != Epoch) return;
         uint seq = r.ReadVarUInt32();
         if (seq == 0) throw new NetFormatException("Seq 0 is never sent.");
+        if (newestSeq >= HistorySeqs && seq <= newestSeq - HistorySeqs) return;   // older than any history kept: its states and removals are moot
         long tick = r.ReadVarInt();
         r.ReadVarUInt32();   // ViewSeq: the views sent before this part (informational)
         int index = r.ReadByte(), count = r.ReadByte();
@@ -341,22 +343,26 @@ public sealed class ClientMirror(AnimationLibrary animations, ILookResolver look
         resync.TryAdd(key, seq);
     }
 
-    /// <summary>A removal applies when the newest state held for its slot is that live character and no newer one.</summary>
+    /// <summary>
+    /// A removal applies when nothing at its Seq or newer is held for its slot and no newer generation lives there. It is kept as a removal entry even
+    /// when the character is not held yet, so a late part with an older state cannot bring it back after the host forgot it.
+    /// </summary>
     void RemoveCharacter(CharacterId id, uint seq, long tick)
     {
         resync.Remove(id.Slot);
-        if (!slots.TryGetValue(id.Slot, out var slot) || slot.History.Count == 0) return;
-        var newest = slot.History[^1];
-        if (newest.Seq >= seq || newest.Id != id || newest.Wire is null) return;
-        slot.History.Add(new Entry(seq, tick, id, null));
+        if (!slots.TryGetValue(id.Slot, out var slot)) slots.Add(id.Slot, slot = new Slot());
+        var history = slot.History;
+        if (history.Count > 0 && (history[^1].Seq >= seq || (history[^1].Wire is null && history[^1].Id == id))) return;
+        foreach (var e in history)
+            if (e.Wire is not null && e.Id.Generation > id.Generation) return;
+        history.Add(new Entry(seq, tick, id, null));
     }
 
     void RemoveBolt(int id, uint seq, long tick)
     {
         resync.Remove(-1 - id);
-        if (!bolts.TryGetValue(id, out var history) || history.Count == 0) return;
-        var newest = history[^1];
-        if (newest.Seq >= seq || newest.Wire is null) return;
+        var history = bolts.TryGetValue(id, out var h) ? h : bolts[id] = [];
+        if (history.Count > 0 && (history[^1].Seq >= seq || history[^1].Wire is null)) return;
         history.Add(new BoltEntry(seq, tick, null));
     }
 

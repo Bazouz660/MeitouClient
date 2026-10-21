@@ -27,7 +27,9 @@ public sealed class ClientReplicator
     {
         public readonly CharacterId Id = id;
         public bool Sent, Removing, Full;
-        public uint LastSentSeq, AckedSeq;
+        // RemovedAt: the Seq of the send that started the pending removal; an ack of an older part's removal (from before a return) does not finish it.
+        // Floor: the Seq this entity (re)started from; acks of older parts are of a previous life and set no baseline, so baselines only move forward.
+        public uint LastSentSeq, AckedSeq, RemovedAt, Floor;
         public CharacterWire? Acked;
         public float Acc;
     }
@@ -36,7 +38,7 @@ public sealed class ClientReplicator
     {
         public readonly int Id = id;
         public bool Sent, Removing, Full, Near;
-        public uint LastSentSeq, AckedSeq;
+        public uint LastSentSeq, AckedSeq, RemovedAt, Floor;
         public ProjectileWire? Acked;
     }
 
@@ -259,12 +261,11 @@ public sealed class ClientReplicator
             if (slot >= 0)
             {
                 foreach (var e in entities.Values)
-                    if (e.Id.Slot == slot) { e.Acked = null; e.Full = true; }
+                    if (e.Id.Slot == slot) (e.Acked, e.Full, e.Floor) = (null, true, nextSeq);
             }
             else if (bolts.TryGetValue(-1 - slot, out var bolt))
             {
-                bolt.Acked = null;
-                bolt.Full = true;
+                (bolt.Acked, bolt.Full, bolt.Floor) = (null, true, nextSeq);
             }
         }
     }
@@ -273,21 +274,21 @@ public sealed class ClientReplicator
     {
         sent.Processed = true;
         foreach (var (id, wire) in sent.Characters)
-            if (entities.TryGetValue(id, out var e) && (e.Acked is null || e.AckedSeq < sent.Seq))
+            if (entities.TryGetValue(id, out var e) && sent.Seq >= e.Floor && (e.Acked is null || e.AckedSeq < sent.Seq))
             {
                 e.Acked = wire;
                 e.AckedSeq = sent.Seq;
             }
         foreach (var (id, wire) in sent.Projectiles)
-            if (bolts.TryGetValue(id, out var b) && (b.Acked is null || b.AckedSeq < sent.Seq))
+            if (bolts.TryGetValue(id, out var b) && sent.Seq >= b.Floor && (b.Acked is null || b.AckedSeq < sent.Seq))
             {
                 b.Acked = wire;
                 b.AckedSeq = sent.Seq;
             }
         foreach (var id in sent.Removals)
-            if (entities.TryGetValue(id, out var e) && e.Removing) entities.Remove(id);
+            if (entities.TryGetValue(id, out var e) && e.Removing && sent.Seq >= e.RemovedAt) entities.Remove(id);
         foreach (int id in sent.BoltRemovals)
-            if (bolts.TryGetValue(id, out var b) && b.Removing) bolts.Remove(id);
+            if (bolts.TryGetValue(id, out var b) && b.Removing && sent.Seq >= b.RemovedAt) bolts.Remove(id);
         strings.Confirm(sent.Strings);
     }
 
@@ -301,6 +302,11 @@ public sealed class ClientReplicator
         for (int i = 0; i < members.Count; i++)
         {
             var (c, weight) = members[i];
+            if (c.Id.Slot < 0 || c.Id.Generation < 0)
+            {
+                Note($"character {c.Id}", $"character {c.Id} not sent: a negative slot or generation has no wire form");
+                continue;
+            }
             CharacterWire? wire;
             try
             {
@@ -315,12 +321,13 @@ public sealed class ClientReplicator
                 Note($"character {c.Id}", $"character {c.Id} not sent: {e.Message}");
                 continue;
             }
-            if (!entities.TryGetValue(c.Id, out var entity)) entities.Add(c.Id, entity = new Entity(c.Id));
+            if (!entities.TryGetValue(c.Id, out var entity)) entities.Add(c.Id, entity = new Entity(c.Id) { Floor = seq });
             if (entity.Removing)
             {
                 // Back before its removal was acked: the client may have applied it, so it starts again from a full record.
                 entity.Removing = false;
                 entity.Acked = null;
+                entity.Floor = seq;
             }
             bool isNew = !entity.Sent || entity.Full || !HasBaseline(entity.AckedSeq, entity.LastSentSeq, entity.Acked is not null, seq);
             if (!isNew && wire.DiffMask(entity.Acked!) == 0)
@@ -336,7 +343,7 @@ public sealed class ClientReplicator
             if (!e.Removing && !interest.Members.Contains(e.Id)) stale.Add(e);
         foreach (var e in stale)
         {
-            if (e.Sent) e.Removing = true;
+            if (e.Sent) (e.Removing, e.RemovedAt) = (true, seq);
             else entities.Remove(e.Id);
         }
     }
@@ -349,17 +356,23 @@ public sealed class ClientReplicator
         float enter = draw + InterestSet.Margin, leave = enter + InterestSet.Margin;
         foreach (var p in view.Projectiles)
         {
+            if (p.Id < 0)
+            {
+                Note($"projectile {p.Id}", $"projectile {p.Id} not sent: a negative id has no wire form");
+                continue;
+            }
             if (!boltsSeen.Add(p.Id)) continue;
             float dx = p.Position.X - View.Eye.X, dz = p.Position.Z - View.Eye.Z, d2 = dx * dx + dz * dz;
             bolts.TryGetValue(p.Id, out var bolt);
             bool near = d2 <= enter * enter || (bolt is { Near: true, Removing: false } && d2 <= leave * leave);
             if (!near) { boltsSeen.Remove(p.Id); continue; }
-            if (bolt is null) bolts.Add(p.Id, bolt = new Bolt(p.Id));
+            if (bolt is null) bolts.Add(p.Id, bolt = new Bolt(p.Id) { Floor = seq });
             bolt.Near = true;
             if (bolt.Removing)
             {
                 bolt.Removing = false;
                 bolt.Acked = null;
+                bolt.Floor = seq;
             }
             var wire = ProjectileWire.Quantize(p);
             bool isNew = !bolt.Sent || bolt.Full || !HasBaseline(bolt.AckedSeq, bolt.LastSentSeq, bolt.Acked is not null, seq);
@@ -371,7 +384,7 @@ public sealed class ClientReplicator
             if (!b.Removing && !boltsSeen.Contains(b.Id))
             {
                 b.Near = false;
-                if (b.Sent) b.Removing = true;
+                if (b.Sent) (b.Removing, b.RemovedAt) = (true, seq);
                 else (gone ??= []).Add(b.Id);
             }
         if (gone is not null)
@@ -397,7 +410,7 @@ public sealed class ClientReplicator
         foreach (var e in entities.Values)
         {
             if (!e.Removing) continue;
-            if (header + part.Length + 12 > max) break;
+            if (header + part.Length + 12 > max || part.RemovalCount >= NetLimits.MaxIdList) break;
             CommonCodec.WriteId(part.Removals, e.Id);
             part.RemovalCount++;
             part.Part.Removals.Add(e.Id);
@@ -405,7 +418,7 @@ public sealed class ClientReplicator
         foreach (var b in bolts.Values)
         {
             if (!b.Removing) continue;
-            if (header + part.Length + 6 > max) break;
+            if (header + part.Length + 6 > max || part.BoltRemovalCount >= NetLimits.MaxIdList) break;
             part.BoltRemovals.WriteVarInt(b.Id);
             part.BoltRemovalCount++;
             part.Part.BoltRemovals.Add(b.Id);
@@ -438,7 +451,7 @@ public sealed class ClientReplicator
             }
             int gap = e.Id.Slot - part.PreviousSlot;
             int bytes = VarIntSize(gap) + VarUIntSize((uint)scratch.Length) + scratch.Length;
-            if (header + part.Length + bytes <= max)
+            if (header + part.Length + bytes <= max && part.CharacterCount < NetLimits.MaxIdList)
             {
                 part.Characters.WriteVarInt(gap);
                 part.Characters.WriteVarUInt((uint)scratch.Length);
@@ -484,7 +497,7 @@ public sealed class ClientReplicator
             ProjectileWire.Write(scratch, strings, wire, baseline, mask);
             int gap = bolt.Id - part.PreviousBolt;
             int bytes = VarIntSize(gap) + VarUIntSize((uint)scratch.Length) + scratch.Length;
-            if (header + part.Length + bytes <= max)
+            if (header + part.Length + bytes <= max && part.BoltCount < NetLimits.MaxIdList)
             {
                 part.Bolts.WriteVarInt(gap);
                 part.Bolts.WriteVarUInt((uint)scratch.Length);
