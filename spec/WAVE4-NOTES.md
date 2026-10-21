@@ -55,3 +55,15 @@ Deviations:
 Remaining:
 - NetClient is exercised only by T1 (wave 5).
 - `LookCache` builds looks on the thread pool (background: true).
+
+## Review fixes after wave 4 (session ccd542, on `multiplayer`)
+
+- b4dff43: `NetHost` never throws on client input or unencodable host data. `OnReceived` catches every exception (not
+  only `NetFormatException`) and drops that client with `ProtocolError`; a WorldReset whose weather the codec refuses goes
+  without it (non-finite focus → 0); refused Weather or EventBatch writes are logged (`TryWrite`), never thrown out of `EndFrame`.
+- 196ff29 (before wave 4): the gate admits a natural-rock site id only in `ProductionSystem.NaturalId`'s exact form for a
+  placed rock of the rock source (`ProductionSystem.IsRock`); without a rock source none passes. Done: the CONTRACT
+  "bound or validate the natural-rock site check" item.
+- `wip/wave4-alternate` (965c1bc): an independent N11/N12 built in parallel by this session, not merged; kept only for comparison.
+- Left as is: the host's `pendingChange` keeps only the last clock change of a frame (two changes in one frame announce one);
+  the client's Hello throws `ArgumentException` out of `BeginFrame` for a data set over `ProtocolCodec.MaxDataFiles` files.
