@@ -54,6 +54,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         frame = frame.Where(f => f.Id != id).ToArray();
     }
     public void CloseAll() { foreach (string id in open.ToArray()) Close(id); }
+    /// <summary>Sets the selected row of a list or -1 for none (a window reopened with fresh state).</summary>
+    public void SetSelected(string id, string widget, int index) => screens[id].Selected[widget] = index;
     public void SetTab(string id, string widget, int index) => screens[id].Tabs[widget] = Math.Max(0, index);
     /// <summary>Where a screen has been moved from its layout position (a dragged window keeps its offset; the host may place a window beside another).</summary>
     public Vector2 GetOffset(string id) => screens[id].Offset;
