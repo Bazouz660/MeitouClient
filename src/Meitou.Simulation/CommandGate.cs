@@ -168,8 +168,12 @@ public static class CommandGate
         /// <summary>A building of the player faction (<see cref="BuildingRegistry"/>).</summary>
         public bool PlayerSite(string site) => world.Buildings.Find(site) is { } b && b.Owner == world.Player.Faction;
         public bool Machine(string site) => world.Machines.Find(site) is not null;
-        /// <summary>A natural rock's site id (<see cref="Production.ProductionSystem.NaturalId"/>): its machine is made at the first order; the production system ignores an id that names no rock.</summary>
-        public bool Rock(string site) => Production.ProductionSystem.IsNatural(site);
+        /// <summary>
+        /// A natural rock's site id (<see cref="Production.ProductionSystem.NaturalId"/>) that names a rock (<see cref="Production.ProductionSystem.IsRock"/>): its machine is made at the first
+        /// order. Without a production system or rock source no id passes.
+        /// </summary>
+        public bool Rock(string site) =>
+            Production.ProductionSystem.IsNatural(site) && world.Systems.OfType<Production.ProductionSystem>().FirstOrDefault() is { } production && production.IsRock(site);
         public bool Container(string fixture) => world.Fixtures.Find(fixture) is { Contents: not null };
 
         /// <summary>One of the sender's player squads (of the player faction, not a platoon's active half).</summary>

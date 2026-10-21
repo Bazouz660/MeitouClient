@@ -1107,7 +1107,7 @@ session or uses up a grant.
   that character to be the sender's.
 - **Targets and places**: a target, patient, prisoner, wearer, inspected character or surgeon must be alive. Talk and trade partners must not be
   player characters. Doors must be door fixtures and containers fixtures with contents. Ground items must exist. Operate and job sites must be
-  machines, player-faction buildings or natural rock ids (`ProductionSystem.IsNatural`; the production system ignores one that names no rock); build, dismantle, cancel and pause sites must be player-faction buildings, crafting benches machines.
+  machines, player-faction buildings or natural rock ids in `ProductionSystem.NaturalId`'s exact form for a placed rock of the rock source (`ProductionSystem.IsRock`; none without a rock source, so made-up ids never reach the site cache); build, dismantle, cancel and pause sites must be player-faction buildings, crafting benches machines.
   Squad commands name the sender's own player squads (`ActiveSquadCommand` may also say -1).
 - **Values**: enums are defined (`ShackleWork`, `TaskType`, `EditKind`); an edit's look has only finite floats, vectors and instance
   transforms; `DialogueChoice.Index >= 0` and `TakeLootItem.Index >= 0`; research ids are non-empty; `Buy/SellItem.Quantity >= 1`, and a buy's section is null, `main`
