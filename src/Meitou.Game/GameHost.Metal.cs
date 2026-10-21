@@ -1116,16 +1116,17 @@ sealed partial class GameHost
             bool streamingIdle = (terrainTextures?.Idle ?? true) && (objects?.Pending ?? 0) == 0 && (foliage?.Pending ?? 0) == 0;
             if (!streamingIdle) streamingIdleSince = 0;
             else if (streamingIdleSince == 0) streamingIdleSince = now;
-            if (streamingIdle && now - streamingIdleSince >= 2 && now - lastManagedTrim >= 60)
+            var managedBefore = GC.GetGCMemoryInfo();
+            bool managedHighWater = managedBefore.HeapSizeBytes > 4L << 30;
+            if ((streamingIdle && now - streamingIdleSince >= 2 || managedHighWater) && now - lastManagedTrim >= 60)
             {
                 lastManagedTrim = now;
-                var before = GC.GetGCMemoryInfo();
+                var before = managedBefore;
                 // Compacting the LOH is a stop-the-world move of every large object: on a 4+ GB heap it stalled
                 // this loop for 1.6 s. Do it where a loading screen or a menu covers the pause, or when the heap
-                // has grown past 4 GB and the streamers are quiet anyway; otherwise a background collection is
-                // enough and does not move the live arrays.
+                // has grown past 4 GB; otherwise a background collection is enough and does not move live arrays.
                 bool safePoint = TitleVisible || settings?.Visible == true || sceneLoad is not null || loading?.Exiting == true;
-                bool compact = safePoint || before.HeapSizeBytes > 4L << 30;
+                bool compact = safePoint || managedHighWater;
                 if (compact)
                 {
                     GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
