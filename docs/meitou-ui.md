@@ -113,7 +113,7 @@ Engine choice (the game has no chat); only in a session (`Net` role not `None`).
   `Kenshi_MainPanel.layout`) with the box focused (`MyGuiScreenHost.FocusBox`). Enter or SEND sends and closes; Esc or
   a click away keeps the text as the draft for the next open; Up/Down step through the last 20 sent lines; Tab is swallowed.
 - Sending: text goes to `IMultiplayerView.SendChat`; own lines are never added locally, they return as `Chat` events so
-  every screen shows the host's order. Every line also goes to the Overview Messages tab.
+  every screen shows the host's order. Chat and session-event lines also go to the Overview Messages tab.
 - History (`AddChatHistory`, Kenshi_StandardFont_Medium, bottom left above the entry): last 100 lines kept. Closed: lines
   younger than 12 s, fading over the last 2 s, at most 8 rows; open: the last 14 rows. A player's line starts with the
   name in the player's colour (`PlayerColours`, grey if gone); system and error lines have no name.
