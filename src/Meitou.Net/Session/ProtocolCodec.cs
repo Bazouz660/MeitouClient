@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Text;
 using Meitou.Data.World;
 using Meitou.Engine.Time;
+using Meitou.Net.Transport;
 
 namespace Meitou.Net.Session;
 
@@ -33,12 +34,18 @@ public sealed record ChatRequest(string Text);
 /// The Control-channel protocol messages (docs/net.md, "Protocol and handshake"). <c>Write</c> puts the <see cref="MessageType"/> byte first; the caller
 /// reads that byte (<see cref="ReadType"/>), dispatches, and the <c>ReadX</c> of the message reads the rest and demands its end. The <c>NetRules</c> and
 /// <c>SessionRules</c> overloads write bodies only (they are parts of Welcome, WorldReset and Rules). Writers clamp texts to their reader limit (at a
-/// character boundary) and throw <see cref="ArgumentException"/> for a fixed-size field of the wrong size, so a reader never refuses what they wrote.
+/// character boundary) and throw <see cref="ArgumentException"/> for a fixed-size field of the wrong size or a non-finite clock or weather number, so a reader never refuses what they wrote.
 /// </summary>
 public static class ProtocolCodec
 {
     /// <summary>Longest build string, in UTF-8 bytes.</summary>
     public const int MaxBuild = 64;
+
+    /// <summary>
+    /// Longest <see cref="Reject.Reason"/> written, in UTF-8 bytes: an encoded Reject (type byte, code byte, two length bytes, text) fits
+    /// <see cref="INetTransport.MaxDropPayload"/>, as a drop or refusal payload must.
+    /// </summary>
+    public const int MaxRejectReason = INetTransport.MaxDropPayload - 4;
 
     /// <summary>Most files in a data set identity.</summary>
     public const int MaxDataFiles = 1024;
@@ -121,7 +128,7 @@ public static class ProtocolCodec
     {
         w.WriteByte((byte)MessageType.Reject);
         w.WriteEnum(m.Code);
-        WriteText(w, m.Reason, NetLimits.MaxMessageText);
+        WriteText(w, m.Reason, MaxRejectReason);
     }
 
     public static Reject ReadReject(ref NetReader r)
@@ -206,7 +213,7 @@ public static class ProtocolCodec
     {
         w.WriteByte((byte)MessageType.ClockRequest);
         w.WriteEnum(m.Kind);
-        w.WriteDouble(m.Speed);
+        WriteFiniteDouble(w, m.Speed);
     }
 
     public static ClockRequest ReadClockRequest(ref NetReader r)
@@ -233,15 +240,15 @@ public static class ProtocolCodec
     static void WriteClockBody(NetWriter w, ClockState m)
     {
         w.WriteUInt16(m.Epoch);
-        w.WriteDouble(m.Speed);
-        w.WriteDouble(m.LastSpeed);
+        WriteFiniteDouble(w, m.Speed);
+        WriteFiniteDouble(w, m.LastSpeed);
         w.WriteBool(m.HostBusy);
-        w.WriteDouble(m.AchievedSpeed);
+        WriteFiniteDouble(w, m.AchievedSpeed);
         w.WriteVarInt(m.AnchorTick);
-        w.WriteDouble(m.AnchorHours);
+        WriteFiniteDouble(w, m.AnchorHours);
         w.WriteVarInt(m.Change.Player);
         w.WriteEnum(m.Change.Kind);
-        w.WriteDouble(m.Change.Speed);
+        WriteFiniteDouble(w, m.Change.Speed);
     }
 
     static ClockState ReadClockBody(ref NetReader r)
@@ -358,7 +365,7 @@ public static class ProtocolCodec
         w.WriteBool(m.Forced is not null);
         if (m.Forced is not null) WriteText(w, m.Forced, NetLimits.MaxName);
         w.WriteVarInt(m.Day);
-        w.WriteDouble(m.Hour);
+        WriteFiniteDouble(w, m.Hour);
         int count = Math.Min(m.Regions.Count, MaxWeatherRegions);
         w.WriteVarUInt((uint)count);
         for (int i = 0; i < count; i++)
@@ -370,20 +377,20 @@ public static class ProtocolCodec
             w.WriteVarInt(g.SeasonEndDay);
             WriteText(w, g.WeatherId, NetLimits.MaxName);
             w.WriteVarInt(g.WeatherEntryIndex);
-            w.WriteDouble(g.WeatherStartMinute);
-            w.WriteDouble(g.WeatherEndMinute);
-            w.WriteSingle(g.Strength);
-            w.WriteDouble(g.Wind.StartMinute);
-            w.WriteDouble(g.Wind.DurationMinutes);
-            w.WriteSingle(g.Wind.Speed0);
-            w.WriteSingle(g.Wind.Heading0);
-            w.WriteSingle(g.Wind.Speed1);
-            w.WriteSingle(g.Wind.Heading1);
-            w.WriteDouble(g.NextWindUpdateMinute);
-            w.WriteSingle(g.FogFrom.Enabled);
+            WriteFiniteDouble(w, g.WeatherStartMinute);
+            WriteFiniteDouble(w, g.WeatherEndMinute);
+            WriteFiniteSingle(w, g.Strength);
+            WriteFiniteDouble(w, g.Wind.StartMinute);
+            WriteFiniteDouble(w, g.Wind.DurationMinutes);
+            WriteFiniteSingle(w, g.Wind.Speed0);
+            WriteFiniteSingle(w, g.Wind.Heading0);
+            WriteFiniteSingle(w, g.Wind.Speed1);
+            WriteFiniteSingle(w, g.Wind.Heading1);
+            WriteFiniteDouble(w, g.NextWindUpdateMinute);
+            WriteFiniteSingle(w, g.FogFrom.Enabled);
             CommonCodec.WriteVector3(w, g.FogFrom.Colour);
-            w.WriteSingle(g.FogFrom.Distance);
-            w.WriteDouble(g.FogFadeMinutes);
+            WriteFiniteSingle(w, g.FogFrom.Distance);
+            WriteFiniteDouble(w, g.FogFadeMinutes);
         }
     }
 
@@ -437,6 +444,18 @@ public static class ProtocolCodec
     }
 
     // ---- Helpers ----
+
+    static void WriteFiniteDouble(NetWriter w, double v)
+    {
+        if (!double.IsFinite(v)) throw new ArgumentException("A clock or weather number is not finite.");
+        w.WriteDouble(v);
+    }
+
+    static void WriteFiniteSingle(NetWriter w, float v)
+    {
+        if (!float.IsFinite(v)) throw new ArgumentException("A weather number is not finite.");
+        w.WriteSingle(v);
+    }
 
     static double ReadFiniteDouble(ref NetReader r)
     {

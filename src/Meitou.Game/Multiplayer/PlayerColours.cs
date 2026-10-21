@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Net;
+using Meitou.Net.Session;
 
 namespace Meitou.Game;
 
@@ -39,8 +40,7 @@ static class PlayerColours
     /// </summary>
     public static int Assign(IReadOnlyCollection<int> taken, int preferred = -1)
     {
-        if ((uint)preferred < Count && !taken.Contains(preferred)) return preferred;
-        for (int i = 0; i < Count; i++) if (!taken.Contains(i)) return i;
-        return -1;
+        // preferred -1 (none) maps to colour 0 by the rule; an out-of-range number is reduced modulo Count.
+        return PlayerColourRule.Assign(taken, preferred < 0 ? 0 : preferred);
     }
 }

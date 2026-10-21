@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Text;
 using Meitou.Data.World;
 using Meitou.Engine.Time;
+using Meitou.Net.Transport;
 using Meitou.Net;
 using Meitou.Net.Session;
 
@@ -122,7 +123,8 @@ public class ProtocolCodecTests
     {
         string long8 = new('ü', 5000);
         var reject = Read(Bytes(w => ProtocolCodec.Write(w, new Reject(RejectCode.Data, long8))), MessageType.Reject, ProtocolCodec.ReadReject);
-        Assert.Equal(NetLimits.MaxMessageText, Encoding.UTF8.GetByteCount(reject.Reason));
+        Assert.Equal(ProtocolCodec.MaxRejectReason, Encoding.UTF8.GetByteCount(reject.Reason));
+        Assert.True(Bytes(w => ProtocolCodec.Write(w, new Reject(RejectCode.Data, long8))).Length <= INetTransport.MaxDropPayload);
 
         var bytes = Bytes(w => ProtocolCodec.Write(w, new Ready(1)));
         Assert.Throws<NetFormatException>(() => Read([.. bytes, 0], MessageType.Ready, ProtocolCodec.ReadReady));
@@ -132,7 +134,13 @@ public class ProtocolCodecTests
         Assert.Throws<ArgumentException>(() => Bytes(w => ProtocolCodec.Write(w, new Challenge([1, 2, 3], "h", false))));
         Assert.Throws<ArgumentException>(() => Bytes(w => ProtocolCodec.Write(w, new Hello(1, "b", Guid.Empty, "n", [1], Data, 0))));
 
-        var clock = Bytes(w => ProtocolCodec.Write(w, new ClockState(0, double.NaN, 0, false, 0, 0, 0, default)));
+        var clock = Bytes(w => ProtocolCodec.Write(w, new ClockState(0, 1, 0, false, 0, 0, 0, default)));
+        BitConverter.GetBytes(double.NaN).CopyTo(clock, 3); // the type byte and the epoch come first, then Speed
         Assert.Throws<NetFormatException>(() => Read(clock, MessageType.ClockState, ProtocolCodec.ReadClockState));
+
+        // The writers refuse what those readers would.
+        Assert.Throws<ArgumentException>(() => Bytes(w => ProtocolCodec.Write(w, new ClockState(0, double.NaN, 0, false, 0, 0, 0, default))));
+        Assert.Throws<ArgumentException>(() => Bytes(w => ProtocolCodec.Write(w, new ClockRequest(ClockRequestKind.SetSpeed, double.PositiveInfinity))));
+        Assert.Throws<ArgumentException>(() => Bytes(w => ProtocolCodec.Write(w, new WeatherSync(0, null, 0, double.NaN, []))));
     }
 }

@@ -182,6 +182,39 @@ public class FcsRecordCodecTests
     }
 
     [Fact]
+    public void A_record_the_reader_would_refuse_is_refused_on_write()
+    {
+        var cases = new Action<FcsRecord>[]
+        {
+            r => r.Name = new string('n', NetLimits.MaxName + 1),
+            r => r.StringId = new string('s', NetLimits.MaxName + 1),
+            r => r.Bools[new string('k', NetLimits.MaxName + 1)] = true,
+            r => r.Ints[new string('é', NetLimits.MaxName / 2 + 1)] = 1,
+            r => r.Strings["text"] = new string('t', NetLimits.MaxString + 1),
+            r => r.Filenames["file"] = new string('語', NetLimits.MaxString / 3 + 1),
+            r => r.Floats["f"] = float.NaN,
+            r => r.Vector3s["v"] = new Vector3(1, float.PositiveInfinity, 3),
+            r => r.Vector4s["c"] = new Vector4(0, 0, float.NegativeInfinity, 1),
+            r => r.Instances.Add(new FcsInstance { Id = "i", Target = "t", Rotation = new Quaternion(float.NaN, 0, 0, 1) }),
+        };
+        foreach (var change in cases)
+        {
+            var record = new FcsRecord();
+            change(record);
+            using var w = new NetWriter();
+            Assert.Throws<ArgumentException>(() => FcsRecordCodec.Write(w, new StringTableWriter(confirmOnSend: true), record));
+        }
+
+        // The limits themselves are written and read back.
+        var edge = new FcsRecord { Name = new string('n', NetLimits.MaxName) };
+        edge.Strings["text"] = new string('t', NetLimits.MaxString);
+        using var ok = new NetWriter();
+        FcsRecordCodec.Write(ok, new StringTableWriter(confirmOnSend: true), edge);
+        var reader = new NetReader(ok.Written);
+        AssertSame(edge, FcsRecordCodec.Read(ref reader, new StringTableReader()));
+    }
+
+    [Fact]
     public void An_empty_record_round_trips()
     {
         var record = new FcsRecord();
