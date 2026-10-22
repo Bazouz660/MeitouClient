@@ -177,7 +177,7 @@ internal static partial class ZoneNavMeshBuilder
     /// How far below an upward face of a solid a span's floor has to be to count as inside (engine choice: one height cell). Recast rounds a span's top up to the
     /// highest point of its surface over the cell, so a span on the solid's own top is on or above that face and stays.
     /// </summary>
-    const float SolidTopInset = 1;
+    internal const float SolidTopInset = 1;
 
     /// <summary>Removes the walkable spans whose floor, at the middle of their cell, lies inside the solid (docs/game/pathfinding.md, "Solids").</summary>
     static void RemoveInside(NavSolid solid, RcCompactHeightfield chf)
