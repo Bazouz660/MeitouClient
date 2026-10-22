@@ -10,6 +10,9 @@ namespace Meitou.Rendering.Ui;
 /// <summary>Native alpha-composited MyGUI atlas slices and styled native control frames.</summary>
 public sealed partial class UiPainter : IDisposable
 {
+    /// <summary>The game's standard face (Exo2 SemiBold): the fallback for text whose font resource is not found, and the debug overlay's when no monospace system font is.</summary>
+    internal const string StandardFontFile = "Exo2-SemiBold.ttf";
+
     readonly DebugOverlay overlay;
     readonly MyGuiResources resources;
     readonly Func<string, string?> resolve;
@@ -47,7 +50,7 @@ public sealed partial class UiPainter : IDisposable
         standardSourceKnown = true;
         var spec = FontSpec("Kenshi_StandardFont_Medium");
         if (spec is not null && FontPath(spec.Source) is { } path) standardSource = (path, spec);
-        else if (FontPath("Exo2-SemiBold.ttf") is { } exo) standardSource = (exo, null);
+        else if (FontPath(StandardFontFile) is { } exo) standardSource = (exo, null);
         return standardSource;
     }
 
@@ -149,7 +152,7 @@ public sealed partial class UiPainter : IDisposable
         {
             // The fallback faces (a control whose font is not a TrueType resource): glyph-cache fonts in Meitou's look, 2x oversampled so that scaled text stays smooth.
             DebugOverlay Fallback(string path, int pixels) => CreateUiOverlay(new UiFontOptions(path, pixels * 64L, 72, false, false, null));
-            if (resolve("Exo2-SemiBold.ttf") is { } standard)
+            if (resolve(StandardFontFile) is { } standard)
             {
                 standardFont = Fallback(standard, 16);
                 standardLarge = Fallback(standard, (int)LargePixels);

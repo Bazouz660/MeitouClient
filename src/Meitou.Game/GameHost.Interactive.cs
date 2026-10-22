@@ -82,7 +82,7 @@ sealed partial class GameHost
             EndLoadingScreen();
             return 0;
         }
-        var overlay = DebugOverlay.TryCreate(display.Context);
+        var overlay = DebugOverlay.TryCreate(display.Context, assets.Find);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
         // The debug overlays (docs/engine.md): F10 the debug menu (GameHost.DebugMenu.cs), F11 the frame statistics, F12 the profiler chart.

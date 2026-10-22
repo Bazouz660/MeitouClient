@@ -138,7 +138,7 @@ sealed partial class GameHost
         for (int i = 0; i < gpu.Post.WarmupFrames; i++) { DrawWorld(w, h); display.EndFrame(); }   // a temporal upscaler converges first
         DrawWorld(w, h);
         display.EndFrame();
-        using var overlay = DebugOverlay.TryCreate(context);
+        using var overlay = DebugOverlay.TryCreate(context, assets.Find);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
         string?[] panels = g.UiShowcase

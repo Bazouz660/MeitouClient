@@ -215,7 +215,7 @@ static partial class WorldApp
         if (gpu.Probes is { } probeInfo) Console.WriteLine($"gi probes  {probeInfo.Describe()}");
         if (gpu.Post is { } occlusionPost && gpu.Foliage is { } occlusionFoliage) Console.WriteLine($"occlusion  {(occlusionPost.OcclusionCull ? $"depth pyramid {occlusionPost.Hiz?.Describe ?? "none"}: {occlusionFoliage.OccludedInstances} foliage instances left out of the main view" : "off")}");
         if (gpu.Post is { } shaftsPost) Console.WriteLine($"shafts     {shaftsPost.ShaftsDescribe}");
-        if (o.ShowKeys && DebugOverlay.TryCreate(context) is { } keysOverlay)
+        if (o.ShowKeys && DebugOverlay.TryCreate(context, assets.Find) is { } keysOverlay)
         {
             keysOverlay.Target = target;
             keysOverlay.Visible = true;
@@ -278,8 +278,8 @@ static partial class WorldApp
         {
             gpu = CreateGpu(display.Context, install, scene, assets, o, interactive: true);
             if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = VendorUpscalers.Factory(display.Context, streamline);
-            overlay = DebugOverlay.TryCreate(display.Context);
-            if (overlay is null) Console.WriteLine("keys      no monospace system font found: the F10 key list and F11 statistics are unavailable");
+            overlay = DebugOverlay.TryCreate(display.Context, assets.Find);
+            if (overlay is null) Console.WriteLine("keys      no monospace system font or game font found:the F10 key list and F11 statistics are unavailable");
             if (overlay is not null) overlay.Visible = o.ShowKeys;
             (camera, render) = Setup(scene, o);
             if (overlay is not null) panel = CreateSettingsPanel(overlay, gpu, render, () => hour, v => hour = v, () => display.VSync, v => display.VSync = v, switches,

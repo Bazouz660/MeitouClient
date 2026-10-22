@@ -41,7 +41,7 @@ sealed partial class GameHost
     void BeginLoadingScreen(VulkanDisplay display)
     {
         loadingDisplay = display;
-        loadingOverlay = DebugOverlay.TryCreate(display.Context);
+        loadingOverlay = DebugOverlay.TryCreate(display.Context, assets.Find);
         if (loadingOverlay is not null) loading = LoadingScreen.Create(loadingOverlay, assets.Find, install.DataDirectory, (g.UiMode ?? config.UiMode) == Meitou.Data.Ui.UiMode.Faithful);
         loadingSteps = StartSteps;
     }
