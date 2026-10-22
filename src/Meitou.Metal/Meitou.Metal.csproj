@@ -21,4 +21,8 @@
     <ProjectReference Include="..\Meitou.Rendering\Meitou.Rendering.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Meitou.Tests" />
+  </ItemGroup>
+
 </Project>

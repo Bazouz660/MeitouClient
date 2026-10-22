@@ -43,6 +43,11 @@ public sealed class MetalUploads : IGpuUploads
         public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
         {
             var desc = target.Desc;
+            if (level < 0 || level >= desc.Levels)
+            {
+                Console.WriteLine($"warning   upload outside {desc.Name} L{level} layer {layer}: level is not in 0..{desc.Levels - 1}");
+                return;
+            }
             uint maxWidth = (uint)Math.Max(desc.Width >> level, 1), maxHeight = (uint)Math.Max(desc.Height >> level, 1);
             // A cube's six faces are its type's slices, not array layers; the descriptor's Layers stays 1.
             uint layers = desc.Kind == TextureKind.Cube ? 6u * (uint)Math.Max(desc.Layers, 1) : (uint)desc.Layers;

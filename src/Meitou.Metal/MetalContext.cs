@@ -109,7 +109,10 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
         """;
 
-    readonly MetalDisplay display;
+    readonly MetalDisplay? display;
+    readonly MTLDevice device;
+    readonly MTLCommandQueue queue;
+    readonly MTLPixelFormat presentFormat;
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
     readonly MetalBindlessTable bindless;
@@ -134,9 +137,17 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     DrawState? passState;
     MetalCommandList? passList, segment, guest;
 
-    public MetalContext(MetalDisplay display)
+    public MetalContext(MetalDisplay display) : this(display.Device, display.Queue, display.Layer.PixelFormat)
     {
         this.display = display;
+    }
+
+    /// <summary>A context without a window or drawable: the deterministic tests' entry point (uploads, resource lifetime, readbacks).</summary>
+    internal MetalContext(MTLDevice device, MTLCommandQueue queue, MTLPixelFormat presentFormat)
+    {
+        this.device = device;
+        this.queue = queue;
+        this.presentFormat = presentFormat;
         frames = new MetalFrame[FrameRingDepth];
         for (int i = 0; i < FrameRingDepth; i++) frames[i] = new MetalFrame(this, i);
         Shaders = new MetalShaders(Device);
@@ -150,7 +161,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         presentPipeline = MakePresentPipeline();
     }
 
-    public MTLDevice Device => display.Device;
+    public MTLDevice Device => device;
 
     /// <summary>The GPU time of the last command buffer the three-frame ring found completed (ms); 0 until one is.</summary>
     public double LastGpuMilliseconds { get; private set; }
@@ -182,8 +193,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         foreach (var b in buffers) if (b is not null) liveBuffers++;
         foreach (var r in retiredTextures) retired += r.Views.Length;
         foreach (var r in retiredLevelViews) level += r.Views.Length;
-        int deferred;
-        lock (deferredGate) deferred = deferredDeletes.Count;
+        int deferred = deferredDeletes.Count;
         long chunkBytes = 0, chunkUsed = 0;
         int chunkCount = 0;
         foreach (var f in frames) { chunkBytes += f.ChunkBytes; chunkUsed += f.ChunkUsedBytes; chunkCount += f.ChunkCount; }
@@ -198,7 +208,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     }
 
     /// <summary>The queue the frames are committed to (an upload batch's command buffer comes from it too: the queue executes its command buffers in commit order).</summary>
-    public MTLCommandQueue Queue => display.Queue;
+    public MTLCommandQueue Queue => queue;
 
     // ---- the seam's services ----
 
@@ -455,25 +465,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
     }
 
-    void ReleaseDeferred(bool force = false)
-    {
-        List<Action>? run = null;
-        lock (deferredGate)
-        {
-            if (deferredDeletes.Count == 0) return;
-            int budget = force ? int.MaxValue : 64;
-            for (int i = 0; i < deferredDeletes.Count && budget > 0;)
-            {
-                var item = deferredDeletes[i];
-                if (!force && frameNumber - item.Frame < FrameRingDepth) { i++; continue; }
-                (run ??= []).Add(item.Release);
-                deferredDeletes.RemoveAt(i);
-                budget--;
-            }
-        }
-        if (run is null) return;
-        foreach (var release in run) release();
-    }
+    void ReleaseDeferred(bool force = false) => deferredDeletes.ReleaseDue(frameNumber, FrameRingDepth, 64, force);
 
     public GpuBuffer CreateBuffer(ulong size, BufferUse use, string name)
     {
@@ -613,6 +605,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// </summary>
     public bool BeginFrame()
     {
+        var display = this.display ?? throw new InvalidOperationException("a headless MetalContext has no frame loop");
         // Every frame needs its own pool: CAMetalLayer's nextDrawable and the command buffer are autoreleased, and a
         // pool held until quit keeps every drawable and its IOSurface alive (the travel footprint grew to 15 GB).
         if (framePoolOpen) { framePool.Dispose(); framePoolOpen = false; }
@@ -788,7 +781,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         d.VertexFunction = library.NewFunction((NSString)"present_vertex");
         d.FragmentFunction = library.NewFunction((NSString)"present_fragment");
         var attachment = d.ColorAttachments.Object(0);
-        attachment.PixelFormat = display.Layer.PixelFormat;
+        attachment.PixelFormat = presentFormat;
         d.ColorAttachments.SetObject(attachment, 0);
         var pipeline = Device.NewRenderPipelineState(d, ref error);
         if (error.NativePtr != IntPtr.Zero) throw new InvalidOperationException($"the present pass's pipeline failed: {error.LocalizedDescription}");
@@ -840,13 +833,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <inheritdoc/>
     public void DeferDelete(Action release)
     {
-        bool now;
-        lock (deferredGate)
-        {
-            now = slot < 0;
-            if (!now) deferredDeletes.Add((frameNumber, release));
-        }
-        if (now) release();
+        if (slot < 0) release();
+        else deferredDeletes.Add(frameNumber, release);
     }
 
     /// <inheritdoc/>
@@ -921,8 +909,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly List<(long Frame, MTLCommandBuffer Command, MTLBuffer Buffer, string Label)> retiredUploads = [];
     bool uploadErrorReported;
     /// <summary>Actions from <see cref="DeferDelete"/>, released after the frame ring has passed.</summary>
-    readonly List<(long Frame, Action Release)> deferredDeletes = [];
-    readonly object deferredGate = new();
+    readonly DeferredReleaseQueue deferredDeletes = new();
 
     unsafe void BlitScaled(MTLCommandBuffer command, MTLTexture source, MTLTexture target, MTLPixelFormat format, int width, int height, TextureMinFilter filter)
     {
@@ -1091,27 +1078,68 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>The generic attribute value a disabled vertex input reads (GL's constant (0, 0, 0, 1), bound with stride 0).</summary>
     public GpuBuffer DummyVertex => dummyVertex;
 
+    /// <summary>The live entries in the three resource tables (the deterministic leak tests' count; the table indices themselves are never reused).</summary>
+    internal (int Textures, int Views, int Buffers) LiveResourceCounts()
+    {
+        int tex = 0, liveViews = 0, liveBuffers = 0;
+        foreach (var t in textures) if (t is not null) tex++;
+        foreach (var v in views) if (v is not null) liveViews++;
+        foreach (var b in buffers) if (b is not null) liveBuffers++;
+        return (tex, liveViews, liveBuffers);
+    }
+
+    /// <summary>
+    /// A texture's level 0 as raw bytes, read back through a blit. <paramref name="texelBytes"/> is the engine format's
+    /// texel size (RGBA8 = 4, R8 = 1, R16 = 2); rows are returned tightly packed even when the Metal blit needs a
+    /// 4-byte-aligned source row. The display and the upload tests both use this.
+    /// </summary>
+    internal byte[] Readback(GpuTexture texture, int texelBytes, int level = 0, int layer = 0)
+    {
+        var desc = textures[texture.Index]!.Desc;
+        int layers = desc.Kind == TextureKind.Cube ? 6 * Math.Max(desc.Layers, 1) : desc.Layers;
+        if (level < 0 || level >= desc.Levels) throw new ArgumentOutOfRangeException(nameof(level));
+        if (layer < 0 || layer >= layers) throw new ArgumentOutOfRangeException(nameof(layer));
+        int width = Math.Max(desc.Width >> level, 1), height = Math.Max(desc.Height >> level, 1);
+        int rowBytes = checked(width * texelBytes);
+        int stride = (rowBytes + 3) & ~3;
+        var command = Queue.CommandBuffer();
+        var blit = command.BlitCommandEncoder();
+        var buffer = Device.NewBuffer((ulong)(stride * height), MTLResourceOptions.ResourceStorageModeShared);
+        blit.CopyFromTexture(TextureAt(texture), (ulong)layer, (ulong)level, new MTLOrigin(), new MTLSize { width = (ulong)width, height = (ulong)height, depth = 1 },
+            buffer, 0, (ulong)stride, (ulong)(stride * height));
+        blit.EndEncoding();
+        command.Commit();
+        command.WaitUntilCompleted();
+        var pixels = new byte[rowBytes * height];
+        for (int y = 0; y < height; y++)
+            Marshal.Copy(IntPtr.Add(buffer.Contents, y * stride), pixels, y * rowBytes, rowBytes);
+        buffer.Dispose();
+        return pixels;
+    }
+
+    /// <summary>Waits for the queue's earlier command buffers (the deterministic tests' readback barrier).</summary>
+    internal void WaitForGpu()
+    {
+        var marker = Queue.CommandBuffer();
+        marker.Commit();
+        marker.WaitUntilCompleted();
+    }
+
+    /// <summary>The contents of a shared buffer after the queue's earlier commands have completed (test/diagnostic helper).</summary>
+    internal byte[] ReadBuffer(GpuBuffer buffer)
+    {
+        WaitForGpu();
+        var of = BufferAt(buffer);
+        var bytes = new byte[of.Length];
+        if (bytes.Length > 0) Marshal.Copy(of.Contents, bytes, 0, bytes.Length);
+        return bytes;
+    }
+
     /// <summary>
     /// A texture's level 0 as RGBA bytes, read back through a blit (a texture is not CPU-mappable, even in shared storage): the
     /// display's and tests' picture check. Rows in the texture's own order.
     /// </summary>
-    public byte[] Readback(GpuTexture texture)
-    {
-        var desc = textures[texture.Index]!.Desc;
-        int rowBytes = desc.Width * 4;
-        var command = Queue.CommandBuffer();
-        var blit = command.BlitCommandEncoder();
-        var buffer = Device.NewBuffer((ulong)(rowBytes * desc.Height), MTLResourceOptions.ResourceStorageModeShared);
-        blit.CopyFromTexture(TextureAt(texture), 0, 0, new MTLOrigin(), new MTLSize { width = (ulong)desc.Width, height = (ulong)desc.Height, depth = 1 },
-            buffer, 0, (ulong)rowBytes, (ulong)(rowBytes * desc.Height));
-        blit.EndEncoding();
-        command.Commit();
-        command.WaitUntilCompleted();
-        var pixels = new byte[rowBytes * desc.Height];
-        Marshal.Copy(buffer.Contents, pixels, 0, pixels.Length);
-        buffer.Dispose();
-        return pixels;
-    }
+    public byte[] Readback(GpuTexture texture) => Readback(texture, 4);
 
     public void Dispose()
     {
