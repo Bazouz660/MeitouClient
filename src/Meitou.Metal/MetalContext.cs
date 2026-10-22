@@ -484,8 +484,14 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public void ReleaseBuffer(GpuBuffer buffer)
     {
-        buffers[buffer.Index]?.Release();
+        // A mesh/index/instance buffer can be named by a frame still in flight when streaming unloads it; releasing it
+        // immediately let the GPU read freed memory (the far-travel command-buffer faults). Keep the Metal buffer until
+        // the frame ring has passed, as the texture path does.
+        var of = buffers[buffer.Index];
+        if (of is null) return;
         buffers[buffer.Index] = null;
+        if (slot < 0) of.Release();
+        else DeferDelete(of.Release);
     }
 
     public GpuSet CreateSet(GpuSetLayout layout, ReadOnlySpan<GpuBinding> bindings)
