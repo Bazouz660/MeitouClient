@@ -88,7 +88,13 @@ the disassembly where the decompile hides them):
 | Get up | off WHOLE unless carried | `Task_GetUp::vfunc_1` → `FUN_1405c69f0` |
 | Furniture use, entity rebuild, destruction | release all | `FUN_140330600`, `FUN_1405b93a0`, `FUN_140799af0` |
 
-Leg collapse also sets leg state 2 (slot 110). No path from hits, knockback, stagger or
+Leg collapse also sets leg state 2 (slot 110). **Observed** (decompile): the medical tick `FUN_140649320`
+sets posture 2 (forced crawl, slot 110 setter `FUN_1405c7e20`, field `+0xe0`) when **any one** part with
+`collapse part` 0x10/0x20 tests down and the posture is 0 (standing); it does not knock out. The test
+`FUN_140644450` for a leg: down when it is a stump or crushed (limb state 1/3), when h − s < −(base × mult ×
+scale) − wear (severed), or when h − s + `+0x48` is under the KO point `FUN_140643ae0` (−10..−85 by
+toughness), not under 0; characters with the slot-0x248 object never collapse. Postures: 0 standing, 1 voluntary crawl (orders reset it
+unless `+0x5b8` forces it), 2 forced crawl, 3/4 set while ragdolled. No path from hits, knockback, stagger or
 explosions: a conscious character is never thrown ([combat](combat.md): knockback is root motion).
 Animals play `VO_Creature_Die` on a WHOLE request.
 
