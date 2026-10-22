@@ -35,6 +35,11 @@ public static class CombatTuning
     public const float FootworkSpeed = 18;
     /// <summary>A target that is not fighting and moves faster than this (units per second) for <see cref="FleeingSeconds"/> on end is run after at any gap (<b>Observed</b>, FUN_1402ae0e0).</summary>
     public const float FleeingSpeed = 9, FleeingSeconds = 1.5f;
+    /// <summary>
+    /// After a fleeing target a fighter aims at the target's position plus its velocity times (1 − r) <see cref="LeadSlope"/> + <see cref="LeadBase"/> seconds, r its attack
+    /// play rate (<b>Observed</b>, FUN_1402af1e0 / FUN_1404354d0, the rate is CharStats +0x188; docs/game/combat.md "Combat stance").
+    /// </summary>
+    public const float LeadBase = 1.2f, LeadSlope = 2;
 
     /// <summary>The footprint radius of a human, used when a character has no race data.</summary>
     public const float DefaultFootprint = 4;

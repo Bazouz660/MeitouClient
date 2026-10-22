@@ -40,8 +40,16 @@ public sealed partial class CombatSystem
     /// </summary>
     float PlayRate(CharacterCold cold, CombatTechnique tech, bool attack)
     {
-        var fighter = cold.Fighter!;
         if (!attack && (tech.IsDodge || !tech.IsBlock)) return 1;
+        return Rate(cold, attack);
+    }
+
+    /// <summary>The attack play rate of a fighter (its <see cref="PlayRate"/> for any attack; CharStats +0x188 in the original), which the chase lead also reads.</summary>
+    public float AttackRate(CharacterCold cold) => Rate(cold, true);
+
+    float Rate(CharacterCold cold, bool attack)
+    {
+        var fighter = cold.Fighter!;
         float weight = fighter.Unarmed ? 0 : fighter.Weapon!.Stats.Weight;
         float f = Math.Clamp(xp.WeaponWeightStrengthFactor(weight, cold.Stats![StatsEnumerated.Strength], cold.Medical!.StatMultiplier(StatsEnumerated.Strength)), 0, 1);
         float g = (0.5f + 0.5f * MathF.Min(1, fighter.EncumbranceFactor + 0.5f) * (1 - f)) * fighter.CombatSpeed;

@@ -5,8 +5,9 @@ namespace Meitou.Simulation;
 
 /// <summary>
 /// Walks an attacker to its target through the path service (docs/simulation.md "Combat"). The combat system is run with <c>SelfApproach</c> off, so a character with the
-/// <see cref="CharacterTask.Attack"/> task would stand still; this system, placed before the movement system, asks for a path to the target (a new one when the target has moved
-/// more than <see cref="RepathDistance"/> from the goal, at most every <see cref="RepathSeconds"/>) and drops the path once the target is in reach or a swing is on.
+/// <see cref="CharacterTask.Attack"/> task would stand still; this system, placed before the movement system, asks for a path to the target, or to a point ahead of a fleeing
+/// target (a new one when the goal has moved more than <see cref="RepathDistance"/>, at most every <see cref="RepathSeconds"/>) and drops the path once the target is in reach
+/// or a swing is on.
 /// </summary>
 public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 {
@@ -35,12 +36,24 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             cold.TargetFleeingTime = away ? cold.TargetFleeingTime + dt : 0;
             if (gap > CombatTuning.RunGap) cold.CombatRunning = true;
             else if (gap < CombatTuning.FootworkGap) cold.CombatRunning = false;
-            if (cold.TargetFleeingTime >= CombatTuning.FleeingSeconds) cold.CombatRunning = true;
+            bool fleeing = cold.TargetFleeingTime >= CombatTuning.FleeingSeconds;
+            if (fleeing) cold.CombatRunning = true;
             n.TaskTime -= dt;
+            // After a fleeing target it aims ahead of it (CombatTuning.LeadBase), so a faster chaser runs past; the lead follows the target's velocity, so it swings round
+            // when the target turns. An engine rule: the lead and the run past hold only while the chaser is behind the target; once level or ahead it turns on the target
+            // and stops within reach, so the runner comes into it.
+            var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
+            bool behind = fleeing && tv.X * d.X + tv.Z * d.Z > 0 && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null;
+            if (behind)
+            {
+                float lead = (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase;
+                var ahead = goal + new Vector2(tv.X, tv.Z) * lead;
+                if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
+            }
             // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
             bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
             bool holding = Orders.Has(cold, CharacterOrders.Hold);
-            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && gap <= CombatTuning.CloseInGap || holding)
+            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= CombatTuning.CloseInGap || holding)
             {
                 // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
                 if ((n.Flags & Path) != 0)
@@ -51,7 +64,6 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
                 }
                 continue;
             }
-            var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
             bool asking = (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
             bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
             if (asking || !stale || n.TaskTime > 0) continue;
