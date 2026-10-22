@@ -64,6 +64,11 @@ internal sealed class ZoneGeometry
     public List<NavVolume> Painters { get; } = [];
     /// <summary>Seed points: regions of the mesh near one stay, the rest is pruned (docs/game/pathfinding.md, "Region pruning by seeds").</summary>
     public List<Vector3> Seeds { get; } = [];
+    /// <summary>
+    /// For an interior mesh: its building's first shopkeeper or general node, the seed when <see cref="Seeds"/> (the inner door markers) find nothing
+    /// (docs/game/pathfinding.md, "Interior seeds").
+    /// </summary>
+    public List<Vector3> NodeSeeds { get; } = [];
 
     /// <summary>For an interior mesh: the convex hull of the building interior mask; the mesh is clipped to it.</summary>
     public NavVolume? InteriorHull { get; init; }

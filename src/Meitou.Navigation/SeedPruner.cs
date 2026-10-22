@@ -24,6 +24,7 @@ internal static class SeedPruner
         var keep = new bool[n];
         var queue = new Queue<int>();
         int matched = Match(mesh, g.Seeds, s, keep, queue);
+        if (matched == 0 && g.NodeSeeds.Count > 0) matched = Match(mesh, g.NodeSeeds, s, keep, queue);
         int border = g.TerrainHeight is { } terrain ? MatchBorder(mesh, g, terrain, keep, queue) : 0;
 
         if (matched == 0 && border == 0 && g.InteriorDestroyed)

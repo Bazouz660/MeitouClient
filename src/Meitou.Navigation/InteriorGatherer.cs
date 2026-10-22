@@ -112,9 +112,12 @@ internal sealed partial class ZoneGeometryGatherer
 
         uint mask = site.Destroyed ? DestroyedInteriorGroupMask : InteriorGroupMask;
         AddBuilding(g, site.Record, site.Placement.Key, site.Position, site.Placement.Rotation, site.Destroyed, new InteriorContext(site.Placement.Key, site.Destroyed, mask, Own: true));
-        // Its layouts' furniture: walkable pieces give floor, the rest cut.
+        // Its layouts' furniture: walkable pieces give floor, the rest cut. The first shopkeeper or general node is the seed when no door's is (SeedPruner).
         foreach (var (item, at, rotation) in LayoutObjects(site.Placement, site.Record, site.Position, site.Destroyed))
+        {
+            if (g.NodeSeeds.Count == 0 && item.Building.GetBool("is node") && item.Building.GetInt("node type") is 0 or 1) g.NodeSeeds.Add(at);
             AddBuilding(g, item.Building, $"{site.Placement.Key}/{item.InstanceId}", at, rotation, destroyed: false, new InteriorContext(site.Placement.Key, false, mask, Own: false), item.Floor);
+        }
 
         // Other buildings standing inside the hull (furniture placed in the zone file): walkable ones give floor, the rest cut.
         var (ox, oz) = WorldLayout.ZoneOrigin(site.Placement.Zone);

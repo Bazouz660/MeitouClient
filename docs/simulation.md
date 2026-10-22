@@ -1008,8 +1008,12 @@ it, not `ArriveRadius` (10), without separation over the last 10 (engine choice:
 the ground below shows through them (Observed: the Storm House at the Hub, counter, tables, stools, 22..28
 below), so a spot whose floor is not under it is walked to (and residents spawned) at the nearest floor
 point within 12 (`IWalkability.FloorNear`), and no step goes down into such a hole (`StandDrop`,
-[pathfinding](game/pathfinding.md)). A home with no node (the Hub's ruined houses) makes its squads at its origin, on the ruin's
-ground floor ([pathfinding](game/pathfinding.md) "Destroyed interiors"). The Storm House's upper storey (+66) is on the navmesh except under its beds, whose
+[pathfinding](game/pathfinding.md)). A home with no node makes its squads at its origin; for a building with an
+interior (not a gate, whose guards stay on the ground under its walkway) they go on its lowest floor more than 12 above the terrain within 40 of the
+origin, else the ground there (raised Swamp Houses and Cannibal Shacks: floor 25..55 above the origin, the ground under it within 10). A node with no
+floor near it puts them on the nearest meshed storey below (`PopulationSystem.HomeFloor`, engine choices). **Observed** (headless probe of every
+town, 600 ticks): characters on the ground under a building floor went from 278 to 128 of 9060; ~80 of those are gate guards, the rest mostly
+homeless squads placed under unmeshed platforms. The Storm House's upper storey (+66) is on the navmesh except under its beds, whose
 spots therefore stand on the floor below (Observed, 2026-10-18 probe). Engine choices: patrolling town acts as
 wandering (its task class is undecoded); a committed goal chosen again after its commitment ran out
 starts over with a new target; training and throne furniture of 275's mask are not used; shops stand customers at a general

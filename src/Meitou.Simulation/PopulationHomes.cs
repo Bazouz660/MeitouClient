@@ -162,6 +162,50 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
+    /// A floor of <paramref name="home"/> for a resident whose spot at height <paramref name="y"/> has none near it (engine choice; null: none, the spot's height
+    /// stands): at a node, the nearest storey below it on the mesh (an upper room the mesh does not reach, Observed: Stack's Longhouse <c>4-Newwworld-INGAME</c>);
+    /// at the origin of a building without nodes, its lowest floor more than <see cref="RaisedFloor"/> above the terrain (raised houses, whose floor is 25..55 above
+    /// their origin, Observed: the Swamp Houses and Cannibal Shacks). Only buildings with an interior (an <c>interior mask</c>, not a gateway), so gate guards stay
+    /// on the ground under the walkway.
+    /// </summary>
+    Vector3? HomeFloor(IWalkability walk, TownBuilding home, float x, float z, float y)
+    {
+        if (data.Db.Find(home.BuildingId) is not { } record || record.GetBool("is gateway") || !record.GetReferences("interior mask").Any()) return null;
+        float terrain = walk.TerrainHeight(x, z);
+        if (HasNode(home))
+        {
+            for (float h = y - FloorScanStep; h > terrain + RaisedFloor; h -= FloorScanStep)
+                if (FloorAround(walk, x, z, h) is { } below) return below;
+            return null;
+        }
+        for (float h = terrain + RaisedFloor; h <= MathF.Max(y, terrain) + FloorScanReach; h += FloorScanStep)
+            if (FloorAround(walk, x, z, h) is { } floor) return floor;
+        return null;
+    }
+
+    /// <summary>The nearest point within <see cref="FloorScanRadius"/> of (x, z) on rings 4 apart (8 directions each) whose floor is within half a scan step of <paramref name="h"/>
+    /// and more than <see cref="RaisedFloor"/> above the terrain there (not the ground beside the house).</summary>
+    static Vector3? FloorAround(IWalkability walk, float x, float z, float h)
+    {
+        for (float r = 0; r <= FloorScanRadius; r += FloorScanStep)
+            for (int k = 0; k < (r == 0 ? 1 : 8); k++)
+            {
+                float px = x + r * MathF.Cos(k * MathF.PI / 4), pz = z + r * MathF.Sin(k * MathF.PI / 4);
+                if (walk.TryStand(px, pz, h, out float g) && MathF.Abs(g - h) <= FloorScanStep / 2 && g > walk.TerrainHeight(px, pz) + RaisedFloor) return new Vector3(px, g, pz);
+            }
+        return null;
+    }
+
+    /// <summary>Whether <paramref name="b"/> has a node its residents are made at (<see cref="SpotIn"/>; without one, its origin).</summary>
+    static bool HasNode(TownBuilding b) => b.Spots.Any(s => s.NodeType is NodeGeneral or NodeShopkeeper or NodeGuardPost);
+
+    /// <summary>
+    /// <see cref="HomeFloor"/>'s numbers (engine choices): a floor more than 12 above the terrain is a raised one (the walkers' step-down limit), scanned in 4-unit
+    /// steps up to 60 above the origin (or the terrain, when it is buried), within 40 of the spot (a shack's middle is often furniture).
+    /// </summary>
+    const float RaisedFloor = 12, FloorScanStep = 4, FloorScanReach = 60, FloorScanRadius = 40;
+
+    /// <summary>
     /// Where a resident squad of <paramref name="b"/> is made (Observed, <c>FUN_14057f820</c> and <c>FUN_140583a10</c>): a random general node of it, else a
     /// shopkeeper node, else a guard post, else its origin; the height to find the floor from (its Y plus <see cref="SpotLift"/>).
     /// </summary>

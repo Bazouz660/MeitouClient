@@ -461,12 +461,20 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             float x = built.Position.X + plan.Offset.X, z = built.Position.Y + plan.Offset.Y;
             if (!(built.NearY is { } nearY ? walk.IsWalkable(x, z, nearY) : walk.IsWalkable(x, z))) (x, z) = (built.Position.X, built.Position.Y);
             // Inside, on the floor and not on the ground showing through a hole furniture cuts in it (the spot's height is its own plus SpotLift).
-            if (built.NearY is { } floorY && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onFloor) (x, z) = (onFloor.X, onFloor.Z);
+            float? standY = built.NearY;
+            if (built.NearY is { } floorY)
+            {
+                // A building without nodes makes them at its origin, often under a raised floor: that floor first (the ground under it is near the origin).
+                bool atOrigin = built.Home is { } h && !HasNode(h);
+                if (!atOrigin && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onFloor) (x, z) = (onFloor.X, onFloor.Z);
+                else if (built.Home is { } home && HomeFloor(walk, home, x, z, floorY - SpotLift) is { } inside) (x, z, standY) = (inside.X, inside.Z, inside.Y + SpotLift);
+                else if (atOrigin && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onGround) (x, z) = (onGround.X, onGround.Z);
+            }
             var race = assembly.RaceOf(plan.RecordId, member.Appearance);
             var record = data.Db.Find(plan.RecordId);
             var hot = new CharacterHot
             {
-                Position = new Vector3(x, Ground(walk, x, z, built.NearY), z),
+                Position = new Vector3(x, Ground(walk, x, z, standY), z),
                 Yaw = yaw,
                 Health = 100,
                 Task = (byte)(player || idle ? CharacterTask.Idle : plan.Role == SquadRole.Leader || !hasLeader ? CharacterTask.Wander : CharacterTask.Follow),

@@ -96,6 +96,10 @@ these nodeless ruins stood on the terrain under their floors. The island has no 
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
 **Entrance seeds** (engine choice): cross the door's width axis, then use the lowest collision floor with agent-height headroom.
+**Interior seeds**: without a door seed the building's first shopkeeper or general node of its interior layout is the seed (the original's rule, below);
+Meitou also uses it when the door seeds find no polygon (engine choice). **Observed** (`meitou-tools navmesh`): doorless Hive Commune Huts (10.31
+`50-Newwworld-INGAME`, clipped at the zone border) kept nothing before and 75 of 102 polygons with it; Stack's Old Storm House `14-` (19.29), whose
+door seed misses its floor, 0 → 73 of 113 (its door still has no join).
 **Observed** (35 base door records and their box collision extents): `door navmesh axis` 0 selects exporter X width, 1 exporter Y width;
 using that width as the crossing direction leaves Shark's Swamp House `321-Newwworld-INGAME` room unseeded.
 Its platform has overlapping upward faces near Y122/133; the lower face lacks headroom. A zone21.42 route from
