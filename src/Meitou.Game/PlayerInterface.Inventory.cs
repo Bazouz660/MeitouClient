@@ -80,8 +80,14 @@ sealed partial class PlayerInterface
 
         if (buying is { } b)
         {
-            // Stock dropped on the customer's pocket or bag grid: a purchase into the cell under the drop.
+            // Stock dropped on the customer's pocket/bag grid or backpack slot: a purchase into the target.
             if (trade is null || hit.Screen is not ("inventory" or "bag") || InventoryOwner(trade.Customer)?.ItemGrid is not { } grid) return;
+            if (hit.Screen == "inventory" && faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent)
+                .First(f => f.Id == hit.Screen).Controls.Any(c => c.Name == "backpack_attach" && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true)))
+            {
+                Say(new BuyItem(b.Item.Token, 1) { Tick = session.World.Tick, Section = "backpack_attach" });
+                return;
+            }
             string section = hit.Screen == "bag" ? "backpack_content" : "main";
             int columns = section == "main" ? grid.Width : grid.BagWidth, rows = section == "main" ? grid.Height : grid.BagHeight;
             if (!DropCell(p, hit.Screen, section, columns, rows, b.Grab, b.Item.Width, b.Item.Height, Footprints(grid.Items, section, -1), out int x, out int y)) return;
