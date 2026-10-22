@@ -230,6 +230,10 @@ Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short r
     has `BuildingClassType` 12 = BCTYPE_SHELL_WITH_INTERIOR (the class at +0x198, virtual slot 0x358; enum order from the
     FCS) and the +0x1f0 → +0x2c flag clear; each becomes a carver (FUN_1403c1ae0 builds the volume, FUN_140dd9e80 wraps it as an `hkaiCarver`
     with flags 0, i.e. without CARVER_ERODE_EDGES, the only flag). A carver removes the navmesh inside it, so the exterior navmesh has a hole where a house's interior is; the interior is built separately.
+    **Observed** (original tiles 23.22, 24.22, point-in-polygon on a 5-unit grid within 40 of the origin): no exterior polygon under Old Storm
+    House `407-`, Stephouse `560-`, Storm House `403-`/`671-`, Bughouse `433-` (0 of 289 points each), although their terrain lies 14..26 below
+    the hull's floor. Meitou: an interior mask carver reaches `CarverDrop` (60) below its hull (engine choice); from the hull's bottom only, the
+    ground under raised floors stayed as a crawlspace joined to the street and Blister Hill's residents walked under its houses.
   - **Door painters** (FUN_1403c4520): door shapes (group 5) of door buildings, searched in the AABB grown by 20 units on
     every side (the 20 is a search margin, not a painter size); the door shape's hull, its pose shifted by 5 units along
     one local axis, becomes a convex painter volume with material 4 (open door), so faces under a door get face data 4.

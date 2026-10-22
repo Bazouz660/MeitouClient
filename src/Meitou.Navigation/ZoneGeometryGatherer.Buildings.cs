@@ -176,6 +176,13 @@ internal sealed partial class ZoneGeometryGatherer
     /// <summary>A door painter reaches this far below its hull and is grown by <see cref="DoorPainterGrow"/> on each side (engine choice).</summary>
     const float DoorPainterDrop = 10, DoorPainterGrow = 3;
 
+    /// <summary>
+    /// How far below its hull an interior mask carver reaches (engine choice): the hull starts at the floor, and the ground 14..26 under a raised floor
+    /// would otherwise stay as a crawlspace joined to the street (Observed: Blister Hill, residents walked under Old Storm Houses and Stephouses). The
+    /// original's tiles have no polygon under these houses.
+    /// </summary>
+    const float CarverDrop = 60;
+
     void AddShape(ZoneGeometry g, PreparedShape shape, Matrix4x4 node, float walkableSlope, bool carve)
     {
         var pts = new Vector3[shape.Vertices.Length];
@@ -224,7 +231,7 @@ internal sealed partial class ZoneGeometryGatherer
             yMax = Math.Max(yMax, pts[i].Y);
         }
         // A door painter needs some thickness to catch cells; a door's hull is only a few units deep (engine choice).
-        target.Add(NavGeometry.Footprint(pts, carver ? yMin : yMin - DoorPainterDrop, yMax, carver ? 0 : DoorPainterGrow));
+        target.Add(NavGeometry.Footprint(pts, yMin - (carver ? CarverDrop : DoorPainterDrop), yMax, carver ? 0 : DoorPainterGrow));
         if (carver) stats.Carvers++; else stats.Painters++;
     }
 }
