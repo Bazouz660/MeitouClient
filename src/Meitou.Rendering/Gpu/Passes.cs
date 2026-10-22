@@ -119,6 +119,25 @@ public sealed unsafe partial class GpuContext
     }
 
     /// <inheritdoc/>
+    public void BeginHostPassParallel(IGpuCommandList cmd, PassTargets targets, DrawState state, int stage)
+    {
+        BeginHostPass(cmd, targets, state);
+        if (RecordsSecondaries) Frame.Parallel.Begin((CommandList)cmd, targets.Formats, stage);
+    }
+
+    /// <inheritdoc/>
+    public void SetPassStage(int stage)
+    {
+        if (Frame.Parallel.Open) Frame.Parallel.Stage = stage;
+    }
+
+    /// <inheritdoc/>
+    public void EndHostPassParallel(IGpuCommandList cmd)
+    {
+        if (Frame.Parallel.Open) Frame.Parallel.End();
+    }
+
+    /// <inheritdoc/>
     public bool DepthClamp => Device.DepthClamp;
 
     /// <inheritdoc/>

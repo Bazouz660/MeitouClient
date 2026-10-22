@@ -583,6 +583,19 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     void IGpuContext.BeginHostPass(IGpuCommandList cmd, PassTargets targets, DrawState state) => BeginHostPass((MetalCommandList)cmd, targets, state);
 
+    /// <summary>Metal records inline: the stage is only a Vulkan secondary-pass concept, and the depth clear goes straight to the open list.</summary>
+    public void BeginHostPassParallel(IGpuCommandList cmd, PassTargets targets, DrawState state, int stage) => BeginHostPass((MetalCommandList)cmd, targets, state);
+
+    public void SetPassStage(int stage) { }
+
+    public void EndHostPassParallel(IGpuCommandList cmd) { }
+
+    public void ClearDepth(IGpuCommandList host, float value, PixelRect rect)
+    {
+        if (passList is null || !ReferenceEquals(host, passList)) throw new InvalidOperationException("ClearDepth without the open host pass");
+        host.ClearDepth(value, rect);
+    }
+
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
     public void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null)
     {

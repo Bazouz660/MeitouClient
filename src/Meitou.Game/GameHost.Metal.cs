@@ -38,6 +38,7 @@ sealed partial class GameHost
     /// </summary>
     int Metal()
     {
+        metalRenderer = true;
         // The banks and the output device load on a worker while the window, the world and the renderers are made.
         BeginAudio();
         var loaded = LoadScene is not null ? LoadScene() : scene;
@@ -68,12 +69,9 @@ sealed partial class GameHost
         if (ulong.TryParse(Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_BUDGET_MB"), NumberStyles.None,
                 CultureInfo.InvariantCulture, out ulong budgetMb) && budgetMb > 0)
             memoryBudget = budgetMb << 20;
+        bool guardEnabled = Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0";
         VramGuard? memoryGuard = null;
-        if (Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0")
-        {
-            memoryGuard = new VramGuard(() => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget));
-            Console.WriteLine($"metal     memory guard: {memoryBudget / 1048576} MB of GPU allocation");
-        }
+        if (guardEnabled) Console.WriteLine($"metal     memory guard: {memoryBudget / 1048576} MB of GPU allocation");
         var window = display.Window;
         // The shared window setting: borderless full screen as the Vulkan path starts; --windowed keeps the window for one run.
         bool fullScreen = config.FullScreen && !o.Windowed;
@@ -106,47 +104,8 @@ sealed partial class GameHost
         if (!metalWater) Console.WriteLine("metal     water disabled (MEITOU_METAL_WATER=0)");
         if (!metalShadows) Console.WriteLine("metal     shadows disabled (MEITOU_METAL_SHADOWS=0)");
         if (!metalImpostors) Console.WriteLine("metal     impostors disabled (MEITOU_METAL_NO_IMPOSTORS=1)");
-        // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
-        var sky = new SkyRenderer(ctx, assets)
-        {
-            CloudCoverage = o.Clouds,
-            HazeStrength = o.HazeStrength,
-            NightAir = o.NightAir,
-            Planetshine = o.Planetshine,
-            PlanetshineStrength = o.PlanetshineStrength,
-            MeitouStars = o.MeitouStars,
-            LitClouds = o.MeitouClouds,
-            CloudShadows = metalCloudShadows,
-        };
-        if (scene.Database is { } skyDb) sky.LoadWorld(install, skyDb);
-        // The weather scheduler, as WorldFrame.CreateGpu makes it: its state feeds the sky's fog and colour, and the surface shaders' wetness and dust.
-        WorldWeather? weather = null;
-        if (scene.Database is { } weatherDb)
-        {
-            var world = Meitou.Data.World.WeatherWorld.Create(weatherDb, install, 1, Meitou.Data.World.WeatherTime.At(0));
-            weather = new WorldWeather(world, weatherDb) { Day = o.Day ?? 0 };
-            if (!o.AutoWeather)
-            {
-                if (!world.ForceWeather(o.Weather))
-                    throw new ArgumentException($"no weather named '{o.Weather}'; known: {string.Join(", ", Meitou.Data.World.SkyWeather.Names(weatherDb).Distinct().Take(12))} ...");
-                sky.Weather = Meitou.Data.World.SkyWeather.Find(weatherDb, o.Weather) ?? Meitou.Data.World.SkyWeather.Default;
-            }
-            Console.WriteLine($"metal     weather: {(o.AutoWeather ? $"scheduler, day {o.Day ?? 0}" : $"forced {o.Weather}")}");
-        }
-        hostWeather = weather;
-        var surfaces = scene.Database is not null ? new WeatherSurfaces(ctx, assets) : null;
-        // The placed fog volumes (docs/formats/fogfeatures.md): CPU culling and the frame globals every world shader reads.
-        var fogVolumes = new FogVolumes(ctx, o.NoFogFeatures ? [] : Meitou.Data.World.FogFeatures.Load(install));
-        // The sun's shadows: the game's CSM (or the Meitou cascades) into the atlas the terrain's receivers sample.
-        var shadow = new ShadowPass(ctx, assets)
-        {
-            Settings = new Meitou.Data.World.ShadowSettings(Meitou.Data.World.KenshiShadows.MapSize(o.ShadowQuality), o.ShadowRangeFor(o.MeitouShadows)),
-            Meitou = o.MeitouShadows,
-            FilterQuality = o.ShadowFilter,
-            Enabled = metalShadows && !o.ShadowsOff,
-            Guard = memoryGuard,
-        };
-        shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
+        // The world's renderers are built by the shared WorldFrame path after the display/upscaler setup. Metal keeps
+        // only its post chain here (PostComposite/PostTaa and the MetalFX adapters) until PostProcess itself is on the seam.
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         composite.LoadHeatHaze(assets);
@@ -283,117 +242,53 @@ sealed partial class GameHost
         if (BorderlessFullScreen.IsOn(window)) display.SetFullScreenPresentation(true);
         Splash?.Dispose();
 
-        // The terrain: the whole-world heights, the quadtree's patch grid, and (unless textures are off) the biomes' layers and maps.
-        // The textures' CPU bake runs here once, as the Vulkan path's boot does before its loading frames.
-        // The world's lamps (including interior room lights), read on a worker; their grid publishes the light globals the world shaders sample.
-        WorldLamps? lamps = null;
-        if (scene.Database is { } lampDb && scene.Heightmap is { } lampMap)
-        {
-            lamps = new WorldLamps(ctx, () =>
-            {
-                var levels = WorldLevelData.Load(install, includeInteriors: true);
-                return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
-            });
-            hostLamps = lamps;
-        }
-        var terrain = new TerrainRenderer(ctx, scene.Coarse, scene.CoarseSize, scene.Window);
-        // The weather's and map placers' particles: created here, updated each frame, and drawn after the scene effects.
-        ParticleRenderer? particles = null;
-        WeatherAreas? weatherAreas = null;
-        if (!o.NoParticles && Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1" && scene.Database is { } effectsDb)
-        {
-            var particleWatch = Stopwatch.StartNew();
-            particles = ParticleRenderer.Create(ctx, install);
-            particles.PrewarmSeconds = o.ParticlePrewarm;
-            particles.World.GroundHeight = terrain.HeightAt;
-            particles.World.FreezeGroundHeight = () => terrain.Snapshot().HeightAt;
-            weatherAreas = WeatherAreas.Load(install);
-            particles.World.Area = RegionArea.At(weatherAreas, scene.Focus.X, scene.Focus.Z);
-            var placers = MapEffectPlacers.Find(effectsDb, MapFeatureFile.Open(install));
-            particles.SetPlacers(placers);
-            Console.WriteLine($"metal     particles ready: {particles.Library.Systems.Count} systems, {placers.Count} placers ({particleWatch.ElapsedMilliseconds} ms)");
-        }
-        TerrainTextures? terrainTextures = null;
+        // The world's renderers through the shared construction path: terrain, textures, streamer, sky and weather,
+        // particles, lamps, objects, foliage, faithful water, shadows and the memory guard. The step callback is
+        // unused here because Metal has no separate Vulkan loading-frame loop.
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
         if (terrainTexturesOff) Console.WriteLine("metal     terrain textures disabled (MEITOU_METAL_NO_TERRAIN_TEXTURES=1)");
-        if (!o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
+        bool metalParticles = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1";
+        var worldGpu = WorldFrame.CreateGpu(ctx, install, scene, assets, o, interactive: true,
+            terrainTextures: !terrainTexturesOff, particlesEnabled: metalParticles, objectLoadBudget: 0,
+            vramSample: guardEnabled ? () => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget) : null);
+        gpu = worldGpu;
+        memoryGuard = worldGpu.Guard;
+        var terrain = worldGpu.Terrain;
+        var sky = worldGpu.Sky;
+        var weather = worldGpu.Weather;
+        var surfaces = worldGpu.Surfaces;
+        var fogVolumes = worldGpu.FogVolumes!;
+        var shadow = worldGpu.Shadow!;
+        var streamer = worldGpu.Streamer;
+        var objects = worldGpu.Objects;
+        var foliage = worldGpu.Foliage;
+        var water = worldGpu.Water;
+        var lamps = worldGpu.Lamps;
+        var particles = worldGpu.Particles;
+        var weatherAreas = worldGpu.WeatherAreas;
+        // The diagnostic opt-outs keep their old meaning now that the shared path owns construction.
+        if (!metalFoliage) { foliage?.Dispose(); worldGpu.Foliage = null; foliage = null; }
+        if (!metalWater) { water?.Dispose(); worldGpu.Water = null; water = null; }
+        if (!metalShadows) shadow.Enabled = false;
+        if (!metalCloudShadows) sky.CloudShadows = false;
+        if (!metalImpostors) foliage?.DisableImpostors();
+        if (foliage is not null)
         {
-            terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
-            terrain.SetTextures(terrainTextures);
-            foreach (var m in terrainTextures.Messages.Take(20)) Console.WriteLine($"warning   {m}");
-            Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, {terrainTextures.Capacity} biome slots");
-        }
-        else Console.WriteLine($"metal     terrain: {terrain.LevelCount} LOD levels, untextured");
-        // The fine heights and the biome maps stream round the eye, as the Vulkan path's streamer does (the Metal path has no object streaming yet).
-        var streamer = scene.Heightmap is not null
-            ? new TerrainStreamer(install, terrain, terrainTextures, scene.Window.Step) { MaterialDistance = o.MaterialDistance }
-            : null;
-        // The buildings and the world's objects, as WorldFrame.CreateGpu makes them: the same distances and LOD bias. The meshes and
-        // textures stream in round the eye on the renderer's own workers.
-        WorldObjectRenderer? objects = null;
-        if (scene.Objects is { } worldObjects)
-        {
-            objects = new WorldObjectRenderer(ctx, assets, worldObjects, landmarks: o.LandmarkDistanceFor(o.MeitouReach) > 0)
-            {
-                ObjectDistance = o.ObjectDistanceFor(o.MeitouReach),
-                LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach),
-                DistantRange = o.DistantZones * Meitou.Data.World.WorldLayout.ZoneSize,
-                NoDistant = o.DistantZones <= 0,
-                LoadBudget = 0,
-                SortNearestFirst = o.MeitouReach,
-                LodBias = 1 / o.ObjectLod,
-                Guard = memoryGuard,
-            };
-            hostObjects = objects;
-            Console.WriteLine("metal     objects ready");
+            foliage.SwaySeconds = 0;   // a still picture: the grass holds still, so it repeats
+            foliage.DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1";
+            foliage.DrawMeshes = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_FOLIAGE_MESHES") != "1";
         }
         // The buildings' interior masks (docs/render-interior-cut.md): the depth range the terrain, foliage and map features are cut by
         // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.
         InteriorMaskRenderer? interiorMask = objects is null ? null : new InteriorMaskRenderer(ctx, objects);
-        // The GPU culls stay Vulkan-only for now; the CPU cull draws the meshes and their far impostors. The impostor
-        // atlas path is re-enabled after the frame-slot fence; the env switch is only a diagnostic fallback.
-        FoliageRenderer? foliage = null;
-        if (!o.NoFoliage && metalFoliage && scene.Database is { } foliageDb)
-        {
-            foliage = new FoliageRenderer(ctx, install, foliageDb,
-                scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install), assets)
-            {
-                SwaySeconds = 0,   // a still picture: the grass holds still, so it repeats
-                MeitouRange = o.MeitouRange,
-                Lod = o.FoliageLod,
-                Terrain = terrain,
-                Guard = memoryGuard,
-                // The Metal impostor atlas path is re-enabled after the frame-slot fence; keep a diagnostic off switch
-                // for a quick A/B if the atlas content regresses.
-                Impostors = metalImpostors,
-                // Diagnostic/workaround: keep the tree, bush and rock meshes but skip the grass page draws.
-                DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1",
-                // Diagnostic isolation for the far-travel GPU hang: trees/bushes off, the TERRAIN-mode rocks still draw.
-                DrawMeshes = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_FOLIAGE_MESHES") != "1",
-            };
-            if (o.LargeRange is { } largeRange)
-            {
-                float k = largeRange / foliage.LargeRange;
-                (foliage.SmallRange, foliage.MediumRange, foliage.LargeRange) = (foliage.SmallRange * k, foliage.MediumRange * k, largeRange);
-            }
-            if (o.GrassDensity is { } grassDensity) foliage.GrassDensitySetting = grassDensity;
-            hostFoliage = foliage;
-            Console.WriteLine($"metal     foliage ready ({foliage.LoadMs:0} ms)");
-        }
-        // The water: the game's faithful quad first (the Meitou grid's ocean FFT and shore field are Vulkan-typed still).
-        WaterRenderer? water = null;
-        if (metalWater && !o.NoWater && scene.Database is { } waterDb)
-        {
-            var messages = new List<string>();
-            water = WaterRenderer.Create(ctx, install, waterDb, assets, sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
-                meitouWaves: false, shoreField: false);
-            water.Refraction = false;
-            foreach (var m in messages.Take(20)) Console.WriteLine($"warning   {m}");
-            Console.WriteLine("metal     water ready (faithful)");
-        }
+        worldGpu.InteriorMask = interiorMask;
+        hostWeather = weather;
+        hostLamps = lamps;
+        hostObjects = objects;
+        hostFoliage = foliage;
         terrain.BeginFrame();
 
-        // The world, the simulation's side only: the renderer is not made, so the camera rig and the clock are the game's own.
+        // The simulation's side, using the same CPU height grid as the shared renderer.
         var heights = new Meitou.Data.World.GroundHeights(scene.Window, scene.Coarse, scene.CoarseSize, WorldFrame.CoarseStep);
         hostGround = heights.HeightAt;
         var (walkability, systems, constants) = BootSimulation(heights, interactive: true);
@@ -431,27 +326,21 @@ sealed partial class GameHost
         }
         ApplyCamera(session.Camera.Current);
         SendFocus();
-        // Characters: the viewer's generated harness with `--crowd`, else the simulation's snapshot list. The player
-        // interface is not booted in this loop, so the draw list is the world-only source (no editor previews/portraits).
-        CharacterRenderer? characters = null;
-        if (scene.Database is { } characterDb)
+        // Characters: WorldFrame.CreateGpu already made the `--crowd` harness; otherwise the live loop supplies the
+        // simulation's snapshot list. The player interface is not booted here, so the source has no editor previews/portraits.
+        CharacterRenderer? characters = worldGpu.Characters;
+        if (characters is not null) Console.WriteLine($"metal     crowd ready ({characters.Assets} appearances)");
+        else if (scene.Database is { } characterDb && !g.NoPopulation)
         {
-            if (o.Crowd > 0)
-            {
-                characters = CrowdHarness.Create(ctx, install, scene, assets, o, interactive: false);
-                Console.WriteLine($"metal     crowd ready ({characters.Assets} appearances)");
-            }
-            else if (!g.NoPopulation)
-            {
-                characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0 };
-                Console.WriteLine("metal     characters ready (population draw list)");
-            }
-            hostCharacters = characters;
-            if (characters is not null)
-            {
-                characters.Guard = memoryGuard;
-                characters.InteriorObjects = objects;
-            }
+            characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0 };
+            worldGpu.Characters = characters;
+            Console.WriteLine("metal     characters ready (population draw list)");
+        }
+        hostCharacters = characters;
+        if (characters is not null)
+        {
+            characters.Guard = memoryGuard;
+            characters.InteriorObjects = objects;
         }
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
@@ -1093,33 +982,15 @@ sealed partial class GameHost
                 characters?.CollectLamps(lamps.Moving);
                 lamps.Update(eye, objects, WorldLights.DaylightFactor(hour, scene.Clock.Sunrise, scene.Clock.Sunset));
             }
-            // The casters' cascades, before the scene reads the receiver block.
+            // The casters' cascades, before the scene reads the receiver block: the same shared pass Vulkan runs.
             shadow.RangeCap = fogVolumes.AtmosphereDistance;
             shadow.SetFogHide(fogVolumes.ShadowHideDistance, fogVolumes.ShadowHidePending);
-            shadow.Temporal = mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa;
-            var shadowView = new Meitou.Data.World.ShadowView(eye, camera.Forward, Vector3.Normalize(new Vector3(view.M12, view.M22, view.M32)), camera.FieldOfView,
-                aspect, camera.Near, camera.Distance);
-            ShadowPass.LandmarkCasters? landmarkCasters = null;
-            if (render.Objects && objects is { HasLandmarks: true } landmarkObjects)
-                landmarkCasters = new ShadowPass.LandmarkCasters(
-                    spheres => landmarkObjects.LandmarkCasters(camera.Eye, spheres),
-                    (_, worldToClip, planes, lodEye) => landmarkObjects.DrawLandmarksDepth(worldToClip, lodEye, planes, render, terrain));
-            shadow.Render(shadowView, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
-            {
-                float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
-                terrain.DrawDepth(worldToClip, lodEye, planes, render, coarse);
-                if (render.Objects && objects is not null) objects.DrawDepth(worldToClip, lodEye, planes, render, terrain, coarse);
-                characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(coarse, render.TerrainPixelScale));
-                if (foliage is not null)
-                {
-                    foliage.DrawDepth(worldToClip, lodEye, planes, render, terrain, maxRange: shadow.EffectiveRange * 1.2f,
-                        minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0);
-                }
-            }, sunHeight: sky.ShadowSunHeight, landmarks: landmarkCasters);
+            WorldFrame.DrawShadows(gpu, camera, render, light, sceneSize.X, sceneSize.Y, sky.ShadowSunHeight,
+                temporal: mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa);
 
-            // The scene's host pass, as SceneHost.Open does: a native segment, a rendering into the backbuffer (cleared to
-            // transparent; the sky fills every pixel), the host pass the sky draws as a guest segment in.
-            var cmd = (MetalCommandList)ctx.BeginNative("scene");
+            // The shared host pass: a native segment, a rendering into the scene colour and depth (cleared by its load
+            // ops; the sky fills every pixel), and the guests below.
+            var host = gpu.Scene ??= new SceneHost(ctx);
             var backbuffer = ctx.Backbuffer;
             var depth = ctx.Depth;
             var albedo = ctx.Albedo;
@@ -1129,13 +1000,8 @@ sealed partial class GameHost
                 sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, sceneSize.X, sceneSize.Y,
                     Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
             }
-            var targets = PassTargets.Of(sceneColour, depth, albedo) with
-            {
-                Colour = new RenderTarget(sceneColour.Attachment(), LoadOp.Clear, new ClearColour(0, 0, 0, 0)),
-                Depth = new RenderTarget(depth.Attachment(), LoadOp.Clear, default),
-            };
-            cmd.BeginRendering(targets.Rendering);
-            ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
+            var targets = PassTargets.Of(sceneColour, depth, albedo);
+            host.Open(5, targets, new ClearColour(0, 0, 0, 0), clearDepth: true);
 
             sky.Draw(viewProjection, colours);
 
@@ -1157,9 +1023,7 @@ sealed partial class GameHost
             characters?.Draw(worldProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance);
             water?.Draw(worldProjection, eye, light, colours, (float)session.Clock.HoursSinceStart, camera.ViewDistance * 1.5f);
 
-            ctx.EndHostPass(cmd);
-            cmd.EndRendering();
-            ctx.EndNative(cmd);
+            host.Close();
 
             var postInputs = new PostComposite.SceneInputs(eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance,
                 characters is not null && characters.DrawnCharacters > 0, water is not null ? Meitou.Data.World.WorldWater.Height : null);
@@ -1293,7 +1157,7 @@ sealed partial class GameHost
             // Once the terrain, object and foliage streamers have been quiet for two seconds, the large decode/upload
             // buffers are garbage. Compact at that idle point (at most once a minute) so the LOH does not keep them
             // for the rest of the session. Active streaming is never interrupted.
-            bool streamingIdle = (terrainTextures?.Idle ?? true) && (objects?.Pending ?? 0) == 0 && (foliage?.Pending ?? 0) == 0;
+            bool streamingIdle = (streamer?.Idle ?? true) && (objects?.Pending ?? 0) == 0 && (foliage?.Pending ?? 0) == 0;
             if (!streamingIdle) streamingIdleSince = 0;
             else if (streamingIdleSince == 0) streamingIdleSince = now;
             var managedBefore = GC.GetGCMemoryInfo();
@@ -1381,23 +1245,14 @@ sealed partial class GameHost
         ctx.Finish();
         hud?.DisposeUi();
         overlay?.Dispose();
-        characters?.Dispose();
-        foliage?.Dispose();
-        water?.Dispose();
-        interiorMask?.Dispose();
-        objects?.Dispose();
-        lamps?.Dispose();
-        particles?.Dispose();
-        terrain.Dispose();   // owns the textures it was given
-        streamer?.Dispose();
+        // The shared world owns terrain (and its textures), sky, weather surfaces, particles, lamps, objects, foliage,
+        // water, characters, interior masks, streamer and shadow. Metal's post chain and the picture target are local.
+        gpu?.Dispose();
         sceneColour?.Dispose();
-        shadow.Dispose();
         composite.Dispose();
         taa.Dispose();
         metalFx?.Dispose();           // PostTaa owns it while selected; safe to dispose again after a preset switch
         metalFxSpatial?.Dispose();
-        surfaces?.Dispose();
-        sky.Dispose();
         double elapsed = clock.Elapsed.TotalSeconds;
         Console.WriteLine($"metal     {frames} frames in {elapsed:0.0} s: {frames / Math.Max(elapsed, 1e-3):0} fps, " +
             $"camera {camera.Target.X:0}, {camera.Target.Z:0}, yaw {camera.Yaw * 180 / MathF.PI:0}, pitch {camera.Pitch * 180 / MathF.PI:0}, boom {camera.Distance:0}");

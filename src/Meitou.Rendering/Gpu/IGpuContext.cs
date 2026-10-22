@@ -121,8 +121,25 @@ public interface IGpuContext
     /// </summary>
     void BeginHostPass(IGpuCommandList cmd, PassTargets targets, DrawState state);
 
+    /// <summary>
+    /// As <see cref="BeginHostPass"/>, for a host whose rendering may record its guests on worker threads (Vulkan's secondaries):
+    /// <paramref name="stage"/> is the <see cref="StageClock"/> stage its jobs count towards. A backend without secondaries ignores it.
+    /// </summary>
+    void BeginHostPassParallel(IGpuCommandList cmd, PassTargets targets, DrawState state, int stage);
+
     /// <summary>The viewport and scissor (null: the whole viewport) the guests draw with from now on (a cascade's tile).</summary>
     void SetPassViewport(PixelViewport viewport, PixelRect? scissor = null);
+
+    /// <summary>The <see cref="StageClock"/> stage the open host pass's guests count towards from now on (no-op where guests record inline).</summary>
+    void SetPassStage(int stage);
+
+    /// <summary>Clears an area of the open host pass's depth attachment in its place among the guests.</summary>
+    void ClearDepth(IGpuCommandList host, float value, PixelRect rect);
+
+    /// <summary>
+    /// Ends a parallel host pass's queued guests (Vulkan's secondaries): call before the rendering ends. Inline backends do nothing.
+    /// </summary>
+    void EndHostPassParallel(IGpuCommandList cmd);
 
     /// <summary>Closes the host's pass (a guest's draws end with it).</summary>
     void EndHostPass(IGpuCommandList cmd);

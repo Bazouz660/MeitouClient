@@ -483,11 +483,21 @@ Still missing: the pointer sprite, the free camera and a runtime pass over the s
 
 **Current Metal mode (2026-10-22).** Terrain textures, water, foliage, terrain shadows and cloud shadows are on.
 Turn any of them off for diagnosis with `MEITOU_METAL_FOLIAGE=0`, `_WATER=0`, `_SHADOWS=0`, `_CLOUD_SHADOWS=0` or
-`MEITOU_METAL_NO_TERRAIN_TEXTURES=1`; far impostors stay off. The former black/miscoloured terrain and the acid-pool
+`MEITOU_METAL_NO_TERRAIN_TEXTURES=1`; far impostors are on again by default. The former black/miscoloured terrain and the acid-pool
 water GPU fault were the same Metal bug: `MetalUploads.Write` applied a sub-rectangle's x offset to both the packed
 source row and the destination origin, shifting every map-window piece. Screenshots at `-16134,26409`, `-44047,250`
 and `-12213,36572`, plus 15-second all-feature runs, are clean. Saved shadow settings now control shadows normally
 instead of being forced off.
+
+**Shared world construction and host pass (2026-10-22).** `SceneHost` now takes `IGpuContext`; the seam carries the
+Vulkan secondary-pass staging (`BeginHostPassParallel`, `SetPassStage`, `EndHostPassParallel`) and `ClearDepth`, and
+Metal's scene pass runs through the same `SceneHost` instead of a hand-rolled native segment. `WorldFrame.CreateGpu`
+also takes `IGpuContext`: it builds terrain, textures, streamer, sky/weather, particles, lamps, objects, foliage,
+water, shadows and the memory guard on either backend. Vulkan-only pieces (the full `PostProcess`, reflection and
+GI) are created only when the context is Vulkan; Metal supplies its allocation sample for `VramGuard`, starts water
+faithful, keeps its `PostComposite`/`PostTaa` chain, and now shares `WorldFrame.DrawShadows`. The Vulkan reference
+still uses the same path and screenshot. Remaining duplication is `WorldFrame.Draw`'s full post/reflection/GI flow,
+which needs the post-chain abstraction before Metal can call it.
 
 **Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
 headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
@@ -514,16 +524,17 @@ and the shared trade/dialogue/build/editor interaction layer are wired. The rema
 
 **After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
 refraction); the character motion pass and the hover/stage host calls; the Meitou clouds; the remaining post
-(`FogRate`, dynamic motion, GPU culls/grass); resize, HDR/EDR and `WorldFrame`/`SceneHost` on `IGpuContext`; then the
-GI decision, parity, memory/tone and the macOS default.
+(`FogRate`, dynamic motion, GPU culls/grass); resize and HDR/EDR; the remaining `WorldFrame.Draw` post/reflection
+flow (the shared construction and `SceneHost` are in); then the GI decision, parity, memory/tone and the macOS default.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
 
 1. **The rest of the real game loop (largest).** The first playable slice is in: camera bindings, edge/turn/zoom,
    left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
-   unify the bespoke loop with `WorldFrame`/`SceneHost` on `IGpuContext` (or keep the duplicate, which doubles every
-   future feature); the free camera, fly-to, warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
+   the bespoke loop now uses `WorldFrame.CreateGpu` and `SceneHost` on `IGpuContext`; the remaining shared frame draw
+   (post/reflection/GI) still needs the post-chain abstraction. Also the free camera, fly-to, warm-up,
+   resize/fullscreen, HDR/EDR and the remaining present details.
    Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world rebuild, the loading
    screen, audio/UI sounds, the sky transitions, mesh/building/surface hits and floor stepping are wired.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu, title, New Game, save/load and the
@@ -679,8 +690,10 @@ faithful and Meitou look.
 ### 7. The full game loop (plan step 10)
 
 The interactive host: input and camera controls (`MetalDisplay` events), the title/New Game/save/load and audio
-paths, resize, HDR/EDR and the present details, warm-up frames, `--screenshot`/`--ui` parity, and the real
-`GameHost` render flow (`WorldFrame`, `SceneHost`) widened to `IGpuContext` instead of the bespoke Metal loop.
+paths, resize, HDR/EDR and the present details, warm-up frames, `--screenshot`/`--ui` parity. The shared
+`WorldFrame.CreateGpu` and `SceneHost` now run on `IGpuContext`; the remaining shared frame draw
+(`WorldFrame.Draw`'s post/reflection/GI) must be split behind a post-chain abstraction before the bespoke Metal
+loop can disappear.
 
 ### 8. Parity and the default (plan step 11)
 
@@ -748,9 +761,9 @@ default.
   drawable sleeps 1 ms rather than spinning the main thread.
 - **Debug text scale.** The HUD scales with the screen; the fixed-pixel debug overlay (F11/F12) must be scaled by
   framebuffer/points (2 on the Retina test display), or it is half size.
-- **Far foliage.** When impostors are re-enabled, the purple/red far trees are the impostor atlases (some assets are
-  red, e.g. `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. With the current
-  `Impostors = false` workaround the far trees are drawn as meshes.
+- **Far foliage.** The purple/red far trees are the impostor atlases (some assets are red, e.g.
+  `FOLIAGE_DeadPineType-red`); the same view on Vulkan shows the same purple impostors. Impostors are enabled by
+  default again; `MEITOU_METAL_NO_IMPOSTORS=1` is the diagnostic fallback.
 - **Population and navmesh.** The live Metal loop boots the simulation with `interactive: true`, loads the navmesh
   zones round the start and calls `UpdateNav` each frame. The Hub shows its wall guards and residents again; the
   background population costs frames, so measure the live window rather than the still's first-frames average.
@@ -826,7 +839,7 @@ itself — run the suite and a Vulkan comparison, because the change can alter t
 to be neutral:
 
 ```
-DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet test --filter "Category!=Slow&Category!=Bench"   # 424 / 1 known arm64
+DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet test --filter "Category!=Slow&Category!=Bench"   # 476 passed / 2 skipped
 ```
 
 Parity: render the same view on the Vulkan path before and after (two baseline runs, since the temporal path is

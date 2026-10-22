@@ -401,7 +401,7 @@ sealed class WorldOptions
 /// timestamps); <see cref="Close"/> records the queued jobs on the job threads and executes everything in order. <see cref="ClearDepth"/> clears
 /// the depth in its place among the guests.
 /// </summary>
-sealed class SceneHost(GpuContext ctx)
+sealed class SceneHost(IGpuContext ctx)
 {
     IGpuCommandList? cmd;
     PassTargets? targets;
@@ -410,27 +410,26 @@ sealed class SceneHost(GpuContext ctx)
 
     /// <summary>Opens the host on <paramref name="targets"/> (nothing when it is open already); its jobs count towards <paramref name="stage"/>.
     /// <paramref name="clearColour"/> / <paramref name="clearDepth"/>: the attachments are cleared by the rendering's load ops (to the colour, to 1).
-    /// Without secondaries (<see cref="Recording.Mode"/> 0) the guests record straight into its rendering.</summary>
+    /// Without secondaries (<see cref="IGpuContext.RecordsSecondaries"/>) the guests record straight into its rendering.</summary>
     public void Open(int stage, PassTargets targets, ClearColour? clearColour = null, bool clearDepth = false)
     {
         if (cmd is not null) { Stage(stage); return; }
         var list = ctx.BeginNative("scene");
-        bool secondaries = Recording.Secondaries;
+        bool secondaries = ctx.RecordsSecondaries;
         var colour = clearColour is { } c ? targets.Colour with { Load = LoadOp.Clear, Clear = c } : targets.Colour;
         var depth = clearDepth ? targets.Depth with { Load = LoadOp.Clear, DepthClear = 1f } : targets.Depth;
         // The extra target (the GI resolve's albedo) is cleared to 0 with the colour: no surface there takes the probes' light in post.
         var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = LoadOp.Clear, Clear = default } : targets.Extra;
         list.BeginRendering(new RenderingDesc(colour, depth, targets.Width, targets.Height, 0, 0, targets.ShadingRate, targets.ShadingRateTexel, extra), secondaries);
         this.targets = targets;
-        ctx.BeginHostPass((CommandList)list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb));   // alpha: the characters only (the SSAO character mask)
-        if (secondaries) ctx.Frame.Parallel.Begin((CommandList)list, targets.Formats, stage);
+        ctx.BeginHostPassParallel(list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb), stage);   // alpha: the characters only (the SSAO character mask)
         cmd = list;
     }
 
     /// <summary>The <see cref="StageClock"/> stage the guests' jobs count towards from now on.</summary>
     public void Stage(int stage)
     {
-        if (cmd is not null) ctx.Frame.Parallel.Stage = stage;
+        if (cmd is not null) ctx.SetPassStage(stage);
     }
 
     /// <summary>Clears the open rendering's depth to 1 over the whole target, in its place among the guests' segments.</summary>
@@ -443,7 +442,8 @@ sealed class SceneHost(GpuContext ctx)
     public void Close()
     {
         if (cmd is not { } list) return;
-        if (ctx.Frame.Parallel.Open) ctx.Frame.Parallel.End();
+        // Vulkan's queued guests execute into the rendering's secondaries; they must finish before EndRendering.
+        ctx.EndHostPassParallel(list);
         list.EndRendering();
         ctx.EndHostPass(list);
         ctx.EndNative(list);
@@ -691,7 +691,7 @@ static class WorldFrame
     /// benchmark start, a 300 ms stall two frames later), and one full, compacting collection runs now instead of a blocking gen2 collection a few
     /// frames into play (300+ ms measured), then gen2 collections only in the background while the world runs (DECISIONS 12).
     /// </summary>
-    public static void FinishLoading(GpuContext context)
+    public static void FinishLoading(IGpuContext context)
     {
         context.Finish();
         System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
@@ -728,7 +728,7 @@ static class WorldFrame
     }
 
     /// <summary>The particle renderer (reads the scripts and materials, makes the pass's program) if there is none yet; for whoever feeds it a weather's effect list.</summary>
-    public static ParticleRenderer EnsureParticles(Gpu gpu, GpuContext context, GameInstall install)
+    public static ParticleRenderer EnsureParticles(Gpu gpu, IGpuContext context, GameInstall install)
     {
         if (gpu.Particles is { } existing) return existing;
         return gpu.Particles = ParticleRenderer.Create(context, install);
@@ -736,7 +736,9 @@ static class WorldFrame
 
     /// <summary>The renderer for <paramref name="scene"/>. <paramref name="step"/> is called before each of its steps (terrain, biomes, sky, water, objects, foliage, shadows) with the step's name: the game draws a loading frame there.</summary>
     /// <paramref name="wait"/> waits for the CPU work started on workers at the beginning (the terrain textures' and the water's files and bakes); the game draws loading frames while it waits.
-    public static Gpu CreateGpu(GpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive, Action<string>? step = null, Action<Task>? wait = null)
+    public static Gpu CreateGpu(IGpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive,
+        Action<string>? step = null, Action<Task>? wait = null, bool terrainTextures = true, bool particlesEnabled = true, int objectLoadBudget = -1,
+        Func<(ulong Used, ulong Budget)>? vramSample = null)
     {
         var watch = Stopwatch.StartNew();
         context.Samplers.MaxAnisotropy = o.Anisotropy;
@@ -746,14 +748,14 @@ static class WorldFrame
         int layerSize = Math.Max(2048 >> Meitou.Data.Textures.TextureQuality.LevelsToDrop("terrain.dds", "Landscape"), 16);
         if (layerSize != 2048) Console.WriteLine($"textures  quality {o.TextureQuality} ({Meitou.Data.Textures.TextureQuality.Labels[o.TextureQuality]}): terrain layers {layerSize}² instead of 2048²");
         // The files the terrain textures and the water read and bake (seconds of CPU work) are read on workers while the steps before them run.
-        var terrainSource = !o.NoTextures && scene.Database is { } textureDb ? Task.Run(() => TerrainTextures.Prepare(install, textureDb)) : null;
+        var terrainSource = !o.NoTextures && terrainTextures && scene.Database is { } textureDb ? Task.Run(() => TerrainTextures.Prepare(install, textureDb)) : null;
         var waterSource = !o.NoWater && scene.Database is { } waterDb ? Task.Run(() => WaterRenderer.Prepare(install, waterDb, assets, scene.Coarse)) : null;
         T Ready<T>(Task<T> work) { if (wait is not null) wait(work); return work.GetAwaiter().GetResult(); }
         step?.Invoke("terrain");
         var terrain = new TerrainRenderer(context, scene.Coarse, scene.CoarseSize, scene.Window);
         Console.WriteLine($"uploaded  terrain heights: {terrain.LevelCount} LOD levels, finest {terrain.FinestSpacing:0.#} units ({watch.ElapsedMilliseconds} ms)");
         TerrainTextures? textures = null;
-        if (!o.NoTextures && scene.Database is not null)
+        if (!o.NoTextures && terrainTextures && scene.Database is not null)
         {
             step?.Invoke("biomes");
             textures = TerrainTextures.Create(context, install, scene.Database, assets, layerSize, source: Ready(terrainSource!));
@@ -762,12 +764,16 @@ static class WorldFrame
             terrain.SetTextures(textures);
         }
         step?.Invoke("sky");
-        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = new PostProcess(context, o.Post) };
-        gpu.Post.LoadHeatHaze(assets);
+        // The full post chain is still the Vulkan implementation; Metal owns its PostComposite/PostTaa slice. The
+        // shared renderer construction below can therefore run on either backend without pretending PostProcess is
+        // ported yet: the frame loop only reaches Post when the context made one.
+        var post = context is GpuContext vulkanPost ? new PostProcess(vulkanPost, o.Post) : null;
+        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = post };
+        post?.LoadHeatHaze(assets);
         // The placed fog volumes (docs/formats/fogfeatures.md): the swamp's fog and the like, part of the game's look.
         // Always made: the weather's fog spheres go through it too, with or without a fogfeatures.dat.
         gpu.FogVolumes = new FogVolumes(context, o.NoFogFeatures ? [] : FogFeatures.Load(install));
-        gpu.Post.FogVrs = true;   // takes effect where the device supports fragment shading rates
+        if (post is not null) post.FogVrs = true;   // takes effect where the device supports fragment shading rates
         gpu.Sky.HazeStrength = o.HazeStrength;
         gpu.Sky.NightAir = o.NightAir;
         gpu.Sky.Planetshine = o.Planetshine;
@@ -796,7 +802,7 @@ static class WorldFrame
         // The weather's particle effects (rain, ash...) follow the weather state (UpdateParticles); the map's effect placers are always on
         // (docs/formats/weather.md "Effect placers on the map"), so the particle renderer exists from the start whatever the weather.
         step?.Invoke("particles");
-        if (!o.NoParticles && scene.Database is { } effectsDb)
+        if (particlesEnabled && !o.NoParticles && scene.Database is { } effectsDb)
         {
             var particleWatch = Stopwatch.StartNew();
             var particles = EnsureParticles(gpu, context, install);
@@ -825,10 +831,18 @@ static class WorldFrame
         {
             var messages = new List<string>();
             step?.Invoke("water");
-            gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean, Ready(waterSource!));
-            gpu.Water.Meitou = o.MeitouWater;
-            step?.Invoke("reflections");
-            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
+            // The Meitou water's FFT, shore field and reflection/refraction are still Vulkan paths. Metal gets the
+            // game's faithful surface until those pieces are ported, but from the same construction path.
+            bool meitouWater = o.MeitouWater && context is GpuContext;
+            gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
+                Ready(waterSource!), meitouWaves: meitouWater, shoreField: meitouWater);
+            gpu.Water.Meitou = meitouWater;
+            if (context is GpuContext vulkanWater)
+            {
+                step?.Invoke("reflections");
+                gpu.Reflection = new ReflectionPass(vulkanWater) { Level = o.WaterReflection, Range = ReflectionRange };
+            }
+            else gpu.Water.Refraction = false;
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }
@@ -836,8 +850,9 @@ static class WorldFrame
         {
             // Landmarks (huge objects, drawn to their own distance) are kept apart from the zones only when the viewer starts with them (Meitou reach, distance above 0).
             step?.Invoke("objects");
+            int loadBudget = objectLoadBudget >= 0 ? objectLoadBudget : interactive ? 8 : 0;
             gpu.Objects = new WorldObjectRenderer(context, assets, scene.Objects, landmarks: o.LandmarkDistanceFor(o.MeitouReach) > 0)
-            { ObjectDistance = o.ObjectDistanceFor(o.MeitouReach), LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach), DistantRange = o.DistantZones * WorldLayout.ZoneSize, NoDistant = o.DistantZones <= 0, LoadBudget = interactive ? 8 : 0, SortNearestFirst = o.MeitouReach, LodBias = 1 / o.ObjectLod };
+            { ObjectDistance = o.ObjectDistanceFor(o.MeitouReach), LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach), DistantRange = o.DistantZones * WorldLayout.ZoneSize, NoDistant = o.DistantZones <= 0, LoadBudget = loadBudget, SortNearestFirst = o.MeitouReach, LodBias = 1 / o.ObjectLod };
             Console.WriteLine($"objects   GPU ready ({watch.ElapsedMilliseconds} ms)");
         }
         if (!o.NoFoliage && scene.Database is not null)
@@ -872,31 +887,39 @@ static class WorldFrame
         step?.Invoke("gi");
         if (o.GiDebug > 0 || o.Gi)
         {
-            if (!context.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
+            if (context is not GpuContext giContext) Console.WriteLine("gi        off: the Metal backend has no ray queries yet");
+            else if (!giContext.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
             else
             {
-                gpu.Gi = new Gi.GiScene(context);
+                gpu.Gi = new Gi.GiScene(giContext);
                 if (o.GiDebug > 0)
                 {
-                    gpu.GiDebugPass = new Gi.GiDebugPass(context);
+                    gpu.GiDebugPass = new Gi.GiDebugPass(giContext);
                     gpu.GiDebug = o.GiDebug;
                     Console.WriteLine($"gi        debug view {o.GiDebug}");
                 }
                 if (o.Gi)
                 {
-                    gpu.Probes = new Gi.GiProbes(context) { Enabled = o.GiProbes, InteriorEnabled = o.InteriorGi };
+                    gpu.Probes = new Gi.GiProbes(giContext) { Enabled = o.GiProbes, InteriorEnabled = o.InteriorGi };
                     Console.WriteLine($"gi        {gpu.Probes.Describe()}");
                 }
             }
         }
-        // The memory-pressure guard (VramGuard): MEITOU_VRAM_GUARD=0 leaves it off.
+        // The memory-pressure guard (VramGuard): MEITOU_VRAM_GUARD=0 leaves it off. Vulkan samples its allocator;
+        // another backend supplies the sample (Metal's device allocation and conservative budget).
         if (Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0")
         {
-            var guard = gpu.Guard = new VramGuard(context.Device.VideoMemory) { Allocator = context.Device.Allocator };
-            if (gpu.Objects is not null) gpu.Objects.Guard = guard;
-            if (gpu.Foliage is not null) gpu.Foliage.Guard = guard;
-            if (gpu.Shadow is not null) gpu.Shadow.Guard = guard;
-            if (gpu.Characters is not null) gpu.Characters.Guard = guard;
+            VramGuard? guard = context is GpuContext vulkanGuard
+                ? new VramGuard(vulkanGuard.Device.VideoMemory) { Allocator = vulkanGuard.Device.Allocator }
+                : vramSample is not null ? new VramGuard(vramSample) : null;
+            if (guard is not null)
+            {
+                gpu.Guard = guard;
+                if (gpu.Objects is not null) gpu.Objects.Guard = guard;
+                if (gpu.Foliage is not null) gpu.Foliage.Guard = guard;
+                if (gpu.Shadow is not null) gpu.Shadow.Guard = guard;
+                if (gpu.Characters is not null) gpu.Characters.Guard = guard;
+            }
         }
         return gpu;
     }
@@ -1269,6 +1292,7 @@ static class WorldFrame
         if (gpu.Shadow is not null) gpu.Shadow.RangeCap = gpu.FogVolumes?.AtmosphereDistance;   // the cascades end where the weather fog hides everything
         gpu.Shadow?.SetFogHide(gpu.FogVolumes?.ShadowHideDistance, gpu.FogVolumes?.ShadowHidePending == true);   // or where the placed fog block the eye is in hides the whole view
         if (gpu.Shadow is not null) { gpu.Shadow.Temporal = gpu.Post?.Temporal == true; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
+
         StageClock.Lap(12);
         if (gpu.Lamps is { } lamps)
         {
@@ -1569,9 +1593,12 @@ static class WorldFrame
     /// depth-only paths (terrain, objects, foliage meshes; detail chosen from the camera's eye), before the reflection and the main pass.
     /// </summary>
     /// <param name="sunHeight">The real sun's height: the map is drawn along the lighting direction while the sun still has a colour (as the game).</param>
-    public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null)
+    public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null,
+        bool? temporal = null)
     {
         var shadow = gpu.Shadow!;
+        // The caller's post chain owns the temporal decision (Metal's PostTaa/MetalFX is outside gpu.Post).
+        shadow.Temporal = temporal ?? gpu.Post?.Temporal == true;
         var v = camera.View;
         var view = new ShadowView(camera.Eye, camera.Forward, Vector3.Normalize(new Vector3(v.M12, v.M22, v.M32)), camera.FieldOfView, width / (float)Math.Max(height, 1), camera.Near, camera.Distance);
         int objects = 0, foliage = 0;

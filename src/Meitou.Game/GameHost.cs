@@ -51,7 +51,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     PlayerInterface player = null!;
     Meitou.Simulation.Squad? playerSquad;
     WorldFrame.Gpu gpu = null!;
-    // The Metal host owns its renderers outside WorldFrame.Gpu; these are the same services the shared title, audio and save code asks the host for.
+    /// <summary>This run uses the native Metal loop: the shared world object exists, but its Vulkan post/loading path does not drive it.</summary>
+    bool metalRenderer;
+    // Fallback services for a host whose renderers are not in WorldFrame.Gpu yet (the shared title, audio and save code asks through these).
     WorldWeather? hostWeather = null;
     WorldObjectRenderer? hostObjects = null;
     FoliageRenderer? hostFoliage = null;
