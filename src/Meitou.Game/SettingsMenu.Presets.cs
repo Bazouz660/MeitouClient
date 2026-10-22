@@ -125,8 +125,8 @@ sealed partial class SettingsMenu
     Entry LookEntry => SidesEntry("All graphics features", "Every graphics feature as the game ships it, or every Meitou improvement. The quality settings stay as they are.",
         "graphics feature", values.Toggles.Where(t => t.Remaster).ToList(), []);
 
-    /// <summary>The Advanced or Fixes page's all switch, over that page's switches (luckyren Mode, a joke mode off by default, left out) and sliders with both marks.</summary>
+    /// <summary>The Advanced or Fixes page's all switch, over that page's Faithful / Meitou switches (not the plain on/off ones such as luckyren Mode) and sliders with both marks.</summary>
     Entry PageSidesEntry(List<Entry> entries, string label, string hint, string what) => SidesEntry(label, hint, what,
-        entries.Select(e => e.Toggle).OfType<Toggle>().Where(t => t.Remaster && t.Label != "luckyren Mode").ToList(),
+        entries.Select(e => e.Toggle).OfType<Toggle>().Where(t => t.Remaster).ToList(),
         entries.Select(e => e.Slider).OfType<Slider>().Where(s => s.Faithful is not null && s.Meitou is not null).ToList());
 }

@@ -1,6 +1,6 @@
 # luckyren Mode
 
-A Meitou-only switch (settings menu, off by default, `UserConfig.LuckyrenMode`): a character killed by a
+An easter egg (an On/Off switch in the settings menu, off by default, outside the all Faithful / all Meitou switches, `UserConfig.LuckyrenMode`): a character killed by a
 hit bursts. No original behaviour; every rule here is an engine choice. Implementation:
 `World.Luckyren`, `CombatSystem` (melee `Apply`, ranged `BoltHit`), `BodySystem.Burst`,
 `GameHost.Debris`, `DebrisRenderer`.

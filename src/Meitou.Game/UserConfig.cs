@@ -38,7 +38,7 @@ sealed class UserConfig
     public SpeedUnit SpeedUnit { get; set; } = SpeedUnit.Mph;
     /// <summary>The damage floaters (Interface settings): the original's <c>floaters</c> option, Simple by default; Meitou also floats a green "+N" over a player character that heals.</summary>
     public FloaterMode Floaters { get; set; } = FloaterMode.Simple;
-    /// <summary>The original's splash at startup in the Faithful UI (Interface settings), off by default; off, the menu shows as soon as the game has loaded.</summary>
+    /// <summary>The original's splash at startup in the Faithful UI (Advanced settings: the switch's Faithful side), off by default; off, the menu shows as soon as the game has loaded.</summary>
     public bool SplashScreens { get; set; }
     public bool MainMenuTransitions { get; set; } = true;
     public bool InGameTransitions { get; set; } = true;
@@ -89,7 +89,7 @@ sealed class UserConfig
     public bool HoverOutline { get; set; } = true;
     /// <summary>The green ring under each selected character (Advanced settings; default on).</summary>
     public bool SelectionRings { get; set; } = true;
-    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; Meitou only, off by default; docs/game/luckyren.md).</summary>
+    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; an easter egg, off by default, not part of the all Faithful / all Meitou switches; docs/game/luckyren.md).</summary>
     public bool LuckyrenMode { get; set; }
     /// <summary>How many items dropped in play stay on the ground before the oldest goes (Advanced settings; <see cref="Meitou.Simulation.Items.GroundItems.Limit"/>).</summary>
     public int GroundItemLimit { get; set; } = Meitou.Simulation.Items.GroundItems.DefaultLimit;
