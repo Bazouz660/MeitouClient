@@ -354,6 +354,8 @@ sealed partial class GameHost
                 // The Metal impostor atlas still comes out corrupt (red/black bands, and a gray
                 // full-screen card under MetalFX); keep the meshes and grass until that path is fixed.
                 Impostors = false,
+                // Diagnostic/workaround: keep the tree, bush and rock meshes but skip the grass page draws.
+                DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1",
             };
             if (o.LargeRange is { } largeRange)
             {
