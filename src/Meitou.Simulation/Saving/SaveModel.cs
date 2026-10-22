@@ -66,6 +66,8 @@ public sealed class LoadedSave
     public HashSet<(string Platoon, int Slot)> SpawnedSlots { get; } = [];
     /// <summary>The relation table of the data right after loading (faction by faction, row by row): a value that still equals it was not changed in play, and the save keeps its own.</summary>
     public float[] RelationBaseline { get; set; } = [];
+    /// <summary>Each faction's rank right after loading, kept as <see cref="RelationBaseline"/> is.</summary>
+    public int[] RankBaseline { get; set; } = [];
     /// <summary>The travelling stand-ins made from the save's NPC platoons: the world's platoon id to the save's platoon name.</summary>
     public Dictionary<int, string> RoamingPlatoons { get; } = [];
     /// <summary>NPC platoons that stay in their placed town (residents, bar squads, slaves): pinned stand-ins, made when the town loads, which then makes none of its own.</summary>

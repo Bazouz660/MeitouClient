@@ -143,6 +143,7 @@ public sealed class FactionRelations
     readonly Dictionary<string, int> index;
     readonly float[] relation;
     readonly bool[] coexist;
+    readonly int[] rank;
 
     FactionRelations(IReadOnlyList<FactionData> factions, Dictionary<string, int> index, float[] relation, bool[] coexist)
     {
@@ -150,6 +151,7 @@ public sealed class FactionRelations
         this.index = index;
         this.relation = relation;
         this.coexist = coexist;
+        rank = new int[factions.Count];
     }
 
     public IReadOnlyList<FactionData> Factions { get; }
@@ -227,6 +229,27 @@ public sealed class FactionRelations
 
     /// <summary>Sets the relation of faction <paramref name="a"/> towards <paramref name="b"/> (a loaded save does this; trust and the other state live outside this table).</summary>
     public void Set(int a, int b, float value) => relation[a * Count + b] = value;
+
+    /// <summary>
+    /// The player's rank in faction <paramref name="f"/> (the int at FactionRelations +0x10, saved as GAMESTATE_FACTION <c>rank</c>; docs/game/factions-squads-towns.md
+    /// "Faction rank"): 0 until a dialogue's DA_INCREASE_FACTION_RANK raises it, read by DC_FACTION_RANK.
+    /// </summary>
+    public int Rank(int f) => Contains(f) ? rank[f] : 0;
+
+    /// <summary>DA_INCREASE_FACTION_RANK: the rank +1 while it is below <paramref name="cap"/> (0: no cap). Returns whether it rose.</summary>
+    public bool RaiseRank(int f, int cap)
+    {
+        if (!Contains(f) || (cap != 0 && rank[f] >= cap)) return false;
+        rank[f]++;
+        Changes++;
+        return true;
+    }
+
+    /// <summary>Sets a faction's rank (a loaded save does this).</summary>
+    public void SetRank(int f, int value)
+    {
+        if (Contains(f)) rank[f] = value;
+    }
 
     /// <summary>A to B: B is another faction and the relation is at or below <see cref="HostileThreshold"/>.</summary>
     public bool IsHostile(int a, int b) => a != b && Get(a, b) <= HostileThreshold;

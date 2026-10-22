@@ -23,6 +23,7 @@ sealed partial class PlayerInterface
     {
         if (ReferenceEquals(selectedBuilding, building)) return;
         selectedBuilding = building;
+        closedMachine = null;   // clicking a building asks for its window again, also when the player closed it before (the mark only held until another was selected)
         // Selecting calls the building's select sound (FUN_1405504a0: Buildings_Click = its `select sound`, none for 0); a click on the same building picks it anew and sounds again.
         if (building?.Record is { } record) Sound("Building_Click", building: record);
         Say(new InspectBuildingCommand(building?.Instance) { Tick = session.World.Tick });
@@ -35,6 +36,12 @@ sealed partial class PlayerInterface
         return selectedBuilding;
     }
 
+    /// <summary>A site of the player's as a selected building (what a left click on it selects).</summary>
+    SelectedBuilding SiteBuilding(Meitou.Simulation.Construction.BuildingSnapshot site) =>
+        new(SiteName(site), null, FactionName?.Invoke(session.World.Player.Faction), null, site.Id, site.Id, site.Position,
+            buildHost?.Placement.Footprint(site.Record) is { } f ? f.Place(site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Rotation))) : null,
+            Record: site.Record);
+
     /// <summary>The nearest building under the pixel, a site of the player's or a level-data one, when the ray meets it before the ground.</summary>
     SelectedBuilding? PickBuilding(Vector2 pixel)
     {
@@ -45,10 +52,7 @@ sealed partial class PlayerInterface
         if (PickSiteAt(pixel) is { } site && site.T < bestT)
         {
             bestT = site.T;
-            string? faction = FactionName?.Invoke(session.World.Player.Faction);
-            best = new(SiteName(site.Site), null, faction, null, site.Site.Id, site.Site.Id, site.Site.Position,
-                buildHost?.Placement.Footprint(site.Site.Record) is { } f ? f.Place(site.Site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Site.Rotation))) : null,
-                Record: site.Site.Record);
+            best = SiteBuilding(site.Site);
         }
         if (buildHost is { } host)
             foreach (var candidate in host.Placement.StaticAlong(ray.Origin, ray.Direction, limit))
@@ -56,7 +60,7 @@ sealed partial class PlayerInterface
                 var b = candidate.Placement;
                 float y = b.WorldY ?? ground(b.Position.X, b.Position.Z) + b.Position.Y;
                 var hull = candidate.Footprint.Place(b.Position, b.Rotation);
-                if (RayPrism(ray.Origin, ray.Direction, hull, y + candidate.Footprint.YMin, y + candidate.Footprint.YMax) is not { } t || t >= bestT) continue;
+                if (BuildingRayT(ray, hull, candidate.Footprint.YMin, candidate.Footprint.YMax, b.BuildingId, b.Position, y, b.Rotation) is not { } t || t >= bestT) continue;
                 bestT = t;
                 var info = host.WorldInfo(b);
                 best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId);

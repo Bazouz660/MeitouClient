@@ -118,8 +118,11 @@ public sealed unsafe class DebrisRenderer : IDisposable
         ], default);
     }
 
-    /// <summary>Half the size of <paramref name="mesh"/>'s bounds along its own axes, loading it (null when it is missing or unreadable).</summary>
-    public Vector3? Extent(string mesh) => Load(mesh)?.Extent;
+    /// <summary>
+    /// Half the size of <paramref name="mesh"/>'s bounds along its own axes, loading it (null when it is missing or unreadable). Textured as
+    /// <paramref name="materialOf"/> when given (a mesh no record names, sharing another's material), else as itself; the first load decides.
+    /// </summary>
+    public Vector3? Extent(string mesh, string? materialOf = null) => Load(mesh, materialOf)?.Extent;
 
     /// <summary>
     /// Draws <paramref name="pieces"/> in the open scene pass (a guest): depth tested and written, back faces culled, colour only.
@@ -170,13 +173,13 @@ public sealed unsafe class DebrisRenderer : IDisposable
         gpu.EndGuest(cmd);
     }
 
-    Mesh? Load(string file)
+    Mesh? Load(string file, string? materialOf)
     {
         if (meshes.TryGetValue(file, out var known)) return known;
         Mesh? mesh = null;
         try
         {
-            if (find(Path.GetFileName(file.Replace('\\', '/'))) is { } path) mesh = Build(file, OgreMeshReader.ReadFile(path));
+            if (find(Path.GetFileName(file.Replace('\\', '/'))) is { } path) mesh = Build(file, materialOf ?? file, OgreMeshReader.ReadFile(path));
         }
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException)
         {
@@ -186,7 +189,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         return mesh;
     }
 
-    Mesh? Build(string file, OgreMesh ogre)
+    Mesh? Build(string file, string materialOf, OgreMesh ogre)
     {
         var built = Model.Build(ogre, null);
         if (built.Parts.Count == 0) return null;
@@ -196,7 +199,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         var parts = new List<(uint, uint, int, SampledImage?, float)>();
         foreach (var part in built.Parts)
         {
-            var material = resolver?.Candidates(file, new OgreSubMesh { MaterialName = part.MaterialName }).FirstOrDefault();
+            var material = resolver?.Candidates(materialOf, new OgreSubMesh { MaterialName = part.MaterialName }).FirstOrDefault();
             float threshold = material is { Alpha: AlphaSource.DiffuseAlpha } ? MathF.Max(material.AlphaThreshold, 0.5f) : 0;
             parts.Add(((uint)indices.Count, (uint)part.Indices.Length, vertices.Count, Texture(material?.Diffuse), threshold));
             foreach (var v in part.Vertices) vertices.Add(v with { Position = v.Position - centre });

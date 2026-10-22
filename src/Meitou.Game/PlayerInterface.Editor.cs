@@ -47,6 +47,15 @@ sealed partial class PlayerInterface
     readonly Dictionary<CharacterId, Preview> previews = [];
     /// <summary>How long the character glides from one look to the next: about the time between two looks while a slider is dragged, so the movement is continuous.</summary>
     const double BlendSeconds = 0.12;
+    /// <summary>Has the renderer prepare the look being prepared at once, ahead of its ordinary queue (the host sets it).</summary>
+    public Action<CharacterAppearance>? PreviewFetch { get; set; }
+    /// <summary>Has the renderer prepare a look's meshes ahead without building it, urgently or on its ordinary queue (the host sets it): the looks the next click can make.</summary>
+    public Action<CharacterAppearance, bool>? PreviewWarm { get; set; }
+    /// <summary>What the looks prepared ahead were made for: the next click's (character, seed, race, gender, clothes) and the catalogue's (character, race, gender, clothes).</summary>
+    (CharacterId Id, int Seed, string Race, bool Female, bool Clothes)? anticipated;
+    (CharacterId Id, string Race, bool Female, bool Clothes)? catalogued;
+    /// <summary>The pending look already handed to <see cref="PreviewFetch"/>.</summary>
+    CharacterAppearance? warmedPending;
     /// <summary>Whether the renderer has prepared a look (the host sets it); a preview is shown only once it is.</summary>
     public Func<CharacterAppearance, bool>? PreviewReady { get; set; }
     readonly Stopwatch previewClock = Stopwatch.StartNew();
@@ -125,8 +134,66 @@ sealed partial class PlayerInterface
             entry = entry with { Version = draft.Version, Clothes = clothes };
         }
         previews[id] = entry;
+        if (entry.Pending is { } waiting && !ReferenceEquals(waiting, warmedPending)) { warmedPending = waiting; PreviewFetch?.Invoke(waiting); }
+        Anticipate(id, draft, loadout, own);
         return entry.Shown ?? own;
     }
+
+    /// <summary>
+    /// Prepares ahead the looks the next click can give, so their meshes are ready when it comes (the original loads its meshes at once): urgently RANDOMISE ALL's next roll
+    /// (the rolls are seeded) and, at creation, the other gender and the next and previous race and subrace, again whenever the seed, race, gender or clothes change; then, on the
+    /// ordinary queue, a look with each head, hair and beard of the race and gender, once for each. Looks whose meshes are all prepared are skipped by the renderer.
+    /// </summary>
+    void Anticipate(CharacterId id, CharacterDraft draft, Loadout loadout, CharacterAppearance own)
+    {
+        if (editor is not { } s || PreviewWarm is null || PreviewSource is null || EditorData is not { } data) return;
+        void Warm(IEnumerable<Meitou.Data.Fcs.FcsRecord> records, bool urgent)
+        {
+            foreach (var record in records)
+                if (Meitou.Simulation.Saving.SavedKit.Wear(loadout, record, data.Db) is { } worn)
+                {
+                    if (!s.Clothes) { worn.Clothing.Clear(); worn.Backpack = null; }
+                    if (PreviewSource(own.Character?.StringId ?? "", worn) is { } look) PreviewWarm(look, urgent);
+                }
+        }
+        if (anticipated != (id, s.Seed, draft.Race.StringId, draft.Female, s.Clothes))
+        {
+            anticipated = (id, s.Seed, draft.Race.StringId, draft.Female, s.Clothes);
+            var next = new List<Meitou.Data.Fcs.FcsRecord> { draft.RandomisedLook(s.Seed) };
+            if (s.Kind == EditKind.Creation)
+            {
+                if (!draft.Race.GetBool("single gender")) next.Add(draft.SwitchedLook(draft.Race, !draft.Female, s.Seed));
+                var groups = EditorRaces(data.Db);
+                int g = IndexOf(groups, draft.Race);
+                if (g >= 0)
+                {
+                    var races = groups[g].Races;
+                    int r = races.ToList().FindIndex(x => x.StringId == draft.Race.StringId);
+                    var neighbours = new[] { races[(r + 1) % races.Count], races[(r + races.Count - 1) % races.Count],
+                        groups[(g + 1) % groups.Count].Races[0], groups[(g + groups.Count - 1) % groups.Count].Races[0] };
+                    foreach (var race in neighbours.DistinctBy(x => x.StringId).Where(x => x.StringId != draft.Race.StringId))
+                        next.Add(draft.SwitchedLook(race, draft.Female && !race.GetBool("single gender"), s.Seed));
+                }
+            }
+            Warm(next, urgent: true);
+        }
+        if (catalogued != (id, draft.Race.StringId, draft.Female, s.Clothes))
+        {
+            catalogued = (id, draft.Race.StringId, draft.Female, s.Clothes);
+            var catalogue = new List<Meitou.Data.Fcs.FcsRecord>();
+            foreach (var kind in new[] { EditorControlKind.Head, EditorControlKind.HairStyle, EditorControlKind.Beard })
+                for (int i = 0; i < draft.Options(kind).Count; i++)
+                    if (draft.Options(kind)[i] is not null) catalogue.Add(draft.WithOption(kind, i));
+            Warm(catalogue, urgent: false);
+        }
+    }
+
+    /// <summary>
+    /// The idle stance the editor shows a character in: its draft's <c>idle stance</c> (the original's preview plays the chosen stance; the world's idles are the
+    /// simulation's), or null while the editor is closed or has no draft of it.
+    /// </summary>
+    public string? EditorIdle(CharacterId id) =>
+        EditorOpen && editor!.Drafts.TryGetValue(id, out var draft) && draft.Record.Strings.GetValueOrDefault("idle stance") is { Length: > 0 } stance ? stance : null;
 
     /// <summary>The preview look being prepared for a character (the host lists it hidden, so the renderer builds it), or null.</summary>
     public CharacterAppearance? EditorPending(CharacterId id) => EditorOpen && previews.TryGetValue(id, out var entry) ? entry.Pending : null;
@@ -247,21 +314,16 @@ sealed partial class PlayerInterface
                 ExportLook(draft, data.InstallRoot);
                 return;
             case "ImportButton":
-                importFiles = ExportedLooks(data.InstallRoot);
-                importChoice = importFiles.FirstOrDefault();
+                ShowImportFolder("./" + ExportFolder.TrimEnd('/'), data.InstallRoot);
                 faithfulScreens.Open("file");
                 return;
         }
-        if (e.Action.StartsWith("editor-slider:", StringComparison.Ordinal) && Control(e.Action[14..]) is { } slider)
-            draft.Set(slider, CharacterGenerator.Round(slider.Min + e.Value * (slider.Max - slider.Min)));
-        else if (e.Action.StartsWith("editor-pick:", StringComparison.Ordinal))
+        // A row's bar moved (its arrows, track or thumb) or a picker's arrow was pressed; the row's widget names the control.
+        if (editorRows.FirstOrDefault(r => r.Owner == e.Widget) is { Owner: not null } row && draft.Controls(s.Tab).ElementAtOrDefault(row.Control) is { } control)
         {
-            var parts = e.Action.Split(':');
-            if (parts.Length == 3 && Control(parts[1]) is { IsPicker: true } picker) draft.Step(picker.Kind, int.Parse(parts[2], CultureInfo.InvariantCulture));
+            if (e.Action == "scroll" && !control.IsPicker) draft.Set(control, control.Min + (int)MathF.Round(e.Value));
+            else if (e.Action == "step" && control.IsPicker) draft.Step(control.Kind, (int)e.Value);
         }
-
-        EditorControl? Control(string index) =>
-            int.TryParse(index, CultureInfo.InvariantCulture, out int i) ? draft.Controls(s.Tab).ElementAtOrDefault(i) : null;
     }
 
 
@@ -296,7 +358,6 @@ sealed partial class PlayerInterface
         CloseEditor();
     }
 
-
     /// <summary>For the screenshot showcase: the open editor's character gets a new random look and name, and CONFIRM is pressed (the creation path end to end).</summary>
     internal void ShowcaseEdit()
     {
@@ -307,8 +368,12 @@ sealed partial class PlayerInterface
     }
     /// <summary>The body files IMPORT and EXPORT use, under the install (<c>FUN_141539ad0</c>), and their extension.</summary>
     const string ExportFolder = "data/character/bodies/export/", BodyExtension = ".bod2";
-    IReadOnlyList<string> importFiles = [];
+    /// <summary>The folder the import dialog shows, as the original keeps it (install-relative, no trailing separator), its lines and the chosen one.</summary>
+    string importFolder = "./" + ExportFolder.TrimEnd('/');
+    IReadOnlyList<UiListItem> importEntries = [];
     string? importChoice;
+    /// <summary>A line's id for a folder (the folder's path), against a file's (its path).</summary>
+    const string FolderEntry = "folder:";
 
     /// <summary>EXPORT (<c>FUN_1405ea410</c>): the look goes to the export folder under the name typed in NameText, replacing a file of that name.</summary>
     void ExportLook(CharacterDraft draft, string installRoot)
@@ -325,11 +390,25 @@ sealed partial class PlayerInterface
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice($"Can't export '{name}': {e.Message}", true); }
     }
 
-    /// <summary>The body files in the export folder, by name.</summary>
-    static IReadOnlyList<string> ExportedLooks(string installRoot)
+    /// <summary>
+    /// Shows <paramref name="folder"/> in the import dialog (<c>FUN_14019fd70</c>): "[..]" and its folders as "[name]", then its body files by their file names, each group in
+    /// ordinal order; the line ids are the paths (folder + "/" + name). Nothing is chosen.
+    /// </summary>
+    void ShowImportFolder(string folder, string installRoot)
     {
-        try { return [.. Directory.EnumerateFiles(Path.Combine(installRoot, ExportFolder), "*" + BodyExtension).Order(StringComparer.OrdinalIgnoreCase)]; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+        importFolder = folder;
+        importChoice = null;
+        string full = Path.Combine(installRoot, folder);
+        var entries = new List<UiListItem>();
+        try
+        {
+            foreach (string name in new[] { ".." }.Concat(Directory.EnumerateDirectories(full).Select(Path.GetFileName).OfType<string>().Order(StringComparer.Ordinal)))
+                entries.Add(new(FolderEntry + folder + "/" + name, "[" + name + "]"));
+            foreach (string name in Directory.EnumerateFiles(full, "*" + BodyExtension).Select(Path.GetFileName).OfType<string>().Order(StringComparer.Ordinal))
+                entries.Add(new(folder + "/" + name, name));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        importEntries = entries;
     }
 
     /// <summary>
@@ -341,7 +420,7 @@ sealed partial class PlayerInterface
         if (editor is not { } s || Draft(s.Current) is not { } draft || EditorData is not { } data) return;
         string file = Path.GetFileNameWithoutExtension(path);
         Meitou.Data.Fcs.FcsRecord appearance;
-        try { appearance = AppearanceFile.Read(path).Record; }
+        try { appearance = AppearanceFile.Read(Path.Combine(data.InstallRoot, path)).Record; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or Meitou.Data.Fcs.FcsFormatException or InvalidDataException)
         { Notice(Loc.Tr("Error loading appearance file '{1}'. The file is in an old format or invalid.", file), true); return; }
         bool female = appearance.Bools.TryGetValue("sex female", out var f) && f;
@@ -352,35 +431,39 @@ sealed partial class PlayerInterface
         faithfulScreens.Close("file");
     }
 
+    /// <summary>The import dialog's buttons and list: a folder line opens on a double click or IMPORT, a file line imports; the up arrow cuts the folder at its last separator.</summary>
     void FileDialogAction(MyGuiEvent e)
     {
+        if (EditorData is not { } data) return;
         if (e.Widget == "ButtonCancel") faithfulScreens.Close("file");
+        else if (e.Widget == "ButtonUp" && importFolder.LastIndexOfAny(['/', '\\']) is var cut and > 0) ShowImportFolder(importFolder[..cut], data.InstallRoot);
         else if (e.Widget == "ListFiles" && e.Action == "select") importChoice = e.Text;
-        else if (e.Widget == "ButtonOpenSave" && importChoice is { } path) ImportLook(path);
+        else if (e.Widget == "ListFiles" && e.Action == "accept" || e.Widget == "ButtonOpenSave")
+        {
+            if (importChoice is not { } choice) return;
+            if (choice.StartsWith(FolderEntry, StringComparison.Ordinal)) ShowImportFolder(choice[FolderEntry.Length..], data.InstallRoot);
+            else ImportLook(choice);
+        }
     }
 
-    /// <summary>The import dialog (<c>Kenshi_OpenSaveFileDialog</c>, titled "Import character", <c>FUN_1405f4dd0</c>): the export folder's body files; no folder browsing.</summary>
+    /// <summary>
+    /// The import dialog (<c>Kenshi_OpenSaveFileDialog</c>, titled "Import character", <c>FUN_1405f4dd0</c>, <c>FUN_1401a0b10</c>): the folder in the combo box, the up arrow, the list,
+    /// IMPORT and CANCEL; no file name box (it opens files).
+    /// </summary>
     void BindFileDialog(UiBindings b)
     {
+        b.TemplateScale = Height / 1080f;
         b.Text["Root"] = "Import character";
-        b.Text["ButtonOpenSave"] = "Import";
-        foreach (string name in new[] { "ButtonCancel", "ButtonOpenSave" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
+        b.Text["ButtonOpenSave"] = Loc.Tr("Import").ToUpperInvariant();
+        b.Text["ButtonCancel"] = Loc.Tr("Cancel").ToUpperInvariant();
+        foreach (string name in new[] { "ButtonCancel", "ButtonOpenSave", "ButtonUp" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
         if (importChoice is null) b.Disabled.Add("ButtonOpenSave");
-        foreach (string name in new[] { "ButtonUp", "EditFileName" }) b.Hidden.Add(name);
-        b.Text["CurrentFolder"] = "./" + ExportFolder;
+        b.Hidden.Add("EditFileName");
+        b.Text["CurrentFolder"] = importFolder;
         b.Disabled.Add("CurrentFolder");
-        var files = importFiles.ToArray();
-        b.Lists["ListFiles"] = [.. files.Select(p => new UiListItem(p, Path.GetFileNameWithoutExtension(p)))];
-        b.SelectedItems["ListFiles"] = Array.IndexOf(files, importChoice);
+        b.Lists["ListFiles"] = importEntries;
+        b.SelectedItems["ListFiles"] = importEntries.ToList().FindIndex(i => i.Id == importChoice);
         b.Properties["ButtonOpenSave"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
-    }
-
-    /// <summary>Esc: a surgeon's or recruit's editor is left without changes; the new game's has to be confirmed.</summary>
-    bool EditorEscape()
-    {
-        if (!EditorOpen) return false;
-        if (editor!.Kind != EditKind.Creation) CloseEditor();
-        return true;
     }
 
     void BindEditor(UiBindings b)
@@ -401,14 +484,13 @@ sealed partial class PlayerInterface
         Arrows(creation && groups.Count > 1, "RaceLeftButton", "RaceRightButton");
         Arrows(creation && g >= 0 && groups[g].Races.Count > 1, "SubRaceLeftButton", "SubRaceRightButton");
         Arrows(creation && !draft.Race.GetBool("single gender"), "GenderLeftButton", "GenderRightButton");
+        // CHANGE CHARACTER stays with one character, its arrows and "1/1" disabled (FUN_1405f1a40; the original's screen shows them).
         if (s.Characters.Count > 1)
             foreach (string name in new[] { "CharLeftArrow", "CharRightArrow" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
-        else
-        {
-            foreach (string name in new[] { "CharLeftArrow", "CharRightArrow", "CharIndexText", "lbChangeCharacter" }) b.Hidden.Add(name);
-            foreach (var frame in faithfulScreens.Layout("editor").Widgets.Where(w => w.Children.Any(c => c.Name == "CharIndexText"))) b.HiddenWidgets.Add(frame);
-        }
+        else b.Disabled.Add("CharIndexText");
         foreach (string name in new[] { "ImportButton", "ExportButton" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
+        // The captions the code sets (FUN_1405f1a40): the catalog's message, upper case; the layout's own captions (RESET ALL, SUBRACE...) never show.
+        foreach (var (name, key) in EditorCaptions) b.Text[name] = Loc.Tr(key).ToUpperInvariant();
         string tabButton = s.Tab switch { EditorTab.Face => "FaceTabButton", EditorTab.Hair => "HairTabButton", _ => "BodyTabButton" };
         b.Properties[tabButton] = new Dictionary<string, string> { ["Checked"] = "true" };
         b.Properties["ClothesButton"] = new Dictionary<string, string> { ["Checked"] = s.Clothes ? "true" : "false", ["StateSelected"] = s.Clothes ? "true" : "false" };
@@ -420,53 +502,144 @@ sealed partial class PlayerInterface
         b.Text["CharIndexText"] = $"{s.Index + 1}/{s.Characters.Count}";
         b.Text["DescriptionPanelText"] = draft.Race.GetString("description");
         b.Properties["DescriptionPanelText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top", ["TextColour"] = MyGuiColours.InkText };
+        // The description shows no bar (the original's screen; MyGUI's EditBox shows its VScroll only with VisibleVScroll, which the layout does not set).
+        foreach (var bar in faithfulScreens.Layout("editor").Widgets.Where(w => w.Properties.GetValueOrDefault("TemplateOwner") == "DescriptionPanelText" && w.Properties.GetValueOrDefault("TemplatePart") == "VScroll"))
+            b.HiddenWidgets.Add(bar);
         b.Properties["NameText"] = new Dictionary<string, string> { ["DefaultAction"] = "false" };
         b.Properties["ConfirmButton"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
+        BindEditorRows(b, draft, s.Tab);
+    }
+
+    /// <summary>The widgets whose captions the original sets from the catalog (<c>FUN_1405f1a40</c>), upper-cased, and their messages.</summary>
+    static readonly (string Widget, string Key)[] EditorCaptions =
+    [
+        ("RandomiseButton", "Randomise"), ("ResetButton", "Reset"), ("RandomiseAllButton", "Randomise All"), ("BodyTabButton", "Body"), ("FaceTabButton", "Face"),
+        ("HairTabButton", "Hair"), ("ImportButton", "Import"), ("ExportButton", "Export"), ("ClothesButton", "Clothes"), ("ConfirmButton", "Confirm"), ("lbRace", "Race"),
+        ("lbSubRace", "Subrace"), ("lbGender", "Gender"), ("lbChangeCharacter", "Change Character"), ("lbRaceDescription", "Race Description"), ("lbRaceStats", "Race Stats"),
+    ];
+
+    /// <summary>The editor's layout as read; the shown tab's rows are added to a copy of it (<see cref="EnsureEditorRows"/>).</summary>
+    MyGuiLayout? editorLayout;
+    /// <summary>The kinds of the rows the editor's layout has now, so it is composed again only when they change (another tab, race or gender).</summary>
+    string editorRowsShape = "";
+    /// <summary>The shown tab's rows: the widget whose events and texts are the row's (the template's owner) and the control it edits.</summary>
+    readonly List<(string Owner, int Control)> editorRows = [];
+    /// <summary>The row widgets in the scroll view, top to bottom, with their template's height (layout pixels).</summary>
+    readonly List<(string Name, float Height)> editorRowWidgets = [];
+    const string EditorRowsView = "EditorRows";
+
+    /// <summary>
+    /// The rows of a tab, as the original makes them (<c>FUN_1405f1a40</c>, <c>FUN_1405ebd50</c>; docs/characters.md "Character editor"): a <c>Kenshi_ScrollViewEmptyLight</c> scroll view
+    /// in <c>TabsPanelContent</c> (vertical bar only), and in it one widget per control, stacked at its template's height: a picker is a <c>Kenshi_ListSlider</c>, a slider a
+    /// <c>Kenshi_Slider</c> (name box, a <c>Kenshi_ScrollBar</c> with its arrows, value box), the three hair colour sliders one <c>Kenshi_MultiSlider</c>.
+    /// </summary>
+    void EnsureEditorRows(CharacterDraft draft, EditorTab tab)
+    {
+        if (editorLayout is null) return;
+        var controls = draft.Controls(tab);
+        string shape = tab + ":" + string.Join(",", controls.Select(c => c.Kind));
+        if (shape == editorRowsShape) return;
+        editorRowsShape = shape;
+        editorRows.Clear();
+        editorRowWidgets.Clear();
+        var rows = new List<MyGuiWidget>();
+        var parts = new List<(string Row, string? Part, int Control)>();
+        for (int i = 0; i < controls.Count; i++)
+        {
+            string name = "EditorRow" + i.ToString(CultureInfo.InvariantCulture);
+            string template = controls[i].Kind == EditorControlKind.HairHue ? "Kenshi_MultiSlider" : controls[i].IsPicker ? "Kenshi_ListSlider" : "Kenshi_Slider";
+            float height = uiResources.Templates.TryGetValue(template, out var resource) ? MyGuiReader.ReadResourceLayout(resource).Roots[0].Position.Height : 55;
+            rows.Add(new("Widget", name, template, "", "Left Top", new(0, 0, 455, height), false, new Dictionary<string, string>(), new Dictionary<string, string>(), []));
+            editorRowWidgets.Add((name, height));
+            if (template == "Kenshi_MultiSlider")
+            {
+                for (int k = 0; k < 3 && i + k < controls.Count; k++) parts.Add((name, "Slider" + (k + 1).ToString(CultureInfo.InvariantCulture), i + k));
+                i += 2;
+            }
+            else parts.Add((name, null, i));
+        }
+        var view = new MyGuiWidget("ScrollView", EditorRowsView, "Kenshi_ScrollViewEmptyLight", "", "Stretch", new(0, 0, 1, 1), true,
+            new Dictionary<string, string> { ["VisibleHScroll"] = "false", ["VisibleVScroll"] = "true", ["CanvasAlign"] = "Left Top" }, new Dictionary<string, string>(), rows);
+        static MyGuiWidget Fill(MyGuiWidget w, MyGuiWidget view) =>
+            w.Name == "TabsPanelContent" ? w with { Children = [view] } : w with { Children = [.. w.Children.Select(c => Fill(c, view))] };
+        faithfulScreens.Replace("editor", editorLayout with { Roots = [.. editorLayout.Roots.Select(r => Fill(r, view))] });
+        faithfulScreens.SetScroll("editor", EditorRowsView, 0);
+        // A hair colour slider's own template widget (Slider1..3 of the multi-slider) owns its bar and texts.
+        var widgets = faithfulScreens.Layout("editor").Widgets.ToList();
+        foreach (var (row, part, control) in parts)
+            editorRows.Add((part is null ? row : widgets.FirstOrDefault(w => w.Properties.GetValueOrDefault("TemplateOwner") == row && w.Properties.GetValueOrDefault("TemplatePart") == part)?.Name ?? row, control));
+    }
+
+    /// <summary>
+    /// The rows' texts and bars: the name box the control's message (the face and hair lists "Face", "Hair", "Beard"; the hair colour sliders "Colour", "Saturation",
+    /// "Brightness" under "Hair colour"), a slider's bar its range and value and the value box the number, a list its choice and "n/count".
+    /// The canvas is as wide as the view (less the bar when the rows overflow it), the rows as tall as their templates.
+    /// </summary>
+    void BindEditorRows(UiBindings b, CharacterDraft draft, EditorTab tab)
+    {
+        EnsureEditorRows(draft, tab);
+        float scale = Height / 1080f;
+        b.TemplateScale = scale;
+        var layout = faithfulScreens.Layout("editor");
+        var controls = draft.Controls(tab);
+        foreach (var (owner, index) in editorRows)
+        {
+            if (controls.ElementAtOrDefault(index) is not { } c) continue;
+            if (c.IsPicker)
+            {
+                var options = draft.Options(c.Kind);
+                b.Text[owner + ".ElementText"] = c.Kind switch { EditorControlKind.Head => "Face", EditorControlKind.Beard => "Beard", _ => "Hair" };
+                b.Text[owner + ".ElementValueText"] = draft.OptionName(c.Kind);
+                b.Text[owner + ".NumberText"] = $"{draft.OptionIndex(c.Kind) + 1}/{options.Count}";
+                continue;
+            }
+            int value = draft.Value(c);
+            b.Text[owner + ".ElementText"] = c.Kind switch
+            {
+                EditorControlKind.HairHue => "Colour", EditorControlKind.HairSaturation => "Saturation", EditorControlKind.HairBrightness => "Brightness", _ => c.Label,
+            };
+            b.Text[owner + ".NumberText"] = value.ToString(CultureInfo.InvariantCulture);
+            if (layout.Widgets.FirstOrDefault(w => w.Type == "ScrollBar" && w.Properties.GetValueOrDefault("TemplateOwner") == owner && w.Properties.GetValueOrDefault("TemplatePart") == "Slider") is { } bar)
+            {
+                b.Properties[bar.Name] = new Dictionary<string, string> { ["Range"] = (c.Max - c.Min + 1).ToString(CultureInfo.InvariantCulture) };
+                faithfulScreens.SetScroll("editor", bar.Name, value - c.Min);
+            }
+            if (c.Kind == EditorControlKind.HairHue && editorRowWidgets.FirstOrDefault(r => owner.StartsWith(r.Name + "@", StringComparison.Ordinal)).Name is { } multi)
+                b.Text[multi + ".Name"] = "Hair colour";
+        }
+        // Rows stacked at their templates' heights on a canvas as wide as the view: its client, less the vertical bar when the rows are taller than it.
+        var content = RealBounds(layout, "TabsPanelContent");
+        float total = editorRowWidgets.Sum(r => r.Height) * scale;
+        float barWidth = (layout.Widgets.FirstOrDefault(w => w.Properties.GetValueOrDefault("TemplateOwner") == EditorRowsView && w.Properties.GetValueOrDefault("TemplatePart") == "VScroll")?.Position.Width ?? 32) * scale;
+        float width = total > content.Height ? content.Width - barWidth : content.Width;
+        if (total <= 0) return;
+        b.Canvas[EditorRowsView] = (width, total);
+        float y = 0;
+        foreach (var (name, height) in editorRowWidgets)
+        {
+            if (layout.Find(name) is { } row) b.RelativePositions[row] = new(0, y / total, 1, height * scale / total);
+            y += height * scale;
+        }
+    }
+
+    /// <summary>A widget's bounds on the screen from its layout's relative positions (the editor's panels are all <c>position_real</c>).</summary>
+    UiRect RealBounds(MyGuiLayout layout, string name)
+    {
+        UiRect? Walk(MyGuiWidget w, UiRect parent)
+        {
+            var bounds = w.RealPosition ? w.Position.RelativeTo(parent, true) : w.Position.RelativeTo(parent, false);
+            if (w.Name == name) return bounds;
+            foreach (var child in w.Children) if (Walk(child, bounds) is { } found) return found;
+            return null;
+        }
+        foreach (var root in layout.Roots) if (Walk(root, new(0, 0, Width, Height)) is { } found) return found;
+        return default;
     }
 
     void AddEditorContent(List<UiControl> controls)
     {
         if (editor is not { } s || Draft(s.Current) is not { } draft) return;
-        if (controls.FirstOrDefault(c => c.Name == "TabsPanelContent") is { } panel) AddEditorRows(controls, draft, s.Tab, panel.Bounds);
         if (controls.FirstOrDefault(c => c.Name == "StatsPanelText") is { } stats) AddRaceStats(controls, draft.Race, stats.Bounds);
-    }
-
-    void AddEditorRows(List<UiControl> controls, CharacterDraft draft, EditorTab tab, UiRect area)
-    {
-        var rows = draft.Controls(tab);
-        if (rows.Count == 0) return;
-        float scale = Height / 1080f;
-        float row = Math.Min(44 * scale, area.Height / rows.Count), pad = 8 * scale;
-        float labelWidth = area.Width * 0.38f, trackX = area.X + labelWidth + pad, trackWidth = area.Width - labelWidth - 2 * pad;
-        for (int i = 0; i < rows.Count; i++)
-        {
-            var c = rows[i];
-            float y = area.Y + i * row;
-            string index = i.ToString(CultureInfo.InvariantCulture);
-            controls.Add(new($"editor-label-{i}", "TextBox", new(area.X + pad, y, labelWidth - pad, row), Loc.Tr(c.Label), "", "", true,
-                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MainColour, ["TextAlign"] = "Left VCenter" }, Vector4.Zero, Pickable: false));
-            if (c.IsPicker)
-            {
-                float arrow = Math.Min(row - 4 * scale, 30 * scale);
-                controls.Add(new($"editor-left-{i}", "Button", new(trackX, y + (row - arrow) / 2, arrow, arrow), "", $"editor-pick:{index}:-1", "Kenshi_SpeedArrowLeftSkin", true,
-                    new Dictionary<string, string>(), Vector4.Zero));
-                controls.Add(new($"editor-right-{i}", "Button", new(trackX + trackWidth - arrow, y + (row - arrow) / 2, arrow, arrow), "", $"editor-pick:{index}:1", "Kenshi_SpeedArrowRightSkin", true,
-                    new Dictionary<string, string>(), Vector4.Zero));
-                controls.Add(new($"editor-choice-{i}", "TextBox", new(trackX + arrow + 4 * scale, y + 3 * scale, trackWidth - 2 * arrow - 8 * scale, row - 6 * scale),
-                    draft.OptionName(c.Kind), "", "Kenshi_GenericTextBoxFlat", true,
-                    new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = MainColour }, Vector4.Zero, Pickable: false));
-                continue;
-            }
-            int value = draft.Value(c);
-            float t = c.Max > c.Min ? Math.Clamp((value - c.Min) / (float)(c.Max - c.Min), 0, 1) : 0;
-            float trackHeight = Math.Min(row * 0.6f, 24 * scale);
-            var track = new UiRect(trackX, y + (row - trackHeight) / 2, trackWidth, trackHeight);
-            controls.Add(new($"editor-track-{i}", "Widget", track, "", $"editor-slider:{index}", "Kenshi_SliderSkin", true,
-                new Dictionary<string, string> { ["Slider"] = "true" }, Vector4.Zero, Pickable: true, Argument: index));
-            float knobHeight = Math.Min(row * 0.95f, 36 * scale), knobWidth = knobHeight * 27 / 57f;
-            controls.Add(new($"editor-knob-{i}", "Button", new(track.X + t * track.Width - knobWidth / 2, y + (row - knobHeight) / 2, knobWidth, knobHeight), "", "", "Kenshi_SliderButtonSkin", true,
-                new Dictionary<string, string>(), Vector4.Zero, Pickable: false));
-        }
     }
 
     /// <summary>
@@ -475,7 +648,14 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddRaceStats(List<UiControl> controls, GameRecord race, UiRect area)
     {
-        var lines = RaceStatLines(race);
+        var lines = new List<(string Label, string Value, bool? Good)>();
+        // The first line is the character's hit points: its first body part's maximum (FUN_1405ee0c0 reads the medical state's first part, Observed), as an integer. While the
+        // draft shows another race than the character has, that race's new medical state's (the character takes it on CONFIRM).
+        float? hitPoints = null;
+        if (editor is { } s && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == s.Current) is { } shown)
+            hitPoints = shown.Appearance?.Race.StringId == race.StringId && shown.HealthParts is [var first, ..] ? first.Maximum : RaceHitPoints(race);
+        if (hitPoints is { } hp) lines.Add((Loc.Tr("Hit Points:"), ((int)(hp + 0.01f)).ToString(CultureInfo.InvariantCulture), null));
+        lines.AddRange(RaceStatLines(race).Select(l => (l.Label, l.Value, (bool?)l.Good)));
         float scale = Height / 1080f, row = Math.Min(22 * scale, area.Height / Math.Max(1, lines.Count));
         for (int i = 0; i < lines.Count; i++)
         {
@@ -484,11 +664,21 @@ sealed partial class PlayerInterface
             controls.Add(new($"editor-stat-{i}", "TextBox", bounds, label, "", "", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MainColour, ["TextAlign"] = "Left VCenter" }, Vector4.Zero, Pickable: false));
             controls.Add(new($"editor-stat-value-{i}", "TextBox", bounds, value, "", "", true,
-                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = good ? GoodColour : BadColour, ["TextAlign"] = "Right VCenter" }, Vector4.Zero, Pickable: false));
+                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = good is null ? MainColour : good.Value ? GoodColour : BadColour, ["TextAlign"] = "Right VCenter" }, Vector4.Zero, Pickable: false));
         }
     }
 
     readonly Dictionary<string, IReadOnlyList<(string, string, bool)>> raceStatCache = [];
+    readonly Dictionary<string, float?> raceHitPointCache = [];
+
+    /// <summary>A healthy new person of <paramref name="race"/>: its first medical part's maximum (<see cref="Meitou.Simulation.Bodies.MedicalState.Create"/>); null without anatomy.</summary>
+    float? RaceHitPoints(GameRecord race)
+    {
+        if (raceHitPointCache.TryGetValue(race.StringId, out var cached)) return cached;
+        if (EditorData is not { } data) return null;
+        var parts = Meitou.Simulation.Bodies.MedicalState.Create(Meitou.Data.Gameplay.Bodies.RaceData.From(race, data.Db), 1).Parts;
+        return raceHitPointCache[race.StringId] = parts.Count > 0 ? parts[0].MaxHp : null;
+    }
 
     IReadOnlyList<(string Label, string Value, bool Good)> RaceStatLines(GameRecord race)
     {
@@ -496,16 +686,20 @@ sealed partial class PlayerInterface
         var lines = new List<(string, string, bool)>();
         if (EditorData is { } data)
         {
-            // As the original's "Character_Editor_Race_Stats" table (FUN_1405ebd50 area, Observed): "No bleeding" below a bleed rate of 0.1, then each stat multiplier
-            // that is not 1 (RACE stats good / bad, strength, dexterity: RaceData.StatMultipliers) as (m - 1) x 100 %. Its first line, the character's hit points, is left out.
+            // As the original's "Character_Editor_Race_Stats" table (FUN_1405ee0c0): "No bleeding" below a bleed rate of 0.1, then the stat multipliers above 1, then those
+            // below 1 (RACE stats good / bad, strength, dexterity: RaceData.StatMultipliers), each as the stat's name and (m - 1) x 100 %, in the order the original's
+            // hash map iterates (RaceData.StatMapOrder).
             var r = Meitou.Data.Gameplay.Bodies.RaceData.From(race, data.Db);
             if (race.GetFloat("bleed rate", 1) < 0.1f) lines.Add((Loc.Tr("No bleeding"), "", true));
-            for (int i = 1; i < r.StatMultipliers.Length; i++)
-            {
-                float m = r.StatMultipliers[i];
-                if (Math.Abs(m - 1) < 0.001f || m <= 0) continue;
-                lines.Add((StatLabel((Meitou.Data.Gameplay.Bodies.StatsEnumerated)i) + ":", ((m - 1) * 100).ToString("+0;-0", CultureInfo.InvariantCulture) + "%", m > 1));
-            }
+            foreach (bool good in new[] { true, false })
+                foreach (var stat in Meitou.Data.Gameplay.Bodies.RaceData.StatMapOrder)
+                {
+                    int i = (int)stat;
+                    if (i < 1 || i >= r.StatMultipliers.Length) continue;
+                    float m = r.StatMultipliers[i];
+                    if (Math.Abs(m - 1) < 0.001f || m <= 0 || m > 1 != good) continue;
+                    lines.Add((StatLabel((Meitou.Data.Gameplay.Bodies.StatsEnumerated)i), ((m - 1) * 100).ToString("+0;-0", CultureInfo.InvariantCulture) + "%", good));
+                }
         }
         return raceStatCache[race.StringId] = lines;
     }

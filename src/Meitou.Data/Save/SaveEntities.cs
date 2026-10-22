@@ -23,6 +23,9 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
     /// <summary>The faction's platoon name counter: the next <c>&lt;n&gt;</c> of <c>&lt;faction&gt;_&lt;n&gt;</c>.</summary>
     public int PlatoonCounter { get => Record.Ints.GetValueOrDefault("platoonIDs"); set => Record.Ints["platoonIDs"] = value; }
 
+    /// <summary>The player's rank in this faction (<c>rank</c>, every faction but the player's; docs/game/factions-squads-towns.md "Faction rank").</summary>
+    public int Rank { get => Record.Ints.GetValueOrDefault("rank"); set => Record.Ints["rank"] = value; }
+
     /// <summary>The player's faction has a <c>known</c> list and no relation table.</summary>
     public bool IsPlayer => Record.References.ContainsKey("known") || !Record.Strings.ContainsKey("relationSID0");
 

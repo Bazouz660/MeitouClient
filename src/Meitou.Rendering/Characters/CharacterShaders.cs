@@ -21,12 +21,17 @@ static class CharacterShaders
 
     // Material flags (CharacterMaterialRecord.Flags).
     public const uint HasDiffuse = 1 << 0, HasNormal = 1 << 1, NormalSwizzled = 1 << 2, HasHead = 1 << 3, HasHeadNormal = 1 << 4, HasHeadMask = 1 << 5,
-        HasBodyMask = 1 << 6, HasHair = 1 << 7, HasBeard = 1 << 8, ClipNormalAlpha = 1 << 9, Dyed = 1 << 10, Vest0Coloured = 1 << 11;
+        HasBodyMask = 1 << 6, HasHair = 1 << 7, HasBeard = 1 << 8, ClipNormalAlpha = 1 << 9, Dyed = 1 << 10, Vest0Coloured = 1 << 11,
+        // 1 << 12 and 1 << 13 are the second and third vest layers' Vest0Coloured.
+        Worn = 1 << 14,
+        // Textures a part has but that are not resident yet (they stream in): the one giving its cut-out (the part is not drawn until it is), the head's
+        // diffuse and normal map (the head's region shows the skin stand-in and a flat normal, not the body texture's transparent border).
+        AlphaPending = 1 << 15, HeadPending = 1 << 16, HeadNormalPending = 1 << 17;
     // Shading modes.
     public const uint ShadeItem = 0, ShadeBody = 1, ShadeHair = 2;
     // Texture slots (CharacterMaterialRecord.Tex).
     public const int SlotDiffuse = 0, SlotNormal = 1, SlotColourMap = 2, SlotHeadDiffuse = 3, SlotHeadNormal = 4, SlotHeadMask = 5, SlotBodyMask = 6,
-        SlotHairOverlay = 7, SlotBeardOverlay = 8, SlotVest = 9, Slots = 18;
+        SlotHairOverlay = 7, SlotBeardOverlay = 8, SlotVest = 9, SlotBlendNormal = 18, Slots = 19;
 
     const string PushMembers = """
             vec3 flatColour;
@@ -179,6 +184,7 @@ static class CharacterShaders
             if (pc.depthIndex != 0u) { fragColour = vec4(pc.flatColour, 1.0); return; }
             CharMaterial m = materials.items[vMaterial];
             uint f = m.flags;
+            if (flag(f, 32768u)) discard;   // its cut-out is still streaming in: a solid card would show
             vec3 n = normalize(vNormal);
             if (!gl_FrontFacing) n = -n;
             vec2 uv = vUv;
@@ -200,10 +206,14 @@ static class CharacterShaders
             {
                 vec4 body = flag(f, 1u) ? tex(m.tex[0], uv) : vec4(0.7, 0.6, 0.5, 0.2);
                 if (flag(f, 2u)) nm = tex(m.tex[1], uv);
+                // The original's muscleBlend: towards the strong or the skinny body normal map (skinTone.w, 0 while that map is not resident).
+                if (flag(f, 2u) && m.skinTone.w > 0.0) nm = mix(nm, tex(m.tex[18], uv), m.skinTone.w);
                 float tone = flag(f, 64u) ? tex(m.tex[6], uv).r : 0.0;
                 vec2 huv = uv + vec2(0.0, 1.0);          // head UVs sit in v -1..0
                 if (flag(f, 8u)) body += tex(m.tex[3], huv);
+                else if (flag(f, 65536u) && uv.y < 0.0) body = vec4(0.7, 0.6, 0.5, 0.2);   // the head still streaming in: skin, not the border's black
                 if (flag(f, 16u) && flag(f, 2u)) nm += tex(m.tex[4], huv);
+                else if (flag(f, 131072u) && uv.y < 0.0) nm = vec4(0.5, 0.5, 1.0, 0.5);
                 if (flag(f, 32u)) tone += tex(m.tex[5], huv).r;
                 body.rgb *= 1.0 - m.skinTone.rgb * tone;
                 if (flag(f, 128u))
@@ -218,9 +228,10 @@ static class CharacterShaders
                 }
                 albedo = body.rgb;
                 gloss = body.a;
-                if (m.vestCount > 0u) vest(m.tex[9], m.tex[10], m.tex[11], flag(f, 2048u), m.shirtColour.rgb, uv, albedo, nm, gloss);
-                if (m.vestCount > 1u) vest(m.tex[12], m.tex[13], m.tex[14], flag(f, 4096u), m.shirtColour.rgb, uv, albedo, nm, gloss);
-                if (m.vestCount > 2u) vest(m.tex[15], m.tex[16], m.tex[17], flag(f, 8192u), m.shirtColour.rgb, uv, albedo, nm, gloss);
+                // vestCount: a bit per worn layer whose textures are resident (one still streaming in is left out, not drawn black).
+                if ((m.vestCount & 1u) != 0u) vest(m.tex[9], m.tex[10], m.tex[11], flag(f, 2048u), m.shirtColour.rgb, uv, albedo, nm, gloss);
+                if ((m.vestCount & 2u) != 0u) vest(m.tex[12], m.tex[13], m.tex[14], flag(f, 4096u), m.shirtColour.rgb, uv, albedo, nm, gloss);
+                if ((m.vestCount & 4u) != 0u) vest(m.tex[15], m.tex[16], m.tex[17], flag(f, 8192u), m.shirtColour.rgb, uv, albedo, nm, gloss);
                 swizzled = true;                          // character normals: X in alpha, Y in green
             }
             else
@@ -238,14 +249,22 @@ static class CharacterShaders
                     d.rgb = mix(d.rgb, m.colour2.rgb * mix(intensity, 1.0, m.colour2.a), cm.g);
                 }
                 albedo = d.rgb;
-                gloss = d.a;
+                // A worn item's material (the Skinned template, skin.hlsl) has glossMult 0: nothing sets it, so worn clothing is matte; an attached item with
+                // its own mesh (the StaticObject template) keeps 1.
+                gloss = flag(f, 16384u) ? 0.0 : d.a;
             }
             if (cut) discard;
+            // The game writes character albedo darkened: 0.7 for bodies, heads and hair (character.hlsl DARKEN), 0.8 for worn items (skin.hlsl); not its icons (rtticons.hlsl,
+            // a fog distance of -1).
+            // An item attached with its own mesh (StaticObject, not Worn) is not darkened.
+            if (view.fogDistance > -0.5 || view.fogDistance < -1.5) albedo *= m.shading != 0u ? 0.7 : flag(f, 16384u) ? 0.8 : 1.0;
 
             if (flag(f, 2u) && m.shading != 2u && dot(vTangent.xyz, vTangent.xyz) > 1e-8)
             {
                 vec3 t = normalize(vTangent.xyz - n * dot(n, vTangent.xyz));
-                vec3 b = cross(n, t) * vTangent.w;
+                // cross(n, t) * w is the game's binormal (the mesh's BINORMAL times its w, Model.Build gameBinormals); worn items flip their maps' green (skin.hlsl), so
+                // their binormal is the opposite.
+                vec3 b = (flag(f, 16384u) ? cross(t, n) : cross(n, t)) * vTangent.w;
                 vec3 tn;
                 if (swizzled) { vec2 xy = vec2(nm.a, nm.g) * 2.0 - 1.0; tn = vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy)))); }
                 else tn = nm.xyz * 2.0 - 1.0;
@@ -258,6 +277,8 @@ static class CharacterShaders
             vec3 colour;
             giInterior = vInterior != 0u;
             if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld);
+            // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight).
+            else if (view.fogDistance < -1.5) colour = stageLight(albedo, n, v, normalize(view.lightDir), gloss);
             else if (view.fogDistance < 0.0)
             {
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient
@@ -274,9 +295,7 @@ static class CharacterShaders
                 float k = alpha * 0.5, k2 = k * k, vis = 1.0 / (lh * lh * (1.0 - k2) + k2);
                 float fv = (0.4 + (1.0 - 0.4) * fresnel) * vis;
                 float specular = nl * D * fv / PI;
-                // The editor's stage (a fog distance of -2, CharacterRenderer.DrawStage) adds a sky-over-ground ambient so the side the light misses is not black; icons have none.
-                vec3 stageAmbient = view.fogDistance < -1.5 ? 0.9 * mix(vec3(0.22, 0.20, 0.18), vec3(0.42, 0.45, 0.50), 0.5 + 0.5 * n.y) : vec3(0.0);
-                colour = clamp(albedo * (PI * nl * 0.6 + stageAmbient) + specular, 0.0, 1.0);
+                colour = clamp(albedo * PI * nl * 0.6 + specular, 0.0, 1.0);
             }
             else
             {
@@ -310,6 +329,7 @@ static class CharacterShaders
             if (vHidden > 0.0) discard;
             CharMaterial m = materials.items[vMaterial];
             uint f = m.flags;
+            if ((f & 32768u) != 0u) discard;
             bool cut = false;
             if (m.shading == 2u && (f & 1u) != 0u)
                 cut = dot(tex(m.tex[0], vUv), m.alphaChannel) < m.alphaThreshold;
@@ -340,6 +360,7 @@ static class CharacterShaders
             if (vHidden > 0.0) discard;
             CharMaterial m = materials.items[vMaterial];
             uint f = m.flags;
+            if ((f & 32768u) != 0u) discard;
             if (m.shading == 2u && (f & 1u) != 0u) { if (dot(tex(m.tex[0], vUv), m.alphaChannel) < m.alphaThreshold) discard; }
             else if (m.shading == 0u && (f & 512u) != 0u) { if (tex(m.tex[1], vUv).a < 0.6) discard; }
             float stored = texelFetch(textures2D[nonuniformEXT(pc.depthIndex)], ivec2(gl_FragCoord.xy), 0).r;
@@ -356,6 +377,7 @@ static class CharacterShaders
 [StructLayout(LayoutKind.Sequential)]
 struct CharacterMaterialRecord
 {
+    /// <summary><see cref="VestCount"/> is a mask: bit i, vest layer i's textures are resident.</summary>
     public uint Shading, Flags, VestCount;
     public float AlphaThreshold;
     public TextureSlots Tex;

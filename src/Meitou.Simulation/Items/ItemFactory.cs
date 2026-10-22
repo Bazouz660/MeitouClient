@@ -62,7 +62,8 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
 
     /// <summary>
     /// The inventory of a new character: what the generator rolled to wear and carry (clothing in its slot's section, a backpack, the crossbow and weapons at hip/back), then the CHARACTER
-    /// record's <c>inventory</c> list (an ITEM reference whose first value is the quantity; entries with 0 never spawn, <b>Observed</b>).
+    /// record's <c>inventory</c> list (an ITEM reference whose first value is the quantity; entries with 0 never spawn, <b>Observed</b>), and last its <c>death items</c> the same way,
+    /// marked <see cref="ItemInstance.Death"/> (docs/game/animals.md "Death items").
     /// </summary>
     public Inventory Build(GameRecord? character, Meitou.Data.Characters.Loadout? loadout)
     {
@@ -91,6 +92,14 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
                 if (Create(r.TargetStringId, r.Values.Value0) is { } item) inventory.Add(item);
             }
         if (loadout?.Crossbow is { } bow) AddAmmo(inventory, bow.Weapon);
+        if (character is not null)
+            foreach (var r in character.GetReferences("death items"))
+            {
+                // One stack of the whole quantity in the first free cell, whatever the item's stack limit (as the saves hold them).
+                if (r.Values.Value0 < 1 || Create(r.TargetStringId, r.Values.Value0) is not { } item || !inventory.FindCell("main", item.Width, item.Height, out int x, out int y)) continue;
+                (item.Death, item.X, item.Y) = (true, x, y);
+                inventory.Items.Add(item);
+            }
         return inventory;
     }
 

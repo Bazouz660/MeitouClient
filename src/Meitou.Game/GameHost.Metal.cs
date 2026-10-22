@@ -536,7 +536,11 @@ sealed partial class GameHost
         // The loading screen is backend-neutral: the same Kenshi layout, picture and tips the Vulkan host draws.
         if (overlay is not null)
         {
-            try { loading = LoadingScreen.Create(overlay, assets.Find, install.DataDirectory); }
+            try
+            {
+                loading = LoadingScreen.Create(overlay, assets.Find, install.DataDirectory,
+                    (g.UiMode ?? config.UiMode) == Meitou.Data.Ui.UiMode.Faithful);
+            }
             catch (Exception e) { Console.Error.WriteLine($"loading   the loading screen did not load: {e.Message}"); }
         }
         bool quit = false;

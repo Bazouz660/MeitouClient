@@ -21,7 +21,14 @@ sealed class NavAdapter(NavmeshWalkability nav) : IAgentWalkability, Meitou.Simu
     public float TerrainHeight(float x, float z) => nav.TerrainHeight(x, z);
     public float GroundHeight(float x, float z, float nearY) => nav.GroundHeight(x, z, nearY);
     public bool IsWalkable(float x, float z, float nearY) => nav.IsWalkable(x, z, nearY);
+    public bool TryStand(float x, float z, float nearY, out float y) => nav.TryStand(x, z, nearY, out y);
+    public Vector3? FloorNear(float x, float z, float y, float slack) => nav.FloorNear(x, z, y, slack);
     public PathResult FindPath(Vector3 from, Vector3 to) => nav.FindPath(from, to);
-    public PathResult FindPath(Vector3 from, Vector3 to, float footprintRadius, float waterFactor) =>
-        nav.FindPath(from, to, new NavAgent { Radius = footprintRadius > 0 ? footprintRadius : NavAgent.Human.Radius, WaterFactor = waterFactor > 0 ? waterFactor : NavAgent.Human.WaterFactor });
+    public PathResult FindPath(Vector3 from, Vector3 to, float footprintRadius, float waterFactor, float roadPreference = 0) =>
+        nav.FindPath(from, to, new NavAgent
+        {
+            Radius = footprintRadius > 0 ? footprintRadius : NavAgent.Human.Radius,
+            WaterFactor = waterFactor > 0 ? waterFactor : NavAgent.Human.WaterFactor,
+            RoadPreference = roadPreference,
+        });
 }

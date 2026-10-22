@@ -42,6 +42,8 @@ public sealed record MachineData
     public int TechLevel { get; init; }
     /// <summary>The <c>animation</c> clip operators play (default <c>stonemine</c>, <b>Observed</b>: <c>Task_OperateMachine</c>).</summary>
     public string Animation { get; init; } = "stonemine";
+    /// <summary>The <c>special tool</c> ITEM operators hold in the <c>hands</c> point on the job (a mine's Pickaxe, a farm's Hoe); null for none.</summary>
+    public string? Tool { get; init; }
     public IReadOnlyList<RecipeInput> Inputs { get; init; } = [];
     public RecipeOutput? Output { get; init; }
     public FarmData? Farm { get; init; }
@@ -88,6 +90,17 @@ public sealed record MachineData
     public bool PowersEmitterEachFrame => !IsCrafting && !IsResearch
         && (Function == MineFunction ? Farm is null : Function is RefineryFunction or GeneratorFunction or ItemFurnaceFunction or BatteryFunction or RainCollectorFunction or NaturalMineFunction);
 
+    /// <summary>
+    /// The cells of a building's own inventory. A building whose <c>limit inventory</c> names exactly one item is as big as that item's <c>inventory footprint</c> (the original's building
+    /// loader, <c>cmp count, 1</c>; two or more items, or none, take <c>storage size</c>; Observed), so a storage for steel bars is 6 x 1.
+    /// </summary>
+    public static (int Width, int Height) StorageGrid(GameDatabase db, GameRecord building)
+    {
+        if (building.GetReferences("limit inventory") is [var only] && db.Find(only.TargetStringId) is { } item)
+            return (Math.Max(1, item.GetInt("inventory footprint width", 1)), Math.Max(1, item.GetInt("inventory footprint height", 1)));
+        return (Math.Max(1, building.GetInt("storage size width", 18)), Math.Max(1, building.GetInt("storage size height", 18)));
+    }
+
     public static MachineData? From(GameDatabase db, GameRecord building)
     {
         var function = building.GetReferences("functionality") is [var link, ..] ? db.Find(link.TargetStringId) : null;
@@ -124,6 +137,8 @@ public sealed record MachineData
                 if (db.Find(option.Item)?.GetReferences("ingredients") is { } list)
                     for (int k = inputs.Count; k < list.Count; k++) inputs.Add(new RecipeInput(list[k].TargetStringId, capacity, 0));
         }
+        var limits = building.GetReferences("limit inventory");
+        var (storageWidth, storageHeight) = StorageGrid(db, building);
         return new MachineData
         {
             Id = building.StringId,
@@ -136,14 +151,15 @@ public sealed record MachineData
             Resource = function?.GetInt("world resource mining") ?? 0,
             TechLevel = function?.GetInt("tech level") ?? 0,
             Animation = function?.GetReferences("animation") is [var anim, ..] && db.Find(anim.TargetStringId) is { } clip ? clip.Name : "stonemine",
+            Tool = function?.GetReferences("special tool") is [var tool, ..] ? tool.TargetStringId : null,
             Inputs = inputs,
             Output = output,
             Farm = farm,
             Craft = craft,
             HasInventory = stores,
-            StorageWidth = Math.Max(1, building.GetInt("storage size width", 18)),
-            StorageHeight = Math.Max(1, building.GetInt("storage size height", 18)),
-            StorageLimit = [.. building.GetReferences("limit inventory").Select(r => r.TargetStringId)],
+            StorageWidth = storageWidth,
+            StorageHeight = storageHeight,
+            StorageLimit = [.. limits.Select(r => r.TargetStringId)],
             ItemTypeLimit = (FcsRecordType)building.GetInt("itemtype limit", (int)FcsRecordType.ITEM),
             StackBonusMult = building.GetFloat("stackable bonus mult", 1),
             PowerOutput = building.GetInt("power output"),

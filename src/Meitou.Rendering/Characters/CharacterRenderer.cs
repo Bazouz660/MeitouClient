@@ -49,6 +49,11 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public float LodBias { get; set; } = 1;
     /// <summary>Further factor on the LOD value in the shadow cascades (a shadow hides detail: coarser levels sooner).</summary>
     public float ShadowLodBias { get; set; } = 2;
+    /// <summary>
+    /// Meitou's generated levels (four reductions, the shadows' own bias and floors; the <c>charlod</c> switch's Meitou side); off: the mesh files' own levels as the
+    /// original picks them (Faithful).
+    /// </summary>
+    public bool GeneratedLod { get; set; } = true;
 
     // Statistics of the last Update / Draw.
     public int Posed { get; private set; }
@@ -63,12 +68,31 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public double LastPoseMs { get; private set; }
     public double LastDrawCpuMs { get; private set; }
     public int Assets => assets.Count(a => a.Value is not null);
+    /// <summary>Loads waiting: the looks drawn this frame whose meshes are not built yet and the character textures still to stream in.</summary>
+    public int PendingLoads
+    {
+        get
+        {
+            // A reused set: the background-loading bar asks every frame.
+            pendingLooks.Clear();
+            foreach (var c in Draws.Items)
+                if (!assets.ContainsKey(c.Appearance)) pendingLooks.Add(c.Appearance);
+            return pendingLooks.Count + content.Textures.PendingCount + content.Textures.UnresidentUsedCount;
+        }
+    }
+    readonly HashSet<CharacterAppearance> pendingLooks = new(ReferenceEqualityComparer.Instance);
     /// <summary>Current appearances still being prepared/uploaded, or textures still being loaded. Failed assets count as finished.</summary>
     public bool ContentPending => Draws.Items.Any(c => !assets.ContainsKey(c.Appearance)) || content.Textures.PendingCount > 0 || content.Textures.UnresidentUsedCount > 0;
     /// <summary>The appearance was uploaded or failed with a diagnostic; either completes its loading request.</summary>
     public bool IsPrepared(CharacterAppearance appearance) => assets.ContainsKey(appearance);
     /// <summary>Start preparing a scene's essential characters ahead of the world streaming queue (render thread).</summary>
     public void Prefetch(CharacterAppearance appearance) => content.Fetched(appearance, urgent: true);
+    /// <summary>Prepares a look's meshes without keeping the request (the character editor's next looks), on the urgent queue or the ordinary one; a close-up's without generated levels. Render thread.</summary>
+    public void Warm(CharacterAppearance appearance, bool urgent, bool close = false) => content.Warm(appearance, urgent, close);
+    /// <summary>Starts preparing a look urgently as a close-up (the character editor's): its meshes without generated levels, which take nearly all of a mesh's preparation. Render thread.</summary>
+    public void PrefetchCloseUp(CharacterAppearance appearance) => content.Prefetch(appearance, close: true);
+    /// <summary>The character editor has closed: drops the close-up preparations it warmed and never showed. Render thread.</summary>
+    public void ReleaseCloseUps() => content.ReleaseCloseUps();
     public List<string> Messages => content.Messages;
 
     /// <summary>One character in range this frame.</summary>
@@ -86,6 +110,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public long Key;
         /// <summary>Beyond <see cref="DrawDistance"/> (or <see cref="CharacterInstance.Hidden"/>) but posed for its portrait (<see cref="PortraitRequests"/>): not drawn in the world.</summary>
         public bool PortraitOnly;
+        /// <summary>In a loaded building's interior (<see cref="WorldObjectRenderer.InteriorAt"/>), found once a frame for every view.</summary>
+        public bool Interior;
     }
 
     /// <summary>What the renderer keeps of a character between frames (by <see cref="CharacterInstance.Key"/>): its last posed palette and the one before.</summary>
@@ -218,6 +244,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 built++;
             }
             if (asset is null) continue;
+            if (inst.Build is { } build) ApplyBuild(asset, build);
             if (inst.BlendFrom is { } blendFrom && inst.Blend < 1 && assets.TryGetValue(blendFrom, out var fromAsset) && fromAsset is not null) ApplyBlend(asset, fromAsset, inst.Blend);
             else RestoreBlend(asset);
             float scale = inst.Scale > 0 ? inst.Scale : 1;
@@ -233,6 +260,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
             l.WeaponDrawn = inst.WeaponDrawn;
             l.Centre = centre;
+            l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
             l.BoneBase = boneTotal;
             boneTotal += asset.Rig.BoneCount;
@@ -333,8 +361,14 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         }
         budget.Update(content.Textures);
         materials = AllocateConstants((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
+        // Each record is built in ordinary memory and copied over whole: the frame's constants are mapped GPU memory, where building a record field by
+        // field (its zeroing, the texture array's stores) cost about 14 µs a record.
+        CharacterMaterialRecord record = default;
         for (int s = 0; s < slotParts.Count; s++)
-            Write(slotParts[s].Material, ref *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size));
+        {
+            Write(slotParts[s].Material, ref record);
+            *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = record;
+        }
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;
         updateCount++;
         updateCpu.Add(LastUpdateMs);
@@ -366,6 +400,43 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         return present ? content.Textures.Index(key, textureBias, textureStandIn) : textureStandIn;
     }
 
+    /// <summary>
+    /// A person's stat-driven body (docs/animation.md "Stat-driven body"), applied when it has changed by more than 0.01: the bone shape and ground offset with its
+    /// muscle and starvation, and the body-shaded parts' normal maps (<see cref="CharacterShape.NormalBlend"/>: base, blend and weight), as <c>FUN_140531820</c> sets them.
+    /// The maps change once both are resident, so a body is not drawn without one while it loads.
+    /// </summary>
+    void ApplyBuild(CharacterAsset asset, BodyBuild build)
+    {
+        if (asset.Animal) return;
+        if (asset.AppliedBuild is not { } applied || !applied.Near(build))
+        {
+            asset.AppliedBuild = build;
+            var c = asset.Appearance;
+            if (content.Rigs.Reshape(c, build) is { } reshaped)
+            {
+                // A glide mixes the rest values (CharacterRenderer.Blend), so the build goes there too, or the end of a glide would bring back an older one.
+                if (asset.Rest is { } rest) (rest.Shape, rest.GroundOffset) = reshaped;
+                if (!asset.Blending) (asset.Shape, asset.GroundOffset) = reshaped;
+            }
+            var (baseField, blendField, weight) = CharacterShape.NormalBlend(c.Female, build.Definition, build.Starvation);
+            string? File(string field) => field.EndsWith(" strong", StringComparison.Ordinal) ? c.BodyNormalStrong : field.EndsWith(" skinny", StringComparison.Ordinal) ? c.BodyNormalSkinny : c.BodyNormal;
+            // A race without the strong or skinny map keeps its own as the base.
+            asset.PendingNormals = (content.BodyTexture(File(baseField) ?? c.BodyNormal), content.BodyTexture(File(blendField)), weight);
+        }
+        if (asset.PendingNormals is not { } p || !Ready(p.Normal) || !Ready(p.Blend)) return;
+        asset.PendingNormals = null;
+        foreach (var part in asset.Parts)
+            if (part.Material.Shading == CharacterShaders.ShadeBody)
+            {
+                part.Material.Tex[CharacterShaders.SlotNormal] = p.Normal;
+                part.Material.Tex[CharacterShaders.SlotBlendNormal] = p.Blend;
+                part.Material.MuscleBlend = p.Weight;
+            }
+
+        // Reading the key asks for the texture; a missing file never becomes resident.
+        static bool Ready(WorldTexture? t) => t is null || t.Key != 0 || t.State == WorldTexture.Residency.Missing;
+    }
+
     void Write(PartMaterial m, ref CharacterMaterialRecord r)
     {
         r = default;
@@ -384,19 +455,26 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (has[CharacterShaders.SlotBeardOverlay]) flags |= CharacterShaders.HasBeard;
         if (m.ClipOnNormalAlpha && has[CharacterShaders.SlotNormal]) flags |= CharacterShaders.ClipNormalAlpha;
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
-        int vests = 0;
+        if (m.Worn) flags |= CharacterShaders.Worn;
+        // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
+        if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
+            || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
+            flags |= CharacterShaders.AlphaPending;
+        if (m.Tex[CharacterShaders.SlotHeadDiffuse] is not null && !has[CharacterShaders.SlotHeadDiffuse]) flags |= CharacterShaders.HeadPending;
+        if (m.Tex[CharacterShaders.SlotHeadNormal] is not null && !has[CharacterShaders.SlotHeadNormal]) flags |= CharacterShaders.HeadNormalPending;
+        uint vests = 0;
         for (int i = 0; i < 3; i++)
         {
             int s = CharacterShaders.SlotVest + 3 * i;
-            if (has[s] && has[s + 1]) vests = i + 1;
+            if (has[s] && has[s + 1]) vests |= 1u << i;
             if (m.VestColoured[i] && has[s + 2]) flags |= CharacterShaders.Vest0Coloured << i;
         }
         r.Shading = m.Shading;
         r.Flags = flags;
-        r.VestCount = (uint)vests;
+        r.VestCount = vests;
         r.AlphaThreshold = m.AlphaThreshold;
         r.ShirtColour = new Vector4(m.ShirtColour, 1);
-        r.SkinTone = new Vector4(m.SkinTone, 0);
+        r.SkinTone = new Vector4(m.SkinTone, has[CharacterShaders.SlotBlendNormal] ? m.MuscleBlend : 0);
         r.HairColour = new Vector4(m.HairColour, 1);
         r.HairAlpha = m.HairAlpha; r.HairMult = m.HairMult; r.BeardAlpha = m.BeardAlpha;
         r.DiffuseChannel = m.DiffuseChannel; r.AlphaChannel = m.AlphaChannel;

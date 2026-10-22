@@ -109,6 +109,9 @@ public sealed partial class DialogueSystem
                     if (ledger.Count == 0) tc.Bounties = null;
                     tc.Recognition = 0;
                     break;
+                case DialogueActions.IncreaseFactionRank when mc is not null:
+                    data.Relations.RaiseRank(mc.Faction, effect.Value);
+                    break;
                 case DialogueActions.LockThisDialog when mc is not null && c.Root is { } current:
                     Lock(mc, current.StringId, true);
                     break;

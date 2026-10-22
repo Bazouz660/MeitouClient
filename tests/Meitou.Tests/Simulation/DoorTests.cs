@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data;
+using Meitou.Data.Physics;
 using Meitou.Data.World;
 using Meitou.Navigation;
 using Meitou.Simulation;
@@ -17,17 +18,18 @@ public class DoorTests(ITestOutputHelper output)
     [Fact]
     public void The_leaf_slides_and_steps_out_by_the_original_formula()
     {
-        var box = (Min: new Vector3(-20, 0, -2), Max: new Vector3(0, 40, 2));
+        // A collision box in PhysX's Z-up frame: 20 wide (X), 4 thick (Y), 40 tall (Z), centred at (-10, 2, 20); in the part's Y-up frame its Y is -Z and its Z is up.
+        var box = DoorFrame.Of(Pose.Identity with { Translation = new Vector3(-10, 2, 20) }, new Vector3(10, 2, 20));
         // No step out: slide x dist x doa.
         var plain = new DoorLeaf(0, 30, 1, 0);
-        Assert.Equal(new Vector3(15, 0, 0), plain.LocalOffset(0.5f, box.Min, box.Max));
-        Assert.Equal(new Vector3(30, 0, 0), plain.LocalOffset(1, box.Min, box.Max));
-        // Step out 10 along the thinnest other axis (X, away from the origin: -X) until t = 10 / (0.25 x 28 + 10) = 10/17, then slide 28 along Z.
+        Assert.Equal(new Vector3(15, 0, 0), plain.LocalOffset(0.5f, box));
+        Assert.Equal(new Vector3(30, 0, 0), plain.LocalOffset(1, box));
+        // Step out 10 along the thinnest other axis (box Y = part -Z, its centre at Z -2: away from the origin is -Z) until t = 10 / (0.25 x 28 + 10) = 10/17, then slide 28 up (box Z).
         var stepping = new DoorLeaf(2, 28, 0.5f, 10);
-        var half = stepping.LocalOffset(0.5f, box.Min, box.Max);
-        Assert.Equal(-8.5f, half.X, 4);
-        Assert.Equal(0, half.Z);
-        Assert.Equal(new Vector3(-10, 0, 28), stepping.LocalOffset(1, box.Min, box.Max));
+        var half = stepping.LocalOffset(0.5f, box);
+        Assert.Equal(-8.5f, half.Z, 4);
+        Assert.Equal(0, half.Y);
+        Assert.Equal(new Vector3(0, 28, -10), stepping.LocalOffset(1, box));
     }
 
     sealed class Gate : IDoorGate
@@ -167,5 +169,23 @@ public class DoorTests(ITestOutputHelper output)
         }
         Assert.True(doors > 10, $"{doors} doors");
         Assert.Empty(missing);
+    }
+
+    [Fact, Slow]
+    public void The_hubs_destroyed_gates_register_no_doors_while_its_intact_buildings_keep_theirs()
+    {
+        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
+        var db = InstallData.BaseGame!;
+        var levels = InstallData.Levels!;
+        var data = PopulationData.Create(db, levels.Towns(), buildings: TownBuildings.Build(db, levels, null, (_, _) => 0));
+        int site = data.Sites.ToList().FindIndex(s => s.Town.Name == "The Hub");
+        var walk = new OpenGroundWalkability((_, _) => 150);
+        using var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, walk, []);
+        world.Fixtures.RegisterSite(world, data, site);
+        // The level data marks both Defensive Gate IV destroyed; a ruin has no doors (docs/game/locks.md "Doors").
+        var gates = data.Sites[site].Buildings.Where(b => b.IsGate).ToList();
+        Assert.Equal(2, gates.Count(b => b.Destroyed));
+        Assert.All(gates.Where(b => b.Destroyed), g => Assert.DoesNotContain(world.Fixtures.OfBuilding(g.Key), f => f.Kind == FixtureKind.Door));
+        Assert.Contains(data.Sites[site].Buildings.Where(b => !b.Destroyed), b => world.Fixtures.OfBuilding(b.Key).Any(f => f.Kind == FixtureKind.Door));
     }
 }

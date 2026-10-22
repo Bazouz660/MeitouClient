@@ -459,7 +459,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         // by the ambient map's colour and the environment factor; no specular), with the ambient map read at level 0 as the shader runs in a branch.
         vec3 foamLight(vec3 albedo, vec3 n, vec3 world, float shadow)
         {
-            vec4 am = uAtmoMaps.z < 0.5 ? vec4(1.0, 1.0, 1.0, 0.5) : textureLod(uAtmoAmbientMap, (world.xz + uAtmoMaps.w) / (2.0 * uAtmoMaps.w), 0.0);
+            vec4 am = uAtmoMaps.z < 0.5 ? vec4(1.0, 1.0, 1.0, 0.5) : atmoAmbientFloor(textureLod(uAtmoAmbientMap, (world.xz + uAtmoMaps.w) / (2.0 * uAtmoMaps.w), 0.0), uAtmoMaps);
             vec3 sun = uAtmoSunLight * am.a * 2.0 * atmoCloudShadow(world) * shadow;
             vec3 diffuse = ATMO_PI * clamp(dot(n, uAtmoLight.xyz), 0.0, 1.0) * sun * 0.96;
             return albedo * (diffuse + atmoIrradiance(n) * 0.96 * am.rgb * uAtmoLight.w);

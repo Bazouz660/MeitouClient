@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Bodies;
 
 namespace Meitou.Data.Characters;
 
@@ -30,6 +31,17 @@ public sealed record CharacterShapeInput
     /// <summary>Per-leg state of the character that narrows the thigh to 0.8 (source not identified).</summary>
     public bool NarrowLeftThigh { get; init; }
     public bool NarrowRightThigh { get; init; }
+}
+
+/// <summary>
+/// A character's stat-driven body (the original's <c>AppearanceHuman</c> values at +0x1a0..+0x1a8, <c>FUN_14052bc70</c>; docs/animation.md "Stat-driven body"):
+/// <see cref="Muscle"/> the bulk of the bone shape, <see cref="Definition"/> the body normal map's blend towards the strong one, <see cref="Starvation"/> 0 (fed) to 1.
+/// </summary>
+public readonly record struct BodyBuild(float Muscle, float Definition, float Starvation)
+{
+    /// <summary>Whether <paramref name="other"/> looks the same: every value within <paramref name="tolerance"/>.</summary>
+    public bool Near(BodyBuild other, float tolerance = 0.01f) =>
+        MathF.Abs(Muscle - other.Muscle) <= tolerance && MathF.Abs(Definition - other.Definition) <= tolerance && MathF.Abs(Starvation - other.Starvation) <= tolerance;
 }
 
 /// <summary>Per-bone vectors for Kenshi's modified Ogre (docs/formats/ogre-skeleton.md, "Bone maths").</summary>
@@ -173,7 +185,17 @@ public static class CharacterShape
         return Math.Clamp((x - 0.2f) / ((female ? 0.99f : 0.9f) - 0.2f), 0, 1);
     }
 
-    /// <summary>Starvation from the character's nutrition value: 1 at 4/3 or less, falling to 0 at 2.</summary>
+    /// <summary>
+    /// The body a character's current stats and hunger give (<c>FUN_14052bc70</c>): bulk from strength and the two smithing skills, definition from swimming, athletics,
+    /// dexterity, martial arts, cooking and science, starvation from the hunger (0 to 3).
+    /// </summary>
+    public static BodyBuild BuildFromStats<T>(bool female, T stats, Func<T, StatsEnumerated, float> stat, float hunger) => new(
+        MuscleFromStats(stat(stats, StatsEnumerated.Strength), stat(stats, StatsEnumerated.SmithingWeapon), stat(stats, StatsEnumerated.SmithingArmour)),
+        MuscleDefinitionFromStats(female, stat(stats, StatsEnumerated.Swimming), stat(stats, StatsEnumerated.Athletics), stat(stats, StatsEnumerated.Dexterity),
+            stat(stats, StatsEnumerated.MartialArts), stat(stats, StatsEnumerated.Cooking), stat(stats, StatsEnumerated.Science)),
+        StarvationFromNutrition(hunger));
+
+    /// <summary>Starvation from the character's hunger (the original's <c>+0x4b8</c>, 0 to 3): 1 at 4/3 or less, falling to 0 at 2.</summary>
     public static float StarvationFromNutrition(float nutrition) => Math.Clamp((1 - Math.Clamp(nutrition - 1, 0, 1)) * 1.5f, 0, 1);
 
     /// <summary>

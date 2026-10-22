@@ -256,9 +256,10 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         Assert.Equal("Wounded", PlayerInterface.HealthWord(new BodyStatus(1, 0.5f, 3, false, false)).Text);
         Assert.Equal("Starving", PlayerInterface.HealthWord(new BodyStatus(1, 1, 0.5f, false, false)).Text);
         // The race lists Right Leg, Left Arm, Left Leg, Head, Stomach, Right Arm, Chest; the panel shows head, torso, arms, legs, left before right.
-        string[] race = ["Right Leg", "Left Arm", "Left Leg", "Head", "Stomach", "Right Arm", "Chest"];
-        var parts = race.Select((n, i) => (Part: new HealthPartView(n, n, 100, 0, 0, 0, 100, false), Index: i));
-        Assert.Equal(["Head", "Stomach", "Chest", "Left Arm", "Right Arm", "Left Leg", "Right Leg"], parts.OrderBy(p => PlayerInterface.PartRank(p.Part, p.Index)).Select(p => p.Part.Name));
+        (string Name, BodyPartType Type, int Collapse)[] race = [("Right Leg", BodyPartType.Leg, 0x10), ("Left Arm", BodyPartType.Arm, 4), ("Left Leg", BodyPartType.Leg, 0x20),
+            ("Head", BodyPartType.Head, 1), ("Stomach", BodyPartType.Torso, 1), ("Right Arm", BodyPartType.Arm, 2), ("Chest", BodyPartType.Torso, 1)];
+        var parts = race.Select(p => new BodyPartTemplate { StringId = p.Name, Name = p.Name, Type = p.Type, CollapsePart = p.Collapse });
+        Assert.Equal(["Head", "Stomach", "Chest", "Left Arm", "Right Arm", "Left Leg", "Right Leg"], parts.OrderBy(p => p.MedicalOrder).Select(p => p.Name));
         var lead = new CharacterSnapshot(new CharacterId(0, 0), null, Vector3.Zero, 0, [])
             { Hud = new HudView(150, 150, 0, 1, [new("Strength:", 99.4f, 100), new("Toughness:", 100, 100), new("Dodge:", 105, 100)]) };
         Assert.Equal(["STRENGTH: 99 (-1)", "TOUGHNESS: 100", "DODGE: 105 (+5)"], PlayerInterface.StatsLines(lead).Select(l => $"{l.Label} {l.Value}"));

@@ -23,6 +23,8 @@ public sealed class PlacementServices
     public required Func<Vector2, float, IEnumerable<PlacedFootprint>> StaticAround { get; init; }
     /// <summary>The level data's pickable buildings along a ray (origin, direction, length) with their record footprints; empty without level data.</summary>
     public Func<Vector3, Vector3, float, IEnumerable<PlacedBuilding>> StaticAlong { get; init; } = (_, _, _) => [];
+    /// <summary>The collision triangles of a building record in its own space (a click on a building is tested against them); empty without level data.</summary>
+    public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionMesh { get; init; } = _ => [];
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>

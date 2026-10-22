@@ -17,11 +17,15 @@ public sealed class NavSurfaces
     readonly Vector2 min;
     readonly int columns, rows;
     readonly int[][] cells;
+    /// <summary>Each triangle's box, so most of a cell's triangles are passed over without the exact tests.</summary>
+    readonly Box[] boxes;
+
+    readonly record struct Box(float X0, float X1, float Y0, float Y1, float Z0, float Z1);
 
     public NavSurfaces(Vector3[] corners)
     {
         Corners = corners;
-        if (corners.Length == 0) { cells = []; return; }
+        if (corners.Length == 0) { cells = []; boxes = []; return; }
         var lo = new Vector2(float.MaxValue);
         var hi = new Vector2(float.MinValue);
         foreach (var c in corners) { lo = Vector2.Min(lo, new(c.X, c.Z)); hi = Vector2.Max(hi, new(c.X, c.Z)); }
@@ -29,8 +33,12 @@ public sealed class NavSurfaces
         columns = (int)((hi.X - lo.X) / Cell) + 1;
         rows = (int)((hi.Y - lo.Y) / Cell) + 1;
         var lists = new List<int>?[columns * rows];
+        boxes = new Box[corners.Length / 3];
         for (int t = 0; t < corners.Length / 3; t++)
         {
+            var a = corners[t * 3]; var b = corners[t * 3 + 1]; var c = corners[t * 3 + 2];
+            boxes[t] = new Box(MathF.Min(a.X, MathF.Min(b.X, c.X)), MathF.Max(a.X, MathF.Max(b.X, c.X)), MathF.Min(a.Y, MathF.Min(b.Y, c.Y)),
+                MathF.Max(a.Y, MathF.Max(b.Y, c.Y)), MathF.Min(a.Z, MathF.Min(b.Z, c.Z)), MathF.Max(a.Z, MathF.Max(b.Z, c.Z)));
             var (x0, x1, z0, z1) = Range(t);
             for (int z = z0; z <= z1; z++)
                 for (int x = x0; x <= x1; x++) (lists[z * columns + x] ??= []).Add(t);
@@ -71,6 +79,11 @@ public sealed class NavSurfaces
             for (int cx = x0; cx <= x1; cx++)
                 foreach (int t in cells[cz * columns + cx])
                 {
+                    // Neither over the triangle nor within EdgeReach of it, or its heights all farther from y than what would still count.
+                    ref readonly var box = ref boxes[t];
+                    float reachY = MathF.Max(best, bestEdge);
+                    if (x < box.X0 - EdgeReach || x > box.X1 + EdgeReach || z < box.Z0 - EdgeReach || z > box.Z1 + EdgeReach
+                        || box.Y0 - y > reachY || y - box.Y1 > reachY) continue;
                     var a = Corners[t * 3]; var b = Corners[t * 3 + 1]; var c = Corners[t * 3 + 2];
                     if (NavGeometry.Barycentric(x, z, a, b, c, out float l1, out float l2, out float l3) && l1 >= -1e-4f && l2 >= -1e-4f && l3 >= -1e-4f)
                     {
@@ -98,8 +111,9 @@ public sealed class NavSurfaces
         float bestD = EdgeReach * EdgeReach;
         float? h = null;
         reach = EdgeReach;
-        foreach (var (p, q) in ((Vector3, Vector3)[])[(a, b), (b, c), (c, a)])
+        for (int k = 0; k < 3; k++)
         {
+            var (p, q) = k switch { 0 => (a, b), 1 => (b, c), _ => (c, a) };
             float dx = q.X - p.X, dz = q.Z - p.Z, len2 = dx * dx + dz * dz;
             float t = len2 < 1e-9f ? 0 : Math.Clamp(((x - p.X) * dx + (z - p.Z) * dz) / len2, 0, 1);
             float ex = p.X + t * dx - x, ez = p.Z + t * dz - z, d = ex * ex + ez * ez;

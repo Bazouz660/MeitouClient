@@ -39,7 +39,7 @@ sealed partial class PlayerInterface
             soundScreens.Remove(id);
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench": Sound("Inventory_Close"); break;
+                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
                 case "stats": Sound("Stats_Close"); break;
                 case "overview": if (soundOverviewTab == 0) Sound("Map_Close"); else if (soundOverviewTab == 2) Sound("Tech_Close"); soundOverviewTab = -1; break;
                 case "menu": Sound("General_Click"); break;
@@ -50,7 +50,7 @@ sealed partial class PlayerInterface
             if (!soundScreens.Add(id)) continue;
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench": Sound("Inventory_Open"); break;
+                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
                 case "stats": Sound("Stats_Open"); break;
                 case "build": Sound("Building_Button"); break;
                 case "menu": Sound("General_Click"); break;
@@ -157,9 +157,9 @@ sealed partial class PlayerInterface
             case "editor":
                 if (e.Widget == "ConfirmButton") Sound("Create_Character");
                 else if (e.Widget is "BodyTabButton" or "FaceTabButton" or "HairTabButton") Sound("Tab");
-                // Slider: the first event of each drag. A data-panel slider (the host's Slider property) is not built yet; its drag events would sound here the same way.
-                else if (e.Action.StartsWith("editor-slider:", StringComparison.Ordinal)) { if (e.Action != lastSliderSound) Sound("Slider"); lastSliderSound = e.Action; }
-                else if (e.Widget.EndsWith("Button", StringComparison.Ordinal) || e.Widget.EndsWith("Arrow", StringComparison.Ordinal)) Sound("General_Click");
+                // Slider: the first event of each drag (a row's bar, named by its row). A list row's arrows click.
+                else if (e.Action == "scroll") { if (e.Widget != lastSliderSound) Sound("Slider"); lastSliderSound = e.Widget; }
+                else if (e.Action == "step" || e.Widget.EndsWith("Button", StringComparison.Ordinal) || e.Widget.EndsWith("Arrow", StringComparison.Ordinal)) Sound("General_Click");
                 break;
         }
         if (e.Screen != "editor") lastSliderSound = null;

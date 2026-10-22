@@ -534,7 +534,8 @@ public sealed partial class FoliageRenderer
         s.RefineLoad = BackgroundWork.Run<ImpostorAtlas?>(() =>
         {
             var atlas = cache.TryLoad(source, skip);   // only the levels the new textures keep are read (the albedo's from skip, the normal map's from skip + 1)
-            return atlas is not null && atlas.FramePixels == frame && atlas.Grid == grid ? atlas : null;
+            if (atlas is not null && (atlas.FramePixels != frame || atlas.Grid != grid)) Free(ref atlas);
+            return atlas;
         });
         impostorRefining.Add(a);
     }
@@ -575,7 +576,6 @@ public sealed partial class FoliageRenderer
                 } while (!s.Next.Complete && uploaded + s.Next.NextStepBytes <= budget && UploadTimeLeft(settling));
             }
             if (!s.Next.Complete) { impostorUploadsWaiting = settling; continue; }
-            s.Next.DropCpu();
             var old = s.Textures!;
             (s.Textures, s.Next) = (s.Next, null);
             impostorBytes -= old.Bytes;
@@ -583,14 +583,15 @@ public sealed partial class FoliageRenderer
             if (s.RefineSkip < s.Skip) impostorRefined++; else impostorCoarsened++;
             if (SpikeLog.Enabled) SpikeLog.Note($"impostor {(s.RefineSkip < s.Skip ? "refined" : "coarsened")} {Label(a)} skip {s.Skip}->{s.RefineSkip}");
             s.Skip = s.RefineSkip;
-            (s.RefineAtlas, s.FinerSince) = (null, 0);
+            Free(ref s.RefineAtlas);
+            s.FinerSince = 0;
             impostorRefining.RemoveAt(i--);
             residentStamp++;
         }
 
         void Abandon(ImpostorState s, List<MeshAsset> list, int index)
         {
-            s.RefineAtlas = null;
+            Free(ref s.RefineAtlas);
             s.RefineRetryAt = Environment.TickCount64 + 2000;
             list.RemoveAt(index);
         }
@@ -754,7 +755,7 @@ public sealed partial class FoliageRenderer
             }
             if (cls is not { } c) return (source, meshes, null, null);
             var atlas = cache.TryLoad(source, firstLevel);
-            if (atlas is not null && (atlas.FramePixels != c.FramePixels || atlas.Grid != c.Grid)) atlas = null;
+            if (atlas is not null && (atlas.FramePixels != c.FramePixels || atlas.Grid != c.Grid)) Free(ref atlas);
             return (source, meshes, c, atlas);
         });
         impostorWork.Add(a);
@@ -782,7 +783,8 @@ public sealed partial class FoliageRenderer
             if (!MakeImpostorRoom(need, a) || guard is { } g && !g.Allows((ulong)need))
             {
                 impostorRefused++;
-                (s.Stage, s.RetryAt, s.Atlas, s.Meshes) = (ImpostorStage.None, Environment.TickCount64 + (long)(ImpostorRetrySeconds * 1000), null, null);
+                Free(ref s.Atlas);
+                (s.Stage, s.RetryAt, s.Meshes) = (ImpostorStage.None, Environment.TickCount64 + (long)(ImpostorRetrySeconds * 1000), null);
                 return true;
             }
             using var first = Gpu.Uploads.Begin();
@@ -800,8 +802,7 @@ public sealed partial class FoliageRenderer
         if (!s.Textures.Complete) return false;
         s.Stage = ImpostorStage.Ready;
         if (SpikeLog.Enabled) SpikeLog.Note($"impostor ready {Label(a)} skip {s.Skip}");
-        s.Textures.DropCpu();   // keep the atlas's metadata for the draw; its byte arrays are no longer needed
-        s.Atlas = null;
+        Free(ref s.Atlas);   // the CPU copy is not needed any more (a reload reads the cache again)
         s.Meshes = null;
         residentStamp++;
         return true;
@@ -889,7 +890,7 @@ public sealed partial class FoliageRenderer
             s.Next.Dispose();
             s.Next = null;
         }
-        if (s.RefineLoad is { } load) { try { load.Wait(); } catch (AggregateException) { } s.RefineLoad = null; }
+        FreeLoads(s);
         if (s.Textures is not null)
         {
             impostorBytes -= s.Textures.Bytes;
@@ -907,13 +908,36 @@ public sealed partial class FoliageRenderer
         foreach (var a in ImpostorAssets())
         {
             if (a.Impostor is not { } s) continue;
-            try { s.Load?.Wait(); } catch (AggregateException) { }
-            try { s.RefineLoad?.Wait(); } catch (AggregateException) { }
-            s.Textures?.Dispose();
             s.Next?.Dispose();
+            FreeLoads(s);
+            s.Textures?.Dispose();
         }
         impostorBaker?.Dispose();
         impostorDraw?.Dispose();
+    }
+
+    /// <summary>Frees a read atlas's native levels (docs/engine.md, "Native buffers") and clears the reference: wherever the state lets go of one.</summary>
+    static void Free(ref ImpostorAtlas? atlas)
+    {
+        atlas?.Dispose();
+        atlas = null;
+    }
+
+    /// <summary>Waits for the state's loads in flight and frees every atlas it holds (after its <see cref="ImpostorState.Next"/> textures, which read the refine's).</summary>
+    static void FreeLoads(ImpostorState s)
+    {
+        if (s.Load is { } load)
+        {
+            try { load.Wait(); load.Result.Atlas?.Dispose(); } catch (AggregateException) { }
+            s.Load = null;
+        }
+        if (s.RefineLoad is { } refine)
+        {
+            try { refine.Wait(); refine.Result?.Dispose(); } catch (AggregateException) { }
+            s.RefineLoad = null;
+        }
+        Free(ref s.RefineAtlas);
+        Free(ref s.Atlas);
     }
 
     // ---- drawing ----

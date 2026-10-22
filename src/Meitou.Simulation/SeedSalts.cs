@@ -57,6 +57,8 @@ internal static class SeedSalts
     public const ulong HomeOrder = 0x40DE00UL, HomeSpot = 0x40DE5UL, Housemates = 0x40A7E00UL, ResidentHome = 0x2E51DUL;
     /// <summary>A housed squad's <c>prisoners</c> (<c>PopulationSystem.MakePrisoners</c>): the salt XORed into a prisoner squad's key, and counter base of the cage picks.</summary>
     public const ulong PrisonerSquad = 0x9215EUL, PrisonerCage = 0x921CA00UL;
+    /// <summary>A housed squad's <c>slaves</c> (<c>PopulationSystem.MakeSlaves</c>): counter base of the slaves' looks, and of their cage picks.</summary>
+    public const ulong SlaveLook = 0x5A1A100UL, SlaveCage = 0x5A1ACA00UL;
 
     /// <summary>Faction campaigns (<c>PopulationCampaigns.cs</c>): counters of a roll's pass test and its draw, a follow-up's pick and delay, a request's delay and retry; the
     /// salt XORed into a campaign squad's key, and counter base of its placement tries.</summary>

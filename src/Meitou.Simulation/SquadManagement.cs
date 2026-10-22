@@ -256,6 +256,7 @@ public static class SquadManagement
             SpawnSize = 1,
         };
         cold.Faction = faction;
+        cold.RoadPreference = data.RoadPreferenceOf(faction);
         cold.SquadId = squad.Id;
         cold.Role = (int)SquadRole.Leader;
         cold.FormationOffset = Vector2.Zero;

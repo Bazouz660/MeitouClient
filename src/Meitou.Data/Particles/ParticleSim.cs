@@ -52,6 +52,11 @@ public sealed class ParticleSimulation
     public Vector3 Origin { get; set; }
     /// <summary>Where the coordinates of the simulation are in the world (added to a particle's position for the observers, which compare world positions). Zero when the simulation is in world coordinates itself.</summary>
     public Vector3 WorldOffset { get; set; }
+    /// <summary>The system node's turn: the emitters' offsets and directions are rotated by it (identity for every effect but the host's one-shot bursts).</summary>
+    public Quaternion Orientation { get; set; } = Quaternion.Identity;
+    /// <summary>Multiplies the particles' sizes and the scale affectors' growth, and their lives (1 for every effect but the host's one-shot bursts).</summary>
+    public float Size { get; set; } = 1;
+    public float LifeScale { get; set; } = 1;
     /// <summary>The system was stopped (an effect whose life is over): the emitters make nothing more and the particles live out.</summary>
     public bool EmissionStopped { get; set; }
     /// <summary>Seconds since the system started.</summary>
@@ -238,6 +243,11 @@ public sealed class ParticleSimulation
         }
         var direction = e.AutoDirection && offset.LengthSquared() > 1e-12f ? Vector3.Normalize(offset)
             : Cone(e.Direction.LengthSquared() > 1e-12f ? Vector3.Normalize(e.Direction) : Vector3.UnitY, e.Angle.Evaluate(0, random));
+        if (!Orientation.IsIdentity)
+        {
+            offset = Vector3.Transform(offset, Orientation);
+            direction = Vector3.Transform(direction, Orientation);
+        }
         if (env.WindDirectionEmission && env.Wind.LengthSquared() > 1e-6f)
         {
             float horizontal = MathF.Sqrt(direction.X * direction.X + direction.Z * direction.Z);
@@ -246,7 +256,7 @@ public sealed class ParticleSimulation
         }
         // The emitter's attributes are read at the system's age (Verified, the plugin's _initParticleVelocity / TimeToLive / Dimensions).
         float speed = e.Velocity.Evaluate(Time, random) * Definition.ScaleVelocity;
-        float life = Math.Max(e.Life.Evaluate(Time, random), 1e-3f);
+        float life = Math.Max(e.Life.Evaluate(Time, random) * LifeScale, 1e-3f);
         // all_particle_dimensions is one draw for the three and wins over the per-axis sizes; each per-axis one draws its own.
         float width, height, depth;
         if (e.AllDimensions is not null) width = height = depth = e.AllDimensions.Evaluate(Time, random);
@@ -271,7 +281,7 @@ public sealed class ParticleSimulation
         t.X[i] = p.X; t.Y[i] = p.Y; t.Z[i] = p.Z;
         t.Vx[i] = direction.X * speed; t.Vy[i] = direction.Y * speed; t.Vz[i] = direction.Z * speed;
         t.Age[i] = 0; t.Life[i] = life;
-        t.Width[i] = width * scale.X; t.Height[i] = height * scale.Y; t.Depth[i] = depth * scale.Z;
+        t.Width[i] = width * scale.X * Size; t.Height[i] = height * scale.Y * Size; t.Depth[i] = depth * scale.Z * Size;
         t.R[i] = t.ER[i] = colour.X; t.G[i] = t.EG[i] = colour.Y; t.B[i] = t.EB[i] = colour.Z; t.A[i] = t.EA[i] = colour.W;
         t.Seed[i] = (uint)random.Next();
         t.Emitter[i] = (byte)emitterIndex;
@@ -359,7 +369,7 @@ public sealed class ParticleSimulation
                             // given, else x / y / z; read at the life fraction or the system's age. A size that would not stay above 0 is
                             // left as it was (Verified, the plugin's ScaleAffector::_affect and setOwnDimensions).
                             float f = a.SinceStartSystem ? Time : t.Age[i] / t.Life[i];
-                            var s = Definition.Scale * dt;
+                            var s = Definition.Scale * (dt * Size);
                             float rx, ry, rz;
                             if (a.ScaleXyz is not null) rx = ry = rz = a.ScaleXyz.Evaluate(f);
                             else (rx, ry, rz) = (a.ScaleX?.Evaluate(f) ?? 0, a.ScaleY?.Evaluate(f) ?? 0, a.ScaleZ?.Evaluate(f) ?? 0);

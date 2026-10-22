@@ -50,8 +50,9 @@ public sealed class GameInstall
     /// <summary>
     /// Finds the install from <c>KENSHI_PATH</c>, then <c>meitou.local.json</c> (<c>{"kenshiPath": "..."}</c>)
     /// in the working directory or next to the executable, or in one of their parent directories (so a test or tool run
-    /// from <c>bin/</c> finds the repository root's file), then a Steam install (<c>steamapps/common/Kenshi</c> in any of the
-    /// libraries Steam lists). Returns null when none is found.
+    /// from <c>bin/</c> finds the repository root's file), then the per-user <c>meitou/config.json</c> in <c>XDG_CONFIG_HOME</c> (Linux, macOS), then a Steam install (<c>steamapps/common/Kenshi</c> in any of the
+    /// libraries Steam lists), then the other launchers' installs (<see cref="GameInstallSources"/>: GOG, Heroic, Lutris, Bottles, Wine prefixes).
+    /// The folder the executable sits in and the one above it are tried before Steam. Returns null when none is found.
     /// </summary>
     public static GameInstall? Locate()
     {
@@ -83,8 +84,19 @@ public sealed class GameInstall
             }
             try
             {
-                SaveLocalConfig(AppContext.BaseDirectory, line);
-                Console.WriteLine($"Saved to {Path.Combine(AppContext.BaseDirectory, LocalConfigFile)}.");
+                // Next to the executable; an AppImage or a system folder is read-only, so then the per-user file.
+                try
+                {
+                    SaveLocalConfig(AppContext.BaseDirectory, line);
+                    Console.WriteLine($"Saved to {Path.Combine(AppContext.BaseDirectory, LocalConfigFile)}.");
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    if (GameInstallSources.UserConfigFile(Environment.GetEnvironmentVariable) is not { } userConfig) throw;
+                    Directory.CreateDirectory(Path.GetDirectoryName(userConfig)!);
+                    SaveConfigFile(userConfig, line);
+                    Console.WriteLine($"Saved to {userConfig}.");
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -100,18 +112,29 @@ public sealed class GameInstall
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
             for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
                 yield return ReadLocalConfig(Path.Combine(dir.FullName, LocalConfigFile));
+        if (GameInstallSources.UserConfigFile(Environment.GetEnvironmentVariable) is { } userConfig) yield return ReadLocalConfig(userConfig);
+        // The folder this executable sits in, or the one above it (a build dropped into the game's folder).
+        yield return AppContext.BaseDirectory;
+        yield return Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         foreach (var library in SteamLibraries())
+        {
             yield return Path.Combine(library, "steamapps", "common", "Kenshi");
+            // An install under another folder name: Steam's own record of it (appmanifest_233860.acf, the Kenshi app).
+            if (GameInstallSources.SteamInstallDirectory(Path.Combine(library, "steamapps")) is { } installDir) yield return installDir;
+        }
+        foreach (var path in GameInstallSources.Launchers()) yield return path;
     }
 
     /// <summary>
     /// Writes <c>meitou.local.json</c> with <paramref name="root"/> into <paramref name="directory"/>, so <see cref="Locate"/> finds the
     /// install next time (a release's first start asks for the folder and keeps it this way).
     /// </summary>
-    public static void SaveLocalConfig(string directory, string root)
+    public static void SaveLocalConfig(string directory, string root) => SaveConfigFile(Path.Combine(directory, LocalConfigFile), root);
+
+    static void SaveConfigFile(string path, string root)
     {
         // Written by hand, not JsonSerializer: the launcher is Native AOT, where reflection-based serialization is unavailable.
-        using var file = File.Create(Path.Combine(directory, LocalConfigFile));
+        using var file = File.Create(path);
         using var json = new Utf8JsonWriter(file, new JsonWriterOptions { Indented = true });
         json.WriteStartObject();
         json.WriteString("kenshiPath", Path.GetFullPath(root));
@@ -147,15 +170,22 @@ public sealed class GameInstall
         else if (OperatingSystem.IsLinux())
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            foreach (var relative in new[] { ".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam" })
-                if (Directory.Exists(Path.Combine(home, relative))) yield return Path.Combine(home, relative);
+            // Steam itself installs to ~/.local/share/Steam whatever XDG_DATA_HOME says, so both are tried.
+            var candidates = new[] { Path.Combine(GameInstallSources.Xdg.From(home, Environment.GetEnvironmentVariable).DataHome, "Steam"), Path.Combine(home, ".local/share/Steam"), Path.Combine(home, ".steam/steam"), Path.Combine(home, ".var/app/com.valvesoftware.Steam/.local/share/Steam") };
+            foreach (var steam in candidates.Distinct())
+                if (Directory.Exists(steam)) yield return steam;
         }
     }
 
     static string? ReadLocalConfig(string file)
     {
         if (!File.Exists(file)) return null;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
-        return doc.RootElement.TryGetProperty("kenshiPath", out var p) ? p.GetString() : null;
+        // A broken file (an interrupted save) is skipped, so the other sources and the prompt still run.
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(file));
+            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("kenshiPath", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+        }
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException) { return null; }
     }
 }

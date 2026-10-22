@@ -74,7 +74,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
 
     sealed record Choice(Func<IReadOnlyList<string>> Options, Func<int> Current, Action<int> Choose);
     sealed record Entry(string Label, string Hint = "", Slider? Slider = null, Toggle? Toggle = null, Choice? Choice = null,
-        InputAction? Binding = null, Action? Run = null, string? Picture = null);
+        InputAction? Binding = null, Action? Run = null, string? Picture = null, bool Segmented = false);
     sealed record Hit(UiRect Bounds, Action Activate, Slider? Slider = null, UiRect? Track = null);
 
     public IReadOnlyList<Slider> Sliders => values.Sliders;
@@ -115,7 +115,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (label is "Time of day" or "Time speed") return "Advanced";
         if (label is "VSync" or "Full screen" or MetalPresetSlider || WorldFrame.UpscalerSliders.Contains(label) || label == WorldFrame.FilteringSlider || label == WorldFrame.TextureQualitySlider) return "Display";
         if (label.Contains("water", StringComparison.OrdinalIgnoreCase) || label.Contains("Reflection", StringComparison.Ordinal)) return "Water";
-        if (label.StartsWith("Shadow", StringComparison.Ordinal) || label.StartsWith("Light shafts", StringComparison.Ordinal) || label.StartsWith("Planetshine", StringComparison.Ordinal) || label.StartsWith("Haze", StringComparison.Ordinal) || label.StartsWith("Ambient", StringComparison.Ordinal)) return "Lighting";
+        if (label.StartsWith("Shadow", StringComparison.Ordinal) || label.StartsWith("Light shafts", StringComparison.Ordinal) || label.StartsWith("Planetshine", StringComparison.Ordinal) || label.StartsWith("Haze", StringComparison.Ordinal) || label.StartsWith("Ambient", StringComparison.Ordinal) || label.StartsWith("Night ambient", StringComparison.Ordinal)) return "Lighting";
         if (label.Contains("Tone", StringComparison.OrdinalIgnoreCase) || label.Contains("Grading", StringComparison.OrdinalIgnoreCase) || label.StartsWith("Heat", StringComparison.Ordinal) || WorldFrame.ParticleSliders.Contains(label)) return "Effects";
         return "World";
     }
@@ -124,7 +124,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     {
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
         "Water" => "Water",
-        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" => "Lighting",
+        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
         _ when toggle.Label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };
@@ -159,7 +159,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         var result = values.Sliders.Where(s => s.Label is not ("Time of day" or "Time speed") && Section(s) == section).Select(SliderEntry).ToList();
         if (page == 1)
             result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle) == section)
-                .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)));
+                .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)).Prepend(LookEntry).Prepend(PresetEntry));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
         if (page == 2)
             result.Add(new("UI style", "Choose original Kenshi skins or Meitou materials.", Choice: new(() => ["Faithful", "Meitou"],
@@ -255,6 +255,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                     pendingAction = action.Run; confirmation = action.Question(); focus = -1;
                 }));
         }
+        if (page == 4)
+            result.Insert(0, PageSidesEntry(result, "All gameplay changes", "Every change on this page as the game plays, or every Meitou change (luckyren Mode stays as it is).", "gameplay change"));
+        if (page == 6)
+            result.Insert(0, PageSidesEntry(result, "All fixes", "Every bug on this page as the game ships it, or every fix.", "fix"));
         return result;
     }
 

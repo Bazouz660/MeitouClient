@@ -15,11 +15,14 @@ sealed partial class PlayerInterface
     const float DoorPickSlack = 10;
 
     /// <summary>The unbroken door whose leaf centre projects nearest the pixel within <see cref="DoorPickPixels"/>, if any, and is not hidden behind another wall; locked or not.</summary>
-    (DoorPick Door, bool Locked)? PickDoor(Vector2 pixel)
+    (DoorPick Door, bool Locked)? PickDoor(Vector2 pixel) => PickDoorAt(pixel)?.Pick;
+
+    /// <summary><see cref="PickDoor"/> with the ray distance to the leaf's centre.</summary>
+    ((DoorPick Door, bool Locked) Pick, float T)? PickDoorAt(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray) return null;
         var snapshot = session.CurrentSnapshot;
-        (DoorPick, bool)? best = null;
+        ((DoorPick, bool), float)? best = null;
         float bestDistance = DoorPickPixels;
         foreach (var door in snapshot.DoorPicks)
         {
@@ -28,8 +31,9 @@ sealed partial class PlayerInterface
             if (d >= bestDistance) continue;
             // A door missing from the published table is closed and unlocked.
             var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
-            if (state.Broken || Hidden(ray, Vector3.Distance(ray.Origin, door.Position) - DoorPickSlack)) continue;
-            (best, bestDistance) = ((door, state.Locked), d);
+            float t = Vector3.Distance(ray.Origin, door.Position);
+            if (state.Broken || Hidden(ray, t - DoorPickSlack)) continue;
+            (best, bestDistance) = (((door, state.Locked), t), d);
         }
         return best;
     }

@@ -150,6 +150,11 @@ public sealed class EffectUnit
     public Vector3 Anchor { get; set; }
     public Vector3 Tint { get; set; } = Vector3.One;
     public float Alpha { get; set; } = 1;
+    /// <summary>The node's turn (<see cref="ParticleSimulation.Orientation"/>).</summary>
+    public Quaternion Orientation { get; set; } = Quaternion.Identity;
+    /// <summary>The particles' size and life factors (<see cref="ParticleSimulation.Size"/>, <see cref="ParticleSimulation.LifeScale"/>).</summary>
+    public float Size { get; set; } = 1;
+    public float LifeScale { get; set; } = 1;
     /// <summary>The node's bounding sphere for culling (<see cref="float.PositiveInfinity"/>: always drawn).</summary>
     public float Radius { get; set; }
     /// <summary>Seconds of life left (<see cref="float.PositiveInfinity"/>: never ends).</summary>
@@ -194,7 +199,7 @@ public sealed class EffectUnit
 
     public void Activate()
     {
-        Simulation = new ParticleSimulation(System, Seed) { EmissionStopped = Stopped };
+        Simulation = new ParticleSimulation(System, Seed) { EmissionStopped = Stopped, Orientation = Orientation, Size = Size, LifeScale = LifeScale };
         Anchor = Position;
     }
 
@@ -716,6 +721,33 @@ public sealed class PlacerEffectGroup : EffectGroup
         Update(0, camera, weather);
         foreach (var u in units.Where(u => u.Active)) u.Pending += seconds;
     }
+}
+
+/// <summary>
+/// One-shot effects the host fires (luckyren Mode's blood, docs/game/luckyren.md): each <see cref="Spawn"/> is a unit that emits for its life, then lives out its
+/// particles and is dropped. Not an EFFECT record of the game: the record is made up from the system's name.
+/// </summary>
+public sealed class BurstEffectGroup(PuSystemDef system, int seed, EffectWorld world)
+    : EffectGroup(new EffectRecord(system.Name, EffectType.Point, system.Name, false, false, 1, 0, 0, Vector3.One, 1, false, 0, 0, 0, 0, 0), null, system, seed, world)
+{
+    /// <summary>A unit at <paramref name="position"/>, turned by <paramref name="orientation"/>, emitting for <paramref name="seconds"/>, its particles <paramref name="size"/> times as big and <paramref name="lifeScale"/> times as long-lived.</summary>
+    public void Spawn(Vector3 position, Quaternion orientation, float seconds, float size, float lifeScale)
+    {
+        var u = NewUnit(position);
+        u.Orientation = orientation;
+        u.Life = seconds;
+        u.Size = size;
+        u.LifeScale = lifeScale;
+        u.Radius *= size * lifeScale;
+    }
+
+    public override void Update(float dt, in EffectCamera camera, WeatherEffectInput weather)
+    {
+        foreach (var u in units) Tick(u, dt, camera, ParticleEnvironment.None);
+        RemoveDone();
+    }
+
+    public override void BeginWarm(float seconds, in EffectCamera camera, WeatherEffectInput weather) { }
 }
 
 public static class EffectGroups

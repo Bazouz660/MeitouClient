@@ -499,6 +499,35 @@ public sealed class CharacterSounds
         Impacts++;
     }
 
+    /// <summary>The squared camera distance within which a luckyren burst also squelches (<see cref="Burst"/>; its sound has no distance falloff).</summary>
+    public const float SquelchLimit = 160000;
+
+    /// <summary>
+    /// luckyren Mode's burst at <paramref name="at"/> (docs/game/luckyren.md; the game has no such sound): <c>Impact</c> as a <c>Heavy_Hit</c> on a pooled object there and,
+    /// within <see cref="SquelchLimit"/>, the wet meat drop (<c>Item_Drop</c>, <c>Inventory_Items</c> = <c>Meat</c>), an interface sound on the GUI object.
+    /// </summary>
+    public void Burst(Vector3 at)
+    {
+        float distance = Vector3.DistanceSquared(at, camera);
+        PointImpact(at, "Heavy_Hit");
+        if (distance >= SquelchLimit) return;
+        player.SetSwitch("Inventory_Items", "Meat", AudioSystem.GuiObject);
+        player.Post("Item_Drop", AudioSystem.GuiObject);
+    }
+
+    /// <summary>A luckyren piece of flesh landing at <paramref name="at"/>: <c>Impact</c> as a <c>Light_Hit</c> on a pooled object there.</summary>
+    public void Splat(Vector3 at) => PointImpact(at, "Light_Hit");
+
+    void PointImpact(Vector3 at, string impacts)
+    {
+        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        ulong id = pool[poolAt++ % pool.Length];
+        player.SetPosition(id, at);
+        player.SetSwitch("Impacts", impacts, id);
+        player.Post("Impact", id);
+        Impacts++;
+    }
+
     /// <summary>A character went down. An animal calls <c>VO_Creature_Die</c> (<c>FUN_1405cbd60</c>); the attacker animal <c>VO_Creature_Victory</c> (<c>CharacterAnimal::vfunc_62</c>).</summary>
     public void Down(ulong key, ulong attacker)
     {

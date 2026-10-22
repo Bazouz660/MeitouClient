@@ -150,6 +150,19 @@ no path re-running the initial resident placement was found (**Unknown** whether
 | +8 | float | accumulated positive trust |
 | +0xc | float | accumulated negative trust |
 
+### 3.2 Faction rank
+
+- The player's rank in a faction is an int at `FactionRelations` +0x10 (the faction's +0x78), 0 by default. **Verified** by code: saved as
+  GAMESTATE_FACTION int `rank` (writer `FUN_1406b37b0`, reader `FUN_14003c2ea` / `FUN_1406b4dc0`; key string at 0x141700eb8), present on
+  every non-player faction (102 per save in two saves).
+- Read by DC_FACTION_RANK (10) and raised by DA_INCREASE_FACTION_RANK (35) of the **speaker's** faction ([dialogue](dialogue.md#effects)).
+- **Verified** (probe of the merged data): only the Shinobi Thieves use it. Joining (`*You clasp hands* Welcome /BROTHER/...`) pays 10,000
+  (DA 8), raises the rank to at most 1 (DA 35 val0 1) and relations +100 (DA 4); rank 0 lines turn the player away ("Talk to the boss",
+  "I don't know you"), rank 1 lines open the shop and smuggling talk, and rank > 0 the free plastic surgeon.
+- The FACTION loader (`FUN_1407fe270`) reads strings `rank0`, `rank1`, ... into a list (Faction +0x18; rank titles, **Unknown** use); no
+  base FACTION has any. Ints `num ranks` / `num negative ranks` (1 on many factions) are not read there (**Unknown**).
+- Meitou: `FactionRelations.Rank` / `RaiseRank`, loaded from and written to `rank`.
+
 ### 3.3 Thresholds (**Verified**: -30 and 50 appear in the predicate functions, in the threshold-message function `FUN_1406b28f0` and in the declare-war gate `FUN_1406b3000`; re-read independently)
 
 | Predicate | Rule | Where |

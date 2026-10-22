@@ -130,7 +130,12 @@ public static class MachineSave
                 else storage.Add(item);
             }
             if (m.Storage is { } grid && storage.Count > 0)
-                foreach (var item in SavedKit.ToInventory(storage, factory).Items) grid.Items.Add(item);
+                foreach (var item in SavedKit.ToInventory(storage, factory).Items)
+                {
+                    // A grid that is now smaller (a storage sized from its one item) gets an item that no longer fits at the next free cell, as the original's loader does.
+                    bool fits = item.X >= 0 && item.Y >= 0 && item.X + item.Width <= grid.Width && item.Y + item.Height <= grid.Height && grid.IsFree(item.Section, item.X, item.Y, item.Width, item.Height);
+                    if (fits || grid.Add(item) is false && item.Quantity > 0) grid.Items.Add(item);
+                }
         }
         world.Machines.Touch();
     }

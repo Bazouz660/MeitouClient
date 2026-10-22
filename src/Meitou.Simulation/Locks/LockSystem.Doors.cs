@@ -153,6 +153,7 @@ public sealed partial class LockSystem
     {
         SyncPlayerBuildings(world);
         world.Fixtures.StepDoors(world.TickSeconds);
+        HoldAtLeaves(world);
         DoorWalkers(world);
         if (world.Tick % WalkerEveryTicks == 0) OpenForWalkers(world);
     }
@@ -202,7 +203,7 @@ public sealed partial class LockSystem
                 var table = s.World.Characters;
                 ref var n = ref table.Next[slot];
                 if (!n.Alive || table.Cold(slot) is not { } c || c.IsImprisoned) return;
-                if (MathF.Abs(n.Position.Y - s.Spot.Centre.Y) > DoorHeight) return;
+                if (MathF.Abs(n.Position.Y - s.Spot.Foot) > DoorHeight) return;
                 if (s.Watch)
                 {
                     // Anyone in the doorway (down or standing) or walking through it keeps it open.
@@ -228,6 +229,48 @@ public sealed partial class LockSystem
             // A door that wants its lock is left open: closing it would lock it, and a locked gate shuts its building for every path.
             else if (watch && DoorsCloseBehind && !f.WantsLock && f.Motion == DoorMotion.Open && (world.Tick - f.LastPass) * world.TickSeconds >= AutoCloseSeconds)
                 FixtureRegistry.CloseDoor(f);
+        }
+    }
+
+    /// <summary>The open amount from which a door lets walkers through (the original's navmesh treats it as open from 0.6, docs/game/locks.md "Navigation").</summary>
+    public const float PassableOpen = 0.6f;
+
+    struct LeafScan
+    {
+        public World World;
+        public DoorSpot Spot;
+    }
+
+    /// <summary>
+    /// A door less than <see cref="PassableOpen"/> open is solid: a character that moved this tick from one side of its leaf into or through it, within its width, is put back
+    /// on its own side at its footprint radius, so a walker waits while the door it opened slides open (a gate takes seconds) instead of passing through the closed leaf.
+    /// Engine stand-in for the original's door faces, which no path crosses before 0.6. Serial phases only.
+    /// </summary>
+    static void HoldAtLeaves(World world)
+    {
+        var fixtures = world.Fixtures;
+        foreach (var f in fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Door || f.DoorBroken || f.OpenAmount >= PassableOpen || fixtures.DoorSpotOf(f) is not { } spot) continue;
+            var scan = new LeafScan { World = world, Spot = spot };
+            world.Grid.Query(spot.Centre.X, spot.Centre.Z, spot.HalfWidth + DoorDepth, ref scan, static (int slot, ref LeafScan s) =>
+            {
+                var table = s.World.Characters;
+                ref var n = ref table.Next[slot];
+                if (!n.Alive || table.Cold(slot) is not { } c || !c.CarriedBy.IsNone || MathF.Abs(n.Position.Y - s.Spot.Foot) > DoorHeight) return;
+                var c2 = new Vector2(s.Spot.Centre.X, s.Spot.Centre.Z);
+                var normal = new Vector2(s.Spot.Normal.X, s.Spot.Normal.Z);
+                var was = new Vector2(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
+                var now = new Vector2(n.Position.X, n.Position.Z);
+                float before = Vector2.Dot(was - c2, normal), after = Vector2.Dot(now - c2, normal);
+                float r = c.FootprintRadius > 0 ? c.FootprintRadius : 4;
+                // Only one coming from a side; one already in the leaf (a door closed on it) is let out.
+                if (MathF.Abs(before) < r * 0.5f || (after > 0) == (before > 0) && MathF.Abs(after) >= r) return;
+                var lateral = now - c2 - normal * after;
+                if (lateral.Length() > s.Spot.HalfWidth) return;
+                var back = normal * ((before > 0 ? r : -r) - after);
+                n.Position += new Vector3(back.X, 0, back.Y);
+            });
         }
     }
 

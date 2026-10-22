@@ -173,6 +173,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
             var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root), biomes: biomes, buildings: buildings, roads: levels?.Roads());
+            if (nav is not null) nav.Walkability.Roads = data.Roads;   // one network for both: on-screen long routes take the roads as the off-screen squads do
             // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
             if (levels is not null)
             {
@@ -180,7 +181,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                 Meitou.Data.World.FoliageLayoutCache? layoutCache = null;
                 try { layoutCache = new Meitou.Data.World.FoliageLayoutCache(install, foliageCatalog, Meitou.Data.World.FoliageWorld.ReadTowns(gameDb, levels)); }
                 catch (IOException e) { Console.Error.WriteLine($"resource rocks without the layout cache: {e.Message}"); }
-                data.ResourceNodes = new Meitou.Data.Gameplay.Construction.FoliageResourceNodes(new Meitou.Data.World.FoliageWorld(install, gameDb, levels, foliageCatalog, cache: layoutCache), gameDb);
+                data.ResourceNodes = new Meitou.Data.Gameplay.Construction.FoliageResourceNodes(new Meitou.Data.World.FoliageWorld(install, gameDb, levels, foliageCatalog, cache: layoutCache), gameDb, name => assets.Find(name));
             }
             // One set of skeleton rigs for the ragdolls and the renderer, so a ragdoll starts from the drawn pose.
             characterRigs = CharacterRenderer.CreateRigs(gameDb, assets);
@@ -291,7 +292,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (!IsSandbox && crowd > 0 && population is not null) SpawnCrowd(target, crowd);
         LoadingStep("characters");
         if (scene.Database is { } characterDb && !g.NoPopulation && gpu.Characters is null)
-            gpu.Characters = new CharacterRenderer(context, install, characterDb, assets, characterRigs) { Source = FillDrawList, Guard = gpu.Guard };
+            gpu.Characters = new CharacterRenderer(context, install, characterDb, assets, characterRigs) { Source = FillDrawList, Guard = gpu.Guard, GeneratedLod = o.CharacterLod };
         var rig = session.Camera;
         rig.Place(new Vector2(target.X, target.Z), (o.Yaw ?? 30) * MathF.PI / 180,
             (o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180, o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance);
@@ -369,6 +370,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (TitleVisible) { DrawTitleWorld(width, height); return; }
         if (player.EditorOpen) { DrawEditorStage(width, height); return; }
         if (gpu.Characters is { StageRequest: not null } staged) staged.StageRequest = null;
+        ClearEditorStage();
         double seconds = animClock ? animSeconds : realTime.Elapsed.TotalSeconds;
         if (gpu.Foliage is { } foliage && o.Screenshot is null) foliage.SwaySeconds = seconds;
         // The heat haze's gameTime: game hours since the start (it stops while paused, as in the game).

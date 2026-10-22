@@ -8,10 +8,11 @@ using Meitou.Rendering.Ui;
 namespace Meitou.Game;
 
 /// <summary>
-/// The loading screen drawn while the game starts and between scenes (docs/engine.md "Loading"): the original's <c>Kenshi_LoadingScreen</c> (one of its
-/// <c>loading_screen*.dds</c> pictures full screen, its panel made small at the bottom right with a tip from <c>data/tips.txt</c>), and Meitou's panel at the bottom left: LOADING..., a spinner and an
-/// approximate progress bar under it (the original has neither: engine choice). The bar eases towards the end of the running step by the time the step usually
-/// takes, so it moves while a step runs; it never goes back.
+/// The loading screen drawn while the game starts and between scenes (docs/engine.md "Loading", docs/game/ui-screens.md "Loading screen"). <see cref="Faithful"/>:
+/// the original's <c>Kenshi_LoadingScreen</c> as it shows it (a picture of the <c>Kenshi_LoadingScreen</c> image set, the layout's own panel with "Loading" and its
+/// dots and a tip, hidden at once when done). Meitou: one of every <c>loading_screen*.dds</c> picture, the layout's panel made small at the bottom right with the tip,
+/// and Meitou's panel at the bottom left: LOADING..., a spinner and an approximate progress bar under it (engine choice); both slide out when done. The bar eases
+/// towards the end of the running step by the time the step usually takes, so it moves while a step runs; it never goes back.
 /// </summary>
 sealed class LoadingScreen : IDisposable
 {
@@ -20,8 +21,11 @@ sealed class LoadingScreen : IDisposable
     readonly UiPainter? painter;
     readonly MyGuiResources? resources;
     readonly MyGuiLayout? layout;
-    readonly string? picture;
-    readonly string tip;
+    readonly Random random = new();
+    readonly string[] tips, pictures, groups;
+    string? picture, group;
+    string tip = "";
+    double shownAt;
     readonly Stopwatch clock = Stopwatch.StartNew();
     string label = "";
     double from, to, expected = 1, stepStart;
@@ -33,46 +37,88 @@ sealed class LoadingScreen : IDisposable
     float ExitProgress => exitStart is { } start ? (float)Math.Clamp((clock.Elapsed.TotalSeconds - start) / ExitSeconds, 0, 1) : 0;
     public bool Exiting => exitStart is not null && ExitProgress < 1;
 
-    /// <summary>Reveal the ready scene while the panels slide out. A fast sky load that never showed panels has nothing to dismiss.</summary>
+    /// <summary>The original's background-loading bar, drawn over the Faithful screen (the host steps it).</summary>
+    public ResourceLoadBar? LoadBar { get; set; }
+
+    /// <summary>The original's screen (the Faithful UI mode); set by the host before drawing.</summary>
+    public bool Faithful { get; set; }
+
+    /// <summary>Reveal the ready scene while the panels slide out (Faithful: hidden at once, as the original's window). A fast sky load that never showed panels has nothing to dismiss.</summary>
     public void Finish()
     {
-        if (drawn) exitStart ??= clock.Elapsed.TotalSeconds;
+        if (drawn) exitStart ??= clock.Elapsed.TotalSeconds - (Faithful ? ExitSeconds : 0);
     }
 
-    LoadingScreen(DebugOverlay overlay, UiPainter? painter, MyGuiResources? resources, MyGuiLayout? layout, string? picture, string tip)
+    LoadingScreen(DebugOverlay overlay, UiPainter? painter, MyGuiResources? resources, MyGuiLayout? layout, string[] tips, string[] pictures, string[] groups)
     {
-        (this.overlay, this.painter, this.resources, this.layout, this.picture, this.tip) = (overlay, painter, resources, layout, picture, tip);
+        (this.overlay, this.painter, this.resources, this.layout, this.tips, this.pictures, this.groups) = (overlay, painter, resources, layout, tips, pictures, groups);
+        Pick();
+    }
+
+    /// <summary>
+    /// What a showing of the screen draws, picked anew each time as the original's window does when shown (<c>FUN_140916ca0</c>): a tip, a picture (Meitou) and a
+    /// group of the image set (Faithful: one of its groups by position, shown by name, so <c>MyGuiImages</c> takes the first group of that name, as MyGUI does).
+    /// </summary>
+    void Pick()
+    {
+        tip = tips.Length > 0 ? Meitou.Localisation.Loc.Tr(tips[random.Next(tips.Length)]) : "";
+        picture = pictures.Length > 0 ? pictures[random.Next(pictures.Length)] : null;
+        group = groups.Length > 0 ? groups[random.Next(groups.Length)] : null;
+        shownAt = clock.Elapsed.TotalSeconds;
     }
 
     /// <summary>The screen with the original's layout, picture and tips when they are found (else the spinner and bar on black).</summary>
-    public static LoadingScreen Create(DebugOverlay overlay, Func<string, string?> resolve, string? dataDirectory)
+    public static LoadingScreen Create(DebugOverlay overlay, Func<string, string?> resolve, string? dataDirectory, bool faithful)
     {
-        var random = new Random();
-        string tip = "";
         // tips.txt through the resource lookup: the active language's own copy (locale/<code>/tips.txt) replaces data/tips.txt; a tip that is also a
-        // message of the catalog (main.pot lists the tips) is translated.
+        // message of the catalog (main.pot lists the tips) is translated. The original keeps every non-empty line (FUN_14091a280; a written "\n" is a line break,
+        // which the painter honours).
+        string[] tips = [];
         string? tipsFile = resolve("tips.txt") ?? (dataDirectory is null ? null : Path.Combine(dataDirectory, "tips.txt"));
-        if (tipsFile is not null && File.Exists(tipsFile))
-        {
-            var tips = File.ReadAllLines(tipsFile).Where(l => l.Trim().Length > 0).ToArray();
-            if (tips.Length > 0) tip = Meitou.Localisation.Loc.Tr(tips[random.Next(tips.Length)].Trim());
-        }
+        if (tipsFile is not null && File.Exists(tipsFile)) tips = ReadTips(tipsFile);
         try
         {
-            var resources = MyGuiResources.Load("kenshi_init.xml", resolve);
+            var resources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
             var layout = resolve("Kenshi_LoadingScreen.layout") is { } file ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(file), resources) : null;
-            // The pictures the original ships (loading_screen0..10, some numbers missing).
+            // Meitou: the pictures the original ships (loading_screen0..10, some numbers missing). Faithful: the image set's groups in file order, repeats kept.
             var pictures = Enumerable.Range(0, 16).Select(i => $"loading_screen{i}.dds").Where(n => resolve(n) is not null).ToArray();
+            string[] groups = resources.Resources.TryGetValue(ImageSet, out var set) ? [.. set.Elements("Group").Select(g => (string?)g.Attribute("name")).OfType<string>()] : [];
             var painter = new UiPainter(overlay, resources, resolve);
             var stamp = resolve("MailartRubberstamp-Regular.ttf") is { } stampFile ? DebugOverlay.FromFont(overlay.Gpu, stampFile, 64) : null;
-            return new(overlay, painter, resources, layout, pictures.Length > 0 ? pictures[random.Next(pictures.Length)] : null, tip) { stamp = stamp };
+            return new(overlay, painter, resources, layout, tips, pictures, groups) { stamp = stamp, Faithful = faithful };
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Xml.XmlException)
         {
             Console.Error.WriteLine($"loading   the original loading screen did not load ({e.Message}); spinner only");
-            return new(overlay, null, null, null, null, tip);
+            return new(overlay, null, null, null, tips, [], []) { Faithful = faithful };
         }
     }
+
+    const string ImageSet = "Kenshi_LoadingScreen";
+
+    /// <summary>
+    /// The non-empty lines of a tips file: by its byte order mark when it has one, else UTF-8 when it is valid UTF-8, else Windows-1252 (the French, German and
+    /// Spanish files are; engine choice: how the original's MyGUI strings show those bytes is Unknown).
+    /// </summary>
+    static string[] ReadTips(string file)
+    {
+        byte[] bytes = File.ReadAllBytes(file);
+        string text;
+        try
+        {
+            using var reader = new StreamReader(new MemoryStream(bytes), new System.Text.UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true);
+            text = reader.ReadToEnd();
+        }
+        catch (System.Text.DecoderFallbackException) { text = Windows1252.Value.GetString(bytes); }
+        return [.. text.Split(['\r', '\n']).Select(l => l.Trim()).Where(l => l.Length > 0)];
+    }
+
+    /// <summary>Windows-1252, its code page provider registered once.</summary>
+    static readonly Lazy<System.Text.Encoding> Windows1252 = new(() =>
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        return System.Text.Encoding.GetEncoding(1252);
+    });
 
     /// <summary>A step starts: its name, the bar's share it covers (<paramref name="start"/> to <paramref name="end"/>, 0..1) and about how long it takes.</summary>
     public void Step(string name, double start, double end, double seconds)
@@ -95,14 +141,21 @@ sealed class LoadingScreen : IDisposable
         }
     }
 
-    /// <summary>Starts the bar again (a new load between scenes).</summary>
-    public void Restart() { shown = 0; from = to = 0; exitStart = null; drawn = false; }
+    /// <summary>Starts the bar again (a new load between scenes), with a new tip and picture.</summary>
+    public void Restart() { shown = 0; from = to = 0; exitStart = null; drawn = false; Pick(); }
 
     public void Draw(int width, int height, bool background = true)
     {
         float t = ExitProgress;
         if (t >= 1) return;
         drawn = true;
+        if (Faithful && painter is not null && layout is not null && resources is not null)
+        {
+            // Hidden at once when done, also when the mode was switched to Faithful during the Meitou slide-out.
+            if (exitStart is null) DrawFaithful(width, height, background);
+            return;
+        }
+        if (painter is not null) painter.Mode = UiMode.Meitou;
         float departure = t * t * (3 - 2 * t), opacity = 1 - departure;
         if (background)
         {
@@ -171,6 +224,36 @@ sealed class LoadingScreen : IDisposable
         overlay.Rect(x0, barTop, x1, barTop + barHeight, new Vector4(0.08f, 0.07f, 0.06f, 1));
         overlay.Rect(x0, barTop, x0 + (x1 - x0) * progress, barTop + barHeight, new Vector4(0.78f, 0.66f, 0.42f, 1));
         overlay.Flush(width, height);
+    }
+
+    /// <summary>
+    /// The original's window (<c>LoadingWindow</c>, <c>FUN_14091a280</c>, docs/game/ui-screens.md "Loading screen"): the layout as it is, the picture in
+    /// <c>BackgroundImage</c>, the tip in <c>MessageText</c>, and in <c>LoadingText</c> the catalog's "Loading" upper-cased (its font, <c>Kenshi_UI_Messages</c>, has only
+    /// A to Z and the dot) with one more dot each second, back to none after three, left-aligned where "LOADING.." would be centred in the panel.
+    /// </summary>
+    void DrawFaithful(int width, int height, bool background)
+    {
+        painter!.Mode = UiMode.Faithful;
+        var b = new UiBindings();
+        if (!background) b.Hidden.Add("BackgroundImage");
+        if (group is not null)
+            b.Properties["BackgroundImage"] = new Dictionary<string, string> { ["ImageResource"] = ImageSet, ["ImageGroup"] = group, ["ImageName"] = "Background" };
+        string word = Meitou.Localisation.Loc.Tr("Loading").ToUpperInvariant();
+        int dots = (int)Math.Floor(clock.Elapsed.TotalSeconds - shownAt) % 4;
+        b.Text["LoadingText"] = word + new string('.', dots);
+        b.Text["MessageText"] = tip;
+        var controls = MyGuiPresentation.Arrange(layout!, width, height, b, resources!.Layers).ToList();
+        int text = controls.FindIndex(c => c.Name == "LoadingText"), panel = controls.FindIndex(c => c.Name == "LoadingPanel");
+        if (text >= 0 && panel >= 0)
+        {
+            var c = controls[text];
+            float measured = painter.MeasureText(c.Properties.GetValueOrDefault("FontName") ?? "", word + "..", height, 0, 0).Width;
+            var box = controls[panel].Bounds;
+            var properties = new Dictionary<string, string>(c.Properties) { ["TextAlign"] = "Left VCenter" };
+            controls[text] = c with { Bounds = c.Bounds with { X = box.X + (box.Width - measured) * 0.5f }, Properties = properties };
+        }
+        if (LoadBar is { Visible: true } bar) controls.AddRange(bar.Controls(resources, width, height));
+        painter.Draw(controls, width, height, new Vector2(-1, -1), null);
     }
 
     public void Dispose() { painter?.Dispose(); stamp?.Dispose(); }

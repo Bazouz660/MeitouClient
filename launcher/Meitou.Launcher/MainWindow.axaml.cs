@@ -50,6 +50,8 @@ public sealed partial class MainWindow : Window
         ModListBox.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
         ArgumentsBox.Text = config.LaunchArguments;
         NightlyBox.IsChecked = config.IncludePrereleases;
+        AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
+        AutoUpdateBox.IsEnabled = updater.IsInstalled;
         DataFolderText.Text = $"The launcher's and the game's settings: {LauncherConfig.DataDirectory}";
         InstallPathBox.Text = LauncherConfig.InstallDirectory;
         LauncherVersionText.Text = $"v{LauncherVersion} · {Releases.Rid}";
@@ -60,7 +62,7 @@ public sealed partial class MainWindow : Window
         UseKenshi(found);
         if (!config.FoldersConfirmed) ShowSetup();
         Closing += (_, _) => { if (graphicsSave?.IsEnabled == true) SaveGame(); };
-        Opened += async (_, _) => await Task.WhenAll(LoadNewsAsync(), RefreshReleasesAsync());
+        Opened += async (_, _) => await Task.WhenAll(LoadNewsAsync(), RefreshReleasesAsync(updateLauncher: true));
     }
 
     void Status(string text) => SetText(StatusText, text);
@@ -160,7 +162,7 @@ public sealed partial class MainWindow : Window
         if (NightlyBox.IsChecked == true && !config.IncludePrereleases)
         {
             bool sure = await AskAsync("Nightly builds",
-                "Nightly builds are made every day from the newest code and are not tested. They may be unstable, crash, and corrupt your save files: "
+                "Nightly builds are made twice a day from the newest code and are not tested. They may be unstable, crash, and corrupt your save files: "
                 + "back up your saves before playing one.\n\nContinue with nightly builds?", "Yes", "No");
             if (!sure) { NightlyBox.IsChecked = false; return; }
         }
@@ -547,7 +549,8 @@ public sealed partial class MainWindow : Window
         SelectVersionButton.IsEnabled = installed && row?.Played != true;
     }
 
-    async Task RefreshReleasesAsync()
+    // At startup (updateLauncher) an installed launcher also applies its own update and restarts into it, unless turned off in Settings.
+    async Task RefreshReleasesAsync(bool updateLauncher = false)
     {
         Status("Checking GitHub for releases...");
         var (list, problem) = await releases.FetchAsync();
@@ -555,6 +558,7 @@ public sealed partial class MainWindow : Window
         ShowReleases();
         Status(problem ?? "");
         await ShowLauncherUpdateAsync();   // after: its "Launcher … is available" line must not be cleared
+        if (updateLauncher && config.AutoUpdateLauncher && updater.IsInstalled && LauncherUpdateButton.IsVisible) await UpdateLauncherAsync();
     }
 
     void ShowReleases()
@@ -756,9 +760,20 @@ public sealed partial class MainWindow : Window
         if (version is not null) Status($"Launcher {version} is available.");
     }
 
+    void AutoUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        config.AutoUpdateLauncher = AutoUpdateBox.IsChecked == true;
+        config.Save();
+    }
+
     async void LauncherUpdate_Click(object? sender, RoutedEventArgs e)
     {
         if (LauncherUpdateButton.Tag is string url) { await this.Launcher.LaunchUriAsync(new Uri(url)); return; }
+        await UpdateLauncherAsync();
+    }
+
+    async Task UpdateLauncherAsync()
+    {
         LauncherUpdateButton.IsEnabled = TitleLauncherUpdateButton.IsEnabled = false;
         try
         {
@@ -824,6 +839,8 @@ public sealed partial class MainWindow : Window
         if (install is null) { Status("Set the Kenshi folder first (Settings)."); return; }
         if (PlayVersion is not { } version) { Status("Install a version first (Versions)."); return; }
         if (Releases.FindGame(Releases.VersionDirectory(version)) is not { } exe) { Status($"Meitou {version} is not installed any more."); return; }
+        // A second game would share meitou.user.json and the mod list with the first; whichever closes last overwrites the other's.
+        if (running is { HasExited: false }) { Status("Meitou is already running: close it before starting it again."); return; }
         if (!SaveMods()) return;
         if (graphicsSave?.IsEnabled == true) SaveGame();
         var start = new ProcessStartInfo(exe)
@@ -832,16 +849,46 @@ public sealed partial class MainWindow : Window
             UseShellExecute = false,
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
+        if (OperatingSystem.IsMacOS() && !AddMacVulkanEnvironment(start.Environment))
+        {
+            Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
+            return;
+        }
         foreach (var arg in SplitArguments(config.LaunchArguments)) start.ArgumentList.Add(arg);
         try
         {
-            running = Process.Start(start);
+            var game = Process.Start(start);
+            running = game;
             Status($"Meitou {version} started.");
+            if (game is null) return;
+            // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
+            var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");
+            game.EnableRaisingEvents = true;
+            game.Exited += (_, _) =>
+            {
+                int code = game.ExitCode;
+                if (code != 0) Dispatcher.UIThread.Post(() => Status($"Meitou {version} stopped with an error (exit code {code}); its log is {log}"));
+            };
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
         {
             Status($"Could not start Meitou {version}: {ex.Message}");
         }
+    }
+
+    // dlopen's default path lacks Homebrew's lib dir, and a launcher started from Finder has no DYLD_LIBRARY_PATH, so the game
+    // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Values already set win.
+    // False when no folder on the resulting path holds the loader.
+    static bool AddMacVulkanEnvironment(IDictionary<string, string?> environment)
+    {
+        environment.TryGetValue("DYLD_LIBRARY_PATH", out var existing);
+        var dirs = (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries).ToList();
+        foreach (var dir in new[] { "/opt/homebrew/lib", "/usr/local/lib" })
+            if (!dirs.Contains(dir) && File.Exists(Path.Combine(dir, "libvulkan.1.dylib"))) dirs.Add(dir);
+        if (dirs.Count > 0) environment["DYLD_LIBRARY_PATH"] = string.Join(':', dirs);
+        if (!environment.TryGetValue("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", out var mvk) || string.IsNullOrEmpty(mvk))
+            environment["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1";
+        return dirs.Any(d => File.Exists(Path.Combine(d, "libvulkan.1.dylib")));
     }
 
     // Space-separated, with double quotes around arguments that contain spaces.

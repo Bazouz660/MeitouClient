@@ -8,8 +8,9 @@ namespace Meitou.Data.Characters;
 /// Rolls a character from a CHARACTER (or RACE) record the way Kenshi spawns an NPC (docs/characters.md, "Generating a
 /// character"): race and gender, then for characters without a body file a random head, hair, beard, hair colour, skin
 /// tone, sliders and face poses from the race's editor limits, then backpack, clothing (with quality and material) and
-/// weapons (with manufacturer and model). Deterministic for a seed; it follows the game's rules, not its random
-/// sequence.
+/// weapons (with manufacturer and model). Deterministic for a seed: the original's generator (<see cref="MsvcRandom"/>) seeded from it, its draws in the
+/// original's order (docs/characters.md "Original random sequence"). The step functions (<see cref="RollHead"/>, <see cref="RollFace"/>, <see cref="RollHair"/>,
+/// <see cref="RollBody"/>, <see cref="RollFacePoses"/>) are also the character editor's randomisers.
 /// </summary>
 public static class CharacterGenerator
 {
@@ -32,7 +33,7 @@ public static class CharacterGenerator
 
     public static Loadout Generate(GameDatabase db, string installRoot, GameRecord record, int seed, bool? female = null, GameRecord? faction = null)
     {
-        var rng = new GeneratorRandom(seed ^ Fnv1a(record.StringId)); // different records roll differently for one seed
+        var rng = MsvcRandom.FromSeed(seed ^ Fnv1a(record.StringId)); // different records roll differently for one seed
         var notes = new List<string>();
         GameRecord? character = record.Type == FcsRecordType.CHARACTER ? record : null;
 
@@ -73,22 +74,75 @@ public static class CharacterGenerator
 
     // ---- Appearance --------------------------------------------------------------------------------------------
 
-    static (AppearanceFile, int) RollAppearance(GameDatabase db, string installRoot, GameRecord? character, GameRecord? faction, GameRecord race, bool female, GeneratorRandom rng, List<string> notes)
+    /// <summary>
+    /// A generated NPC's look in the original's draw order (<c>FUN_140581770</c>): head, head again with the face sliders, beard, hair and hair colour; for a CHARACTER
+    /// the body sliders, colours and skin re-roll, then the morph index. The face poses come from the morph face's own sequence (<see cref="RollFacePoses"/>). A
+    /// RACE (the viewer) takes the body and morph steps too (engine choice: the original never generates from a bare race).
+    /// </summary>
+    static (AppearanceFile, int) RollAppearance(GameDatabase db, string installRoot, GameRecord? character, GameRecord? faction, GameRecord race, bool female, MsvcRandom rng, List<string> notes)
     {
         string g = female ? "female" : "male";
         var a = new FcsRecord { RecordType = FcsRecordType.CHARACTER_APPEARANCE, Name = "generated", StringId = "generated" };
         a.Bools["sex female"] = female;
         a.References["race"] = [new FcsReference(race.StringId, 0, 0, 0)];
 
-        // Head: the race's heads of that gender that have a texture map; val0 is the weight.
-        var head = PickCumulative(rng, race.GetReferences($"heads {g}")
-            .Select(r => (Item: db.Find(r.TargetStringId), Weight: (float)r.Values.Value0))
-            .Where(h => h.Item is not null && h.Item.GetPath("texture map").Length > 0));
-        if (head is not null) a.Strings["head"] = head.StringId;
+        AppearanceLimits? limits = null;
+        if (race.GetPath("editor limits") is { Length: > 0 } limitsPath)
+        {
+            try { limits = AppearanceLimits.Read(Resolve(installRoot, limitsPath), female, GameConstants.FromDatabase(db).AppearanceRandomDeviation); }
+            catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { notes.Add($"editor limits {limitsPath}: {e.Message}"); }
+            if (limits is null) notes.Add($"editor limits {limitsPath}: no {g} config");
+        }
+        else notes.Add($"race '{race.Name}' has no editor limits: no random sliders");
 
-        // Hair and beard: the race's "hairs" by attach slot, weight val0 clamped to 1–100, restricted to the faction's
-        // "hairstyles" when that leaves anything. Women get no beard.
         faction ??= character?.GetReferences("faction").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(f => f is not null);
+        RollHead(db, race, a, rng);
+        RollFace(db, race, limits, a, rng);
+        RollHair(db, race, faction, a, rng);
+        RollBody(limits, a, rng, skinReroll: true);
+
+        // Face poses: one of the race's "morph num" faces per gender (morph index = (int)(unit × morph num)), each a fixed roll of the pose sliders: the original
+        // seeds the global generator with the FNV-1a of the morph face's mesh name when it makes that mesh (FUN_14007c070); the name's form is Unknown, so Meitou's
+        // stand-in is race/gender/index.
+        int morph = -1;
+        if (limits is not null)
+        {
+            int count = Math.Max(race.GetInt("morph num", 5), 1);
+            morph = Math.Min((int)(rng.Unit() * count), count - 1);
+            RollFacePoses(limits, a, new MsvcRandom((uint)Fnv1a($"{race.StringId}/{g}/{morph}")));
+        }
+        a.Strings["idle stance"] = "idle_stand_normal";
+        return (new AppearanceFile { Record = a }, morph);
+    }
+
+    /// <summary>The head (<c>FUN_14007c880</c>): one cumulative pick among the race's heads of the look's gender that have a texture map; none: no draw.</summary>
+    public static void RollHead(GameDatabase db, GameRecord race, FcsRecord look, MsvcRandom rng)
+    {
+        if (HeadOptions(db, race, look) is { } heads && PickCumulative(rng, heads) is { } head) look.Strings["head"] = head.StringId;
+    }
+
+    /// <summary>The race's heads of the look's gender that have a texture map, with their weights (val0), in list order.</summary>
+    public static List<(GameRecord? Item, float Weight)> HeadOptions(GameDatabase db, GameRecord race, FcsRecord look) =>
+        [.. race.GetReferences($"heads {(IsFemale(look) ? "female" : "male")}")
+            .Select(r => (Item: db.Find(r.TargetStringId), Weight: (float)r.Values.Value0))
+            .Where(h => h.Item is not null && h.Item.GetPath("texture map").Length > 0)];
+
+    /// <summary>The face (<c>FUN_14007b310</c>): the head again, then the Face sliders (not the poses, not colours) as <see cref="Rolls"/> rolls them.</summary>
+    public static void RollFace(GameDatabase db, GameRecord race, AppearanceLimits? limits, FcsRecord look, MsvcRandom rng)
+    {
+        RollHead(db, race, look, rng);
+        if (limits is null) return;
+        foreach (var (range, v) in Rolls(limits.Ranges.Where(r => r.Category == AppearanceCategory.Face && r.Target is null).ToList(), r => (r.Group, r.Mid, r.Variation), rng))
+            look.Floats[range.Name] = v;
+    }
+
+    /// <summary>
+    /// The hair (<c>FUN_14007adc0</c>): the beard (men; women get none, no draw), the hair, each a cumulative pick among the race's <c>hairs</c> of that attach slot
+    /// (weight val0 clamped to 1–100, only the <paramref name="faction"/>'s <c>hairstyles</c> when that leaves any), then the hair colour: a relative pick among the
+    /// race's <c>hair colors</c> COLOR_DATA (val0, 0 counting as 100) stored as HSB sliders × 100, without one brightness 100 and saturation 0.
+    /// </summary>
+    public static void RollHair(GameDatabase db, GameRecord race, GameRecord? faction, FcsRecord look, MsvcRandom rng)
+    {
         var allowed = faction?.GetReferences("hairstyles").Select(r => r.TargetStringId).ToHashSet(StringComparer.Ordinal);
         string? Hair(AttachSlot slot)
         {
@@ -98,85 +152,96 @@ public static class CharacterGenerator
                 options = options.Select(o => (o.Item, allowed.Contains(o.Item!.StringId) ? o.Weight : 0f)).ToList();
             return PickCumulative(rng, options)?.StringId;
         }
-        a.Strings["beard"] = female ? "" : Hair(AttachSlot.Beard) ?? "";
-        if (Hair(AttachSlot.Hair) is { } hair) a.Strings["hair style"] = hair;
+        look.Strings["beard"] = IsFemale(look) ? "" : Hair(AttachSlot.Beard) ?? "";
+        look.Strings["hair style"] = Hair(AttachSlot.Hair) ?? "";
 
-        // Hair colour: a weighted "hair colors" COLOR_DATA (val0, 0 counts as 100) stored as HSB sliders × 100;
-        // without one, brightness 100 and saturation 0.
         var colour = PickRelative(rng, race.GetReferences("hair colors")
             .Select(r => (db.Find(r.TargetStringId), r.Values.Value0 == 0 ? 100f : r.Values.Value0)));
         if (colour is null)
         {
-            a.Floats["Hair Brightness"] = 100;
-            a.Floats["Hair Saturation"] = 0;
+            look.Floats["Hair Brightness"] = 100;
+            look.Floats["Hair Saturation"] = 0;
         }
         else
         {
             var (h, s, v) = ToHsb(CharacterAppearance.Rgb(colour.GetInt("color 1")));
-            a.Floats["Hair Colour"] = h * 100;
-            a.Floats["Hair Saturation"] = s * 100;
-            a.Floats["Hair Brightness"] = v * 100;
+            look.Floats["Hair Colour"] = h * 100;
+            look.Floats["Hair Saturation"] = s * 100;
+            look.Floats["Hair Brightness"] = v * 100;
         }
+    }
 
-        // Sliders, colours and face poses from the race's editor limits.
-        int morph = -1;
-        AppearanceLimits? limits = null;
-        if (race.GetPath("editor limits") is { Length: > 0 } limitsPath)
-        {
-            try { limits = AppearanceLimits.Read(Resolve(installRoot, limitsPath), female, GameConstants.FromDatabase(db).AppearanceRandomDeviation); }
-            catch (Exception e) when (e is IOException or System.Xml.XmlException or UnauthorizedAccessException) { notes.Add($"editor limits {limitsPath}: {e.Message}"); }
-            if (limits is null) notes.Add($"editor limits {limitsPath}: no {g} config");
-        }
-        else notes.Add($"race '{race.Name}' has no editor limits: no random sliders");
+    /// <summary>
+    /// The body (<c>FUN_14007b940</c>): the Body sliders, then the Body colours, each as <see cref="Rolls"/> rolls them (each list its own group draws); with
+    /// <paramref name="skinReroll"/> (a generated NPC, not the editor) the skin tone again, uniform over its whole range; last <c>Posture</c> back to the appearance
+    /// template's 20 (docs/characters.md "Random appearance": its draw is still made).
+    /// </summary>
+    public static void RollBody(AppearanceLimits? limits, FcsRecord look, MsvcRandom rng, bool skinReroll)
+    {
         if (limits is not null)
         {
-            foreach (var category in new[] { AppearanceCategory.Face, AppearanceCategory.Body })
-            {
-                var groups = new Dictionary<int, float>();
-                foreach (var range in limits.Ranges.Where(r => r.Category == category && r.Target is null))
-                    a.Floats[range.Name] = Roll(rng, groups, range.Group, range.Mid, range.Variation);
-                foreach (var range in limits.Colours.Where(r => r.Category == category))
-                    a.Vector3s[range.Name] = range.ColourAt(Roll(rng, groups, range.Group, range.Mid, range.Variation));
-            }
-            // NPCs: the skin tone is uniform over its whole range instead.
-            if (limits.Colours.FirstOrDefault(c => c.Name == "Skin Tone") is { } skin)
-                a.Vector3s["Skin Tone"] = skin.ColourAt(rng.Int(skin.Min, skin.Max));
+            foreach (var (range, v) in Rolls(limits.Ranges.Where(r => r.Category == AppearanceCategory.Body && r.Target is null).ToList(), r => (r.Group, r.Mid, r.Variation), rng))
+                look.Floats[range.Name] = v;
+            var colours = limits.Colours.Where(c => c.Category == AppearanceCategory.Body).ToList();
+            foreach (var (c, v) in Rolls(colours, c => (c.Group, c.Mid, c.Variation), rng)) look.Vector3s[c.Name] = c.ColourAt(v);
+            // The original rolls Int(max(min, mid - w), min(max, mid + w)) with w = round(max - min): the whole range.
+            if (skinReroll && colours.FirstOrDefault(c => c.Name == "Skin Tone") is { } skin) look.Vector3s["Skin Tone"] = skin.ColourAt(rng.Int(skin.Min, skin.Max));
+        }
+        look.Floats["Posture"] = 20;
+    }
 
-            // Face poses: one of the race's "morph num" faces per gender, each a fixed roll of the pose sliders.
-            int count = Math.Max(race.GetInt("morph num", 5), 1);
-            morph = Math.Min((int)(rng.Unit() * count), count - 1);
-            var face = new GeneratorRandom(Fnv1a($"{race.StringId}/{(female ? "female" : "male")}/{morph}"));
-            var faceGroups = new Dictionary<int, float>();
-            foreach (var range in limits.Ranges.Where(r => r.Category == AppearanceCategory.Face && r.Target is not null))
+    /// <summary>
+    /// The face poses (<c>FUN_140070010</c>, the editor's <c>FUN_14007b7c0</c>): the Face pose sliders as <see cref="Rolls"/> rolls them, written as pose weights
+    /// (value / 100; a pair with an opposite: the positive side on the target, the negative on the opposite, the other 0).
+    /// </summary>
+    public static void RollFacePoses(AppearanceLimits? limits, FcsRecord look, MsvcRandom rng)
+    {
+        if (limits is null) return;
+        foreach (var (range, v) in Rolls(limits.Ranges.Where(r => r.Category == AppearanceCategory.Face && r.Target is not null).ToList(), r => (r.Group, r.Mid, r.Variation), rng))
+        {
+            if (range.TargetOpposite is { } opposite)
             {
-                int v = Roll(face, faceGroups, range.Group, range.Mid, range.Variation);
-                if (range.TargetOpposite is { } opposite)
-                {
-                    a.Floats[range.Target!] = v > 0 ? v * 0.01f : 0;
-                    a.Floats[opposite] = v < 0 ? v * -0.01f : 0;
-                }
-                else a.Floats[range.Target!] = v * 0.01f;
+                look.Floats[range.Target!] = v > 0 ? v * 0.01f : 0;
+                look.Floats[opposite] = v < 0 ? v * -0.01f : 0;
+            }
+            else look.Floats[range.Target!] = v * 0.01f;
+        }
+    }
+
+    /// <summary>
+    /// The original's rolls of a list of ranges (<c>FUN_14006fcf0</c>, <c>FUN_140070460</c>, <c>FUN_140070010</c>, <b>Verified</b> by decompilation): the ranges
+    /// without a <c>random_group</c> in list order, one draw each; then one draw per group, shared by its ranges, the groups in the order of the original's
+    /// <c>boost::unordered_map&lt;short, …&gt;</c> (<see cref="BoostHashOrder"/>). A value is round(variation × (2r − 1) + mid), not clamped.
+    /// </summary>
+    static List<(T Range, int Value)> Rolls<T>(List<T> ranges, Func<T, (int Group, int Mid, int Variation)> of, MsvcRandom rng)
+    {
+        var result = new List<(T, int)>();
+        var grouped = new Dictionary<int, List<T>>();
+        var firstSeen = new List<int>();
+        foreach (var range in ranges)
+        {
+            var (group, mid, variation) = of(range);
+            if (group < 0) result.Add((range, Round(variation * (rng.Unit() * 2 - 1) + mid)));
+            else if (grouped.TryGetValue(group, out var members)) members.Add(range);
+            else { grouped[group] = [range]; firstSeen.Add(group); }
+        }
+        foreach (int group in BoostHashOrder.Of(firstSeen.Select(g => (long)g)))
+        {
+            float r = rng.Unit();
+            foreach (var range in grouped[group])
+            {
+                var (_, mid, variation) = of(range);
+                result.Add((range, Round(variation * (r * 2 - 1) + mid)));
             }
         }
-        // Randomization restores the appearance template's posture (docs/characters.md, "Random appearance").
-        // Keep the rolls above: posture still consumes its random draw before the template value replaces it.
-        a.Floats["Posture"] = 20;
-        a.Strings["idle stance"] = "idle_stand_normal";
-        return (new AppearanceFile { Record = a }, morph);
+        return result;
     }
 
-    /// <summary>round(mid + variation × (2r − 1)), one r per random group (−1 = its own); not clamped to min/max.</summary>
-    static int Roll(GeneratorRandom rng, Dictionary<int, float> groups, int group, int mid, int variation)
-    {
-        float r;
-        if (group < 0) r = rng.Unit();
-        else if (!groups.TryGetValue(group, out r)) groups[group] = r = rng.Unit();
-        return Round(variation * (r * 2 - 1) + mid);
-    }
+    static bool IsFemale(FcsRecord look) => look.Bools.TryGetValue("sex female", out var f) && f;
 
     // ---- Equipment ---------------------------------------------------------------------------------------------
 
-    static void RollEquipment(GameDatabase db, GameRecord character, GameRecord race, GeneratorRandom rng, Loadout loadout)
+    static void RollEquipment(GameDatabase db, GameRecord character, GameRecord race, MsvcRandom rng, Loadout loadout)
     {
         // Backpack: entries with val0 > 0; val1 is an absolute chance (out of 100).
         var pack = PickAbsolute(rng, character.GetReferences("backpack").Where(r => r.Values.Value0 > 0)
@@ -239,7 +304,7 @@ public static class CharacterGenerator
     }
 
     /// <summary>Manufacturer from CHARACTER "weapon level" (val0 relative, 0 = 100; none listed: "Ancient"), model from its "weapon models" (val1).</summary>
-    static LoadoutWeapon? MakeWeapon(GameDatabase db, GameRecord character, GameRecord weapon, GeneratorRandom rng, Loadout loadout)
+    static LoadoutWeapon? MakeWeapon(GameDatabase db, GameRecord character, GameRecord weapon, MsvcRandom rng, Loadout loadout)
     {
         var levels = character.GetReferences("weapon level");
         var maker = levels.Count == 0 ? db.Find("917-gamedata.base")
@@ -272,7 +337,7 @@ public static class CharacterGenerator
     // ---- Weighted picks ----------------------------------------------------------------------------------------
 
     /// <summary>Relative weights: roll in [0, total) and take the first entry whose running sum exceeds it.</summary>
-    static T? PickRelative<T>(GeneratorRandom rng, IEnumerable<(T? Item, float Weight)> options) where T : class
+    static T? PickRelative<T>(MsvcRandom rng, IEnumerable<(T? Item, float Weight)> options) where T : class
     {
         var list = options.Where(o => o.Item is not null && o.Weight > 0).ToList();
         if (list.Count == 0) return null;
@@ -280,7 +345,7 @@ public static class CharacterGenerator
         return Running(list, rng.Range(0, list.Sum(o => o.Weight)));
     }
 
-    static GameReference? PickRelative(GeneratorRandom rng, IEnumerable<(GameReference? Ref, float Weight)> options)
+    static GameReference? PickRelative(MsvcRandom rng, IEnumerable<(GameReference? Ref, float Weight)> options)
     {
         var list = options.Where(o => o.Ref is not null && o.Weight > 0).ToList();
         if (list.Count == 0) return null;
@@ -289,7 +354,7 @@ public static class CharacterGenerator
     }
 
     /// <summary>Absolute chances out of 100: roll in [0, 100); nothing when the roll is not below the total.</summary>
-    static T? PickAbsolute<T>(GeneratorRandom rng, IEnumerable<(T? Item, float Weight)> options) where T : class
+    static T? PickAbsolute<T>(MsvcRandom rng, IEnumerable<(T? Item, float Weight)> options) where T : class
     {
         var list = options.Where(o => o.Item is not null && o.Weight > 0).ToList();
         if (list.Count == 0) return null;
@@ -297,7 +362,7 @@ public static class CharacterGenerator
         return roll < list.Sum(o => o.Weight) ? Running(list, roll) : null;
     }
 
-    static GameReference? PickAbsolute(GeneratorRandom rng, IEnumerable<(GameReference? Ref, float Weight)> options)
+    static GameReference? PickAbsolute(MsvcRandom rng, IEnumerable<(GameReference? Ref, float Weight)> options)
     {
         var list = options.Where(o => o.Ref is not null && o.Weight > 0).ToList();
         if (list.Count == 0) return null;
@@ -322,7 +387,7 @@ public static class CharacterGenerator
     }
 
     /// <summary>Weights normalised to a running sum; roll in [0, 1) and take the first entry whose sum reaches it, else the last (heads, hair).</summary>
-    static GameRecord? PickCumulative(GeneratorRandom rng, IEnumerable<(GameRecord? Item, float Weight)> options)
+    static GameRecord? PickCumulative(MsvcRandom rng, IEnumerable<(GameRecord? Item, float Weight)> options)
     {
         var list = options.Where(o => o.Item is not null).ToList();
         if (list.Count == 0) return null;
@@ -355,16 +420,4 @@ public static class CharacterGenerator
 
     static string Resolve(string installRoot, string fcsPath) =>
         Path.Combine(installRoot, fcsPath.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
-
-    /// <summary>Deterministic random numbers for one seed (System.Random's seeded algorithm is fixed).</summary>
-    sealed class GeneratorRandom(int seed)
-    {
-        readonly Random random = new(seed);
-        /// <summary>Uniform in [0, 1).</summary>
-        public float Unit() => (float)random.NextDouble();
-        /// <summary>Uniform in [min, max).</summary>
-        public float Range(float min, float max) => min + (float)random.NextDouble() * (max - min);
-        /// <summary>Uniform integer in [min, max].</summary>
-        public int Int(int min, int max) => max < min ? min : random.Next(min, max + 1);
-    }
 }

@@ -253,13 +253,22 @@ public sealed record AnimationDefinition
             1 => held.Holds && (kinds & held.Weapon) != 0,
             _ => true,
         };
-        static bool Mode(int wants, bool on) => wants switch { 0 => !on, 1 => on, _ => true };
         return Hand(WeaponLeft, s.Left, Kinds) && Hand(WeaponRight, s.Right, Kinds)
             && Mode(CombatMode, s.Combat) && Mode(StealthMode, s.Stealth)
             && Crouched == s.Crouched && Prone == s.Prone
             // The carrying booleans are tested on upper and overlay picks only (docs/animation.md): a carrier's legs walk with the ordinary lower clips.
             && (Area == AnimationArea.Lower || CarryingLeft == s.CarryingLeft && CarryingRight == s.CarryingRight && BeingCarried == s.BeingCarried);
     }
+
+    /// <summary>
+    /// Whether the record can play as a character's own <c>idle stance</c> (the original's idle pick <c>FUN_14051f230</c>, <b>Verified</b> by decompilation,
+    /// docs/animation.md "Idle stance"): normal category, the combat and stealth modes fit, and the arm check, which passes for a whole-body record (layer
+    /// <c>all</c>); other layers take <see cref="Fits"/> (engine choice: that arm check was not decoded). The weapon kinds are not tested.
+    /// </summary>
+    public bool FitsAsStance(in AnimationStance s) =>
+        Category == 0 && !s.BeingCarried && (Area == AnimationArea.All ? Mode(CombatMode, s.Combat) && Mode(StealthMode, s.Stealth) : Fits(s));
+
+    static bool Mode(int wants, bool on) => wants switch { 0 => !on, 1 => on, _ => true };
 }
 
 /// <summary>

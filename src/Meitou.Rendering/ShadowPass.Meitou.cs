@@ -150,6 +150,10 @@ public sealed unsafe partial class ShadowPass
     /// <summary>Foliage meshes smaller than this many texels of a cascade (radius × largest scale) cast nothing into it (Meitou): their shadow would be a
     /// blur of a few texels under the soft filter, at the price of their triangles and cut-out fragments.</summary>
     public const float MinFoliageCasterTexels = 2;
+    /// <summary>A character part (hair, a weapon, a hat) narrower than this many texels casts nothing into a coarse cascade (<c>CharacterRenderer.DrawDepth</c>).</summary>
+    public const float MinCharacterCasterTexels = 1;
+    /// <summary>The cull of <see cref="MinCharacterCasterTexels"/> (the <c>char-casters</c> A/B switch): on by default.</summary>
+    public static bool CharacterCasterCull { get; set; } = true;
 
     /// <summary>The smallest foliage mesh <paramref name="cascade"/> draws (world units; 0 with the faithful shadows: every mesh).</summary>
     public float MinFoliageCaster(ShadowCascade cascade) => Meitou ? (float)cascade.Texel * MinFoliageCasterTexels : 0;

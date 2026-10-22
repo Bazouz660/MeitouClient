@@ -37,7 +37,7 @@ public class ImpostorBudgetTests
         ImpostorTexture Map(ImpostorMap map, ImpostorEncoding encoding) => new()
         {
             Map = map, Encoding = encoding,
-            Levels = Enumerable.Range(0, levels).Select(l => new byte[ImpostorTexture.LevelBytes(encoding, (grid * frame) >> l)]).ToArray(),
+            Levels = Enumerable.Range(0, levels).Select(l => (ReadOnlyMemory<byte>)new byte[ImpostorTexture.LevelBytes(encoding, (grid * frame) >> l)]).ToArray(),
         };
         var atlas = new ImpostorAtlas
         {

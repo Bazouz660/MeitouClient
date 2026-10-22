@@ -489,6 +489,12 @@ public sealed unsafe partial class SkyRenderer : IDisposable
     /// </summary>
     public bool Planetshine { get; set; } = true;
 
+    /// <summary>
+    /// With <see cref="Planetshine"/>, by night (faded like <see cref="NightAmbientStrength"/>), a darker biome's ambient colour is raised, hue kept, to this
+    /// luminance: that of D6D6DB, the most common biome ambient. The swamp's 827A47 (0.47) would otherwise leave its night near black.
+    /// </summary>
+    public const float NightAmbientFloor = 0.84f;
+
     /// <summary>Presentation-only fill light on the planets from the viewer's side (the title raises it so their whole face shows); 0, the game's look, in play.</summary>
     public float PlanetFill { get; set; }
 
@@ -500,6 +506,12 @@ public sealed unsafe partial class SkyRenderer : IDisposable
 
     /// <summary>A multiple of the sky's ambient light (the environment factor every lit surface, the probes and the GI resolve read); 1 is the game's.</summary>
     public float AmbientStrength { get; set; } = 1;
+
+    /// <summary>A further multiple of the ambient by night, faded in like the exposure's night floor (<see cref="KenshiLighting.MinLuminance"/>: full from the horizon down, none from sunY 0.2); 1 is the game's.</summary>
+    public float NightAmbientStrength { get; set; } = 1;
+
+    /// <summary>The ambient's multiple for a sun height: <see cref="AmbientStrength"/>, times <see cref="NightAmbientStrength"/> by night.</summary>
+    float AmbientFor(float sunY) => MathF.Max(AmbientStrength, 0) * (1 + (MathF.Max(NightAmbientStrength, 0) - 1) * (1 - Math.Clamp(sunY * 5, 0, 1)));
 
     /// <summary>The planet's mean colour (<see cref="Meitou.Data.World.Planetshine.MeanAlbedo(Meitou.Data.Textures.DdsFile)"/>), read when the texture loads.</summary>
     public Vector3 PlanetAlbedo { get; private set; } = new(Meitou.Data.World.Planetshine.FallbackAlbedo);
@@ -585,13 +597,19 @@ public sealed unsafe partial class SkyRenderer : IDisposable
     /// <summary>The eye in world units, for the Meitou clouds' parallax (the sky pass's matrix is a rotation only); the frame sets it.</summary>
     public Vector3 Eye { get; set; }
 
+    /// <summary>The Meitou <c>cloudfog</c> switch: the cloud shadows fade near and inside placed fog blocks (<see cref="CloudShadowScale"/>), which they would otherwise darken too much (the swamp, the Deadlands).</summary>
+    public bool CloudFog { get; set; } = true;
+    /// <summary>The cloud shadows' strength factor near placed fog blocks (<see cref="FogVolumes.CloudShadowScale"/>; the frame sets it): 0 inside one.</summary>
+    public float CloudShadowScale { get; set; } = 1;
+    float FogScale => CloudFog ? CloudShadowScale : 1;
+
     /// <summary>Cloud shadows: strength, density offset (legacy) or coverage (volume), base height, and mode (0 legacy / 1 volume).</summary>
     Vector4 CloudShadowUniform()
     {
         if (VolumeShadows)
-            return new Vector4(MeitouClouds.ShadowAt(state.Sun.Y), CloudDensity, VolumetricClouds.Bottom, 1);
+            return new Vector4(MeitouClouds.ShadowAt(state.Sun.Y) * FogScale, CloudDensity, VolumetricClouds.Bottom, 1);
         bool on = CloudShadows && Physical && cloudsSmooth is not null && cloudsTileSmooth is not null && CloudDensity > 0;
-        float strength = on ? MeitouClouds.ShadowAt(state.Sun.Y) : 0;
+        float strength = on ? MeitouClouds.ShadowAt(state.Sun.Y) * FogScale : 0;
         return new Vector4(strength, CloudLayer.DensityOffset(CloudDensity), MeitouClouds.PlaneHeight, 0);
     }
 
@@ -669,7 +687,7 @@ public sealed unsafe partial class SkyRenderer : IDisposable
     }
     State state;
     Vector3 builtSun = new(float.NaN);
-    (bool On, float Strength, Vector3 Albedo, bool Air, float Ambient) builtPlanetshine;
+    (bool On, float Strength, Vector3 Albedo, bool Air, float Ambient, float NightAmbient) builtPlanetshine;
     SkyWeather? builtWeather;
     Vector3 builtTint;
     bool builtPhysical;
@@ -766,7 +784,8 @@ public sealed unsafe partial class SkyRenderer : IDisposable
         {
             var simple = SkyColours.For(sun);
             var light = simple.Lighting(fogDistance);
-            light = light with { AmbientSky = light.AmbientSky * AmbientStrength, AmbientGround = light.AmbientGround * AmbientStrength };
+            float ambient = AmbientFor(sun.Y);
+            light = light with { AmbientSky = light.AmbientSky * ambient, AmbientGround = light.AmbientGround * ambient };
             state = new State { Sun = sun, Colours = simple, Light = light, FogDistance = fogDistance, Valid = true, MinLuminance = Exposure.Min,
                 CloudSun = KenshiLighting.SunColour(sun), CloudZenith = CloudLayer.ZenithLight(sun, SkyColourMultiplier),
                 CloudKey = KenshiLighting.SunColour(sun), CloudKeyDirection = sun, CloudAmbient = MeitouClouds.Ambient(sun, SkyColourMultiplier, Vector4.Zero) };
@@ -775,7 +794,7 @@ public sealed unsafe partial class SkyRenderer : IDisposable
             return (simple, light);
         }
         // SkyX's sky does not depend on the eye's height (its camera is fixed); the light only changes with the sun and the weather.
-        var planetshine = (Planetshine, PlanetshineStrength, PlanetAlbedo, NightAir, AmbientStrength);
+        var planetshine = (Planetshine, PlanetshineStrength, PlanetAlbedo, NightAir, AmbientStrength, NightAmbientStrength);
         if (!builtPhysical || !ReferenceEquals(builtWeather, Weather) || builtTint != SkyColourMultiplier || (sun - builtSun).LengthSquared() > 1e-10f || builtPlanetshine != planetshine)
         {
             builtSun = sun;
@@ -786,8 +805,8 @@ public sealed unsafe partial class SkyRenderer : IDisposable
             var sunLight = KenshiLighting.SunLight(sun);
             var lightDir = KenshiLighting.LightDirection(sun);
             // The ambient stays the game's: its factor comes from the sun's own (clamped) direction, never the planet's, whose height of 12 degrees would
-            // raise the night ambient fivefold. The ambient slider scales it.
-            float env = KenshiLighting.EnvironmentFactor(lightDir) * MathF.Max(AmbientStrength, 0);
+            // raise the night ambient fivefold. The ambient sliders scale it.
+            float env = KenshiLighting.EnvironmentFactor(lightDir) * AmbientFor(sun.Y);
             // Meitou planetshine: from the end of the sun's light the planet is the light (docs/formats/sky.md "Planetshine"): its colour in the sun light's own
             // unit (the sun at the zenith, undimmed by the air in between, is the reference), added to the sun's, the direction weighted by their brightness.
             bool planetLit = false;
@@ -931,7 +950,8 @@ public sealed unsafe partial class SkyRenderer : IDisposable
             new Vector4(KenshiHaze ? 1f : 0f, hazeStart, hazeEnd, fogWeight > 0 && fogDistance > 1 ? 1f / fogDistance : 0f),
             new Vector4(cloud.X, cloud.Y, cloud.Z, pull),
             new Vector4(KenshiHaze ? AltitudeWeight : 1f, MathF.Max(HazeStrength, 0), AltitudeWeight, 0),
-            new Vector4(irradianceCube is not null ? 1f : 0f, specularCube is not null ? 1f : 0f, ambientMap is not null ? 1f : 0f, AmbientMap.HalfWorld),
+            new Vector4(irradianceCube is not null ? 1f : 0f, specularCube is not null ? 1f : 0f,
+                ambientMap is not null ? 1f + (Planetshine ? NightAmbientFloor * (1 - Math.Clamp(s.Sun.Y * 5, 0, 1)) : 0f) : 0f, AmbientMap.HalfWorld),
             s.Night);
     }
 

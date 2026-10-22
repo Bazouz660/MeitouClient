@@ -140,7 +140,7 @@ public static partial class SaveCapture
             if (!player)
                 for (int b = 0; b < data.Factions.Count; b++)
                     table.Add(new SaveRelation(data.Factions[b].Id, data.Relations.Get(a, b), 0, 0));
-            builder.AddFaction(f.Id, f.Name, player, 1000, table);
+            builder.AddFaction(f.Id, f.Name, player, 1000, table, rank: data.Relations.Rank(a));
         }
     }
 
@@ -207,6 +207,7 @@ public static partial class SaveCapture
                 f.PlatoonCounter = Math.Max(f.PlatoonCounter, state.PlatoonCounter);
             }
             if (loaded is null || !index.TryGetValue(f.Id, out int a) || f.IsPlayer || loaded.RelationBaseline.Length != index.Count * index.Count) continue;
+            if (a < loaded.RankBaseline.Length && data.Relations.Rank(a) != loaded.RankBaseline[a]) f.Rank = data.Relations.Rank(a);
             var table = f.Relations;
             var updated = new List<SaveRelation>(table.Count);
             bool changed = false;

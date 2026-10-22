@@ -108,7 +108,8 @@ public sealed partial class UiPainter : IDisposable
     readonly Dictionary<string, OpacityMask> masks = new(StringComparer.Ordinal);
     readonly List<UiRect> opaqueRects = new();
     readonly List<UiRect> previousOpaqueRects = new();
-    double opaqueArea;
+    double? opaqueArea;
+    int coverageWidth, coverageHeight;
     DebugOverlay.OverlayPass? overlayPass;
 
     /// <summary>
@@ -116,7 +117,15 @@ public sealed partial class UiPainter : IDisposable
     /// texels are all alpha 255, drawn with alpha 1; text and translucent pieces do not count. Overlaps count once. The measure for how
     /// much scene shading a UI depth stamp could skip.
     /// </summary>
-    public float OpaqueCoverage { get; private set; }
+    public float OpaqueCoverage
+    {
+        get
+        {
+            // Measured when asked (the stats line), not every frame: the union is costly and the pieces change whenever a panel or a name tag moves.
+            opaqueArea ??= UnionArea([.. previousOpaqueRects]);
+            return coverageWidth > 0 && coverageHeight > 0 ? (float)(opaqueArea.Value / ((double)coverageWidth * coverageHeight)) : 0;
+        }
+    }
 
     /// <summary>Makes <paramref name="texture"/> the image an ImageBox shows for <c>ImageTexture</c> <paramref name="name"/> (the caller keeps and frees it).</summary>
     public void SetTexture(string name, GpuTexture texture, SampledTexture sampled) => external[name] = (texture, sampled);
@@ -285,10 +294,13 @@ public sealed partial class UiPainter : IDisposable
                 ?? "Kenshi_StandardFont_Medium";
             var font = fontName == "Meitou_TitleFont" ? titleFont ?? paintedFont ?? overlay :
                 fontName.Contains("Painted", StringComparison.Ordinal) || fontName.Contains("Banner", StringComparison.Ordinal) ? paintedFont ?? standardFont ?? overlay : standardFont ?? overlay;
-            var textColour = MyGuiColours.Text(resources, c, widgetState, c.Enabled ? DebugOverlay.TextColour : new(0.45f, 0.43f, 0.38f, 1));
+            // A toggled button's caption takes the skin's *_checked colour too (the editor's selected tab is brighter).
+            string textState = c.Properties.GetValueOrDefault("Checked") == "true" ? widgetState + "_checked" : widgetState;
+            var textColour = MyGuiColours.Text(resources, c, textState, c.Enabled ? DebugOverlay.TextColour : new(0.45f, 0.43f, 0.38f, 1));
             textColour.W *= Alpha(c.Properties);
             font.Target = overlay.Target;
             float scale = c.TextScale ?? (c.Skin.Length > 0 ? Math.Clamp(height / 1080f, 0.5f, 1.5f) : 1);
+            bool original = false;
             // Settings request a font baked at its physical pixel size rather than scaling the 16px atlas.
             if (int.TryParse(c.Properties.GetValueOrDefault("FontPixels"), out int pixels) && StandardSource() is { } standardFace)
             {
@@ -303,8 +315,10 @@ public sealed partial class UiPainter : IDisposable
                 font = resourceFont;
                 font.Target = overlay.Target;
                 scale = 1;
+                // MyGUI never scales text to its widget: a font resource keeps its size in the Faithful mode, overflowing the line box and clipped by the widget.
+                original = Mode == UiMode.Faithful;
             }
-            if (minimumTextPixels > 0)
+            if (minimumTextPixels > 0 || original)
             {
                 // Short captions keep the main UI's readable size. Centre the line box over
                 // its inset client and clip to the widget instead of shrinking the lettering.
@@ -361,9 +375,9 @@ public sealed partial class UiPainter : IDisposable
         {
             previousOpaqueRects.Clear();
             previousOpaqueRects.AddRange(opaqueRects);
-            opaqueArea = UnionArea(opaqueRects);
+            opaqueArea = null;
         }
-        OpaqueCoverage = width > 0 && height > 0 ? (float)(opaqueArea / ((double)width * height)) : 0;
+        (coverageWidth, coverageHeight) = (width, height);
         opaqueRects.Clear();
     }
 

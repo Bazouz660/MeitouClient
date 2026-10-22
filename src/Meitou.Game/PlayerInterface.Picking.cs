@@ -113,7 +113,10 @@ sealed partial class PlayerInterface
     /// </summary>
     public Func<CharacterId, Vector3, Vector3, float?>? MeshHit { get; set; }
 
-    CharacterId? PickWhere(Vector2 pixel, Func<CharacterSnapshot, bool> accept)
+    CharacterId? PickWhere(Vector2 pixel, Func<CharacterSnapshot, bool> accept) => PickWhereAt(pixel, accept)?.Id;
+
+    /// <summary>The nearest accepted character under the pixel with its ray distance; null when none, or when the nearest is hidden behind a building seen from outside.</summary>
+    (CharacterId Id, float T)? PickWhereAt(Vector2 pixel, Func<CharacterSnapshot, bool> accept)
     {
         if (Ray(pixel) is not { } ray) return null;
         CharacterId? best = null;
@@ -137,7 +140,32 @@ sealed partial class PlayerInterface
                 best = c.Id;
             }
         }
-        return best is not null && Hidden(ray, bestT) ? null : best;
+        return best is not { } found || Hidden(ray, bestT) ? null : (found, bestT);
+    }
+
+    /// <summary>What a right click acts on, as <see cref="PickAt"/> chose it.</summary>
+    enum Picked { None, Character, GroundItem, Container, Door, Rock, Site }
+
+    /// <summary>
+    /// The right button's target under the pixel, with characters selected (docs/game/ui-input.md "Building picking and selection"): the nearest along the ray of a character with a quick
+    /// order, a ground item, a container, a door, a rock and a site that is an object (unfinished, a machine, storage, furnace or turret), as the original's pick walks its hits nearest first.
+    /// The pixel magnets of items, containers and doors only decide whether one is a candidate; their distance is to their middle. What a building seen from outside hides is left out (each
+    /// helper's <see cref="Hidden"/> test, the original's floor rule). A plain building is not a candidate: it takes the click only when nothing is (<see cref="SitePress"/>). Hover and click
+    /// share it, as in the original.
+    /// </summary>
+    (Picked Kind, float T) PickAt(Vector2 p)
+    {
+        (Picked Kind, float T) best = (Picked.None, float.MaxValue);
+        void Offer(Picked kind, float? t) { if (t is { } v && v < best.T) best = (kind, v); }
+        if (QuickOrder(p) is { } order) Offer(Picked.Character, PickWhereAt(p, c => c.Id == order.Target)?.T ?? 0);
+        else if (PickWhereAt(p, _ => true) is { } any && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == any.Id) is { } held && Verbs(held).Count > 0)
+            Offer(Picked.Character, any.T);   // no quick order, but a held click opens its menu
+        Offer(Picked.GroundItem, PickGroundItemAt(p)?.T);
+        Offer(Picked.Container, PickContainerAt(p)?.T);
+        Offer(Picked.Door, PickDoorAt(p)?.T);
+        Offer(Picked.Rock, PickRockAt(p)?.T);
+        if (PickSiteAt(p) is { } site && SiteIsObject(site.Site)) Offer(Picked.Site, site.T);
+        return best;
     }
 
     /// <summary>The host's test for where a ray enters a building seen from outside (its interior not shown), within a distance; null when none is in the way.</summary>

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Ui;
 using Meitou.Engine.Time;
 using Meitou.Rendering;
 using Meitou.Simulation;
@@ -15,20 +16,55 @@ sealed partial class PlayerInterface
 
     public float HudBottom => 48;
 
-    // ---- notices ----
+    // ---- notices (the original's MessageRoller, docs/game/ui-screens.md "Messages") ----
 
-    string? notice;
-    bool noticeIsError;
-    long noticeUntil;
+    /// <summary>The seconds a message holds at full alpha, then the alpha it loses per second (<b>Verified</b>).</summary>
+    const float NoticeHoldSeconds = 4, NoticeFadeRate = 3;
 
-    /// <summary>Shows a short message at the top of the screen for a few seconds ("Saved", "Loaded", or an error text in red).</summary>
+    readonly Queue<(string Text, bool Error)> noticeQueue = new();
+    (string Text, bool Error)? notice;
+    float noticeHold, noticeAlpha;
+    long noticeAt;
+    MyGuiLayout? messageLayout;
+    string? messageClient;
+
+    /// <summary>Queues a message for the message panel ("Discovered {1}", "Saved", or an error text in red); each shows for 4 s in turn.</summary>
     public void Notice(string text, bool error = false)
     {
-        notice = Loc.Tr(text).ReplaceLineEndings(" ");
-        uiMessages.Add(notice);
+        string line = Loc.Tr(text).ReplaceLineEndings(" ");
+        uiMessages.Add(line);
         if (uiMessages.Count > 200) uiMessages.RemoveAt(0);
-        noticeIsError = error;
-        noticeUntil = System.Diagnostics.Stopwatch.GetTimestamp() + (long)((error ? 6 : 2.5) * System.Diagnostics.Stopwatch.Frequency);
+        noticeQueue.Enqueue((line, error));
+    }
+
+    /// <summary>Once a frame: the next queued message comes up at full alpha when none shows; the shown one holds, then fades out.</summary>
+    void PollNotice()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float dt = noticeAt == 0 ? 0 : MathF.Min((float)System.Diagnostics.Stopwatch.GetElapsedTime(noticeAt, now).TotalSeconds, 0.25f);
+        noticeAt = now;
+        if (notice is null)
+        {
+            if (noticeQueue.TryDequeue(out var next)) (notice, noticeHold, noticeAlpha) = (next, NoticeHoldSeconds, 1);
+            return;
+        }
+        if ((noticeHold -= dt) < 0 && (noticeAlpha -= dt * NoticeFadeRate) <= 0) notice = null;
+    }
+
+    /// <summary>The shown message in the game's <c>Kenshi_MessagePanel</c> layout, placed where the HUD's <c>MessagePanel</c> is; it never takes the mouse.</summary>
+    void AddNotice(List<UiControl> controls)
+    {
+        if (notice is not { } shown || messageLayout is null || messageLayout.Roots.Count == 0) return;
+        var root = messageLayout.Roots[0];
+        var b = new UiBindings();
+        if (faithfulHud.Find("MessagePanel") is { RealPosition: true } slot) b.RelativePositions[root] = root.Position with { X = slot.Position.X, Y = slot.Position.Y };
+        b.Text["MessageTextBox"] = shown.Text;
+        b.Properties[root.Name] = new Dictionary<string, string> { ["Alpha"] = Math.Clamp(noticeAlpha, 0, 1).ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        foreach (var w in messageLayout.Widgets.Where(w => w != root)) b.Properties[w.Name] = new Dictionary<string, string> { ["NeedMouse"] = "false" };
+        // The EditBox's alignment is its text's, which the template's client draws.
+        if (messageClient is not null)
+            b.Properties[messageClient] = new Dictionary<string, string> { ["NeedMouse"] = "false", ["TextAlign"] = "Center", ["TextColour"] = shown.Error ? BadColour : MyGuiColours.InkText };
+        controls.AddRange(MyGuiPresentation.Arrange(messageLayout, Width, Height, b, uiResources.Layers).Select(c => c with { Pickable = false }));
     }
 
     /// <summary>Drops the transient state of the mouse (a drag box, a steering right click): the world it belonged to is gone.</summary>
@@ -45,16 +81,6 @@ sealed partial class PlayerInterface
         selectedBuilding = null;
         Follow = null;
         CloseContextMenu();
-    }
-
-    void DrawNotice(DebugOverlay o, int width)
-    {
-        if (notice is null) return;
-        if (System.Diagnostics.Stopwatch.GetTimestamp() > noticeUntil) { notice = null; return; }
-        string text = notice.Length > 160 ? notice[..157] + "..." : notice;
-        float w = text.Length * o.CharWidth + 4 * Pad, x0 = MathF.Max(Margin, (width - w) / 2), y0 = Margin;
-        o.Rect(x0, y0, x0 + w, y0 + o.LineHeight + 2 * Pad, DebugOverlay.PanelColour);
-        o.Text(text, x0 + 2 * Pad, y0 + Pad, noticeIsError ? new Vector4(1f, 0.4f, 0.35f, 1f) : new Vector4(0.35f, 1f, 0.45f, 1f));
     }
 
     bool OverHud(Vector2 p) => ContainsUi(p);
@@ -95,6 +121,7 @@ sealed partial class PlayerInterface
         Width = width;
         Height = height;
         PollBiome();
+        PollNotice();
         PollProspect();
         var white = DebugOverlay.TextColour;
         var green = new Vector4(0.35f, 1f, 0.45f, 1f);
@@ -136,7 +163,6 @@ sealed partial class PlayerInterface
         }
 
         DrawGameUi(o, width, height);
-        DrawNotice(o, width);
         o.Flush(width, height);
     }
 }

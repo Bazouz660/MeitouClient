@@ -12,7 +12,7 @@ public class EditorOrbitTests
         orbit.Drag(100, 50);
         orbit.Reset(head: true);
         Assert.True(orbit.Head);
-        Assert.Equal((EditorOrbit.StartYaw, EditorOrbit.StartElevation, EditorOrbit.HeadStart), (orbit.Yaw, orbit.Elevation, orbit.Distance));
+        Assert.Equal((EditorOrbit.StartYaw, EditorOrbit.HeadStartElevation, EditorOrbit.HeadStart), (orbit.Yaw, orbit.Elevation, orbit.Distance));
         orbit.Reset(head: false);
         Assert.Equal((EditorOrbit.StartYaw, EditorOrbit.StartElevation, EditorOrbit.BodyStart), (orbit.Yaw, orbit.Elevation, orbit.Distance));
     }

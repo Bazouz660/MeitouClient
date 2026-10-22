@@ -302,35 +302,21 @@ public sealed class CharacterDraft
         Version++;
     }
 
+    /// <summary>The look with a picker's choice <paramref name="index"/>, the draft unchanged (the editor prepares every choice's mesh ahead).</summary>
+    public FcsRecord WithOption(EditorControlKind kind, int index)
+    {
+        var next = Copy(Record);
+        next.Strings[KeyOf(kind)] = Options(kind).ElementAtOrDefault(index)?.StringId ?? "";
+        return next;
+    }
+
     /// <summary>Steps a picker to the previous or next choice.</summary>
     public void Step(EditorControlKind kind, int direction) => SetOption(kind, OptionIndex(kind) + direction);
 
-    /// <summary>
-    /// Rolls a new look of the race and gender (the generator's rules, <see cref="CharacterGenerator"/>): all of it, or only the keys of <paramref name="tab"/>'s controls.
-    /// </summary>
+    /// <summary>RANDOMISE (<paramref name="tab"/>) or RANDOMISE ALL (null) with a sequence seeded by <paramref name="seed"/> (<see cref="RandomisedLook"/>).</summary>
     public void Randomise(EditorTab? tab, int seed)
     {
-        var rolled = CharacterGenerator.Generate(db, installRoot, Race, seed, Female).Appearance.Record;
-        if (tab is null) { TakeLook(rolled); return; }
-        var keys = new List<string>();
-        foreach (var c in Controls(tab.Value))
-            switch (c.Kind)
-            {
-                case EditorControlKind.Slider or EditorControlKind.Colour: keys.Add(c.Label); break;
-                case EditorControlKind.Pose: keys.Add(c.Range!.Target!); if (c.Range.TargetOpposite is { } o) keys.Add(o); break;
-                case EditorControlKind.HairHue: keys.Add("Hair Colour"); break;
-                case EditorControlKind.HairSaturation: keys.Add("Hair Saturation"); break;
-                case EditorControlKind.HairBrightness: keys.Add("Hair Brightness"); break;
-                // Meitou: the stance stays (whether the original's RANDOMISE rolls it is Unknown).
-                case EditorControlKind.IdleStance: break;
-                default: keys.Add(KeyOf(c.Kind)); break;
-            }
-        foreach (var k in keys)
-        {
-            if (rolled.Floats.TryGetValue(k, out var f)) Record.Floats[k] = f;
-            if (rolled.Vector3s.TryGetValue(k, out var v)) Record.Vector3s[k] = v;
-            if (rolled.Strings.TryGetValue(k, out var s)) Record.Strings[k] = s;
-        }
+        Record = RandomisedLook(seed, tab);
         Version++;
     }
 
@@ -341,53 +327,103 @@ public sealed class CharacterDraft
     /// </summary>
     public void Reset()
     {
-        if (Limits is { } limits)
-        {
-            foreach (var r in limits.Ranges)
-                Write(Record, new EditorControl(r.Name, r.Target is null ? EditorControlKind.Slider : EditorControlKind.Pose, r.Min, r.Max, r.Mid) { Range = r }, r.Target is null ? r.Mid : 0);
-            foreach (var c in limits.Colours) Record.Vector3s[c.Name] = c.ColourAt(c.Mid);
-        }
-        Record.Floats["Posture"] = 20;
-        Record.Floats["Hair Colour"] = 0;
-        Record.Floats["Hair Saturation"] = 0;
-        Record.Floats["Hair Brightness"] = 100;
-        Record.Strings["hair style"] = "";
-        Record.Strings["beard"] = "";
-        Record.Strings["idle stance"] = "idle_stand_normal";
+        Defaults(Record, Limits);
         Version++;
     }
 
-    /// <summary>Changes race (a single-gender race makes the character male) and rolls a new look for it.</summary>
+    /// <summary><see cref="Reset"/>'s values written into <paramref name="record"/>.</summary>
+    static void Defaults(FcsRecord record, AppearanceLimits? limits)
+    {
+        if (limits is not null)
+        {
+            foreach (var r in limits.Ranges)
+                Write(record, new EditorControl(r.Name, r.Target is null ? EditorControlKind.Slider : EditorControlKind.Pose, r.Min, r.Max, r.Mid) { Range = r }, r.Target is null ? r.Mid : 0);
+            foreach (var c in limits.Colours) record.Vector3s[c.Name] = c.ColourAt(c.Mid);
+        }
+        record.Floats["Posture"] = 20;
+        record.Floats["Hair Colour"] = 0;
+        record.Floats["Hair Saturation"] = 0;
+        record.Floats["Hair Brightness"] = 100;
+        record.Strings["hair style"] = "";
+        record.Strings["beard"] = "";
+        record.Strings["idle stance"] = "idle_stand_normal";
+    }
+
+    /// <summary>The look the character had as each race and gender it was shown as, by race id and gender (the original's per-character map, <c>FUN_1405eadc0</c>).</summary>
+    readonly Dictionary<(string Race, bool Female), FcsRecord> looks = [];
+
+    /// <summary>Changes race (a single-gender race makes the character male): the look comes back as it was for that race and gender, else a new one is rolled.</summary>
     public void SetRace(GameRecord race, int seed)
     {
         if (race.StringId == Race.StringId) return;
-        bool female = Female && !race.GetBool("single gender");
-        Race = race;
-        Record.Bools["sex female"] = female;
-        Record.References["race"] = [new FcsReference(race.StringId, 0, 0, 0)];
-        Limits = LimitsFor(Race, female);
-        TakeLook(CharacterGenerator.Generate(db, installRoot, race, seed, female).Appearance.Record);
+        SwitchLook(race, Female && !race.GetBool("single gender"), seed);
     }
 
-    /// <summary>Changes gender (not for a single-gender race) and rolls a new look for it.</summary>
+    /// <summary>Changes gender (not for a single-gender race), keeping the look of each gender as <see cref="SetRace"/> does.</summary>
     public void SetFemale(bool female, int seed)
     {
         if (Race.GetBool("single gender")) female = false;
         if (female == Female) return;
-        Record.Bools["sex female"] = female;
-        Limits = LimitsFor(Race, female);
-        TakeLook(CharacterGenerator.Generate(db, installRoot, Race, seed, female).Appearance.Record);
+        SwitchLook(Race, female, seed);
     }
 
-    /// <summary>Takes a rolled look's sliders, colours, head, hair and beard; the record's other keys (flags, ints, idle stance) stay.</summary>
-    void TakeLook(FcsRecord rolled)
+    /// <summary>
+    /// The original's switch (<c>FUN_1405ef390</c>, <c>FUN_1405eadc0</c>, <b>Observed</b>): the current look is kept for the old race and gender, the new pair's kept look
+    /// replaces it (the idle stance stays the character's); a pair never shown gets a rolled look (the original rolls them when the editor opens).
+    /// </summary>
+    void SwitchLook(GameRecord race, bool female, int seed)
     {
-        Record.Floats.Clear();
-        foreach (var (k, v) in rolled.Floats) Record.Floats[k] = v;
-        foreach (var (k, v) in rolled.Vector3s) Record.Vector3s[k] = v;
-        foreach (var k in new[] { "head", "hair style", "beard" }) Record.Strings[k] = rolled.Strings.GetValueOrDefault(k) ?? "";
+        var next = SwitchedLook(race, female, seed);
+        looks[(Race.StringId, Female)] = Copy(Record);
+        Race = race;
+        Limits = LimitsFor(Race, female);
+        Record = next;
         Version++;
     }
+
+    /// <summary>The look <see cref="SetRace"/> or <see cref="SetFemale"/> would give with <paramref name="seed"/>, the draft unchanged (the editor prepares it ahead).</summary>
+    public FcsRecord SwitchedLook(GameRecord race, bool female, int seed)
+    {
+        FcsRecord next;
+        if (looks.TryGetValue((race.StringId, female), out var kept))
+        {
+            next = Copy(kept);
+            if (Record.Strings.TryGetValue("idle stance", out var stance)) next.Strings["idle stance"] = stance;
+        }
+        else
+        {
+            // The original makes every pair's look when the editor opens (FUN_1405f03c0): the appearance template's defaults (FUN_14007a490: the first head, no
+            // hair or beard; Meitou: sliders at their mid, poses 0, skin at its mid colour), then only the hair rolled (FUN_14007adc0, no faction).
+            next = Copy(Record);
+            next.Bools["sex female"] = female;
+            next.References["race"] = [new FcsReference(race.StringId, 0, 0, 0)];
+            next.Floats.Clear();
+            next.Vector3s.Clear();
+            Defaults(next, LimitsFor(race, female));
+            if (Record.Strings.TryGetValue("idle stance", out var own)) next.Strings["idle stance"] = own;
+            next.Strings["head"] = CharacterGenerator.HeadOptions(db, race, next).FirstOrDefault().Item?.StringId ?? "";
+            CharacterGenerator.RollHair(db, race, null, next, MsvcRandom.FromSeed(seed));
+        }
+        return next;
+    }
+
+    /// <summary>
+    /// The look RANDOMISE ALL (<paramref name="tab"/> null) or a tab's RANDOMISE would give with <paramref name="seed"/>, the draft unchanged (the editor prepares it
+    /// ahead). The original's randomisers in its draw order (<b>Verified</b> by decompilation, docs/characters.md "Character editor"): RANDOMISE ALL
+    /// (<c>FUN_1405ef930</c>) the hair without the faction's limits, the face (head, face sliders), the body without the skin re-roll, then the face poses; FACE the
+    /// face and its poses; BODY the body; HAIR the hair (<c>FUN_1405efa50</c>). Everything else stays.
+    /// </summary>
+    public FcsRecord RandomisedLook(int seed, EditorTab? tab = null)
+    {
+        var next = Copy(Record);
+        var rng = MsvcRandom.FromSeed(seed);
+        if (tab is null or EditorTab.Hair) CharacterGenerator.RollHair(db, Race, null, next, rng);
+        if (tab is null or EditorTab.Face) CharacterGenerator.RollFace(db, Race, Limits, next, rng);
+        if (tab is null or EditorTab.Body) CharacterGenerator.RollBody(Limits, next, rng, skinReroll: false);
+        if (tab is null or EditorTab.Face) CharacterGenerator.RollFacePoses(Limits, next, rng);
+        return next;
+    }
+
 
     /// <summary>
     /// A proposed look made valid (what the simulation applies, docs/characters.md "Character editor"): race and gender as given (a single-gender race is male), head,

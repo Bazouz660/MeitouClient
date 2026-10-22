@@ -161,6 +161,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     // The crossbow clips (RANGED records, played by the combat system's timing).
     readonly int aimClip = library.IndexOf(AnimationLibrary.RangedAimRecord), defaultReload = library.IndexOf(AnimationLibrary.RangedReloadRecord);
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> reloadClips = new(StringComparer.Ordinal);
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> stanceClips = new(StringComparer.Ordinal);
+
+    /// <summary>The character's own idle stance (its appearance's <c>idle stance</c>, an ANIMATION record name), -1 when it has none or the data lacks it.</summary>
+    int OwnStance(CharacterCold cold) => cold.Appearance?.Body?.IdleStance is { } name ? stanceClips.GetOrAdd(name, static (key, lib) => lib.IndexOf(key), Library) : -1;
 
     /// <summary>The reload clip of the character's crossbow: its record's <c>reload anim</c>, else <c>reload 1 phase</c>.</summary>
     int ReloadClip(CharacterCold cold) => cold.Fighter?.Crossbow is { Data.ReloadAnimId: { Length: > 0 } id }
@@ -352,7 +356,14 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             {
                 // A carrier standing: a whole-body idle as if it carried nothing, with the carrying arm pose (stand carrying left) over it (engine choice: the data has no whole-body carrying idle).
                 bool carrying = stance.CarryingLeft || stance.CarryingRight;
-                StandingIdle(a, carrying ? stance with { CarryingLeft = false, CarryingRight = false } : stance, lower.Count > 0, dt, seed, key, tick, wanted);
+                var standing = carrying ? stance with { CarryingLeft = false, CarryingRight = false } : stance;
+                // A human plays its own idle stance whenever that fits, the random idles only otherwise (the original's idle pick, docs/animation.md "Idle stance").
+                if (lower.Count == 0 && OwnStance(cold) is >= 0 and var own && Library.Definitions[own].FitsAsStance(standing))
+                {
+                    (a.Idle, a.IdleLeft) = (own, 0);
+                    wanted.Add((own, 1));
+                }
+                else StandingIdle(a, standing, lower.Count > 0, dt, seed, key, tick, wanted);
                 if (carrying && Library.CarryIdle(stance) is >= 0 and var arms) wanted.Add((arms, 1));
             }
         }
@@ -430,7 +441,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
                 k = a.Count < CharacterAnimation.MaxLayers ? a.Count++ : Evict(a);
                 if (k < 0) continue;
                 var d = Library.Definitions[index];
-                float start = d.Loop && !d.IsAction && !d.Technique && index != a.Action && index != lift
+                // A clip that never advances (the stances: play speed 0) holds its first frame, as the editor and the portraits show it.
+                float start = d.Loop && !d.IsAction && !d.Technique && index != a.Action && index != lift && (d.PlaySpeed > 0 || d.MoveSpeed != 0)
                     ? Rng.Float(Rng.Hash(seed, key, RngPurpose.Animation, (ulong)tick ^ ((ulong)index << 32) ^ 0x4C4F4F50UL)) * lengths.Of(d.Clip) : 0;
                 a.Layers[k] = new CharacterAnimation.Layer { Definition = index, Weight = first ? weight : 0, Time = start };
             }
@@ -614,7 +626,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         var stance = new AnimationStance { Right = new HandHold(cold.DrawnWeapon), Combat = cold.InCombat, Stealth = (cold.Orders & CharacterOrders.Sneak) != 0, CarryingLeft = !cold.Carrying.IsNone, BeingCarried = !cold.CarriedBy.IsNone };
         if (cold.Medical is not { } body) return stance;
         float left = 100, right = 100;
-        foreach (var part in body.Parts)
+        foreach (var part in body.PartSpan)
         {
             if (part.Template.Type != Meitou.Data.Gameplay.Bodies.BodyPartType.Leg) continue;
             if (part.Template.Side == Meitou.Data.Gameplay.Bodies.BodySide.Left) left = MathF.Min(left, part.Fraction * 100);

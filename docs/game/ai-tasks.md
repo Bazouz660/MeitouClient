@@ -688,6 +688,12 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   Storm House, up to 161° off their table).
 - **24 Wandering** (`FUN_140998040`): the nearest town; list A holds `atATown`, so it is dropped while in a town.
 - **36 Patrolling town**: `Task_PatrolTown`, behaviour **Unknown**.
+- **180 Man the gate** (`Task_ManTheGate` slot 2 `FUN_140342c50`, target `FUN_140338690`; **Observed**, disassembly): the gate is the
+  task's target, else the Blackboard's home (`HOME_GATE`), else the town's gate nearest the character (town vfunc `0x308`), each only when it
+  is a GatewayBuilding (vfunc `0x3d8`). The guard walks to its first door's point `+0x3bc` and turns along `+0x3bc - +0x3c8`. A door's
+  two points (`FUN_14029cc90`) are its leaf's centre ± 15 (constant `0x14168a258`) along the leaf's thin axis, dropped to the ground;
+  which side `+0x3bc` is depends on a door body offset (**Unknown**). Gate BUILDING records have no nodes (**Verified**, the merged
+  load order's Defensive Gates II-V), so the squad's guard node goals find nothing there.
 
 ## Perma-jobs
 

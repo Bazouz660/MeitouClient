@@ -11,7 +11,24 @@ references and .bod2 overrides. Keep generated appearance/loadout seed separate 
 live stats. Record lists' weighted chances, forced equipment, quality/manufacturer rolls and
 race restrictions have distinct semantics; missing references do not imply a universal item.
 Worn records' lanterns (and an animal's backpack lantern) become `CharacterAppearance.Lights` ([lights](formats/lights.md#carried-lanterns)).
-NPC generation order determines random consumption; original RNG sequence is not reproduced.
+**Original random sequence** (**Verified** by decompile 2026-10-21 unless marked): every draw is MSVCR100 `rand()` (unit `rand()/32768`,
+`FUN_1409b1c10`; range `a + unit·(b−a)`, `FUN_1409b1c80`; integer `clamp(a + (int)(unit·(b−a+1)), a, b)`, `FUN_1409b3b40`; weighted pick: one draw, first
+cumulative weight ≥ r, `FUN_14006e1a0`), seeded once with `srand(time())` at startup (`FUN_1409b1be0`) and reseeded by world streaming (buildings
+`FUN_1405609e0`, foliage cells) and by a face-morph mesh's creation (`srand(FNV-1a-32(mesh name))`, `FUN_14007c070`, only when not cached). So the
+original never gives the same people twice: only its algorithm, draw order and distributions can be matched. Draw order of a new character
+(`FUN_140581770`): race (one draw unless one candidate) → gender (`female chance`, no draw for a single-gender race) → head (`FUN_14007c880`; a
+cumulative pick draws nothing when the list is empty) → head again with the face sliders (`FUN_14007b310`; Face sliders only: no poses, no
+colours) → beard (men; no draw for women), hair, hair colour (`FUN_14007adc0`) → body sliders, then body colours, then the skin re-roll
+(`FUN_14007b940`, CHARACTERs) → morph index → money chance and amount → bounty, name, personality (`FUN_14062b210`). A list of ranges
+(`FUN_14006fcf0`, colours `FUN_140070460`, poses `FUN_140070010`) draws its ungrouped ranges in list order, then once per `random_group` in the
+order of a boost `unordered_map<short>` of 16 buckets (bucket mix64(group) & 15; a group in a new bucket goes first, one in a used bucket first in
+that bucket's run): human bodies draw group 1 before group 0. Sliders and colours keep separate group maps. The skin re-roll is
+`Int(max(min, mid − w), min(max, mid + w))` with w = round(max − min), so it covers the whole range. A morph face's poses come from `srand(FNV-1a-32
+(mesh name))` when its mesh is made, so draws after the appearance (money, bounty, name) follow a reseeded or uncached sequence. **Unknown**: the
+Character constructor's own draws (it runs before the race pick), where equipment is rolled, the faction field skipping the skin re-roll and morph,
+the morph mesh name. Meitou (`CharacterGenerator`, `MsvcRandom`): the same generator and appearance order, one sequence per character from its
+seed (scrambled, as neighbouring `srand` seeds start alike), equipment after the morph index, the poses from FNV-1a of race/gender/index; money,
+names and personality keep their own per-purpose seeds.
 
 ### Random appearance
 
@@ -34,9 +51,23 @@ vests/backpacks, hair-hidden/part-map flags, stumps and missing limbs are not or
 checkboxes. Weapon inventory choice, equipped/drawn location and sheath/back/hip attach bone
 are separate; .phs attachment points are data. Part scales/transforms must follow skeletal axes.
 
+**Verified** (decompilation, `AppearanceBase::setupItemMaterial` `FUN_140536210`): an attached item without a material record whose type is
+LIMB_REPLACEMENT (111) gets the appearance's body material (its textures, skin tone and stat-driven normal blend). The races' stumps
+(`Human Left Arm Stump` and the others in `Newwworld.mod`, mesh material `default`, no texture fields) are drawn so; prosthetics have a
+material. Meitou: `CharacterContent.ItemMaterial` (they were untextured, white, before).
+
 ## Shading, poses and LOD
 
 **Observed HLSL** body/head texture layering uses head UV+(0,1), border-black and body normal.wy.
+**Verified** (`character.hlsl`, `skin.hlsl`; mesh probe 2026-10-21): the binormal is the mesh's own BINORMAL × the tangent's w (w = 1 for a
+three-component tangent). Both human bodies store BINORMAL = cross(tangent, normal); `human_male` has four-component tangents (w ±1),
+`human_female` three. Meitou (`Model.Build` `gameBinormals`, characters only): w is set so that cross(normal, tangent) × w is that binormal; worn
+items flip their normal map's green (skin.hlsl), so their binormal is the opposite. Albedo is written darkened: × 0.7 for bodies, heads, hair and severed limbs (`character.hlsl`
+`DARKEN`), × 0.8 for worn items (`skin.hlsl`); the icons' forward shader (`rtticons.hlsl`) has none. Items attached with their own mesh (`StaticObject`):
+their darken and green flip are **Unknown**; Meitou applies neither (both keyed on `PartMaterial.Worn`).
+Worn items (template `Skinned`, `AppearanceBase::setupItemMaterial` `FUN_140536210`) write gloss = diffuse alpha × `glossMult`, metalness = colour
+map blue; nothing sets `glossMult` there and `Skinned_FP` has no default, so it is 0: worn clothing is matte (**Observed**: no setter in the function,
+no default in `skin.program`). Items attached with their own mesh (`StaticObject`) keep `glossMult` 1. Meitou: worn metalness is not applied (**gap**).
 Skin tone, body normals/muscle/starvation, hair/beard overlays, dye/cloth/cutout and wet/dust inputs
 have separate parameters. Material runtime facts: [runtime-materials](formats/runtime-materials.md).
 Bone/positional sizes and face morph deltas apply before skinning; meshes with their own LOD or
@@ -109,6 +140,11 @@ checks `human_male.mesh`):
 | CONTAINER backpacks | 2 levels at 400 |
 | LIMB_REPLACEMENT, WEAPON (`mesh`, `bare sword`, `sheath`) | none |
 
+Meitou: the `charlod` switch (Character levels). Faithful draws the files' own levels by the rule above with the stored bounding radius (unclamped) and
+bias 1, the shadow passes as the picture; Meitou draws its generated levels ([character-renderer](character-renderer.md)). Both sets are prepared at
+load (`CharacterContent.PrepareMesh`), so the switch needs no rebuild. 400-character crowd at The Hub, Release: Faithful 2.07M character triangles
+a frame against 0.75M, +0.9 ms GPU in the picture and +0.9 ms in the shadows. Whether Kenshi's shadow cameras take the main camera's LOD is **Unknown**.
+
 ## Names
 
 **Observed** (character setup `FUN_14062b210`, pool loader `@ 140641d80`): CHARACTER `named` false → the record's name; true → a uniform pick
@@ -128,8 +164,18 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
 - **Races**: RACE_GROUP name on RACE, RACE name on SUBRACE; a race is listed if not an animal, in a group, has its editor limits XML, `playable`
   (mode 0) and, with a `force race` list, in it (none left: "Game start has no valid races", the list is unrestricted). Base data: Human
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
-  (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel: "Hit Points:", "No bleeding"
-  below `bleed rate` 0.1, then each stat multiplier as (m-1)x100 % (Meitou omits the hit points line).
+  (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
+  "Hit Points:" and the character's first medical part's maximum as an integer (Meitou, while the draft shows another race: that race's new medical state's), "No bleeding" below `bleed rate` 0.1, then the stat multipliers
+  above 1, then those below 1, each as the stat's name (no colon) and (m-1)x100 %. Within each group the order is the race stat map's iteration order
+  ([boost-unordered](formats/boost-unordered.md); `RaceData.StatMapOrder`), which gives vanilla's Greenlander Farming, Cooking, Science (**Observed**).
+- **Captions** (`FUN_1405f1a40`, **Observed**): the code sets every button and header from the catalog, upper case: Randomise, Reset (not the
+  layout's RESET ALL), Randomise All, Body, Face, Hair, Import, Export, Clothes, Confirm, Race, Subrace, Gender, Change Character, Race
+  Description, Race Stats. With one character CHANGE CHARACTER, its arrows and "1/1" stay on screen (vanilla screenshot), arrows inactive.
+- **Rows** (`FUN_1405f1a40`, `FUN_1405ebd50`, **Observed**): `TabsPanelContent` holds a `Kenshi_ScrollViewEmptyLight` ScrollView (vertical bar
+  only); each control is a template widget stacked at its template's height (`kenshi_templates.xml`): a list is `Kenshi_ListSlider` (name box,
+  arrows, value name, "n/count"; captions "Face", "Hair", "Beard"), a slider `Kenshi_Slider` (name box, `Kenshi_ScrollBar` with arrows, value
+  box), the hair colour one `Kenshi_MultiSlider` "Hair colour" with "Colour", "Saturation", "Brightness". Captions are catalog messages, not
+  upper-cased. The rows scale with the screen (55 layout px = 73 px at 1440p in the vanilla screenshot).
 - **Tabs** (`FUN_1405ebd50`, Body first): FACE = head list (if more than one) + XML Face ranges + colours; BODY = "Idle stance" slider, then
   `Skin Tone` (vec3 interpolated; only with more than one colour), then XML Body ranges, then other colours (order also seen in the original's
   screen); HAIR = Hair (attach slot 2) and Beard (13) lists with
@@ -140,31 +186,48 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
   order that are `idle`, not `disabled`, `weather type` < 1, `layer` not `overlay`, `has weapon L` and `R` both 0, not `crouched`. Writes
   the record name to `idle stance` (`FUN_1405eaa30`); a stance not in the list shows as 1. **Verified** by probe on base data: 8 stances
   (`idle_stand_relax`, `stand 1`, `idle_stand_guard`, `idle_stand_timid`, `idle_stand_confident`, `idle_stand_normal`, `idle_stand_stiff`,
-  `squat`), so the default `idle_stand_normal` is 6, as the original's screen shows. Whether RANDOMISE rolls it is **Unknown** (Meitou: no).
-- **Buttons**: RANDOMISE = current tab only; RANDOMISE ALL = every randomiser; RESET ALL = the appearance template's defaults (hair, beard,
+  `squat`), so the default `idle_stand_normal` is 6, as the original's screen shows. RANDOMISE never rolls it (**Verified**: no randomiser writes it).
+  The stance clips are 1-frame poses (0.033 s, two keys) with `play speed` 0 (`squat` 0.01), **Verified** by probe on base data; looped at
+  real time they flicker between the keys. The preview plays the chosen stance at its `play speed`, cross-faded at `animation blend rate`
+  (Meitou: `PlayerInterface.EditorIdle`, `GameHost.EditorStancePoses`; the original's fade is **Observed** smooth, its rate **Unknown**). In the
+  world a character stands in its stance whenever it fits ([animation.md](animation.md#idle-stance)).
+- **Buttons** (randomisers **Verified** by decompilation, `FUN_1405efa50`, `FUN_1405ef930`): RANDOMISE rolls the current tab: FACE = head and face
+  sliders, then face poses; BODY = body sliders and colours, no skin re-roll; HAIR = hair, no faction limits. RANDOMISE ALL = hair, face, body
+  (`FUN_14007f040`), then face poses; the rest stays. Draws as in [Original random sequence](#assembly-and-generation). RESET ALL = the appearance template's defaults (hair, beard,
   colours, `Posture`, idle stance `idle_stand_normal`; slider values **Unknown**, Meitou: XML mid, poses 0, Posture 20); CLOTHES toggles worn
   clothing in the preview; IMPORT/EXPORT: see [below](#import-and-export). CONFIRM asks first when some
-  characters were never shown, closes, unpauses at speed 1; it charges nothing. No cancel widget; Esc **Unknown** (Meitou: Esc leaves a
-  surgeon's editor unchanged and unpaid; the new game's must be confirmed).
+  characters were never shown, closes, unpauses at speed 1; it charges nothing. No cancel widget; Esc opens the game menu over the editor
+  (**Observed**, vanilla play; Meitou does so in both modes).
+- **Race and gender switches** (`FUN_1405ef390`, `FUN_1405eadc0`, **Observed**): each character keeps a look per (race, gender); a switch stores
+  the current look under the old pair and loads the new pair's, keeping the idle stance. **Verified** (decompilation, `FUN_1405f03c0`): when the
+  editor opens, every pair's look is the template reset (`FUN_14007a490` with 1: first head, no hair or beard, the race's first `hair colors`,
+  face sliders at mid) and then a hair roll, nothing else. Meitou (`CharacterDraft.SwitchedLook`): the same when a pair is first shown (sliders at mid).
 - **Preview**: a separate scene. **Verified** (install's compositor files): workspace `Kenshi_Character_Editor` = `GBuffer_Minimal` (characters only,
   render queues 50-70) then a `Character_Editor` node, then the GUI. The background is a full-screen `render_quad` of
-  `data/gui/gfx/SandyGround.dds` (1920x1080 DXT1, no depth). Lighting is `Deferred_RTT` / `rtt.hlsl`: one directional light (-3, 2, -3), colour
-  0.6, exposure 0.5, IBL from `mp_irradiance` / `mp_specularity`; no fog, sky or shadows (light sign convention **Unknown**). The stage sits at
-  y -3000 (**Verified**, editor ctor in the RE dump). Camera rig (**Verified**, same dump): a pivot node takes yaw (about Y) and pitch (about X);
-  the camera is its child at (-3, 0, -30) + normalize(-3, 0, -30) x zoom. Mode flag 1 = body (fixed pivot, zoom clamp -9..7), 0 = head (pivot at
-  the head bone y - 12, default zoom -21, clamp -23..-17). Any of three mouse buttons drags (yaw/pitch += delta x sens x dt x -0.1); the wheel
-  zooms (zoom -= wheel x sens x dt x 0.6, clamped). **Observed**: FACE and HAIR tabs give head mode, BODY the body mode; changing mode or
-  character resets angles and zoom. **Unknown**: default angles, pitch limits, speeds, body default zoom (set at run time).
-  Meitou (`EditorOrbit`, `CharacterRenderer.Editor`, `PlayerInterface.EditorBackdrop`): while the editor is open the world is not drawn; the
-  renderer draws the edited character alone into a stage texture (transparent, key light plus a hemispheric ambient, an engine choice: the stage
-  shader branch for a fog distance of -2; icons keep none), the interface puts `SandyGround.dds` and the
-  texture behind the panels, centred between them. Drag with any button orbits, wheel zooms, mode/character change resets; limits, speeds and
-  start angles are engine choices (`EditorOrbit`). **Blend**: a slider moves the character along: when a new preview look is ready it is drawn
+  `data/gui/gfx/SandyGround.dds` (1920x1080 DXT1, no depth). Lighting (`charedit.compositor`, `rtt.hlsl`, `lightingFunctions.hlsl`): world
+  direction (-3, 2, -3) towards the light, colour 0.6: `CalcPunctualLight` (diffuse π·N.L·(1-0.04), GGX for roughness 1-0.99·gloss, specular
+  colour 0.04) plus `CalcEnvironmentLight` (`mp_irradiance` mip 3 ·a·4, `mp_specularity` mip (1-gloss)·7 ·a·10, Lazarov BRDF), times exposure
+  0.5, written to the 8-bit target untonemapped; no fog, sky or shadows. **Verified** (exe disassembly, `FUN_1405f03c0`, `FUN_1405e9ca0`,
+  `FUN_1405e9490` and their static data): the rig's pivot sits at y -3000; `charedit_root_node` 12 below it holds the platform, BUILDING_PART
+  `5370-platform_otto.mod` (base: `character_editor_platform_part`, mesh `data/buildings/furniture/new_furniture01/character_editor_platform.mesh`,
+  first `material`), at its origin, and the characters on it turned half round (quaternion w 0, y 1). Camera: the pivot takes yaw (about Y)
+  and pitch (about X); the camera is its child at (-3, 0, -30) + normalize(-3, 0, -30) x zoom. Mode flag 1 = body (pivot 12 above the feet,
+  pitch 0.15π, yaw 0, zoom 0, pitch clamp 0.025π..0.2π, zoom clamp -9..7), 0 = head (pivot at the head bone, pitch 0, yaw 0, zoom -21, pitch
+  clamp -0.1π..0.25π, zoom clamp -23..-17); every reset (mode or character change) restores these. Any of three mouse buttons drags (yaw/pitch +=
+  delta x sens x dt x -0.1); the wheel zooms (zoom -= wheel x sens x dt x 0.6, clamped). **Observed**: FACE and HAIR give head mode, BODY body.
+  Meitou (`EditorOrbit`, `CharacterRenderer.Editor`, `WorldObjectRenderer.Stage`, `PlayerInterface.EditorBackdrop`): while the editor is open the
+  world is not drawn (objects keep streaming); the edited character and the platform (a loose instance, its stage frame the character's turned
+  half round) are drawn into a UNORM stage texture with that lighting (`AtmosphereShaders.stageLight`, fog distance -2), which the interface puts
+  over `SandyGround.dds`, centred between the panels by a projection shift instead of the -3 offset. Orbit starts, limits and zooms are the
+  exe's; drag and wheel speeds are engine choices. Its looks are close-ups: meshes without generated LOD levels, which were 99 % of a mesh's
+  preparation (a hair 1-2 s; measured 2026-10-21), and the looks the next click can give (next RANDOMISE ALL roll, other gender, neighbouring
+  races, every head/hair/beard of the race) are prepared ahead; a click shows in 1-2 frames. **Blend**: a slider moves the character along: when a new preview look is ready it is drawn
   as the mix of the old and new values over 0.12 s, the interval of the throttled rebuild (`CharacterRenderer.Blend`): body shape, posture
   layers, face/body pose weights (morph set recomputed per frame in a scratch ring of `MorphArena`) and skin/hair colours; a look with another
   head, hair or clothes swaps at once. The original's own slider behaviour is **Unknown**.
 - **Keys**: `in editor` true while open; a mode 0 character without a body file is randomised on open (Meitou's start characters are already
-  rolled). Closing in mode 0 also sets health from the race's `starting health` (Meitou: a new race at creation gets a new body).
+  rolled). Closing in mode 0 also sets health from the CHARACTER's `starting health` (Meitou: a new race at creation gets a new body, which
+  applies it; the edited look keeps stumps and prosthetics).
 - **Meitou validation** (`CharacterEditing.Apply`, `CharacterDraft.Sanitize`): player character with a person's look; creation only while
   `PlayerState.InCreation` (new game until CONFIRM) and within the start's force races; surgery needs the surgeon alive within 60 units
   (engine choice), the same race and gender, money > price, and takes the price. Head/hair/beard must be the race's, sliders and poses are
@@ -180,7 +243,11 @@ else "Error loading appearance file '{1}'. The file is in an old format or inval
 what the original does with another race in mode 1 is **Unknown**. **Verified** (FcsReader + FcsWriter on the install's 12 exports): all are
 type 15, one record, id 1, `1--INGAME`, name `default` or `0`, and round-trip byte-exact. Meitou (`CharacterDraft.Import`/`Export`,
 `PlayerInterface.Editor`): export writes that layout, overwriting a file of the same name; import sanitizes the file for its race and refuses a
-race the editor doesn't offer (creation) or another race or sex (surgeon); the dialog lists the folder only (no browsing).
+race the editor doesn't offer (creation) or another race or sex (surgeon).
+Dialog (`FUN_1401a0b10`, refresh `FUN_14019fd70`, **Observed**): `CurrentFolder` shows the folder as kept (no trailing separator; "./data"
+when empty); `ListFiles` gets "[..]" and the subfolders as "[name]", then (open mode) the matching files by file name with extension, item data
+folder + "/" + name; ButtonUp cuts the folder at its last `\` or `/`; ButtonCancel is `Tr("Cancel")`, ButtonOpenSave `Tr("Import")` here, both
+upper-cased. Order: case-sensitive (vanilla screenshot: "Yumi" before "yoshim"). Meitou: a double click (or IMPORT) on a folder opens it.
 
 ### Plastic surgeons
 

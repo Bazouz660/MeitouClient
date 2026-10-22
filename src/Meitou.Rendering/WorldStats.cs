@@ -28,6 +28,7 @@ static class WorldStats
         var alloc = context.Device.Allocator;
         stats.Add($"vram        {vramUsed / 1073741824.0:0.00} of {vramBudget / 1073741824.0:0.0} GB; our blocks {alloc.TotalAllocatedBytes / 1073741824.0:0.00} GB, {alloc.TotalUsedBytes / 1073741824.0:0.00} used");
         if (gpu.Guard is { } vramGuard) stats.Add($"  {vramGuard.Status}");
+        stats.Add($"ram         gc heap {GC.GetGCMemoryInfo().HeapSizeBytes / 1073741824.0:0.00} GB; native buffers {Meitou.Data.NativeBuffer.LiveBytes / 1048576} MB held");
         // The room in our blocks: empty and spare blocks can go back to the driver (they do under the guard's pressure); the scattered room
         // in part-used blocks only by moving what is in them.
         var (empty, spare, scattered, parts) = alloc.Slack();

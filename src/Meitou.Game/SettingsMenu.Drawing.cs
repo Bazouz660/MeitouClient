@@ -182,6 +182,8 @@ sealed partial class SettingsMenu
             if (remaster.OnOff) Segmented(R(860, y + (row - 22) / 2, 240, 22), meitou ? 1 : 0, i => remaster.Set(i == 1), "Faithful (off)", "Meitou (on)");
             else Segmented(R(920, y + (row - 22) / 2, 180, 22), meitou ? 1 : 0, i => remaster.Set(i == 1));
         }
+        else if (entry is { Segmented: true, Choice: { } sides })
+            Segmented(R(860, y + (row - 22) / 2, 240, 22), sides.Current(), sides.Choose, "All Faithful", "All Meitou");
         else if (entry.Toggle is { } toggle)
             Button(toggle.Get() ? "On" : "Off", R(976, buttonY, 124, 26), () => toggle.Set(!toggle.Get()), toggle.Get(), clip: viewport);
         else if (entry.Choice is { } choice)

@@ -22,6 +22,7 @@ public sealed partial class DialogueSystem
         bool Num2(double v) => dc.CompareBy == 1 ? v < dc.Value : v >= dc.Value;
         if (dc.Condition == 76) return Bool(s is not null);
         if (dc.Condition == 13) return Num3(counters.GetValueOrDefault((me, c.Event)).Count);
+        if (dc.Condition == 10) return Num3(data.Relations.Rank(mc.Faction));   // the speaker's faction's rank, whatever `who` says
         if (s is null) return dc.Condition is 6 or 15 or 34 or 51 || !b;
         int meF = mc.Faction, sF = s.Faction;
         var relations = data.Relations;
@@ -30,7 +31,7 @@ public sealed partial class DialogueSystem
             case 6 or 15 or 34 or 51: return true;
             case 1: return Num2(sF == meF ? 100 : relations.Contains(meF) && relations.Contains(sF) ? (int)relations.Get(meF, sF) : 0);
             case 2: return Num2(world.Player.Money);
-            case 3 or 10 or 12: return Num3(0);
+            case 3 or 12: return Num3(0);
             case 4 or 5:
                 return Bool(Cold(world, s.Carrying) is { } body && (body.Medical?.Dead ?? false) == (dc.Condition == 5) && (body.Bounties?.AmountFor(meF) ?? 0) > 0);
             case 9: return Bool(s.SquadId >= 0 && world.Squads.Find(s.SquadId)?.Shop is not null);

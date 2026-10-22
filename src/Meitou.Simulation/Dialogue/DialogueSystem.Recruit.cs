@@ -53,6 +53,7 @@ public sealed partial class DialogueSystem
 
         Leave(world, me, mc);
         mc.Faction = world.Player.Faction;
+        mc.RoadPreference = data.RoadPreferenceOf(mc.Faction);
         mc.SquadId = squad.Id;
         mc.Role = (int)SquadRole.Squad1;
         mc.FormationOffset = Vector2.Zero;

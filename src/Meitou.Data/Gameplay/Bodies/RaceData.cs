@@ -77,6 +77,12 @@ public sealed class RaceData
     public float StatMultiplier(StatsEnumerated stat) => (uint)stat < StatsInfo.Count ? StatMultipliers[(int)stat] : 1;
 
     /// <summary>A map with every entry 1.</summary>
+    /// <summary>
+    /// The order the original's race stat map iterates (a boost map of every <see cref="StatsEnumerated"/> 0-38 inserted in order, <c>FUN_14042efa0</c>,
+    /// docs/formats/boost-unordered.md): the RACE STATS panel lists the bonuses, then the penalties, in it.
+    /// </summary>
+    public static readonly IReadOnlyList<StatsEnumerated> StatMapOrder = [.. BoostHashOrder.Of(Enumerable.Range(0, StatsInfo.Count).Select(i => (long)i)).Select(k => (StatsEnumerated)k)];
+
     public static float[] NewStatMap()
     {
         var map = new float[StatsInfo.Count];

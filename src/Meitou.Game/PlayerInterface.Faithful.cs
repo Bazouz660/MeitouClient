@@ -24,9 +24,14 @@ sealed partial class PlayerInterface
         {
             if (advancedOpen && faithfulScreens.OpenScreens.LastOrDefault() == "new-game") { advancedOpen = false; return true; }
             if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) return true;
-            if (EditorOpen && faithfulScreens.OpenScreens[^1] == "editor") { EditorEscape(); UpdateMenuPause(); return true; }
+            // The editor stays under the game menu (the original's Esc in the editor; it has no cancel: CONFIRM closes it).
+            if (EditorOpen && faithfulScreens.OpenScreens[^1] == "editor") { faithfulScreens.Open("menu"); UpdateMenuPause(); return true; }
             // Esc presses the last button of the top message box (Return the first, docs/game/ui-input.md section 5).
             if (faithfulScreens.IsOpen("message")) HandleFrontendAction(new("message", CancelButton, CancelButton));
+            // While looting, one Esc closes the looter's and the body's windows together (their bags follow); the loot closes with its window.
+            else if (faithfulScreens.IsOpen("loot") && faithfulScreens.OpenScreens[^1] is "inventory" or "bag" or "loot" or "loot-bag") { faithfulScreens.Close("loot"); faithfulScreens.Close("inventory"); }
+            // So does trading: one Esc closes the trader with the customer's windows, whichever of them was clicked last (closing the trader ends the trade).
+            else if (faithfulScreens.IsOpen("trader") && faithfulScreens.OpenScreens[^1] is "inventory" or "bag" or "limbs" or "trader") { faithfulScreens.Close("trader"); faithfulScreens.Close("inventory"); }
             else if (!faithfulScreens.Escape()) faithfulScreens.Open("menu");
             UpdateMenuPause();
             return true;
@@ -85,20 +90,21 @@ sealed partial class PlayerInterface
         else if (e.Screen == "dialogue") DialogueAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); }
-        else if (e.Screen is "building" or "bench") MachineAction(e);
+        else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
+        else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });
         else if (e.Screen is "inventory" or "bag")
         {
             if (e.Widget == "OpenBagButton") ToggleBag();
             else if (e.Widget == "LimbsButton") faithfulScreens.Open("limbs");
-            else if (e.Widget == "ArrangeButton" && Selected().FirstOrDefault() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
+            else if (e.Widget == "ArrangeButton" && InventoryOwner() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
         }
     }
     UiBindings BindFaithfulScreen(string id)
     {
         var b = new UiBindings();
         var layout = faithfulScreens.Layout(id);
-        var lead = Selected().FirstOrDefault();
+        var lead = id is "inventory" or "bag" or "limbs" ? InventoryOwner() : Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
         if (BindFrontend(id, b)) return b;
         if (id == "editor") { BindEditor(b); return b; }
@@ -107,7 +113,8 @@ sealed partial class PlayerInterface
         else if (id == "dialogue") BindDialogueScreen(b);
         else if (id == "prospect") BindProspectScreen(b);
         else if (id == "build") BindBuildScreen(b);
-        else if (id is "building" or "bench") BindMachineScreen(id, b);
+        else if (id is "building" or "bench" or "storage") BindMachineScreen(id, b);
+        else if (IsLootScreen(id)) BindLootScreen(id, b);
         else if (id is "inventory" or "stats" or "bag" or "limbs")
         {
             b.Text["Root"] = id == "stats" ? lead?.Name.ToUpperInvariant() ?? "CHARACTER STATS"
@@ -151,7 +158,7 @@ sealed partial class PlayerInterface
             b.Hidden.Add("CameraMarker"); b.Hidden.Add("MovemementMarker");
             b.NativeScroll.Add("MapScrollView");   // the map pans and zooms itself (PlayerInterface.Map.cs); the canvas is not the layout's 4096 px
         }
-        if (id is "inventory" or "bag" or "limbs" or "trader") BindInventoryGeometry(id, b);
+        if (id is "inventory" or "bag" or "limbs" or "trader" or "loot" or "loot-bag") BindInventoryGeometry(id, b);
         return b;
     }
     /// <summary>
@@ -188,19 +195,21 @@ sealed partial class PlayerInterface
         if (id == "build") { AddBuildContent(controls); return; }
         if (id == "dialogue") { AddDialogueChoices(controls); return; }
         if (id == "prospect") { AddProspectContent(controls); return; }
-        if (id is "building" or "bench") { AddMachineContent(id, controls); return; }
+        if (id is "building" or "bench" or "storage") { AddMachineContent(id, controls); return; }
         // The bag window has no caption buttons (the vanilla screenshot): OPEN BAG closes it.
-        if (id == "bag") controls.RemoveAll(c => c.Action.StartsWith("mygui:close", StringComparison.Ordinal) || c.Action.StartsWith("mygui:pin", StringComparison.Ordinal));
+        if (id is "bag" or "loot-bag") controls.RemoveAll(c => c.Action.StartsWith("mygui:close", StringComparison.Ordinal) || c.Action.StartsWith("mygui:pin", StringComparison.Ordinal));
         AddMapContent(id, controls);
         if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); }
         if (id == "trader") { ArrangeTraderWindow(controls); AddTraderContent(controls); return; }
-        if (id is not ("inventory" or "bag" or "limbs") || Selected().FirstOrDefault() is not { ItemGrid: { } grid } lead) return;
-        string gridSection = id == "bag" ? "backpack_content" : "main";
-        int columns = id == "bag" ? grid.BagWidth : grid.Width, rows = id == "bag" ? grid.BagHeight : grid.Height;
-        if (id == "bag") ArrangeContainerGrid(id, controls, columns, rows);
+        // The loot windows show the open loot's body as the character windows show the lead.
+        if (id is not ("inventory" or "bag" or "limbs" or "loot" or "loot-bag") || (IsLootScreen(id) ? LootBody() : InventoryOwner()) is not { ItemGrid: { } grid } lead) return;
+        bool bagWindow = id is "bag" or "loot-bag";
+        string gridSection = bagWindow ? "backpack_content" : "main";
+        int columns = bagWindow ? grid.BagWidth : grid.Width, rows = bagWindow ? grid.BagHeight : grid.Height;
+        if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
         else ArrangeEquipmentGrid(controls, grid);
         if (id == "inventory") AddInventorySummary(controls, lead);
-        foreach (var item in grid.Items.Where(i => id == "bag" ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
+        foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {
             if (inventoryDrag is { } drag && drag.Character == lead.Id && drag.Item.Index == item.Index) continue;
             if (controls.FirstOrDefault(c => c.Name == item.Section) is not { } slot) continue;

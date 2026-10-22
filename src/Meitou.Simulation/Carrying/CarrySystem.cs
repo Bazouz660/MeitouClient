@@ -38,6 +38,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public FactionRelations? Relations { get; set; }
     /// <summary>The crime system a player's looting is reported to (a pending Looting; null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
+    /// <summary>Re-dresses a character whose worn gear the loot window moved (null: the looks and fighters stay).</summary>
+    internal CharacterAssembly? Assembly { get; set; }
     readonly BodyOptions bodyOptions = options;
     readonly List<LootEntry> loots = [];
 
@@ -59,7 +61,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// </summary>
     public static bool LeftArmUsable(MedicalState medical)
     {
-        foreach (var p in medical.Parts)
+        foreach (var p in medical.PartSpan)
         {
             if ((p.Template.CollapsePart & 4) == 0) continue;
             if (p.Template.Collapses && p.IsDown) return false;
@@ -463,7 +465,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             End(table, i);
             return;
         }
+        int death = DeathUnits(victim.Inventory!);
         var (taken, left) = TakeAll(bag, victim.Inventory!, Crime.CrimeSystem.IsLootTheft(cold, victim) ? victim.Faction : -1);
+        Butcher(world, i, t, death);
         bool seen = Looted(world, table, i, t, taken, left);
         if (cold.IsPlayer)
         {
@@ -513,7 +517,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             && Gap(table.Next[o], table.Next[t]) <= Settings.Reach * 1.5f ? (o, t) : null;
     }
 
-    /// <summary>One item of the open loot's main grid into the looter's inventory (what does not fit stays); marked stolen when the loot is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>).</summary>
+    /// <summary>
+    /// One item of the open loot (its grids, bag or worn gear) into the looter's inventory: the drop's place when it takes the item, else the first room (what does not fit stays); marked
+    /// stolen when the loot is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>). Gear changing hands re-dresses both.
+    /// </summary>
     void TakeLoot(World world, TakeLootItem take)
     {
         if (OpenLootPair(world) is not var (i, t)) return;
@@ -521,17 +528,56 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         var from = victim.Inventory!;
-        if (take.Index < 0 || take.Index >= from.Items.Count || from.Items[take.Index] is not { Section: "main" } item) return;
-        int mark = item.StolenFrom, before = item.Quantity;
+        var token = take.Item;
+        if (from.All().ElementAtOrDefault(token.Index) is not { } item || item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y ||
+            item.Quantity != token.Quantity || !InventoryCommands.IsMovableSection(item.Section)) return;
+        if (item.LockedOn)
+        {
+            if (cold.IsPlayer) world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
+            return;
+        }
+        bool worn = InventoryCommands.IsEquipmentSection(item.Section), wear = take.Section is { } s && InventoryCommands.IsEquipmentSection(s);
+        int mark = item.StolenFrom, before = item.Quantity, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
-        bool all = cold.Inventory!.Add(item);
-        if (all) from.Remove(item);
-        else item.StolenFrom = mark;
+        bool all = take.Section is { } section && InventoryCommands.Transfer(from, token, cold.Inventory!, section, take.X, take.Y);
+        if (!all && wear)
+        {
+            item.StolenFrom = mark;
+            if (cold.IsPlayer) world.Post($"{cold.Name} cannot wear {item.Name} there.");
+            return;
+        }
+        if (!all && take.Section is null && take.Count > 0 && take.Count < item.Quantity)
+        {
+            // Some units of a stack (a right click): the rest stays, unmarked.
+            var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
+            int moved = InventoryCommands.MoveUnits(owner, item, take.Count, cold.Inventory!);
+            item.StolenFrom = mark;
+            if (moved == 0)
+            {
+                if (cold.IsPlayer) world.Post($"{cold.Name} has no room for {item.Name}.");
+                return;
+            }
+            all = true;
+            wear = false;
+        }
+        if (!all)
+        {
+            wear = false;
+            bool flagged = item.Death;
+            item.Death = false;
+            all = cold.Inventory!.Add(item);
+            if (all) from.Remove(item);
+            else item.Death = flagged;
+        }
+        if (!all) item.StolenFrom = mark;
         if (!all && item.Quantity == before)
         {
             if (cold.IsPlayer) world.Post($"{cold.Name} has no room for {item.Name}.");
             return;
         }
+        Butcher(world, i, t, death);
+        if (worn) Assembly?.RefreshEquipment(victim);
+        if (wear) Assembly?.RefreshEquipment(cold);
         // Seen taking from one open window: one relations penalty and one message, as a take-all (engine choice).
         bool first = seenLoot != world.Player.OpenLoot;
         if (Looted(world, table, i, t, 1, all ? 0 : 1, first))
@@ -541,24 +587,53 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         }
     }
 
+    /// <summary>The units of <paramref name="inventory"/>'s death items (<see cref="ItemInstance.Death"/>).</summary>
+    static int DeathUnits(Inventory inventory)
+    {
+        int n = 0;
+        foreach (var item in inventory.All()) if (item.Death) n += item.Quantity;
+        return n;
+    }
+
+    /// <summary>
+    /// A live, down body that had <paramref name="before"/> units of death items and now has fewer is butchered: it dies, "{name} has been butchered" (<c>FUN_14075e7e0</c>, docs/game/animals.md
+    /// "Death items"; posted when the looter or the body is the player's, engine choice).
+    /// </summary>
+    void Butcher(World world, int looter, int body, int before)
+    {
+        var table = world.Characters;
+        var victim = table.Cold(body)!;
+        if (victim.Medical is not { Dead: false } medical || DeathUnits(victim.Inventory!) >= before) return;
+        medical.Butcher();
+        if (table.Cold(looter)!.IsPlayer || victim.IsPlayer) world.Post($"{victim.Name} has been butchered");
+    }
+
     /// <summary>The open loot whose looting was already seen (see <see cref="TakeLoot"/>).</summary>
     CharacterId seenLoot = CharacterId.None;
 
-    /// <summary>One of the looter's items into a free cell of the open loot's main grid (the container put's rules, <c>ProductionSystem.PutInContainer</c>).</summary>
+    /// <summary>One of the looter's items into the open loot: a free cell of its main grid or bag, or a free equipment slot that takes it (<see cref="InventoryCommands.Transfer"/>).</summary>
     void PutLoot(World world, PutLootItem put)
     {
         if (OpenLootPair(world) is not var (i, t) || put.Character != world.Player.LootOpener) return;
         var table = world.Characters;
-        var root =table.Cold(i)!.Inventory!;
-        var into = table.Cold(t)!.Inventory!;
-        var token = put.Item;
-        var item = root.All().ElementAtOrDefault(token.Index);
-        if (item is null || item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
-            !InventoryCommands.IsMovableSection(item.Section) || item.Contents is not null && item.Section == "backpack_attach") return;
-        if (put.X < 0 || put.Y < 0 || put.X > into.Width - item.Width || put.Y > into.Height - item.Height || !into.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
-        if (!root.Remove(item)) return;
-        (item.Section, item.X, item.Y) = ("main", put.X, put.Y);
-        into.Items.Add(item);
+        var looter = table.Cold(i)!;
+        var body = table.Cold(t)!;
+        var item = looter.Inventory!.All().ElementAtOrDefault(put.Item.Index);
+        if (item is null || item.Contents is not null && item.Section == "backpack_attach") return;
+        bool worn = InventoryCommands.IsEquipmentSection(item.Section);
+        if (put.FirstFit)
+        {
+            var token = put.Item;
+            if (item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
+                !InventoryCommands.IsMovableSection(item.Section)) return;
+            var owner = looter.Inventory.Items.Contains(item) ? looter.Inventory : looter.Inventory.Backpack?.Contents;
+            if (owner is null || InventoryCommands.MoveUnits(owner, item, put.Count, body.Inventory!) == 0) return;
+            if (worn) Assembly?.RefreshEquipment(looter);
+            return;
+        }
+        if (!InventoryCommands.Transfer(looter.Inventory, put.Item, body.Inventory!, put.Section, put.X, put.Y)) return;
+        if (worn) Assembly?.RefreshEquipment(looter);
+        if (InventoryCommands.IsEquipmentSection(put.Section)) Assembly?.RefreshEquipment(body);
     }
 
     /// <summary>
@@ -579,7 +654,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         foreach (var item in items)
         {
             int mark = item.StolenFrom;
+            bool death = item.Death;
             if (stolenFrom >= 0) item.StolenFrom = stolenFrom;
+            item.Death = false;
             if (into.Add(item))
             {
                 from.Remove(item);
@@ -588,6 +665,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             else
             {
                 item.StolenFrom = mark;
+                item.Death = death;
                 left++;
             }
         }

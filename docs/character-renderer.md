@@ -41,10 +41,19 @@ Item icons (`CharacterRenderer.Icons.cs`) are the same: an item's mesh drawn thr
 the camera, lighting and sizes are in [game/ui-screens.md](game/ui-screens.md) "Item icons".
 Harness `--crowd` exercises instance scaling; compare pose/upload/draw/shadow separately.
 **Observed** human_male:23 poses, no normal offsets,2986/15504 vertices affected, max offset0.18.
+**Verified** (`FUN_140071ac0`, `skin.program`; survey 2026-10-21): the game bakes a look's poses on the CPU once (`Ogre::Mesh::softwareVertexPoseBlend`
+per non-zero weight into a clone `<mesh>_morph_<n>`, then `removeAllPoses`) and never rebuilds normals or tangents; its vertex programs take no
+pose input. No pose in base data (13 posed meshes, 292 poses), installed mods or the Workshop folder carries normals, so the bind normals stay,
+as in Meitou (offsets only).
 
 ## Remaining limits
 
-GPU culling, coarser/merged far shadow casters, better texture stand-ins, face-morph normals and
-original animation-update budgets remain incomplete. Generated LOD as a Faithful switch also
-needs explicit design. Tests pin layouts/data; visual parity requires named screenshots across
+Far shadow casters: in Meitou's coarse cascades (`ShadowLod`) a part whose diameter is under one texel
+(`ShadowPass.MinCharacterCasterTexels`) casts nothing (hair, beards, weapons, hats); A/B `char-casters`. Release, 400-character
+crowd at The Hub: render-thread shadows -0.28 ms (-15 %), 11k of 921k pixels differ by 4/255 or more.
+Texture stand-ins: a part whose cut-out texture is still streaming in is not drawn (shadow and motion passes too); the head's
+region shows the skin constant and a flat normal until the head maps are resident; vest layers are drawn per ready layer
+(`AlphaPending`, `HeadPending`, `HeadNormalPending`, the vest mask).
+GPU culling, merged far shadow casters (one skinning per frame for every cascade), tail-mip texture stand-ins and
+original animation-update budgets remain incomplete. The `charlod` switch picks the files' own levels instead (Faithful; [characters](characters.md#lod-of-character-meshes)). Tests pin layouts/data; visual parity requires named screenshots across
 races, bodies, gear, animals, attachments, motion and shadow views. [bench](bench.md).

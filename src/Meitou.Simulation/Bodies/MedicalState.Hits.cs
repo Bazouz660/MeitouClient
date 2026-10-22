@@ -14,7 +14,7 @@ public sealed partial class MedicalState
     public void Heal(in MedicalContext ctx)
     {
         if (Dead) return;
-        foreach (var p in Parts)
+        foreach (var p in parts)
         {
             p.Wear = p.Stun = p.Bandage = p.Rig = 0;
             p.Flesh = p.MaxHp;
@@ -168,6 +168,28 @@ public sealed partial class MedicalState
         return item;
     }
 
+    /// <summary>
+    /// One CHARACTER <c>starting health</c> entry on a new body (<c>FUN_140645ef0</c>): below -M a limb becomes a stump (flesh 0, the treated pool 5); otherwise the flesh is
+    /// <paramref name="value"/> clamped to [-M, M] and the rest, M - flesh, is already treated. A part the anatomy lacks is ignored.
+    /// </summary>
+    public void ApplyStartingHealth(string partId, float value)
+    {
+        if (Parts.FirstOrDefault(p => p.Template.StringId == partId) is not { } p) return;
+        float max = p.MaxHp;
+        if (value < -max && p.Template.LimbSlot is >= 0 and < 4)
+        {
+            p.Limb = LimbState.Stump;
+            p.Flesh = 0;
+            p.Bandage = 5;
+        }
+        else
+        {
+            p.Flesh = Math.Clamp(value, -max, max);
+            p.Bandage = max - p.Flesh;
+        }
+        p.WasDown = p.IsDown;
+    }
+
     // ------------------------------------------------------------------ KO and death
 
     void StartKo(in MedicalContext ctx, List<MedicalEvent>? events) => ApplyKo(KoTime(ctx), events);
@@ -199,6 +221,9 @@ public sealed partial class MedicalState
         }
         else KoTimer = MathF.Max(KoTimer, minutes);
     }
+
+    /// <summary>Kills the character because one of its death items was taken while it was down (docs/game/animals.md "Death items").</summary>
+    public void Butcher(List<MedicalEvent>? events = null) => Die(DeathCause.Butchered, events);
 
     void Die(DeathCause cause, List<MedicalEvent>? events)
     {

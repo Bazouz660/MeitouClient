@@ -55,7 +55,7 @@ which are descriptive (RTTI knows `MessageBoxManager::Box`; the constructor of a
 | LoadGameMenu | 140480b50 | Kenshi_LoadGamePanel | Window | save list, info panel, "Reset squad positions" |
 | SaveGameMenu | 140481ed0 | Kenshi_SaveGamePanel | Window | name edit box |
 | ImportGameMenu | 140481130 | Kenshi_ImportGamePanel | Window | ticks: positions, buildings, research, dead NPCs, relations; Advanced options; the import kind of the save request is described in [save.md](../formats/save.md#save-requests-fun_14047c310) |
-| LoadingWindow | 14091a280 | Kenshi_LoadingScreen | Top | message text with a tip |
+| LoadingWindow | 14091a280 | Kenshi_LoadingScreen | Top | picture, "LOADING" with dots, a tip ([Loading screen](#loading-screen)) |
 | MainBarGUI (HUD) | 14072d3b0 | Kenshi_MainPanel | Middle | see section 4 |
 | Overview (ManagementScreen) | 14049f5b0 | Kenshi_OverviewWindow | Window | tabs Map, Faction, Research, Craft, Squads, Messages ("DIALOGUE"), AI |
 | MapScreen | 140490210 | in Overview | - | world map, markers ([Map](#map)) |
@@ -81,6 +81,41 @@ Root, Datapanel and TooltipPanel, with no option controls. Loading the layout al
 **Observed** (installed `locale/en_GB/LC_MESSAGES/main.pot` and the eight non-English catalogs, de/es/fr/ja/ko/pt/ru/zh; no test checks it):
 `kenshi/titlescreen.cpp:557..563` each identify a label and a longer description, in hunger/death/damage/production/research/building/nests
 order, and all seven have translations. Runtime reads the template and translates the exact message key.
+
+### Loading screen
+
+**Verified** (decompilation: constructor `FUN_14091a280`, show/hide `FUN_140916ca0`, picture `FUN_1409163e0`, tip `FUN_140913640`, per frame `FUN_1409133d0`):
+
+- The layout is used as it is; nothing is moved or resized but `LoadingText`.
+- `LoadingText`: the catalog's "Loading" upper-cased (through the global locale) and left-aligned. It is placed so that the text with two dots is centred
+  horizontally in `LoadingPanel`. One dot is added per second of real time, back to none after three. Its font `Kenshi_UI_Messages` (MailartRubberstamp)
+  has only the codes A-Z and the dot.
+- Tips: every non-empty line of `tips.txt` (resource group General, so a locale's own copy) is kept, with a written `
+` read as a line break. Each
+  showing puts one at random in `MessageText`, or nothing when there are none. `MessageText` wraps through its template (`Kenshi_GenericTextBox`).
+- Picture: each showing takes a random group, `Int(0, n − 1)` with the global `rand`, of the image set `Kenshi_LoadingScreen`
+  (`kenshi_images.xml`). The group is set by name and MyGUI resolves a name to its first group. The base data names the `loading_screen9` and
+  `loading_screen10` groups `LoadingScreen6`, so vanilla shows `loading_screen1..5` at 1/8 each and `loading_screen6` at 3/8. Pictures 0, 9 and 10
+  ship but never show.
+- Hiding is immediate, with no fade.
+- The bar at the top right is the background loading bar below, not part of this window.
+- Meitou (`LoadingScreen`, Faithful mode): as above. `tips.txt` is read as UTF-8, else Windows-1252, since the French, German and Spanish files are
+  Windows-1252 (engine choice: how the original shows those bytes is **Unknown**). The Meitou mode keeps its own panel, spinner, bar and slide-out.
+
+### Background loading bar
+
+**Verified** (decompilation, the resource loader's update `FUN_14044bf40`; **Observed** in a vanilla screenshot, also without RE_Kenshi):
+
+- Widget: a `ProgressBar`, skin `Kenshi_ProgressBarFill`, created once by `createWidgetRealT` at real coordinates (0.9, 0, 0.1, 0.02), align
+  Left Top, layer `Top`, no name. So it sits at the top right over the loading screen and over the game alike.
+- Counters: each update counts the loader's pending requests (two queues). A rise adds to a total, a fall adds to a done count, and both reset to 0
+  when nothing is pending. The bar's range is the total and its position the done count.
+- Visibility: the bar shows when the total is above 0 and a wait counter is 0, tested before the counter steps. The counter goes back to 6 when the
+  total is 0 and counts down otherwise, so the bar appears after six updates with work pending and hides as soon as the queue empties.
+- A second pair of counters over two other queues is kept the same way but not drawn.
+- Meitou (`ResourceLoadBar`, Faithful mode): stepped once a drawn frame. Pending means the objects' plus the characters' loads (engine choice: the
+  original's queue holds the meshes and textures it loads in the background; terrain and foliage streaming are left out). It is drawn last on the
+  loading screen and over the in-game UI.
 
 ## 4. HUD (MainBarGUI)
 
@@ -179,7 +214,8 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
     Dexterity, Toughness and (not in ranged mode) Dodge. A value is the effective number, then its change in brackets: `{1} ({2})` all Bad when lower,
     `{1} (+{2})` all Good when higher, plain when equal. The code passes the labels in mixed case ("Martial Arts:"); the original shows them upper case in
     a light colour (**Observed**, screenshot), from a source **Unknown**.
-  - `HealthText` words in priority: Dead, BEING EATEN ALIVE!!, Dying, Unconscious (N), Recovery coma, Playing dead..., Blood loss KO, Bleeding out,
+  - `HealthText` words in priority: Dead, BEING EATEN ALIVE!!, Dying, Unconscious (N) (N = (int) of the medical float `+0xa0`, the KO timer, taken
+    only while it is &gt; 0; "Rebooting" for skeletons; `FUN_14088a8f0`), Recovery coma, Playing dead..., Blood loss KO, Bleeding out,
     Crippled, Crippled arm, Critical, Limb trauma, Staying low, Starving (hunger &lt; 1), Bleeding, disguise words; else by the overall health h:
     Hungry (h ≥ 0.7 and hunger &lt; 2), Wounded (h &lt; 0.7), Slightly Injured (h &lt; 0.9), Normal. What h is exactly is **Unknown**; the worst part's
     fraction matches a screenshot (a leg at 77 % and "Slightly Injured", **Observed**).
@@ -193,7 +229,7 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
   splint % × 0.01 + green, number floor(H − S + 0.1); arrows `<<   ` below 0 and degenerating, `<<!!   ` at the KO point, `!!!   ` destroyed. Blood:
   green blood / capacity, number floor(blood + 0.1), arrows a run of `<`, ceil(|bleed rate| / 0.05) of them (at most 100). Hunger (0..3): number
   (int)(hunger × 100), Green hunger − 2, Yellow hunger − 1, Red hunger; arrows `>   ` recovering, `<!   ` below 2, else `<   `. The parts come in the
-  order head, stomach, chest, left arm, right arm, left leg, right leg for people (**Observed**, screenshot); Meitou reads the RACE `combat anatomy` references in another order (right leg first), so how the original orders its part list is **Unknown** and Meitou sorts by part name to match.
+  medical part array's order ([part order](character-stats.md#part-order), **Verified**): head, torso, arms, legs, left before right.
 - Information panel: `ExtendingPanel` starts collapsed, its bottom moved onto the panel's bottom (behind the Overlapped `StatsPanel`), and slides over
   0.5 s to its layout place when `ExtendedStatsButton` is pressed (**Verified**). `BountyPanel` shows only for one selected character with a bounty or
   a status line (Imprisoned, Slave, Escaped slave, Committing Crime!, Leader...; **Verified**).
@@ -237,6 +273,17 @@ holds `BiomeTextBox` (`Kenshi_BannerTextFont`, centred, shadowed) between `Biome
 - **Save.** CAMERA `biome_text_timer` = the cooldown, `biome_text_groud` = the stored group's string id (empty: none), set back on load. `area` (`FUN_140375360`) = the name of the group under the pivot, empty for `NONE`.
 
 Meitou (`PlayerInterface.Biome.cs`, both UI modes): the group comes from the weather region under the pivot; the layout's own line positions (**engine choice**: the text-size layout above is not reproduced); the block is "a conversation is showing"; a new world or a load only takes the group under the pivot (a load keeps the saved cooldown, clamped at 0 on save where the original writes its raw falling value).
+
+### Messages
+
+**Verified** (`MessageRoller`, constructor `140724af0`, update `140724310`, show-next `140723590`) unless noted. Event messages ("Discovered {1}"...) show one at a time in
+`Kenshi_MessagePanel.layout` (Popup layer; `Kenshi_MessageSkin`, a three-part paper strip, 0.359 x 0.065 of the screen; `MessageTextBox` centred, word-wrapped,
+`Kenshi_StandardFont_Large` in ink `#140806`), queued. Its top-left is the absolute position of the HUD's `MessagePanel` (`14072d3b0`; lower centre, 0.32 / 0.71 of the
+screen), of the build window's `MessagePanel` while that is open (`1404e5210`). Each message shows at alpha 1 for 4 s, then a MyGUI alpha fade to 0 at coef 3 (⅓ s); its end shows
+the next (**Observed**: the delegate's body is not read). Nothing new comes up while the LoadingWindow is up. When an unknown widget (`DAT_1421337d0 + 0x38`) is visible the panel
+sits above another one instead (**Unknown**).
+
+Meitou (`PlayerInterface.Hud.cs`, both UI modes): its own notices (Saved, Loaded, errors) share the queue, errors in `Bad` red; always at the HUD's spot; real-time timers.
 
 ### Prospecting
 
@@ -373,7 +420,8 @@ decompile unless marked; Meitou's adapter is `PlayerInterface.Map.cs`.
   `meitou-nest:<wild site>:<TOWN id>` and reads them back; the place is filled in when the nest next loads.
 - **Discovery** (`14092f6b0`): a character within 400 units (XZ) sets `discovered` and `explored` (that it is a player character's is **Observed**);
   else, not yet discovered, within 8500 (17000 for type Town, halved for Nest and Ruins) sets `discovered` with the message "Discovered {1}", none for
-  nests. Meitou skips types 8 and 10 (whether the original does is **Unknown**) and checks with the population's zone refresh (every 15 ticks), a camp only after its nest has loaded; flags per placed town
+  nests. The new game's messages show after the character editor's CONFIRM (**Observed**, vanilla play); Meitou checks nothing while `PlayerState.InCreation`.
+  Meitou skips types 8 and 10 (whether the original does is **Unknown**) and checks with the population's zone refresh (every 15 ticks), a camp only after its nest has loaded; flags per placed town
   (`PlayerState.Towns`) and per camp (`PlayerState.Camps`), read and written as the GAMESTATE_TOWN bools.
 - **Map items** (MAP_ITEM: `towns` with v0 = how many of that TOWN, 0 all, v1 = weight; `unlock count`, 0 all): only by right-clicking the item in a
   player character's inventory (`140714a20` → `14075f550`). Candidates per link: the placed towns of that record (not types 0, 8, 10) not yet
@@ -430,6 +478,9 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   **Observed** (vanilla screenshot supplied 2026-10-21, METARU, Medium Backpack): the bag window sits left of the character window, same top, with no caption buttons; it is married to
   the character window and closed only by OPEN BAG again. Meitou: `MyGuiScreenHost.Follow("bag", "inventory")` (a drag on either moves both; Escape or closing the inventory closes both). Engine choice: OPEN BAG's state is kept per character
   (`PlayerInterface.bagOpen`, not saved), so the bag reopens with that character's inventory or when they are selected again.
+  The pin button (`Kenshi_PinButtonSkin` in the `Kenshi_WindowCXP` caption, drawn "O") keeps the inventory window, its bag and limbs on the character shown when it was pressed,
+  whoever is selected after; closing the window lets the pin go. Engine choice: the original's pin rule (one window, or a new one for the next selection) is **Unknown**.
+  Esc while trading closes the trader and the character's windows in one press, whichever was clicked last (engine choice, as for loot).
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.
 - **Trader window** (code `PlayerInterface.Trade.cs`):

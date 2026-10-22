@@ -32,8 +32,8 @@ Needs a Vulkan1.3 GPU with required descriptor-indexing/indirect-draw features, 
 DLSS and FSR are Windows-only; optional ray-query GI falls back on unsupported GPUs. On Linux (checked on KDE, Wayland and X11, NVIDIA driver) a Steam install is found under ~/.local/share/Steam, ~/.steam/steam or the Flatpak folder; macOS is untested.
 Building requires the [.NET10 SDK](https://dotnet.microsoft.com/download).
 
-Steam installs are located automatically; otherwise select the Kenshi folder when prompted,
-set KENSHI_PATH, or create git-ignored meitou.local.json in the repo/working/executable directory:
+Steam installs, and GOG installs made by GOG Galaxy, Heroic, Lutris or Bottles, are located automatically; otherwise select the Kenshi folder when prompted,
+set KENSHI_PATH, or create git-ignored meitou.local.json in the repo/working/executable directory (on Linux and macOS also `~/.config/meitou/config.json`, the place the prompt saves to when the executable's folder is read-only):
 
 ```json
 { "kenshiPath": "<your Kenshi install directory>" }

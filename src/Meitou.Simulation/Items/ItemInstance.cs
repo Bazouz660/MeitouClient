@@ -53,6 +53,11 @@ public sealed class ItemInstance
     /// (<see cref="Carrying.CarrySystem"/>). The item counts as stolen while its holder is of another faction (<see cref="IsStolenFor"/>).
     /// </summary>
     public int StolenFrom { get; set; } = -1;
+    /// <summary>
+    /// One of its owner's CHARACTER / ANIMAL_CHARACTER <c>death items</c> (the save's <c>death</c>, docs/game/animals.md "Death items"): a live owner's own food search skips it, taking
+    /// it from a live owner that is down butchers the owner, and it stops being one when it leaves the owner's inventory. Its stack does not merge with ordinary units.
+    /// </summary>
+    public bool Death { get; set; }
     /// <summary>A worn backpack's contents (null for other items).</summary>
     public Inventory? Contents { get; init; }
     /// <summary>The factor of the contents' weight (a bag's <c>encumbrance effect</c>).</summary>
@@ -65,7 +70,7 @@ public sealed class ItemInstance
     {
         Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = UnitWeight, StackLimit = StackLimit,
-        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom,
+        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death,
     };
 
     /// <summary>Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (carry-loot.md 4.4: the from-owner is set and of another faction).</summary>

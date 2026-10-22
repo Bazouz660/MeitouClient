@@ -2,8 +2,11 @@ using System.Numerics;
 
 namespace Meitou.Simulation.Items
 {
-    /// <summary>Open a container (<see cref="Locks.Fixture.Id"/>): the nearest of the characters (the selection when empty) who may walks to it and its window opens.</summary>
-    public sealed record OpenContainerOrder(IReadOnlyList<CharacterId> Characters, string Fixture) : SimCommand;
+    /// <summary>
+    /// Open a container (<see cref="Locks.Fixture.Id"/>): the nearest of the characters (the selection when empty) who may walks to it and its window opens. Another faction's locked one:
+    /// with <paramref name="Alt"/> its lock is picked (76 PICK_LOCK), else the hint and a walk to it; a shop's without Alt: the steal hint and a walk.
+    /// </summary>
+    public sealed record OpenContainerOrder(IReadOnlyList<CharacterId> Characters, string Fixture, bool Alt = false) : SimCommand;
 
     /// <summary>Closes the open container's window.</summary>
     public sealed record CloseContainer : SimCommand;
@@ -14,12 +17,21 @@ namespace Meitou.Simulation
     /// <summary>
     /// Opening a container of a building's interior (docs/game/locks.md "Containers"): a character walks up to it, its inventory shows in a window beside the character's, and items are
     /// moved with <see cref="Production.PutInMachine"/> / <see cref="Production.TakeFromMachine"/> addressed by the fixture id. <b>Engine choices</b>: the reach, a locked one refusing, a shop's
-    /// containers staying the shop's (its stock is one merged inventory, <see cref="Trading.Shop.ForBuilding"/>), the window closing when the opener walks off.
+    /// containers staying the shop's (its stock is one merged inventory, <see cref="Trading.Shop.ForBuilding"/>), what is taken from another faction's marked stolen with no witness test.
     /// </summary>
     public sealed partial class PlayerSystem
     {
         /// <summary>A character opens or uses a container within this distance of it (an engine choice).</summary>
         public const float ContainerReach = 20;
+
+        /// <summary>How far above or below a container a character may stand to open or use it, and how near its origin's height the floor walked to must be (engine choices: a storey is about 66).</summary>
+        public const float ContainerFloorSlack = 20;
+
+        /// <summary>
+        /// How far (X/Z) a character may be from a container it puts into or takes from: the original's limit for an item moved out of a character's inventory (60; out of a building's, its
+        /// bounds radius + 40, which a chest's is close to; docs/game/economy.md "Trading range").
+        /// </summary>
+        public const float TradingRange = 60;
 
         static void OpenContainerInput(World world, Items.OpenContainerOrder order)
         {
@@ -35,14 +47,30 @@ namespace Meitou.Simulation
             }
             if (best < 0) return;
             var walker = table.Cold(best)!;
+            bool theirs = fixture.Owner >= 0 && fixture.Owner != world.Player.Faction;
             if (fixture.Lock is { EffectivelyLocked: true })
             {
-                world.Post($"{walker.Name}: It's locked.");
+                if (!theirs)
+                {
+                    world.Post($"{walker.Name}: It's locked.");
+                    return;
+                }
+                // Another faction's locked container (the original's FUN_1407fc6e0): Alt picks the lock, else the hint and a walk to it.
+                walker.Shackles = null;
+                walker.PickingLock = order.Alt ? fixture.Id : null;
+                if (!order.Alt) world.Post("Hold down the ALT key to pick the lock.");
+                MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
                 return;
             }
             if (world.Squads.All.Any(s => s.Shop?.Building == fixture.Building))
             {
-                world.Post($"{walker.Name}: That stock is the shop's. Trade with the shopkeeper.");
+                // A shop's stock: the original's hint and a move without Alt; with Alt Meitou still refuses (the stock is the shop's one merged inventory, engine choice).
+                if (!order.Alt && theirs)
+                {
+                    world.Post("Hold down the ALT key to steal items");
+                    MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
+                }
+                else world.Post($"{walker.Name}: That stock is the shop's. Trade with the shopkeeper.");
                 return;
             }
             var player = world.Player;
@@ -52,10 +80,16 @@ namespace Meitou.Simulation
             player.OpenContainer = null;
             player.OpeningContainer = order.Fixture;
             player.ContainerWalker = table.IdOf(best);
-            if (bestDistance > ContainerReach) MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
+            if (bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position))
+            {
+                // Onto the container's own floor: furniture cuts a hole in the floor's navmesh, and a goal without a height resolves to the storey above or the ground below.
+                var at = world.Walkability.FloorNear(fixture.Position.X, fixture.Position.Z, fixture.Position.Y, ContainerFloorSlack) is { } onFloor ? onFloor : fixture.Position;
+                MovementSystem.GoTo(table, best, Flat(at), walker.RunSpeed);
+                (walker.GoalHeight, walker.GoalHeightAt) = (at.Y, Flat(at));
+            }
         }
 
-        /// <summary>Each tick: the walker in reach opens its container; one given another order, downed or gone gives up. An open window closes when its opener is far, down or gone.</summary>
+        /// <summary>Each tick: the walker in reach opens its container; one given another order, downed or gone gives up. An open window stays until the player closes it; it closes when its opener is down or gone.</summary>
         static void ContainerWorkers(World world)
         {
             var player = world.Player;
@@ -67,7 +101,7 @@ namespace Meitou.Simulation
                 else
                 {
                     var at = Flat(fixture.Position);
-                    if (Vector2.Distance(Flat(table.Next[s].Position), at) <= ContainerReach)
+                    if (Vector2.Distance(Flat(table.Next[s].Position), at) <= ContainerReach && SameFloor(table.Next[s].Position, fixture.Position))
                     {
                         if (table.Next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
                         (player.OpenContainer, player.ContainerOpener, player.OpeningContainer) = (wanted, player.ContainerWalker, null);
@@ -77,20 +111,22 @@ namespace Meitou.Simulation
             }
             if (player.OpenContainer is { } open)
             {
-                bool keep = world.Fixtures.Find(open) is { Contents: not null } f && table.TryResolveNext(player.ContainerOpener, out int o) && table.Cold(o) is { Medical.Incapacitated: false }
-                    && Vector2.Distance(Flat(table.Next[o].Position), Flat(f.Position)) <= ContainerReach * 1.5f;
+                // The original has no walk-away test: the windows stay until the player closes them (docs/game/locks.md "Containers"); only an opener who is down or gone closes it here.
+                bool keep = world.Fixtures.Find(open) is { Contents: not null } && table.TryResolveNext(player.ContainerOpener, out int o) && table.Cold(o) is { Medical.Incapacitated: false };
                 if (!keep) player.OpenContainer = null;
             }
         }
 
-        /// <summary>The container Take/Put address by <paramref name="site"/> (a fixture id) and the character, when it is open and the character is in reach; posts "too far" otherwise. Null when <paramref name="site"/> is not a container.</summary>
+        static bool SameFloor(Vector3 a, Vector3 b) => MathF.Abs(a.Y - b.Y) <= ContainerFloorSlack;
+
+        /// <summary>The container Take/Put address by <paramref name="site"/> (a fixture id) and the character, when it is open and the character is in reach; posts "Out of trading range." otherwise (<see cref="TradingRange"/>). Null when <paramref name="site"/> is not a container.</summary>
         internal static Locks.Fixture? ContainerFor(World world, string site, CharacterId who, out CharacterCold? cold)
         {
             cold = null;
             if (world.Fixtures.Find(site) is not { Contents: not null } f) return null;
             var table = world.Characters;
             if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true, Inventory: not null } c) return f;
-            if (Vector2.Distance(Flat(table.Next[slot].Position), Flat(f.Position)) > ContainerReach * 1.5f) { world.Post($"{c.Name} is too far away."); return f; }
+            if (Vector2.Distance(Flat(table.Next[slot].Position), Flat(f.Position)) > TradingRange) { world.Post("Out of trading range."); return f; }
             cold = c;
             return f;
         }

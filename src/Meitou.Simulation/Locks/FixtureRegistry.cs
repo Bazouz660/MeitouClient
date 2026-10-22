@@ -46,7 +46,7 @@ public sealed class FixtureRegistry
     IReadOnlyList<ContainerSpot>? containerSpots;
 
     /// <summary>Where the containers with an inventory stand, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position))];
+    public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }))];
 
     IReadOnlyList<DoorPick>? doorPicks;
 
@@ -98,7 +98,8 @@ public sealed class FixtureRegistry
         var faction = owner >= 0 && owner < data.Factions.Count ? data.Factions[owner] : null;
         var list = new List<Fixture>();
         var record = db.Find(b.BuildingId);
-        if (record is not null)
+        // A destroyed building has no doors and no lock of its own (docs/game/locks.md "Doors"); its interior's fixtures stay.
+        if (record is not null && !b.Destroyed)
         {
             AddDoors(world, db, record, b.Key, site, owner, faction, b.Position, b.Yaw, list);
             if (Lockable(db, record) is { } own) list.Add(Make(world, db, own, b.Key, b.Key, record, site, owner, faction, b.Position, b.Yaw));
@@ -190,7 +191,7 @@ public sealed class FixtureRegistry
         {
             Id = id, Building = building, Kind = kind, RecordId = record.StringId, Site = site, Owner = owner, Position = at, Yaw = yaw,
             Restrains = functionality?.GetBool("restrains movement") ?? false, UseRange = functionality is null ? 25 : FloatOf(functionality, "use range", 25),
-            Contents = kind == FixtureKind.Container && storageWidth > 0 && storageHeight > 0 ? new Meitou.Simulation.Items.Inventory(storageWidth, storageHeight) : null,
+            Contents = kind == FixtureKind.Container && storageWidth > 0 && storageHeight > 0 ? new Meitou.Simulation.Items.Inventory(storageWidth, storageHeight) { StackBonusMult = record.GetFloat("stackable bonus mult", 1) } : null,
             Lock = !locked ? null : new LockState { Level = RollLevel(world.Seed, id, faction, IntOf(record, "lock level bonus"), door: false), Hardness = FloatOf(record, "hardness") },
         };
     }
@@ -316,6 +317,7 @@ public sealed class FixtureRegistry
     /// <summary>Tells navigation after a door's lock changed (a pick, a break, an unlock).</summary>
     public void Touch(Fixture fixture)
     {
+        if (fixture.Contents is not null) containerSpots = null;   // its lock state is published with the spots
         if (fixture.Kind == FixtureKind.Door) SyncDoors(fixture.Building);
     }
 

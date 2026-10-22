@@ -15,7 +15,7 @@ Bonedog/Garru/Bull/Leviathan/spider/crab and other creatures have distinct clips
 
 Animal faction/hostility/run-away ratio applies ordinary relations; senses/blood/egg behaviours
 are separately decoded/uncertain. Race carriable gate governs lifting (Leviathan excluded in
-survey), not an invented mass threshold. Death items/backpack/natural weapon are record inputs.
+survey), not an invented mass threshold. Death items ([below](#death-items)), backpack and natural weapon are record inputs.
 Appearance uses animal mesh/fur/body scale; race-specific animation names and bounds matter.
 Pose/LOD distances can scale by animal size in engine, not original scheduler proof.
 
@@ -76,6 +76,30 @@ Pose/LOD distances can scale by animal size in engine, not original scheduler pr
 | Land Bat | land_bat (52) | **walk** 1.33, **run** 0.67 | **idle1** 11.3, **idle2** 15.3 | none | attack1 0.97 | idle3, eat (listed), strafeleft/right |
 | Cage Beast | cage_beast (41) | **walk** 1.6 | **idle1** 15.9 | gotosleep 2.5, sleep 1.5 | attack1 1.4 | run 0.67, strafeleft |
 | Skimmer | skimmer (32) | **walk** 2.67 | none: its `idle1` record names a clip the skeleton lacks (it has `idle01` 0.17) | **sleep** 0.17 | **attack1** 1.83 (its `eat (attack1)` record too) | strafe |
+
+## Death items
+
+The meat, skins, teeth (animals) and cores/CPUs (robots, Gurglers) a body yields. Not dropped at death: they are in the inventory
+from the start.
+
+- `death items` (ANIMAL_CHARACTER and CHARACTER) lists ITEMs, value 0 the quantity, the others 0 in the install (**Verified**,
+  merged data: 43 animals, e.g. Bonedog 1 Animal Skin / 4 Animal Teeth / 3 Raw Meat; Pet Dog, Settler's Pup, Pack Beast Dead none).
+- Added when a new character's inventory is set up, after the `inventory` list (`Character::vfunc_88` `FUN_140622e80`, called last
+  by both setup functions, not for an inventory loaded from a save); entries below 1 skipped; each item gets the byte `+0x138`
+  set (**Observed**, decompile).
+- `+0x138` is the saved item key `death` (read/written by `FUN_140761550` / `FUN_1407609e0`) (**Observed**). In saves these items
+  take ordinary grid cells beside carried goods, each entry one stack of its whole quantity whatever the item's `stackable`
+  (Electrical Components 4, Iron Plates 6, `stackable` 1), and a stack of the same record without the flag stays a separate stack
+  (**Verified**, METARU and quicksave platoon files: 144 / 187 flagged items, none overlapping).
+- Item lookups by type (`FUN_1407465d0`, used by `Task_grabOneFood` and `CharacterAnimal::vfunc_94`) skip flagged items while the
+  owner is alive (`+0x5bc`) (**Observed**).
+- Taking one out (`FUN_14075e7e0`, from the inventory's remove functions) clears the flag; when the owner is alive and down
+  (`isDown`, [carry-loot.md](carry-loot.md)) the owner dies (the death function) with "{1} has been butchered" (**Observed**).
+- No inventory-window filter on the flag was found: the items show while the owner lives (**Observed**, absence in the decompile).
+- Unknown: `FUN_1405a59a0` (reads record 3979's `death items`); whether the flag changes weight.
+
+Meitou: `ItemFactory.Build` adds them (`ItemInstance.Death`), stacks merge only with the same flag, the feed search skips them,
+moving an item out of its inventory clears it, and a loot take that removes flagged units from a live body butchers it.
 
 ## 8. Not found
 

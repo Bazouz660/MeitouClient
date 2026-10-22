@@ -4,7 +4,9 @@ using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Ui;
 using Meitou.Simulation;
+using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Production;
 using Meitou.Simulation.Trading;
 using Meitou.Ui;
 
@@ -265,7 +267,8 @@ sealed partial class PlayerInterface
             Say(new BuyItem(stock.Token, shift ? stock.Quantity : 1) { Tick = session.World.Tick, Equip = true });
             return true;
         }
-        if (!picked.Control.Properties.TryGetValue("InventoryItem", out var index) || Selected().FirstOrDefault() is not { ItemGrid: { } grid } lead) return false;
+        if (trade is null && WindowRightClick(picked.Screen, picked.Control, shift)) return true;
+        if (IsLootScreen(picked.Screen) || !picked.Control.Properties.TryGetValue("InventoryItem", out var index) || InventoryOwner() is not { ItemGrid: { } grid } lead) return false;
         var item = grid.Items.FirstOrDefault(i => i.Index == int.Parse(index, CultureInfo.InvariantCulture));
         if (item is null) return false;
         var token = new InventoryItemToken(item.Index, item.Record, item.Section, item.X, item.Y, item.Quantity, item.Quality);
@@ -277,5 +280,46 @@ sealed partial class PlayerInterface
         if (MapItemTowns?.Invoke(item.Record) is null) return false;
         Say(new ReadMapItem(lead.Id, token) { Tick = session.World.Tick });
         return true;
+    }
+
+    /// <summary>
+    /// A right click on an item while the character's inventory and another item window are open (the original's release handler <c>FUN_140714a20</c>, move <c>FUN_140713d20</c>):
+    /// one unit goes to the other window, where it first fits, with Shift the whole stack (the original repeats the one-unit move until it fails). Between the lead's inventory or bag and the
+    /// shown machine, storage or container window, or the open loot (true: taken).
+    /// </summary>
+    bool WindowRightClick(string screen, UiControl control, bool shift)
+    {
+        int count = shift ? 0 : 1;
+        if (!faithfulScreens.IsOpen("inventory") || InventoryOwner() is not { ItemGrid: { } grid } lead) return false;
+        var machine = Machine(shownMachine) is { } shown && faithfulScreens.IsOpen(MachineScreen(shown)) ? shown : null;
+        bool loot = faithfulScreens.IsOpen("loot") && lead.Id == session.CurrentSnapshot.LootOpener;
+        if (machine is not null && control.Properties.TryGetValue("MachineItem", out var raw))
+        {
+            int code = int.Parse(raw, CultureInfo.InvariantCulture);
+            Say(new TakeFromMachine(lead.Id, machine.Site, code >= 1000 ? -1 : code - 10, Math.Max(0, code - 1000), Count: count) { Tick = session.World.Tick });
+            return true;
+        }
+        if (!control.Properties.TryGetValue("InventoryItem", out var index)) return false;
+        int at = int.Parse(index, CultureInfo.InvariantCulture);
+        if (IsLootScreen(screen))
+        {
+            if (!loot || LootBody()?.ItemGrid?.Items.FirstOrDefault(i => i.Index == at) is not { } looted) return false;
+            Say(new TakeLootItem(Token(looted)) { Tick = session.World.Tick, Count = count });
+            return true;
+        }
+        if (screen is not ("inventory" or "bag") || grid.Items.FirstOrDefault(i => i.Index == at) is not { } item || !InventoryCommands.IsMovableSection(item.Section)) return false;
+        if (loot)
+        {
+            Say(new PutLootItem(lead.Id, Token(item), 0, 0) { Tick = session.World.Tick, FirstFit = true, Count = count });
+            return true;
+        }
+        if (machine is null) return false;
+        bool inputs = machine.Inputs.Count > 0 || machine.Storage is null;
+        int slot = inputs ? machine.Inputs.ToList().FindIndex(i => i.Item == item.Record) : -1;
+        if (inputs && slot < 0) return true;   // no input takes it
+        Say(new PutInMachine(lead.Id, Token(item), machine.Site, slot, -1, 0, count) { Tick = session.World.Tick });
+        return true;
+
+        static InventoryItemToken Token(InventoryItemView i) => new(i.Index, i.Record, i.Section, i.X, i.Y, i.Quantity, i.Quality);
     }
 }

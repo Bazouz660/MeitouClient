@@ -37,6 +37,8 @@ public sealed class LauncherConfig
     /// <summary>A game release the user chose not to be offered as an update; a newer one is offered again.</summary>
     public string? SkippedVersion { get; set; }
     public string LaunchArguments { get; set; } = "";
+    /// <summary>An installed launcher applies its own update at startup and restarts into it.</summary>
+    public bool AutoUpdateLauncher { get; set; } = true;
     public List<ModPreset> Presets { get; set; } = [];
 
     public static LauncherConfig Load()

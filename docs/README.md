@@ -41,6 +41,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 
 ## Format research
 
+- [boost-unordered](formats/boost-unordered.md): iteration order of the exe's hash tables
 - [camera](formats/camera.md)
 - [clouds](formats/clouds.md)
 - [collision](formats/collision.md)

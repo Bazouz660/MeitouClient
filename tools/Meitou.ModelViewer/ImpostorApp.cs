@@ -238,7 +238,7 @@ static class ImpostorApp
         {
             var texture = atlas[map]!;
             int px = atlas.AtlasPixels;
-            var rgba = ImpostorEncoder.Decode(texture.Encoding, texture.Levels[0], px);
+            var rgba = ImpostorEncoder.Decode(texture.Encoding, texture.Levels[0].ToArray(), px);
             if (map == ImpostorMap.Albedo)   // coverage shown over a grey background
                 for (int i = 0; i < rgba.Length; i += 4)
                 {

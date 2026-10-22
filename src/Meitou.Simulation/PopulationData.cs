@@ -100,7 +100,7 @@ public sealed class PopulationData
     public BiomeMap? Biomes { get; init; }
     /// <summary>The world's mineable rocks (ore mines' yield); null: none known, so ore mines yield nothing.</summary>
     public Meitou.Data.Gameplay.Construction.IResourceNodes? ResourceNodes { get; set; }
-    /// <summary>The road network off-screen squads may travel by (null: none, they go straight).</summary>
+    /// <summary>The road network squads travel by, off screen here and on screen through the walkability's long routes (null: none, they go straight).</summary>
     public RoadNetwork? Roads { get; init; }
     /// <summary>The new-game options that change the body mechanics (hunger time, chance of death...).</summary>
     public BodyOptions BodyOptions { get => bodyOptions; init => bodyOptions = value; }
@@ -134,6 +134,9 @@ public sealed class PopulationData
             return list;
         }
     }
+
+    /// <summary>FACTION <c>road preference</c> of a position in <see cref="Factions"/>; 0 (never the roads) for none.</summary>
+    public float RoadPreferenceOf(int faction) => faction >= 0 && faction < Factions.Count ? Factions[faction].RoadPreference : 0;
 
     /// <summary>The position of a faction id in <see cref="Factions"/> (the first when an id repeats), or -1. The index is built once.</summary>
     public int FactionIndex(string id)

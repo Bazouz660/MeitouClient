@@ -65,8 +65,8 @@ static class BodyFixtures
     public static BodyPartTemplate LeftLeg { get; } = new() { StringId = "30-t", Name = "Left Leg", Type = BodyPartType.Leg, Collapses = true, Severance = true, CollapsePart = 32, KoMult = 0.5f };
     public static BodyPartTemplate RightLeg { get; } = new() { StringId = "31-t", Name = "Right Leg", Type = BodyPartType.Leg, Collapses = true, Severance = true, CollapsePart = 16, KoMult = 0.5f };
 
-    /// <summary>Part indices of <see cref="Human"/> (the order of the Greenlander's <c>combat anatomy</c>: right leg, left arm, left leg, head, stomach, right arm, chest).</summary>
-    public const int RLeg = 0, LArm = 1, HeadIx = 3, RArm = 5;
+    /// <summary>Part indices of <see cref="Human"/> (the original's part order, <see cref="BodyPartTemplate.MedicalOrder"/>: head, stomach, chest, left arm, right arm, left leg, right leg).</summary>
+    public const int HeadIx = 0, LArm = 3, RArm = 4, RLeg = 6;
 
     /// <summary>A Greenlander: anatomy 80/100, 140/100, 140/100, arms 80 and 40, legs 80 and 80; good Science, Farming, Cooking.</summary>
     public static RaceData Human { get; } = new()

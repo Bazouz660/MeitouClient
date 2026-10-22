@@ -12,10 +12,15 @@ items); the launcher never downloads or hosts mods.
   are, so `/releases/latest` (README's link) is the newest launcher; README's
   setup links are `/releases/latest/download/<name>`, so the Setup/AppImage/pkg names must stay free of the version. Full releases of both pass
   `--notes-start-tag` with the previous tag of their own family, so the generated notes never span the other family's tag.
-- Nightlies: `release.yml` also runs daily (02:00 UTC, or by hand with `nightly`) and publishes `v<X.Y.Z+1>-nightly.<yyyymmdd>`
+- Both tag the commit the run started on with `GITHUB_TOKEN`. **Verified** (throwaway test workflow, 2026-10-22): GitHub refuses that
+  token a tag or release (HTTP 403 "Resource not accessible by integration") on a commit whose `.github/workflows/` files differ from
+  the current master, as it lacks the `workflows` permission. So pushing a workflow edit while a release runs fails its release step;
+  re-run it from a new dispatch, or publish the run's artifacts by hand with `gh release create` (launcher 1.1.1 was).
+- Nightlies: `release.yml` also runs twice a day (05:00 UTC "nightly", 14:00 UTC "daily", or by hand with `nightly`) and publishes
+  `v<X.Y.Z+1>-nightly.<yyyymmdd>`, a second build on the same UTC day `….<yyyymmdd>.2`
   (patch after the newest full release) as a pre-release without a changelog section; its notes list every
   commit since the newest game tag (GitHub's generated notes cover only merged pull requests, so nightlies don't use them). It is skipped when nothing
-  outside `news/`, `site/`, `launcher/` and their workflows changed since the newest game tag (nightly or full). Only the newest 7
+  outside `news/`, `site/`, `launcher/`, `docs/` and `.github/workflows/` changed since the newest game tag (nightly or full). Only the newest 14
   nightlies are kept, so the releases page and the launcher's Versions list stay short. Each nightly's commit list is posted to Discord
   through the `DISCORD_WEBHOOK_URL` repo secret (a channel webhook), when set. The launcher shows them with the Nightly builds checkbox beside Play ticked ("Play latest nightly"; ticking it asks first, with Yes under the pointer, warning of crashes and corrupted saves) (GitHub pre-releases; `IncludePrereleases` in `launcher.json`).
 - Game assets: `Meitou-<version>-<rid>.zip`, `<rid>` as .NET's `RuntimeInformation.RuntimeIdentifier` (`win-x64`, `linux-x64`,
@@ -54,9 +59,10 @@ items); the launcher never downloads or hosts mods.
   whose `GetReleases` returns only `launcher-v*` releases from the launcher's own cached list. Velopack's stock listing reads just
   the newest 10 releases (`per_page=10`, page 1; **Verified** in its source 2026-10-19), which game releases would crowd out;
   its `GitBase` merges the feed of every release given and skips releases without one.
-- Checked each time the release list loads (startup). Installed by Setup or AppImage (`UpdateManager.IsInstalled`): the title bar
-  and Settings offer "Update launcher to <v>" / "Update to <v>", which download, apply and restart. Run from anywhere else (a build,
-  a copied folder): the same buttons open the newest `launcher-v*` release page.
+- Checked each time the release list loads. Installed by Setup or AppImage (`UpdateManager.IsInstalled`): at startup the launcher
+  downloads and applies a newer version and restarts into it (Settings toggle, `AutoUpdateLauncher`, default on); when off or failed, the title bar and Settings offer "Update launcher to
+  <v>" / "Update to <v>" to retry. Launchers up to 1.0.4 only offer the buttons. Run from anywhere else (a build, a copied folder):
+  the same buttons open the newest `launcher-v*` release page.
 - **Unknown**: the update path end to end (1.0.1 → 1.0.2 is the first real one).
 
 ## Game zips per runtime
@@ -76,7 +82,8 @@ Native dependencies off Windows:
 - macOS: no Vulkan loader or MoltenVK is bundled (no `Silk.NET.MoltenVK.Native` reference); the user installs them
   (Homebrew or the LunarG SDK). Runs on Apple Silicon, see [macos-port](macos-port.md). Browser downloads get
   Gatekeeper's quarantine flag (no Apple signing or notarisation).
-- Kenshi's Steam folder is found only on Windows (`GameInstall`); elsewhere it comes from `KENSHI_PATH` or the console prompt.
+- Kenshi's Steam folder is found on Windows and Linux (native, `~/.steam/steam` and Flatpak Steam; `GameInstall`); on macOS it comes
+  from `KENSHI_PATH` or the console prompt.
 
 ## Files
 
@@ -84,7 +91,10 @@ The launcher's data folder (its program, once installed, is Velopack's, e.g. `%L
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
 `launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
-versions. The game gets the Kenshi folder through `KENSHI_PATH`.
+versions. The game gets the Kenshi folder through `KENSHI_PATH`; on macOS also `DYLD_LIBRARY_PATH` and the MoltenVK setting
+([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
+Play refuses while the game it started still runs. A game that exits with a non-zero code is reported in the status line with its
+`log.txt` path.
 
 `versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
 is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing

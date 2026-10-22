@@ -65,7 +65,7 @@ public sealed record BuildingState(bool Destroyed = false, GameRecord? TownMater
 /// random generator seeded from the building's position (<see cref="BuildingRandom"/>), recursively; each part draws
 /// its <c>phs or mesh</c> (or <c>destroyed mesh</c>) on its own scene node: moved by <c>offset X/Y/Z</c> × <c>scale</c>,
 /// scaled by <c>scale</c>, parented to its parent part's node or the building's (position + rotation). Doors listed in
-/// <c>doors</c> are buildings of their own at the same position and rotation. A map feature draws its MAP_FEATURES
+/// <c>doors</c> are buildings of their own at the same position, rotation and <c>scale</c>. A map feature draws its MAP_FEATURES
 /// <c>mesh</c> scaled, rotated and moved by its <c>features.dat</c> entry.
 /// </summary>
 public static class WorldObjectLayout
@@ -93,6 +93,21 @@ public static class WorldObjectLayout
         return new PlacedMesh(mesh, InstanceTransform(worldPosition, rotation, Vector3.One), item, item, placementId, PlacedKind.Item);
     }
 
+    /// <summary>The BUILDING_PART the character editor's stage stands the characters on (<c>FUN_1405f03c0</c>; base data: "character_editor_platform_part").</summary>
+    public const string EditorPlatform = "5370-platform_otto.mod";
+
+    /// <summary>
+    /// The character editor's platform (docs/characters.md "Character editor", Preview): <see cref="EditorPlatform"/>'s <c>phs or mesh</c> with its first <c>material</c> (a resolved
+    /// collection; none: the mesh's own), at <paramref name="transform"/>, the characters' feet. Null when the merged data has no such part or it names no mesh.
+    /// </summary>
+    public static PlacedMesh? EditorPlatformMesh(GameDatabase db, Matrix4x4 transform)
+    {
+        if (db.Find(EditorPlatform) is not { } part || part.GetPath("phs or mesh") is not { } mesh || !mesh.Contains(".mesh", StringComparison.Ordinal)) return null;
+        var refs = part.GetReferences("material");
+        var material = refs.Count > 0 && db.Find(refs[0].TargetStringId) is { Type: FcsRecordType.MATERIAL_SPEC } own ? ResolveCollection(db, own, EditorPlatform) : null;
+        return new PlacedMesh(mesh, transform, part, part, "meitou:editor-platform", PlacedKind.BuildingPart) { Material = material };
+    }
+
     /// <summary>The mesh a loose item is drawn with: its <c>ground mesh</c>, else its <c>mesh</c>; "" for none.</summary>
     public static string ItemMesh(GameRecord item) => item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
 
@@ -114,13 +129,14 @@ public static class WorldObjectLayout
         state ??= new BuildingState();
         var result = new List<PlacedMesh>();
         AddBuilding(db, building, placementId, worldPosition, rotation, state, result, lights);
-        // Doors: one building per "doors" entry at the parent's position and rotation, not for destroyed buildings (game: Building::createPhysical).
+        // Doors: one building per "doors" entry at the parent's position, rotation and scale (the door's own scale is not used: Defensive
+        // Gate III/IV are 0.85, their doors 1), not for destroyed buildings (game: Building::createPhysical).
         if (!state.Destroyed && !building.GetBool("is node"))
         {
             var doors = building.GetReferences("doors");
             for (int i = 0; i < doors.Count; i++)
                 if (db.Find(doors[i].TargetStringId) is { Type: FcsRecordType.BUILDING } door)
-                    AddBuilding(db, door, placementId, worldPosition, rotation, state, result, lights, i);
+                    AddBuilding(db, door, placementId, worldPosition, rotation, state, result, lights, i, building.GetFloat("scale", 1));
         }
         return result;
     }
@@ -146,10 +162,10 @@ public static class WorldObjectLayout
     }
 
     static void AddBuilding(GameDatabase db, GameRecord building, string placementId, Vector3 position, Quaternion rotation, BuildingState state,
-        List<PlacedMesh> result, List<PlacedLight>? lights, int doorIndex = -1)
+        List<PlacedMesh> result, List<PlacedLight>? lights, int doorIndex = -1, float? parentScale = null)
     {
         if (building.GetBool("is node")) return;
-        float scale = building.GetFloat("scale", 1);
+        float scale = parentScale ?? building.GetFloat("scale", 1);
         var a = new Assembly(db, building, placementId, state, result, lights)
         {
             Scale = scale > 0 ? scale : 1,

@@ -53,6 +53,9 @@ public interface IPackageRules
     void Started(Blackboard board, AiPackage package, PackageClass kind);
 }
 
+/// <summary>A guarded gate: its door leaf's centre at the leaf's foot, the unit X/Z way through it pointing away from the town, and half the leaf's width.</summary>
+public readonly record struct GatePost(TownBuilding Building, Vector3 Door, Vector2 Out, float HalfWidth);
+
 /// <summary>
 /// A squad's AI state (docs/game/ai.md "Blackboard update"): its packages by slot, the package running and the role lists it loaded, a contract package that
 /// overrides the slots, and what the running package needs: a home building, a patrol route. Changed only in <see cref="AiSystem"/>'s serial step; the members' think reads it.
@@ -99,6 +102,8 @@ public sealed class Blackboard
     public Dictionary<int, int> TurretClaims { get; } = [];
     /// <summary>The seat of the bar (<see cref="Home"/> under a bar package) each relaxing member's slot claimed, as the last serial step found it (derived, not hashed).</summary>
     public Dictionary<int, HomeSpot> SeatClaims { get; } = [];
+    /// <summary>The gate the squad guards (its home when that is a gate, else for a gate guard goal the town's gate nearest the squad), as the last serial step found it (derived, not hashed); null: none, or its door's place not known.</summary>
+    public GatePost? Gate { get; set; }
     public TownBuilding? OwnHome { get; set; }
     public TownBuilding? Home { get; set; }
     /// <summary>The members it was made with: the squad size of the intact rule.</summary>

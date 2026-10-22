@@ -194,7 +194,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     if (data is not null) Editing.CharacterEditing.Apply(world, data, edit);
                     break;
                 case DebugCommand debug:
-                    DebugCheats.Apply(world, data, debug);
+                    DebugCheats.Apply(world, data, assembly, debug);
                     break;
                 case Editing.FinishCreation:
                     player.InCreation = false;

@@ -241,6 +241,13 @@ sealed partial class GameHost
                 }
                 if (panel is not null && KeyMap.Map(k) is { } settingsToggle && session.Bindings.Get(InputAction.ToggleSettings).Contains(Binding.Of(settingsToggle)))
                 { panel.Visible = true; return; }
+                // Esc is the game menu's, never Quit's while there is a game: with the interface hidden (F7) it comes back with the menu open,
+                // under the cinema's clean picture it does nothing.
+                if (k == SilkKey.Escape && !g.NoPopulation && !player.UiVisible)
+                {
+                    if (interfaceHidden && !cinema.Clean) { interfaceHidden = false; player.UiVisible = true; player.UiKey(EngineKey.Escape); }
+                    return;
+                }
                 if (KeyMap.Map(k) is { } uiKey && player.UiKey(uiKey, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight), shiftDown)) return;
                 bool ctrl = keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight);
                 if (k == SilkKey.KeypadDivide && !IsDuel)
@@ -475,10 +482,11 @@ sealed partial class GameHost
             bool Held(SilkKey a, SilkKey b) => silkInput.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
             player.CtrlHeld = Held(SilkKey.ControlLeft, SilkKey.ControlRight);
             player.AltHeld = Held(SilkKey.AltLeft, SilkKey.AltRight);
-            // The Highlight key (Alt) lights up the signs and outlines the characters near the focus.
+            // The Highlight key (Alt) lights up the signs, outlines the characters near the focus and labels the ground items there.
             bool highlighting = highlightHeld && windowFocused && !Covered && !session.Camera.IsFree &&
                 panel?.Visible != true && !interfaceHidden && !cinema.Clean && !cinemaHolds && !cinema.EditorVisible;
             if (gpu.Objects is { } signObjects) signObjects.HighlightSigns = highlighting;
+            player.HighlightFocus = highlighting && !screenshotRequested && takeFile is null ? camera.Target : null;
             bool pointerWorld = pointerMouse is not null && !Covered && !g.NoPopulation && !(PanelLive() && panel?.Visible == true) && !cinema.Contains(pointerAt);
             bool freeLook = pointerWorld && session.Camera.IsFree;
             // Hover outline (Advanced, Meitou only): not in the free camera, with the interface hidden, or in saved pictures.
@@ -497,6 +505,11 @@ sealed partial class GameHost
                 profiler?.BeginFrame();
                 // A scene load draws only the loading screen; the warm-up draws whole frames under it (the first frames of a new place build what it needs).
                 bool covered = Covered, sceneLoading = sceneLoad is not null;
+                // The loading screen follows the interface's mode as it is now (the settings can switch it at any time); only the Faithful mode counts loads.
+                bool faithfulUi = player.UiMode == Meitou.Data.Ui.UiMode.Faithful;
+                loadBar.Update(faithfulUi ? PendingLoads() : 0);
+                player.LoadBar = loadBar;
+                if (loading is not null) (loading.LoadBar, loading.Faithful) = (loadBar, faithfulUi);
                 if (sceneLoading && skyArrival is { AtStars: true })
                     WorldFrame.DrawLoadingSky(gpu, scene, camera, size.X, size.Y, presentationHour ?? 0, (float)animSeconds, o.FogDistance);
                 else if (!sceneLoading || skyArrival is not null) DrawWorld(size.X, size.Y);

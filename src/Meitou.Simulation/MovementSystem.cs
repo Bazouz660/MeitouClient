@@ -22,7 +22,7 @@ namespace Meitou.Simulation;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
 /// Water states cap or replace the top speed (<see cref="WaterStateAt"/>, <see cref="Speed.InWater"/>). Not modelled yet (Unknown or later): slopes (the original has no slope penalty), the combat speed
-/// multiplier, road routes for far trips, the formation slot rules (Unknown).
+/// multiplier, the formation slot rules (Unknown). Far trips take the roads in the path layer (<see cref="CharacterCold.RoadPreference"/>).
 /// <item>Turning (engine choice; the original's rate is Unknown): the heading a path is followed along turns at most <see cref="TurnRate"/>, and the
 /// speed is scaled by the cosine of what is left of the turn (none beyond 90 degrees), so a character turns about on the spot before it runs off.</item>
 /// Queued orders (<see cref="CharacterCold.OrderQueue"/>) and the formation (<see cref="Formation"/>) exist.
@@ -181,7 +181,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             // The goal's floor: the height the order was given at, else the character's own (a wander or follow goal on its level).
             float nearY = cold.GoalHeightAt == next[i].Goal && !float.IsNaN(cold.GoalHeight) ? cold.GoalHeight : next[i].Position.Y;
             var to = new Vector3(next[i].Goal.X, world.Walkability.GroundHeight(next[i].Goal.X, next[i].Goal.Y, nearY), next[i].Goal.Y);
-            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius, cold.WaterFactor);
+            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius, cold.WaterFactor, cold.RoadPreference);
             next[i].Flags = (ushort)((next[i].Flags & ~(ushort)MoveFlags.NeedPath) | (ushort)MoveFlags.Pending);
         }
         // The synchronous service has the answers already.
@@ -429,9 +429,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             var step = (dir * speed + push.Sum * SeparationStrength) * dt;
             var shove = closing ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
             step += shove;
-            float x = p.Position.X + step.X, z = p.Position.Z + step.Y;
+            float x = p.Position.X + step.X, z = p.Position.Z + step.Y, y = 0;
+            bool stands = false;
             // Pushed by its neighbours where it cannot stand (over a hole furniture cuts in a floor): its own step alone.
-            if ((push.Sum != Vector2.Zero || shove != Vector2.Zero) && !walk.IsWalkable(x, z, p.Position.Y))
+            if ((push.Sum != Vector2.Zero || shove != Vector2.Zero) && !(stands = walk.TryStand(x, z, p.Position.Y, out y)))
             {
                 step = dir * speed * dt;
                 (x, z) = (p.Position.X + step.X, p.Position.Z + step.Y);
@@ -439,9 +440,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (step != Vector2.Zero)
             {
                 // One already off every surface near its height (a stale height) is not held there: it steps down onto what is below.
-                if (walk.IsWalkable(x, z, p.Position.Y) || !walk.IsWalkable(p.Position.X, p.Position.Z, p.Position.Y) && walk.IsWalkable(x, z))
+                if (!stands) stands = walk.TryStand(x, z, p.Position.Y, out y);
+                if (stands || !walk.IsWalkable(p.Position.X, p.Position.Z, p.Position.Y) && walk.IsWalkable(x, z))
                 {
-                    n.Position = new Vector3(x, walk.GroundHeight(x, z, p.Position.Y), z);
+                    n.Position = new Vector3(x, y, z);
                     if (speed > 0.1f) n.Yaw = MathF.Atan2(dir.X, dir.Y);
                 }
                 else

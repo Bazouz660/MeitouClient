@@ -26,8 +26,8 @@ public sealed record DebugMaxSkills(IReadOnlyList<CharacterId> Characters) : Deb
 public sealed record DebugDamage(IReadOnlyList<CharacterId> Characters, float Cut) : DebugCommand;
 
 /// <summary>
-/// Puts <see cref="Quantity"/> of item record <see cref="Record"/> into the character's inventory, at <see cref="Quality"/> (0 to 100) for the types that have one;
-/// what does not fit is dropped at the character's feet.
+/// Puts <see cref="Quantity"/> of item record <see cref="Record"/> on the character, at <see cref="Quality"/> (0 to 100) for the types that have one: one unit into its free
+/// equipment slot (<see cref="Items.InventoryCommands.TryEquip"/>), the rest into the inventory; what does not fit is dropped at the character's feet.
 /// </summary>
 public sealed record DebugGiveItem(CharacterId Character, string Record, int Quantity, int Quality = 0) : DebugCommand
 {
@@ -58,7 +58,7 @@ public sealed record DebugSpawn(string Record, Vector2 At) : DebugCommand;
 
 static class DebugCheats
 {
-    public static void Apply(World world, PopulationData? data, DebugCommand command)
+    public static void Apply(World world, PopulationData? data, CharacterAssembly? assembly, DebugCommand command)
     {
         var table = world.Characters;
         switch (command)
@@ -108,6 +108,13 @@ static class DebugCheats
                 else if (item.Type == FcsRecordType.WEAPON && DebugGiveItem.Grade(data.Db, give.Quality) is { } grade)
                     (item.CompanyId, item.MaterialId, item.Level) = (CraftBench.PlayerWeapons, grade.Model, grade.Level);
                 else if (DebugGiveItem.QualityTypes.Contains(item.Type)) item.Level = Math.Clamp(give.Quality, 0, 100);
+                if (Items.InventoryCommands.TryEquip(inventory, item.WithQuantity(1)))
+                {
+                    // One unit is worn when its slot is free (as the trade window's right click); the rest of a stack goes to the grids.
+                    assembly?.RefreshEquipment(table.Cold(owner)!);
+                    if (item.Quantity == 1) break;
+                    item = item.WithQuantity(item.Quantity - 1);
+                }
                 if (inventory.Add(item)) break;
                 world.GroundItems.Drop(item, table.Next[owner].Position, 0);
                 world.Post($"{item.Quantity} x {item.Name} did not fit; dropped on the ground.");

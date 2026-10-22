@@ -216,11 +216,19 @@ public sealed partial class ProductionSystem
         if (state.Queue.Count == 1) Apply(m, state, state.Queue[0]);
     }
 
-    /// <summary>A finished item taken from a bench's output into a character's inventory (what does not fit stays).</summary>
-    void TakeCrafted(World world, Machine m, CraftState state, Inventory root, int index)
+    /// <summary>A finished item (at most <paramref name="count"/> units, 0: all) taken from a bench's output into a character's inventory (what does not fit stays).</summary>
+    void TakeCrafted(World world, Machine m, CraftState state, Inventory root, int index, int count = 0)
     {
         if (index < 0 || index >= state.Done.Count) return;
         var item = state.Done[index];
+        if (count > 0 && count < item.Quantity)
+        {
+            var unit = item.WithQuantity(count);
+            item.Quantity -= count;
+            if (!root.Add(unit)) item.Quantity += unit.Quantity;
+            world.Machines.Touch();
+            return;
+        }
         state.Done.RemoveAt(index);
         if (!root.Add(item) && item.Quantity > 0) state.Done.Insert(index, item);
         world.Machines.Touch();

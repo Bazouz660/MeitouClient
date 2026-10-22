@@ -101,7 +101,9 @@ public static class CharacterEditing
 
         // The look: the new record wearing what the character wears now.
         var worn = cold.Inventory is { } inventory ? SavedKit.FromInventory(inventory) : [];
-        if (SavedKit.LoadoutOf(record, worn, data.Db, look.Loadout?.Seed ?? 0) is { } kit && data.Appearances?.Create(cold.RecordId, kit) is { } updated)
+        var kit = SavedKit.LoadoutOf(record, worn, data.Db, look.Loadout?.Seed ?? 0);
+        if (kit is not null) SavedKit.SetLimbs(kit, cold.Medical, data.Db);   // stumps and prosthetics stay on the edited look
+        if (kit is not null && data.Appearances?.Create(cold.RecordId, kit) is { } updated)
         {
             cold.Appearance = updated;
             cold.LookEdited = true;

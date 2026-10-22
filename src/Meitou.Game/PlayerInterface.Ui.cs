@@ -47,14 +47,18 @@ sealed partial class PlayerInterface
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
         faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
         squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
+        messageLayout = resolve("Kenshi_MessagePanel.layout") is { } messages ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(messages), uiResources) : null;
+        messageClient = messageLayout?.Widgets.FirstOrDefault(w => w.Properties.GetValueOrDefault("CaptionOwner") == "MessageTextBox")?.Name;
         faithfulScreens = new(uiResources) { ClipboardReader = () => ClipboardRead?.Invoke(), ClipboardWriter = text => ClipboardWrite?.Invoke(text) };
         foreach (var (id, file, modal) in FaithfulScreenFiles)
         {
             var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
             if (id == "new-game") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
             faithfulScreens.Register(id, layout, modal, centreRoot: id is "save" or "load" or "file");
         }
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
+        faithfulScreens.Follow("loot-bag", "loot");
         faithfulScreens.Activated += FaithfulAction;
         uiHost.Diagnostic += d => Console.Error.WriteLine($"ui        {d.Extension} {d.Operation}: {d.Error.Message}");
         uiRegistration = uiHost.Register(new PlayerUiExtension(ExecuteUiAction));
@@ -68,8 +72,8 @@ sealed partial class PlayerInterface
         ("title", "Kenshi_MainMenu", true), ("new-game", "Kenshi_NewGamePanel", true),
         ("save", "Kenshi_SaveGamePanel", true),
         ("load", "Kenshi_LoadGamePanel", true), ("message", "Kenshi_MessageBox", true),
-        ("bag", "Kenshi_InventoryGenericWindow", false), ("limbs", "Kenshi_LimbReplacementWindow", false), ("trader", "Kenshi_InventoryTraderWindow", false),
-        ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false),
+        ("bag", "Kenshi_InventoryGenericWindow", false), ("loot", "Kenshi_InventoryCharacterWindow", false), ("loot-bag", "Kenshi_InventoryGenericWindow", false), ("limbs", "Kenshi_LimbReplacementWindow", false), ("trader", "Kenshi_InventoryTraderWindow", false),
+        ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false), ("storage", "Kenshi_InventoryGenericWindow", false),
         ("build", "Kenshi_BuildWindow", false), ("editor", "Kenshi_CharacterEditor", true), ("dialogue", "Kenshi_ConversationPanel", true),
         ("file", "Kenshi_OpenSaveFileDialog", true), ("prospect", "Kenshi_ProspectingWindow", false),
     ];
@@ -184,6 +188,7 @@ sealed partial class PlayerInterface
     {
         SyncTradeScreens();
         SyncMachineScreens();
+        SyncLootScreen();
         SyncDialogueScreen();
         ValidateInventoryDrag();
         var b = BindUi();
@@ -218,8 +223,10 @@ sealed partial class PlayerInterface
                     new Dictionary<string, string> { ["FontName"] = "Meitou_TitleFont", ["TextAlign"] = "Right VCenter" },
                     Vector4.Zero, new Vector4(0.89f, 0.84f, 0.71f, 1), TextScale: Height / 720f));
         }
+        AddNotice(controls);
         AddInventoryDrag(controls);
         var nameTags = new List<UiControl>();   // the tags are on the original's Back layer: under every panel
+        AddItemLabels(nameTags);
         AddNameTags(nameTags);
         controls.InsertRange(0, nameTags);
         AddSpeech(controls);
@@ -292,9 +299,16 @@ sealed partial class PlayerInterface
         }
     }
 
-    void DrawGameUi(DebugOverlay overlay, int width, int height) =>
-        uiPainter?.Draw(ArrangeUi(), width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
+    /// <summary>The original's background-loading bar, drawn over the interface in the Faithful mode (the host steps it).</summary>
+    internal ResourceLoadBar? LoadBar { get; set; }
+
+    void DrawGameUi(DebugOverlay overlay, int width, int height)
+    {
+        IReadOnlyList<UiControl> controls = ArrangeUi();
+        if (UiMode == UiMode.Faithful && LoadBar is { Visible: true } bar) controls = [.. controls, .. bar.Controls(uiResources, width, height)];
+        uiPainter?.Draw(controls, width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
             minimumTextPixels: TitleOpen ? 0 : StandardTextPixels * height / 1080f);
+    }
 
     /// <summary>For screenshot reviews: open the same panel through its registered button action.</summary>
     public void ShowUiPanel(string? panel, bool? expandInformation = null)

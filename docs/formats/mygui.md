@@ -47,12 +47,19 @@ Sources: the configured Kenshi install's `data/gui/`, the existing
   `Size = (int)getDefaultHeight() + font size2` (settings.cfg, default 3), still in
   points at the resource's resolution; the default height is taken from the
   font as first loaded. MyGUI 3.2.3 (MyGUI.log) makes the default height ascent +
-  descent in pixels. **Observed** (user screenshots at 1080 p, text widths): the
-  heights fit FreeType's grid-fitted metrics, hhea ascender rounded up plus
-  descender rounded down at the fractional em (each at least the OS/2 Windows value
-  at the rounded ppem): Sentencia 25 pt draws at 22 pt (15.3 px), Exo2 20 pt stays
-  20 pt (13.9 px). Rounding to the integer ppem instead (head flag bit 3) gives
-  20 pt for Sentencia and does not fit. Meitou: `KenshiFontSize` (default 3).
+  descent in pixels. **Observed** (user screenshots, text widths): the heights fit
+  the hhea ascender and descender each rounded to the nearest pixel at the fractional
+  em (each at least the OS/2 Windows value at the rounded ppem). At 1080 p,
+  Sentencia 25 pt draws at 22 pt (15.3 px) and Exo2 20 pt stays 20 pt (13.9 px).
+  At 1440 p (2026-10-22, the same French loading tip side by side), Exo2 24 pt draws
+  at 23 pt: lines within 1 % of vanilla's width, where rounding up gives 24 pt and
+  5 % too wide. MailartRubberstamp 110 pt gives 108 pt, its stamp matching vanilla's
+  to 2 px. Rounding at the integer ppem (head flag bit 3) gives 20 pt for Sentencia and
+  does not fit. Meitou: `KenshiFontSize` (default 3).
+- **Verified** against MyGUI 3.2.2 (`TextView`), **Observed** on the loading screen:
+  text is never scaled to its widget. A line taller than its box overflows it and is
+  clipped by the widget. Meitou's Faithful mode does the same for font resources
+  (`UiPainter`). The Meitou mode still shrinks text with no minimum size to fit.
 - **Observed** in the install's font files: `SubstituteCode` 0, `Distance` 2, `TabWidth` 4,
   `Codes` `32 126` and `8127 8217` for the English fonts; `locale/ja_JP` uses
   `ume-pgs5.ttf` with `32 255`, `12288 12543`, `19968 40959`, `65280 65519`. A locale's
@@ -221,7 +228,7 @@ Code: `UiDocument.Widgets.cs` (layout), `MyGuiScreenHost.Widgets.cs` (input). **
   sits by `CanvasAlign` (centred when unset; `Default` = Left Top); bar page 16 px, wheel 50 px (vertical first). MyGUI re-reads the sizes once per update, Meitou iterates to the fixed point.
   The source passes the cross-axis view size as ViewPage (as read); Meitou pages by the view along the axis (**Unknown** which is intended). Children of the client are placed against the scrolled canvas.
   A screen that scrolls a view itself lists it in `NativeScroll` (the map). Without a canvas nothing scrolls and the bars hide: the Overview's `RelationsPanel` (no `CanvasSize` in the layout) loses its static bars.
-  Multi-line EditBox scroll bars are not done.
+  Multi-line EditBox scroll bars are not done. An EditBox's `TextAlign` aligns its client's text (MyGUI `EditBox::setTextAlign`), as its `WordWrap`. A template part's `position_real` becomes pixels once, at the template's own size (`Kenshi_ListBoxEmpty`'s client sits 19 x 18 px in). A ListBox's lines are its `SkinLine` template's skin and font; the selected line is that skin's checked state (`Kenshi_ListBoxItemSkin`: lighter text, no bar). A second click on a line within 0.5 s accepts it (`eventListSelectAccept`). A checked button's caption takes the skin's `*_checked` text colour.
 - **Slider** (Observed): no installed layout uses `Kenshi_Slider`, `Kenshi_ListSlider` or `Kenshi_MultiSlider(Small)`; they are supported as templates. `Kenshi_Slider`'s bar has `Range` 100 and no
   `MoveToClick` (so a track press pages by one), giving positions 0 to 99 although its example caption reads 100. Text of template parts is set with `Text["<owner>.NumberText"]`
   (also `ElementText`, `ElementValueText`). `Kenshi_ListSlider`'s Start / End arrows raise `step` (`Text`: start / end, `Value`: -1 / +1). The character editor's own slider tracks keep the old

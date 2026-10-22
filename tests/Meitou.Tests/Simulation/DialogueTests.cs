@@ -42,16 +42,41 @@ public class DialogueTests
         Rec("greet-l", FcsRecordType.DIALOGUE_LINE, r => r.Strings["text0"] = "well met"),
     ]), []);
 
+    /// <summary>
+    /// The Shinobi Thieves' gate (docs/game/factions-squads-towns.md "Faction rank") on the same ids: at rank 0 the villager says "I don't know you." and offers to join
+    /// (c.10,000 and DA_INCREASE_FACTION_RANK capped at 1); at rank 1 (checked with `who` 1, which the game ignores) it offers to buy.
+    /// </summary>
+    static PopulationData Guild() => PopulationData.Create(Db([
+        Rec("p-d", FcsRecordType.FACTION, r => r.Name = "Nameless"),
+        Rec("f-d", FcsRecordType.FACTION, r => r.Name = "Thieves"),
+        Rec("npc-d", FcsRecordType.CHARACTER, r => { r.Name = "Villager"; r.References["dialogue"] = [Ref("stranger-d"), Ref("member-d")]; }),
+        Rec("rank-d", FcsRecordType.DIALOG_ACTION, r => r.Ints["condition name"] = 10),
+        Rec("rank-who-d", FcsRecordType.DIALOG_ACTION, r => { r.Ints["condition name"] = 10; r.Ints["who"] = 1; }),
+        Rec("pay-d", FcsRecordType.DIALOG_ACTION, r => r.Ints["action name"] = DialogueActions.TakeMoney),
+        Rec("raise-d", FcsRecordType.DIALOG_ACTION, r => r.Ints["action name"] = DialogueActions.IncreaseFactionRank),
+        Rec("stranger-d", FcsRecordType.DIALOGUE, r => { r.References["conditions"] = [Ref("rank-d", 0)]; r.References["lines"] = [Ref("stranger-l")]; }),
+        Rec("stranger-l", FcsRecordType.DIALOGUE_LINE, r => { r.Strings["text0"] = "I don't know you."; r.References["lines"] = [Ref("join-l")]; }),
+        Rec("join-l", FcsRecordType.DIALOGUE_LINE, r =>
+        {
+            r.Ints["speaker"] = (int)Talker.Target;
+            r.Strings["text0"] = "I'll join.";
+            r.References["effects"] = [Ref("pay-d", 10000), Ref("raise-d", 1)];
+        }),
+        Rec("member-d", FcsRecordType.DIALOGUE, r => { r.References["conditions"] = [Ref("rank-who-d", 1)]; r.References["lines"] = [Ref("member-l")]; }),
+        Rec("member-l", FcsRecordType.DIALOGUE_LINE, r => r.Strings["text0"] = "Need to sell off some junk?"),
+    ]), []);
+
     sealed class Village : IDisposable
     {
-        public PopulationData Data { get; } = DialogueTests.Data();
+        public PopulationData Data { get; }
         public SimWorld World { get; }
         public DialogueSystem Dialogue { get; }
         public CharacterId Hero { get; }
         public CharacterId Villager { get; }
 
-        public Village(int threads = 1, float apart = 20)
+        public Village(int threads = 1, float apart = 20, PopulationData? data = null)
         {
+            Data = data ?? DialogueTests.Data();
             Dialogue = new DialogueSystem(Data);
             var ground = new OpenGroundWalkability((_, _) => 150);
             World = new SimWorld(new WorldSettings { Seed = 5, Threads = threads, PublishSnapshots = false }, ground, [new MovementSystem(new PathService(ground, true)), Dialogue]);
@@ -121,6 +146,26 @@ public class DialogueTests
         var loaded = new Meitou.Tests.Combat.Combatant { Name = "x" }.MakeCold();
         DialogueSave.Read(state, loaded);
         Assert.True(loaded.DialogueLocks!["rich-d"]);
+    }
+
+    [Fact]
+    public void Joining_the_guild_raises_its_rank_to_the_cap_and_switches_its_dialogue()
+    {
+        using var v = new Village(data: Guild());
+        int guild = v.Data.FactionIndex("f-d");
+        v.World.Player.Money = 12000;
+        v.Say(new TalkOrder(v.Hero, v.Villager) { Tick = 0 });
+        v.World.RunTicks(2);
+        Assert.Equal(("I don't know you.", "I'll join."), (v.Talk!.Text, v.Talk.Choices.Single()));
+        v.Say(new DialogueChoice(0) { Tick = 0 });
+        v.World.RunTicks(1);
+        Assert.Equal((1, 2000), (v.Data.Relations.Rank(guild), v.World.Player.Money));
+
+        v.Say(new TalkOrder(v.Hero, v.Villager) { Tick = 0 });
+        v.World.RunTicks(2);
+        Assert.Equal("Need to sell off some junk?", v.Talk!.Text);
+        Assert.False(v.Data.Relations.RaiseRank(guild, 1));   // the join line's cap
+        Assert.Equal(1, v.Data.Relations.Rank(guild));
     }
 
     /// <summary>

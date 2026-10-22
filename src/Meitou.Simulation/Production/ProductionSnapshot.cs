@@ -4,7 +4,7 @@ using Meitou.Data.Gameplay.Construction;
 namespace Meitou.Simulation.Production;
 
 /// <summary>A recipe slot as the host shows it: the item, how many are held of how many, and the level (input) or progress (output) 0..1.</summary>
-public readonly record struct MachineSlotView(string Item, string Name, int Count, int Capacity, float Fill);
+public readonly record struct MachineSlotView(string Item, string Name, int Count, int Capacity, float Fill, int Width = 1, int Height = 1);
 
 /// <summary>A farm as the host shows it (docs/simulation.md "Production").</summary>
 public readonly record struct FarmView(float Growth, float Death, int Harvested, int Plants, FarmStatus Status, float Fertility, float CropMatch, float Ripeness)
@@ -32,16 +32,18 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
 {
     /// <summary>A container of a building's interior, open (<see cref="PlayerState.OpenContainer"/>): <see cref="Site"/> is its fixture id; no research, recipe or power.</summary>
     public bool IsContainer { get; init; }
-    /// <summary>The open loot (<see cref="PlayerState.OpenLoot"/>), also <see cref="IsContainer"/>: the body whose main grid <see cref="Storage"/> shows (indices into its inventory's items), else none.</summary>
-    public CharacterId Body { get; init; } = CharacterId.None;
-    /// <summary>The window's caption when it is not the record's name (the looted character's).</summary>
-    public string? Title { get; init; }
     /// <summary>The research bench's tech level (0 for other machines).</summary>
     public int TechLevel { get; init; }
     /// <summary>Characters can work it (a well, farm or research bench).</summary>
     public bool Operable { get; init; }
     /// <summary>A storage (a "Hauling to" job can name it).</summary>
     public bool IsStorage { get; init; }
+    /// <summary>Its BUILDING_FUNCTIONALITY <c>function</c> (-1: none; 12 a turret, 14 a furnace).</summary>
+    public int Function { get; init; } = -1;
+    /// <summary>The one item a storage is limited to (its heading in the window), else null.</summary>
+    public string? StorageLimitName { get; init; }
+    /// <summary>A limited storage's <c>Max Capacity</c>: the building's <c>stackable bonus mult</c> (0 when it has none).</summary>
+    public int StorageCapacity { get; init; }
     /// <summary>The crafting bench state (null for other machines).</summary>
     public CraftView? Craft { get; init; }
     /// <summary>Its power (null for a building outside the grid).</summary>
@@ -52,8 +54,8 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     internal static MachineSnapshot Of(Machine m, ItemFactory items)
     {
         string Name(string record) => items.Info(record)?.Name ?? record;
-        var inputs = m.Inputs.Select(i => new MachineSlotView(i.Item, Name(i.Item), i.Count, i.Recipe.Capacity, Math.Clamp(i.Level, 0, 1))).ToArray();
-        MachineSlotView? output = m.Output is { } o ? new MachineSlotView(o.Recipe.Item, Name(o.Recipe.Item), o.Count, o.Recipe.Capacity, Math.Clamp(o.Progress, 0, 1)) : null;
+        var inputs = m.Inputs.Select(i => new MachineSlotView(i.Item, Name(i.Item), i.Count, i.Recipe.Capacity, Math.Clamp(i.Level, 0, 1), items.Info(i.Item)?.Width ?? 1, items.Info(i.Item)?.Height ?? 1)).ToArray();
+        MachineSlotView? output = m.Output is { } o ? new MachineSlotView(o.Recipe.Item, Name(o.Recipe.Item), o.Count, o.Recipe.Capacity, Math.Clamp(o.Progress, 0, 1), items.Info(o.Recipe.Item)?.Width ?? 1, items.Info(o.Recipe.Item)?.Height ?? 1) : null;
         InventoryView? storage = m.Storage is { } s ? new InventoryView(s.Width, s.Height, 0, 0,
             Array.AsReadOnly(s.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
                 { Material = item.MaterialId, Charge = item.ChargeFraction }).ToArray())) : null;
@@ -61,7 +63,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
             ? new FarmView(f.Growth, f.Death, f.Harvested, f.Plants.Length, f.Status, m.Yield, m.CropMatch, ProductionSystem.Ripeness(f)) { PlantGrowth = [.. f.Plants] } : null;
         // The classes that update their emitter every frame tell it the efficiency and the power; the others powered it once, when built, with no operators (efficiency 0).
         var sound = m.Data.PowersEmitterEachFrame ? new MachineSound(m.Efficiency, m.HasPower && m.Efficiency > 0) : new MachineSound(0, true);
-        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsStorage = m.Data.IsStorage, Craft = Crafting(m, items),
+        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
             Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null };
     }
 

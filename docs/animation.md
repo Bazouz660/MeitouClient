@@ -47,6 +47,18 @@ of definitions and gives each a weight; zero-weight ones are dropped:
 - Finally the weights are **normalised per layer** (each layer's weights divided by that layer's sum,
   `@ 14051cde0`).
 
+### Idle stance
+
+Verified (decompilation). A human's animation object keeps its own idle: the `idle stance` of its appearance looked up by record name
+(`@ 1405bd240` at creation, `@ 1405b9880` after an appearance change). Its idle pick (`AnimationClassHuman` slot 25, `@ 14051f230`;
+animals' slot 25 is the plain draw) returns that stance when the character's category is normal (0), the record's `is combat mode`
+and `stealth mode` are EITHER or equal to the character's, and the arm check `@ 14051d240` passes (it always does for a record
+whose layer is not upper or overlay); otherwise it draws from the idle list (`@ 14051ec80`, `@ 140523450`). The standing update
+`@ 14051d3b0` re-picks when the timer (`idle time` seconds) runs out, so a fitting stance is held. Weapon kinds are not tested.
+Base data (**Verified** by probe): the 8 stances are layer `all`, combat and stealth mode 0, `play speed` 0 (`squat` 0.01), clips 0.033 s:
+characters stand still in their stance out of combat and not sneaking. Meitou: `AnimationDefinition.FitsAsStance`,
+`AnimationSystem.OwnStance`; a clip that never advances starts at its first frame (engine choice; the original's start time is **Unknown**).
+
 ## Shape notation and factors
 
 **Verified formula body** from14052e6c0; stat-field identity matching remains **Observed**.
@@ -70,6 +82,25 @@ Muscle normal blends, head poses and skinning follow their own data/shader rules
 **Engine choice** GroundOffset compensates lowest foot/toe bind-pose height change per appearance;
 it does not re-ground crouches or prove the original controller's mechanism. Physically moving
 characters/root collision and leg-health/lying/care selection belong in [simulation](simulation.md#animation).
+
+### Stat-driven body
+
+**Verified** (decompilation): `FUN_14052bc70` sets three values on the human appearance (+0x1a0..+0x1a8) from the character's `CharStats`
+(offsets: [character-stats](game/character-stats.md#the-stat-list)) and hunger (`+0x4b8`, [ui-screens](game/ui-screens.md)):
+
+- **Bulk M** = map(max(strength, weapon smith, armour smith) × 0.01, 0.2 → 0, 0.99 → 1), not clamped. Strength is read through the stats object's slot-2
+  accessor; Meitou takes the stat itself.
+- **Definition D** = map((swimming + athletics + 3 × max(dexterity × x, martial arts) − cooking − science) × 0.01 / 5, 0.2 → 0, 0.9 men / 0.99 women → 1),
+  clamped 0..1. x is the float at `CharStats +0x34` (**Unknown**; Meitou 1).
+- **Starvation S** = clamp((1 − clamp(hunger − 1, 0, 1)) × 1.5, 0, 1).
+
+`FUN_140531820` (not for robot races) then sets the body material's `normalMap` and `bodyBlendNormal` and its `muscleBlend` (`character.hlsl`:
+`bodyN = lerp(bodyN, blendNormalMap, muscleBlend)`, before the head's normal is added), and, for a character with stats, rebuilds the bone shape
+(`FUN_14052e6c0`, M and S above). The maps: base `nm <g>` blended to `nm <g> strong` by D; when S > 0.25 or S > D, blended to `nm <g> skinny`
+by S, the base being `nm <g> strong` when D > 0.33 (RACE fields; humans and Shek have their own `_muscular` / `_skinny` files, robots and hive
+one file for all). What calls it, and how often, is **Unknown** (it is a virtual of `AppearanceHuman`, slots 6 and 13).
+Meitou (`CharacterShape.BuildFromStats`, `CharacterSnapshot.Build`, `CharacterRenderer.ApplyBuild`): published every tick from the live stats,
+applied when a value moves by more than 0.01, the normal maps once both are resident (engine choices).
 
 ### Startup preprocessing
 
@@ -141,7 +172,7 @@ The renderer samples at `clip length × slider / 100`; generated NPC posture fol
   movement blend, was not traced), how the idle timer's units work, the arm check `@ 14051d240` in detail,
   the get-up clip's playback rate, how fast the movement direction turns, and which of `foetal` /
   `sitting dazed` / `knockout training` play when. Our engine's rules are in [simulation.md](simulation.md#animation).
-- Body shape: the nutrition value behind starvation (+0x4b8), the two
+- Body shape: the two
   movement-scale exceptions, the stats field x in the muscle definition, what reads (`Height` − 80) × 0.025,
   and what the game does when a body file lacks a slider (the viewer uses 100).
 

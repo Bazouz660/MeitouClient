@@ -22,8 +22,8 @@ public static class KenshiFontSize
     }
 
     /// <summary>
-    /// MyGUI's default height at <paramref name="em"/> pixels: the grid-fitted ascent (hhea ascender rounded up) plus descent (descender rounded down),
-    /// each at least the OS/2 Windows metric at the whole pixel size.
+    /// MyGUI's default height at <paramref name="em"/> pixels: the ascent (hhea ascender) plus descent (descender), each rounded to the nearest pixel and
+    /// at least the OS/2 Windows metric at the whole pixel size.
     /// </summary>
     static int? DefaultHeight(ReadOnlySpan<byte> ttf, float em)
     {
@@ -33,7 +33,8 @@ public static class KenshiFontSize
         int unitsPerEm = BinaryPrimitives.ReadUInt16BigEndian(head[18..]);
         if (unitsPerEm == 0 || !(em > 0)) return null;
         int ascender = BinaryPrimitives.ReadInt16BigEndian(hhea[4..]), descender = BinaryPrimitives.ReadInt16BigEndian(hhea[6..]);
-        int ascent = (int)MathF.Ceiling(ascender * em / unitsPerEm), descent = (int)MathF.Ceiling(-descender * em / unitsPerEm);
+        // Rounded to the nearest pixel (FreeType's FT_PIX_ROUND), not up: Exo2 24 pt then gives 23 pt as the original draws it (docs/formats/mygui.md).
+        int ascent = (int)MathF.Floor(ascender * em / unitsPerEm + 0.5f), descent = (int)MathF.Floor(-descender * em / unitsPerEm + 0.5f);
         var os2 = Table(ttf, "OS/2");
         if (os2.Length >= 78)
         {

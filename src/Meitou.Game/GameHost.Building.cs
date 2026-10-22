@@ -177,6 +177,7 @@ sealed partial class GameHost
             {
                 Ground = gpu.Terrain.HeightAt,
                 Footprint = footprints.Of,
+                CollisionMesh = footprints.Mesh,
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
             },

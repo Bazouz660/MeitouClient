@@ -85,10 +85,12 @@ mesh). Not drawn: the death tint and the per-plant brightness.
 
 ## Doors
 
-Door parts carry `PlacedMesh.DoorIndex` (their entry in the building's `doors` list). The host hands the renderer the snapshot's
+Door parts carry `PlacedMesh.DoorIndex` (their entry in the building's `doors` list) and take the parent building's `scale`, not
+their own, as the door collision does ([collision](formats/collision.md#placement-and-groups); **Observed**: Defensive Gate III/IV
+are 0.85 with doors at 1, and the leaf drawn at 1 sat oversized and off-centre in the frame). The host hands the renderer the snapshot's
 open amounts (`WorldObjectRenderer.Doors`, by placement id and index); `DrawReal` poses a door part from its closed placement by
-`DoorLeaf.LocalOffset` ([motion](game/locks.md#doors)) along the part's own axes, in world units, when its amount changed; the
-step-out axis comes from the mesh file's bounds. Colour and shadow passes see the moved leaf; the GI acceleration structures take
+`DoorLeaf.LocalOffset` ([motion](game/locks.md#doors)) along the axes of the part's collision box (`DoorFrame`, the first box of its
+`xml collision`, PhysX Z-up mapped to the part's Y-up), in world units, when its amount changed. Colour and shadow passes see the moved leaf; the GI acceleration structures take
 the instance transform only when they gather instances (not checked for leaves in motion).
 
 ## Validation

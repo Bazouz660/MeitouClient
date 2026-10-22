@@ -23,7 +23,7 @@ public sealed class ProductionSettings
     public float SettleReach { get; init; } = 150;
     /// <summary>The footprint radius of a BUILDING record (the host knows it); null: 0.</summary>
     public Func<string, float>? Footprint { get; init; }
-    /// <summary>A character gives or takes items from within this far (X/Z) of a building (engine choice; the original walks the character to it first).</summary>
+    /// <summary>A character gives or takes items from within this far (X/Z) of a building, else "Out of trading range." (engine choice: the original allows the building's bounds radius + 40 for an item out of it and 60 for one out of a character's inventory, docs/game/economy.md "Trading range"; Meitou has no bounds radius in the sim).</summary>
     public float TransferReach { get; init; } = 200;
     /// <summary>Operators empty a full output into storages and fill empty inputs from them (docs/simulation.md "Production"; engine option: the original's wording "put any excess materials ... into storage" is the Ditch items squad AI option's, <see cref="SquadAi.Ditch"/>).</summary>
     public bool AutoHaul { get; init; } = true;
@@ -186,6 +186,7 @@ public sealed partial class ProductionSystem : ITickSystem
                     }
                     break;
                 }
+                case UseTurretOrder turret: UseTurret(world, turret); break;
                 case ProspectOrder prospect: ProspectBegin(world, prospect); break;
                 case AddJob add: AddJobs(world, add); break;
                 case RemoveJob remove: RemoveJobAt(world, remove); break;
@@ -199,6 +200,24 @@ public sealed partial class ProductionSystem : ITickSystem
                 case RepeatCrafts repeat: if (world.Machines.Find(repeat.Site)?.Craft is { } state) { state.Repeat = repeat.Repeat; world.Machines.Touch(); } break;
             }
         }
+    }
+
+    /// <summary>The nearest able one of the order's characters walks to the turret's gunner spot (engine choice: one gunner, the original's pick among several is Unknown).</summary>
+    void UseTurret(World world, UseTurretOrder order)
+    {
+        if (Site(world, order.Site) is not { Complete: true } site || db.Find(site.Record) is not { } record ||
+            (record.GetReferences("functionality") is [var link, ..] ? db.Find(link.TargetStringId) : null) is not { } fn || fn.GetInt("function") != Meitou.Data.World.ObjectRanges.TurretFunction) return;
+        var forward = Vector3.Transform(Vector3.UnitZ, site.Rotation);
+        var post = new Meitou.Data.World.TurretPost(site.Position, MathF.Atan2(forward.X, forward.Z), fn.GetFloat("use range", 10),
+            record.GetReferences("gun turret").Select(r => r.TargetStringId).FirstOrDefault() ?? "", null);
+        var spot = Ai.AiSystem.TurretSpot(world, post);
+        var table = world.Characters;
+        int best = -1;
+        float bestGap = float.MaxValue;
+        foreach (var id in Who(world, order.Characters))
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
+                (best, bestGap) = (slot, gap);
+        if (best >= 0) MovementSystem.GoTo(table, best, new Vector2(spot.X, spot.Z), SpeedMode.Run);
     }
 
     /// <summary>A character that can work: awake, not fighting, not carrying or carried, not caged.</summary>
@@ -239,6 +258,7 @@ public sealed partial class ProductionSystem : ITickSystem
         n.TaskTime = 0;
         cold.OperateSite = site.Id;
         cold.OperateClip = m.Data.Animation;
+        cold.OperateTool = m.Data.Tool;
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
@@ -731,11 +751,14 @@ public sealed partial class ProductionSystem : ITickSystem
         if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true } c || c.Inventory is null) return false;
         cold = c;
         if (Gap(table.Next[slot].Position, site.Position) <= Settings.TransferReach + (Settings.Footprint?.Invoke(site.Record) ?? 0)) return true;
-        world.Post($"{c.Name} is too far away.");
+        world.Post("Out of trading range.");
         return false;
     }
 
-    /// <summary>Put an item into a container's grid (<see cref="PlayerSystem.ContainerFor"/>): the cell must be free; a bag or limb item is refused like the machine's.</summary>
+    /// <summary>
+    /// Put an item into a container's grid (<see cref="PlayerSystem.ContainerFor"/>): at a free cell, or with X below 0 where it first fits (<see cref="PutInMachine.Count"/> units); a bag or limb
+    /// item is refused like the machine's.
+    /// </summary>
     static void PutInContainer(World world, Locks.Fixture container, CharacterCold cold, PutInMachine put)
     {
         var root = cold.Inventory!;
@@ -745,7 +768,13 @@ public sealed partial class ProductionSystem : ITickSystem
         if (item is null || item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
             !InventoryCommands.IsMovableSection(item.Section) || item.Contents is not null && item.Section == "backpack_attach") return;
         var owner = root.Items.Contains(item) ? root : root.Backpack?.Contents;
-        if (owner is null || put.X < 0 || put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
+        if (owner is null) return;
+        if (put.X < 0)
+        {
+            if (InventoryCommands.MoveUnits(owner, item, put.Count, storage) > 0) world.Machines.Touch();
+            return;
+        }
+        if (put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
         owner.Remove(item);
         item.Section = "main";
         item.X = put.X;
@@ -754,15 +783,20 @@ public sealed partial class ProductionSystem : ITickSystem
         world.Machines.Touch();
     }
 
-    /// <summary>Take an item out of a container into the character's inventory; what does not fit stays in the container.</summary>
+    /// <summary>
+    /// Take an item (<see cref="TakeFromMachine.Count"/> units) out of a container into the character's inventory; what does not fit stays in the container. Taken from another faction's
+    /// container it is stolen from that faction (engine choice: no witness or crime yet).
+    /// </summary>
     static void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
         var storage = container.Contents!;
         if (take.Index < 0 || take.Index >= storage.Items.Count) return;
         var item = storage.Items[take.Index];
-        storage.Items.RemoveAt(take.Index);
-        if (!cold.Inventory!.Add(item) && item.Quantity > 0 && storage.FindCell("main", item.Width, item.Height, out int x, out int y)) { item.Section = "main"; item.X = x; item.Y = y; storage.Items.Add(item); }
-        world.Machines.Touch();
+        int mark = item.StolenFrom;
+        if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
+        int moved = InventoryCommands.MoveUnits(storage, item, take.Count, cold.Inventory!);
+        if (storage.Items.Contains(item)) item.StolenFrom = mark;   // what stayed keeps its mark
+        if (moved > 0) world.Machines.Touch();
     }
 
     void Put(World world, PutInMachine put)
@@ -784,7 +818,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             if (put.Slot >= m.Inputs.Length || m.Inputs[put.Slot] is not { } input || input.Item != item.Record) return;
             int room = input.Recipe.Capacity - input.Count;
-            int n = Math.Min(room, item.Quantity);
+            int n = Math.Min(room, put.Count > 0 ? Math.Min(put.Count, item.Quantity) : item.Quantity);
             if (n <= 0) return;
             input.Count += n;
             item.Quantity -= n;
@@ -798,7 +832,12 @@ public sealed partial class ProductionSystem : ITickSystem
                 world.Post($"{m.Data.Name} does not take {item.Name}.");
                 return;
             }
-            if (put.X < 0 || put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
+            if (put.X < 0)
+            {
+                if (InventoryCommands.MoveUnits(owner, item, put.Count, storage) > 0) world.Machines.Touch();
+                return;
+            }
+            if (put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
             owner.Remove(item);
             item.Section = "main";
             item.X = put.X;
@@ -820,22 +859,17 @@ public sealed partial class ProductionSystem : ITickSystem
         if (take.Slot == -1)
         {
             if (m.Storage is not { } storage || take.Index < 0 || take.Index >= storage.Items.Count) return;
-            var item = storage.Items[take.Index];
-            storage.Items.RemoveAt(take.Index);
-            if (!root.Add(item))
-            {
-                // What did not fit stays in the storage.
-                if (item.Quantity > 0 && storage.FindCell("main", item.Width, item.Height, out int x, out int y)) { item.Section = "main"; item.X = x; item.Y = y; storage.Items.Add(item); }
-            }
-            world.Machines.Touch();
+            // What does not fit stays in the storage.
+            if (InventoryCommands.MoveUnits(storage, storage.Items[take.Index], take.Count, root) > 0) world.Machines.Touch();
             return;
         }
         if (take.Slot == -2 && m.Craft is { } craft)
         {
-            TakeCrafted(world, m, craft, root, take.Index);
+            TakeCrafted(world, m, craft, root, take.Index, take.Count);
             return;
         }
         (string Item, int Count) held = take.Slot == -2 ? (m.Output?.Recipe.Item ?? "", m.Output?.Count ?? 0) : take.Slot >= 0 && take.Slot < m.Inputs.Length ? (m.Inputs[take.Slot].Item, m.Inputs[take.Slot].Count) : ("", 0);
+        if (take.Count > 0) held.Count = Math.Min(held.Count, take.Count);
         if (held.Count <= 0 || items.Create(held.Item, held.Count) is not { } made) return;
         int moved = Placed(root, made);
         if (moved <= 0) return;

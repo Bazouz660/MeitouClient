@@ -22,6 +22,8 @@ public enum DeathCause
     BloodLoss,
     /// <summary>Hunger at 0.</summary>
     Starvation,
+    /// <summary>One of its death items taken while it was down (docs/game/animals.md "Death items").</summary>
+    Butchered,
 }
 
 /// <summary>Something that happened to a character in a tick or a hit, for the caller to act on (XP, drops, messages, the commit phase).</summary>

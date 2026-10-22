@@ -21,6 +21,9 @@ sealed partial class GameHost
         player.EditorData = (data.Db, install.Root);
         player.PreviewSource = (recordId, loadout) => data.Appearances?.Create(recordId, loadout);
         player.PreviewReady = look => gpu.Characters?.IsPrepared(look) ?? true;
+        // The editor's looks are close-ups: their meshes without generated levels (CharacterContent.PrepareMesh), so a new hair or head shows at once, as in the original.
+        player.PreviewFetch = look => gpu.Characters?.PrefetchCloseUp(look);
+        player.PreviewWarm = (look, urgent) => gpu.Characters?.Warm(look, urgent, close: true);
     }
 
     /// <summary>Opens the editor on the new game's squad once the world shows and the squad is in the snapshot.</summary>
@@ -43,6 +46,7 @@ sealed partial class GameHost
     {
         if (!creationWarmOwed || pendingCreation is not null || player.EditorOpen || sceneLoad is not null) return;
         creationWarmOwed = false;
+        if (playerSquad is { Leader.IsNone: false } squad) player.Follow = squad.Leader;   // a new game starts with the camera locked to the leader
         if (loading is null) return;
         session.World.RunTick();
         loading.Restart();
@@ -71,11 +75,46 @@ sealed partial class GameHost
     void DrawEditorStage(int width, int height)
     {
         if (gpu.Characters is not { } characters) return;
+        editorStaged = true;
         if (player.EditorView() is not { } view || session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == view.Character) is not { } c) { characters.StageRequest = null; return; }
         characters.StageRequest = new EditorStageRequest(DrawKey(view.Character), width, height, view.Yaw, view.Elevation, view.Distance, view.Head, camera.FieldOfView, EditorStageShift);
         characters.SetView(width, height, camera.FieldOfView);
         characters.Update(DrawnPosition(c));
         characters.DrawStage();
+        DrawEditorPlatform(view.Character, characters);
         if (characters.StageTexture is { } stage) player.SetUiTexture(PlayerInterface.StageTexture, stage.Texture, stage.Sampled);
+    }
+
+    /// <summary>The character the stage's platform was placed for (it is placed once per character, where the character stands when first shown).</summary>
+    CharacterId? editorPlatformFor;
+
+    /// <summary>
+    /// The platform under the edited character (<see cref="Meitou.Data.World.WorldObjectLayout.EditorPlatformMesh"/>): its stage frame is the character's turned half round, as the
+    /// original stands the characters on it turned so. The objects keep streaming meanwhile (the world's frame, which would, is not drawn), and the platform is drawn into the stage picture.
+    /// </summary>
+    void DrawEditorPlatform(CharacterId character, CharacterRenderer characters)
+    {
+        if (gpu.Objects is not { } objects || popData is not { } data || characters.StageView is not { } stage || characters.StageTexture is not { } colour || characters.StageDepth is not { } depth) return;
+        if (editorPlatformFor != character)
+        {
+            editorPlatformFor = character;
+            objects.SetStageProp(Meitou.Data.World.WorldObjectLayout.EditorPlatformMesh(data.Db, Matrix4x4.CreateRotationY(MathF.PI) * stage.Feet));
+        }
+        objects.Update(stage.Eye);
+        objects.DrawStageProp(colour.Texture, depth, stage.ViewProjection, stage.Eye, stage.Light);
+    }
+
+    /// <summary>Whether the editor's stage was drawn since it last closed (<see cref="ClearEditorStage"/>).</summary>
+    bool editorStaged;
+
+    /// <summary>The editor has closed: the platform goes, and the close-up looks warmed for it and never shown are dropped.</summary>
+    void ClearEditorStage()
+    {
+        if (!editorStaged) return;
+        editorStaged = false;
+        gpu.Characters?.ReleaseCloseUps();
+        if (editorPlatformFor is null) return;
+        editorPlatformFor = null;
+        gpu.Objects?.SetStageProp(null);
     }
 }

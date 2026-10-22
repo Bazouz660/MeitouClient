@@ -14,6 +14,18 @@ read-only binding copies, never mutable world. [MyGUI](formats/mygui.md), [parit
 Meitou uses the [UI kit](meitou-ui.md)'s rounded rust plates and paper Save action. Tab or Options
 opens it; Esc/the original Kenshi X/Save saves preferences and returns. Changes apply live, with the active
 upscaler shown separately from the requested one. Terrain texture quality needs a restart.
+Every Graphics sub-page starts with two rows (`SettingsMenu.Presets.cs`):
+- **Quality preset** Low / Medium / High / Ultra sets the distance, foliage, grass, reflection, shadow, particle density,
+  filtering and texture sliders; High is the start default (texture quality: full size). Distances that follow a
+  switch's side (object distance, terrain error: Draw distances; shadow distance: Shadows) are multiples of that side's
+  mark, so High reads High in either look. Low also sets the costliest Meitou switches Faithful (AO, indirect light,
+  light shafts, clouds, cloud shadows, water, shadows) and quarter-size particles, as `--low-end`; no preset turns a
+  costly Meitou effect on, and anti-aliasing and render scale are left alone. The shown preset is derived (sliders and the fifth
+  cascade only; Custom otherwise), not saved.
+- **All graphics features** sets every Faithful / Meitou graphics switch to one side (gameplay switches and sliders
+  untouched); mixed switches show neither side. A switch that does not take (indirect light without ray queries) is ignored.
+  Advanced (**All gameplay changes**) and Fixes (**All fixes**) start with the same switch over their own page's
+  switches and sliders with both marks (attackers per target); luckyren Mode is left out.
 The modal pauses simulation and captures world input; wheel/PageUp/PageDown scroll, Tab/arrows
 focus/adjust, Enter activates. Binding capture rejects conflicting/reserved controls; Esc cancels,
 Delete unbinds. Defaults and cache deletion ask first. The viewer retains its debug panel.

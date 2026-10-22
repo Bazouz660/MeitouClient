@@ -13,11 +13,19 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class GameHost
 {
-    /// <summary>The nest bones' meshes (<c>data/items/nests</c>; only <c>bone1</c> has an item record).</summary>
+    /// <summary>The nest bones' meshes (<c>data/items/nests</c>; only <c>bone1</c> has an item record, whose material all of them take).</summary>
     static readonly string[] BoneMeshes = [.. Enumerable.Range(1, 14).Select(i => $"bone{i}.mesh")];
 
-    const int BonesPerBurst = 12, MaxPieces = 400, BurstSplashes = 24;
-    const float Gravity = 98, BurstHeight = 10, Bounce = 0.35f, Grip = 0.6f, BurstReach = 60, BoneLength = 2.5f;
+    /// <summary>Raw meat (rebirth.mod's item), thrown with the bones of a race that bleeds.</summary>
+    const string MeatMesh = "Item_Meat_Raw.mesh";
+    /// <summary>The blood particle systems: the splash at the burst and where flesh lands, and the spray (along its +Z) thrown out of the body.</summary>
+    const string BurstSplash = "Bloodsplash01", BurstSpray = "HackBlood-system";
+
+    /// <summary>The burst's mist: its sprites twice the systems' size and living 3 times as long (they keep growing, so they end about 6 times as big).</summary>
+    const float MistSize = 2, MistLife = 3;
+
+    const int BonesPerBurst = 12, MeatPerBurst = 4, SpraysPerBurst = 5, MaxPieces = 400, BurstSplashes = 24;
+    const float Gravity = 98, BurstHeight = 10, Bounce = 0.35f, Grip = 0.6f, BurstReach = 60, BoneScale = 0.12f;
 
     sealed class Piece
     {
@@ -27,7 +35,7 @@ sealed partial class GameHost
         public Vector3 Extent;
         public float Scale;
         public float Floor;
-        public bool Resting, Landed;
+        public bool Resting, Landed, Flesh;
         public long Born;
         public uint Colour;
     }
@@ -51,33 +59,58 @@ sealed partial class GameHost
                 store.Add(TerrainDecalType.Splash, m.Position + new Vector3(d.X, 0, d.Y) * far, d, 0.3f + bloodRandom.NextSingle() * 0.2f, opaque, TerrainDecalStore.NewLife, bloodRandom);
             }
         }
+        var centre = m.Position + new Vector3(0, BurstHeight, 0);
+        characterSounds?.Burst(centre);
+        if (bleeds && gpu.Particles is { } particles)
+        {
+            particles.Burst(BurstSplash, centre, Quaternion.Identity, 0.3f, MistSize, MistLife);
+            for (int i = 0; i < SpraysPerBurst; i++)
+            {
+                var d = Vector2.Normalize(RandomDirection() + blow * 0.6f);
+                var spray = Vector3.Normalize(new Vector3(d.X, 0.3f + bloodRandom.NextSingle() * 0.7f, d.Y));
+                particles.Burst(BurstSpray, centre, Turn(Vector3.UnitZ, spray), 0.4f + bloodRandom.NextSingle() * 0.3f, MistSize, MistLife);
+            }
+        }
         if (gpu.Debris is not { } debris) return;
         float terrain = gpu.Terrain.HeightAt(m.Position.X, m.Position.Z);
         // On an upper floor the pieces land on its level; the terrain is beneath the building.
         float floor = m.Position.Y > terrain + BloodAboveGround ? m.Position.Y : float.NaN;
         var limbs = LimbMeshes(m.Race);
         var meshes = new List<string>(limbs);
+        int meat = bleeds ? MeatPerBurst : 0;
+        for (int i = 0; i < meat; i++) meshes.Add(MeatMesh);
         for (int i = 0; i < BonesPerBurst; i++) meshes.Add(BoneMeshes[bloodRandom.Next(BoneMeshes.Length)]);
         for (int i = 0; i < meshes.Count; i++)
         {
             string mesh = meshes[i];
-            if (debris.Extent(mesh) is not { } size) continue;
-            // The nest bones are a beast's (up to 3.4 m long): each made a human bone's length, BoneLength.
-            float scale = i < limbs.Length ? 1 : BoneLength * (0.5f + bloodRandom.NextSingle()) / MathF.Max(size.X, MathF.Max(size.Y, size.Z));
+            bool limb = i < limbs.Length, flesh = i < limbs.Length + meat;
+            if (debris.Extent(mesh, flesh ? null : BoneMeshes[0]) is not { } size) continue;
+            // The nest bones are a beast's (up to 3.5 m long): all shrunk alike by BoneScale (±15%), so a vertebra stays smaller than a thigh bone.
+            // The meat is a 39 cm slab: torn smaller.
+            float scale = limb ? 1 : flesh ? 0.5f + bloodRandom.NextSingle() * 0.4f : BoneScale * (0.85f + bloodRandom.NextSingle() * 0.3f);
             var extent = size * scale;
             var d = Vector2.Normalize(RandomDirection() + blow * 0.6f);
             float speed = 30 + bloodRandom.NextSingle() * 60;
             var spinAxis = Vector3.Normalize(new Vector3(bloodRandom.NextSingle() - 0.5f, bloodRandom.NextSingle() - 0.5f, bloodRandom.NextSingle() - 0.5f) + new Vector3(1e-3f));
             pieces.Add(new Piece
             {
-                Mesh = mesh, Scale = scale, Extent = extent, Floor = floor, Born = world.Tick, Colour = bleeds ? 0xFF000000 | Abgr(m.Colour) : 0,
-                Position = m.Position + new Vector3(0, BurstHeight, 0),
+                Mesh = mesh, Scale = scale, Extent = extent, Floor = floor, Born = world.Tick, Colour = bleeds ? 0xFF000000 | Abgr(m.Colour) : 0, Flesh = flesh,
+                Position = centre,
                 Velocity = new Vector3(d.X * speed, 30 + bloodRandom.NextSingle() * 50, d.Y * speed),
                 Rotation = Quaternion.Normalize(new Quaternion(bloodRandom.NextSingle() - 0.5f, bloodRandom.NextSingle() - 0.5f, bloodRandom.NextSingle() - 0.5f, bloodRandom.NextSingle() - 0.5f)),
                 Spin = spinAxis * (4 + bloodRandom.NextSingle() * 10),
             });
         }
         if (pieces.Count > MaxPieces) pieces.RemoveRange(0, pieces.Count - MaxPieces);
+    }
+
+    /// <summary>The shortest rotation taking unit vector <paramref name="from"/> to unit vector <paramref name="to"/>.</summary>
+    static Quaternion Turn(Vector3 from, Vector3 to)
+    {
+        var axis = Vector3.Cross(from, to);
+        float s = axis.Length();
+        if (s < 1e-5f) return Vector3.Dot(from, to) > 0 ? Quaternion.Identity : Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI);
+        return Quaternion.CreateFromAxisAngle(axis / s, MathF.Atan2(s, Vector3.Dot(from, to)));
     }
 
     Vector2 RandomDirection()
@@ -126,6 +159,11 @@ sealed partial class GameHost
         p.Position.Y = floor + thin;
         if (!p.Landed && p.Colour != 0 && decalStore is { } store)
             store.Add(TerrainDecalType.Splash, p.Position, new Vector2(p.Velocity.X, p.Velocity.Z), 0.12f, p.Colour, TerrainDecalStore.NewLife, bloodRandom);
+        if (!p.Landed && p.Flesh)
+        {
+            characterSounds?.Splat(p.Position);
+            if (p.Colour != 0) gpu.Particles?.Burst(BurstSplash, p.Position, Quaternion.Identity, 0.15f, 1.3f, 1.5f);
+        }
         p.Landed = true;
         var flat = new Vector2(p.Velocity.X, p.Velocity.Z);
         if (MathF.Abs(p.Velocity.Y) < 15 && flat.Length() < 12)

@@ -104,6 +104,25 @@ public sealed class BuildingFootprints
         return result;
     }
 
+    /// <summary>
+    /// The triangles of a building record's collision shapes in its own space (scale applied, as the hull is): what a click on a building is tested against after its hull. Read from the
+    /// cache on demand, not kept; empty without a database record or collision files.
+    /// </summary>
+    public IReadOnlyList<(Vector3[] Vertices, int[] Indices)> Mesh(string buildingId)
+    {
+        var result = new List<(Vector3[], int[])>();
+        if (db.Find(buildingId) is not { } building) return result;
+        float scale = building.GetFloat("scale", 1);
+        if (scale <= 0) scale = 1;
+        foreach (var mesh in WorldObjectLayout.Building(db, building, "footprint", Vector3.Zero, Quaternion.Identity, new BuildingState()))
+        {
+            string path = mesh.Source.GetPath("xml collision");
+            if (path.Length == 0 || collision.Get(path) is not { } prepared) continue;
+            foreach (var shape in prepared.Shapes) result.Add(([.. shape.Vertices.Select(v => v * scale)], shape.Indices));
+        }
+        return result;
+    }
+
     Task<BuildingFootprint?> Request(string buildingId) => byRecord.GetOrAdd(buildingId, id => Task.Run(() => Compute(id)));
 
     BuildingFootprint? Compute(string buildingId)
@@ -125,9 +144,18 @@ public sealed class BuildingFootprints
     }
 
     /// <summary>
-    /// The level data's buildings (footprints already read; the others are being read) whose placement lies within reach of the ray's ground track: the candidates a click picks from.
+    /// The level data's buildings whose placement lies within reach of the ray's ground track: the candidates a click picks from. Their footprints are read now (in parallel) if they
+    /// were not yet, so the first click on a building picks it.
     /// </summary>
     public IEnumerable<PlacedBuilding> Along(Vector3 origin, Vector3 direction, float maxDistance)
+    {
+        var near = Near(origin, direction, maxDistance).ToList();
+        foreach (var b in near) _ = Request(b.BuildingId);
+        foreach (var b in near)
+            if (Wait(b.BuildingId) is { } footprint) yield return new PlacedBuilding(b, footprint);
+    }
+
+    IEnumerable<BuildingPlacement> Near(Vector3 origin, Vector3 direction, float maxDistance)
     {
         var map = index.Value;
         const float Reach = 200;
@@ -153,7 +181,7 @@ public sealed class BuildingFootprints
                 var p = new Vector2(b.Position.X, b.Position.Z);
                 float s = lengthSquared < 1e-6f ? 0 : Math.Clamp(Vector2.Dot(p - from, track) / lengthSquared, 0, 1);
                 if (Vector2.DistanceSquared(p, from + track * s) > Reach * Reach) continue;
-                if (Of(b.BuildingId) is { } footprint) yield return new PlacedBuilding(b, footprint);
+                yield return b;
             }
         }
     }

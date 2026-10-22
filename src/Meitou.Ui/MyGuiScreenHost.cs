@@ -11,7 +11,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
 {
     sealed partial class Screen(MyGuiLayout layout, bool modal, bool centreRoot)
     {
-        public MyGuiLayout Layout { get; } = layout;
+        public MyGuiLayout Layout { get; set; } = layout;
         public bool Modal { get; } = modal;
         public bool CentreRoot { get; } = centreRoot;
         public Vector2 Offset;
@@ -22,6 +22,9 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         public Dictionary<string, float> Scroll { get; } = new(StringComparer.Ordinal);
     }
     readonly Dictionary<string, Screen> screens = new(StringComparer.Ordinal);
+    /// <summary>The last list line clicked and when, for the double click that accepts it; the window a double click has (the system's default, 500 ms).</summary>
+    (string Screen, string List, int Line, long At)? lastListClick;
+    const double DoubleClickSeconds = 0.5;
     readonly List<string> open = [];
     IReadOnlyList<MyGuiScreenFrame> frame = [];
     (string Screen, string Widget)? focus;
@@ -35,8 +38,12 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public IReadOnlyList<string> Registered => screens.Keys.ToArray();
     public IReadOnlyList<string> OpenScreens => open.ToArray();
     public void Register(string id, MyGuiLayout layout, bool modal = false, bool centreRoot = false) => screens.Add(id, new(MyGuiTemplates.Expand(layout, resources), modal, centreRoot));
+    /// <summary>Swaps a screen's layout for one composed at run time (rows the code makes from templates, as the original's <c>createWidgetT</c>); the screen's state stays.</summary>
+    public void Replace(string id, MyGuiLayout layout) => screens[id].Layout = MyGuiTemplates.Expand(layout, resources);
     public MyGuiLayout Layout(string id) => screens[id].Layout;
     public bool IsOpen(string id) => open.Contains(id);
+    /// <summary>Whether the open window's pin button is down (closing the window lets it go).</summary>
+    public bool IsPinned(string id) => open.Contains(id) && screens[id].Pinned;
     public void Open(string id)
     {
         if (!screens.ContainsKey(id)) throw new KeyNotFoundException(id);
@@ -55,6 +62,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     {
         foreach (var (follower, leader) in leaders.ToArray()) if (leader == id && open.Contains(follower)) Close(follower);
         open.Remove(id);
+        screens[id].Pinned = false;
         if (focus?.Screen == id) { focus = null; edit = null; }
         if (keyButton?.Screen == id) keyButton = null;
         if (drag?.Screen == id) drag = null;
@@ -141,6 +149,15 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
                 int selected = int.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture);
                 s.Selected[parts[2]] = selected;
                 Activated?.Invoke(new(id, parts[2], "select", c.Argument, selected));
+                // A second click on the same line soon after accepts it (MyGUI ListBox: eventListSelectAccept on a double click).
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (lastListClick is { } last && last.Screen == id && last.List == parts[2] && last.Line == selected
+                    && System.Diagnostics.Stopwatch.GetElapsedTime(last.At, now).TotalSeconds < DoubleClickSeconds)
+                {
+                    lastListClick = null;
+                    Activated?.Invoke(new(id, parts[2], "accept", c.Argument, selected));
+                }
+                else lastListClick = (id, parts[2], selected, now);
             }
             return true;
         }

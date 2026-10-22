@@ -108,14 +108,15 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
 
     public BonePose? Publish(CharacterId id) => ragdolls.TryGetValue(id, out var r) ? r.Published : null;
 
-    (PhysicsFile File, string Path)? FileOf(CharacterAppearance look) => files.GetOrAdd(look, a => new(() =>
+    // A static factory given the rigs: nothing allocated on a hit.
+    (PhysicsFile File, string Path)? FileOf(CharacterAppearance look) => files.GetOrAdd(look, static (a, rigs) => new(() =>
     {
         // RACE male ragdoll / female ragdoll (the female file only for a female look; docs/game/ragdolls.md "RagdollPart and requests").
         var name = a.Race.GetPath(a.Female ? "female ragdoll" : "male ragdoll") is { Length: > 0 } f ? f : a.Race.GetPath("male ragdoll");
         if (string.IsNullOrEmpty(name) || rigs.Find(name) is not { } path) return null;
         try { return (PhysicsFile.ReadFile(path), path); }
         catch (Exception e) when (e is FormatException or IOException) { return null; }
-    })).Value;
+    }), rigs).Value;
 
     RagdollDefinition? DefinitionOf(CharacterAppearance look, SkeletonRig rig, float scale)
     {
@@ -142,7 +143,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         // A human's collapsed limbs, not a robotic one (animals have none).
         if (cold.Fighter is { IsAnimal: true } || cold.Medical is not { } medical || cold.Race is not { } race) return RagdollPart.None;
         var parts = RagdollPart.None;
-        foreach (var p in medical.Parts)
+        foreach (var p in medical.PartSpan)
             if (p.Template.Collapses && p.IsDown && !p.IsRobotic(race)) parts |= (RagdollPart)p.Template.CollapsePart & RagdollPart.Limbs;
         return parts;
     }

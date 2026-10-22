@@ -29,7 +29,10 @@ sealed partial class PlayerInterface
 
     MachineSnapshot? Machine(string? site) => site is null ? null : session.CurrentSnapshot.Machines.FirstOrDefault(m => m.Site == site);
 
-    static string MachineScreen(MachineSnapshot m) => m.Storage is not null && m.Inputs.Count == 0 && m.Output is null ? "bench" : "building";
+    /// <summary>The storage window's layout pixels above its grid (caption and item heading) and in all around it, with the two-line Max Capacity text below (measured on the original's window).</summary>
+    const float StorageAbove = 86, StorageChrome = 150;
+
+    static string MachineScreen(MachineSnapshot m) => m.Storage is null || m.Inputs.Count > 0 || m.Output is not null ? "building" : m.IsStorage && !m.IsContainer && m.TechLevel == 0 ? "storage" : "bench";
 
     /// <summary>Opens the selected machine's window and closes it when the selection moves on.</summary>
     void SyncMachineScreens()
@@ -46,7 +49,9 @@ sealed partial class PlayerInterface
         {
             faithfulScreens.Close("building");
             faithfulScreens.Close("bench");
+            faithfulScreens.Close("storage");
             shownMachine = null;
+            storageWithInventory = null;
             machineDrag = null;
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
@@ -61,7 +66,10 @@ sealed partial class PlayerInterface
         shownMachine = m.Site;
         string screen = MachineScreen(m);
         inventoryScroll.Remove(screen);
-        if (Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
+        // The character's inventory opens with an order-driven container window (the original's order 26 opens the looter's own window and the target's together) and with a machine's; selecting
+        // a storage or a mined rock shows its window alone (the original's Storage window of a selected ore storage has no inventory beside it).
+        bool alone = !m.IsContainer && (m.IsStorage || ProductionSystem.IsNatural(m.Site)) && storageWithInventory != m.Site;
+        if (!alone && Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
         faithfulScreens.Open(screen);
         PlaceInventoryBeside(screen, left: false);
     }
@@ -69,12 +77,32 @@ sealed partial class PlayerInterface
     void BindMachineScreen(string id, UiBindings b)
     {
         var m = Machine(shownMachine);
-        b.Text["Root"] = (m is { IsContainer: true } ? m.Title ?? buildHost?.ItemName(m.Record) ?? "CONTAINER" : selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
+        if (id == "storage")
+        {
+            // The original's generic container window: caption STORAGE, the limited item as heading, and Max Capacity (red "(Full)" once the stack is full).
+            b.Text["Root"] = "STORAGE";
+            b.Text["TypeText"] = m?.StorageLimitName ?? "";
+            if (m is { StorageCapacity: > 0 } cap)
+            {
+                bool full = m.Storage?.Items.FirstOrDefault()?.Quantity >= cap.StorageCapacity;
+                b.Text["CapacityText"] = $"Max Capacity: {cap.StorageCapacity.ToString("N0", CultureInfo.InvariantCulture)}" + (full ? " (Full)" : "");
+                // The original paints the whole line red once the stack is full (the exact red is Unknown; read off its screenshot).
+                if (full) b.Properties["CapacityText"] = new Dictionary<string, string> { ["TextColour"] = "0.91 0.25 0.25" };
+            }
+            else b.Hidden.Add("CapacityText");
+            b.Disabled.Remove("ArrangeButton");
+            b.Hidden.Add("ArrangeButton");
+            if (m?.Storage is { } sg)
+                b.Positions["Root"] = new(0, 0, sg.Width * InventoryCell + 40 * InventoryScale, Math.Min(Height * 0.8f, sg.Height * InventoryCell + StorageChrome * InventoryScale));
+            b.TemplateScale = InventoryScale;
+            return;
+        }
+        b.Text["Root"] = (m is { IsContainer: true } ? buildHost?.ItemName(m.Record) ?? "CONTAINER" : selectedBuilding?.Name ?? "BUILDING").ToUpperInvariant();
         if (id == "bench")
         {
             b.Disabled.Remove("ResearchButton");
             b.Actions["ResearchButton"] = "ResearchButton";
-            if (m is { IsContainer: true }) b.Hidden.Add("ResearchButton");
+            if (m is not { TechLevel: > 0 }) b.Hidden.Add("ResearchButton");
             b.Disabled.Remove("ArrangeButton");
             b.Hidden.Add("ArrangeButton");
             if (m?.Storage is { } grid)
@@ -116,10 +144,11 @@ sealed partial class PlayerInterface
     void AddMachineContent(string id, List<UiControl> controls)
     {
         if (Machine(shownMachine) is not { } m) return;
-        if (id == "bench")
+        if (id is "bench" or "storage")
         {
             if (m.Storage is not { } grid) return;
-            ArrangeContainerGrid(id, controls, grid.Width, grid.Height);
+            if (id == "storage") ArrangeContainerGrid(id, controls, grid.Width, grid.Height, StorageAbove, StorageChrome - StorageAbove - 6);
+            else ArrangeContainerGrid(id, controls, grid.Width, grid.Height);
             if (controls.FirstOrDefault(c => c.Name == "backpack_content") is not { } slot) return;
             var area = slot.Bounds;
             foreach (var item in grid.Items)
@@ -136,8 +165,9 @@ sealed partial class PlayerInterface
         {
             if (view.Count <= 0 || controls.FirstOrDefault(c => c.Name == name) is not { } slot || (machineDrag is { } d && d.Slot == code - 10)) return;
             var b = slot.Bounds;
-            float side = MathF.Min(b.Width, b.Height);
-            AddItemCell(controls, $"machine-{name}", new(b.X, b.Y, side, side), view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
+            // The item at its own footprint, as the original draws it in a slot (a box of building material is 6 x 3 cells), centred in the slot.
+            float cell = InventoryCell, w = view.Width * cell, h = view.Height * cell;
+            AddItemCell(controls, $"machine-{name}", new(b.X + (b.Width - w) / 2, b.Y + (b.Height - h) / 2, w, h), view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
         }
         for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", m.Inputs[k], 10 + k);
         if (m.Output is { } output) Slot("out", output, 8);
@@ -178,23 +208,18 @@ sealed partial class PlayerInterface
     /// <summary>A machine item let go over the selected character's inventory or bag: taken into it.</summary>
     void MachineDrop((string Site, int Slot, int Index, string Record, string Name, int Quantity, int Width, int Height, Vector2 Grab) d, string screen)
     {
-        if (screen is not ("inventory" or "bag") || Selected().FirstOrDefault() is not { } lead) return;
-        if (Machine(d.Site) is { Body.IsNone: false })
-        {
-            Say(new Meitou.Simulation.Carrying.TakeLootItem(d.Index) { Tick = session.World.Tick });
-            return;
-        }
+        if (screen is not ("inventory" or "bag") || InventoryOwner() is not { } lead) return;
         Say(new TakeFromMachine(lead.Id, d.Site, d.Slot, d.Index, screen == "bag" ? "backpack_content" : "main") { Tick = session.World.Tick });
     }
 
     /// <summary>A character's item let go over a machine window: into the input slot under it (or the first input taking it), or the bench's grid cell.</summary>
     bool PutDrop(Vector2 p, string screen, CharacterId character, InventoryItemView item, InventoryItemToken token, Vector2 grab)
     {
-        if (screen is not ("building" or "bench") || Machine(shownMachine) is not { } m) return false;
-        if (screen == "bench")
+        if (screen is not ("building" or "bench" or "storage") || Machine(shownMachine) is not { } m) return false;
+        if (screen is "bench" or "storage")
         {
             if (m.Storage is { } grid && DropCell(p, screen, "backpack_content", grid.Width, grid.Height, grab, item.Width, item.Height, grid.Items.Select(i => (i.X, i.Y, i.Width, i.Height)), out int x, out int y))
-                Say(m.Body.IsNone ? new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick } : new Meitou.Simulation.Carrying.PutLootItem(character, token, x, y) { Tick = session.World.Tick });
+                Say(new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick });
             return true;
         }
         var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;

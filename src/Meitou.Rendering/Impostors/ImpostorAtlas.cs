@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Numerics;
 using System.Text;
+using Meitou.Data;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -31,7 +32,8 @@ public sealed class ImpostorTexture
 {
     public required ImpostorMap Map { get; init; }
     public required ImpostorEncoding Encoding { get; init; }
-    public required byte[][] Levels { get; init; }
+    /// <summary>Managed arrays when baked; slices of the atlas's native block when read (<see cref="ImpostorAtlas.Read"/>).</summary>
+    public required ReadOnlyMemory<byte>[] Levels { get; init; }
 
     public static int LevelBytes(ImpostorEncoding encoding, int size) => encoding switch
     {
@@ -45,9 +47,10 @@ public sealed class ImpostorTexture
 /// A baked impostor atlas and its file format (<c>.mimp</c>, docs/impostors.md "File format"): a small header (magic, versions, grid, frame
 /// size, levels, the bounding sphere in object space, the gloss, the source's name), the per-map level sizes, then the level data, deflated,
 /// with an FNV-1a checksum of the inflated data. <see cref="Read"/> returns null for anything that does not match (wrong magic, version,
-/// sizes, checksum, truncation): the caller bakes again.
+/// sizes, checksum, truncation): the caller bakes again. A read atlas holds its levels in one native block that <see cref="Dispose"/> frees
+/// (docs/engine.md, "Native buffers"): its owner disposes it once the levels are uploaded or it is dropped. A baked one is managed; disposing it does nothing.
 /// </summary>
-public sealed class ImpostorAtlas
+public sealed class ImpostorAtlas : IDisposable
 {
     public const uint Magic = 0x504D494D;   // "MIMP"
     public const int FormatVersion = 2;
@@ -72,6 +75,18 @@ public sealed class ImpostorAtlas
 
     public ImpostorTexture? this[ImpostorMap map] => Textures.FirstOrDefault(t => t.Map == map);
 
+    /// <summary>The native block a read atlas's levels are slices of; null for a baked one.</summary>
+    NativeBuffer? block;
+
+    /// <summary>Frees the levels' native block: the levels must not be read after this.</summary>
+    public void Dispose() => ((IDisposable?)block)?.Dispose();
+
+    /// <summary>This atlas's shape without its maps (no textures, <see cref="Levels"/> 0): what drawing reads once the maps are on the GPU.</summary>
+    public ImpostorAtlas WithoutLevels() => new()
+    {
+        Grid = Grid, FramePixels = FramePixels, Centre = Centre, Radius = Radius, Gloss = Gloss, Name = Name, FirstLevel = FirstLevel, Textures = [],
+    };
+
     public void Write(Stream stream)
     {
         if (FirstLevel != 0) throw new InvalidOperationException("an atlas read without its top levels cannot be written");
@@ -95,16 +110,16 @@ public sealed class ImpostorAtlas
         }
         ulong hash = Fnv.Offset;
         foreach (var t in Textures)
-            foreach (var level in t.Levels) hash = Fnv.Hash(hash, level);
+            foreach (var level in t.Levels) hash = Fnv.Hash(hash, level.Span);
         w.Write(hash);
         w.Flush();
         using var z = new ZLibStream(stream, CompressionLevel.Fastest, leaveOpen: true);
         foreach (var t in Textures)
-            foreach (var level in t.Levels) z.Write(level);
+            foreach (var level in t.Levels) z.Write(level.Span);
     }
 
     /// <summary>
-    /// The first level that has data: the levels below it are empty arrays (an atlas read with <c>firstLevel</c>, <see cref="Read"/>), because nothing built from it asked for them.
+    /// The first level that has data: the levels below it are empty (an atlas read with <c>firstLevel</c>, <see cref="Read"/>), because nothing built from it asked for them.
     /// 0 for a baked atlas or one read whole.
     /// </summary>
     public int FirstLevel { get; init; }
@@ -148,11 +163,19 @@ public sealed class ImpostorAtlas
             ulong hash = Fnv.Offset;
             firstLevel = Math.Clamp(firstLevel, 0, levels - 1);
             byte[]? scratch = null;
+            // Every kept level of every map in one native block, sliced: one allocation and one free per atlas.
+            long kept = 0;
+            foreach (var spec in specs)
+                for (int l = firstLevel; l < levels; l++) kept += spec.Sizes[l];
+            if (kept > int.MaxValue) return null;
+            var block = new NativeBuffer((int)kept);
+            bool ok = false;
             try
             {
+                int offset = 0;
                 for (int i = 0; i < count; i++)
                 {
-                    var data = new byte[levels][];
+                    var data = new ReadOnlyMemory<byte>[levels];
                     for (int l = 0; l < levels; l++)
                     {
                         if (l < firstLevel)
@@ -160,22 +183,26 @@ public sealed class ImpostorAtlas
                             scratch ??= System.Buffers.ArrayPool<byte>.Shared.Rent(specs.Max(s => s.Sizes[0]));
                             z.ReadExactly(scratch.AsSpan(0, specs[i].Sizes[l]));
                             hash = Fnv.Hash(hash, scratch.AsSpan(0, specs[i].Sizes[l]));
-                            data[l] = [];
+                            data[l] = ReadOnlyMemory<byte>.Empty;
                             continue;
                         }
-                        data[l] = new byte[specs[i].Sizes[l]];
-                        z.ReadExactly(data[l]);
-                        hash = Fnv.Hash(hash, data[l]);
+                        var level = block.Memory.Slice(offset, specs[i].Sizes[l]);
+                        offset += level.Length;
+                        z.ReadExactly(level.Span);
+                        hash = Fnv.Hash(hash, level.Span);
+                        data[l] = level;
                     }
                     textures[i] = new ImpostorTexture { Map = specs[i].Map, Encoding = specs[i].Encoding, Levels = data };
                 }
+                if (hash != expected) return null;
+                ok = true;
+                return new ImpostorAtlas { Grid = grid, FramePixels = frame, Centre = centre, Radius = radius, Gloss = gloss, Name = name, Textures = textures, FirstLevel = firstLevel, block = block };
             }
             finally
             {
                 if (scratch is not null) System.Buffers.ArrayPool<byte>.Shared.Return(scratch);
+                if (!ok) ((IDisposable)block).Dispose();
             }
-            if (hash != expected) return null;
-            return new ImpostorAtlas { Grid = grid, FramePixels = frame, Centre = centre, Radius = radius, Gloss = gloss, Name = name, Textures = textures, FirstLevel = firstLevel };
         }
         catch (Exception e) when (e is EndOfStreamException or InvalidDataException or IOException or ArgumentException or OverflowException)
         {

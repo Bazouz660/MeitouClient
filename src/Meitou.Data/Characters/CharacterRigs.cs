@@ -51,7 +51,8 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
     public string? BodySkeletonName(string path) => skeletonNames.GetOrAdd(path, p => new Lazy<string?>(() => OgreMeshReader.ReadFile(p).SkeletonName)).Value;
 
     /// <summary>The pose setup of <paramref name="c"/> (cached per appearance); null when its body mesh or skeleton cannot be found or read.</summary>
-    public CharacterPoseSetup? For(CharacterAppearance c) => setups.GetOrAdd(c, a => new Lazy<CharacterPoseSetup?>(() => Build(a))).Value;
+    public CharacterPoseSetup? For(CharacterAppearance c) =>
+        setups.GetOrAdd(c, static (a, self) => new Lazy<CharacterPoseSetup?>(() => self.Build(a)), this).Value;   // a static factory: nothing allocated on a hit
 
     CharacterPoseSetup? Build(CharacterAppearance c)
     {
@@ -77,12 +78,25 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
     }
 
     /// <summary>Body-shape sliders as bone sizes (docs/animation.md, "Body shape sliders"); only skeletons with exactly 30 bones, as in Kenshi.</summary>
-    BodyShapeData? Shape(CharacterAppearance c, SkeletonRig rig)
+    /// <param name="build">The stat-driven body (its muscle and starvation) in place of the appearance's own.</param>
+    BodyShapeData? Shape(CharacterAppearance c, SkeletonRig rig, BodyBuild? build = null)
     {
         if (rig.BoneCount != CharacterShape.HumanBoneCount) return null;
         var input = c.Shape ?? CharacterShape.InputFor(db, c);
+        if (build is { } b) input = input with { Muscle = b.Muscle, Starvation = b.Starvation };
         var shape = CharacterShape.Compute(input, name => rig.Handle(name) is not null);
         return rig.Shape(shape.BoneSize, shape.PositionalSize, shape.MovementScale);
+    }
+
+    /// <summary>
+    /// The bone shape and ground offset of <paramref name="c"/> with the stat-driven <paramref name="build"/> (its muscle and starvation); null for an animal or a skeleton
+    /// the body sliders do not apply to.
+    /// </summary>
+    public (BodyShapeData? Shape, float GroundOffset)? Reshape(CharacterAppearance c, BodyBuild build)
+    {
+        if (For(c) is not { Animal: false, Rig: { BoneCount: CharacterShape.HumanBoneCount } rig }) return null;
+        var data = Shape(c, rig, build);
+        return (data, GroundOffset(rig, data));
     }
 
     static readonly string[] FootBones = ["Bip01 L Foot", "Bip01 R Foot", "Bip01 L Toe0", "Bip01 R Toe0"];
@@ -92,6 +106,7 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
     /// scale the legs about the hips while <c>Bip01</c> keeps its height, so a short body floats and a tall one sinks. What grounds them in Kenshi was not found;
     /// lowering the character by this is an engine choice.
     /// </summary>
+
     static float GroundOffset(SkeletonRig rig, BodyShapeData? shape)
     {
         if (shape is null) return 0;

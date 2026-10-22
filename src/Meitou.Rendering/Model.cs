@@ -73,7 +73,9 @@ public sealed class Model
     }
 
     /// <param name="boneCount">Bones in the skeleton the mesh will be skinned with, or null to drop skinning.</param>
-    public static Model Build(OgreMesh mesh, int? boneCount)
+    /// <param name="gameBinormals">Characters: the tangent's w makes cross(normal, tangent) × w the game's binormal, the mesh's BINORMAL × the stored w (1 when the
+    /// tangent has three components; character.hlsl, skin.hlsl's skinning; docs/characters.md "Shading, poses and LOD"). Otherwise the stored w is kept (objects).</param>
+    public static Model Build(OgreMesh mesh, int? boneCount, bool gameBinormals = false)
     {
         var model = new Model();
         var min = new Vector3(float.MaxValue);
@@ -87,7 +89,7 @@ public sealed class Model
             var indices = Triangulate(sub, model.Warnings, s);
             if (indices is null) continue;
 
-            var part = BuildPart(s, sub, vd, assignments, boneCount, indices, model.Warnings);
+            var part = BuildPart(s, sub, vd, assignments, boneCount, indices, model.Warnings, gameBinormals);
             foreach (var v in part.Vertices)
             {
                 min = Vector3.Min(min, v.Position);
@@ -128,7 +130,7 @@ public sealed class Model
         }
     }
 
-    static ModelPart BuildPart(int s, OgreSubMesh sub, OgreVertexData vd, List<OgreBoneAssignment> assignments, int? boneCount, uint[] indices, List<string> warnings)
+    static ModelPart BuildPart(int s, OgreSubMesh sub, OgreVertexData vd, List<OgreBoneAssignment> assignments, int? boneCount, uint[] indices, List<string> warnings, bool gameBinormals)
     {
         int n = (int)vd.VertexCount;
         var verts = new Vertex[n];
@@ -151,9 +153,9 @@ public sealed class Model
                 var t = new Vector3(tangents[i * tc], tangents[i * tc + 1], tangents[i * tc + 2]);
                 float w = 1;
                 if (tc == 4) w = tangents[i * tc + 3] < 0 ? -1 : 1;
-                else if (binormals is not null)
+                if (binormals is not null && (tc != 4 || gameBinormals))
                 {
-                    var b = new Vector3(binormals[i * 3], binormals[i * 3 + 1], binormals[i * 3 + 2]);
+                    var b = new Vector3(binormals[i * 3], binormals[i * 3 + 1], binormals[i * 3 + 2]) * w;
                     w = Vector3.Dot(Vector3.Cross(v.Normal, t), b) < 0 ? -1 : 1;
                 }
                 v.Tangent = new Vector4(t, w);

@@ -450,8 +450,6 @@ public sealed unsafe class DebugOverlay : IDisposable
     internal void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip, OverlayPass? pass)
     {
         if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; atlasRuns.Clear(); return; }
-        // A native segment of its own. It is begun first: the overlay is also drawn after a frame ended (a screenshot's key list), and the
-        // segment opens the frame whose constants hold the vertices.
         var t = PassTargets.Of(Target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
         if (clip is { } rect)
         {
@@ -465,6 +463,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         SampledTexture AtlasAt(int run) => atlasRuns.Count > 0 ? atlasRuns[run].Texture : uiFont is { } ui ? ui.Sampled : atlasSampled;
         if (pass is not null)
         {
+            // Only the scissor goes to the pass (the whole target without a clip, as PassTargets.At gives).
             var all = CollectionsMarshal.AsSpan(batch);
             if (atlasRuns.Count <= 1) pass.Add(this, all, imageBatch, t.Scissor, imageBatch is null ? AtlasAt(0) : null);
             else
@@ -478,6 +477,9 @@ public sealed unsafe class DebugOverlay : IDisposable
             imageBatch = null;
             return;
         }
+        // A native segment of its own. It is begun first: the overlay is also drawn after a frame ended (a screenshot's key list), and the
+        // segment opens the frame whose constants hold the vertices.
+
         var cmd = Gpu.BeginNative("debug overlay");
         cmd.BeginRendering(t.Rendering);
         program.Set(uScreen, (float)width, height);

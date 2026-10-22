@@ -13,7 +13,10 @@ meitou-viewer --view swamp --bench-frames 600 --bench-out run.json
 meitou-viewer --impostor-preview <FOLIAGE_MESH>
 ```
 
-Find install through KENSHI_PATH/meitou.local.json/Steam; asset lookup/load order is documented
+Find install as `GameInstall.Locate` lists (KENSHI_PATH, meitou.local.json, `$XDG_CONFIG_HOME/meitou/config.json`, Steam, other
+launchers via `GameInstallSources`); a candidate counts only with `data/gamedata.base`. **Observed** (one real Heroic install,
+no test): Heroic's list and a Wine prefix's `system.reg` (GOG `GOG.com\Games\<id>`: `gameName`, `path`). Lutris, Bottles and
+`.desktop` formats are **Unknown** beyond test layouts. Asset lookup/load order is documented
 in [overview](formats/overview.md). Never substitute a guessed absolute game path.
 --at x,z / --zone / --town selects focus; --radius zones controls source height region, with
 power-of-two sample step keeping<=2048 cells/side. World renderers/streaming are shared with game.

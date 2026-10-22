@@ -76,7 +76,7 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
         ItemInstance? fits = null, smallest = null;
         foreach (var item in inventory.All())
         {
-            if (!item.IsFood || item.Quantity <= 0) continue;
+            if (!item.IsFood || item.Quantity <= 0 || item.Death) continue;   // a live owner's death items are not counted (FUN_1407465d0)
             if (smallest is null || item.Nutrition < smallest.Nutrition) smallest = item;
             if (item.Nutrition <= want && (fits is null || item.Nutrition > fits.Nutrition)) fits = item;
         }

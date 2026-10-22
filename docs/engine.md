@@ -40,6 +40,9 @@ streaming uploads retire and a compacting GC completes before that final smooth 
 **GC:** the stock runtime (server GC, four heaps) in builds and release zips alike; the startup `gc` line names the collector (`GcName`). The
 experimental Satori GC (github.com/VSadov/Satori, `PublishWithSatoriGC` SDK) is not used in official builds. **Observed** earlier A/B (RTX 4070, 10.0.13
 Satori vs stock 10.0.12 fast flight): longest GC pause 15-21 ms stock vs 1-18 ms Satori, frames unchanged (long frames are foliage updates, docs/viewer.md).
+`GCConserveMemory` is not set. **Observed** A/B (`DOTNET_GCConserveMemory=5`, 3600-frame fly benchmark, 3 clean runs each): managed heap at the end
+1.42 vs 1.93 GB, working set 3.37 vs 3.93 GB, but gen2 GCs 12-14 vs 7-8 and pause totals 54-306 vs 36-53 ms (one run 64 frames over 33 ms).
+Process memory beyond the GC heap is mostly untouched write-combined commit (~6 GB at 6.7 GB of VRAM in use), not resident RAM.
 **Pooled buffers** (allocation is the GC lever): streaming garbage is mostly LOH arrays from worker jobs. **Observed** in flights: gen0/gen1 pauses under
 ~40 ms; single blocking gen2s (`NonConcurrentGC`, reason `AllocSmall`) of 0.3-1.7 s in some runs despite SustainedLowLatency, with or without pooling;
 what triggers them is **Unknown**. Pooled now:
@@ -51,12 +54,19 @@ one point after its last reader, never while anything keeps it; a buffer that is
 `ArrayPool<byte>.Shared` rounds up to a power of two (a 4.2 MB file rents 8 MB) and trims idle arrays on gen2; textures in flight bound what it holds.
 **Observed** (swamp, 1920x1080, 3000-frame flight, 4 alternating pairs, 2026-10-21): allocated 6.2 GB to 4.8 GB (2.1 to 1.6 MB a frame), gen0+gen1
 45 to 35 in total, gen2 count unchanged; frame percentiles unchanged within noise.
-The Metal path also drops the impostor atlas CPU levels after the last upload (docs/metal-backend.md, "Live performance and memory"); Vulkan keeps
-them with `ImpostorTextures`. How to rank allocation sites: docs/bench.md.
-Not pooled, kept by their owners: `HeightWindow` arrays (read through `HeightSnapshot` on workers), impostor atlas levels (`ImpostorTextures`
-holds the atlas), grass blade arrays (kept as `PendingBlades`). How to rank allocation sites: docs/bench.md.
+Not pooled, kept by their owners: `HeightWindow` arrays (read through `HeightSnapshot` on workers), grass blade arrays (kept as `PendingBlades`),
+particle texture decodes (preloads not drawn within 30 s are dropped). How to rank allocation sites: docs/bench.md.
+**Native buffers** (`Meitou.Data.NativeBuffer`, a `MemoryManager<byte>` over `NativeMemory`): outside the GC heap, freed at once on `Dispose`, so a
+transient buffer leaves no LOH garbage or holes. No finalizer (CA2015: it could free a block a `Span` still reads), so an undisposed block leaks;
+`NativeBuffer.LiveBytes` (F11 `ram` line, the flight's `gc` line) shows what is held. Used for impostor atlases read from the cache: `ImpostorAtlas.Read`
+inflates every kept level into one block, the levels are `ReadOnlyMemory<byte>` slices of it (baked atlases stay managed arrays; disposing them does
+nothing). The atlas's owner disposes it where it lets go: `FoliageRenderer` after the upload completes, on a refused upload, an abandoned or
+finished refine, a mismatched load, and `UnloadImpostor`/teardown (after the `Next` textures that read it). `ImpostorTextures` never frees.
+**Observed** (swamp, 1920x1080, 3000-frame flight, 2026-10-21): traced large-object allocations after loading 6.0 to 1.8 GB (`ImpostorAtlas.Read`
+4.2 GB to 85 MB); 4 alternating pairs (both orders): allocated 4.9-5.0 to 4.0-4.1 GB, peak working set 5.4-6.4 to 4.9-5.8 GB (set while loading),
+0 MB native held at the end, gen2 counts 3-4 vs 3, p99 unchanged. GC pause totals 28-161 ms (base) vs 98-158 ms (native): inconclusive, **Unknown**.
 Cancel on window close. Helpers/services dispose/join with their owning scene/session.
-After warm-up, loading panels ease off the left/right edges over 0.7s while the loading image fades to the live scene and UI.
+After warm-up, loading panels ease off the left/right edges over 0.7s while the loading image fades to the live scene and UI (Faithful: hidden at once, as the original).
 Input remains blocked through this reveal. A new game ends warm-up as soon as the squad's characters are drawable, skips the sky arrival and opens the
 character editor first (`GameHost.Editor`); once it closes, the loading screen returns and the world warms up as above. Sky loads dismiss only panels that were shown, keeping the sky flight visible.
 

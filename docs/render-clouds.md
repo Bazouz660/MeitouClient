@@ -28,7 +28,9 @@ Clock rewind/weather changes must refresh sky/fog histories and not retain stale
 
 Cloud shadows:512² map over320000 units, texel-snapped, integrates density toward real sun.
 World receivers project to cloud base and sample transmission. Coarse integration omits erosion;
-outside map uses overcast approximation; above-base points/night receive no shadow. Prepare
+outside map uses overcast approximation; above-base points/night receive no shadow. Strength
+scales by the eye's distance outside the nearest placed fog block /2000 (0 inside; largest
+plane distance, spheres/beams ignored; Meitou `cloudfog` switch), else the swamp/Deadlands get too dark. Prepare
 map before world/reflection shading. GI rays and shafts do not yet sample this map.
 
 ## Limits and verification

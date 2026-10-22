@@ -55,6 +55,19 @@ money-item branches are scoped in the expressions/field tables and undecoded que
 - **Stock stacks** (**Observed**, `ShopTraderInventory::vfunc_1` = `FUN_140955f50`, the stock section's constructor): stack bonus minimum 1, mult 50, so a stock cell holds
   50 x the item's `stackable` (Building Material, `stackable` 1: 50). Meitou: `Shop.StockStackMult` on both shop kinds.
 
+### Trading range
+
+(**Observed**, `FUN_14070d290`; its five callers are the one-unit move `FUN_140713d20`, the trade window `FUN_140715560` and `FUN_140712250`, `FUN_140712490`, `FUN_1407139a0`.)
+An item may move between two inventories of different owners only within an X/Z distance of the owners' positions; a failure is result 1, "Out of trading range.",
+with the sound `gui_notrade` (`FUN_14070f7e0`). The limit is 1000 unless a flag is set: the caller's flag (the one-unit move sets it when the target is a building's
+inventory, `uses_building_category`), or an owner of type 1 whose +0x2f8 is 2, or of type 0x5b whose +0xc0 object has +0x2f8 = 2, or the source owner's +0x78 object passing
+its slot +0x260 (meanings **Unknown**). Flagged: the owners must not be enemies (faction test) and must be on the same floor, and the limit is 60, or the source owner's bounds radius + 40
+when the source is a building (class 0). Same owner: always allowed. **Unknown**: which windows the three drop callers flag; whether take-all uses the check.
+
+Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 200 of the building (the sim has no bounds
+radius), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. No faction or
+floor test, no sound.
+
 ### Who trades
 
 - `IS_A_TRADER` (dialogue condition 9, `FUN_1405cff70`) and the stock are the squad's: they read the SQUAD_TEMPLATE `is trader` through the character's platoon (**Observed**, `uses_is_trader`).
@@ -401,7 +414,7 @@ RACE `buy value` is 100 for most races (27 of 53 records); other values in the d
   each entry by its target's record type, with 0 counting as 100 (engine choices, [../simulation.md "Trade"](../simulation.md#trade)).
 - **The FACTION field names of the armour vendor quality chances** (`armors 0..5` in section 9.2): read as the ints `armors 0` .. `armors 5`, falling back to the editor defaults; not
   checked against the data.
-- **The trading range** ("Out of trading range.", section 8): Meitou opens the trade within 30 units.
+- **Opening a trade**: Meitou opens it within 30 units; the original's opening distance is not traced (the item check is in [Trading range](#trading-range)).
 
 ## Expression reference
 

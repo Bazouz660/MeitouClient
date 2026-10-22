@@ -54,7 +54,8 @@ public static class Enhancements
         Func<bool> meitouWater, Action<bool> setMeitouWater, Func<bool> foliageLod, Action<bool> setFoliageLod, Func<bool>? gi = null, Action<bool>? setGi = null,
         Func<bool>? nightHaze = null, Action<bool>? setNightHaze = null, Func<bool>? planetshine = null, Action<bool>? setPlanetshine = null,
         Func<bool>? stars = null, Action<bool>? setStars = null, Func<bool>? clouds = null, Action<bool>? setClouds = null, Func<bool>? cloudShadows = null, Action<bool>? setCloudShadows = null,
-        Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null) =>
+        Func<bool>? cloudFog = null, Action<bool>? setCloudFog = null,
+        Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null, Func<bool>? characterLod = null, Action<bool>? setCharacterLod = null) =>
     [
         new("ao", "Ambient occlusion", "off", "SSAO",
             () => post.Ssao, v => post.Ssao = v, "the game ships SSAO but has it disabled"),
@@ -117,9 +118,15 @@ public static class Enhancements
         new("cloudshadows", "Cloud shadows", "none", "on the land",
             cloudShadows ?? (() => false), setCloudShadows ?? (_ => { }),
             "the game's clouds cast no shadows; Meitou anchors the cloud layer to the world (1.2 km up, so the clouds also drift past as the camera moves) and dims the sun on the land and the water under it, the shadows sweeping over the ground with the wind (docs/formats/clouds.md, \"Meitou cloud shadows\")"),
+        new("cloudfog", "Cloud shadows in fog", "full", "faded",
+            cloudFog ?? (() => false), setCloudFog ?? (_ => { }),
+            "with Cloud shadows on, Meitou weakens them as the camera nears a placed fog volume and drops them inside one; otherwise the cloud shadows darken the already dim fog, and places like the swamp or the Deadlands get too dark (docs/render-clouds.md)"),
         new("interiorgi", "Indoor GI", "original ambient", "bounced light",
             interiorGi ?? (() => false), setInteriorGi ?? (_ => { }),
             "with Indirect light enabled, use bounced light indoors; turn this off to keep the original ambient on room surfaces, furniture and indoor characters while outdoor GI stays enabled"),
+        new("charlod", "Character levels", "the meshes' own", "generated levels",
+            characterLod ?? (() => true), setCharacterLod ?? (_ => { }),
+            "the game draws a character's meshes with their files' own LOD levels (one reduced level at 200 or 400 units for some, none for most: human_female, hair cuts, weapons) by the distance_sphere rule; Meitou makes four reductions of every mesh at load and picks one by how many pixels its deviation would show, with coarser levels in the shadow maps (docs/characters.md \"LOD of character meshes\")"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

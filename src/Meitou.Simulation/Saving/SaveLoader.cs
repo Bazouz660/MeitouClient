@@ -55,6 +55,7 @@ public static class SaveLoader
         if (loaded.MissingMods.Count > 0) loaded.Notes.Add($"Made with data files this game does not load: {string.Join(", ", loaded.MissingMods)}.");
         LoadFactions(save, data, options, loaded);
         loaded.RelationBaseline = Snapshot(data.Relations);
+        loaded.RankBaseline = [.. Enumerable.Range(0, data.Relations.Count).Select(data.Relations.Rank)];
 
         // The player.
         var playerFaction = save.PlayerFaction;
@@ -181,6 +182,7 @@ public static class SaveLoader
             loaded.Factions.Add(state);
             int a = data.FactionIndex(f.Id);
             if (!options.ApplyRelations || a < 0) continue;
+            data.Relations.SetRank(a, f.Rank);
             foreach (var r in f.Relations)
                 if (data.FactionIndex(r.FactionId) is var b and >= 0) data.Relations.Set(a, b, r.Relation);
         }

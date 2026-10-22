@@ -28,12 +28,21 @@ sealed partial class GameHost
     ];
     (string Step, string Label, double Seconds)[] loadingSteps = StartSteps;
 
+    /// <summary>The original's background-loading bar (Faithful UI mode), stepped once a drawn frame.</summary>
+    readonly ResourceLoadBar loadBar = new();
+
+    /// <summary>
+    /// What the bar counts as the original's resource loader queue: the objects' and the characters' loads waiting (engine choice: the original's queue holds the
+    /// meshes and textures it loads in the background; Meitou's terrain and foliage streaming are left out, as the original's are not in that queue).
+    /// </summary>
+    int PendingLoads() => (gpu?.Objects?.Pending ?? 0) + (gpu?.Characters?.PendingLoads ?? 0);
+
     /// <summary>Opens the loading screen on the window (nothing without an overlay, e.g. headless).</summary>
     void BeginLoadingScreen(VulkanDisplay display)
     {
         loadingDisplay = display;
         loadingOverlay = DebugOverlay.TryCreate(display.Context);
-        if (loadingOverlay is not null) loading = LoadingScreen.Create(loadingOverlay, assets.Find, install.DataDirectory);
+        if (loadingOverlay is not null) loading = LoadingScreen.Create(loadingOverlay, assets.Find, install.DataDirectory, (g.UiMode ?? config.UiMode) == Meitou.Data.Ui.UiMode.Faithful);
         loadingSteps = StartSteps;
     }
 
@@ -87,6 +96,8 @@ sealed partial class GameHost
         if (loadingDisplay.BeginFrame(size.X, size.Y))
         {
             loadingOverlay.Target = loadingDisplay.Backbuffer;
+            loadBar.Update(loading.Faithful ? PendingLoads() : 0);
+            loading.LoadBar = loadBar;
             loading.Draw(size.X, size.Y);
             loadingDisplay.Present();
         }

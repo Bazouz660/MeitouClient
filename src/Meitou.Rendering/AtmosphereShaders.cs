@@ -20,6 +20,19 @@ static class AtmosphereShaders
         float atmoWaterWeight(float dist, float farClip) { return 1.0 - smoothstep(0.5, 0.9, dist / max(farClip, 1.0)); }
         """;
 
+    /// <summary>
+    /// The Meitou night ambient floor (docs/render-sky.md): a texel of the ambient map with its colour raised, hue kept, to the luminance
+    /// <c>maps.z - 1</c> (<see cref="SkyRenderer.NightAmbientFloor"/>; 0 by day and in Faithful). <c>maps</c>: the <c>uAtmoMaps</c> values.
+    /// </summary>
+    internal const string AmbientFloorFunction = """
+
+        vec4 atmoAmbientFloor(vec4 am, vec4 maps)
+        {
+            float l = dot(am.rgb, vec3(0.2126, 0.7152, 0.0722));
+            return vec4(am.rgb * max(1.0, (maps.z - 1.0) / max(l, 1e-3)), am.a);
+        }
+        """;
+
     /// <summary>What every world shader includes (fragment stage, or the grass's vertex stage).</summary>
     public static readonly string Functions = $$"""
 
@@ -36,7 +49,7 @@ static class AtmosphereShaders
         uniform vec4 uAtmoHaze;       // Kenshi haze: x 1 when on, y start, z end of the atmosphere fog, w weather fog density (1 / distance)
         uniform vec4 uAtmoHazeCloud;  // Kenshi haze: horizonClouds, rgb the cloud colour (a stand-in), a how far the haze is pulled to it
         uniform vec4 uAtmoAltitude;   // viewer: x the physical haze's share (0 the game's haze, 1 the physical), y haze strength (1 the game's), z how far the eye is above the game's camera heights (0 within them, 1 high above)
-        uniform vec4 uAtmoMaps;       // x irradiance cube, y specular cube, z ambient map present; w half the world's width
+        uniform vec4 uAtmoMaps;       // x irradiance cube, y specular cube, z ambient map present (0: none, else 1 + the night ambient floor); w half the world's width
         uniform vec4 uAtmoNight;      // Meitou night air (docs/formats/sky.md "Night air"): rgb its colour at full night at the horizon, a its weight (0: Faithful, or by day)
         uniform samplerCube uAtmoIrradiance, uAtmoSpecular;
         uniform sampler2D uAtmoAmbientMap;
@@ -188,10 +201,11 @@ static class AtmosphereShaders
 
         {{ShadowShaders.Functions}}
         // ---- the deferred lighting pass (deferred.hlsl main_fs, lightingFunctions.hlsl; docs/formats/lighting.md) ----
+        {{AmbientFloorFunction}}
         vec4 atmoAmbientMapAt(vec3 world)
         {
             if (uAtmoMaps.z < 0.5) return vec4(1.0, 1.0, 1.0, 0.5);
-            return texture(uAtmoAmbientMap, (world.xz + uAtmoMaps.w) / (2.0 * uAtmoMaps.w));
+            return atmoAmbientFloor(texture(uAtmoAmbientMap, (world.xz + uAtmoMaps.w) / (2.0 * uAtmoMaps.w)), uAtmoMaps);
         }
         vec3 atmoIrradiance(vec3 n)
         {
@@ -205,6 +219,31 @@ static class AtmosphereShaders
             vec4 t = vec4(1.0 / 0.96, 0.475, (0.0275 - 0.25 * 0.04) / 0.96, 0.25) * gloss + vec4(0.0, 0.0, (0.015 - 0.75 * 0.04) / 0.96, 0.75);
             float a0 = t.x * min(t.y, exp2(-9.28 * nv)) + t.z;
             return clamp(a0 + 0.04 * (t.w - a0), 0.0, 1.0);
+        }
+        // The character editor's stage (a fog distance of -2): the game's rtt.hlsl (docs/characters.md "Character editor"): one punctual light of colour 0.6 (CalcPunctualLight: diffuse
+        // pi * N.L * (1 - 0.04), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.04) plus the environment light of the irradiance and specular cubes
+        // (CalcEnvironmentLight), times the exposure 0.5, stored as it is in an 8-bit target (UNORM, as the icons). l: towards the light, v: towards the eye.
+        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss)
+        {
+            const float PI = 3.14159265;
+            vec3 hv = normalize(v + l);
+            float nl = clamp(dot(n, l), 0.0, 1.0), lh = clamp(dot(l, hv), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0), nv = clamp(dot(n, v), 0.0, 1.0);
+            float rough = 1.0 - gloss * 0.99, alpha = rough * rough, alphaSqr = alpha * alpha;
+            float denom = max(1e-6, nh * nh * (alphaSqr - 1.0) + 1.0);
+            float D = alphaSqr / (PI * denom * denom);
+            float fresnel = exp2((-5.55473 * lh - 6.98316) * lh);
+            float k = alpha * 0.5, k2 = k * k, vis = 1.0 / (lh * lh * (1.0 - k2) + k2);
+            float sunSpecular = 0.6 * nl * D * (0.04 + 0.96 * fresnel) * vis / PI;
+            float sunDiffuse = PI * nl * 0.6 * 0.96;
+            vec3 envDiffuse = atmoIrradiance(n) * 0.96;
+            vec3 envSpecular = vec3(0.0);
+            if (uAtmoMaps.y > 0.5)
+            {
+                vec3 dominant = mix(n, reflect(-v, n), gloss * (sqrt(gloss) + rough));
+                vec4 r = textureLod(uAtmoSpecular, dominant, (1.0 - gloss) * 7.0);
+                envSpecular = kenshiEnvBrdf(gloss, nv) * r.rgb * r.a * 10.0;
+            }
+            return clamp((albedo * (sunDiffuse + envDiffuse) + sunSpecular + envSpecular) * 0.5, 0.0, 1.0);
         }
         // What a lit fragment writes to the GI resolve's surface target (GiResolveShaders.WithAlbedo; RGBA16UI, 0: no probes here), set by kenshiLight:
         // x, y the shading normal's octahedral position (16 bits each), z sqrt(albedo) red | green << 8, w blue | 1 << 8 | interior << 9.

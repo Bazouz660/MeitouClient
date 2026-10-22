@@ -17,10 +17,10 @@ public enum CareKind { None, Treating, Resting }
 /// <summary>
 /// The health the interface shows: blood (0..1 of capacity), the worst body part (fraction of its maximum HP), hunger (3 fed .. 0 starving) and whether it is out cold or dead; for the player's
 /// characters also whether first aid has anything to bandage (<see cref="NeedsAid"/>) or a limb to splint (<see cref="NeedsSplint"/>, the menu's test with skill 50), what the character is
-/// doing (<see cref="Care"/>) and its medic job switch.
+/// doing (<see cref="Care"/>), its medic job switch and what is left of a knockout (<see cref="KoTimer"/>, the header's "Unconscious (N)").
 /// </summary>
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
-    bool NeedsSplint = false);
+    bool NeedsSplint = false, float KoTimer = 0);
 public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic);
 /// <summary>A line of the HUD's stats panel: the label, the value the character fights with and the value it would have unhurt (docs/game/ui-screens.md section 4).</summary>
 public readonly record struct HudStatLine(string Label, float Value, float Base);
@@ -79,6 +79,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<Vector3> Path { get; init; } = [];
     /// <summary>Null for a character without a body (an animal).</summary>
     public BodyStatus? Body { get; init; }
+    /// <summary>The stat-driven body of a person (not a robot, not an animal), from its current stats and hunger; null for the others.</summary>
+    public Meitou.Data.Characters.BodyBuild? Build { get; init; }
     /// <summary>What a selected character carries, one line per item (empty for the others).</summary>
     public IReadOnlyList<string> Inventory { get; init; } = [];
     /// <summary>A selected character's bounties, one line per faction that wants it (empty for the others and for one nobody wants).</summary>
@@ -98,6 +100,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterId CarriedBy { get; init; } = CharacterId.None;
     /// <summary>The carrier's bone a carried body hangs from (<c>Bip01 L UpperArm</c>), null when not carried.</summary>
     public string? AttachBone { get; init; }
+    /// <summary>The ITEM (string id) held in the <c>hands</c> point while operating: the functionality's <c>special tool</c> (docs/game/buildings-production.md "Production"); null for none.</summary>
+    public string? HeldTool { get; init; }
     /// <summary>The size the body is drawn at: an animal's lerp(age, <c>scale min</c>, <c>scale max</c>) (its <c>MedicalState.ScaleK</c>), 1 for people.</summary>
     public float Scale { get; init; } = 1;
     /// <summary>The movement task (<see cref="CharacterTask"/>); the host's sounds follow building, treating and looting from it.</summary>
@@ -185,6 +189,9 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<SquadView> PlayerSquads { get; init; } = [];
     /// <summary>The active squad's id (<see cref="PlayerState.Squad"/>; -1 none): the squad bar shows it.</summary>
     public int ActiveSquad { get; init; } = -1;
+    /// <summary>The downed character whose inventory window is open (<see cref="PlayerState.OpenLoot"/>; its snapshot has the <see cref="CharacterSnapshot.ItemGrid"/>), and who opened it.</summary>
+    public CharacterId OpenLoot { get; init; } = CharacterId.None;
+    public CharacterId LootOpener { get; init; } = CharacterId.None;
     /// <summary>Player-built buildings and construction sites, in creation order (docs/simulation.md "Buildings").</summary>
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>

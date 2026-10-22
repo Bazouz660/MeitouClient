@@ -129,4 +129,59 @@ public class HubNavigationTests
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
     }
+
+    /// <summary>
+    /// The player's long route from the Hub to Stack takes the roads by the original's rule (Nameless, road preference 0.3), as the off-screen squads do
+    /// (docs/game/pathfinding.md "Roads": 34054 walked for 16898 straight, Observed); without a road preference it goes over the terrain.
+    /// </summary>
+    [Fact]
+    public void A_long_route_from_the_hub_to_stack_follows_the_roads()
+    {
+        var install = GameInstall.Locate();
+        Assert.SkipWhen(install is null, "Kenshi install not found");
+        var db = InstallData.FullLoadOrder!;
+        var levels = InstallData.Levels!;
+        var dir = Path.Combine(Path.GetTempPath(), "meitou-roadnav-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var map = TerrainHeightmap.Open(install!);
+            using var nav = new NavSystem(install!, db, levels, (x, z) => (float)map.HeightAt(x, z), cache: new NavMeshCache(dir));
+            var data = PopulationData.Create(db, levels.Towns(), roads: levels.Roads());
+            nav.Walkability.Roads = data.Roads;
+            Vector3 Town(string name) => levels.Towns().First(t => db.Find(t.TownId)?.Name == name).Position;
+            var (hub, stack) = (Town("The Hub"), Town("Stack"));
+            float straight = Vector2.Distance(new(hub.X, hub.Z), new(stack.X, stack.Z));
+            var roadPoints = levels.Roads().SelectMany(r => r.Points).Select(p => new Vector2(p.X, p.Z)).ToList();
+
+            // The length walked and the share of it (sampled every 200 units) within 400 of a road point.
+            (float Walked, float OnRoad) Walk(float preference)
+            {
+                var path = nav.Walkability.FindPath(hub, stack, new NavAgent { RoadPreference = preference });
+                Assert.True(path.Found);
+                float walked = 0;
+                int on = 0, samples = 0;
+                for (int k = 1; k < path.Points.Count; k++)
+                {
+                    var (a, b) = (new Vector2(path.Points[k - 1].X, path.Points[k - 1].Z), new Vector2(path.Points[k].X, path.Points[k].Z));
+                    float length = Vector2.Distance(a, b);
+                    for (float d = 0; d < length; d += 200, samples++)
+                    {
+                        var q = Vector2.Lerp(a, b, d / length);
+                        if (roadPoints.Any(r => Vector2.DistanceSquared(r, q) < 400 * 400)) on++;
+                    }
+                    walked += length;
+                }
+                return (walked, on / (float)samples);
+            }
+
+            var road = Walk(data.RoadPreferenceOf(data.PlayerFaction));
+            Assert.True(road.Walked > straight * 1.8f && road.OnRoad > 0.9f, $"by road: walked {road.Walked:0} for a straight {straight:0}, {road.OnRoad:P0} near a road");
+            var terrain = Walk(0);
+            Assert.True(terrain.Walked < straight * 1.3f && terrain.OnRoad < 0.5f, $"over the terrain: walked {terrain.Walked:0} for a straight {straight:0}, {terrain.OnRoad:P0} near a road");
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
 }

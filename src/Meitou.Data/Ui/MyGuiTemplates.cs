@@ -31,14 +31,19 @@ public static partial class MyGuiTemplates
             properties["TemplatePart"] = originalName;
             if (originalName == "Caption") properties["CaptionOwner"] = source.Name;
             if (node.UserStrings.TryGetValue("Event", out string? eventName)) properties["TemplateEvent"] = eventName;
-            var nested = node.Children.Select(c => Clone(c, node.Position.Width, node.Position.Height)).ToList();
+            // MyGUI turns a part's position_real into pixels once, at the template's own size; its align then keeps those margins (Kenshi_ListBoxEmpty's client sits
+            // 19 x 18 px in, whatever the list's size).
+            var position = node.RealPosition
+                ? new UiRect(node.Position.X * referenceWidth, node.Position.Y * referenceHeight, node.Position.Width * referenceWidth, node.Position.Height * referenceHeight)
+                : node.Position;
+            var nested = node.Children.Select(c => Clone(c, position.Width, position.Height)).ToList();
             if (originalName == "Client" && !placed && source.Type != "TabControl")
             {
                 nested.AddRange(children);
                 placed = true;
                 if (source.Type is "EditBox" or "TextBox") properties["CaptionOwner"] = source.Name;
             }
-            return ExpandWidget(node with { Name = name, Properties = properties, Children = nested }, resources, new(chain));
+            return ExpandWidget(node with { Name = name, Position = position, RealPosition = false, Properties = properties, Children = nested }, resources, new(chain));
         }
         var framed = template.Children.Select(c => Clone(c, template.Position.Width, template.Position.Height)).ToList();
         if (!placed) framed.AddRange(children);
@@ -48,6 +53,13 @@ public static partial class MyGuiTemplates
         var strings = new Dictionary<string, string>(template.UserStrings, StringComparer.Ordinal);
         foreach (var p in source.UserStrings) strings[p.Key] = p.Value;
         if (source.Type == "MultiListBox") framed.AddRange(ColumnPrototypes(source.Name, strings, resources, chain));
+        // A ListBox's lines are its SkinLine template (Kenshi_ListBoxItem): their skin and font; the selected line is that skin's checked state.
+        if (strings.TryGetValue("SkinLine", out var line) && resources.Templates.TryGetValue(line, out var lineResource)
+            && MyGuiReader.ReadResourceLayout(lineResource).Roots.FirstOrDefault() is { } lineRoot)
+        {
+            rootProperties["LineSkin"] = lineRoot.Skin;
+            if (lineRoot.Properties.TryGetValue("FontName", out var lineFont)) rootProperties["LineFont"] = lineFont;
+        }
         var expanded = source with { Skin = template.Skin, Properties = rootProperties, UserStrings = strings, Children = framed };
         // A template's root requests a native skin, even when that skin shares the template's name.
         var resolvedProperties = new Dictionary<string, string>(expanded.Properties, StringComparer.Ordinal) { ["ResolvedTemplate"] = "true" };

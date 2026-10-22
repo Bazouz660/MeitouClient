@@ -37,6 +37,20 @@ public sealed record FogFeature(string Name, FogFeatureType Type, Vector3 Colour
         return true;
     }
 
+    /// <summary>How far a point lies outside a block: the largest distance past one of its planes (a lower bound of the true distance; 0 inside,
+    /// infinity for a sphere or beam).</summary>
+    public float DistanceOutside(Vector3 p)
+    {
+        if (Type != FogFeatureType.Block) return float.PositiveInfinity;
+        float d = 0;
+        foreach (var plane in Planes)
+        {
+            float length = new Vector3(plane.X, plane.Y, plane.Z).Length();
+            if (length > 0) d = MathF.Max(d, (plane.X * p.X + plane.Y * p.Y + plane.Z * p.Z - plane.W) / length);
+        }
+        return d;
+    }
+
     /// <summary>
     /// A block's corners: the points where three of its planes meet that lie on or inside the other four (within 0.5 units). The game builds the
     /// volume's mesh from these (FUN_14010b6a0). The planes in the base game face mostly upwards, so a block is open below and its corners include

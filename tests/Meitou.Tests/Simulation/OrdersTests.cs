@@ -18,7 +18,8 @@ public class OrdersTests
     {
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, walk,
+        // Seed 1: a fight where the unordered player is not knocked out before its first swing (seeds 3 and 9 are, since the original part order).
+        var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, walk,
             [new PlayerSystem(), new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat)]);
         CharacterId Make(string name, Vector3 at, bool player)
         {

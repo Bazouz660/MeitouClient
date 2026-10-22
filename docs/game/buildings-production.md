@@ -287,6 +287,13 @@ holding at most 10. Save (`vfunc_17`/`18` `FUN_1402a1fa0` / `FUN_1402a23a0`, **O
 not a natural site, has a functionality and passes the owner test of [resources](#resources); 0 occurrences in two saves),
 `consumption amount-<k>` (input levels); the items are in the building's INVENTORY_STATE.
 
+**Held tool** (**Observed**, `Task_OperateMachine` set-up `FUN_14035b430`): when the task starts, a functionality with a
+`special tool` reference gets that item made and attached to the operator's `hands` point (`Bip01 Prop2`); the
+`special tool` records are ITEMs with a `mesh` in Newwworld.mod: Pickaxe (mines, rocks) and Hoe (farms). The attach is
+skipped when a virtual test on the character (`+0x30`) fails (**Unknown** what it tests; Meitou skips animals). Meitou
+shows it for the whole operate task, the walk there included, and drops it when the task ends (the original's removal
+was not traced, **Unknown**).
+
 | function | examples (production mult) |
 |---|---|
 | 1 MINE | Ore mine 64, Stone mine 128, copper mine 72, well 48 |
@@ -496,7 +503,11 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   Capacity / Advanced +60 each.
 
 **Storage** (**Verified**, 603 buildings): 87 have `has inventory`; default 18 x 18, `itemtype limit` 4; `stackable bonus
-mult` 1 to 100000; `limit inventory` restricts the items. Locks and containers: [locks](locks.md).
+mult` 1 to 100000; `limit inventory` restricts the items. Grid (**Observed**, the building loader): a building whose `limit inventory`
+names exactly one item is that item's `inventory footprint` (Iron Plates 4 x 3, Building Materials 6 x 3, steel bars 6 x 1), else
+`storage size`, for built and town-placed storages alike (`MachineData.StorageGrid`). Its window (**Observed**, screenshots) is
+`Kenshi_InventoryGenericWindow`: caption STORAGE, the one limited item's name as heading, `Max Capacity: N` with N the `stackable bonus
+mult`, the line red with "(Full)" once the first stack reaches it (exact red **Unknown**). Locks and containers: [locks](locks.md).
 Water Tower takes only Water and `Storage: Ore` only Raw Iron, both with mult 100 and functionality `Resource
 storage` (function 2); Large Barrels also hold Water.
 

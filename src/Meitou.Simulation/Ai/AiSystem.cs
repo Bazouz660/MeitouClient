@@ -440,7 +440,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.GoHome:
                 var (target, home, floor) = SpotFor(mind, board, behaviour, type);
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type == TaskType.RUN_AWAY_HOMETOWN ? SpeedMode.Run : SpeedMode.Walk, height: floor))
+                {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
+                    if (home && board.Gate is { } gate && GateSpot(board, mind, type) is not null) table.Next[slot].Yaw = MathF.Atan2(gate.Out.X, gate.Out.Y);   // looking out
+                }
                 break;
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
@@ -501,6 +504,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             if (board.Town >= 0) return (Flat(data.Sites[board.Town].Position), true, null);
             return (mind.Squad.HomeCentre, true, null);
         }
+        if (!mind.HomeUnreachable && GateSpot(board, mind, type) is { } guard) return (Flat(guard), true, guard.Y);
         if (board.Home is not { } home || mind.HomeUnreachable || type is TaskType.HOLD_POSITION or TaskType.MAN_THE_GATE) return (mind.Post, false, null);
         HomeSpotKind kind = behaviour == AiBehaviour.Sleep ? HomeSpotKind.Bed : type switch
         {
@@ -541,7 +545,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// few distances behind it whose ground is walkable at the turret's height, else beside or before it, else the turret's own place. The Y is the walkable surface
     /// there, so the path goes up to the tower's floor rather than to the ground below it. Engine choice: the game's gunner spot is not in the data.
     /// </summary>
-    static Vector3 TurretSpot(World world, in TurretPost turret)
+    internal static Vector3 TurretSpot(World world, in TurretPost turret)
     {
         var at = Flat(turret.Position);
         var forward = new Vector2(MathF.Sin(turret.Yaw), MathF.Cos(turret.Yaw));
@@ -673,7 +677,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         if (Interlocked.Exchange(ref placing, 0) != 0) Place(table);
         bool cadence = world.Tick % Math.Max(1, Settings.PackageEveryTicks) == 0;
         // Each town's turrets are claimed once per cadence, by the squads in squad order (derived, not hashed).
-        if (cadence) { turretTaken.Clear(); seatTaken.Clear(); RefreshPlaces(world); }
+        if (cadence) { turretTaken.Clear(); seatTaken.Clear(); ReserveSeats(world); RefreshPlaces(world); }
         foreach (var squad in world.Squads.All)
         {
             if (squad.Ai is null)
@@ -709,7 +713,59 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             squad.Resume = false;
             ClaimTurrets(world, board, squad);
             ClaimSeats(world, board, squad);
+            FindGate(world, board, squad);
         }
+    }
+
+    /// <summary>
+    /// Sets <see cref="Blackboard.Gate"/>: the home when it is a gate, else, for a squad with a gate guard, the town's gate nearest the squad (the original's
+    /// <c>HOME_GATE</c> chain, docs/game/ai-tasks.md "Town goals"); its first door's leaf, from the door gate (none headless). Kept while the gate stays the same.
+    /// </summary>
+    void FindGate(World world, Blackboard board, Squad squad)
+    {
+        TownBuilding? gate = board.Home is { IsGate: true } home ? home : null;
+        if (gate is null && board.Crowd.ContainsKey(TaskType.MAN_THE_GATE) && board.Town >= 0)
+        {
+            float best = float.MaxValue;
+            foreach (var b in data.Sites[board.Town].Buildings)
+            {
+                float d = Vector2.DistanceSquared(Flat(b.Position), Flat(squad.Position));
+                if (b.IsGate && d < best) (gate, best) = (b, d);
+            }
+        }
+        if (gate is null) { board.Gate = null; return; }
+        if (board.Gate?.Building == gate) return;
+        board.Gate = null;
+        Locks.Fixture? door = null;
+        foreach (var f in world.Fixtures.OfBuilding(gate.Key))
+            if (f.Kind == Locks.FixtureKind.Door && (door is null || f.DoorIndex < door.DoorIndex)) door = f;
+        if (door is null || world.Fixtures.DoorSpotOf(door) is not { } leaf) return;
+        var way = Vector2.Normalize(new Vector2(leaf.Normal.X, leaf.Normal.Z));
+        // Out of the town: the original's side is not decoded (engine choice).
+        var town = board.Town >= 0 ? Flat(data.Sites[board.Town].Position) : Flat(gate.Position);
+        if (Vector2.Dot(way, Flat(leaf.Centre) - town) < 0) way = -way;
+        board.Gate = new GatePost(gate, leaf.Centre with { Y = leaf.Foot }, way, leaf.HalfWidth);
+    }
+
+    /// <summary>How far from a gate's leaf its gate guard stands (Observed, <c>Task_ManTheGate</c>: the door's point 15 along its normal).</summary>
+    const float GateGuardOut = 15;
+
+    /// <summary>
+    /// Where a gate's guards stand: the gate guard 15 out from its leaf; a member whose node goal finds no node in a gate it lives in flanks the opening on that side,
+    /// beyond the leaf's edges, alternately left and right in two rows (engine choice: the original's goal finds nothing there). Null for other goals.
+    /// </summary>
+    static Vector3? GateSpot(Blackboard board, AiMind mind, TaskType type)
+    {
+        if (board.Gate is not { } gate) return null;
+        var front = gate.Door + new Vector3(gate.Out.X, 0, gate.Out.Y) * GateGuardOut;
+        if (type == TaskType.MAN_THE_GATE) return front;
+        if (type is not (TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING_INDOORS_ONLY or TaskType.STAND_AT_GUARD_NODE_HOMETOWN_OUTSIDE
+            or TaskType.STAND_AT_GENERAL_NODE) || board.Home != gate.Building) return null;
+        foreach (var s in gate.Building.Spots) if (s.IsNode) return null;
+        int step = mind.MemberIndex / 2;
+        float side = (mind.MemberIndex & 1) == 0 ? 1 : -1;
+        var along = new Vector3(-gate.Out.Y, 0, gate.Out.X) * side * (gate.HalfWidth + 6 + 7 * (step / 2));
+        return front + new Vector3(gate.Out.X, 0, gate.Out.Y) * (8 * (step % 2)) + along;
     }
 
     /// <summary>
@@ -749,10 +805,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// package's bar under a bar package): in member order each takes the first seat no one in that building claimed in this cadence pass; members left without one
     /// do not relax or sit. Relaxing takes a chair, else a bar node, else a general node (the original operates furniture of the bar, docs/game/ai-tasks.md "Town
     /// goals", Observed; the node fallbacks are an engine choice); sitting around a chair only (the original's furniture not claimed by others, Observed; its
-    /// training and throne furniture are left out).
+    /// training and throne furniture are left out). A member keeps the seat it had while it still relaxes or sits (engine choice: reassigning every pass in member
+    /// order moved every later sitter to another chair whenever one came or went); the seats kept are reserved for every squad first (<see cref="ReserveSeats"/>).
     /// </summary>
     void ClaimSeats(World world, Blackboard board, Squad squad)
     {
+        kept.Clear();
+        foreach (var (slot, spot) in board.SeatClaims) kept[slot] = spot;
         board.SeatClaims.Clear();
         if (board.Home is not { } home) return;
         bool bar = board.CurrentClass == PackageClass.Bar;
@@ -770,8 +829,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 relaxes |= bar && roles[g].Task.Type == TaskType.RELAX_IN_TOWN_PACKAGE;
                 sits |= roles[g].Task.Type == TaskType.SIT_AROUND;
             }
-            if (!relaxes && !sits || cold.Ai.SeatUnreachable) continue;   // one that gave its seat up leaves it to the next member
             if (taken is null && !seatTaken.TryGetValue(home, out taken)) seatTaken[home] = taken = [];
+            int had = kept.TryGetValue(s, out var old) ? IndexOf(home, old) : -1;
+            if (!relaxes && !sits || cold.Ai.SeatUnreachable)   // one that gave its seat up leaves it to the next member
+            {
+                if (had >= 0) taken.Remove(had);
+                continue;
+            }
+            if (had >= 0 && (relaxes || old.Kind == HomeSpotKind.Chair))
+            {
+                taken.Add(had);
+                board.SeatClaims[s] = old;
+                continue;
+            }
             int seat = FreeSeat(home, taken, HomeSpotKind.Chair);
             if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.Bar);
             if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.General);
@@ -779,6 +849,27 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             taken.Add(seat);
             board.SeatClaims[s] = home.Spots[seat];
         }
+    }
+
+    readonly Dictionary<int, HomeSpot> kept = [];
+
+    /// <summary>Marks every seat a squad's member holds from the last pass as taken, before any squad claims (the cadence pass; see <see cref="ClaimSeats"/>).</summary>
+    void ReserveSeats(World world)
+    {
+        foreach (var squad in world.Squads.All)
+        {
+            if (squad.Ai is not { Home: { } home } board || board.SeatClaims.Count == 0) continue;
+            if (!seatTaken.TryGetValue(home, out var taken)) seatTaken[home] = taken = [];
+            foreach (var spot in board.SeatClaims.Values)
+                if (IndexOf(home, spot) is >= 0 and var i) taken.Add(i);
+        }
+    }
+
+    static int IndexOf(TownBuilding building, HomeSpot spot)
+    {
+        for (int i = 0; i < building.Spots.Count; i++)
+            if (building.Spots[i] == spot) return i;
+        return -1;
     }
 
     static int FreeSeat(TownBuilding bar, HashSet<int> taken, HomeSpotKind kind)

@@ -11,7 +11,7 @@ public sealed record PutDownOrder(IReadOnlyList<CharacterId> Carriers) : SimComm
 
 /// <summary>
 /// Orders one of the looters (the selection when the list is empty) to loot <see cref="Target"/>, a knocked-out or dead character: the nearest walks to it and takes everything from
-/// its inventory and backpack that fits its own (the loot window's "take all"; worn gear stays). Looting someone of another faction in sight of its members is a theft.
+/// its inventory and backpack that fits its own (a take-all; worn gear stays, the loot window takes it). Looting someone of another faction in sight of its members is a theft.
 /// </summary>
 public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
 
@@ -22,13 +22,26 @@ public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId T
 public sealed record OpenLootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
 
 /// <summary>
-/// Takes the item at <see cref="Index"/> of the open loot's inventory (<see cref="Items.Inventory.Items"/> order) into the looter's (as <see cref="Items.Inventory.Add"/>; what does not fit stays);
-/// a theft as a loot is (<see cref="Crime.CrimeSystem.IsLootTheft"/>).
+/// Takes the open loot's <see cref="Item"/> (worn gear and the bag's contents included; <see cref="Items.Inventory.All"/> order) into the looter's: into <see cref="Section"/> at
+/// (<see cref="X"/>, <see cref="Y"/>) by <see cref="Items.InventoryCommands.Transfer"/>'s rules, or with no section (or a grid cell that does not take it) as <see cref="Items.Inventory.Add"/>
+/// (what does not fit stays). A theft as a loot is (<see cref="Crime.CrimeSystem.IsLootTheft"/>); a locked-on item stays.
 /// </summary>
-public sealed record TakeLootItem(int Index) : SimCommand;
+public sealed record TakeLootItem(Items.InventoryItemToken Item, string? Section = null, int X = 0, int Y = 0) : SimCommand
+{
+    /// <summary>With no section: at most this many units (0: all; a right click takes one).</summary>
+    public int Count { get; init; }
+}
 
-/// <summary>Puts the looter's (<see cref="Character"/>, the one who opened it) <see cref="Item"/> into the open loot's main grid at cell (<see cref="X"/>, <see cref="Y"/>), which must be free; worn and bag items are refused (as a container's put).</summary>
-public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken Item, int X, int Y) : SimCommand;
+/// <summary>
+/// Puts the looter's (<see cref="Character"/>, the one who opened it) <see cref="Item"/> into the open loot's <see cref="Section"/> at (<see cref="X"/>, <see cref="Y"/>): a free cell of its main
+/// grid or bag, or one of its equipment slots (<see cref="Items.InventoryCommands.Transfer"/>). A worn bag with contents is refused (as a container's put).
+/// </summary>
+public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken Item, int X, int Y, string Section = "main") : SimCommand
+{
+    /// <summary>Into the first room of the loot (<see cref="Items.Inventory.Add"/>) instead of the place, at most <see cref="Count"/> units (0: all): a right click.</summary>
+    public bool FirstFit { get; init; }
+    public int Count { get; init; }
+}
 
 /// <summary>
 /// Orders one of the attackers (the selection when the list is empty) to knock <see cref="Target"/> out from behind (the original's order 228, verb "Stealth KO", <c>Task_StealthKO</c>):

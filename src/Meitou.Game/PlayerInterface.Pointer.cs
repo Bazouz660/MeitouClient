@@ -50,7 +50,7 @@ sealed partial class PlayerInterface
         var selection = SelectedIds();
         foreach (var c in session.CurrentSnapshot.Characters)
             if (c.Id != hover?.Id && Vector3.DistanceSquared(c.Position, centre) <= radius * radius)
-                list.Add((c.Id, PointerColour(selection.Count == 0 ? "arrow" : QuickPointer(c, selection[0]))));
+                list.Add((c.Id, PointerColour(selection.Count > 0 ? QuickPointer(c, selection[0]) : StandingHostile(c) ? "attk" : "arrow")));
         return list;
     }
 
@@ -59,10 +59,13 @@ sealed partial class PlayerInterface
     {
         if (c.IsPlayer) return c.Body is { Dead: false, NeedsAid: true } ? "med" : !c.CarriedBy.IsNone ? "search" : c.Body is { Dead: true } or { Unconscious: true } ? "lift" : "arrow";
         if (c.Body is { Dead: true } or { Unconscious: true } || !c.CarriedBy.IsNone) return "search";
-        if (c.IsTrader) return "talk";
         if (Hostile(c)) return "attk";
+        if (c.IsTrader) return "talk";
         return session.World.CanTalk(c.Id, selected) ? "talk" : "arrow";
     }
+
+    /// <summary>Another faction's hostile character on its feet (not downed, dead or carried): the attack pointer and red outline whatever is selected.</summary>
+    bool StandingHostile(CharacterSnapshot c) => !c.IsPlayer && c.Body is not ({ Dead: true } or { Unconscious: true }) && c.CarriedBy.IsNone && Hostile(c);
 
     static readonly Vector4 WhiteOutline = new(0.95f, 0.93f, 0.85f, 0.85f);
 
@@ -84,13 +87,22 @@ sealed partial class PlayerInterface
         if (SelectedIds().Count > 0)
         {
             if ((CtrlHeld || AltHeld) && PickDowned(mouse) is { } downed) chosen = (AltHeld ? "search" : "lift", downed);
-            else if (QuickOrder(mouse) is { } order) chosen = (order.Pointer, order.Target);
-            else if (PickGroundItem(mouse) is not null) chosen = ("pick_item", null);
-            else if (PickContainer(mouse) is not null) chosen = ("search", null);
-            else if (PickDoor(mouse) is { } door) chosen = (DoorPointer(door), null);
-            else if (SitePointer(mouse) is { } siteMode) chosen = (siteMode, null);
+            else
+                // The nearest target, as the right click takes it (PickAt).
+                switch (PickAt(mouse).Kind)
+                {
+                    case Picked.Character when QuickOrder(mouse) is { } order: chosen = (order.Pointer, order.Target); break;
+                    case Picked.GroundItem: chosen = ("pick_item", null); break;
+                    case Picked.Container when PickContainer(mouse) is { } container: chosen = (ContainerPointer(container), null); break;
+                    case Picked.Door when PickDoor(mouse) is { } door: chosen = (DoorPointer(door), null); break;
+                    case Picked.Rock: chosen = ("mine", null); break;   // a resource rock a right click would mine (the original's `mine` pointer)
+                    case Picked.Site when SitePointer(mouse) is { } siteMode: chosen = (siteMode, null); break;
+                }
         }
         chosen.Target ??= PickWhere(mouse, _ => true);
+        // A hostile character shows the attack pointer and the red outline even with nobody selected to send at it.
+        if (chosen.Name == "arrow" && chosen.Target is { } over && snapshot.Characters.FirstOrDefault(c => c.Id == over) is { } overChar && StandingHostile(overChar))
+            chosen.Name = "attk";
         return pointer = (snapshot.Tick, mouse, CtrlHeld, AltHeld, chosen.Name, chosen.Target);
     }
 

@@ -131,6 +131,32 @@ sealed partial class GameHost
         }
     }
 
+    // The editor's stances and their weights, of the character last shown, and when they were last stepped (EditorStancePoses).
+    readonly List<(string Stance, float Weight)> editorStances = [];
+    CharacterId editorStancesOf;
+    double editorStancesAt;
+
+    /// <summary>
+    /// The edited character's poses: the chosen idle stance at its record's play speed, as the simulation plays it (0 for the stances: a held pose of a 1-frame clip;
+    /// 0.01 for squat), cross-faded from the stances chosen before at the simulation's blend rate (<c>animation blend rate</c>).
+    /// </summary>
+    CharacterPose[] EditorStancePoses(CharacterId id, string stance)
+    {
+        double now = realTime.Elapsed.TotalSeconds;
+        if (id != editorStancesOf || editorStances.Count == 0) { editorStances.Clear(); editorStances.Add((stance, 1)); editorStancesOf = id; }
+        else if (!editorStances.Exists(s => s.Stance == stance)) editorStances.Add((stance, 0));
+        float step = (float)(now - editorStancesAt) * (popData?.Bodies.Constants.AnimationBlendRate ?? 4);
+        editorStancesAt = now;
+        for (int i = editorStances.Count - 1; i >= 0; i--)
+        {
+            var (name, weight) = editorStances[i];
+            weight = name == stance ? MathF.Min(weight + step, 1) : weight - step;
+            if (weight <= 0) editorStances.RemoveAt(i);
+            else editorStances[i] = (name, weight);
+        }
+        return [.. editorStances.Select(s => new CharacterPose(s.Stance, animationLibrary?.IndexOf(s.Stance) is >= 0 and int k ? (float)now * animationLibrary.Definitions[k].PlaySpeed : 0, s.Weight))];
+    }
+
     void FillDrawListCore(CharacterDrawList list)
     {
         var current = session.CurrentSnapshot;
@@ -167,18 +193,39 @@ sealed partial class GameHost
                         }
                 poses[i] = new CharacterPose(layer.Name, time, weight);
             }
-            var look = player.EditorPreview(c.Id, c.Appearance) ?? c.Appearance;
+            if (player.EditorIdle(c.Id) is { } stance) poses = EditorStancePoses(c.Id, stance);
+            var held = HeldLook(c.Appearance, c.HeldTool, out var heldPending);
+            var look = player.EditorPreview(c.Id, c.Appearance) ?? held;
             var glide = player.EditorBlend(c.Id);   // after the preview, which may just have swapped the look
             list.Add(new CharacterInstance(DrawKey(c.Id), look, position, yaw, poses)
             {
                 WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = aboveFloor.Contains(c.Id), FullRateAnimation = c.IsPlayer,
                 Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha),
-                BlendFrom = glide?.From, Blend = glide?.Blend ?? 0,
+                BlendFrom = glide?.From, Blend = glide?.Blend ?? 0, Build = c.Build,
             });
             // The editor's next preview look, listed hidden so the renderer prepares it while the last one is still shown.
             if (player.EditorPending(c.Id) is { } pending)
                 list.Add(new CharacterInstance(DrawKey(c.Id) ^ (1L << 55), pending, position, yaw, poses) { Hidden = true });
+            else if (heldPending is not null)
+                list.Add(new CharacterInstance(DrawKey(c.Id) ^ (1L << 55), heldPending, position, yaw, poses) { Hidden = true });
         }
+    }
+
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<Meitou.Data.Characters.CharacterAppearance, Dictionary<string, Meitou.Data.Characters.CharacterAppearance>> heldLooks = new();
+
+    /// <summary>
+    /// The look with the tool an operator holds (<see cref="CharacterSnapshot.HeldTool"/>), made once per look and tool. Until the renderer has prepared it the plain look is
+    /// drawn and the tool's look is <paramref name="pending"/>, to be listed hidden so it gets prepared.
+    /// </summary>
+    Meitou.Data.Characters.CharacterAppearance HeldLook(Meitou.Data.Characters.CharacterAppearance look, string? tool, out Meitou.Data.Characters.CharacterAppearance? pending)
+    {
+        pending = null;
+        if (tool is null || scene.Database is not { } db) return look;
+        var byTool = heldLooks.GetOrCreateValue(look);
+        if (!byTool.TryGetValue(tool, out var held)) byTool[tool] = held = db.Find(tool) is { } item ? look.WithHeld(item) : look;
+        if (gpu.Characters is not { } characters || characters.IsPrepared(held)) return held;
+        pending = held;
+        return look;
     }
 
     /// <summary>A ragdoll's bones between the last two ticks: rotations by nlerp, root positions and the get-up weight linearly; a bone only in the newer one as it is.</summary>

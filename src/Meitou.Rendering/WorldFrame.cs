@@ -52,9 +52,9 @@ sealed class WorldOptions
     /// <summary>`--play-shots`: the viewer starts flying its saved camera keys (the F2 timeline) on a loop.</summary>
     public bool PlayShots;
     /// <summary>The game's <c>texture resolution gimping</c> (0..4; missing key: 1) and <c>water reflection</c> (0..4; missing: 2) settings (docs/formats/settings.md).</summary>
-    // The viewer starts at full quality (the old look); the game's missing-key defaults are TextureQuality.Default (1) and
-    // ReflectionPass.DefaultLevel (2): --texture-quality 1 --water-reflection 2.
-    public int TextureQuality = 0, WaterReflection = 4;
+    // Textures start at High, the game's missing-key default (TextureQuality.Default); water reflection at full (the game's
+    // missing-key default is ReflectionPass.DefaultLevel, 2).
+    public int TextureQuality = Meitou.Data.Textures.TextureQuality.Default, WaterReflection = 4;
     /// <summary>Sun shadows (docs/formats/shadows.md): the game's <c>shadow quality</c> index, <c>Shadow Range</c>, the debug view.</summary>
     public int ShadowQuality = 2, DebugShadows, ShadowFilter = 2;
     /// <summary>The ray-traced global illumination's debug view (0 off; docs/render-gi.md).</summary>
@@ -92,6 +92,8 @@ sealed class WorldOptions
     public bool Impostors = true;
     /// <summary>The Meitou <c>lod</c> switch: generated mesh levels for TERRAIN-mode foliage meshes (<see cref="FoliageRenderer.Lod"/>).</summary>
     public bool FoliageLod = true;
+    /// <summary>Characters' generated LOD levels (the <c>charlod</c> switch's Meitou side); false: the mesh files' own levels (<c>CharacterRenderer.GeneratedLod</c>).</summary>
+    public bool CharacterLod = true;
     public float? ImpostorDistance, LargeImpostorDistance;
     public double? ImpostorBudgetMb;
     public float HazeStrength = Enhancements.MeitouHazeStrength; // the Meitou haze switch (default); 1 = the game's haze
@@ -101,6 +103,7 @@ sealed class WorldOptions
     public bool MeitouStars = true;   // the Meitou stars switch (default): the procedural night sky (SkyRenderer.MeitouStars); false: the game's starfield texture
     public bool MeitouClouds = true;  // the Meitou clouds switch (default): the cloud layer lit by the sun through its depth (SkyRenderer.LitClouds); false: the game's flat colour
     public bool CloudShadows = true;  // the Meitou cloudshadows switch (default): the cloud layer shades the sun on the land and water (SkyRenderer.CloudShadows); false: none, as the game
+    public bool CloudFog = true;      // the Meitou cloudfog switch (default): the cloud shadows fade near and inside placed fog volumes (SkyRenderer.CloudFog); false: full strength
     /// <summary><c>--weather</c>: a WEATHER record's name forces that weather at the camera; null or "auto" lets the scheduler (docs/formats/weather.md) run.</summary>
     public string? Weather;
     /// <summary><c>--day</c> (null: day 0 in the viewer, the game's clock start in the game).</summary>
@@ -220,7 +223,7 @@ sealed class WorldOptions
           --no-vsync               start with vsync off (uncapped; Tab slider)
           --grass-density <x>      grass blades x this (0.1-2, default 1; Tab slider)
           --camera-code <hex>      start at a camera code (Ctrl+C in the viewer copies one), the world loaded round it
-          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,interiorgi>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
+          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,cloudfog,interiorgi>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
           --show-keys              start with the key list overlay open (toggle with F10)
           --play-shots             start flying the saved camera keys (the F2 timeline) on a loop
           --log-spikes             print a line for every frame whose GPU time is over 1.5 x the median: stage times (GPU, render thread) and what it uploaded or rebuilt
@@ -267,7 +270,9 @@ sealed class WorldOptions
         () => o.MeitouStars, v => o.MeitouStars = v,
         () => o.MeitouClouds, v => o.MeitouClouds = v,
         () => o.CloudShadows, v => o.CloudShadows = v,
-        () => o.InteriorGi, v => o.InteriorGi = v);
+        () => o.CloudFog, v => o.CloudFog = v,
+        () => o.InteriorGi, v => o.InteriorGi = v,
+        () => o.CharacterLod, v => o.CharacterLod = v);
 
     public static WorldOptions? Parse(string[] args)
     {
@@ -770,6 +775,7 @@ static class WorldFrame
         gpu.Sky.MeitouStars = o.MeitouStars;
         gpu.Sky.LitClouds = o.MeitouClouds;
         gpu.Sky.CloudShadows = o.CloudShadows;
+        gpu.Sky.CloudFog = o.CloudFog;
         step?.Invoke("weather");
         if (scene.Database is { } skyDb)
         {
@@ -861,6 +867,7 @@ static class WorldFrame
         gpu.Shadow.SetTerrain(scene.Coarse, scene.CoarseSize);   // the Meitou shadows' terrain shadow beyond the range
         Console.WriteLine($"shadows   {gpu.Shadow.Settings.MapSize}² atlas, {gpu.Shadow.CascadeCount} cascades of {gpu.Shadow.Settings.TileSize}² ({(gpu.Shadow.Meitou ? "Meitou: a layer each" : "Faithful: tiles of one layer")}), range {gpu.Shadow.Settings.Range:0}");
         if (o.Crowd > 0 && scene.Database is not null) gpu.Characters = Characters.CrowdHarness.Create(context, install, scene, assets, o, interactive);
+        if (gpu.Characters is { } crowd) crowd.GeneratedLod = o.CharacterLod;
         gpu.DebugShadows = o.DebugShadows;
         step?.Invoke("gi");
         if (o.GiDebug > 0 || o.Gi)
@@ -955,7 +962,9 @@ static class WorldFrame
             () => gpu()?.Sky.MeitouStars ?? o.MeitouStars, v => { o.MeitouStars = v; if (gpu() is { } stars) stars.Sky.MeitouStars = v; },
             () => gpu()?.Sky.LitClouds ?? o.MeitouClouds, v => { o.MeitouClouds = v; if (gpu() is { } g) g.Sky.LitClouds = v; },
             () => gpu()?.Sky.CloudShadows ?? o.CloudShadows, v => { o.CloudShadows = v; if (gpu() is { } g) g.Sky.CloudShadows = v; },
-            () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; });
+            () => gpu()?.Sky.CloudFog ?? o.CloudFog, v => { o.CloudFog = v; if (gpu() is { } g) g.Sky.CloudFog = v; },
+            () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; },
+            () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
         Func<bool>? getVSync = null, Action<bool>? setVSync = null, IReadOnlyList<Enhancement>? switches = null,
@@ -1043,6 +1052,8 @@ static class WorldFrame
         sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => g.Sky.PlanetshineStrength, v => g.Sky.PlanetshineStrength = MathF.Round(v), "0"));
         // Ours: the sky's ambient light (shade, nights, interiors), a multiple of the game's.
         sliders.Add(new Slider("Ambient light strength (1 = game)", 0, 3, () => g.Sky.AmbientStrength, v => g.Sky.AmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
+        // Ours: a further multiple by night (the exposure sits at its night floor there, so it is not adapted away).
+        sliders.Add(new Slider("Night ambient light strength (1 = game)", 0, 5, () => g.Sky.NightAmbientStrength, v => g.Sky.NightAmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
         if (g.Post is { } post)
         {
             // Upscaling (docs/engine.md "Upscaling"): FSR and DLSS fall back to TAA where their library or backend is missing.
@@ -1104,7 +1115,7 @@ static class WorldFrame
         var side = new List<Slider>
         {
             new(TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, () => Meitou.Data.Textures.TextureQuality.Level,
-                v => Meitou.Data.Textures.TextureQuality.Level = (int)MathF.Round(v), "0",
+                v => Meitou.Data.Textures.TextureQuality.Level = (int)MathF.Round(v), "1",
                 Text: v => (int)MathF.Round(v) is var level && level != terrainLevel
                     ? $"{Meitou.Data.Textures.TextureQuality.Labels[level]} (terrain at start)" : Meitou.Data.Textures.TextureQuality.Labels[level]),
         };
@@ -1252,6 +1263,7 @@ static class WorldFrame
         {
             gpu.Particles?.CollectFogVolumes(gpu.EffectFogs);
             fogVolumes.Update(eye, camera.Forward, camera.FieldOfView, rw / (float)Math.Max(rh, 1), gpu.Sky.HazeDistance, sun.Y, true, gpu.EffectFogs, gpu.Sky.FogCullDistance);
+            gpu.Sky.CloudShadowScale = fogVolumes.CloudShadowScale;
         }
         StageClock.Lap(13);
         if (gpu.Shadow is not null) gpu.Shadow.RangeCap = gpu.FogVolumes?.AtmosphereDistance;   // the cascades end where the weather fog hides everything
@@ -1577,7 +1589,9 @@ static class WorldFrame
             if (render.Objects && gpu.Objects is { } o) { o.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, coarse); objects += o.DrawnInstances; (oi, oc) = (o.DrawnInstances, o.DrawCalls); }
             StageClock.Sub("objects");
             // Characters take the far cascades' floor in both shadow modes: their levels are Meitou's own, and every character is in every cascade that holds the crowd.
-            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale));
+            // In Meitou's coarse cascades a part under a texel across casts nothing (ShadowPass.MinCharacterCasterTexels).
+            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale),
+                ShadowPass.CharacterCasterCull ? coarse * ShadowPass.MinCharacterCasterTexels * 0.5f : 0);
             long t2 = Stopwatch.GetTimestamp();
             if (gpu.Foliage is { } f) { f.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, maxRange: shadow.EffectiveRange * 1.2f, minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0); foliage += f.DrawnInstances; (fi, fc) = (f.DrawnInstances, f.DrawCalls); }
             StageClock.Phase(CascadeLabels[cascade.Index]);

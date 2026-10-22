@@ -205,10 +205,11 @@ static class GiShaders
         layout(buffer_reference, scalar, buffer_reference_align = 4) readonly buffer Triangle { uvec3 v; };
         uvec2 offsetBy(uvec2 a, uint bytes) { uint lo = a.x + bytes; return uvec2(lo, a.y + (lo < a.x ? 1u : 0u)); }
 
+        {{AtmosphereShaders.AmbientFloorFunction}}
         vec4 ambientMap(vec3 world)
         {
             if (maps.z < 0.5) return vec4(1.0, 1.0, 1.0, 0.5);
-            return textureLod(uAtmoAmbientMap, (world.xz + maps.w) / (2.0 * maps.w), 0.0);
+            return atmoAmbientFloor(textureLod(uAtmoAmbientMap, (world.xz + maps.w) / (2.0 * maps.w), 0.0), maps);
         }
         vec3 skyIrradiance(vec3 n)
         {

@@ -87,7 +87,7 @@ public class ImpostorTests
             {
                 var b = new byte[ImpostorTexture.LevelBytes(e, grid * (frame >> l))];
                 random.NextBytes(b);
-                return b;
+                return (ReadOnlyMemory<byte>)b;
             }).ToArray(),
         };
         return new ImpostorAtlas
@@ -116,7 +116,7 @@ public class ImpostorTests
         {
             Assert.Equal(atlas.Textures[m].Map, read.Textures[m].Map);
             Assert.Equal(atlas.Textures[m].Encoding, read.Textures[m].Encoding);
-            for (int l = 0; l < atlas.Levels; l++) Assert.Equal(atlas.Textures[m].Levels[l], read.Textures[m].Levels[l]);
+            for (int l = 0; l < atlas.Levels; l++) Assert.Equal(atlas.Textures[m].Levels[l].ToArray(), read.Textures[m].Levels[l].ToArray());
         }
     }
 
@@ -208,10 +208,10 @@ public class ImpostorTests
         var first = Assemble(1);
         var other = Assemble(2);   // takes the first's maps and scratch, fills them with other pictures
         var again = Assemble(1);   // takes the other's: must equal the first, not carry anything of the other
-        Assert.NotEqual(first.Textures[0].Levels[0], other.Textures[0].Levels[0]);
+        Assert.NotEqual(first.Textures[0].Levels[0].ToArray(), other.Textures[0].Levels[0].ToArray());
         for (int m = 0; m < 2; m++)
             for (int l = 0; l < first.Levels; l++)
-                Assert.Equal(first.Textures[m].Levels[l], again.Textures[m].Levels[l]);
+                Assert.Equal(first.Textures[m].Levels[l].ToArray(), again.Textures[m].Levels[l].ToArray());
         Assert.Equal(first.Gloss, again.Gloss);
         ImpostorAssembler.ReleasePool();
     }
@@ -278,8 +278,8 @@ public class ImpostorTests
             Assert.True(device!.ValidationErrors == 0, string.Join("\n", device.ValidationLog));
 
             // Frame (3, 3) looks from +X; its pixels are 96..127 in both directions of the 128-pixel level 0.
-            var albedo = atlas[ImpostorMap.Albedo]!.Levels[0];
-            var normal = atlas[ImpostorMap.Normal]!.Levels[0];
+            var albedo = atlas[ImpostorMap.Albedo]!.Levels[0].ToArray();
+            var normal = atlas[ImpostorMap.Normal]!.Levels[0].ToArray();
             int At(float u, float v) => ((96 + (int)(v * 32)) * 128 + 96 + (int)(u * 32)) * 4;
             // The radius is √(0.5² + 1 + 1) × 1.01 ≈ 1.515: z = 0.5 is at u ≈ 0.33, z = −0.5 at u ≈ 0.67.
             int left = At(0.33f, 0.5f), right = At(0.67f, 0.5f), outside = At(0.02f, 0.02f);

@@ -436,14 +436,23 @@ public sealed class FrameProfiler : IDisposable
                 if (!showGpu && (s == Other || StageClock.GpuOnly(s))) continue;
                 var series = hist[s];
                 float thickness = s == Total ? 2f : 1.5f;
-                float? lastX = null, lastY = null;
+                // A run of points within a quarter pixel of the height it started at is one segment: most stages lie flat near 0, and the
+                // 300 segments a series would otherwise queue made the plot cost as much as the HUD.
+                float runX = 0, runY = 0, lastX = 0, lastY = 0;
                 for (int i = count - 1; i >= 0; i--)
                 {
                     float v = series[(head - 1 - i + History) % History];
                     float x = px1 - i * dx, y = py1 - (py1 - py0) * Math.Clamp(v / scale, 0, 1);
-                    if (lastX is { } fromX && lastY is { } fromY) overlay.Line(fromX, fromY, x, y, thickness, Colours[s]);
-                    lastX = x; lastY = y;
+                    if (i == count - 1) (runX, runY) = (x, y);
+                    else if (MathF.Abs(y - runY) >= 0.25f)
+                    {
+                        if (lastX > runX) overlay.Line(runX, runY, lastX, lastY, thickness, Colours[s]);
+                        overlay.Line(lastX, lastY, x, y, thickness, Colours[s]);
+                        (runX, runY) = (x, y);
+                    }
+                    (lastX, lastY) = (x, y);
                 }
+                if (lastX > runX) overlay.Line(runX, runY, lastX, lastY, thickness, Colours[s]);
             }
         }
         overlay.Flush(width, height);

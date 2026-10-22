@@ -40,6 +40,6 @@ public sealed class NavDoorGeometry(GameInstall install, GameDatabase db)
         }
         if (lo.X > hi.X) return null;
         var size = hi - lo;
-        return size.X <= size.Z ? new DoorSpot((lo + hi) / 2, Vector3.UnitX, size.Z / 2) : new DoorSpot((lo + hi) / 2, Vector3.UnitZ, size.X / 2);
+        return size.X <= size.Z ? new DoorSpot((lo + hi) / 2, Vector3.UnitX, size.Z / 2, size.Y / 2) : new DoorSpot((lo + hi) / 2, Vector3.UnitZ, size.X / 2, size.Y / 2);
     }
 }

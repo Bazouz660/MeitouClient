@@ -172,7 +172,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     /// </summary>
     void Discover(World world)
     {
-        if (!world.Player.Exists) return;
+        // Not during the new game's character creation: the original's "Discovered" messages come after CONFIRM (its world waits for the editor).
+        if (!world.Player.Exists || world.Player.InCreation) return;
         var prev = world.Characters.Previous;
         var player = world.Player;
         for (int i = 0; i < prev.Length; i++)
@@ -339,8 +340,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         foreach (var built in town.Squads)
         {
             var squad = SpawnSquad(world, built, site, radius);
-            state.Squads.Add(squad.Id);   // slave squads are planned (built.Plan.Slaves) but not spawned yet
+            state.Squads.Add(squad.Id);
             MakePrisoners(world, built, squad, site, radius, state);
+            MakeSlaves(world, built, squad, site, radius, state);
         }
         if (town.Squads.Count > 0) MadeTown(world, town.Site, town.Squads.Where(s => s.Home is not null).Select(s => s.Members.Count));
         int housed = town.Squads.Count(s => s.Home is not null);
@@ -380,6 +382,45 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
                 var cage = cages[pick];
                 cages.RemoveAt(pick);
                 if (world.Fixtures.Imprison(world, id, cage)) table.Cold(id.Slot)!.Kidnapped = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A squad's <c>slaves</c> (the squad factory's recursive slave squads, role 4; docs/game/factions-squads-towns.md "Squad factory"): each planned slave squad is made as a squad of its
+    /// template's <c>faction</c> (else the owner's), every member a slave (state 1) of the owner squad's faction. <b>Engine choices</b>: they are made at the owner squad's spot; with a
+    /// home building, each goes into a random free cage of it (their package's goal is Slave get in Cage, which Meitou does not act out), those left over stand by the owner squad.
+    /// Their obedience goals (Slave AI Goals) and work are not built.
+    /// </summary>
+    void MakeSlaves(World world, BuiltSquad owner, Squad squad, TownSite site, float radius, SiteState state)
+    {
+        if (owner.Plan.Slaves.Count == 0) return;
+        var table = world.Characters;
+        var cages = owner.Home is { } home
+            ? world.Fixtures.OfBuilding(home.Key).Where(f => f.Kind == Locks.FixtureKind.Cage && Locks.FixtureRegistry.IsFree(table, f)).ToList() : [];
+        ulong ownerKey = Rng.StableHash(owner.Home?.Key ?? squad.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var ownerFaction = (uint)squad.Faction < (uint)data.Factions.Count ? data.Factions[squad.Faction] : null;
+        int n = 0, picks = 0;
+        foreach (var plan in owner.Plan.Slaves)
+        {
+            if (plan.Members.Count == 0) continue;
+            int faction = plan.Template.Faction is { } tf && data.FactionIndex(tf) is var fi and >= 0 ? fi : squad.Faction;
+            var members = new List<BuiltMember>();
+            foreach (var m in plan.Members)
+            {
+                var look = data.Appearances?.Create(m.RecordId, ownerFaction?.Id, (int)(Rng.Hash(world.Seed, ownerKey, RngPurpose.Spawn, SeedSalts.SlaveLook + (ulong)n++) & 0x7FFFFFFF));
+                members.Add(new BuiltMember(m, look));
+            }
+            var slaves = SpawnSquad(world, new BuiltSquad(plan with { Slaves = [] }, owner.Position, faction, members, owner.NearY), site, radius);
+            state.Squads.Add(slaves.Id);
+            foreach (var id in slaves.Members)
+            {
+                if (table.Cold(id.Slot) is not { } c) continue;
+                (c.SlaveState, c.SlaveOwner) = (1, squad.Faction);
+                if (cages.Count == 0) continue;
+                int pick = Rng.Int(Rng.Hash(world.Seed, ownerKey, RngPurpose.Spawn, SeedSalts.SlaveCage + (ulong)picks++), cages.Count);
+                world.Fixtures.Imprison(world, id, cages[pick]);
+                cages.RemoveAt(pick);
             }
         }
     }

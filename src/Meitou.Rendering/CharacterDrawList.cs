@@ -27,6 +27,8 @@ public readonly record struct CharacterInstance(long Key, CharacterAppearance Ap
     /// feet's lift, the posture sliders, the face and body poses and the skin and hair colours are mixed; looks that differ in other ways switch at once.</summary>
     public CharacterAppearance? BlendFrom { get; init; }
     public float Blend { get; init; }
+    /// <summary>The stat-driven body (bone bulk, the body normal blend); null keeps the appearance's own.</summary>
+    public Meitou.Data.Characters.BodyBuild? Build { get; init; }
 }
 
 /// <summary>

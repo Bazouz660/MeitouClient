@@ -50,8 +50,28 @@ public sealed record MyGuiWidget(string Type, string Name, string Skin, string L
 
 public sealed record MyGuiLayout(string Version, IReadOnlyList<MyGuiWidget> Roots)
 {
-    public IEnumerable<MyGuiWidget> Widgets => Roots.SelectMany(w => w.DescendantsAndSelf());
-    public MyGuiWidget? Find(string name) => Widgets.FirstOrDefault(w => w.Name == name);
+    /// <summary>Every widget, each before its children (depth first).</summary>
+    public IReadOnlyList<MyGuiWidget> Widgets => Index().All;
+    /// <summary>The first widget of <see cref="Widgets"/> named <paramref name="name"/>.</summary>
+    public MyGuiWidget? Find(string name) => Index().ByName.GetValueOrDefault(name);
+
+    /// <summary>
+    /// The flattened tree, made once per tree (the HUD asks it every frame). Kept by the roots list rather than in a field, which a <c>with</c> copy would carry over
+    /// to other roots and which would take part in the record's equality.
+    /// </summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IReadOnlyList<MyGuiWidget>, WidgetIndex> indexes = new();
+    WidgetIndex Index() => indexes.GetValue(Roots, static roots => new WidgetIndex(roots));
+
+    sealed class WidgetIndex
+    {
+        public readonly MyGuiWidget[] All;
+        public readonly Dictionary<string, MyGuiWidget> ByName = new(StringComparer.Ordinal);
+        public WidgetIndex(IReadOnlyList<MyGuiWidget> roots)
+        {
+            All = [.. roots.SelectMany(w => w.DescendantsAndSelf())];
+            foreach (var w in All) ByName.TryAdd(w.Name, w);
+        }
+    }
 }
 
 public sealed record MyGuiSkinPart(string Type, UiRect Offset, string Align, IReadOnlyDictionary<string, UiRect> States,

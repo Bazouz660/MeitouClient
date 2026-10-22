@@ -280,7 +280,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 6, 15, 34, 51 | not evaluated, always pass | - |
 | 7 / 8 IMPRISONED_BY_TARGET / OTHER | S caged by Me's (7) or another (8) faction | Bool |
 | 9 IS_A_TRADER | S's squad trades | Bool |
-| 10 FACTION_RANK | Me's faction rank, any `who` | Num3 |
+| 10 FACTION_RANK | the player's rank in Me's faction ([faction rank](factions-squads-towns.md#32-faction-rank)), any `who` | Num3 |
 | 11 BUILDING_IS_CLOSED_AND_SECURED | a building of Me's (which one **Unknown**) | Bool |
 | 12 PLAYER_TECH_LEVEL | world tech level | Num3 |
 | 13 NUM_DIALOG_EVENT_REPEATS | Me's counter for the current event | Num3 |
@@ -396,7 +396,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 28 SEPARATE_TO_MY_OWN_SQUAD | the speaker (or a player-speaker's target) leaves for a new squad |
 | 32 ASSIGN_BOUNTY | bounty += val0 for the speaker's faction, or books a pending crime |
 | 33 CRIME_ALARM | the target is hostile, its crime timer 30 s, the town alarm may be raised |
-| 35 INCREASE_FACTION_RANK | rank +1 up to val0 (0: no cap) |
+| 35 INCREASE_FACTION_RANK | the speaker's faction's rank +1 while below val0 (0: no cap) (**Verified** by code) |
 | 36 LOCK_THIS_DIALOG | locks the current dialogue |
 | 37 / 38 / 39 ASSAULT / RETREAT / VICTORY_PHASE | the speaker's campaign phase: 1 (2 without a pt2 leader package), 2, 3 (unhandled) ([campaigns](factions-squads-towns.md#campaigns)) |
 | 41, 42, 43, 48 CHOOSE_* | the character trading window (slaves sold / bought, bail, animals; val0 price override) |

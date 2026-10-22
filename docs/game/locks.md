@@ -117,6 +117,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - Door object fields (**Verified**: save writer `DoorStuff` slot 148 / reader 149): `state` (+0x380: 0 closed, 1 open,
   2 opening, 3 closing; this is not the DoorState enum), `doa` open amount (+0x37c, 0..1), `broken` (+0x3ec), `gatecode`, `wants lock`
   (+0x384), and the lock (`lock lvl`, `locked`, `broken`, `hardness`). `wants lock` starts from `always locks` (gates).
+- **Destroyed buildings have no doors** ([pathfinding](pathfinding.md) "Destroyed interiors", `Building::createPhysical`) and no lock: **Verified** by census, the
+  level data's states of destroyed buildings (both Hub `Defensive Gate IV`, `4400-`/`4617-Newwworld-INGAME`) and two original Hub saves carry no
+  door or lock keys for them (those saves write them only for the Hub's intact Bar and Residential Small). Meitou registers no door or own lock
+  for them; their interior fixtures stay.
 - **Motion** (**Verified**, constructor `FUN_14029fb40`, update slot 28 `FUN_140299030`, pose `FUN_140298d10` by disassembly): doors
   slide, they never swing. Open (`FUN_140297040`) works only from state 0 -> 2 and tests no lock; close (`FUN_140298c50`) only from
   1 -> 3, not on a destroyed door. Each frame `doa` moves by frame time x `door move speed` (+0x388, default 0.5 before the record
@@ -125,9 +129,13 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   `o = 0`: `slide x d x doa`; else `t = |o| / (0.25 |d| + |o|)` and `doa < t`: `out x o x doa / t`, otherwise
   `slide x d x (doa - t) / (1 - t) + out x o`. `slide` is the door collision shape's local axis `door axis` (0 X, 1 Y, 2 Z); `out`
   is the shape box's thinnest other axis, sign-flipped by a dot test against the shape position (`FUN_14029cc90`; the reference
-  point is not decoded, **Observed**: Meitou points it away from the building origin, which matches the Storm House doors in game).
-  Data (35 door records): houses slide sideways (axis 0, 16..30 units, speed 1), gates up (`Concrete Gate Door` axis 1, 85) or along
-  Z (defensive gates 65..100, speed 0.2..0.25); 14 TwoStorey doors step out 0.6..13 units first.
+  point is not decoded, **Observed**: Meitou points it away from the part's origin, which matches the Storm House doors in game).
+  The axes are the box's in the collision file's Z-up PhysX frame (actor and shape pose composed), so an unrotated box's axis 1 is
+  the part's -Z and axis 2 is up (**Observed**: with this frame no door of the 35 slides along its thinnest box side, and
+  Defensive Gate IV lowers from the top as in game; the mesh frame instead slid 5 Storm House doors through their own thickness).
+  Data (35 door records): houses slide sideways (axis 0, 16..30 units, speed 1); defensive gates (65..100, speed 0.2..0.25), Saloon,
+  Makeshift Gate Panel and Storm House B/D/F..I lift (axis 2); `Concrete Gate Door` (85) and Moor C doors slide sideways (axis 1);
+  Outpost Door III/IV sink (-20, -27); 14 TwoStorey doors step out 0.6..13 units first.
 - **Who opens and closes** (**Observed**, callers of the two functions): opening: Task_OpenDoor (its start and update; the update
   fails on a locked lock), the door panel button, a broken lock (bashing), dialogue effect 0x36 (the speaker's building's door).
   Closing: Task_CloseDoor, Task_LockDoor and the door panel. The planner opens doors for walks: Moving (1, 29, 67) lists states 59
@@ -181,12 +189,12 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 
 ## Containers (Meitou)
 
-Interior items with `has inventory` (storage size from the record, 18 x 18 by default) are container fixtures with their own grid, locked or not (`has lock`).
+Interior items with `has inventory` (grid as for a [storage](buildings-production.md), 18 x 18 by default) are container fixtures with their own grid, locked or not (`has lock`).
 A resident squad with `vendors` has its home's stock containers filled and unlocked by the building filler, trader or not ([building shops](economy.md#building-shops-observed-decompile));
 the others start empty (what else the original stocks them with is **Unknown**). **Engine choices**, not Verified against the original: a right click with a selection walks the nearest
-character to one (`OpenContainerOrder`, reach 20) and opens a storage window beside the inventory, closing when the opener walks 1.5 x the reach away; a locked one refuses
-("It's locked."; pick it first); a building shop's containers refuse too, their stock being the shop's one merged inventory (`Shop.ForBuilding`). Items move with
-`PutInMachine` / `TakeFromMachine` addressed by the fixture id. Contents are saved in Meitou's own GAMESTATE_BUILDING string `meitou container <layout index>` (the index of the fixture id; JSON list of items with cell, quality, level,
+character to one (`OpenContainerOrder`, reach 20) and opens a storage window beside the inventory, staying open until the player closes it (asking for the same container again reopens it, also while paused); the character's inventory opens beside it for an order-driven container and not when a storage or rock is merely selected (the original has no walk-away test; an opener who is down or gone closes it); the player's own locked one refuses
+("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's containers refuse, their stock being the shop's one merged inventory (`Shop.ForBuilding`); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk. Items move with
+`PutInMachine` / `TakeFromMachine` addressed by the fixture id, within 60 of it ("Out of trading range.", [economy](economy.md#trading-range)). Contents are saved in Meitou's own GAMESTATE_BUILDING string `meitou container <layout index>` (the index of the fixture id; JSON list of items with cell, quality, level,
 material, maker, charge and a bag's contents; absent while empty; `Locks/ContainerSave.cs`), the original's interior ids being unmapped. Like the locks, only into building states the
 save already holds (zones visited), and the original ignores the key (**Unverified**). A lock on a stored shackle and prosthetic wear are not kept. Theft rolls
 ([carry-loot](carry-loot.md)) for taking from another faction's container are not modelled.

@@ -19,8 +19,8 @@ public enum FixtureKind : byte
     Bed,
 }
 
-/// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record and position.</summary>
-public sealed record ContainerSpot(string Id, string Record, Vector3 Position);
+/// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
+public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
 
 /// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction and where its leaf is (else its building's origin).</summary>
 public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position);
@@ -144,5 +144,9 @@ public interface IDoorGate
     DoorSpot? DoorSpotOf(string buildingRecordId, int doorIndex) => null;
 }
 
-/// <summary>A door leaf's closed box: its centre, the horizontal unit normal of its thinnest side (the way through), and half its width along the wall.</summary>
-public readonly record struct DoorSpot(Vector3 Centre, Vector3 Normal, float HalfWidth);
+/// <summary>A door leaf's closed box: its centre, the horizontal unit normal of its thinnest side (the way through), half its width along the wall and half its height (0: not known).</summary>
+public readonly record struct DoorSpot(Vector3 Centre, Vector3 Normal, float HalfWidth, float HalfHeight = 0)
+{
+    /// <summary>The height of the leaf's foot, where a walker through it stands (its centre when the height is not known).</summary>
+    public float Foot => Centre.Y - HalfHeight;
+}

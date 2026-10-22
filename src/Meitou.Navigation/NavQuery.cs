@@ -13,6 +13,8 @@ public sealed record NavAgent
     /// (docs/game/pathfinding.md, "Filters and costs"). 7 is a Greenlander (a = 6).
     /// </summary>
     public float WaterFactor { get; init; } = 7;
+    /// <summary>FACTION <c>road preference</c>: a long route takes the roads by the original's rule (<see cref="RoadNetwork.Route"/>); 0 never.</summary>
+    public float RoadPreference { get; init; }
     /// <summary>Doors are blocked (closed, face data 5) when this is true; open doors cost <see cref="OpenDoorCost"/> extra.</summary>
     public bool DoorsClosed { get; init; }
     public static NavAgent Human { get; } = new();
@@ -214,12 +216,13 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         }
         if (bestEdge < 0)
         {
-            // A near-miss seam (docs/game/pathfinding.md, "Inner seams"): the facing edge strays off the line, so take the overlap with a looser gap.
+            // A near-miss seam (docs/game/pathfinding.md, "Inner seams") or a door join: the facing edge strays off the line, so take the overlap with
+            // a looser gap, as loose as the join's (a tighter one cuts a slanted door edge down to a sliver no one fits through).
             for (int k = 0; k < pb.Length; k++)
             {
                 var b0 = mb.Vertices[pb[k]];
                 var b1 = mb.Vertices[pb[(k + 1) % pb.Length]];
-                if (!NavGeometry.FacingOverlap(a0, a1, b0, b1, NavGeometry.NearMissGap + 0.5f, out float lo, out float hi, out _, out _)) continue;
+                if (!NavGeometry.FacingOverlap(a0, a1, b0, b1, Math.Max(NavGeometry.NearMissGap + 0.5f, NavInteriors.JoinDistance), out float lo, out float hi, out _, out _)) continue;
                 float score = Vector3.Distance(mid, (b0 + b1) * 0.5f);
                 if (score >= bestDistance) continue;
                 bestDistance = score;

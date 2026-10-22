@@ -100,6 +100,8 @@ public sealed class CharacterCold
     public float SpeedOverride { get; set; }
     /// <summary>The path cost factor of water for this character (race <c>water avoidance</c>, halved for the player faction; 0: default).</summary>
     public float WaterFactor { get; set; }
+    /// <summary>Its faction's FACTION <c>road preference</c> (0: none), with which a long trip takes the roads (<see cref="RoadNetwork.Route"/>).</summary>
+    public float RoadPreference { get; set; }
     /// <summary>The water state 0..3 (<see cref="Meitou.Simulation.Bodies.Speed.WaterState"/>) <see cref="MovementSystem"/> found at the character's position, and its swim speed (<see cref="Meitou.Simulation.Bodies.Speed.Swim"/>) <see cref="BodySystem"/> keeps up to date. Derived each tick: not hashed, not saved.</summary>
     public byte WaterState { get; set; }
     public float SwimSpeed { get; set; }
@@ -252,6 +254,8 @@ public sealed class CharacterCold
     public string? HaulTo { get; set; }
     /// <summary>The clip the operator plays while it works (the functionality's <c>animation</c>).</summary>
     public string? OperateClip { get; set; }
+    /// <summary>The ITEM the operator holds while its operate task runs (the functionality's <c>special tool</c>); derived, not hashed.</summary>
+    public string? OperateTool { get; set; }
     /// <summary>The operator did work this tick (it plays <see cref="OperateClip"/>); derived, not hashed.</summary>
     public bool Operating { get; set; }
 }

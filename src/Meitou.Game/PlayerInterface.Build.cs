@@ -152,6 +152,8 @@ sealed partial class PlayerInterface
     {
         if (buildMode && !faithfulScreens.IsOpen("build")) SetBuildMode(false);   // Esc closed the window
         UpdateSite();
+        UpdateStorageOpening();
+        UpdateRock();
         if (!buildMode || buildHost is not { } host) { if (ghostsDrawn) ShowGhosts(); return; }
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         float dt = buildClock == 0 ? 0 : (float)Math.Min(System.Diagnostics.Stopwatch.GetElapsedTime(buildClock, now).TotalSeconds, 0.1);
@@ -478,12 +480,14 @@ sealed partial class PlayerInterface
     {
         if (buildHost is not { } host || session.CurrentSnapshot.Buildings.Count == 0 || Ray(pixel) is not { } ray) return null;
         BuildingSnapshot? best = null;
-        float bestT = float.MaxValue;
+        // Only what the ray meets before the ground counts, as in PickBuilding and the original's raycast (terrain ends the walk): a building's hull and collision reach below the ground,
+        // and the part of the ray that has gone through the ground must not find them (the pointer showed the hammer on bare ground beside a building).
+        float bestT = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : float.MaxValue;
         foreach (var site in session.CurrentSnapshot.Buildings)
         {
+            var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation));
             float? t = host.Placement.Footprint(site.Record) is { } footprint
-                ? RayPrism(ray.Origin, ray.Direction, footprint.Place(site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation))),
-                    site.Position.Y + footprint.YMin, site.Position.Y + footprint.YMax)
+                ? BuildingRayT(ray, footprint.Place(site.Position, yaw), footprint.YMin, footprint.YMax, site.Record, site.Position, site.Position.Y, yaw)
                 : RaySegment(ray.Origin, ray.Direction, site.Position, site.Position + new Vector3(0, 16, 0), 12);
             if (t is { } hit && hit < bestT) (bestT, best) = (hit, site);
         }
@@ -564,6 +568,8 @@ sealed partial class PlayerInterface
     bool SitePress(Vector2 p)
     {
         if (SelectedIds().Count == 0 || PickSite(p) is not { } site) return false;
+        // A finished plain building does not take the click when a container, an item, a door or a character is under the cursor (a chest inside a house).
+        if (!SiteIsObject(site) && SomethingInsideAt(p)) return false;
         // With Shift a storage takes a job even without verbs.
         if (SiteVerbs(site).Count == 0 && !(SlowModifier && site.Complete && Machine(site.Id) is { IsStorage: true })) return false;
         sitePending = (site, p, System.Diagnostics.Stopwatch.GetTimestamp());
@@ -586,6 +592,54 @@ sealed partial class PlayerInterface
         }
         if (!pending.Site.Complete) Say(new BuildOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Operable: true }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
+        else if (Machine(pending.Site.Id) is { Function: Meitou.Data.World.ObjectRanges.TurretFunction })
+            Say(new Meitou.Simulation.Production.UseTurretOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });   // the original's order 146 USE_TURRET
+        else if (Machine(pending.Site.Id) is { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction })
+        {
+            // A finished storage or furnace of the player's: the selection walks to it, and on arrival its window opens with the character's inventory beside it (the original's order 26,
+            // LOOT_TARGET, pointer search). A left click on a storage shows its window alone.
+            Move(pending.Site.Position, false);
+            storageOpening = (pending.Site, System.Diagnostics.Stopwatch.GetTimestamp());
+        }
+        else if (!SiteIsObject(pending.Site) && Ray(pending.At) is { } ray && MoveHit(ray.Origin, ray.Direction) is { } hit)
+        {
+            // A finished plain building's quick right click is a move to the point under the cursor (the original: order 29 MOVE_CUS_ORDERED). The original's target is the building
+            // hit's x, z at the terrain height, which the path's goal snap puts on the floor inside or the ground outside; a pick that went on through the roof or wall to the
+            // terrain beyond (a site has no room pick) takes that point instead, so the character goes in rather than to the ground behind.
+            if (PickSiteAt(pending.At) is { } at && at.Site.Id == pending.Site.Id && at.T + 1 < Vector3.Distance(ray.Origin, hit))
+            {
+                var p = ray.Origin + ray.Direction * at.T;
+                hit = new Vector3(p.X, ground(p.X, p.Z), p.Z);
+            }
+            Move(hit, SlowModifier);
+            PlaceMarker(hit);
+        }
+    }
+
+    /// <summary>A storage the selection was sent to open (a quick right click) and when; it opens when one of them is near enough, or is dropped when they stop short.</summary>
+    (BuildingSnapshot Site, long Since)? storageOpening;
+
+    /// <summary>The storage whose window shows the character's inventory beside it (opened by an order, not by selecting it).</summary>
+    string? storageWithInventory;
+
+    /// <summary>How near (X/Z) a selected character must be to open the storage it was sent to; a character takes from a machine within 200.</summary>
+    const float StorageArrive = 120;
+
+    /// <summary>Once a frame: the storage a right click sent the selection to opens on arrival.</summary>
+    void UpdateStorageOpening()
+    {
+        if (storageOpening is not { } pending) return;
+        var selected = Selected();
+        double waited = System.Diagnostics.Stopwatch.GetElapsedTime(pending.Since).TotalSeconds;
+        if (selected.Count == 0 || waited > 120 || session.CurrentSnapshot.Buildings.All(b => b.Id != pending.Site.Id)) { storageOpening = null; return; }
+        var at = new Vector2(pending.Site.Position.X, pending.Site.Position.Z);
+        if (selected.Any(c => Vector2.Distance(new(c.Position.X, c.Position.Z), at) <= StorageArrive))
+        {
+            storageOpening = null;
+            storageWithInventory = pending.Site.Id;
+            SetBuilding(SiteBuilding(pending.Site));
+        }
+        else if (waited > 2 && selected.All(c => c.Task != Meitou.Simulation.CharacterTask.GoTo)) storageOpening = null;   // they stopped short: another order was given
     }
 
     /// <summary>Once a frame: a site press held long enough opens its menu.</summary>
@@ -598,6 +652,26 @@ sealed partial class PlayerInterface
         if (verbs.Count > 0) contextMenu = new(SiteName(site), pending.At, verbs);
     }
 
-    /// <summary>The pointer over a site with characters selected: <c>build</c> (the original's pointer mode 0xb).</summary>
-    string? SitePointer(Vector2 p) => SelectedIds().Count > 0 && PickSite(p) is { } site && (!site.Complete || SiteVerbs(site).Count > 0) ? "build" : null;
+    /// <summary>
+    /// Whether a site is an object to act on, not a plain building: an unfinished one, or a finished machine, storage, furnace or turret. The original's pointer is the hammer (<c>build</c>)
+    /// only for an unfinished building; a finished plain building is the arrow, and its quick order is a move (docs/game/ui-input.md "Building hover and click").
+    /// </summary>
+    bool SiteIsObject(BuildingSnapshot site) =>
+        !site.Complete || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
+
+    /// <summary>
+    /// The pointer over a site with characters selected: <c>build</c> while unfinished (the original's pointer mode 0xb), <c>search</c> over a storage, else the class's slot 130 pointer
+    /// (docs/game/ui-input.md, its table): <c>mine</c> over a machine of function 1 or 27, <c>use</c> over other machines, a furnace or a turret; none over a plain building.
+    /// </summary>
+    string? SitePointer(Vector2 p)
+    {
+        if (SelectedIds().Count == 0 || PickSite(p) is not { } site) return null;
+        if (!site.Complete) return "build";
+        if (Machine(site.Id) is not { } m || !SiteIsObject(site)) return null;
+        if (m.IsStorage) return "search";   // a finished storage: the original's pointer for opening it
+        return m.Function is MachineData.MineFunction or MachineData.NaturalMineFunction ? "mine" : "use";
+    }
+
+    /// <summary>Something more specific than a building lies under the pixel: a character, an item on the ground, a container, a door or a resource rock. A plain building gives way to it.</summary>
+    bool SomethingInsideAt(Vector2 p) => PickWhere(p, _ => true) is not null || PickGroundItem(p) is not null || PickContainer(p) is not null || PickDoor(p) is not null || PickRock(p) is not null;
 }

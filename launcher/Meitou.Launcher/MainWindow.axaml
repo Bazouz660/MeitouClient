@@ -339,6 +339,15 @@
                 <Button Grid.Column="1" x:Name="LauncherUpdateButton" Click="LauncherUpdate_Click" IsVisible="False" />
               </Grid>
             </Border>
+            <Border Classes="row">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Update the launcher automatically" />
+                  <TextBlock Classes="desc" Text="At startup, install a new launcher version and restart into it." />
+                </StackPanel>
+                <CheckBox Grid.Column="1" x:Name="AutoUpdateBox" Click="AutoUpdate_Click" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </Panel>

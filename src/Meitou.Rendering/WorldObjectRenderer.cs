@@ -713,6 +713,19 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         return best;
     }
 
+    /// <summary>
+    /// Whether the instance stands in a loaded building's interior (<see cref="InteriorAt"/>), kept on it until the interiors or its place change: every view
+    /// (the camera's, each shadow cascade's, the reflection's) asks it of each piece of furniture.
+    /// </summary>
+    bool InInterior(ObjectStreamer.Instance inst)
+    {
+        var at = inst.Transform.Translation;
+        if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known.Inside;
+        bool inside = InteriorAt(at) is not null;
+        inst.Interior = new(streamer.InteriorVersion, at, inside);
+        return inside;
+    }
+
     /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
     public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
     {
@@ -967,7 +980,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (gpu.MinLevel > 0) blend = new LodBlend(Math.Max(blend.Lower, gpu.MinLevel), Math.Max(blend.Upper, gpu.MinLevel), blend.T);
         var m = inst.Transform;
         // Spare instance-matrix component: room GI gain without splitting shared furniture batches.
-        m.M34 = inst.Placed.Interior || inst.Placed.ParentPlacementId is not null && InteriorAt(m.Translation) is not null ? 1 : 0;
+        m.M34 = inst.Placed.Interior || inst.Placed.ParentPlacementId is not null && InInterior(inst) ? 1 : 0;
         // Another spare component, M44: 1, or for a construction site the height of its scaffold clip plane (BuildingLodShaders.ScaffoldBase + world Y).
         bool site = false;
         bool highlight = HighlightSigns && !depthPass && !inst.Stand && inst.Placed.Owner.GetBool("is sign");

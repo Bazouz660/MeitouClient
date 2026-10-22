@@ -8,7 +8,7 @@ namespace Meitou.Rendering.Characters;
 /// <summary>
 /// The character editor's view of the character being edited (<see cref="CharacterRenderer.StageRequest"/>): the character by its draw-list key, the size of the picture
 /// and the camera as the editor's orbit sets it. <paramref name="Yaw"/> turns the camera round the character (0: in front of it) and <paramref name="Elevation"/> lifts it,
-/// both in radians; <paramref name="Distance"/> is from the pivot, which is the body's middle or, with <paramref name="Head"/>, the head;
+/// both in radians; <paramref name="Distance"/> is from the pivot, which is 12 units above the feet or, with <paramref name="Head"/>, the head;
 /// <paramref name="ShiftX"/> moves the pivot sideways on the picture (normalised device units, negative: left).
 /// </summary>
 public readonly record struct EditorStageRequest(long Key, int Width, int Height, float Yaw, float Elevation, float Distance, bool Head, float FieldOfView, float ShiftX);
@@ -25,16 +25,26 @@ internal sealed unsafe partial class CharacterRenderer
     GpuTexture? stageColour, stageDepth;
     SampledTexture? stageSampled;
 
-    /// <summary>The stage picture (sRGB, transparent where no character is, upside down as the renderer's targets are), made by <see cref="DrawStage"/>; null before the first.</summary>
+    /// <summary>The stage picture (8-bit UNORM holding the lit values as they are, as the original's; transparent where nothing is drawn; upside down as the renderer's targets are), made by <see cref="DrawStage"/>; null before the first.</summary>
     public (GpuTexture Texture, SampledTexture Sampled)? StageTexture => stageColour is null ? null : (stageColour, stageSampled!.Value);
 
+    /// <summary>The stage picture's depth, for the platform drawn after the character (<c>WorldObjectRenderer.DrawStageProp</c>); null before the first.</summary>
+    public GpuTexture? StageDepth => stageDepth;
+
     /// <summary>
-    /// Draws <see cref="StageRequest"/>'s character with its live pose (after <see cref="Update"/>, outside any pass). The light is the key light of the portraits, from the camera's
-    /// side, above and to the left, plus a hemispheric ambient (the shader's stage branch, a fog distance of -2) (the original's trivial lighting, <c>rtt.hlsl</c>, has one directional light and the environment; its convention is <b>Unknown</b>).
+    /// The last stage drawn: its camera, the light (towards it, in the world) and where the character stands (its position and facing, no scale), which the platform's
+    /// stage frame is turned half round from; null when no character was drawn.
+    /// </summary>
+    public (Matrix4x4 ViewProjection, Vector3 Eye, Vector3 Light, Matrix4x4 Feet)? StageView { get; private set; }
+
+    /// <summary>
+    /// Draws <see cref="StageRequest"/>'s character with its live pose (after <see cref="Update"/>, outside any pass), lit as the original's stage (<c>rtt.hlsl</c>, the shader's stage
+    /// branch, a fog distance of -2): the light comes from the stage's (-3, 2, -3), the stage turned with the character, who stands on it turned half round (<c>FUN_1405f03c0</c>).
     /// </summary>
     public void DrawStage()
     {
         if (StageRequest is not { } r || r.Width <= 0 || r.Height <= 0) return;
+        StageView = null;
         if (stageColour is null || stageColour.Desc.Width != r.Width || stageColour.Desc.Height != r.Height) MakeStage(r.Width, r.Height);
         int index = -1;
         for (int i = 0; i < liveCount; i++)
@@ -52,9 +62,9 @@ internal sealed unsafe partial class CharacterRenderer
             var (eye, pivot) = StageCamera(in l, in r);
             var view = Matrix4x4.CreateLookAt(eye, pivot, Vector3.UnitY);
             var projection = Matrix4x4.CreatePerspectiveFieldOfView(r.FieldOfView, r.Width / (float)r.Height, 0.5f, 400) * Matrix4x4.CreateTranslation(r.ShiftX, 0, 0);
-            var toEye = Vector3.Normalize(eye - pivot);
-            var left = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, toEye));
-            var light = Vector3.Normalize(toEye + 0.7f * Vector3.UnitY + 0.4f * left);
+            var light = Vector3.Normalize(Vector3.TransformNormal(StageLight, l.World));
+            Matrix4x4.Decompose(l.World, out _, out var facing, out _);
+            StageView = (view * projection, eye, light, Matrix4x4.CreateFromQuaternion(facing) * Matrix4x4.CreateTranslation(Ground(in l)));
             portraitLive = index;
             try { DrawView(new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = light, FogDistance = -2 }, eye, []); }
             finally { portraitLive = -1; }
@@ -64,7 +74,13 @@ internal sealed unsafe partial class CharacterRenderer
         Gpu.EndNative(cmd);
     }
 
-    /// <summary>The eye and the pivot it looks at, in the world: the pivot is the middle of the body, or the head bone moved by the race's <c>portrait offset</c> (as the portrait camera does).</summary>
+    /// <summary>The stage's light direction (towards the light) in the character's frame: the original's (-3, 2, -3) on the stage, where the character faces the stage's -z.</summary>
+    static readonly Vector3 StageLight = new(3, 2, 3);
+
+    /// <summary>
+    /// The eye and the pivot it looks at, in the world: the pivot is 12 units above the feet (the original's stage root is 12 below the camera rig's pivot, whatever the
+    /// character's size), or the head bone moved by the race's <c>portrait offset</c> (as the portrait camera does).
+    /// </summary>
     (Vector3 Eye, Vector3 Pivot) StageCamera(in Live l, in EditorStageRequest r)
     {
         var asset = l.Asset;
@@ -76,15 +92,18 @@ internal sealed unsafe partial class CharacterRenderer
             var offset = new Vector3(race.GetFloat("portrait offset x"), race.GetFloat("portrait offset y"), race.GetFloat("portrait offset z"));
             pivot = Vector3.Transform(PosePortrait(in l) + offset * scale, l.World);
         }
-        else pivot = Vector3.Transform(new Vector3(0, asset.Height * 0.5f, 0), l.World);
+        else pivot = Ground(in l) + new Vector3(0, 12, 0);
         var local = Vector3.Transform(new Vector3(0, 0, r.Distance), Quaternion.CreateFromAxisAngle(Vector3.UnitY, r.Yaw) * Quaternion.CreateFromAxisAngle(Vector3.UnitX, -r.Elevation));
         return (pivot + Vector3.TransformNormal(local, l.World) / scale, pivot);
     }
 
+    /// <summary>Where the character stands: its root raised back by the body shape's lift (the renderer lowers the root so a short body's feet stay on the ground).</summary>
+    static Vector3 Ground(in Live l) => l.World.Translation + new Vector3(0, l.Asset.GroundOffset, 0);
+
     void MakeStage(int width, int height)
     {
         DisposeStage();
-        stageColour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
+        stageColour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "character stage"));
         stageDepth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.DepthTarget, Name: "character stage depth"));
         stageSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), stageColour.View());

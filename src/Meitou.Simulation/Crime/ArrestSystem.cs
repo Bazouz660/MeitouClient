@@ -218,6 +218,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             if (!Suspect(world, s)) continue;
             var c = table.Cold(s)!;
             bool wanted = c.Bounties is { Any: true };
+            if (c.SlaveState != 0 && CatchSlave(world, s, c)) continue;
             if (!wanted && !c.Escaped) { c.Recognition = 0; continue; }
             var at = next[s].Position;
             bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
@@ -268,8 +269,77 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         }
     }
 
-    /// <summary>EV_BOUNTY_SPOTTED, EV_ESCAPED_PRISONER_SPOTTED.</summary>
-    public const int BountySpotted = 44, EscapedPrisonerSpotted = 45;
+    /// <summary>EV_BOUNTY_SPOTTED, EV_ESCAPED_PRISONER_SPOTTED, EV_ESCAPING_SLAVE_SPOTTED.</summary>
+    public const int BountySpotted = 44, EscapedPrisonerSpotted = 45, EscapingSlaveSpotted = 36;
+
+    /// <summary>
+    /// Slave catching (the packages' Capture Slaves, goal 167; <b>engine</b> rules, the original's finder and escape test are <b>Unknown</b>, docs/simulation.md "Arrest and jail"): an awake NPC of
+    /// the slave's owner faction in its own town that sees the slave (its daylight sight test, full range) tags a slave (state 1) as escaping when it wears no locked shackles or stands outside that
+    /// NPC's town; the nearest such police-like or slaver NPC then captures an escaping slave (state 2): it fights it down and cages it, and the caging makes it the faction's slave again.
+    /// True when a capture started (the slave is then the arrest's, not the bounty spotting's).
+    /// </summary>
+    bool CatchSlave(World world, int s, CharacterCold c)
+    {
+        if (c.SlaveOwner < 0) return false;
+        var table = world.Characters;
+        var next = table.Next;
+        var at = next[s].Position;
+        bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
+        float stealth = sneaking ? Orders.Stealth(c) : 0;
+        int catcher = -1;
+        float catcherD2 = float.MaxValue;
+        for (int w = 0; w < table.HighWater; w++)
+        {
+            if (w == s || !next[w].Alive) continue;
+            if (table.Cold(w) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true, SlaveState: 0 } wc || wc.Faction != c.SlaveOwner) continue;
+            float d2 = Vector3.DistanceSquared(next[w].Position, at), range = AggroSystem.RangeOf(wc, AggroSystem.OutdoorSight);
+            if (d2 > range * range || !InTownOf(world, w, next[w].Position)) continue;
+            float v = sneaking ? AggroSystem.SneakVisibility(next[w].Position, next[w].Yaw, at, range, stealth) : AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, range);
+            if (v <= 0) continue;
+            if (c.SlaveState == 1 && (LockSystem.WornShackles(c) is null || !InTownOf(world, w, at))) FixtureRegistry.TagEscaped(world, c);
+            if (c.SlaveState == 2 && d2 < catcherD2 && (Crimes.IsPoliceLike(world, wc) || wc.NpcClass == FundamentalType.Slaver) && FreeGuard(world, w)) (catcher, catcherD2) = (w, d2);
+        }
+        if (catcher < 0) return false;
+        var gc = table.Cold(catcher)!;
+        var arrest = new Arrest { Guard = table.IdOf(catcher), Target = table.IdOf(s), Faction = gc.Faction, Enslave = true };
+        arrests.Add(arrest);
+        gc.Engaged = true;
+        BeginFight(world, arrest, catcher, s);
+        if (Talks) Talk!.FireEvent(world, arrest.Guard, arrest.Target, EscapingSlaveSpotted);
+        return true;
+    }
+
+    /// <summary>
+    /// The point is within the town of the guard's resident squad (engine choice: towns are not round, Rebirth's gates stand about 1500 from its centre and its radius is 184):
+    /// within <see cref="InOwnTown"/>'s extent, else, in a town with gates, no farther from the centre than the gate nearest the point plus <see cref="GateMargin"/>; a town
+    /// without gates ends there.
+    /// </summary>
+    bool InTownOf(World world, int guard, Vector3 at)
+    {
+        if (world.Characters.Cold(guard) is not { SquadId: >= 0 } c || world.Squads.Find(c.SquadId) is not { TownOwn: true } squad) return false;
+        var p = new Vector2(at.X, at.Z);
+        float r = squad.HomeRadius * Settings.TownSlack;
+        if (Vector2.DistanceSquared(p, squad.HomeCentre) <= r * r) return true;
+        var gates = TownGates(world, squad.Town);
+        if (gates.Length == 0) return false;
+        var nearest = gates[0];
+        foreach (var g in gates) if (Vector2.DistanceSquared(p, g) < Vector2.DistanceSquared(p, nearest)) nearest = g;
+        return Vector2.Distance(p, squad.HomeCentre) <= Vector2.Distance(nearest, squad.HomeCentre) + GateMargin;
+    }
+
+    /// <summary>How far beyond its gates a town reaches for slave catching (an engine choice).</summary>
+    public const float GateMargin = 100;
+
+    readonly Dictionary<int, Vector2[]> townGates = [];
+
+    /// <summary>Where the town's gates stand, in X/Z (none without building data).</summary>
+    Vector2[] TownGates(World world, int site)
+    {
+        if (townGates.TryGetValue(site, out var list)) return list;
+        list = world.Systems.OfType<PopulationSystem>().FirstOrDefault()?.Data is { } data && (uint)site < (uint)data.Sites.Count
+            ? [.. data.Sites[site].Buildings.Where(b => b.IsGate).Select(b => new Vector2(b.Position.X, b.Position.Z))] : [];
+        return townGates[site] = list;
+    }
 
     /// <summary>
     /// The guard recognised the target: event <paramref name="ev"/> fired at it (<c>FUN_140856f00</c> / <c>FUN_140859680</c>, economy.md 11.8). What follows is the data's: the line said

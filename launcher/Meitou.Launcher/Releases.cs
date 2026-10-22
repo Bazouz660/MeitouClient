@@ -138,12 +138,13 @@ public sealed class Releases(HttpClient http)
         return [.. list.OrderByDescending(r => r.Published)];
     }
 
-    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> (release.yml): its number and build date.</summary>
+    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> or a same-day second build <c>….20261020.2</c> (release.yml): its number and build date.</summary>
     public static (string Number, DateOnly? Nightly) ParseVersion(string version)
     {
         int at = version.IndexOf("-nightly.", StringComparison.Ordinal);
         if (at < 0) return (version, null);
-        return (version[..at], DateOnly.TryParseExact(version[(at + "-nightly.".Length)..], "yyyyMMdd", out var date) ? date : null);
+        var stamp = version[(at + "-nightly.".Length)..].Split('.')[0];
+        return (version[..at], DateOnly.TryParseExact(stamp, "yyyyMMdd", out var date) ? date : null);
     }
 
     /// <summary>"v0.15.0", a nightly "v0.15.1 nightly".</summary>

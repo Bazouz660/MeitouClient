@@ -47,6 +47,9 @@ public sealed class BodyFactory(GameDatabase db)
             stats.Scale = age;
             return (data, stats, MedicalState.Create(data, stats.Strength, hasStats: false, hpMultiplier: animal.Scale(age), bodyScale: animal.HpMult));
         }
-        return (data, stats, MedicalState.Create(data, stats.Strength));
+        var medical = MedicalState.Create(data, stats.Strength);
+        if (character is not null)
+            foreach (var r in character.GetReferences("starting health")) medical.ApplyStartingHealth(r.TargetStringId, r.Values.Value0);
+        return (data, stats, medical);
     }
 }

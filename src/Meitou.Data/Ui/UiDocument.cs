@@ -70,6 +70,10 @@ public static partial class MyGuiPresentation
                 // An EditBox's WordWrap is its text's, which the template's client draws.
                 if (!props.ContainsKey("WordWrap") && ((bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault("WordWrap")) ?? layout.Find(owner)?.Properties.GetValueOrDefault("WordWrap")) is { } wrap)
                     props["WordWrap"] = wrap;
+                // So is its TextAlign (MyGUI EditBox::setTextAlign aligns the client's text): the editor's NameText is centred.
+                if (((bindings.Properties.GetValueOrDefault(owner)?.GetValueOrDefault("TextAlign")) ?? layout.Find(owner)?.Properties.GetValueOrDefault("TextAlign")) is { } textAlign
+                    && layout.Find(owner)?.Type == "EditBox")
+                    props["TextAlign"] = textAlign;
             }
             if (props.GetValueOrDefault("SkipCaption") == "true") caption = "";
             string action = bindings.Actions.GetValueOrDefault(w.Name) ?? "";

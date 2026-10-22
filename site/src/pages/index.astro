@@ -2,6 +2,22 @@
 import Base from '../layouts/Base.astro';
 import DiscordIcon from '../components/DiscordIcon.astro';
 import GithubIcon from '../components/GithubIcon.astro';
+import WindowsIcon from '../components/WindowsIcon.astro';
+import LinuxIcon from '../components/LinuxIcon.astro';
+import AppleIcon from '../components/AppleIcon.astro';
+
+// The launcher's setup per platform, as named on its launcher-v* releases (.github/workflows/launcher-release.yml).
+const releasesPage = 'https://github.com/VlcekM/MeitouClient/releases';
+const platforms = [
+  { os: 'windows', name: 'Windows', Icon: WindowsIcon, asset: 'MeitouLauncher-win-x64-Setup.exe', file: 'Setup .exe' },
+  { os: 'linux', name: 'Linux', Icon: LinuxIcon, asset: 'MeitouLauncher-linux-x64.AppImage', file: 'AppImage' },
+  {
+    os: 'macos', name: 'macOS', Icon: AppleIcon, asset: 'MeitouLauncher-osx-arm64-Setup.pkg', file: 'Apple silicon .pkg',
+    alt: { asset: 'MeitouLauncher-osx-x64-Setup.pkg', label: 'Intel Mac' },
+  },
+];
+
+const trailer = 'https://www.youtube.com/watch?v=qm722zwWnJU';
 
 // The performance video: 30 fps WebM, no audio.
 const performanceVideo = '/fast-loading.webm';
@@ -22,8 +38,14 @@ const pairs = [
         Fully compatible with FCS mods and vanilla save games. Requires original copy to run
       </p>
     </div>
+    <a class="trailer" href={trailer} target="_blank" rel="noopener">
+      <span class="trailer-disc" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="36" height="36"><path fill="currentColor" d="M8 5.5v13l11-6.5z" /></svg>
+      </span>
+      <span class="trailer-label">View trailer</span>
+    </a>
     <div class="actions">
-      <a class="mt-btn mt-btn-primary" href="https://github.com/VlcekM/MeitouClient/releases">
+      <a class="mt-btn mt-btn-primary" href={releasesPage} data-download>
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14" /></svg>
         <span>Download</span>
       </a>
@@ -33,6 +55,25 @@ const pairs = [
       </a>
     </div>
   </section>
+
+  <dialog class="dl mt-plate" aria-labelledby="dl-title">
+    <form method="dialog"><button class="dl-close" aria-label="Close">&times;</button></form>
+    <h2 id="dl-title">Download the launcher</h2>
+    <p class="dl-sub">It installs and updates MeitouClient for you. You need Kenshi installed. <span class="dl-version"></span></p>
+    <div class="dl-choices">
+      {platforms.map((p) => (
+        <div class="dl-choice" data-os={p.os}>
+          <a class="dl-main" href={releasesPage} data-asset={p.asset}>
+            <p.Icon />
+            <span class="dl-name">{p.name}</span>
+            <span class="dl-file">{p.file}</span>
+          </a>
+          {p.alt && <a class="dl-alt" href={releasesPage} data-asset={p.alt.asset}>{p.alt.label}</a>}
+        </div>
+      ))}
+    </div>
+    <p class="dl-note mt-caption">The macOS packages are not signed yet, so Gatekeeper warns. All files are on <a href={releasesPage}>GitHub Releases</a>.</p>
+  </dialog>
 
   <section id="ai">
     <div class="ai">
@@ -121,6 +162,35 @@ const pairs = [
 </Base>
 
 <script>
+  // Download: the dialog offers each platform's setup from the newest launcher release. Game releases share the repository and
+  // can be its "latest", so the launcher's is looked up by tag; until it is found (or if GitHub can't be reached) the links
+  // fall back to the releases page.
+  const dialog = document.querySelector<HTMLDialogElement>('.dl')!;
+  let assets: Promise<Map<string, string>> | undefined;
+  const findAssets = () => assets ??= fetch('https://api.github.com/repos/VlcekM/MeitouClient/releases?per_page=50')
+    .then((r) => r.ok ? r.json() : [])
+    .then((releases: { tag_name: string; prerelease: boolean; draft: boolean; assets: { name: string; browser_download_url: string }[] }[]) => {
+      const launcher = releases.find((r) => r.tag_name.startsWith('launcher-v') && !r.prerelease && !r.draft);
+      if (!launcher) return new Map();
+      dialog.querySelector('.dl-version')!.textContent = `Version ${launcher.tag_name.slice('launcher-v'.length)}.`;
+      return new Map(launcher.assets.map((a) => [a.name, a.browser_download_url]));
+    })
+    .catch(() => new Map());
+  const os = /Win/.test(navigator.userAgent) ? 'windows' : /Mac/.test(navigator.userAgent) ? 'macos' : /Linux|X11/.test(navigator.userAgent) ? 'linux' : '';
+  dialog.querySelector(`.dl-choice[data-os="${os}"]`)?.classList.add('is-detected');
+  document.querySelector('[data-download]')!.addEventListener('click', (e) => {
+    e.preventDefault();
+    findAssets();
+    dialog.showModal();
+  });
+  dialog.querySelectorAll<HTMLAnchorElement>('[data-asset]').forEach((a) => a.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const url = (await findAssets()).get(a.dataset.asset!);
+    if (url) { location.href = url; dialog.close(); } else window.open(a.href, '_blank', 'noopener');
+  }));
+  // A click on the backdrop (outside the plate) closes it.
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+
   const tabs = document.querySelectorAll<HTMLElement>('.cmp-tabs [role=tab]');
   const panels = document.querySelectorAll<HTMLElement>('.cmp');
   tabs.forEach((tab, i) => tab.addEventListener('click', () => {
@@ -140,6 +210,34 @@ const pairs = [
   .more { max-width: 100%; justify-content: flex-start; padding: 0 20px 0 12px; }
   .more-icon { position: relative; flex: none; opacity: .8; transition: opacity .16s ease; }
   .more:hover .more-icon { opacity: 1; }
+  /* The trailer: a round brass-rimmed play button centred at the bottom of the first view, its label beneath. */
+  .trailer { position: absolute; left: 50%; bottom: calc(var(--edge) - 5px); display: flex; flex-direction: column; align-items: center; gap: var(--space-4); color: var(--paper-light); text-decoration: none; transform: translateX(-50%); }
+  .trailer-disc { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(8, 6, 5, .55); box-shadow: inset 0 0 0 2px var(--brass-light), 0 2px 12px rgba(8, 6, 5, .6); transition: background .16s ease, color .16s ease, transform .16s ease; }
+  .trailer-label { font: 600 13px/18px var(--font-exo); letter-spacing: .1em; text-transform: uppercase; text-shadow: 0 1px 8px rgba(8, 6, 5, .8); }
+  .trailer:hover .trailer-disc { background: var(--brass); color: var(--secondary); transform: scale(1.06); }
+  .trailer:focus-visible { outline: none; }
+  .trailer:focus-visible .trailer-disc { outline: 2px solid var(--brass-light); outline-offset: 4px; }
+  /* Too narrow to sit between the buttons and the wordmark: stand above the wordmark instead. */
+  @media (max-width: 1040px) { .trailer { left: auto; right: 0; bottom: calc(var(--edge) + 56px); transform: none; } }
+  /* Download dialog: a plate with three platform cards, the one matching the visitor's system rimmed in brass. */
+  .dl { width: min(640px, calc(100vw - 32px)); max-height: calc(100svh - 32px); margin: auto; padding: 28px; border: 0; color: var(--main); }
+  .dl::backdrop { background: rgba(8, 6, 5, .7); backdrop-filter: blur(3px); }
+  .dl h2 { margin: 0 0 var(--space-4); padding-right: 32px; color: #fff; font: 600 26px/32px var(--font-exo); }
+  .dl-sub { margin: 0 0 var(--space-7); font-size: 16px; line-height: 24px; }
+  .dl-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--main); font: 400 28px/1 var(--font-exo); cursor: pointer; }
+  .dl-close:hover { color: var(--paper-light); background: rgba(217, 206, 184, .08); }
+  .dl-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); }
+  .dl-choice { display: flex; flex-direction: column; gap: var(--space-4); }
+  .dl-main { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: 24px var(--space-5) 20px; border-radius: calc(2 * var(--radius-card)); background: rgba(8, 6, 5, .45); box-shadow: var(--plate-border); color: var(--paper-light); text-decoration: none; transition: background .16s ease, box-shadow .16s ease; }
+  .dl-main:hover { background: rgba(129, 102, 53, .22); box-shadow: inset 0 0 0 1px var(--brass-light); }
+  .is-detected .dl-main { box-shadow: inset 0 0 0 1px rgba(196, 160, 98, .55), var(--plate-drop); }
+  .dl-name { color: #fff; font: 600 18px/24px var(--font-exo); }
+  .dl-file { font: 600 11px/16px var(--font-exo); letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+  .dl-alt { align-self: center; color: var(--main); font-size: 13px; line-height: 18px; }
+  .dl-alt:hover { color: var(--paper-light); }
+  .dl-note { margin: var(--space-7) 0 0; }
+  .dl-note a { color: inherit; }
+  @media (max-width: 520px) { .dl { padding: 24px var(--space-6); } .dl-choices { grid-template-columns: 1fr; } .dl-main { flex-direction: row; padding: var(--space-5) var(--space-6); } .dl-file { margin-left: auto; } }
   .stack { min-width: 0; }
   h1 { margin: 0 0 var(--space-6); color: #fff; text-shadow: 0 2px 12px rgba(8, 6, 5, .6); white-space: nowrap; font: 600 clamp(32px, 6vw, 52px)/1.1 var(--font-exo); }
   .lede { max-width: 620px; margin: 0; font-size: 18px; line-height: 27px; text-shadow: 0 1px 8px rgba(8, 6, 5, .8); }
@@ -223,6 +321,7 @@ const pairs = [
     .hero { flex-direction: column; justify-content: space-between; gap: var(--space-7); padding-bottom: calc(var(--edge) + 52px); }
     .actions { position: static; flex-direction: column; align-items: stretch; gap: var(--space-5); }
     .lede { color: var(--paper-light); }
+    .trailer { position: static; align-self: center; }
     .actions .mt-btn { min-height: 44px; }
     .actions .mt-btn-primary { min-height: 52px; }
     .perf, .ai { padding: 40px 0; }

@@ -24,6 +24,8 @@ public sealed class SaveItem
     public float Damage { get; init; }
     public float Wear { get; init; }
     public float Stun { get; init; }
+    /// <summary>The <c>death</c> bool: a death item still on its owner (docs/game/animals.md "Death items").</summary>
+    public bool Death { get; init; }
     /// <summary>Shackles' lock (LockedArmour, docs/game/locks.md "Save keys"): <c>lock lvl</c>, <c>locked</c>, <c>broken</c>, <c>hardness</c>; null for other items.</summary>
     public SaveItemLock? Lock { get; init; }
     /// <summary>A container's contents (the INVENTORY_STATE its one instance names); null for other items.</summary>
@@ -80,6 +82,7 @@ public static class SaveInventory
         Damage = r.Floats.GetValueOrDefault("dam"),
         Wear = r.Floats.GetValueOrDefault("wear"),
         Stun = r.Floats.GetValueOrDefault("stun"),
+        Death = r.Bools.GetValueOrDefault("death"),
         Lock = r.Ints.TryGetValue("lock lvl", out int lockLevel) ? new SaveItemLock(lockLevel, r.Bools.GetValueOrDefault("locked"), r.Bools.GetValueOrDefault("broken"), r.Floats.GetValueOrDefault("hardness")) : null,
         Contents = contents,
         Source = r,
@@ -121,8 +124,8 @@ public static class SaveInventory
             r.Strings["color sid"] = "";
             Hand.Null.Write(r, "insideBuilding");
             Hand.Null.Write(r, "ownedby");
-            r.Bools["death"] = false;
         }
+        r.Bools["death"] = item.Death;
         r.Strings["material sid"] = item.MaterialId;
         r.Strings["company sid"] = item.CompanyId;
         r.Strings["section"] = item.Section;

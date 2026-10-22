@@ -97,7 +97,41 @@ public sealed class NavmeshWalkability : IWalkability
         return TryStand(w, x, z, nearY, out _, out bool reachable) && reachable;
     }
 
+    public bool TryStand(float x, float z, float nearY, out float y)
+    {
+        var w = world;
+        if (!TryStand(w, x, z, nearY, out y, out bool reachable)) { y = Ground(w, x, z); reachable = false; }
+        return w.Contains(WorldLayout.ZoneOf(x, z)) ? reachable : fallback.IsWalkable(x, z);
+    }
+
     bool TryStand(NavWorld w, float x, float z, float nearY, out float y) => TryStand(w, x, z, nearY, out y, out _);
+
+    /// <summary>
+    /// <see cref="IWalkability.FloorNear"/>, kept for the loaded world it was found on: the AI asks it of the same spots at every think, and a spot with no floor near
+    /// tries every point of the search.
+    /// </summary>
+    public Vector3? FloorNear(float x, float z, float y, float slack)
+    {
+        var cache = floors;
+        if (!ReferenceEquals(cache.World, world)) floors = cache = new FloorCache(world);
+        if (cache.Found.TryGetValue((x, z, y, slack), out var known)) return known;
+        // Counted apart: ConcurrentDictionary.Count takes every lock, and misses come all at once after a swap, from every partition.
+        if (Interlocked.Increment(ref cache.Added) > FloorCacheLimit) { cache.Found.Clear(); Interlocked.Exchange(ref cache.Added, 0); }
+        return cache.Found[(x, z, y, slack)] = IWalkability.ScanFloor(this, x, z, y, slack);
+    }
+
+    /// <summary>How many <see cref="FloorNear"/> answers are kept at most (engine choice: well above a town's spots).</summary>
+    const int FloorCacheLimit = 16384;
+
+    sealed class FloorCache(NavWorld world)
+    {
+        public readonly NavWorld World = world;
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<(float X, float Z, float Y, float Slack), Vector3?> Found = new();
+        /// <summary>Answers added since <see cref="Found"/> was last cleared (a spot asked twice at once counts twice: the limit is loose).</summary>
+        public int Added;
+    }
+
+    volatile FloorCache floors = new(NavWorld.Empty);
 
     /// <summary>
     /// The real surface of the highest mesh layer at (x, z) within <see cref="StandRise"/> above <paramref name="nearY"/> and <see cref="StandDrop"/> below it
@@ -247,17 +281,49 @@ public sealed class NavmeshWalkability : IWalkability
         return new PathResult([.. path.Points.Select(p => new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z))]);
     }
 
+    /// <summary>The road network long routes may take (<see cref="Route"/>); null: none, the terrain grid alone.</summary>
+    public RoadNetwork? Roads { get; set; }
+
+    /// <summary>How far (units) along a road route its navmesh part reaches at most (engine choice: the navmesh path to a far point would cut the road's bends,
+    /// so the walker asks again every so often and keeps to the road).</summary>
+    public const float RoadHandover = 1500;
+
     /// <summary>
-    /// The coarse route, with its start replaced by a navmesh path to the farthest point of it that lies well inside the loaded zones (the handover).
+    /// The long route over the terrain: by the roads when the original's rule takes them for the agent's road preference (<see cref="RoadNetwork.Route"/>), the legs to
+    /// and from the road over the terrain grid (engine choice: the original walks them on its navmesh); else the grid's route. Empty when there is none; road routes
+    /// are flagged.
+    /// </summary>
+    (List<Vector3> Route, bool Road) Route(Vector3 from, Vector3 to, NavAgent agent)
+    {
+        if (agent.RoadPreference <= 0 || Roads?.Route(new(from.X, from.Z), new(to.X, to.Z), agent.RoadPreference) is not { } via) return (Coarse.Find(from, to, agent.WaterFactor), false);
+        // via: the join, the road's points, the leave, then the goal.
+        var route = new List<Vector3> { from };
+        void Leg(Vector3 a, Vector3 b)
+        {
+            var leg = Coarse.Find(a, b, agent.WaterFactor);
+            if (leg.Count > 1) route.AddRange(leg.Skip(1));
+            else route.Add(b);
+        }
+        Vector3 At(Vector2 p) => new(p.X, MathF.Max(ground(p.X, p.Y), WorldWater.Height), p.Y);
+        Leg(from, At(via[0]));
+        for (int i = 1; i < via.Count - 1; i++) route.Add(At(via[i]));
+        Leg(route[^1], to);
+        return (route, true);
+    }
+
+    /// <summary>
+    /// The long route (<see cref="Route"/>), with its start replaced by a navmesh path to the farthest point of it that lies well inside the loaded zones (the handover;
+    /// on a road route at most <see cref="RoadHandover"/> along it).
     /// </summary>
     PathResult LongRoute(NavWorld w, Vector3 from, Vector3 to, NavAgent agent, bool fromLoaded)
     {
-        var route = Coarse.Find(from, to, agent.WaterFactor);
+        var (route, road) = Route(from, to, agent);
         if (route.Count == 0) return fallback.FindPath(from, to);
         if (!fromLoaded) { Ahead(w, route, 1); return new PathResult(route) { Exact = 1 }; }
 
         // The handover: the farthest point along the route, in steps, that lies well inside the loaded zones, and the index of the route point after it.
         (int Next, Vector3 Point)? handover = null;
+        float reach = road ? RoadHandover : float.MaxValue, along = 0;
         for (int i = 1; i < route.Count; i++)
         {
             var a = route[i - 1];
@@ -267,10 +333,11 @@ public sealed class NavmeshWalkability : IWalkability
             for (float d = HandoverStep; d < length + HandoverStep; d += HandoverStep)
             {
                 var p = Vector3.Lerp(a, b, MathF.Min(d, length) / MathF.Max(length, 1e-3f));
-                if (!WellInside(w, p)) { left = true; break; }
+                if (!WellInside(w, p) || along + MathF.Min(d, length) > reach) { left = true; break; }
                 handover = (i, p);
             }
             if (left) break;
+            along += length;
         }
         if (handover is not var (next, point)) { Ahead(w, route, 1); return new PathResult(route) { Exact = 1 }; }
 
@@ -282,7 +349,7 @@ public sealed class NavmeshWalkability : IWalkability
         var points = part.Points.ToList();
         var end = points[^1];
         bool reached = Vector2.Distance(new(end.X, end.Z), new(target.X, target.Z)) <= NavQuery.GoalSnap;
-        var rest = reached ? route.Skip(next).ToList() : Coarse.Find(end, to, agent.WaterFactor).Skip(1).ToList();
+        var rest = reached ? route.Skip(next).ToList() : Route(end, to, agent).Route.Skip(1).ToList();
         if (rest.Count == 0) rest = [.. route.Skip(next)];
         int exact = points.Count;
         points.AddRange(rest);

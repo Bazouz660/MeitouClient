@@ -85,6 +85,12 @@ none when destroyed; it holds interior stairs and upper floors. **Verified** (ti
 `4933-Newwworld-INGAME`): the original mesh ramps +4→+68 over (+30..+65, −45..−5) from the origin to the roof storey at +69..+72,
 inside the bounds of `Storm_House_01_Interior-stairs` (`is stairs`, only in `interior`). **Observed** (scratch NavSystem probe):
 without the list that storey and the Watchtower `2-Newwworld-INGAME` floors +130/+190/+290 were unkept; with it paths from the door seed reach them.
+**Destroyed interiors**: a part with a `destroyed mesh` but no `destroyed collision` keeps its intact `xml collision` (**Verified**,
+`FUN_14055f6e0`; with no `phs or mesh` its `xml collision` is cleared instead). A destroyed building has no doors, so its interior has no seed.
+Engine choice: such an interior keeps nothing (no largest-region fallback); the ruin's floor is the exterior's. **Observed** (zone 20.32,
+`meitou-tools navmesh`, "flyin" save): all 17 seedless interiors there are destroyed; the Bughouse `4937-Newwworld-INGAME` kept 149
+polygons at Y1710..1757 (its `Storm_House_02_UpstairsWALLS-AND-ROOF.xml` floor and wall tops; terrain ~1580) and outlaws stood on them
+under the drawn ruined roof. The original exterior tile has no polygons above Y1680 there; whether its interior job keeps that island is **Unknown**.
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
 **Entrance seeds** (engine choice): cross the door's width axis, then use the lowest collision floor with agent-height headroom.
@@ -99,6 +105,9 @@ When neither joins, the interior polygons connected to the door polygons within 
 edges face: a raised sill reached by steps (~47..52°) that cross the hull, whose lower part is the exterior's (cut at the hull: Y351 for
 `29-rebirth-INGAME`, door Y365..380; Y418 for `27-`, door Y430..441) and upper part the interior's, meeting on the hull's edge.
 **Observed** (zone 18.35, scratch probe): both rooms reached from the street; no other door in 18.35, 19.29, 20.29, 20.32, 21.32, 21.42 needs it.
+Joined edges may lie up to 6 apart (`NavInteriors.JoinDistance`), so an A* portal across a link takes the overlap with that gap. **Observed** (zone 21.31,
+`meitou-tools navmesh`): the Rebel Base Storm House `3384-TwoStorey`'s exterior door edge slants 2.0..2.3 off the interior's (z −1156.3); with a
+2.0 gap the portal was 0.2 wide and radius-4 agents never got in; with 6, (-50620,-1080) → (-50617,-1232) `--to-y 1080` walks in, and back out.
 **Inner seams** (engine choice): Recast welds polygon vertices only within 2 height cells, and a step's corner height can come out
 differently on each side, so a stair foot and the ground beside it can share an X/Z edge without being neighbours. The stitcher
 joins open edges of one tile that coincide reversed and are within the climb at both ends. **Observed** (zone 21.42, `meitou-tools navmesh`):
@@ -108,7 +117,7 @@ agents had no way up; with the seam, ground (-47000,125,48100) reaches the room 
 Contour simplification also leaves near-miss T seams (one edge against two whose middle vertex is off its line). Open edges of one tile left
 unjoined are linked (`Links`, not `Neighbours`) when they run opposite, share one end in X/Z (so floors either side of a thin wall stay apart),
 lie within 1.5 of each other's line at both ends of the overlap, and are within climb + 0.5 there; A* portals for such links take the overlap
-with a 2.0 gap when no facing edge is within 0.2. **Observed** (zone 18.39, `meitou-tools navmesh`): the Swamp Village stair foot's edge
+with the door joins' 6 gap when no facing edge is within 0.2. **Observed** (zone 18.39, `meitou-tools navmesh`): the Swamp Village stair foot's edge
 (-62220,108,34088 → -62208,105,34086) against two edges meeting at (-62216,106,34086) joins both; the path (-62218,34080) → (-62216,34148)
 `--to-y 140` climbs through that vertex (length 83) instead of detouring to the tile line x−62208 (97).
 **Tile seams** (engine choice): tiles are rasterised with a 3-cell border from their neighbours (Recast `borderSize`), so contour
@@ -153,6 +162,15 @@ nearest reachable point and a straight provisional tail (the terrain search, und
 a way round through an unloaded zone within one block is not found). **Observed**: Hub→(-36000,-6000) and Hub→Squin arrive; "6 dudes"
 save, scratch harness with the host's zone loading: Fog Islands (-80620,-24171) → the squad at (-31620,11420), 60.5k units, arrives
 (17,506 ticks); before, it walked to the nearest reachable point and stopped on a cliff 10.6k short.
+**Roads** (original, **Observed**): `CharMovement::vfunc_18` (`FUN_140661270`, set destination) tries the road route
+(`FUN_14065f940`, the off-screen mover's [rule](factions-squads-towns.md#off-screen-world), its own gate 10000 units) for trips over 1000
+units when no road path is active, with w from the character's faction `road preference` (CharMovement +0x100, set in `FUN_140661f90`);
+after over 16 navmesh failures it falls back to the road route ("trying road network"). Nameless has 0.3, so player squads take roads too.
+Ours: the long route asks `RoadNetwork.Route` first (`NavAgent.RoadPreference`, `CharacterCold.RoadPreference`, kept on recruit/dismiss);
+when taken, the legs to and from the road are terrain-grid routes (engine choice) and the navmesh part reaches at most `RoadHandover`
+(1500) along it, so bends are not cut. Not built: the rule for a trip within one loaded block (navmesh only), the failure fallback.
+**Observed** (scratch harness, nothing loaded): Hub→Squin 17657 straight walks 25522 at 0.3 (99 % within 400 of a road; 43 % at 0);
+Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short road `length` values, as off screen).
 
 ### Generator (runtime and tool-time navmesh building)
 

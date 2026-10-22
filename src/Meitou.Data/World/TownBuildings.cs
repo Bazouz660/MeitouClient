@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Construction;
 
 namespace Meitou.Data.World;
 
@@ -61,6 +62,8 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     public bool CanHouse { get; init; }
     /// <summary><c>is wall gate</c>: a town gate, housing only resident entries that name it in <c>building</c>.</summary>
     public bool IsGate { get; init; }
+    /// <summary>The level-data state's <c>destroyed</c>: a ruin, which has no doors (docs/game/locks.md "Doors").</summary>
+    public bool Destroyed { get; init; }
     /// <summary>The level data's <c>residents template</c> of its state (a SQUAD_TEMPLATE id; empty when none).</summary>
     public string ResidentsTemplate { get; init; } = "";
     /// <summary>Its turret, when its record has a <c>BUILDING_FUNCTIONALITY</c> function BF_TURRET (a mounted harpoon turret or crossbow); null otherwise.</summary>
@@ -88,7 +91,7 @@ public sealed record TownFixture(string Id, string RecordId, bool IsCage, Vector
 {
     /// <summary>Its BUILDING_FUNCTIONALITY <c>function</c> (-1: none).</summary>
     public int Function { get; init; } = -1;
-    /// <summary>A container with its own inventory (<c>has inventory</c>): its <c>storage size width</c> x <c>storage size height</c>; 0 x 0 otherwise.</summary>
+    /// <summary>A container with its own inventory (<c>has inventory</c>): its cells (<see cref="MachineData.StorageGrid"/>); 0 x 0 otherwise.</summary>
     public int StorageWidth { get; init; }
     public int StorageHeight { get; init; }
     /// <summary>Its stock is a building shop's (functions 2 BF_RESOURCE_STORAGE, 9 BF_SHOP, 13 BF_GENERAL_STORAGE with an inventory; <c>FUN_1409562f0</c>, docs/game/economy.md "Building shops").</summary>
@@ -174,12 +177,12 @@ public static class TownBuildings
                         if (function?.GetInt("function") is TableFunction or CorpseDisposalFunction or RefineryFunction) (faced ??= []).Add(at);
                         else if (FunctionOf(db, item.Building, functions)?.GetInt("function") is var itemFn && (itemFn == CageFunction || item.Building.GetBool("has lock") || item.Building.GetBool("has inventory")))
                         {
-                            bool stores = item.Building.GetBool("has inventory");
+                            var (storageWidth, storageHeight) = item.Building.GetBool("has inventory") ? MachineData.StorageGrid(db, item.Building) : (0, 0);
                             (fixtures ??= []).Add(new TownFixture($"{b.Key}/{index}", item.Building.StringId, itemFn == CageFunction, at, YawOf(rotation))
                             {
                                 Function = itemFn ?? -1,
-                                StorageWidth = stores ? item.Building.GetInt("storage size width", 18) : 0,
-                                StorageHeight = stores ? item.Building.GetInt("storage size height", 18) : 0,
+                                StorageWidth = storageWidth,
+                                StorageHeight = storageHeight,
                             });
                         }
                         index++;
@@ -195,6 +198,7 @@ public static class TownBuildings
                 OwnerFactionId = owner, Fixtures = fixtures ?? [], Zone = b.Zone,
                 CanHouse = record.GetBool("is wall gate") || record.GetReferences("interior").Count > 0 && !record.GetBool("links together"),
                 IsGate = record.GetBool("is wall gate"),
+                Destroyed = resolved.Destroyed,
                 Turret = turret,
                 ResidentsTemplate = state?.GetString("residents template") ?? "",
                 InteriorLayout = state?.GetString("interior layout name") ?? "",

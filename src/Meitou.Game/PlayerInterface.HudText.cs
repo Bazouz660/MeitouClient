@@ -22,7 +22,6 @@ sealed partial class PlayerInterface
     /// <summary>The stats panel's labels (MARTIAL ARTS, STRENGTH, ...): the grey of the orders buttons' text, not Main (docs/game/ui-screens.md).</summary>
     internal static readonly string StatLabelColour = "0.4 0.380392 0.356863";
 
-
     /// <summary>Resolves a faction (a position in the world's faction list) to its name; the host sets it.</summary>
     public Func<int, string?>? FactionName { get; set; }
 
@@ -109,22 +108,12 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The medical header's word (the original's list is longer; Meitou shows the states it models): Dead, Unconscious, Starving below 1 hunger, then by the worst
+    /// The medical header's word (the original's list is longer; Meitou shows the states it models): Dead, Unconscious (N) with N the KO timer as (int) while it runs, Starving below 1 hunger, then by the worst
     /// part h: Wounded below 0.7, Hungry below 2 hunger, Slightly Injured below 0.9, else Normal.
     /// </summary>
     internal static (string Text, string? Colour) HealthWord(BodyStatus body) =>
-        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.Unconscious ? (Loc.Tr("Unconscious"), BadColour) : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
+        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.Unconscious ? (body.KoTimer > 0 ? $"{Loc.Tr("Unconscious")} ({(int)body.KoTimer})" : Loc.Tr("Unconscious"), BadColour) : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
         : body.WorstPart < 0.7f ? (Loc.Tr("Wounded"), BadColour) : body.Hunger < 2 ? (Loc.Tr("Hungry"), BadColour) : body.WorstPart < 0.9f ? (Loc.Tr("Slightly Injured"), BadColour) : (Loc.Tr("Normal"), null);
-
-    /// <summary>The row of a body part in the medical panel: the head, the torso, the left then right arm, the left then right leg (the original's order for people,
-    /// <b>Observed</b>); the race's own order inside a group.</summary>
-    internal static int PartRank(HealthPartView part, int index)
-    {
-        bool right = part.Name.StartsWith("Right", StringComparison.OrdinalIgnoreCase);
-        int group = part.Name.Contains("Head", StringComparison.OrdinalIgnoreCase) ? 0 : part.Name.Contains("Arm", StringComparison.OrdinalIgnoreCase) ? 2
-            : part.Name.Contains("Leg", StringComparison.OrdinalIgnoreCase) ? 3 : 1;
-        return group * 1000 + (group >= 2 ? (right ? 500 : 0) : 0) + index;
-    }
 
     /// <summary>Adds a text panel's lines over the arranged widget <paramref name="panel"/>: one row per line, the label from 3 % of the width, the value right-aligned to 96 %.</summary>
     /// <summary>One row per line, the label left and the value right; the value takes <paramref name="valueFont"/> at <paramref name="valuePixels"/> when given.</summary>
@@ -223,7 +212,7 @@ sealed partial class PlayerInterface
             // A run of '<', one per 0.05 of bleeding (at most 100).
             int bleed = Math.Min(100, (int)MathF.Ceiling(Math.Abs(hud?.Bleeding ?? 0) / 0.05f));
             rows.Add((Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false));
-            foreach (var part in lead.HealthParts.Select((p, i) => (p, i)).OrderBy(x => PartRank(x.p, x.i)).Select(x => x.p))
+            foreach (var part in lead.HealthParts)
             {
                 float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh + part.Rig - part.Stun;
                 string arrows = health < -max ? "!!!   " : health < 0 ? "<<   " : "";

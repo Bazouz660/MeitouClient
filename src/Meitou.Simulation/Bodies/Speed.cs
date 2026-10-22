@@ -27,7 +27,7 @@ public static class Speed
     public static float LegFactor(MedicalState medical)
     {
         float lowest = float.MaxValue;
-        foreach (var p in medical.Parts)
+        foreach (var p in medical.PartSpan)
             if (p.Template.Type == BodyPartType.Leg) lowest = MathF.Min(lowest, p.Fraction);
         return lowest == float.MaxValue ? 1 : Math.Clamp(lowest * 1.8f, 0, 1);
     }
@@ -85,7 +85,7 @@ public static class Speed
     /// <summary>An arm (<paramref name="bit"/>: <c>collapse part</c> 4 left, 2 right) is usable unless a part with that bit is collapsed or the arm is a stump (<b>Verified</b> for the left arm, docs/game/carry-loot.md; the right one is the mirror byte).</summary>
     static bool ArmUsable(MedicalState medical, int bit)
     {
-        foreach (var p in medical.Parts)
+        foreach (var p in medical.PartSpan)
         {
             if ((p.Template.CollapsePart & bit) == 0) continue;
             if (p.Template.Collapses && p.IsDown) return false;

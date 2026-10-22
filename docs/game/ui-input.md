@@ -135,9 +135,10 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 | Ctrl + right click on a knocked-out or dead character | the nearest selected character picks it up (`PickUpOrder`); on a body a selected character carries, puts it down (`PutDownOrder`) |
 | right click on one of the player's own downed characters with nothing to bandage | picks it up (as the original's quick right click; with something to bandage it is first aid, as above) |
 | Alt + right click on a knocked-out or dead character | the nearest selected character takes all that fits from its inventory and backpack (`LootOrder`; no window) |
-| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its pockets open in the container window beside the inventory: items are dragged out of it or into it (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
+| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its whole inventory opens in a second character window beside the inventory (worn gear in the equipment slots, its bag in a bag window): items are dragged out of it or into it, onto equipment slots too (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
 | an item dragged out of the inventory window and let go over the world | dropped on the ground 3 units ahead of the character (`DropInventoryItem`; worn gear too, not locked-on items or fitted limbs; engine choice, the original's drop rule is **Unknown**) |
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
+| right click on an item while the inventory and another item window are open | one unit moves to the other window, where it first fits (stacks of it, then free cells), in both directions; Shift: the whole stack (**Observed**, release handler `FUN_140714a20`: the one-unit move `FUN_140713d20`, repeated while Shift is held until it fails). Meitou: between the lead's inventory or bag and the shown machine (its inputs and output), storage, container, or the open loot (`PutInMachine` / `TakeFromMachine` / `TakeLootItem` / `PutLootItem` with a count, `InventoryCommands.MoveUnits`) |
 | `J` | Rescue for the selection (the original's NUM8): each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
 
@@ -180,7 +181,7 @@ hit with no walkable point sets `invalidmove` (`FUN_140800250`). Which other hov
 
 Meitou (`PlayerInterface.Pointer.cs`, engine choices): the window's own cursor is hidden and the pointer drawn last in the frame (not in
 screenshots or cinema takes). It follows the quick right-click order, so it never disagrees with the click: with a selection, over a
-trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
+non-hostile trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (also without a selection, red outline; any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
 `lift`, Alt `search`; otherwise, over the interface, the settings panel or the loading screen, `arrow`. The free camera hides it (as mode 0's
 `invisible`). Interface → Hardware mouse (`HardwareMouse` in meitou.user.json, default off as the game's `hardware_mouse`; settings.cfg is
 not read) shows the Windows cursor instead, applied at once.
@@ -205,6 +206,20 @@ Meitou's rebindable `Highlight` action defaults to either Alt key. While held in
 real parts whose owning BUILDING has `is sign` receive a yellow tint, including layout objects and both LODs
 during a transition. Release restores their materials. Loading, menus, hidden UI, free camera and cinema suppress it.
 Rendering details: [objects](../render-objects.md#building-sign-highlight).
+
+### Ground item labels
+
+**Observed** (owner's original-game report): holding Alt shows a small name label over each loose item.
+**Verified** (`Kenshi_ItemDropLabel.layout`, `kenshi_colours.xml`): root `Kenshi_GenericTextBoxFlatSmallSkin` 0.0521 x 0.0259 of the screen, layer Back,
+pointer `pick`; `ItemNameText` (`Kenshi_TextboxStandardText`, Kenshi_StandardFont_Medium) centred. Colours: `DropItemLabelBack/TextDefault` #ffffff,
+`...Selected` #66ff66, `...SelectedStealing` #ff6666.
+**Observed** (`ItemManager::ItemLabel`, `FUN_1401649e0` / `FUN_140162950`): the root's width is fitted to the text; a quantity above 1 is appended
+(exact text **Unknown**); the label widget takes a mouse click; hovered labels turn Selected, or SelectedStealing when the item counts as stolen
+(owner-faction test, **Unknown** detail). Weapons, armour and some other item types take their text colour from the item's grade
+(`ItemGrade0`–`5` by thresholds 16/36/51/66/81, `ItemArtifact`, else `ItemStandard`). Range and anchor **Unknown**.
+Meitou (`PlayerInterface.GroundItems.cs`): with the Highlight gating above, every item within 500 units of the camera's focus not hidden by a
+building, name only, white, green under the pointer; a label picks like its item (pointer `pick_item`, right click picks it up). Overlapping
+labels are stacked above the nearer one. No quantity, grade or stealing colours yet (ground items have no owner).
 
 ### Hover outline
 
@@ -309,8 +324,10 @@ ground and Esc do not clear it (**Observed** by absence: `FUN_140800250` has no 
 
 Meitou (`PlayerInterface.BuildingSelect.cs`, engine choices): a left click with no character under the cursor selects the nearest building the ray
 meets before the ground, among the player's sites and the level data's buildings (not `is node` / `is foliage`). Picking is a ray against a vertical
-prism over the convex hull of the record's collision shapes (`BuildingFootprints`), not per-part collision, so a courtyard or concave building is
-selectable over its whole hull and there are no interior floors. The character selection stays. The HUD panels show the building as in
+prism over the convex hull of the record's collision shapes (`BuildingFootprints`) as the first test, then, for a record with collision files, against its collision
+triangles (`PlayerInterface.CollisionPick.cs`, double sided, nearest hit), so ground, characters and neighbours beside a courtyard or concave building are not taken for it. There are
+no interior floors (a part without collision cannot be clicked, as in the original). Only hits before the ground count, for a click and for the hammer pointer alike (a building's hull and
+collision reach below the ground; without the limit the ray, after meeting the ground, found them and the pointer showed the hammer on bare ground beside a building). The character selection stays. The HUD panels show the building as in
 [ui-screens](ui-screens.md#selected-building) (the simulation publishes the selected building's doors, `InspectBuildingCommand`); no outline
 is drawn (as the original). Selecting or inspecting a character clears it, Shift
 included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). Not built: a house's first-door focus, the
@@ -318,7 +335,7 @@ building windows, the Dismantle / pause / door buttons in the panel (the right-c
 Condition bars, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
 centre, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
 walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
-and a walk there).
+and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level building with an interior is picked by its floors instead (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
 
 ### Edit boxes and keyboard focus
 

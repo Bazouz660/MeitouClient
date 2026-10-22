@@ -261,7 +261,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!prev[i].Alive || i >= slots.Length || world.Tick < slots[i].CalmUntil) continue;
             byte task = next[i].Task;
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
-            if (table.Cold(i) is not { IsPlayer: false, InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold || !Relations.Contains(cold.Faction)) continue;
+            if (table.Cold(i) is not { IsPlayer: false, InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold || !Relations.Contains(cold.Faction)) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
             if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet) continue;
@@ -336,8 +336,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // order is the grid's fixed one. Either way it is a function of the state. A sneaker farther than the best still gets its spot meter.
         bool better = taunts != s.BestTaunts ? taunts : d2 < s.BestD2;
         if (!better && !sneaking) return;
-        // A caged prisoner is nobody's target (engine choice: the original's sensed-list filter is not decoded; town cages hold enemies of their guards).
-        if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c) return;
+        // A caged prisoner is nobody's target, an owned slave nobody's but its owner's enemies' (engine choice: the original's sensed-list filter is not decoded; town cages
+        // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
+        if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
@@ -518,6 +519,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             int n = Relations.Count;
             for (int a = 0; a < n; a++)
                 for (int b = 0; b < n; b++) hasher.Add(Relations.Get(a, b));
+            for (int a = 0; a < n; a++)
+                if (Relations.Rank(a) is var rank and not 0) { hasher.Add(a); hasher.Add(rank); }
         }
         hasher.Add(size);
         for (int i = 0; i < size; i++)

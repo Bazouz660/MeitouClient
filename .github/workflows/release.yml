@@ -1,4 +1,4 @@
-# Manual release, or a nightly pre-release each day there are game changes since the last v* tag: builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
+# Manual release, or a nightly pre-release twice a day (05:00 nightly, 14:00 daily, UTC) when there are game changes since the last v* tag: builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
 # (tools/scripts/package-release.ps1; the Windows zip with NVIDIA DLSS/Streamline and AMD FidelityFX next to the exes), tags the commit
 # v<version> and publishes a GitHub release with one Meitou-<version>-<rid>.zip per runtime (docs/launcher.md), never marked Latest
 # (that is the newest full launcher release, launcher-release.yml).
@@ -20,7 +20,8 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "0 2 * * *" # nightly, 02:00 UTC
+    - cron: "0 5 * * *" # nightly, 05:00 UTC: after the late-evening work
+    - cron: "0 14 * * *" # daily, 14:00 UTC: the morning's work, before the evening
 
 permissions:
   contents: write
@@ -48,25 +49,28 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           NIGHTLY: ${{ github.event_name == 'schedule' || inputs.nightly }}
+          KIND: ${{ github.event.schedule == '0 14 * * *' && 'Daily' || 'Nightly' }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           if ($env:NIGHTLY -eq 'true') {
             # Skipped when nothing the game zips are built from changed since the newest game tag, nightly or full.
             $last = git tag -l "v[0-9]*" --sort=-creatordate | Select-Object -First 1
             if ($last) {
-              git diff --quiet $last HEAD -- . ':!news' ':!site' ':!launcher' ':!.github/workflows/site-image.yml' ':!.github/workflows/launcher-release.yml'
+              git diff --quiet $last HEAD -- . ':!news' ':!site' ':!launcher' ':!docs' ':!.github/workflows'
               if ($LASTEXITCODE -eq 0) { "No game changes since $last; no nightly." >> $env:GITHUB_STEP_SUMMARY; "nightly=skip" >> $env:GITHUB_OUTPUT; exit 0 }
             }
-            # <next patch of the newest full release>-nightly.<UTC date>: after that release, before the next one (semver).
+            # <next patch of the newest full release>-nightly.<UTC date>[.<n>]: after that release, before the next one (semver). A second
+            # build the same day (the daily) gets .2, which sorts after the plain date in semver and as a string.
             $full = git tag -l "v[0-9]*" --sort=-v:refname | Where-Object { $_ -notmatch '-' } | Select-Object -First 1
             $n = if ($full) { [Version]$full.TrimStart('v') } else { [Version]'0.0.0' }
             $v = "$($n.Major).$($n.Minor).$($n.Build + 1)-nightly.$((Get-Date).ToUniversalTime().ToString('yyyyMMdd'))"
-            if (git tag -l "v$v") { $v += ".$env:RUN_NUMBER" }
+            $base = $v; $n = 1
+            while (git tag -l "v$v") { $n++; $v = "$base.$n" }
             # Every commit since that tag: GitHub's generated notes list only merged pull requests, and most work is committed to master directly.
             $range = if ($last) { "$last..HEAD" } else { 'HEAD' }
             $commits = git log --no-merges --format='- %s (%h)' $range
             $since = if ($last) { " since $last" } else { '' }
-            Set-Content -Path "$env:RUNNER_TEMP/changes.md" -Value (@("Nightly build of master at $($env:GITHUB_SHA.Substring(0, 7)): untested, may be broken.", '', "## Changes$since", '') + $commits) -Encoding utf8
+            Set-Content -Path "$env:RUNNER_TEMP/changes.md" -Value (@("$env:KIND build of master at $($env:GITHUB_SHA.Substring(0, 7)): untested, may be broken.", '', "## Changes$since", '') + $commits) -Encoding utf8
             "version=$v" >> $env:GITHUB_OUTPUT
             "nightly=true" >> $env:GITHUB_OUTPUT
             exit 0
@@ -173,7 +177,7 @@ jobs:
           gh release create "v$env:VERSION" @zips --target $env:GITHUB_SHA `
             --title "Meitou $env:VERSION" --notes $notes @flags
 
-      # Only the newest 7 nightlies are kept, so the releases page and the launcher's Versions list stay short.
+      # Only the newest 14 nightlies (a week of two a day) are kept, so the releases page and the launcher's Versions list stay short.
       - name: Prune old nightlies
         if: needs.version.outputs.nightly == 'true'
         shell: pwsh
@@ -181,7 +185,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $old = gh release list --limit 200 --json tagName,createdAt | ConvertFrom-Json |
-            Where-Object { $_.tagName -match '^v.*-nightly\.' } | Sort-Object createdAt -Descending | Select-Object -Skip 7
+            Where-Object { $_.tagName -match '^v.*-nightly\.' } | Sort-Object createdAt -Descending | Select-Object -Skip 14
           foreach ($r in $old) { gh release delete $r.tagName --cleanup-tag --yes }
 
       # Posts a nightly's commit list to Discord as an embed linking the release; skipped without the DISCORD_WEBHOOK_URL secret.

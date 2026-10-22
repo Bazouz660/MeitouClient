@@ -30,6 +30,8 @@ static partial class WorldApp
             "skip zero-contribution surf, ocean and distant detail work and opaque slices' refraction copies; B: always evaluate/copy");
         AbToggles.Register("shadow-zone-box", () => ShadowZoneBox.Enabled, v => ShadowZoneBox.Enabled = v,
             "each shadow cascade's foliage work list box-tested by zone against the cascade's planes (A) against every zone within 1.2 x the shadow range (B)");
+        AbToggles.Register("char-casters", () => ShadowPass.CharacterCasterCull, v => ShadowPass.CharacterCasterCull = v,
+            "character parts under a texel across cast nothing into the coarse shadow cascades (A) against every part in every cascade (B)");
         AbToggles.Register("occlusion", () => post.OcclusionCull, v => post.OcclusionCull = v, "foliage occlusion cull against the previous frame's depth pyramid");
         if (gpu.FogVolumes is { } fog)
         {

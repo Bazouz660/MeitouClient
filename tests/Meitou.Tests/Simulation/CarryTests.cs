@@ -179,6 +179,28 @@ public class CarryTests
         Assert.Equal(10, unseen);
     }
 
+    [Fact]
+    public void Taking_a_death_item_from_a_knocked_out_body_butchers_it_and_the_items_lose_the_flag()
+    {
+        using var rig = new Rig();
+        var looter = rig.Add(1000, 2000);
+        var animal = rig.Add(1100, 2000, player: false, squad: 1, faction: 2);
+        var meat = Item("meat", 1, 1, 3, stack: true);
+        meat.Death = true;
+        rig.Cold(animal).Inventory!.Add(meat);
+        rig.Cold(looter).Inventory!.Add(new ItemInstance { Record = "meat", Name = "meat", Quantity = 2, StackLimit = 99, UnitWeight = 1 });
+        rig.Body(animal).KnockOut(10000);
+        rig.World.RunTick();
+        rig.Say(new LootOrder([looter], animal) { Tick = rig.World.Tick });
+        for (int t = 0; t < 1000 && rig.Carry.Loots.Count == 0; t++) rig.World.RunTick();
+        Assert.Equal((true, DeathCause.Butchered), (rig.Body(animal).Dead, rig.Body(animal).Cause));
+        Assert.Contains($"{rig.Cold(animal).Name} has been butchered", rig.World.TakeMessages());
+        // The taken units are the looter's now, no longer death items.
+        var held = rig.Cold(looter).Inventory!.Items;
+        Assert.Equal((5, false), (held.Sum(i => i.Quantity), held.Any(i => i.Death)));
+        Assert.Empty(rig.Cold(animal).Inventory!.Items);
+    }
+
     // ------------------------------------------------------------------ determinism
 
     /// <summary>

@@ -114,14 +114,21 @@ public static partial class MyGuiPresentation
         var rowClip = area.Intersect(clip);
         int selected = b.SelectedItems.GetValueOrDefault(sel, -1);
         string ink = props.GetValueOrDefault("TextColour") ?? MyGuiColours.InkText, count = items.Count.ToString(Inv);
+        // Lines of the list's SkinLine (MyGuiTemplates: LineSkin, LineFont) draw as that skin, the selected one in its checked state; without one, a bar marks the selection.
+        string? lineSkin = props.GetValueOrDefault("LineSkin");
         for (int d = 0; d < order.Length; d++)
         {
             int source = order[d];
             var row = new UiRect(area.X + 3, area.Y + d * line - offset, Math.Max(0, area.Width - 6), line);
             if (row.Intersect(rowClip).Height <= 0) continue;
-            result.Add(new(w.Name + "@row" + source, "Button", row, CellOf(items[source], column), $"{rowAction}:{sel}:{source}", "", enabled,
-                new Dictionary<string, string> { ["ListOwner"] = scrollKey, ["ListCount"] = count, ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter", ["TextColour"] = ink, ["TextPadding"] = "4 2 4 2" },
-                selected == source ? new(0.25f, 0.24f, 0.16f, 0.95f) : default, Argument: items[source].Id, Clip: rowClip));
+            var rowProperties = new Dictionary<string, string>
+            {
+                ["ListOwner"] = scrollKey, ["ListCount"] = count, ["FontName"] = props.GetValueOrDefault("LineFont") ?? "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter", ["TextPadding"] = "4 2 4 2",
+            };
+            if (lineSkin is null || props.ContainsKey("TextColour")) rowProperties["TextColour"] = ink;
+            if (lineSkin is not null && selected == source) rowProperties["Checked"] = "true";
+            result.Add(new(w.Name + "@row" + source, "Button", row, CellOf(items[source], column), $"{rowAction}:{sel}:{source}", lineSkin ?? "", enabled, rowProperties,
+                lineSkin is null && selected == source ? new(0.25f, 0.24f, 0.16f, 0.95f) : default, Argument: items[source].Id, Clip: rowClip));
         }
         props["ListKey"] = sel; props["ScrollKey"] = scrollKey; props["ScrollMax"] = N(max); props["ScrollWheel"] = N(line);
         props["ListCount"] = count; props["ListLine"] = N(line); props["ListView"] = N(view);

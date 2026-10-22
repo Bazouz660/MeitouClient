@@ -85,6 +85,15 @@ public class AnimalTests(ITestOutputHelper output)
         return (world, systems, new PopulationSystem(data, new PopulationSettings()));
     }
 
+    [Fact]
+    public void A_new_bonedog_carries_its_death_items_flagged()
+    {
+        var db = Db();
+        var items = new Meitou.Simulation.Items.ItemFactory(db, GameConstants.FromDatabase(db));
+        var death = items.Build(db.Find(Bonedog), null).Items.Select(i => (i.Name, i.Quantity, i.Death)).Order().ToArray();
+        Assert.Equal([("Animal Skin", 1, true), ("Animal Teeth", 4, true), ("Raw Meat", 3, true)], death);
+    }
+
     /// <summary>A CHARACTER of the base game with a race of its own (so it has a body without a generated look): the human opponent.</summary>
     static string Human(GameDatabase db) => db.OfType(FcsRecordType.CHARACTER)
         .First(r => r.GetReferences("race").Any(x => x.Values.Value0 > 0 && db.Find(x.TargetStringId)?.Name == "Greenlander") && r.GetReferences("stats").Count > 0).StringId;

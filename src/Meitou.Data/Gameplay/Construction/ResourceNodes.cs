@@ -1,10 +1,64 @@
 using System.Numerics;
+using Meitou.Data.Ogre;
 using Meitou.Data.World;
 
 namespace Meitou.Data.Gameplay.Construction;
 
-/// <summary>A mineable rock (docs/game/buildings-production.md "Resources"): where it stands, its <c>world resource mining</c>, its radius and its BUILDING record.</summary>
-public readonly record struct ResourceNode(Vector3 Position, int Resource, float Radius, string Record = "");
+/// <summary>
+/// A mineable rock (docs/game/buildings-production.md "Resources"): where it stands, its <c>world resource mining</c>, its radius and its BUILDING record; with its mesh's
+/// <paramref name="Shape"/>, placed by <paramref name="Transform"/>, a click hits the rock as drawn.
+/// </summary>
+public readonly record struct ResourceNode(Vector3 Position, int Resource, float Radius, string Record = "", Vector3? Centre = null, RockShape? Shape = null, Matrix4x4 Transform = default)
+{
+    /// <summary>The ray distance to the rock (a unit <paramref name="direction"/>): its mesh's triangles, or without them a sphere of its radius round its centre; null: missed.</summary>
+    public float? RayHit(Vector3 origin, Vector3 direction)
+    {
+        // The local ray is the world one mapped by the inverse transform, so its parameter is the world distance.
+        if (Shape is { } shape && Matrix4x4.Invert(Transform, out var inverse))
+            return shape.Hit(Vector3.Transform(origin, inverse), Vector3.TransformNormal(direction, inverse));
+        var to = (Centre ?? Position) - origin;
+        float along = Vector3.Dot(to, direction);
+        float miss = to.LengthSquared() - along * along, r2 = Radius * Radius;
+        if (miss > r2) return null;
+        float t = along - MathF.Sqrt(r2 - miss);
+        return t >= 0 ? t : null;
+    }
+}
+
+/// <summary>A rock mesh's triangles in mesh space (three corners each) and their bounds box.</summary>
+public sealed class RockShape(Vector3[] corners, Vector3 min, Vector3 max)
+{
+    public Vector3 Min => min;
+    public Vector3 Max => max;
+
+    /// <summary>The ray parameter of the nearest triangle the ray meets (either side), null: none.</summary>
+    public float? Hit(Vector3 origin, Vector3 direction)
+    {
+        if (!FloorSurfaces.RayBox(origin, direction, min, max, float.MaxValue)) return null;
+        float? best = null;
+        for (int i = 0; i + 2 < corners.Length; i += 3)
+            if (FloorSurfaces.RayTriangle(origin, direction, corners[i], corners[i + 1], corners[i + 2]) is { } t && (best is null || t < best)) best = t;
+        return best;
+    }
+
+    /// <summary>The triangle lists of <paramref name="mesh"/>'s submeshes; null when it has none.</summary>
+    public static RockShape? Of(OgreMesh mesh)
+    {
+        var corners = new List<Vector3>();
+        foreach (var sub in mesh.SubMeshes)
+        {
+            if (sub.Operation != OgreOperationType.TriangleList || (sub.UseSharedVertices ? mesh.SharedVertexData : sub.VertexData)?.ReadPositions() is not { } positions) continue;
+            var indices = sub.Indices.Indices;
+            for (int i = 0; i + 2 < indices.Length; i += 3)
+                if (indices[i] < positions.Length && indices[i + 1] < positions.Length && indices[i + 2] < positions.Length)
+                    corners.AddRange([positions[indices[i]], positions[indices[i + 1]], positions[indices[i + 2]]]);
+        }
+        if (corners.Count == 0) return null;
+        Vector3 min = corners[0], max = corners[0];
+        foreach (var c in corners) (min, max) = (Vector3.Min(min, c), Vector3.Max(max, c));
+        return new RockShape([.. corners], min, max);
+    }
+}
 
 /// <summary>Where the world's mineable rocks are.</summary>
 public interface IResourceNodes
@@ -17,10 +71,30 @@ public interface IResourceNodes
 /// The rocks the foliage system places (docs/formats/foliage.md, "building type"): instances whose FOLIAGE_MESH names a BUILDING, the rock's resource being that building's
 /// functionality <c>world resource mining</c>. Zones are placed once and kept (through the foliage world's layout cache when it has one). Thread-safe.
 /// </summary>
-public sealed class FoliageResourceNodes(FoliageWorld world, GameDatabase db) : IResourceNodes, IDisposable
+public sealed class FoliageResourceNodes(FoliageWorld world, GameDatabase db, Func<string, string?>? findMesh = null) : IResourceNodes, IDisposable
 {
-    /// <summary>The radius used for every rock: the original reads the rock's bounds and takes at least 25 (<c>uses_resources</c>); Meitou does not read the meshes (engine choice).</summary>
+    /// <summary>The smallest radius of a rock: the original takes the rock mesh's bounds and at least 25 (<c>uses_resources</c>); without the mesh file a rock is this.</summary>
     public const float NodeRadius = 25;
+
+    readonly Dictionary<string, (Vector3 Centre, float Radius, RockShape Shape)?> meshBounds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A rock mesh's shape and its bounds sphere (the triangles' box middle, and its longest half-extent as the radius, before scaling); null without <c>findMesh</c>, the file or
+    /// triangles.
+    /// </summary>
+    (Vector3 Centre, float Radius, RockShape Shape)? Bounds(string meshPath)
+    {
+        if (findMesh is null) return null;
+        if (meshBounds.TryGetValue(meshPath, out var known)) return known;
+        RockShape? shape = null;
+        if ((findMesh(meshPath) ?? findMesh(Path.GetFileName(meshPath.Replace('\\', '/')))) is { } path)
+            try { shape = RockShape.Of(OgreMeshReader.ReadFile(path)); }
+            catch (Exception e) when (e is IOException or OgreFormatException or NotSupportedException) { }
+        if (shape is null) return meshBounds[meshPath] = null;
+        // The longest half-extent of the bounds box, not its half-diagonal (a rock of 71 x 72 x 66 is 36 across, not 60: the diagonal made the radius nearly twice the rock).
+        var size = shape.Max - shape.Min;
+        return meshBounds[meshPath] = ((shape.Min + shape.Max) / 2, Math.Max(size.X, Math.Max(size.Y, size.Z)) / 2, shape);
+    }
 
     readonly Dictionary<ZoneCoordinate, List<ResourceNode>> zones = [];
     readonly Dictionary<string, int> resourceOf = new(StringComparer.Ordinal);
@@ -48,7 +122,15 @@ public sealed class FoliageResourceNodes(FoliageWorld world, GameDatabase db) : 
         if (zone.IsInsideGrid)
             foreach (var instance in world.Zone(zone).Instances)
                 if (instance.Mesh.BuildingType is { } building && ResourceOf(building) is > 0 and var resource)
-                    list.Add(new ResourceNode(instance.Position, resource, NodeRadius, building.StringId));
+                {
+                    // The rock's size is its mesh's bounds scaled by the instance (at least NodeRadius), centred on the bounds' middle, not on the origin the mesh sits on; it is picked by
+                    // the mesh's triangles where the instance places them.
+                    var bounds = Bounds(instance.Mesh.MeshPath);
+                    float radius = bounds is { } b ? Math.Max(NodeRadius, b.Radius * instance.Scale) : NodeRadius;
+                    list.Add(bounds is { } c
+                        ? new ResourceNode(instance.Position, resource, radius, building.StringId, Vector3.Transform(c.Centre, instance.Transform), c.Shape, instance.Transform)
+                        : new ResourceNode(instance.Position, resource, radius, building.StringId));
+                }
         zones[zone] = list;
         return list;
     }

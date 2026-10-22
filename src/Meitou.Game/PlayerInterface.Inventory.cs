@@ -9,9 +9,25 @@ namespace Meitou.Game;
 
 sealed partial class PlayerInterface
 {
-    (CharacterId Character, InventoryItemView Item, Vector2 Grab)? inventoryDrag;
+    /// <summary>A character's item being dragged: the selected lead's, or (<c>Loot</c>) the open loot's.</summary>
+    (CharacterId Character, InventoryItemView Item, Vector2 Grab, bool Loot)? inventoryDrag;
     /// <summary>A stock item of the open trade being dragged out of the trader window (dropped on the character's grid it is bought).</summary>
     (TradeItemView Item, Vector2 Grab)? tradeDrag;
+    /// <summary>The character the inventory window was pinned on (its caption's pin button), none while it is not pinned.</summary>
+    CharacterId inventoryPin = CharacterId.None;
+
+    /// <summary>
+    /// The character the inventory window (and its bag and limbs) shows: the lead, or while the window is pinned the one it was pinned on, whoever is selected
+    /// (docs/game/ui-screens.md section 6). A pinned character who is gone falls back to the lead.
+    /// </summary>
+    CharacterSnapshot? InventoryOwner()
+    {
+        if (!faithfulScreens.IsPinned("inventory")) inventoryPin = CharacterId.None;
+        else if (inventoryPin.IsNone) inventoryPin = Selected().FirstOrDefault()?.Id ?? CharacterId.None;
+        else if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == inventoryPin) is { } pinned) return pinned;
+        return Selected().FirstOrDefault();
+    }
+    CharacterSnapshot? InventoryOwner(CharacterId id) => InventoryOwner() is { } owner && owner.Id == id ? owner : null;
 
     bool InventoryPointerDown(Vector2 p)
     {
@@ -26,10 +42,11 @@ sealed partial class PlayerInterface
             return true;
         }
         if (MachinePointerDown(picked.Control, Grab())) return true;
-        if (!picked.Control.Properties.TryGetValue("InventoryItem", out var index) || Selected().FirstOrDefault() is not { ItemGrid: { } grid } lead) return false;
+        bool loot = IsLootScreen(picked.Screen);
+        if (!picked.Control.Properties.TryGetValue("InventoryItem", out var index) || (loot ? LootBody() : InventoryOwner()) is not { ItemGrid: { } grid } owner) return false;
         var item = grid.Items.FirstOrDefault(i => i.Index == int.Parse(index, CultureInfo.InvariantCulture));
         if (item is null || !(InventoryCommands.IsMovableSection(item.Section) || InventoryCommands.IsLimbSection(item.Section))) return false;
-        inventoryDrag = (lead.Id, item, Grab());
+        inventoryDrag = (owner.Id, item, Grab(), loot);
         Sound("Item_Lift", item: item.Record);
         return true;
     }
@@ -48,7 +65,7 @@ sealed partial class PlayerInterface
         if (faithfulScreens.HitTest(p) is not { } hit)
         {
             // A character's item let go over the world (no window, no HUD): dropped on the ground at its feet.
-            if (moving is { } dropped && !OverHud(p))
+            if (moving is { Loot: false } dropped && !OverHud(p))
             {
                 var i = dropped.Item;
                 Say(new DropInventoryItem(dropped.Character, new InventoryItemToken(i.Index, i.Record, i.Section, i.X, i.Y, i.Quantity, i.Quality)) { Tick = session.World.Tick });
@@ -61,7 +78,7 @@ sealed partial class PlayerInterface
         if (buying is { } b)
         {
             // Stock dropped on the customer's pocket or bag grid: a purchase into the cell under the drop.
-            if (trade is null || hit.Screen is not ("inventory" or "bag") || Selected().FirstOrDefault(c => c.Id == trade.Customer)?.ItemGrid is not { } grid) return;
+            if (trade is null || hit.Screen is not ("inventory" or "bag") || InventoryOwner(trade.Customer)?.ItemGrid is not { } grid) return;
             string section = hit.Screen == "bag" ? "backpack_content" : "main";
             int columns = section == "main" ? grid.Width : grid.BagWidth, rows = section == "main" ? grid.Height : grid.BagHeight;
             if (!DropCell(p, hit.Screen, section, columns, rows, b.Grab, b.Item.Width, b.Item.Height, Footprints(grid.Items, section, -1), out int x, out int y)) return;
@@ -72,6 +89,8 @@ sealed partial class PlayerInterface
         var drag = moving!.Value;
         var item = drag.Item;
         var token = new InventoryItemToken(item.Index, item.Record, item.Section, item.X, item.Y, item.Quantity, item.Quality);
+        if (drag.Loot) { TakeLootDrop(p, hit.Screen, item, token, drag.Grab); return; }
+        if (IsLootScreen(hit.Screen)) { PutLootDrop(p, hit.Screen, drag.Character, item, token, drag.Grab); return; }
         if (hit.Screen == "trader")
         {
             // The customer's item dropped on the trader's stock: a sale, into the stock cell under the drop when it is free.
@@ -93,30 +112,28 @@ sealed partial class PlayerInterface
                 Say(new MoveInventoryItem(drag.Character, token, slot.Name, 0, 0) { Tick = session.World.Tick });
             return;
         }
-        if (hit.Screen is not ("inventory" or "bag") || Selected().FirstOrDefault(c => c.Id == drag.Character)?.ItemGrid is not { } own) return;
-        string target = hit.Screen == "bag" ? "backpack_content" : "main";
-        if (hit.Screen == "inventory")
+        if (hit.Screen is not ("inventory" or "bag") || InventoryOwner(drag.Character)?.ItemGrid is not { } own) return;
+        if (DropPlace(p, hit.Screen, own, item, drag.Grab, item.Index, out string target, out int tx, out int ty))
+            Say(new MoveInventoryItem(drag.Character, token, target, tx, ty) { Tick = session.World.Tick });
+    }
+
+    /// <summary>
+    /// Where an item let go at <paramref name="p"/> over a character window (<c>inventory</c> / <c>loot</c>: an equipment slot under the pointer, else the main grid; <c>bag</c> /
+    /// <c>loot-bag</c>: the bag's grid) of <paramref name="grid"/> lands; <paramref name="dragged"/> is its index there (-1: from another inventory). False: no cell.
+    /// </summary>
+    bool DropPlace(Vector2 p, string screen, InventoryView grid, InventoryItemView item, Vector2 grab, int dragged, out string section, out int x, out int y)
+    {
+        section = screen is "bag" or "loot-bag" ? "backpack_content" : "main";
+        x = y = 0;
+        if (screen is "inventory" or "loot")
         {
-            var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == hit.Screen).Controls;
-            var equipment = controls.LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true));
-            if (equipment is not null) target = equipment.Name;
+            var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
+            if (controls.LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true)) is { } equipment) section = equipment.Name;
         }
-        if (InventoryCommands.IsEquipmentSection(target))
-        {
-            var size = InventoryCommands.SectionSize(target);
-            // Clothing and bags occupy one slot; weapon sections retain their grid rows.
-            if (target is not ("back" or "hip"))
-            {
-                Say(new MoveInventoryItem(drag.Character, token, target, 0, 0) { Tick = session.World.Tick });
-                return;
-            }
-            if (DropCell(p, hit.Screen, target, size.Width, size.Height, drag.Grab, item.Width, item.Height, Footprints(own.Items, target, item.Index), out int wx, out int wy))
-                Say(new MoveInventoryItem(drag.Character, token, target, wx, wy) { Tick = session.World.Tick });
-            return;
-        }
-        int cols = target == "main" ? own.Width : own.BagWidth, rws = target == "main" ? own.Height : own.BagHeight;
-        if (!DropCell(p, hit.Screen, target, cols, rws, drag.Grab, item.Width, item.Height, Footprints(own.Items, target, item.Index), out int tx, out int ty)) return;
-        Say(new MoveInventoryItem(drag.Character, token, target, tx, ty) { Tick = session.World.Tick });
+        // Clothing and bags occupy one slot; weapon sections retain their grid rows.
+        if (InventoryCommands.IsEquipmentSection(section) && section is not ("back" or "hip")) return true;
+        var (columns, rows) = InventoryCommands.IsEquipmentSection(section) ? InventoryCommands.SectionSize(section) : section == "main" ? (grid.Width, grid.Height) : (grid.BagWidth, grid.BagHeight);
+        return DropCell(p, screen, section, columns, rows, grab, item.Width, item.Height, Footprints(grid.Items, section, dragged), out x, out y);
     }
 
     /// <summary>The cells taken in <paramref name="section"/> by items other than the dragged one (<paramref name="dragged"/>, its index; -1 none).</summary>
@@ -194,7 +211,7 @@ sealed partial class PlayerInterface
     /// <summary>OPEN BAG: opens or closes the lead character's bag and remembers it for that character.</summary>
     void ToggleBag()
     {
-        if (Selected().FirstOrDefault() is not { } lead) return;
+        if (InventoryOwner() is not { } lead) return;
         if (!bagOpen.Remove(lead.Id)) bagOpen.Add(lead.Id);
         SyncBagScreen();
     }
@@ -202,7 +219,7 @@ sealed partial class PlayerInterface
     /// <summary>Once a frame: the bag window is open while the inventory is, the lead character wears a bag and left it open (<see cref="bagOpen"/>).</summary>
     void SyncBagScreen()
     {
-        var lead = Selected().FirstOrDefault();
+        var lead = InventoryOwner();
         bool want = faithfulScreens.IsOpen("inventory") && lead is { ItemGrid: { BagWidth: > 0, BagHeight: > 0 } } && bagOpen.Contains(lead.Id);
         if (want == faithfulScreens.IsOpen("bag")) return;
         if (!want) { faithfulScreens.Close("bag"); return; }
@@ -214,10 +231,12 @@ sealed partial class PlayerInterface
     {
         if (faithfulScreens.HasModal) { CancelInventoryDrag(); return; }
         SyncBagScreen();
-        if (inventoryDrag is { } drag &&
-            (!faithfulScreens.IsOpen(drag.Item.Section == "backpack_content" ? "bag" : "inventory") ||
-             Selected().FirstOrDefault()?.Id != drag.Character ||
-             Selected().FirstOrDefault()?.ItemGrid?.Items.FirstOrDefault(i => i.Index == drag.Item.Index) != drag.Item)) inventoryDrag = null;
+        if (inventoryDrag is { } drag)
+        {
+            var owner = drag.Loot ? LootBody() : InventoryOwner();
+            string window = drag.Item.Section == "backpack_content" ? drag.Loot ? "loot-bag" : "bag" : drag.Loot ? "loot" : "inventory";
+            if (!faithfulScreens.IsOpen(window) || owner?.Id != drag.Character || owner.ItemGrid?.Items.FirstOrDefault(i => i.Index == drag.Item.Index) != drag.Item) inventoryDrag = null;
+        }
         if (tradeDrag is { } stock && (!faithfulScreens.IsOpen("trader") ||
             session.CurrentSnapshot.Trade?.Stock.FirstOrDefault(i => i.Index == stock.Item.Index) != stock.Item)) tradeDrag = null;
     }

@@ -185,7 +185,7 @@ The CAMERA's sky transition is written as finished (`sky updating` false, both t
 | Content | Where | Status |
 | --- | --- | --- |
 | Game time, clock, sky transition, weather and season per region | `quick.save` CAMERA, BIOMES | **Verified** present |
-| Factions: relations, trust, prosperity, war campaigns | `quick.save` | **Verified** (present in the sample); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
+| Factions: relations, trust, prosperity, rank, war campaigns | `quick.save` | **Verified** (present in the sample); int `rank` on each non-player faction ([faction rank](../game/factions-squads-towns.md#32-faction-rank)); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
 | Town state (discovery, population, trade goods, artifacts, nests) | `quick.save` | **Verified** (present in the sample); town placements, names and shop lists come from `leveldata.level` |
 | Squads and all character state (stats, wounds, inventory, appearance, AI) | `.platoon` | **Verified** (present in the sample) |
 | Buildings' state, generated interiors, loose items, item placement groups | `.zone` | **Verified** for visited zones |
@@ -332,7 +332,7 @@ has an override world state (its lists are then replaced) or `0-buildinglist` ho
 - `1-itemlist` (**Observed**, METARU: 285 items in its zone files): INSTANCE_COLLECTION, name "0", flags 0; entries numbered "1", "2", ... with no states, the item's position and a
   full (physics-settled) quaternion, target an ITEM record (type 4, name "0", flags 0) of the same file, id `<n>-zone<X>.<Y>-INGAME` of the zone it was made in (an item
   moved to another zone keeps it). Its keys are INVENTORY_ITEM_STATE's with `in inventory` false and `section` "": `base data sid`, `material sid`, `company sid`,
-  `color sid`, `item function`, `level`, `quantity`, `charges`, `quality`, `inventory x/y` 0, `death`, null-able `ownedby` and `insideBuilding` handles; `uniform` on 49, a
+  `color sid`, `item function`, `level`, `quantity`, `charges`, `quality`, `inventory x/y` 0, `death` ([death item](../game/animals.md#death-items)), null-able `ownedby` and `insideBuilding` handles; `uniform` on 49, a
   `persist` handle (type 85, a town container) on 284 (the nest debris). The one severed limb (`limbs.mod`, `item function` 17) has no `persist` and adds `skin` and `blood`
   ints, a `scale` vector and a `timeout` float (131.7; meaning, units and whether it removes the item **Unknown**).
 

@@ -89,6 +89,9 @@ public sealed class CharacterAppearance
     public string BodyMesh { get; private init; } = "";
     public string? BodyTexture { get; private init; }
     public string? BodyNormal { get; private init; }
+    /// <summary>Race <c>nm male strong</c> / <c>nm male skinny</c> (female: <c>nm female ...</c>): the body normal maps a well-defined or a starving body blends towards.</summary>
+    public string? BodyNormalStrong { get; private init; }
+    public string? BodyNormalSkinny { get; private init; }
     public string? BodyMask { get; private init; }
     public string? PartMap { get; private init; }
     public GameRecord? Head { get; private init; }
@@ -178,6 +181,7 @@ public sealed class CharacterAppearance
             Character = character, Race = race, Female = female, Body = body, BodyFile = bodyFile, Loadout = loadout,
             BodyMesh = bodyMesh,
             BodyTexture = FilePath(race, $"body texture {g}"), BodyNormal = FilePath(race, $"nm {g}"),
+            BodyNormalStrong = FilePath(race, $"nm {g} strong"), BodyNormalSkinny = FilePath(race, $"nm {g} skinny"),
             BodyMask = FilePath(race, $"body mask {g}"), PartMap = FilePath(race, $"part map {g}"),
             Head = head,
             SkinToneParameter = body?.SkinTone is { } tone ? Vector3.One - tone : Vector3.Zero,
@@ -395,6 +399,28 @@ public sealed class CharacterAppearance
         if (weapon.GetPath(field) is not { Length: > 0 } mesh) { Notes.Add($"'{weapon.Name}' has no mesh"); return; }
         Parts.Add(new CharacterPart { Record = weapon, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Material = model,
             Shown = both && bare ? WeaponShown.Sheathed : WeaponShown.Always });
+    }
+
+    /// <summary>
+    /// This look with <paramref name="item"/>'s <c>mesh</c> in the <c>hands</c> point, as the original attaches an operator's <c>special tool</c>
+    /// (docs/game/buildings-production.md "Production"); this look itself when the item has no mesh.
+    /// </summary>
+    public CharacterAppearance WithHeld(GameRecord item)
+    {
+        if (item.GetPath("mesh") is not { Length: > 0 } mesh) return this;
+        var copy = new CharacterAppearance
+        {
+            Character = Character, Animal = Animal, Race = Race, Female = Female, Body = Body, BodyFile = BodyFile, Loadout = Loadout,
+            BodyMesh = BodyMesh, BodyTexture = BodyTexture, BodyNormal = BodyNormal, BodyNormalStrong = BodyNormalStrong, BodyNormalSkinny = BodyNormalSkinny, BodyMask = BodyMask, PartMap = PartMap, Head = Head, Hair = Hair,
+            Shape = Shape, Beard = Beard, SkinToneParameter = SkinToneParameter, HairColour = HairColour, HiddenLimbs = HiddenLimbs,
+        };
+        copy.Parts.AddRange(Parts);
+        copy.Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = "mesh", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands" });
+        copy.BodyLayers.AddRange(BodyLayers);
+        copy.Lights.AddRange(Lights);
+        foreach (var (name, point) in AttachmentPoints) copy.AttachmentPoints[name] = point;
+        foreach (var (name, weight) in PoseWeights) copy.PoseWeights[name] = weight;
+        return copy;
     }
 
     void LoadAttachmentPoints(string installRoot, GameRecord race)

@@ -298,7 +298,7 @@ public sealed class ImpostorAssembler
         var textures = new ImpostorTexture[2];
         for (int m = 0; m < 2; m++)
         {
-            var data = new byte[levels][];
+            var data = new ReadOnlyMemory<byte>[levels];
             for (int l = 0; l < levels; l++) data[l] = ImpostorEncoder.Encode(encodings[m], maps[m][l], grid * (frame >> l));
             textures[m] = new ImpostorTexture { Map = (ImpostorMap)m, Encoding = encodings[m], Levels = data };
         }

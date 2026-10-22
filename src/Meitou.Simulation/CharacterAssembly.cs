@@ -131,6 +131,7 @@ sealed class CharacterAssembly(PopulationData data)
             }
         cold.Fighter = FighterOf(record, cold.Inventory);
         cold.WaterFactor = race.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
+        cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
     }
 
     /// <summary>
@@ -159,6 +160,9 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Inventory = data.Items.Build(record, cold.Appearance?.Loadout);
         cold.Fighter = FighterOf(record, cold.Inventory);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
+        cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
         hot.MaxSpeed = Speed.Run(raceData, stats, medical, 1);
+        // A start without a limb (CHARACTER `starting health`) shows its stump.
+        if (Enumerable.Range(0, 4).Any(k => medical.LimbPart(k) is { Limb: not LimbState.Original })) RefreshEquipment(cold);
     }
 }

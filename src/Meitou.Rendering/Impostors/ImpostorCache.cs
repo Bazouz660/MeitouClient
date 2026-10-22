@@ -54,16 +54,16 @@ public sealed class ImpostorCache
     {
         var path = PathFor(source);
         if (!File.Exists(path)) return null;
+        ImpostorAtlas? atlas;
         try
         {
-            ImpostorAtlas? atlas;
-            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16))
-                atlas = ImpostorAtlas.Read(stream, firstLevel);
-            if (atlas is not null) Touch(path);
-            return atlas;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
+            atlas = ImpostorAtlas.Read(stream, firstLevel);
         }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
+        if (atlas is not null) Touch(path);   // outside the try: an atlas read is the caller's to free (its levels are native)
+        return atlas;
     }
 
     public void Save(ImpostorSource source, ImpostorAtlas atlas)

@@ -20,9 +20,10 @@ internal static class SeedPruner
         int matched = Match(mesh, g.Seeds, s, keep, queue);
         int border = g.TerrainHeight is { } terrain ? MatchBorder(mesh, g, terrain, keep, queue) : 0;
 
-        if (matched == 0 && border == 0 && g.ClippedAtBorder)
+        if (matched == 0 && border == 0 && (g.ClippedAtBorder || g.InteriorDestroyed))
         {
             // Part of an interior whose doors are across a zone border: the neighbour's kept border edges reach it (ZoneKeptClosure).
+            // A destroyed building's interior: its ruin floor is the exterior's, its largest region often a floor or wall tops up in the air.
             for (int p = 0; p < n; p++) mesh.Kept[p] = false;
             return 0;
         }

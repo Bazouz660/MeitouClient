@@ -43,6 +43,13 @@ internal sealed class AssetPart
     /// <summary>The mesh's shadow-only levels (null: the shadow passes pick among the picture's levels): their distances, level 0 first (the original), and the mesh level the first of them is.</summary>
     public float[]? ShadowDistances;
     public int ShadowFirst;
+    /// <summary>
+    /// The mesh file's own levels (the original's, docs/characters.md "LOD of character meshes"), for the Faithful character LOD: their distances, level 0 first, the mesh
+    /// level the first reduced one is, and the file's stored bounding radius (the original's LOD value uses it unclamped). Null distances: the file has no levels.
+    /// </summary>
+    public float[]? FileDistances;
+    public int FileFirst;
+    public float FileRadius;
     /// <summary>Nearest distance of a user this frame, for the textures' mip streaming.</summary>
     public float Near;
     float uvScale;
@@ -72,12 +79,16 @@ internal sealed class PartMaterial
     public readonly WorldTexture?[] Tex = new WorldTexture?[CharacterShaders.Slots];
     public bool Swizzled;
     public bool ClipOnNormalAlpha, Dyed, DoubleSided;
+    /// <summary>Worn on the body's skeleton (the original's Skinned template): matte (its glossMult is 0).</summary>
+    public bool Worn;
     public int VestCount;
     public bool[] VestColoured = new bool[3];
     public Vector3 ShirtColour, SkinTone, HairColour;
     public bool HasShirtColour;
     public Vector4 HairAlpha, HairMult, BeardAlpha, DiffuseChannel = new(1, 0, 0, 0), AlphaChannel = new(1, 0, 0, 0), Colour1, Colour2;
     public float AlphaThreshold;
+    /// <summary>The body's normal blend weight towards <see cref="CharacterShaders.SlotBlendNormal"/> (the original's <c>muscleBlend</c>).</summary>
+    public float MuscleBlend;
 }
 
 /// <summary>Everything the renderer keeps for one appearance: the skeleton and its shape, the parts, the posture layers that always apply.</summary>
@@ -86,6 +97,10 @@ internal sealed class CharacterAsset
     public required CharacterAppearance Appearance;
     public required SkeletonRig Rig;
     public BodyShapeData? Shape;
+    /// <summary>The stat-driven body last applied to the shape and the body's normal maps (<see cref="CharacterRenderer"/>), null before the first.</summary>
+    public BodyBuild? AppliedBuild;
+    /// <summary>The body normal maps and weight of <see cref="AppliedBuild"/> while a map is still loading; the parts keep the last ones until both are resident.</summary>
+    public (WorldTexture? Normal, WorldTexture? Blend, float Weight)? PendingNormals;
     public readonly List<AssetPart> Parts = [];
     /// <summary>The carried lights (<see cref="CharacterAppearance.Lights"/>): a bone, the offset from it and an attach slot, posed like a bone-attached part.</summary>
     public readonly List<(int Bone, Matrix4x4 Offset, int AttachIndex, Meitou.Data.World.WorldLight Light)> Lamps = [];
@@ -139,7 +154,7 @@ internal sealed class CharacterContent : IDisposable
     readonly GameDatabase db;
     readonly MaterialResolver resolver;
     public WorldTextureCache Textures { get; }
-    readonly Dictionary<(string Path, int Bones), LoadedMesh?> meshes = [];
+    readonly Dictionary<(string Path, int Bones, bool Close), LoadedMesh?> meshes = [];
     public List<string> Messages { get; } = [];
     public long MeshBytes { get; private set; }
     public int MeshCount => meshes.Count;
@@ -148,7 +163,8 @@ internal sealed class CharacterContent : IDisposable
     public float LodPixelsPerRadian { get; set; } = Meitou.Data.World.TerrainLod.ProjectionScale(1080, 50 * MathF.PI / 180);
 
     /// <param name="FirstMaterialName">The first submesh's material (script) name, which is all the material resolver takes of a submesh; null: no submesh.</param>
-    sealed record LoadedMesh(GpuObjectMesh Gpu, string? FirstMaterialName, Vector3 Centre, float Radius, MeshMorphs? Morphs = null, float[]? ShadowDistances = null, int ShadowFirst = 0, PickBox[]? PickBoxes = null);
+    sealed record LoadedMesh(GpuObjectMesh Gpu, string? FirstMaterialName, Vector3 Centre, float Radius, MeshMorphs? Morphs = null, float[]? ShadowDistances = null, int ShadowFirst = 0, PickBox[]? PickBoxes = null,
+        float[]? FileDistances = null, int FileFirst = 0, float FileRadius = 0);
 
     public CharacterContent(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, CharacterRigs? rigs = null)
     {
@@ -198,49 +214,61 @@ internal sealed class CharacterContent : IDisposable
     string? BodySkeletonName(string path) => Rigs.BodySkeletonName(path);
 
     /// <summary>What a worker makes of a mesh file (<see cref="PrepareMesh"/>): everything but the GPU buffers.</summary>
-    sealed record PreparedMesh(PreparedPart[] Parts, float[] Distances, string? FirstMaterialName, Vector3 Centre, float Radius, MeshMorphs? Morphs, float[]? ShadowDistances, int ShadowFirst, PickBox[] PickBoxes);
+    sealed record PreparedMesh(PreparedPart[] Parts, float[] Distances, string? FirstMaterialName, Vector3 Centre, float Radius, MeshMorphs? Morphs, float[]? ShadowDistances, int ShadowFirst, PickBox[] PickBoxes,
+        float[]? FileDistances, int FileFirst, float FileRadius);
     /// <summary>A prepared mesh (null: it could not be read) and the messages its reading left.</summary>
     sealed record Prepared(PreparedMesh? Mesh, List<string> Messages);
     static readonly Prepared Uploaded = new(null, []);
 
     /// <summary>The meshes prepared or being prepared, by the key of <see cref="meshes"/>; an uploaded one is left as <see cref="Uploaded"/> so no worker prepares it again.</summary>
-    readonly ConcurrentDictionary<(string Path, int Bones), Lazy<Prepared>> prepared = new();
+    readonly ConcurrentDictionary<(string Path, int Bones, bool Close), Lazy<Prepared>> prepared = new();
 
     /// <summary>The preparation of a mesh, made once (any thread; the first caller's level settings stand).</summary>
-    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null) =>
-        prepared.GetOrAdd((path.ToLowerInvariant(), boneCount ?? -1), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs)));
+    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false) =>
+        prepared.GetOrAdd((path.ToLowerInvariant(), boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close)));
 
     /// <summary>Reads a mesh file and makes its levels and index buffers (no GPU work, any thread): with its skinning weights for a skeleton of <paramref name="boneCount"/>
-    /// bones (null: unskinned); its generated levels start <paramref name="lodScale"/> times farther than the rule gives.</summary>
-    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs)
+    /// bones (null: unskinned); its generated levels start <paramref name="lodScale"/> times farther than the rule gives. A <paramref name="close"/> mesh (the character editor's
+    /// close-up) keeps only its full level: generating the others is nearly all of the time a mesh takes (a hair 1 to 2 s), and the editor shows one character up close.</summary>
+    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close)
     {
         var messages = new List<string>();
         try
         {
             var mesh = OgreMeshReader.ReadFile(path);
-            var model = Model.Build(mesh, boneCount);
+            var model = Model.Build(mesh, boneCount, gameBinormals: true);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
             if (limbs is not null) MarkLimbs(model, limbs);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
             var centre = mesh.Bounds is { } b ? (b.Min + b.Max) / 2 : model.Center;
-            float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius;
+            float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius, fileRadius = radius;
             // The LOD value is distance minus this radius. A few character meshes carry a stored radius many times their size (human_female:
             // 116 for a 20 unit tall body), which would keep them at full detail for another hundred units: the model's own extent bounds it.
             radius = Math.Min(radius, Math.Max(model.Radius, 1));
             // Hair and beards (HairLodScale) are alpha-tested cards: a collapse merges cards and strands go while the surface hardly moves, so the deviation underrates it.
-            var levels = GeneratedLevels(mesh, model, radius, pixelsPerRadian * lodScale, LodSettings);
+            var levels = close ? [FullLevel(mesh)] : GeneratedLevels(mesh, model, radius, pixelsPerRadian * lodScale, LodSettings);
             // Shadow-only levels (the body, which has no cut-outs): built without the texture guard, whose refusals stop the body at about 1300 triangles, so a crowd's
             // shadows can be coarser than its picture; never picked by the picture (distance infinity), the depth pass chooses among them by ShadowDistances.
             float[]? shadowDistances = null;
             int shadowFirst = levels.Count;
-            if (shadowLevels && GeneratedLevels(mesh, model, radius, pixelsPerRadian, ShadowSettings) is { Count: > 1 } shadow)
+            if (shadowLevels && !close && GeneratedLevels(mesh, model, radius, pixelsPerRadian, ShadowSettings) is { Count: > 1 } shadow)
             {
                 shadowDistances = [.. shadow.Select(l => l.Distance)];
                 levels.AddRange(shadow.Skip(1).Select(l => l with { Distance = float.PositiveInfinity }));
             }
+            // The file's own reduced levels (Faithful character LOD, CharacterRenderer.GeneratedLod off): appended like the shadow-only ones, never picked by the
+            // generated distances; manual levels (another mesh file) are left out (no character mesh has one, docs/characters.md).
+            float[]? fileDistances = null;
+            int fileFirst = levels.Count;
+            if (!close && MeshLod.Levels(mesh) is { Count: > 1 } own && own.Skip(1).All(l => l.ManualMesh is null))
+            {
+                fileDistances = [.. own.Select(l => l.Distance)];
+                levels.AddRange(own.Skip(1).Select(l => l with { Distance = float.PositiveInfinity }));
+            }
             var decoded = new DecodedObjectMesh { Model = model, Levels = levels, Manual = [], Centre = centre, Radius = radius };
             var parts = model.Parts.Select(part => ObjectMeshCache.PreparePart(decoded, part, keepLevels: false)).ToArray();
-            return new(new PreparedMesh(parts, [.. levels.Select(l => l.Distance)], mesh.SubMeshes.FirstOrDefault()?.MaterialName, centre, radius, morphs, shadowDistances, shadowFirst, PickBox.From(model)), messages);
+            return new(new PreparedMesh(parts, [.. levels.Select(l => l.Distance)], mesh.SubMeshes.FirstOrDefault()?.MaterialName, centre, radius, morphs, shadowDistances, shadowFirst,
+                PickBox.From(model), fileDistances, fileFirst, fileRadius), messages);
         }
         catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException)
         {
@@ -250,11 +278,11 @@ internal sealed class CharacterContent : IDisposable
     }
 
     /// <summary>A mesh by file, uploaded the first time: prepared here unless a worker has done it (<see cref="Fetched"/>), or after waiting for the worker preparing it.</summary>
-    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null)
+    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false)
     {
-        var key = (path.ToLowerInvariant(), boneCount ?? -1);
+        var key = (path.ToLowerInvariant(), boneCount ?? -1, close);
         if (meshes.TryGetValue(key, out var cached)) return cached;
-        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs).Value;
+        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close).Value;
         prepared[key] = new Lazy<Prepared>(Uploaded);
         Messages.AddRange(messages);
         return meshes[key] = ready is null ? null : Upload(ready);
@@ -283,7 +311,8 @@ internal sealed class CharacterContent : IDisposable
             gpuMesh.Bytes += vertexBytes + indexBytes;
         }
         MeshBytes += gpuMesh.Bytes;
-        return new LoadedMesh(gpuMesh, ready.FirstMaterialName, ready.Centre, ready.Radius, ready.Morphs, ready.ShadowDistances, ready.ShadowFirst, ready.PickBoxes);
+        return new LoadedMesh(gpuMesh, ready.FirstMaterialName, ready.Centre, ready.Radius, ready.Morphs, ready.ShadowDistances, ready.ShadowFirst, ready.PickBoxes,
+            ready.FileDistances, ready.FileFirst, ready.FileRadius);
     }
 
     readonly Dictionary<CharacterAppearance, Task> fetching = [];
@@ -300,8 +329,55 @@ internal sealed class CharacterContent : IDisposable
     {
         if (fetching.TryGetValue(c, out var task)) return task.IsCompleted;
         if (!urgent && Volatile.Read(ref fetchesRunning) >= FetchLimit) return false;
+        if (Start(c, urgent, closeUp.Contains(c)) is not { } started) return true;   // no body mesh: Build reports it
+        fetching[c] = started;
+        return false;
+    }
+
+    /// <summary>
+    /// Prepares <paramref name="c"/>'s skeleton and meshes on a worker without keeping the request (a look that may never be built: the character editor's next ones); nothing
+    /// when they are all prepared already. Render thread.
+    /// </summary>
+    public void Warm(CharacterAppearance c, bool urgent, bool close)
+    {
+        if (FindMesh(c.BodyMesh) is { } body && IsPrepared(body, close) && c.Parts.All(p => FindMesh(p.Mesh) is not { } path || IsPrepared(path, close))) return;
+        Start(c, urgent, close);
+    }
+
+    /// <summary>Looks to build as close-ups (<see cref="PrepareMesh"/>: their meshes without generated levels), from <see cref="Prefetch"/> until <see cref="Build"/>.</summary>
+    readonly HashSet<CharacterAppearance> closeUp = [];
+
+    /// <summary>Starts preparing <paramref name="c"/> urgently, as a close-up when <paramref name="close"/> (the character editor's look). Render thread.</summary>
+    public void Prefetch(CharacterAppearance c, bool close)
+    {
+        if (close) closeUp.Add(c);
+        Fetched(c, urgent: true);
+    }
+
+    /// <summary>
+    /// The character editor has closed: the close-up preparations never uploaded (looks warmed ahead and never shown, every head, hair and beard of the races visited) are
+    /// dropped with their CPU copies, and so are the close-up requests. Uploaded close-ups keep their marker. Render thread.
+    /// </summary>
+    public void ReleaseCloseUps()
+    {
+        closeUp.Clear();
+        foreach (var (key, lazy) in prepared)
+            if (key.Close && !(lazy.IsValueCreated && ReferenceEquals(lazy.Value, Uploaded))) prepared.TryRemove(key, out _);
+    }
+
+    /// <summary>Whether a mesh file has been prepared (for any skeleton), as a close-up or with its levels.</summary>
+    bool IsPrepared(string path, bool close)
+    {
+        string key = path.ToLowerInvariant();
+        foreach (var (k, lazy) in prepared) if (k.Path == key && k.Close == close && lazy.IsValueCreated) return true;
+        return false;
+    }
+
+    /// <summary>Starts preparing <paramref name="c"/>'s skeleton and meshes on a worker; null when it has no body mesh.</summary>
+    Task? Start(CharacterAppearance c, bool urgent, bool close)
+    {
         var bodyPath = FindMesh(c.BodyMesh);
-        if (bodyPath is null) return true;   // Build reports it
+        if (bodyPath is null) return null;
         var parts = c.Parts.Select(p => (Path: FindMesh(p.Mesh), Shared: p.Mode == AttachMode.SharedSkeleton, Scale: PartLodScale(c, p))).Where(p => p.Path is not null).ToList();
         float pixels = LodPixelsPerRadian;
         Interlocked.Increment(ref fetchesRunning);
@@ -310,15 +386,14 @@ internal sealed class CharacterContent : IDisposable
             try
             {
                 if (BodySkeletonName(bodyPath) is not { } name || Rig(name) is not { } rig) return true;
-                _ = Prepare(bodyPath, rig.BoneCount, 1, true, pixels, LimbHideOf(c, rig)).Value;
-                foreach (var (path, shared, scale) in parts) _ = Prepare(path!, shared ? rig.BoneCount : null, scale, false, pixels).Value;
+                _ = Prepare(bodyPath, rig.BoneCount, 1, true, pixels, LimbHideOf(c, rig), close).Value;
+                foreach (var (path, shared, scale) in parts) _ = Prepare(path!, shared ? rig.BoneCount : null, scale, false, pixels, close: close).Value;
             }
             catch (Exception) { }   // a file that cannot be read: Build meets it again on the render thread and reports it
             finally { Interlocked.Decrement(ref fetchesRunning); }
             return true;
         }
-        fetching[c] = urgent ? BackgroundWork.RunUrgent(Fetch) : BackgroundWork.Run(Fetch);
-        return false;
+        return urgent ? BackgroundWork.RunUrgent(Fetch) : BackgroundWork.Run(Fetch);
     }
 
     /// <summary>Which bone handle belongs to which limb slot (-1: none) and the bind-pose heights below which a limb's vertices are its hideable part.</summary>
@@ -390,9 +465,12 @@ internal sealed class CharacterContent : IDisposable
     /// 200 units). Each level starts where its deviation from the original is under the objects' tolerance in rendered pixels (<see cref="ObjectLodGen.Distances"/>, measured in
     /// the bind pose at <paramref name="pixelsPerRadian"/>), so a face or a weapon keeps its detail as long as it would show.
     /// </summary>
+    /// <summary>A mesh's own triangles, its full level.</summary>
+    static MeshLodLevel FullLevel(OgreMesh mesh) => new(0, mesh.SubMeshes.Select(s => (uint[]?)s.Indices.Indices).ToList());
+
     static List<MeshLodLevel> GeneratedLevels(OgreMesh mesh, Model model, float radius, float pixelsPerRadian, FoliageLodBuilder.Settings settings)
     {
-        var levels = new List<MeshLodLevel> { new(0, mesh.SubMeshes.Select(s => (uint[]?)s.Indices.Indices).ToList()) };
+        var levels = new List<MeshLodLevel> { FullLevel(mesh) };
         var parts = model.Parts.Where(p => p.Indices.Length > 0).ToList();
         if (parts.Count == 0 || FoliageLodBuilder.Build(model, radius, settings) is not { } set) return levels;
         var distances = ObjectLodGen.Distances(set, ObjectLodGen.TriangleExtent(parts), radius, pixelsPerRadian);
@@ -409,6 +487,7 @@ internal sealed class CharacterContent : IDisposable
     public CharacterAsset? Build(CharacterAppearance c)
     {
         fetching.Remove(c);
+        bool close = closeUp.Remove(c);
         var bodyPath = FindMesh(c.BodyMesh);
         if (bodyPath is null) { Messages.Add($"body mesh not found: {c.BodyMesh}"); return null; }
         // The body's own skeleton link (Kenshi shares that instance with worn items); the rig's bone count decides the weights kept.
@@ -417,7 +496,7 @@ internal sealed class CharacterContent : IDisposable
         catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException) { Messages.Add($"{c.BodyMesh}: {e.Message}"); return null; }
         var rig = skeletonName is null ? null : Rig(skeletonName);
         if (rig is null) { Messages.Add($"{c.BodyMesh} has no skeleton ({skeletonName})"); return null; }
-        var body = Mesh(bodyPath, rig.BoneCount, shadowLevels: true, limbs: LimbHideOf(c, rig));
+        var body = Mesh(bodyPath, rig.BoneCount, shadowLevels: true, limbs: LimbHideOf(c, rig), close: close);
         if (body is null) return null;
 
         var asset = new CharacterAsset { Appearance = c, Rig = rig, Animal = c.Animal is not null };
@@ -445,6 +524,7 @@ internal sealed class CharacterContent : IDisposable
             Label = $"body {Path.GetFileName(bodyPath)}", Mesh = body.Gpu, Shared = true, Material = BodyMaterial(c),
             BoundsCentre = body.Centre, BoundsRadius = body.Radius, PickBoxes = body.PickBoxes ?? [],
             Morphed = asset.MorphBase != 0, ShadowDistances = body.ShadowDistances, ShadowFirst = body.ShadowFirst, IsBody = true,
+            FileDistances = body.FileDistances, FileFirst = body.FileFirst, FileRadius = body.FileRadius,
         });
         foreach (var part in c.Parts)
         {
@@ -452,12 +532,13 @@ internal sealed class CharacterContent : IDisposable
             if (path is null) continue;
             bool shared = part.Mode == AttachMode.SharedSkeleton;
             // An animal's fur is a shell over the whole body (5.5k triangles on the bonedog, more than its body), not a few hair cards: it takes the rule's own distances.
-            var loaded = Mesh(path, shared ? rig.BoneCount : null, PartLodScale(c, part));
+            var loaded = Mesh(path, shared ? rig.BoneCount : null, PartLodScale(c, part), close: close);
             if (loaded is null || loaded.Gpu.Parts.Count == 0) continue;
             var ap = new AssetPart
             {
                 Label = $"{part.Record.Type} '{part.Record.Name}' .{part.Field}", Mesh = loaded.Gpu, Shared = shared, Material = ItemMaterial(c, part, path, loaded),
                 BoundsCentre = loaded.Centre, BoundsRadius = loaded.Radius, Shown = part.Shown, HideSide = part.HideSide, PickBoxes = loaded.PickBoxes ?? [],
+                FileDistances = loaded.FileDistances, FileFirst = loaded.FileFirst, FileRadius = loaded.FileRadius,
             };
             if (!shared)
             {
@@ -494,6 +575,9 @@ internal sealed class CharacterContent : IDisposable
     static string? Tex(GameRecord? r, string field) => r?.GetPath(field) is { Length: > 0 } p ? p : null;
 
     WorldTexture? Texture(string? name, bool border) => name is null ? null : Textures.Get(name, border, deferred: true);
+
+    /// <summary>A body texture by file (bordered, as the body's own), streamed in like the rest.</summary>
+    public WorldTexture? BodyTexture(string? name) => Texture(name, true);
 
     PartMaterial BodyMaterial(CharacterAppearance c)
     {
@@ -553,6 +637,7 @@ internal sealed class CharacterContent : IDisposable
 
         m.Shading = CharacterShaders.ShadeItem;
         bool worn = part.Mode == AttachMode.SharedSkeleton;
+        m.Worn = worn;
         // Clothing: MATERIAL_SPECS_CLOTHING from "material" (female: "material female" if set), likeliest first; dye from
         // the item's "color" COLOR_DATA (else the CHARACTER's, unless "dont colorise").
         var refs = item.GetReferences(c.Female && item.GetReferences("material female").Count > 0 ? "material female" : "material");
@@ -580,6 +665,14 @@ internal sealed class CharacterContent : IDisposable
             m.ClipOnNormalAlpha = worn && Tex(spec, "normal map") is not null;
             m.DoubleSided = spec.GetInt("material type") == 2;
             return m;
+        }
+        // A limb replacement without a material (the races' stumps, mesh material "default") wears the body's own material: its textures and skin tone
+        // (AppearanceBase::setupItemMaterial, FUN_140536210: no material record and type 111 sets the appearance's body material). Prosthetics have one.
+        if (item.Type == FcsRecordType.LIMB_REPLACEMENT)
+        {
+            var body = BodyMaterial(c);
+            body.Description = $"RACE '{c.Race.Name}' body (stump '{item.Name}')";
+            return body;
         }
         // A weapon of a generated loadout: its manufacturer's model.
         if (part.Material is { Type: FcsRecordType.MATERIAL_SPECS_WEAPON } model && Tex(model, "texture map") is { } modelTexture)

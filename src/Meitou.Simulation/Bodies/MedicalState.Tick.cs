@@ -34,7 +34,7 @@ public sealed partial class MedicalState
     {
         if (Dead) return 0;
         float total = 0;
-        foreach (var p in Parts)
+        foreach (var p in parts)
         {
             if (p.IsRobotic(race) != robotKit) continue;
             float room = p.MaxHp - p.Flesh - p.Bandage;
@@ -49,7 +49,7 @@ public sealed partial class MedicalState
     public float BandageRoom(RaceData race, bool robotKit)
     {
         float total = 0;
-        foreach (var p in Parts)
+        foreach (var p in parts)
         {
             if (p.IsRobotic(race) != robotKit) continue;
             total += MathF.Max(0, p.MaxHp - p.Flesh - p.Bandage);
@@ -83,7 +83,7 @@ public sealed partial class MedicalState
     {
         if (Dead || race.IsRobot) return false;
         float cap = MathF.Truncate(skill);
-        foreach (var p in Parts)
+        foreach (var p in parts)
             if (!p.IsVital && p.Rig < p.Bandage && (p.Flesh - p.Stun + p.Rig) * 1.05f < SplintLimit && p.Rig + 1 < cap) return true;
         return false;
     }
@@ -97,7 +97,7 @@ public sealed partial class MedicalState
         if (Dead || ctx.Race.IsRobot) return 0;
         float t = MathF.Min(skill, kitQuality) * 0.01f;
         float cap = 1 - (int)(float)(t * -100.0);   // t in float, x -100 in double, back to float, truncated: quality 20 gives 20 (0.2f is just under 0.2)
-        foreach (var p in Parts)
+        foreach (var p in parts)
         {
             if (p.IsVital || p.Flesh - p.Stun + p.Rig >= SplintLimit || p.Rig >= p.Stun + p.Bandage || p.Rig >= cap) continue;
             float before = p.Rig;
@@ -215,7 +215,7 @@ public sealed partial class MedicalState
     {
         if (Dead || hours <= 0) return;
         var c = ctx.Constants;
-        foreach (var p in Parts)
+        foreach (var p in parts)
         {
             float m = MathF.Max(p.MaxHp, 0.01f);
             p.Bandage = MathF.Max(p.Bandage, MathF.Max(m - p.Flesh, 0));
@@ -258,7 +258,7 @@ public sealed partial class MedicalState
         wounds.RemoveRange(keep, wounds.Count - keep);
         // A damaged stump keeps bleeding: -(h + b) x 0.002 while h + b is negative.
         float stump = 0;
-        foreach (var p in Parts)
+        foreach (var p in parts)
             if (p.Limb == LimbState.Stump && p.Flesh + p.Bandage < 0) stump += -(p.Flesh + p.Bandage) * 0.002f;
         Bleeding = (c.ExtraBloodLossFromBodyparts * stump + woundSum) * ctx.Options.ChanceOfDeath * 1.2f * race.BleedRate;
         Blood -= Bleeding * dt;
