@@ -210,8 +210,29 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             if (!c.IsPlayer || !c.CarriedBy.IsNone) continue;   // a carried suspect is not looked at (the game's witness function)
             bool kidnapping = !c.Carrying.IsNone && table.TryResolveNext(c.Carrying, out int body) && Innocent(c, table.Cold(body)!);
             if (c.Pending is null && !kidnapping) continue;
-            Witnesses(world, s, c, kidnapping);
+            Witnesses(world, s, c, kidnapping, seconds);
         }
+        if (spots.Count == 0) return;
+        foreach (var key in spots.Keys.ToArray())
+            if (!filled.Contains(key) && (spots[key] -= seconds / Orders.SpotForgetSeconds) <= 0) spots.Remove(key);
+        filled.Clear();
+    }
+
+    /// <summary>
+    /// The witnesses' spot meters on sneaking culprits ("Spotting a sneaker" of docs/game/perception.md, as the aggro scan keeps them for hostile lookers): a witness that has the
+    /// sneaker in view fills its meter by the sweep's seconds / <see cref="Orders.SpotSeconds"/> and sees the deed only once the meter was full before this sweep; meters not filled
+    /// in a sweep empty over <see cref="Orders.SpotForgetSeconds"/>. Not world state (as the aggro meters): a load starts them empty.
+    /// </summary>
+    readonly Dictionary<(CharacterId Culprit, CharacterId Witness), float> spots = [];
+    readonly HashSet<(CharacterId, CharacterId)> filled = [];
+
+    bool Spot(CharacterId culprit, CharacterId witness, float v, float stealth, float seconds)
+    {
+        var key = (culprit, witness);
+        float was = spots.GetValueOrDefault(key);
+        spots[key] = was + seconds / Orders.SpotSeconds(v, stealth);
+        filled.Add(key);
+        return was > 1;
     }
 
     /// <summary>
@@ -227,13 +248,16 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     /// when it regards the culprit as friendly and the victim is of another faction. Theft and Looting need it to care about the victim (same faction or allied); Looting also that it
     /// does not regard the culprit as friendly; Kidnapping a victim and that care; an Assault a victim that it does not regard as an enemy; a Murder nothing more. A witness then sets the
     /// timer to 20 and, police-like of a faction that books bounties, books the crime. With <paramref name="kidnapping"/>, a witness that cares about the carried body first sets a pending
-    /// Kidnapping (timer 20) on the carrier (the carrying check that runs before the crime check).
+    /// Kidnapping (timer 20) on the carrier (the carrying check that runs before the crime check). A sneaking culprit is seen only through a full spot meter (<see cref="spots"/>).
     /// </summary>
-    void Witnesses(World world, int culprit, CharacterCold c, bool kidnapping)
+    void Witnesses(World world, int culprit, CharacterCold c, bool kidnapping, float seconds)
     {
         var table = world.Characters;
         var next = table.Next;
         var at = next[culprit].Position;
+        bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
+        float stealth = sneaking ? Orders.Stealth(c) : 0;
+        var culpritId = table.IdOf(culprit);
         CharacterCold? body = kidnapping && table.TryResolveNext(c.Carrying, out int b) ? table.Cold(b) : null;
         for (int w = 0; w < table.HighWater; w++)
         {
@@ -241,7 +265,13 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             if (table.Cold(w) is not { IsPlayer: false, Medical.Incapacitated: false } wc || !wc.CarriedBy.IsNone || wc.Pending is not null) continue;
             int wf = wc.Faction;
             if (wf == c.Faction || !Relations.Contains(wf)) continue;
-            if (AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, AggroSystem.RangeOf(wc, Settings.Sight)) <= 0) continue;
+            float range = AggroSystem.RangeOf(wc, Settings.Sight);
+            if (sneaking)
+            {
+                float v = AggroSystem.SneakVisibility(next[w].Position, next[w].Yaw, at, range, stealth);
+                if (v <= 0 || !Spot(culpritId, table.IdOf(w), v, stealth, seconds)) continue;
+            }
+            else if (AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, range) <= 0) continue;
             if (body is not null && !Friendly(wf, c.Faction) && Friendly(wf, body.Faction))
                 SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer);
             if (c.Pending is not { } p) continue;

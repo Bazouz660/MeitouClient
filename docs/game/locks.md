@@ -76,7 +76,11 @@ Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values spa
   played at speed `clamp(0.01 x skill, 0.55, 2.0)` (**Verified**, speed is cosmetic: it does not change the roll timing).
 - **XP** (`FUN_1408c62e0`, **Verified**): after each roll, stat 37 gains `k x map[37] x ((101 - stat) / 101)^2` with
   `k = 1.2` on success, 0.24 on failure. The lock level is passed but unused.
-- **Messages/sounds**: "Lockpicking (Chance {p}%)" on the bar, "Pick success!" / "Pick failed" floating text,
+- **Bar** (**Verified**, Task_PickLock slot 2 `FUN_140359160`): each update sets the task's floating bar
+  (`FloatingProgressBar::ProgressBarWidget`, `FUN_1406e8580`, layout `Kenshi_ProgressBarPanel`: `ProgressBar` fill, `Text`
+  caption) to pick time / next-roll time and its caption to "Lockpicking (Chance {p}%)" with the cage penalty. Its screen anchor
+  (character vfunc +0x38) and the visibility flag (character `+0x1a8`) are **Unknown**.
+- **Messages/sounds**: "Pick success!" / "Pick failed" floating text,
   `Character_Unlock_Success`. Wwise events: [audio](../audio.md#characters-footsteps-combat-voices).
 - **Target** (`Task_PickLock` slot 5): a building handle (a door resolves to its lock-owning object) or a **character**, meaning
   that character's cage (only when they are in a building prison). Shackles: the item handle, or a character, meaning their

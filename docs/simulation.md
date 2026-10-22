@@ -428,6 +428,9 @@ Carry/combat report deeds; serial sweep observes current positions. Bounty expir
 `0.04 hours/cat`, permanent at >=10000. Original categories, witness rules, imprisonment and
 remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while imprisoned. The police's response:
 [Arrest and jail](#arrest-and-jail).
+Witness sight: the view cone at full range; a sneaking culprit is seen only once the witness's spot meter is full
+([perception](game/perception.md#spotting-a-sneaker); meters kept by `CrimeSystem`, not saved). Engine gap: no indoor/outdoor
+or line-of-sight test, so a witness in its cone sees through walls.
 
 ## Cages, beds and locks
 
@@ -474,6 +477,8 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
 - **Lockpicking** (`Lockpicking`, serial; the player's order is in [Arrest and jail](#arrest-and-jail)): `Step` per task update (pending crime,
   timer on the lock, seeded roll by the lock's roll counter, XP), `Allowed` (min chance; engine: conscious, an arm, not
   carried, not on a pole), `Break` (strength > 3 x hardness). Not built: cutting locks other than shackles.
+  A player character picking a lock or shackles at the lock gets the floating bar (`CharacterSnapshot.Bar`, drawn in the
+  `Kenshi_ProgressBarPanel` layout just above the name tag; anchor engine choice). No bar for cutting.
 - **Bashing doors** (`LockSystem.Bash`; blow rule in [locks](game/locks.md)): engine stand-in for the planner. Every 30 ticks an
   NPC attacking (armed or an animal) whose target is inside a building another faction's locked doors shut (`IsShut`; inside:
   nearer the door fixture's origin than its farthest door spot) while it is outside takes the nearest door (`CharacterCold.Bashing`);

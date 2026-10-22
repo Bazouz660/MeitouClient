@@ -135,6 +135,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     /// <see cref="StealthExposure.Noticed"/> almost seen, anything lower hidden; null when not a sneaking player character.
     /// </summary>
     public StealthExposure? Stealth { get; init; }
+    /// <summary>The floating progress bar over a player character picking a lock (docs/game/locks.md "Lockpicking"); null when none.</summary>
+    public TaskBar? Bar { get; init; }
     /// <summary>
     /// The chance in per cent that the selection's first sneaking member knocks this character out from behind (<see cref="Carrying.CarrySystem.StealthKoChance"/>); null when no
     /// selected character is sneaking or this one cannot be knocked out (a player character, or already down).
@@ -157,6 +159,9 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 /// A prisoner's cage and sentence (docs/game/economy.md 11.5): <see cref="Locked"/> the cage is effectively locked; <see cref="Sentence"/> its length in game hours (0: none, so it waits
 /// to be released), <see cref="HoursLeft"/> what remains of it.
 /// </summary>
+/// <summary>A floating progress bar's caption and fill (0..1).</summary>
+public readonly record struct TaskBar(string Text, float Progress);
+
 public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
 
 /// <summary>A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its <see cref="Meitou.Data.World.TownBuilding"/> key and BUILDING record, where it stands and faces (0 along +Z, turning towards +X) and its GUN_DATA record.</summary>

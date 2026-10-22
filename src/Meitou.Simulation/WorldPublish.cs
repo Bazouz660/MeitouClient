@@ -94,6 +94,7 @@ public sealed partial class World
                     ? new MannedTurret(building.Key, building.BuildingId, post.Position, post.Yaw, post.GunId) : null,
                 Stealth = sneaking ? watchers.Length == 0 ? StealthExposure.Unobserved : watchers.Max(w => w.Level) : null,
                 Watchers = watchers,
+                Bar = cold is { IsPlayer: true } ? PickBar(cold, state[i].Task) : null,
                 Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours) : null,
                 Ragdoll = ragdolls?.Publish(id),
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
@@ -131,6 +132,20 @@ public sealed partial class World
             Array.AsReadOnly(grid.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
                 { Material = item.MaterialId, Charge = item.ChargeFraction, Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges }).ToArray()));
         return new Production.MachineSnapshot(id, f.RecordId, [], null, storage, null, 0, 0, 0) { IsContainer = true };
+    }
+
+    /// <summary>
+    /// The bar of Task_PickLock and Task_PickLock_Shackles (docs/game/locks.md "Lockpicking"): "Lockpicking (Chance {p}%)" with the cage penalty, filled pick time / next-roll time,
+    /// while the picker is at the lock (not walking to it).
+    /// </summary>
+    TaskBar? PickBar(CharacterCold c, byte task)
+    {
+        if (task == (byte)CharacterTask.GoTo) return null;
+        var l = c.PickingLock is { } id ? Fixtures.Find(id)?.Lock
+            : c.Shackles is { Work: Locks.ShackleWork.Pick } job && Characters.TryResolveNext(job.Wearer, out int w) ? Locks.LockSystem.WornShackles(Characters.Cold(w))?.Lock : null;
+        if (l is not { EffectivelyLocked: true }) return null;
+        float chance = Locks.Lockpicking.RollChance(c, l.Level);
+        return new TaskBar(FormattableString.Invariant($"Lockpicking (Chance {MathF.Round(chance * 100)}%)"), l.NextRoll > 0 ? Math.Clamp(l.PickTime / l.NextRoll, 0, 1) : 0);
     }
 
     /// <summary>The sneaker's watchers of the last <see cref="AggroSystem.WatcherSeconds"/> that are still about, where they stand now.</summary>

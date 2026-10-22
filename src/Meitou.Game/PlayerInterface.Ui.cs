@@ -48,6 +48,7 @@ sealed partial class PlayerInterface
         faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
         squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
         messageLayout = resolve("Kenshi_MessagePanel.layout") is { } messages ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(messages), uiResources) : null;
+        taskBarLayout = resolve("Kenshi_ProgressBarPanel.layout") is { } taskBar ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(taskBar), uiResources) : null;
         messageClient = messageLayout?.Widgets.FirstOrDefault(w => w.Properties.GetValueOrDefault("CaptionOwner") == "MessageTextBox")?.Name;
         faithfulScreens = new(uiResources) { ClipboardReader = () => ClipboardRead?.Invoke(), ClipboardWriter = text => ClipboardWrite?.Invoke(text) };
         foreach (var (id, file, modal) in FaithfulScreenFiles)
@@ -232,6 +233,7 @@ sealed partial class PlayerInterface
         var nameTags = new List<UiControl>();   // the tags are on the original's Back layer: under every panel
         AddItemLabels(nameTags);
         AddNameTags(nameTags);
+        AddTaskBars(nameTags);
         controls.InsertRange(0, nameTags);
         AddSpeech(controls);
         AddContextMenu(controls);
