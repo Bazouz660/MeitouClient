@@ -129,20 +129,29 @@ sealed partial class PlayerInterface
     /// Where an item let go at <paramref name="p"/> over a character window (<c>inventory</c> / <c>loot</c>: an equipment slot under the pointer, else the main grid; <c>bag</c> /
     /// <c>loot-bag</c>: the bag's grid) of <paramref name="grid"/> lands; <paramref name="dragged"/> is its index there (-1: from another inventory). False: no cell.
     /// </summary>
-    bool DropPlace(Vector2 p, string screen, InventoryView grid, InventoryItemView item, Vector2 grab, int dragged, out string section, out int x, out int y)
+    bool DropPlace(Vector2 p, string screen, InventoryView grid, InventoryItemView item, Vector2 grab, int dragged, out string section, out int x, out int y) =>
+        DropPlace(p, screen, grid, item, grab, dragged, out section, out x, out y, out _);
+
+    /// <inheritdoc cref="DropPlace(Vector2, string, InventoryView, InventoryItemView, Vector2, int, out string, out int, out int)"/>
+    /// <param name="area">The screen area it would take: its cells, or the whole slot.</param>
+    bool DropPlace(Vector2 p, string screen, InventoryView grid, InventoryItemView item, Vector2 grab, int dragged, out string section, out int x, out int y, out UiRect area)
     {
-        section = EquipmentSlotAt(p, screen) ?? (screen is "bag" or "loot-bag" ? "backpack_content" : "main");
+        var slot = EquipmentSlotControlAt(p, screen);
+        section = slot?.Name ?? (screen is "bag" or "loot-bag" ? "backpack_content" : "main");
         x = y = 0;
+        area = slot?.Bounds ?? default;
         // Clothing and bags occupy one slot; weapon sections retain their grid rows.
         if (InventoryCommands.IsEquipmentSection(section) && section is not ("back" or "hip")) return true;
         var (columns, rows) = InventoryCommands.IsEquipmentSection(section) ? InventoryCommands.SectionSize(section) : section == "main" ? (grid.Width, grid.Height) : (grid.BagWidth, grid.BagHeight);
-        return DropCell(p, screen, section, columns, rows, grab, item.Width, item.Height, Footprints(grid.Items, section, dragged), out x, out y);
+        return DropCell(p, screen, section, columns, rows, grab, item.Width, item.Height, Footprints(grid.Items, section, dragged), out x, out y, out area);
     }
 
     /// <summary>The equipment slot of a character window (<c>inventory</c> / <c>loot</c>) under <paramref name="p"/>, or null.</summary>
-    string? EquipmentSlotAt(Vector2 p, string screen) => screen is "inventory" or "loot"
+    string? EquipmentSlotAt(Vector2 p, string screen) => EquipmentSlotControlAt(p, screen)?.Name;
+
+    UiControl? EquipmentSlotControlAt(Vector2 p, string screen) => screen is "inventory" or "loot"
         ? faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls
-            .LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true))?.Name
+            .LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true))
         : null;
 
     /// <summary>The cells taken in <paramref name="section"/> by items other than the dragged one (<paramref name="dragged"/>, its index; -1 none).</summary>
@@ -154,9 +163,15 @@ sealed partial class PlayerInterface
     /// Forgiving: the pointer may be up to a cell outside the grid, the cell is clamped into it, and an occupied cell snaps to the nearest free one within
     /// <see cref="DropSnapCells"/> (<paramref name="occupied"/>: the other items of that grid). Without a free cell nearby the clamped cell is returned and the sim refuses it.
     /// </summary>
-    bool DropCell(Vector2 p, string screen, string slotName, int columns, int rows, Vector2 grab, int width, int height, IEnumerable<(int X, int Y, int Width, int Height)> occupied, out int x, out int y)
+    bool DropCell(Vector2 p, string screen, string slotName, int columns, int rows, Vector2 grab, int width, int height, IEnumerable<(int X, int Y, int Width, int Height)> occupied, out int x, out int y) =>
+        DropCell(p, screen, slotName, columns, rows, grab, width, height, occupied, out x, out y, out _);
+
+    /// <inheritdoc cref="DropCell(Vector2, string, string, int, int, Vector2, int, int, IEnumerable{ValueTuple{int, int, int, int}}, out int, out int)"/>
+    /// <param name="area">The screen area of the cells it would take.</param>
+    bool DropCell(Vector2 p, string screen, string slotName, int columns, int rows, Vector2 grab, int width, int height, IEnumerable<(int X, int Y, int Width, int Height)> occupied, out int x, out int y, out UiRect area)
     {
         x = y = 0;
+        area = default;
         var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
         var slot = controls.FirstOrDefault(c => c.Name == slotName);
         if (slot is null || columns <= 0 || rows <= 0 || width > columns || height > rows) return false;
@@ -170,24 +185,68 @@ sealed partial class PlayerInterface
         y = Math.Clamp((int)MathF.Round(fy), 0, rows - height);
         var others = occupied.ToArray();
         bool Free(int cx, int cy) => !others.Any(o => cx < o.X + o.Width && o.X < cx + width && cy < o.Y + o.Height && o.Y < cy + height);
-        if (Free(x, y)) return true;
-        float best = DropSnapCells * DropSnapCells + 0.01f;
-        int bx = x, by = y;
-        for (int cy = 0; cy <= rows - height; cy++)
-            for (int cx = 0; cx <= columns - width; cx++)
-            {
-                float d = (cx - fx) * (cx - fx) + (cy - fy) * (cy - fy);
-                if (d < best && Free(cx, cy)) (best, bx, by) = (d, cx, cy);
-            }
-        (x, y) = (bx, by);
+        if (!Free(x, y))
+        {
+            float best = DropSnapCells * DropSnapCells + 0.01f;
+            int bx = x, by = y;
+            for (int cy = 0; cy <= rows - height; cy++)
+                for (int cx = 0; cx <= columns - width; cx++)
+                {
+                    float d = (cx - fx) * (cx - fx) + (cy - fy) * (cy - fy);
+                    if (d < best && Free(cx, cy)) (best, bx, by) = (d, cx, cy);
+                }
+            (x, y) = (bx, by);
+        }
+        area = new(b.X + x * cellW, b.Y + y * cellH, width * cellW, height * cellH);
         return true;
     }
 
     /// <summary>How far, in cells, a drop on an occupied cell looks for a free one.</summary>
     const float DropSnapCells = 2;
 
+    /// <summary>
+    /// The screen area the item being dragged would land in if let go at <paramref name="p"/> (its grid cells or the slot), as <see cref="InventoryPointerUp"/> places it; null
+    /// where it has no cell (over the world, a machine's input, a trade without a free cell).
+    /// </summary>
+    UiRect? DropArea(Vector2 p)
+    {
+        if (faithfulScreens.HitTest(p) is not { } hit) return null;
+        string screen = hit.Screen;
+        var trade = session.CurrentSnapshot.Trade;
+        UiRect area;
+        if (tradeDrag is { } b)
+        {
+            if (trade is null || screen is not ("inventory" or "bag") || InventoryOwner(trade.Customer)?.ItemGrid is not { } grid) return null;
+            if (b.Item.Container && EquipmentSlotControlAt(p, screen) is { Name: "backpack_attach" } slot) return slot.Bounds;
+            string section = screen == "bag" ? "backpack_content" : "main";
+            int columns = section == "main" ? grid.Width : grid.BagWidth, rows = section == "main" ? grid.Height : grid.BagHeight;
+            return DropCell(p, screen, section, columns, rows, b.Grab, b.Item.Width, b.Item.Height, Footprints(grid.Items, section, -1), out _, out _, out area) ? area : null;
+        }
+        if (inventoryDrag is not { } drag) return null;
+        var item = drag.Item;
+        if (drag.Loot)
+            return screen is "inventory" or "bag" && InventoryOwner() is { ItemGrid: { } own } lead && lead.Id == session.CurrentSnapshot.LootOpener &&
+                DropPlace(p, screen, own, item, drag.Grab, -1, out _, out _, out _, out area) ? area : null;
+        if (IsLootScreen(screen))
+            return LootBody()?.ItemGrid is { } into && DropPlace(p, screen, into, item, drag.Grab, -1, out _, out _, out _, out area) ? area : null;
+        if (screen == "trader")
+            return trade is not null && trade.Customer == drag.Character && TraderGrid(screen) is { } stockGrid && DropCell(p, screen, stockGrid, trade.StockWidth, trade.StockHeight,
+                drag.Grab, item.Width, item.Height, trade.Stock.Select(s => (s.X, s.Y, s.Width, s.Height)), out _, out _, out area) ? area : null;
+        if (screen is "bench" or "storage")
+            return Machine(shownMachine)?.Storage is { } storage && DropCell(p, screen, "backpack_content", storage.Width, storage.Height, drag.Grab, item.Width, item.Height,
+                storage.Items.Select(i => (i.X, i.Y, i.Width, i.Height)), out _, out _, out area) ? area : null;
+        if (screen == "limbs")
+            return faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls
+                .LastOrDefault(c => InventoryCommands.IsLimbSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true))?.Bounds;
+        return screen is "inventory" or "bag" && InventoryOwner(drag.Character)?.ItemGrid is { } mine &&
+            DropPlace(p, screen, mine, item, drag.Grab, item.Index, out _, out _, out _, out area) ? area : null;
+    }
+
     void AddInventoryDrag(List<UiControl> controls)
     {
+        // White over the cells the dragged item would be let go into (vanilla's drop highlight).
+        if ((inventoryDrag is not null || tradeDrag is not null) && UiVisible && DropArea(mouse) is { Width: > 0, Height: > 0 } target)
+            controls.Add(new("drop-target", "Widget", target, "", "", "", true, new Dictionary<string, string>(), new(1, 1, 1, 0.35f), Pickable: false));
         if (inventoryDrag is { } drag)
             Preview(drag.Item.Record, drag.Item.Material, drag.Item.Name, drag.Item.Quantity, drag.Item.Width, drag.Item.Height, drag.Grab);
         else if (machineDrag is { } machine)

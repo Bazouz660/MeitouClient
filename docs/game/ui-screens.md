@@ -519,6 +519,8 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
 
 - **Observed** (user report, 2026-10-16): vanilla shows the item being dragged under
   the pointer. Exact preview opacity and cursor anchoring remain **Unknown**.
+- **Observed** (user screenshot, 2026-10-22): while dragging, the cells the item would land in are lit with a translucent white overlay. Its exact alpha, and
+  how it looks over an occupied or refused cell, are **Unknown**; Meitou uses white at 35 % over the cells (or slot) the drop would pick.
 - **Observed** in the original Metaru screenshot supplied on 2026-10-15: inventory
   icons have translucent black rectangular backings covering their cell footprints;
   empty clothing cells are pale. Emptiness alone does not establish the red/disabled
