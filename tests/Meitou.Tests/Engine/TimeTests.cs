@@ -63,6 +63,18 @@ public class TimeTests
             Assert.Equal(whole.GameSeconds, other.GameSeconds);
             Assert.Equal(whole.Hour, other.Hour);
         }
+
+        // The speed-scaled simulation clock owes the same ticks however the time is split, at every speed.
+        foreach (double speed in SimulationClock.Speeds)
+        {
+            var one = new SimulationClock(maxTicksPerFrame: 1_000_000);
+            one.SetSpeed(speed);
+            long expected = one.Advance(total);
+            Assert.Equal((long)Math.Round(total * speed * 30), expected);
+            var split = new SimulationClock(maxTicksPerFrame: 1_000_000);
+            split.SetSpeed(speed);
+            Assert.Equal(expected, RandomSplit(total, 400, 2).Sum(x => split.Advance(x)));
+        }
     }
 
     [Fact]

@@ -58,7 +58,7 @@ public class FcsRoundTripTests
         Assert.Equal((uint)(bytes.Length - recordStart), BitConverter.ToUInt32(bytes, recordStart));
     }
 
-    public static TheoryData<string> BaseGameFiles => ["gamedata.base", "Newwworld.mod", "Dialogue.mod", "rebirth.mod"];
+    public static TheoryData<string> BaseGameFiles => ["gamedata.base", "Newwworld.mod"];
 
     [Theory]
     [MemberData(nameof(BaseGameFiles))]

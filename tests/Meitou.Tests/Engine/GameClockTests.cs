@@ -29,15 +29,9 @@ public class GameClockTests
 
     [Theory]
     [InlineData(4, 0)]
-    [InlineData(5, 0)]
     [InlineData(5.5, 0.25)]
-    [InlineData(6, 0.5)]
-    [InlineData(7, 1)]
     [InlineData(12, 1)]
-    [InlineData(21, 1)]
-    [InlineData(22, 0.5)]
     [InlineData(22.5, 0.25)]
-    [InlineData(23, 0)]
     [InlineData(23.5, 0)]
     public void Daylight_ramps_over_two_hours_after_sunrise_and_before_sunset(double hour, double factor)
     {

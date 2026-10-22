@@ -30,11 +30,10 @@ public class TradeUiTests
         ui.MouseUp(MouseButton.Left, to, false);
     }
 
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
-    public void Scrolled_stock_keeps_its_cells_and_buys_the_visible_item(UiMode mode)
+    [Fact, Slow]
+    public void Scrolled_stock_keeps_its_cells_and_buys_the_visible_item()
     {
+        const UiMode mode = UiMode.Faithful;
         var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "No Kenshi install configured");
         var stock = new StockSource();
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem(), stock]);

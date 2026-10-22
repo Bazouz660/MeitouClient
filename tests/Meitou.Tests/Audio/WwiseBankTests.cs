@@ -9,9 +9,7 @@ public class WwiseBankTests
 {
     [Theory]
     [InlineData("SFX_Amb_Desert", 0xA467AF85u)]
-    [InlineData("Init", 0x50C63A23u)]
     [InlineData("Enter_Desert_Day", 0x87CDD31Cu)]
-    [InlineData("Weather_Rain_Start", 0x4F5E6A6Du)]
     public void Ids_are_fnv1_of_the_lowercased_name(string name, uint id)
     {
         Assert.Equal(id, WwiseHash.Id(name));

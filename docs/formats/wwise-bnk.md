@@ -310,7 +310,7 @@ rain beds plus a random container of extra layers; `Weather_Wind_Start` plays tw
 
 ## Embedded media (WEM)
 
-A WEM is RIFF/WAVE. **Verified** for the ambience banks (`Ambience_WEMs_are_Wwise_Vorbis...`): a 66-byte `fmt ` chunk with codec tag
+A WEM is RIFF/WAVE. **Verified** for the ambience banks (every WEM decodes in `Every_ambience_WEM_decodes_to_exactly_its_sample_count`): a 66-byte `fmt ` chunk with codec tag
 `0xFFFF` (Wwise Vorbis), then directly a `data` chunk: there is no separate `vorb` chunk, so the Vorbis setup values are in the extended
 `fmt `. The 292 ambience WEMs are 44100 Hz, 252 stereo and 40 mono (Observed with `meitou-tools audio <bank> --media`). Three tiny
 ones in `SFX_Amb_Indoors_Bank` (`12C0F32E`, `0888326E`, `34EC0D31`, 461 to 1625 bytes) are encoded silence of 1, 5 and 10 s, the
@@ -387,7 +387,7 @@ The library is part of the game's Wwise decoder in `kenshi_x64.exe`: a table of 
 codebooks and the end) into one block of packed codebooks in `.rdata` (about 72 KB). `WwiseCodebookLibrary.FromExecutable` finds it by
 that shape (a run of 200+ increasing pointers at most 8000 bytes apart) and accepts it only if every entry parses to exactly its span.
 So it is read from the user's install, never shipped, and no exe build's offsets are hardcoded. **Verified** on the Steam exe
-(36,718,592 bytes): one such table, 598 codebooks (`The_exe_holds_a_library_of_598_packed_codebooks`).
+(36,718,592 bytes): one such table, 598 codebooks (**Observed**; every ambience WEM decodes against it).
 
 ### Audio packets
 

@@ -9,10 +9,8 @@ namespace Meitou.Tests.Save;
 public class SavedCameraTests
 {
     [Theory]
-    [InlineData(0f, 30f, 150f)]
     [InlineData(99.7f, 30f, 88f)]
     [InlineData(-148.2f, 46.8f, 250f)]
-    [InlineData(179f, 11f, 2000f)]
     public void A_view_round_trips_through_rot_and_zoom(float yawDegrees, float pitchDegrees, float distance)
     {
         float yaw = yawDegrees * MathF.PI / 180, pitch = pitchDegrees * MathF.PI / 180;

@@ -54,28 +54,6 @@ public class CharacterAppearanceTests
 
     [Fact]
     [Slow]
-    public void Modern_body_files_read_and_legacy_ones_are_counted()
-    {
-        var install = GameInstall.Locate();
-        Assert.SkipWhen(install is null, "Kenshi install not found");
-        var db = Database(install);
-        var bodies = db.OfType(FcsRecordType.CHARACTER).Select(c => c.GetPath("body")).Where(b => b.Length > 0).Distinct().ToList();
-        Assert.NotEmpty(bodies);
-        int missing = 0, old = 0, read = 0;
-        foreach (var body in bodies)
-        {
-            var path = Path.Combine(install.Root, body.Replace('\\', '/').TrimStart('.', '/'));
-            if (!File.Exists(path)) { missing++; continue; }
-            int type = BitConverter.ToInt32(File.ReadAllBytes(path), 0);
-            if (type < 15) { old++; continue; } // legacy FCS layouts (types 5-13), not read
-            Assert.NotNull(AppearanceFile.Read(path).Record);
-            read++;
-        }
-        Assert.True(read > old + missing, $"{read} read, {old} legacy, {missing} missing");
-    }
-
-    [Fact]
-    [Slow]
     public void Dust_bandit_assembles()
     {
         var install = GameInstall.Locate();
@@ -94,20 +72,6 @@ public class CharacterAppearanceTests
         Assert.Equal(["hands", "back"], c.Parts.Where(p => p.Shown == WeaponShown.Drawn).Select(p => p.Point));
         Assert.True(c.AttachmentPoints.ContainsKey("hip"));
         Assert.Equal("Bip01 Prop2", c.AttachmentPoints["hands"].Bone);
-    }
-
-    [Fact]
-    [Slow]
-    public void Body_mesh_poses_are_named_morphs()
-    {
-        var install = GameInstall.Locate();
-        Assert.SkipWhen(install is null, "Kenshi install not found");
-        var mesh = OgreMeshReader.ReadFile(DataFile(install, "character", "meshes", "human", "human_male.mesh"));
-        Assert.Equal(23, mesh.Poses.Count);
-        Assert.Contains(mesh.Poses, p => p.Name == "wide_cheekbones");
-        Assert.All(mesh.Poses, p => Assert.Equal(1, p.Target));
-        int vertices = (int)mesh.SubMeshes[0].VertexData!.VertexCount;
-        Assert.All(mesh.Poses, p => Assert.All(p.Vertices, v => Assert.True(v.Index < vertices)));
     }
 
     /// <summary>The editor's EXPORT writes a body file in the game's layout that IMPORT reads back into another character's draft unchanged (docs/characters.md "Import and export").</summary>

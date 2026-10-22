@@ -15,16 +15,13 @@ public sealed class GameFilesTests : IDisposable
     public void Dispose() => Directory.Delete(root, recursive: true);
 
     [Fact]
-    public void A_file_written_in_another_case_is_found()
+    public void A_file_or_folder_written_in_another_case_is_found()
     {
         var asked = Path.Combine(root, "data", "animal", "meshes", "mammal_beak.skeleton");
         Assert.True(GameFiles.Exists(asked));
         Assert.Equal(Path.Combine(root, "Data", "Animal", "Meshes", "Mammal_beak.skeleton"), GameFiles.Resolve(asked), ignoreCase: OperatingSystem.IsWindows());
-    }
 
-    [Fact]
-    public void A_folder_written_in_another_case_is_found()
-    {
+        // A folder written in another case is found too.
         Assert.NotNull(GameFiles.ExistingDirectory(Path.Combine(root, "data", "animal")));
     }
 

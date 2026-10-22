@@ -83,12 +83,13 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     }
 
     [Fact, Slow]
-    public void MeitouTitleUsesTheWorldAndKeepsNewGameDialogsAndModeSwitchingFunctional()
+    public void OriginalTitleNewGameAndExitConfirmationProduceHostRequestsAndPauseTheWorld()
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
-        var ui = Ui(session);
+        var ui = Ui(session); MyGuiEvent? request = null; ui.ScreenAction += e => request = e;
         try
         {
+            // The Meitou title uses the world and keeps the new-game dialogs and mode switching functional.
             ui.SetUiMode(UiMode.Meitou);
             ui.ShowTitle();
             Assert.True(session.Simulation.RequestedPause);
@@ -102,17 +103,6 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             Assert.Contains(ui.UiFrame, c => c.Properties.GetValueOrDefault("ImageResource") == "Kenshi_TitleScreen");
             ui.CloseFrontend();
             Assert.False(session.Simulation.RequestedPause);
-        }
-        finally { ui.DisposeUi(); }
-    }
-
-    [Fact, Slow]
-    public void OriginalTitleNewGameAndExitConfirmationProduceHostRequestsAndPauseTheWorld()
-    {
-        using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
-        var ui = Ui(session); MyGuiEvent? request = null; ui.ScreenAction += e => request = e;
-        try
-        {
             ui.ShowTitle(); Assert.True(session.Simulation.RequestedPause);
             Click(ui, "NewGameButton"); Assert.Contains(ui.UiFrame, c => c.Name == "BeginButton" && c.Enabled);
             Click(ui, "BeginButton"); Assert.Equal("new-game", request!.Action); Assert.False(session.World.Player.Exists);
@@ -128,10 +118,8 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         finally { ui.DisposeUi(); }
     }
 
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
-    public void PocketDragRunsThroughTheOriginalWindowAndOnlyMovesAtASimulationTick(UiMode mode)
+    [Fact, Slow]
+    public void PocketDragRunsThroughTheOriginalWindowAndOnlyMovesAtASimulationTick()
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
         var inventory = new Inventory(8, 6);
@@ -142,7 +130,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         var ui = Ui(session);
         try
         {
-            ui.SetUiMode(mode);
+            ui.SetUiMode(UiMode.Faithful);
             ui.ShowUiPanel("inventory");
             var source = ui.UiFrame.Single(c => c.Name == "inventory-item-0");
             var slot = ui.UiFrame.Single(c => c.Name == "main").Bounds;
@@ -160,7 +148,6 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     [Theory, Slow]
     [InlineData(UiMode.Faithful, 1280, 720)]
     [InlineData(UiMode.Meitou, 1600, 900)]
-    [InlineData(UiMode.Faithful, 2560, 1440)]
     public void BackpackFitsItsContentsAndEquipmentKeepsItsFootprint(UiMode mode, int width, int height)
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);

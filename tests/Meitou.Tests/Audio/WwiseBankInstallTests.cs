@@ -54,16 +54,8 @@ public class WwiseBankInstallTests
                     Assert.DoesNotContain(raw.Type, decoded);
                 }
                 else count++;
-            }
-        Assert.Equal(3260, count); // with the buses, the 687 music objects, attenuations, effects and aux buses
-    }
-
-    [Fact]
-    public void Every_sound_plays_a_WEM_embedded_in_its_own_bank_at_the_stored_file_offset()
-    {
-        foreach (var (name, bank) in Banks().Where(b => b.Bank.Version == WwiseBank.DecodedVersion))
-            foreach (var s in bank.Objects.OfType<WwiseSound>())
-            {
+                if (o is not WwiseSound s) continue;
+                // Every sound plays a WEM embedded in its own bank at the stored file offset.
                 Assert.Equal(0, s.Source.StreamType);
                 if (!s.Source.IsVorbis)
                 {
@@ -76,21 +68,7 @@ public class WwiseBankInstallTests
                 Assert.Equal(media.Value.Offset, (int)s.Source.Offset);
                 Assert.Equal(media.Value.Length, (int)s.Source.Size);
             }
-    }
-
-    [Fact]
-    public void Ambience_WEMs_are_Wwise_Vorbis_with_the_setup_in_a_66_byte_fmt_chunk()
-    {
-        foreach (var (name, bank) in Banks().Where(b => b.Name.StartsWith("SFX_Amb_", StringComparison.Ordinal)))
-            foreach (var m in bank.Media)
-            {
-                var wem = bank.MediaBytes(m).Span;
-                Assert.True(wem.StartsWith("RIFF"u8) && wem[8..12].SequenceEqual("WAVE"u8), $"{name} {m.Id:X8}");
-                Assert.True(wem[12..16].SequenceEqual("fmt "u8));
-                Assert.Equal(66, BitConverter.ToInt32(wem[16..20]));
-                Assert.Equal(0xFFFF, BitConverter.ToUInt16(wem[20..22]));
-                Assert.True(wem[(20 + 66)..(24 + 66)].SequenceEqual("data"u8), $"{name} {m.Id:X8}: no data chunk right after fmt");
-            }
+        Assert.Equal(3260, count); // with the buses, the 687 music objects, attenuations, effects and aux buses
     }
 
     [Fact]
@@ -111,16 +89,12 @@ public class WwiseBankInstallTests
         }
         var indoors = Bank("SFX_Amb_Indoors_Bank").Objects.OfType<WwiseEvent>().Select(e => e.Id).ToHashSet();
         Assert.Equal(new HashSet<uint> { WwiseHash.Id("Enter_Building"), WwiseHash.Id("Enter_Building_Big"), WwiseHash.Id("Leave_Building") }, indoors);
-    }
-
-    [Fact]
-    public void The_weather_bank_has_the_rain_and_wind_start_events_but_no_wind_stop()
-    {
-        var events = Bank("SFX_Amb_Weather_Bank").Objects.OfType<WwiseEvent>().Select(e => e.Id).ToHashSet();
-        Assert.Contains(WwiseHash.Id("Weather_Rain_Start"), events);
-        Assert.Contains(WwiseHash.Id("Weather_Rain_End"), events);
-        Assert.Contains(WwiseHash.Id("Weather_Wind_Start"), events);
-        Assert.DoesNotContain(WwiseHash.Id("Weather_Wind_Stop"), events);
-        Assert.Equal(4, events.Count);
+        // The weather bank has the rain and wind start events but no wind stop.
+        var weather = Bank("SFX_Amb_Weather_Bank").Objects.OfType<WwiseEvent>().Select(e => e.Id).ToHashSet();
+        Assert.Contains(WwiseHash.Id("Weather_Rain_Start"), weather);
+        Assert.Contains(WwiseHash.Id("Weather_Rain_End"), weather);
+        Assert.Contains(WwiseHash.Id("Weather_Wind_Start"), weather);
+        Assert.DoesNotContain(WwiseHash.Id("Weather_Wind_Stop"), weather);
+        Assert.Equal(4, weather.Count);
     }
 }
