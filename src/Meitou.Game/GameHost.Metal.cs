@@ -356,6 +356,8 @@ sealed partial class GameHost
                 Impostors = false,
                 // Diagnostic/workaround: keep the tree, bush and rock meshes but skip the grass page draws.
                 DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1",
+                // Diagnostic isolation for the far-travel GPU hang: trees/bushes off, the TERRAIN-mode rocks still draw.
+                DrawMeshes = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_FOLIAGE_MESHES") != "1",
             };
             if (o.LargeRange is { } largeRange)
             {
