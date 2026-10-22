@@ -48,7 +48,7 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public float PriceFactor { get; init; } = 1;
     /// <summary>The faction a stolen item was stolen from, -1 when it is not stolen.</summary>
     public int StolenFrom { get; init; } = -1;
-    /// <summary>The tooltip's two prices of the whole stack (<c>FUN_14079e7a0</c>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
+    /// <summary>The tooltip's two prices of one unit (<c>FUN_14079e7a0</c> calls slot 81, <b>Verified</b>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
     public long Value { get; init; }
     public long SellValue { get; init; }
     /// <summary>The stack's weight in kg.</summary>
@@ -514,16 +514,16 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         float thievery = cold.Stats?[StatsEnumerated.Thieving] ?? 0;
         TradeItemView View(ItemInstance item, int index, bool sell, int holder)
         {
-            long value = m.StackPrice(item, false, shop.Terms, holder), sellValue = m.StackPrice(item, true, shop.Terms, holder);
+            long value = m.UnitPrice(item, false, shop.Terms, holder), sellValue = m.UnitPrice(item, true, shop.Terms, holder);
             bool buyback = IsBuyback(item, sell);
             if (buyback)
             {
-                if (sell) sellValue = Price(m, item, item.Quantity, true, shop.Terms, holder);
-                else value = Price(m, item, item.Quantity, false, shop.Terms, holder);
+                if (sell) sellValue = Price(m, item, 1, true, shop.Terms, holder);
+                else value = Price(m, item, 1, false, shop.Terms, holder);
             }
             bool stolen = item.IsStolenFor(holder);
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
-                item.Quality, sell ? sellValue : value, Price(m, item, 1, sell, shop.Terms, holder), stolen)
+                item.Quality, Price(m, item, item.Quantity, sell, shop.Terms, holder), Price(m, item, 1, sell, shop.Terms, holder), stolen)
             {
                 Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),

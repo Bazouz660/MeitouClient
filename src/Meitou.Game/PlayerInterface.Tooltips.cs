@@ -411,7 +411,7 @@ sealed partial class PlayerInterface
         }
         if (t.Trade is { } trade)
         {
-            // Value and Sell value: the stack's prices, with the trader factor as a mark-up in the bad colour (FUN_14079e7a0).
+            // Value and Sell value: one unit's prices (slot 81), with the trader factor as a mark-up in the bad colour (FUN_14079e7a0).
             int percent = trade.PriceFactor > 1 ? (int)((trade.PriceFactor - 1) * 100) : trade.PriceFactor < 1 ? (int)((1 - trade.PriceFactor) * 100) : 0;
             string suffix = trade.PriceFactor == 1 ? "" : $" ({(trade.PriceFactor > 1 ? "+" : "-")}{percent}%)";
             // A buyback price is the exact refund, not marked up.
