@@ -2,6 +2,11 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.1.2
+
+- When there are two nightly builds on the same day, the Versions list marks the second one "#2" and shows them in order.
+  Before, the two looked the same and could appear in the wrong order.
+
 ## v1.1.1
 
 - Nightly builds now come twice a day; the afternoon build shows its date in the Versions list like the morning one.
