@@ -350,8 +350,10 @@ seam gained `IGpuFrame.PreFrame` (Metal's frame list, recorded before its passes
 `CreateReadback`/`FrameCompleted`, and `CopyTextureToBuffer`. Metal implements the bake's halving blit as a fullscreen
 sampling pass (Metal's blit cannot scale), copies the row into a shared readback buffer, and reports a frame completed
 when the drawable ring has turned. **Temporarily disabled in the Metal host:** the bake now validates, but some atlases
-still draw as red/black bands or a gray full-screen card, so `GameHost.Metal` sets `Impostors = false` and draws the
-meshes instead. Re-enable when the atlas content is fixed. Two Metal fixes the bake surfaced:
+still draw as red/black bands or a gray full-screen card, so `GameHost.Metal` calls `FoliageRenderer.DisableImpostors()`
+after settings load and draws the meshes instead. A saved `Far impostors` setting used to re-enable them after the
+initial `Impostors = false`; the Metal settings no longer offer the toggle. Re-enable when the atlas content is fixed.
+Two Metal fixes the bake surfaced:
 
 - **Argument buffers are padded to 16 bytes.** A one-member set was allocated 8 bytes and failed Metal's validation;
   the set size is rounded up.
