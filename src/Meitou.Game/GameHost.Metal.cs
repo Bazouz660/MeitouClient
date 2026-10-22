@@ -98,8 +98,10 @@ sealed partial class GameHost
         // Safe Metal defaults while the foliage mesh path and the cloud-shadow path are being fixed: both are opt-in.
         bool metalFoliage = Environment.GetEnvironmentVariable("MEITOU_METAL_FOLIAGE") == "1";
         bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") == "1";
+        bool metalWater = Environment.GetEnvironmentVariable("MEITOU_METAL_WATER") == "1";
         if (!metalFoliage) Console.WriteLine("metal     foliage disabled (safe mode; MEITOU_METAL_FOLIAGE=1 to test)");
         if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (safe mode; F10 or MEITOU_METAL_CLOUD_SHADOWS=1)");
+        if (!metalWater) Console.WriteLine("metal     water disabled (safe mode; MEITOU_METAL_WATER=1 to test)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -375,7 +377,7 @@ sealed partial class GameHost
         }
         // The water: the game's faithful quad first (the Meitou grid's ocean FFT and shore field are Vulkan-typed still).
         WaterRenderer? water = null;
-        if (!o.NoWater && scene.Database is { } waterDb)
+        if (metalWater && !o.NoWater && scene.Database is { } waterDb)
         {
             var messages = new List<string>();
             water = WaterRenderer.Create(ctx, install, waterDb, assets, sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
