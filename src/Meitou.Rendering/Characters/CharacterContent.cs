@@ -96,6 +96,11 @@ internal sealed class PartMaterial
     public bool ClipOnNormalAlpha, Dyed, DoubleSided;
     /// <summary>Worn on the body's skeleton (the original's Skinned template): matte (its glossMult is 0).</summary>
     public bool Worn;
+    /// <summary>A person's body (not an animal's): its bare skin may scatter light under the <c>skin</c> switch (<see cref="CharacterShaders.Skin"/>), by its race's choice
+    /// (<see cref="CharacterRenderer.SkinRaces"/>, else <see cref="SkinDefault"/>).</summary>
+    public bool Skin, SkinDefault;
+    /// <summary>The RACE record's string id of a body (<see cref="Skin"/>).</summary>
+    public string? Race;
     public int VestCount;
     public bool[] VestColoured = new bool[3];
     public Vector3 ShirtColour, SkinTone, HairColour;
@@ -254,6 +259,7 @@ internal sealed class CharacterContent : IDisposable
             var model = Model.Build(mesh, boneCount, gameBinormals: true);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
             if (limbs is not null) MarkLimbs(model, limbs);
+            MarkCurvature(model);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
             var centre = mesh.Bounds is { } b ? (b.Min + b.Max) / 2 : model.Center;
             float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius, fileRadius = radius;
@@ -460,6 +466,41 @@ internal sealed class CharacterContent : IDisposable
             }
     }
 
+    /// <summary>
+    /// Writes each vertex's curvature (1 / radius, world units) into its colour's Z, for the Meitou skin (docs/character-renderer.md "Skin"): over the edges at the vertex,
+    /// the mean of how far the normal turns per unit of length, then averaged over the vertices that share its position (a UV seam must not show). Baked per vertex and
+    /// interpolated, it is smooth across triangles; a screen-space estimate is constant per triangle and drew the low-poly faceting in red.
+    /// </summary>
+    static void MarkCurvature(Model model)
+    {
+        foreach (var part in model.Parts)
+        {
+            var v = part.Vertices;
+            var sum = new float[v.Length];
+            var count = new int[v.Length];
+            var idx = part.Indices;
+            for (int t = 0; t + 2 < idx.Length; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    uint a = idx[t + e], b = idx[t + (e + 1) % 3];
+                    float length = Vector3.Distance(v[a].Position, v[b].Position);
+                    if (length < 1e-5f) continue;
+                    float k = Vector3.Distance(Vector3.Normalize(v[a].Normal), Vector3.Normalize(v[b].Normal)) / length;
+                    sum[a] += k; count[a]++;
+                    sum[b] += k; count[b]++;
+                }
+            static Vector3 Key(Vector3 p) => new(MathF.Round(p.X, 3), MathF.Round(p.Y, 3), MathF.Round(p.Z, 3));
+            var byPosition = new Dictionary<Vector3, (float Sum, int Count)>();
+            for (int i = 0; i < v.Length; i++)
+                byPosition[Key(v[i].Position)] = byPosition.TryGetValue(Key(v[i].Position), out var s) ? (s.Sum + sum[i], s.Count + count[i]) : (sum[i], count[i]);
+            for (int i = 0; i < v.Length; i++)
+            {
+                var s = byPosition[Key(v[i].Position)];
+                v[i].Colour.Z = s.Count > 0 ? s.Sum / s.Count : 0;
+            }
+        }
+    }
+
     /// <summary>How much farther a part's generated levels start (<see cref="HairLodScale"/> for a person's hair and beard).</summary>
     static float PartLodScale(CharacterAppearance c, CharacterPart part) => part.Record.Type == FcsRecordType.ATTACHMENT && c.Animal is null ? HairLodScale : 1;
 
@@ -606,6 +647,8 @@ internal sealed class CharacterContent : IDisposable
             HairAlpha = Channel(c.Hair?.GetInt("head alpha channel" + f, 1) ?? 1), HairMult = Channel(c.Hair?.GetInt("head channel" + f) ?? 0),
             BeardAlpha = Channel(c.Beard?.GetInt("head alpha channel" + f, 1) ?? 1),
             ShirtColour = colour is null ? Vector3.One : CharacterAppearance.Rgb(colour.GetInt("color 1")), HasShirtColour = colour is not null,
+            // Animals: fur and hide; a robot race (RACE `is robot`, skeletons) is off by default (docs/character-renderer.md "Skin").
+            Skin = c.Animal is null, SkinDefault = CharacterRenderer.SkinByDefault(c.Race), Race = c.Race.StringId,
         };
         // Animal meshes put the mirrored half of the body at u 1..2 (goat, bull, beak thing: Observed, the meshes' texture coordinates), so their textures repeat; a
         // person's body texture has the transparent border (the head sits beside it at v -1..0). That Kenshi repeats them is an engine reading (the animal material was not read).

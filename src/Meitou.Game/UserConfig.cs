@@ -99,6 +99,8 @@ sealed class UserConfig
     public int? SimThreads { get; set; }
     public Dictionary<string, float> Graphics { get; set; } = [];
     public Dictionary<string, string> Bindings { get; set; } = [];
+    /// <summary>The Meitou skin per race, where chosen against the default (RACE string id to on or off; Graphics > Skin): <c>CharacterRenderer.SkinRaces</c>.</summary>
+    public Dictionary<string, bool> SkinRaces { get; set; } = [];
 
     [JsonIgnore]
     public string Path { get; private set; } = FileName;

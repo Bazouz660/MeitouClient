@@ -50,6 +50,50 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// </summary>
     public bool GeneratedLod { get; set; } = true;
 
+    /// <summary>
+    /// Pre-integrated skin scattering on people's bare skin (the <c>skin</c> switch's Meitou side, docs/character-renderer.md "Skin"); off: the plain N.L of the game.
+    /// A change redraws the portraits.
+    /// </summary>
+    public bool SkinShading
+    {
+        get => skinShading;
+        set
+        {
+            if (skinShading == value) return;
+            skinShading = value;
+            portraitShown.Clear();
+        }
+    }
+    bool skinShading = true;
+    readonly SkinScattering skinScattering;
+
+    /// <summary>
+    /// The skin per race, chosen against its default (RACE string id to on or off; the settings' Skin page): a race not in it takes <see cref="SkinByDefault"/>.
+    /// Read as the materials are written each frame, so a change shows at once; setting it (also the same, changed, dictionary) redraws the portraits.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? SkinRaces
+    {
+        get => skinRaces;
+        set { skinRaces = value; portraitShown.Clear(); }
+    }
+    IReadOnlyDictionary<string, bool>? skinRaces;
+
+    /// <summary>Whether a race's bodies scatter light unless chosen otherwise: every person race but a robot one (RACE <c>is robot</c>: skeletons, metal).</summary>
+    public static bool SkinByDefault(GameRecord race) => !race.GetBool("is robot");
+
+    bool SkinFor(PartMaterial m) => m.Race is not null && skinRaces is not null && skinRaces.TryGetValue(m.Race, out bool chosen) ? chosen : m.SkinDefault;
+
+    /// <summary>
+    /// The person races of the loaded data (base game and mods) for the Skin page: every RACE record no ANIMAL_CHARACTER uses, by name, with its default.
+    /// </summary>
+    public static IReadOnlyList<(string Id, string Name, bool Default)> PersonRaces(GameDatabase db)
+    {
+        var animal = db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER)
+            .SelectMany(r => r.GetReferences("race").Select(x => x.TargetStringId)).ToHashSet();
+        return [.. db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.RACE && !animal.Contains(r.StringId))
+            .OrderBy(r => r.Name.Trim(), StringComparer.OrdinalIgnoreCase).Select(r => (r.StringId, r.Name.Trim(), SkinByDefault(r)))];
+    }
+
     // Statistics of the last Update / Draw.
     public int Posed { get; private set; }
     public int DrawnCharacters { get; private set; }
@@ -178,6 +222,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         depthProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.DepthVertex(), CharacterShaders.DepthFragment(), "characters depth", CharacterShaders.InstanceLocation);
         motionProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.MotionVertex(), CharacterShaders.MotionFragment(), "characters motion", CharacterShaders.InstanceLocation);
         content = new CharacterContent(gpu, install, db, assetLocator, rigs);
+        skinScattering = new SkinScattering(gpu);
         colourTimer = new PassTimer(gpu);
         depthTimer = new PassTimer(gpu);
     }
@@ -516,6 +561,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.ClipOnNormalAlpha && has[CharacterShaders.SlotNormal]) flags |= CharacterShaders.ClipNormalAlpha;
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
         if (m.Worn) flags |= CharacterShaders.Worn;
+        if (m.Skin && SkinFor(m)) flags |= CharacterShaders.Skin;
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
@@ -572,6 +618,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         motionProg.Dispose();
         nativeFrame.Dispose();
         content.Dispose();
+        skinScattering.Dispose();
         DisposePortraits();
         DisposeStage();
         DisposeHover();
