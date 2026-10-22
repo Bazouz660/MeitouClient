@@ -11,6 +11,7 @@ public sealed record CloseTrade : SimCommand;
 /// <summary>
 /// Buys <see cref="Quantity"/> units of the stock item <see cref="Item"/> (its index in the shop's stock) into the customer's inventory: at the cell <see cref="X"/>, <see cref="Y"/> of
 /// <see cref="Section"/> (<c>main</c> or <c>backpack_content</c>, the cell the item was dropped on) when that is free, else wherever it fits.
+/// A backpack may also target the single <c>backpack_attach</c> equipment slot.
 /// </summary>
 public sealed record BuyItem(InventoryItemToken Item, int Quantity) : SimCommand
 {
@@ -302,7 +303,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     {
         var item = inventory.All().ElementAtOrDefault(token.Index);
         return item is not null && item.Record == token.Record && item.Section == token.Section && item.X == token.X && item.Y == token.Y && item.Quantity == token.Quantity
-            && item.Quality == token.Quality && item.Contents is null ? item : null;
+            && item.Quality == token.Quality && (item.Contents is null || item.Quantity == 1) ? item : null;
     }
 
     void Buy(World world, BuyItem buy)
@@ -321,7 +322,13 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var bought = item.WithQuantity(units);
         long price = m.StackPrice(bought, false, shop.Terms, squad.Faction);
         int placed;
-        if (buy.Section is { } section) placed = PlaceAt(cold.Inventory!, bought, units, section, buy.X, buy.Y);
+        if (item.Contents is not null)
+        {
+            placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip);
+            if (placed > 0 && InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
+        }
+        else if (buy.Section == "backpack_attach") placed = 0;
+        else if (buy.Section is { } section) placed = PlaceAt(cold.Inventory!, bought, units, section, buy.X, buy.Y);
         else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1)))
         {
             // One unit is worn; the rest of a stack goes where it fits.
@@ -340,7 +347,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             return;
         }
         if (placed < units) price = m.StackPrice(item.WithQuantity(placed), false, shop.Terms, squad.Faction);
-        Take(shop.Stock, item, placed);
+        if (item.Contents is null) Take(shop.Stock, item, placed);
         world.Player.Money -= price;
         squad.Money += price;
         world.Post($"{cold.Name} bought {Units(placed, item.Name)} for c.{price}");
@@ -370,15 +377,18 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         }
         var sold = item.WithQuantity(units);
         long price = m.StackPrice(sold, true, shop.Terms, cold.Faction);
-        int placed = sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
+        bool equipped = InventoryCommands.IsEquipmentSection(item.Section);
+        int placed = item.Contents is not null
+            ? TransferContainer(cold.Inventory!, sell.Item, shop.Stock, sell.X is not null ? "main" : null, sell.X ?? 0, sell.Y, false)
+            : sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
         if (placed == 0)
         {
             world.Post("No room for that item.");
             return;
         }
         if (placed < units) price = m.StackPrice(item.WithQuantity(placed), true, shop.Terms, cold.Faction);
-        Take(cold.Inventory!, item, placed);
-        if (InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
+        if (item.Contents is null) Take(cold.Inventory!, item, placed);
+        if (equipped) assembly.RefreshEquipment(cold);
         squad.Money -= price;
         world.Player.Money += price;
         world.Post($"{cold.Name} sold {Units(placed, item.Name)} for c.{price}");
@@ -410,7 +420,18 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         return 0;
     }
 
-    /// <summary>Puts <paramref name="units"/> of an item into an inventory; returns how many went in.</summary>
+    // Containers move whole: stack copies intentionally omit Contents. Transfer validates the destination before changing either inventory.
+    static int TransferContainer(Inventory from, InventoryItemToken token, Inventory into, string? section, int x, int y, bool equip)
+    {
+        if (section is not (null or "main" or "backpack_attach")) return 0;
+        if (section == "backpack_attach") return InventoryCommands.Transfer(from, token, into, section, 0, 0) ? 1 : 0;
+        if (equip && InventoryCommands.Transfer(from, token, into, "backpack_attach", 0, 0)) return 1;
+        if (section == "main" && InventoryCommands.Transfer(from, token, into, section, x, y)) return 1;
+        var item = Find(from, token);
+        return item is not null && into.FindCell("main", item.Width, item.Height, out int cx, out int cy)
+            && InventoryCommands.Transfer(from, token, into, "main", cx, cy) ? 1 : 0;
+    }
+
     /// <summary>
     /// Puts the units at the cell they were dropped on (the trade window's <c>placeItemFromMouse</c>): the cell of <paramref name="section"/> in <paramref name="root"/> (the backpack's
     /// contents for <c>backpack_content</c>) when the footprint is inside the grid, free and the stack within the limit; otherwise wherever they fit, as <see cref="Place"/>.

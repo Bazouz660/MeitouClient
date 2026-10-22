@@ -906,6 +906,9 @@ trader has its home's containers filled instead (`FillHome`). Only members that 
 Trade verb and pointer. Shop state is hashed; open UI trade is not world state. A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
 Transfers and money changes must succeed together.
+Backpacks transfer as whole instances, preserving their contents: right-click buys into a free backpack slot, then the main grid;
+dragging can target the backpack slot or main grid. Containers cannot nest inside bags. Rejected transfers leave stock and purses unchanged
+(engine contract, checked by `TradeTests` and `FaithfulInteractionTests`).
 
 ## Dialogue
 

@@ -103,12 +103,13 @@ public class TradeTests
 
     sealed class Bazaar : IDisposable
     {
-        public PopulationData Data { get; } = TradeTests.Data(Shops);
+        public PopulationData Data { get; }
         public SimWorld World { get; }
         public TradeSystem Trade { get; }
 
-        public Bazaar()
+        public Bazaar(params FcsRecord[] extra)
         {
+            Data = TradeTests.Data([.. Shops, .. extra]);
             Trade = new TradeSystem(Data);
             var ground = new OpenGroundWalkability((_, _) => 150);   // above the water line
             World = new SimWorld(new WorldSettings { Seed = 3 }, ground, [new MovementSystem(new PathService(ground, true)), Trade]);
@@ -187,6 +188,79 @@ public class TradeTests
         Assert.Null(b.World.Snapshot.Trade);
         b.World.RunTicks((int)(shop.NextRestockTick - b.World.Tick) + 15);
         Assert.Equal(2, shop.Fills);
+    }
+
+    internal static FcsRecord BackpackRecord() => Rec("bag-t", FcsRecordType.CONTAINER, r =>
+    {
+        r.Ints["value"] = 100; r.Ints["inventory footprint width"] = 4; r.Ints["inventory footprint height"] = 4;
+        r.Ints["storage size width"] = 6; r.Ints["storage size height"] = 8;
+    });
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("main", false)]
+    [InlineData("backpack_attach", false)]
+    public void Buying_a_backpack_transfers_its_container_and_selling_it_preserves_contents(string? section, bool equip)
+    {
+        using var b = new Bazaar(BackpackRecord());
+        var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
+        var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
+        b.World.RunTick();
+        var shop = b.SquadOf(trader).Shop!;
+        shop.Stock.Items.Clear();
+        var bag = b.Data.Items.Create("bag-t")!;
+        var contents = bag.Contents!;
+        var ration = b.Data.Items.Create("ration-t")!;
+        Assert.True(contents.Add(ration));
+        Assert.True(shop.Stock.Add(bag));
+        b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
+        var stock = b.View.Stock.Single(i => i.Record == "bag-t");
+        long playerMoney = b.World.Player.Money, shopMoney = b.SquadOf(trader).Money;
+        b.Say(new BuyItem(stock.Token, 1) { Tick = 0, Section = section, X = 2, Y = 3, Equip = equip }); b.World.RunTick();
+        Assert.Same(bag, Assert.Single(b.Bag(hero).Items));
+        Assert.Same(contents, bag.Contents); Assert.Same(ration, Assert.Single(contents.Items));
+        Assert.Equal(section == "main" ? "main" : "backpack_attach", bag.Section);
+        if (section == "main") Assert.Equal((2, 3), (bag.X, bag.Y));
+        Assert.Empty(shop.Stock.All());
+        Assert.Equal(playerMoney - stock.Price, b.World.Player.Money);
+        Assert.Equal(shopMoney + stock.Price, b.SquadOf(trader).Money);
+        var goods = b.View.Goods.Single(i => i.Record == "bag-t");
+        b.Say(new SellItem(goods.Token, 1) { Tick = 0 }); b.World.RunTick();
+        Assert.Empty(b.Bag(hero).All()); Assert.Same(bag, Assert.Single(shop.Stock.Items));
+        Assert.Same(contents, bag.Contents); Assert.Same(ration, Assert.Single(contents.Items));
+        Assert.Equal(playerMoney - stock.Price + goods.Price, b.World.Player.Money);
+        Assert.Equal(shopMoney + stock.Price - goods.Price, b.SquadOf(trader).Money);
+    }
+
+    [Theory]
+    [InlineData("money")]
+    [InlineData("space")]
+    [InlineData("occupied-slot")]
+    [InlineData("nested-bag")]
+    public void A_rejected_backpack_purchase_leaves_stock_contents_and_money_unchanged(string reason)
+    {
+        using var b = new Bazaar(BackpackRecord());
+        var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
+        var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
+        b.World.RunTick();
+        var shop = b.SquadOf(trader).Shop!; shop.Stock.Items.Clear();
+        var bag = b.Data.Items.Create("bag-t")!; Assert.True(shop.Stock.Add(bag));
+        var contents = bag.Contents;
+        if (reason == "money") b.World.Player.Money = 0;
+        if (reason == "space") b.Bag(hero).Items.Add(new() { Record = "filler", Width = 8, Height = 10 });
+        if (reason is "occupied-slot" or "nested-bag")
+        {
+            var worn = b.Data.Items.Create("bag-t")!; worn.Section = "backpack_attach"; b.Bag(hero).Items.Add(worn);
+        }
+        b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
+        var stock = b.View.Stock.Single();
+        long playerMoney = b.World.Player.Money, shopMoney = b.SquadOf(trader).Money;
+        b.Say(new BuyItem(stock.Token, 1) { Tick = 0, Section = reason == "occupied-slot" ? "backpack_attach" : reason == "nested-bag" ? "backpack_content" : "main" });
+        b.World.RunTick();
+        Assert.Same(bag, Assert.Single(shop.Stock.Items)); Assert.Same(contents, bag.Contents);
+        Assert.Equal(stock.Token, b.View.Stock.Single().Token);
+        Assert.DoesNotContain(b.Bag(hero).All(), i => ReferenceEquals(i, bag));
+        Assert.Equal(playerMoney, b.World.Player.Money); Assert.Equal(shopMoney, b.SquadOf(trader).Money);
     }
 
     [Fact]

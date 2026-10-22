@@ -27,6 +27,52 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     static Vector2 Centre(UiControl c) => new(c.Bounds.X + c.Bounds.Width / 2, c.Bounds.Y + c.Bounds.Height / 2);
     static void Click(PlayerInterface ui, string name) => ui.MouseDown(MouseButton.Left, Centre(ui.UiFrame.Last(c => c.Name == name)), false);
 
+    [Theory, Slow]
+    [InlineData("right-click")]
+    [InlineData("backpack_attach")]
+    [InlineData("main")]
+    public void ShopBackpacksCanBeBoughtByRightClickOrDragging(string action)
+    {
+        var data = TradeTests.Data([.. TradeTests.Shops, TradeTests.BackpackRecord()]);
+        var trade = new Meitou.Simulation.Trading.TradeSystem(data);
+        using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem(), trade]);
+        var world = session.World;
+        var inventory = new Inventory();
+        var hero = world.Characters.Spawn(new(), new() { Name = "Player", IsPlayer = true, Faction = data.PlayerFaction, Inventory = inventory }, 0);
+        var squad = new Squad { Id = world.Squads.NextId(), TemplateId = "shop-t", Faction = data.FactionIndex("f-t"), Town = 0 };
+        world.Squads.Add(squad);
+        var keeper = world.Characters.Spawn(new(), new() { Name = "Shopkeeper", Faction = squad.Faction, SquadId = squad.Id, Inventory = new() }, 0);
+        squad.Members.Add(keeper); squad.Leader = keeper;
+        world.Player.Faction = data.PlayerFaction; world.Player.Money = 10000; world.Player.Selection.Add(hero);
+        world.RunTick();
+        var bag = data.Items.Create("bag-t")!;
+        squad.Shop!.Stock.Items.Clear(); Assert.True(squad.Shop.Stock.Add(bag));
+        world.Commands.Enqueue(new Meitou.Simulation.Trading.OpenTrade(hero, keeper) { Tick = world.Tick }); world.RunTicks(2);
+        var ui = Ui(session);
+        try
+        {
+            var source = ui.UiFrame.Single(c => c.Name == "trade-item-0");
+            if (action == "right-click")
+            {
+                ui.MouseDown(MouseButton.Right, Centre(source), false);
+                ui.MouseUp(MouseButton.Right, Centre(source), false);
+            }
+            else
+            {
+                var target = Centre(ui.UiFrame.Single(c => c.Name == action));
+                ui.MouseDown(MouseButton.Left, Centre(source), false);
+                ui.MouseMove(target); ui.MouseUp(MouseButton.Left, target, false);
+            }
+            world.RunTick();
+            Assert.Same(bag, Assert.Single(inventory.Items));
+            Assert.NotNull(bag.Contents);
+            Assert.Equal(action == "main" ? "main" : "backpack_attach", bag.Section);
+            Assert.Empty(squad.Shop.Stock.Items);
+            Assert.True(world.Player.Money < 10000);
+        }
+        finally { ui.DisposeUi(); }
+    }
+
     [Fact, Slow]
     public void AdvancedOptionsShareTheNewGameScreenAndRemainOperable()
     {
