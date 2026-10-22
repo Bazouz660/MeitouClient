@@ -131,7 +131,8 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
-        if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(state, b.Key, list);
+        if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(StateKeys.Of(state), b.Key, list, level: false);
+        else if (b.LevelState is { } levelState) Restore(StateKeys.Of(levelState), b.Key, list, level: true);
         SyncDoors(b.Key);
     }
 
@@ -168,7 +169,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
-        if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(state, site.Id, list);
+        if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
         SyncDoors(site.Id);
     }
 
@@ -665,12 +666,14 @@ public sealed class FixtureRegistry
     /// Takes a building's lock and door state from its saved GAMESTATE_BUILDING (docs/game/locks.md "Save keys"): <c>hardness</c> and <c>broken</c> always, level and
     /// <c>locked</c> only when the saved <c>lock lvl</c> is above 0; doors by suffix i: <c>state</c>, <c>doa</c>, <c>broken</c>, <c>gatecode</c>, <c>wants lock</c>, <c>lock lvl</c>,
     /// <c>locked</c>, <c>hardness</c>. Interior fixtures (whose save ids are not mapped) keep their rolls but count as restored, apart from Meitou's own <c>meitou lock</c> key (see <see cref="InteriorKey"/>).
+    /// A <paramref name="level"/> state (the level data's, for a building no save has) marks restored only the doors it has a <c>state</c> for, so the squad's <c>initial door state</c>
+    /// still applies to the rest.
     /// </summary>
-    void Restore(FcsRecord state, string building, List<Fixture> list)
+    void Restore(StateKeys state, string building, List<Fixture> list, bool level)
     {
         foreach (var f in list)
         {
-            f.Restored = true;
+            f.Restored = !level || f.Kind == FixtureKind.Door && state.Ints.ContainsKey("state" + f.DoorIndex.ToString(CultureInfo.InvariantCulture));
             if (f.Contents is { } grid && Items is { } factory && ContainerSave.KeyOf(f, building) is { } contentsKey && state.Strings.TryGetValue(contentsKey, out var saved))
                 ContainerSave.Read(saved, grid, factory);
             if (f.Kind == FixtureKind.Door)
@@ -701,7 +704,15 @@ public sealed class FixtureRegistry
         f.Kind is FixtureKind.Cage or FixtureKind.Container && f.Id.Length > building.Length + 1 && f.Id[building.Length] == '/' && f.Id.StartsWith(building, StringComparison.Ordinal)
             ? "meitou lock " + f.Id[(building.Length + 1)..] : null;
 
-    static void ReadLock(FcsRecord state, LockState l, string suffix, bool broken)
+    /// <summary>The keys of a building state, from a save's record or the level data's.</summary>
+    readonly record struct StateKeys(IReadOnlyDictionary<string, int> Ints, IReadOnlyDictionary<string, float> Floats, IReadOnlyDictionary<string, bool> Bools,
+        IReadOnlyDictionary<string, string> Strings)
+    {
+        public static StateKeys Of(FcsRecord r) => new(r.Ints, r.Floats, r.Bools, r.Strings);
+        public static StateKeys Of(GameRecord r) => new(r.Ints, r.Floats, r.Bools, r.Strings);
+    }
+
+    static void ReadLock(StateKeys state, LockState l, string suffix, bool broken)
     {
         if (state.Floats.TryGetValue("hardness" + suffix, out float h)) l.Hardness = h;
         if (broken && state.Bools.TryGetValue("broken" + suffix, out bool b)) l.Broken = b;

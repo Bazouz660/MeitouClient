@@ -68,6 +68,8 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     public bool Destroyed { get; init; }
     /// <summary>The level data's <c>residents template</c> of its state (a SQUAD_TEMPLATE id; empty when none).</summary>
     public string ResidentsTemplate { get; init; } = "";
+    /// <summary>Its level-data GAMESTATE_BUILDING (null when it has none): the lock and door state it starts with when no save has one (docs/game/locks.md "Save keys").</summary>
+    public GameRecord? LevelState { get; init; }
     /// <summary>Its turret, when its record has a <c>BUILDING_FUNCTIONALITY</c> function BF_TURRET (a mounted harpoon turret or crossbow); null otherwise.</summary>
     public TurretPost? Turret { get; init; }
     /// <summary>The state's <c>interior layout name</c> (the one its <see cref="Spots"/> come from); empty when none.</summary>
@@ -204,6 +206,7 @@ public static class TownBuildings
                 Destroyed = resolved.Destroyed,
                 Turret = turret,
                 ResidentsTemplate = state?.GetString("residents template") ?? "",
+                LevelState = state,
                 InteriorLayout = state?.GetString("interior layout name") ?? "",
                 InteriorLayouts = LayoutNames(layouts, record, exterior: false, names),
                 ExteriorLayouts = LayoutNames(layouts, record, exterior: true, names),

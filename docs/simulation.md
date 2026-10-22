@@ -455,7 +455,8 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
 - **Ids** (engine): a building's own lock = its instance id; door i `<inst>#i`; interior item `<inst>/<layout index>`
   (`TownBuildings` collects them as `TownFixture`s); bed k `<inst>@bed<k>`. Owner: the placement's `owner faction ID`, else
   the town's faction. Lock levels roll from `Rng.Hash(seed, StableHash(id), Lock, 0)`: load order never changes them.
-- **Doors**: `AiSystem` applies the template's `initial door state` when it assigns a home (first squad, not to restored
+- **Doors**: a building no save has starts from its level-data GAMESTATE_BUILDING (`TownBuilding.LevelState`: lock levels and door
+  state; only doors with a `state` key count as restored). `AiSystem` applies the template's `initial door state` when it assigns a home (first squad, not to restored
   doors). `IDoorGate` (the game's `NavAdapter` -> `NavDoors`, reset on `ReplaceWorld`) closes a building for every path while
   all its doors are effectively locked and none broken (engine: one nav door state per building; closed-unlocked doors stay passable).
   Motion (`LockSystem.Doors.cs`, serial `SlowWorld`): `StepDoors` moves opening/closing leaves by `door move speed` per second and

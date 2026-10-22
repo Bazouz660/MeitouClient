@@ -172,6 +172,15 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Initial door state** (`FUN_140553210`, when the home building is assigned to a squad; **Verified**): CLOSED -> unlocked, not
   broken, closed; OPEN -> unlocked, open; LOCKED -> locked, closed; BROKEN -> lock broken, door broken. Saved buildings keep
   their saved values. The gate on building +0xa8 that allows it is **Unknown** (presumably "not restored from a save").
+- **Level-data door state**: the level data's GAMESTATE_BUILDING of a placed building carries the [save keys](#save-keys), so a
+  building no save has starts from them (**Verified** data, census of the merged `newland/leveldata` zones: 996 doored building
+  states have `state0`: 547 closed, 442 open, 7 opening, `doa0` matching, `lock lvl0` 20..49; 265 have no door keys). Town gates
+  (`Defensive Gate II-IV`, `Defensive Gate level 2`, `Makeshift Gate`) are mostly open (51 open, 22 closed, 29 closed and locked,
+  2 opening; all `wants lock`).
+  That the original applies them on a new game is **Observed** (the save format: base buildings keep their level state's handle,
+  [save](../formats/save.md#object-handles-and-slot-lists)). Meitou: lock and door state from the level state, the save's on top;
+  only doors with a `state` key count as restored, so `initial door state` still applies to the others (**engine choice**, the
+  +0xa8 gate is Unknown).
 
 ## Cages and beds
 
