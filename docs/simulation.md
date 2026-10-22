@@ -563,6 +563,10 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   into the caging. CHARACTER `slave` ("sets initial slave state"; **Verified**: fcs.def and the editor's `SlaveStateEnum` NOT_SLAVE 0, IS_SLAVE 1, ESCAPING_SLAVE 2, EX_SLAVE 3) is
   applied to a new game's characters (`StartPlayer`; The Slaves' "start slave" is 1, in locked Prisoner Shackles), owned by the start town's faction (engine; the original's owner is
   **Unknown**); 3 is free.
+- **Slave trading** (`DialogueSystem.Slaves.cs`; facts: [economy 12](game/economy.md#12-slaves-prisoners-animals)): DA 41 / 42 open the selling / buying list as the
+  conversation ends, an engine stand-in for the `CharacterTrading_*` window like the bail list (one choice per character with its price, the list shown again after each pick).
+  Engine reading of the buy list (Meitou keeps no platoon slave list): state-1 slaves owned by the slaver's faction within twice its resident squad's home radius, else within 300.
+  Not built: the sold character's shackles, the memory tags.
 - **Slave squads** (`PopulationSystem.MakeSlaves`): a squad's planned `slaves` squads (the factory's role 4) are made at its spot as squads of their template's faction (else the
   owner's), every member a slave of the owner squad's faction, put into random free cages of the home after its prisoners (engine: their "Slave only squad" package's one goal is
   Slave get in Cage, 172; the rest stand by the owner). A slave is never police-like (engine: many slave records keep the default MILITARY class); an owned slave starts no fights and is no aggro target but for its owner's

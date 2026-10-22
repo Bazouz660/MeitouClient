@@ -357,6 +357,7 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
 
 ### 12. Slaves, prisoners, animals
 
+A slave's `buyValue` (`FUN_1406751f0`, **Observed**) is `clamp(trunc(strength + attack + dexterity * k) * RACE buy value, 1000, 20000)`,
 where `strength` = `CharStatsAnimal::vfunc_2`'s value (stat at `+0x80` times `CharStats+0x34`; `k` = `CharStats+0x34`), `attack` =
 the melee-attack stat (`+0x120`), `dexterity` = `+0x88`, with the stat offsets from [character-stats.md](character-stats.md).
 RACE `buy value` is 100 for most races (27 of 53 records); other values in the data: 400 x8, 10 x4, 50 x3, 75 x2, 200 x2, 250 x2,
@@ -368,6 +369,17 @@ RACE `buy value` is 100 for most races (27 of 53 records); other values in the d
 | Buying a slave | `CharacterTrading_SlaveBuying` `FUN_1406a7970` | override or `buyValue`; **doubled** when the character is of the player's faction |
 | Buying an animal | `CharacterTrading_AnimalBuying` `FUN_1406a9440` | override or 14000, times `(growth + 0.1)` where `growth` = the animal's `vfunc 0x398` (age/maturity 0..1) |
 | Paying bail | `CharacterTrading_PrisonerBailout` | section 11.5 |
+
+`k` is 1 for every humanoid ([animals](animals.md), slot 0x398). The windows are opened by the dialogue effects (`FUN_140680560`, **Observed**), never at the speaker
+itself; val0 is the override (used when above 0). Their confirm functions apply per chosen character, then move the summed price once:
+
+- **Selling** (DA 41): the list is the living members of the talker's platoon (the talker too) within 300 of the speaker. Confirm (`vfunc_0` `FUN_1406a7740`): the
+  character is enslaved to the speaker (`FUN_14032e590`: slave state 1, owner the speaker's faction, put in SHACKLES or SHACKLES-BODY when not caged); a memory tag 5 on
+  its platoon; relations of the speaker's faction with the player's +4, of the character's faction -4; the player's purse gets the total (the slaver's purse is not touched).
+- **Buying** (DA 42): the list is the speaker's platoon's slave list, those in slave state 1 and alive. Confirm (`FUN_1406add20`): the slave joins the buyer's platoon
+  (`FUN_14032e430`), its slave state cleared, shackles unlocked, its cage unlocked and released flag set, it says event 51 `BOUGHT_ME_FROM_SLAVERY` to the buyer and gets
+  133 `GET_OUT_OF_CAGE_LEGIT`; a memory tag 3; relations of the speaker's faction with the player's +1 (and of the slave's, by then the player's, +4); the player pays.
+- "Selling Slaves" and "Buying Slaves" are the window titles; selling shows "WARNING: Character will become a slave!".
 
 ## Unknowns
 

@@ -399,7 +399,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 35 INCREASE_FACTION_RANK | the speaker's faction's rank +1 while below val0 (0: no cap) (**Verified** by code) |
 | 36 LOCK_THIS_DIALOG | locks the current dialogue |
 | 37 / 38 / 39 ASSAULT / RETREAT / VICTORY_PHASE | the speaker's campaign phase: 1 (2 without a pt2 leader package), 2, 3 (unhandled) ([campaigns](factions-squads-towns.md#campaigns)) |
-| 41, 42, 43, 48 CHOOSE_* | the character trading window (slaves sold / bought, bail, animals; val0 price override) |
+| 41, 42, 43, 48 CHOOSE_* | the character trading window (slaves sold / bought, bail, animals; val0 price override; lists and prices: [economy 11.5, 12](economy.md#12-slaves-prisoners-animals)). Base data: "trade slaves" (slaver bosses) and "Wandering slave trader" carry 41 and 42, Rebirth's boss 41, "Empire pro-slave" 42 with val0 1000 (**Verified** by probe) |
 | 54 OPEN_NEAREST_GATE | opens the speaker's town's nearest gate |
 | 56 MASSIVE_ALARM | every squad of the speaker's faction attacks and fires event 66 |
 | 58 KNOCKOUT | a speaker field = val0 (probably KO time) |

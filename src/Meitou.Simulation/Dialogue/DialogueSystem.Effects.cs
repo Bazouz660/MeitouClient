@@ -10,7 +10,7 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// A line's effects (<c>FUN_140680560</c>, docs/game/dialogue.md "Effects"), run as it is said or clicked, with <paramref name="me"/> the NPC-side speaker and the player character the
     /// target, in the original's order: locks, interrupt, relation changes, then the DA effects in data order. Not built yet: crowd triggers, items given, AI changes and
-    /// contracts, arrests other than the bounty desk's hand-over, and the slavery effects other than DA 40.
+    /// contracts, arrests other than the bounty desk's hand-over, and DA 48 (animals for sale).
     /// </summary>
     void RunEffects(World world, Conversation c, DialogueNode line, CharacterId me)
     {
@@ -67,7 +67,11 @@ public sealed partial class DialogueSystem
                     return;
                 case ChoosePrisonerBail when Arrests is not null:
                     c.Ended = true;
-                    bailAfter = (me, target);   // the bail list opens as the conversation closes (OpenBail)
+                    tradingAfter = (me, target, TradingKind.Bail, 0);   // the list opens as the conversation closes (OpenTrading)
+                    return;
+                case ChooseSlavesSelling or ChooseSlavesBuying when me != target:
+                    c.Ended = true;
+                    tradingAfter = (me, target, effect.Action == ChooseSlavesSelling ? TradingKind.SlavesSelling : TradingKind.SlavesBuying, effect.Value);
                     return;
                 case DialogueActions.AssignBounty when tc is not null && mc is not null && effect.Value > 0 && data.Relations.Contains(mc.Faction):
                 {

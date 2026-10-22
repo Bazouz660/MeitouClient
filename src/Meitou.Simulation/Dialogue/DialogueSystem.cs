@@ -307,7 +307,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     void Choose(World world, Conversation c, int index)
     {
         if ((uint)index >= (uint)c.Choices.Count) return;
-        if (bailList is not null) { ChooseBail(world, c, index); return; }
+        if (tradingList is not null) { ChooseTrading(world, c, index); return; }
         var (reply, text) = c.Choices[index];
         DialogueNode? from = c.Line;
         if (reply is not null)
@@ -335,14 +335,14 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (open is not { } c) return;
         open = null;
         view = null;
-        if (bailList is not null) { bailList = null; Release(world, c.Npc); return; }   // the bail list closing: the conversation was counted already
+        if (tradingList is not null) { tradingList = null; Release(world, c.Npc); return; }   // a trading list closing: the conversation was counted already
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
         if (world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
         // An arrest the conversation started (DA 29, 30) keeps the guard held.
         if (Arrests?.Arrests.Any(a => a.Guard == c.Npc) != true) Release(world, c.Npc);
-        OpenBail(world);
+        OpenTrading(world);
     }
 
     void MarkUsed(World world, Conversation c, DialogueNode line)

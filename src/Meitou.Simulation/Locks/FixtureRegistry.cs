@@ -624,8 +624,14 @@ public sealed class FixtureRegistry
         if (shackles is null && c.SlaveState == 0) return;
         world.Bark(world.Characters.IdOf(slot), Loc.Tr("Free!"));
         world.EmitSound(SoundKind.Unlocked, slot, world.Characters.Next[slot].Position);
+        Unslave(world, c);
+    }
+
+    /// <summary>Clears the slave state and unlocks worn shackles, without a word (a slave bought, <c>FUN_1406add20</c>).</summary>
+    public static void Unslave(World world, CharacterCold c)
+    {
         SetSlave(world, c, 0, -1);
-        if (shackles?.Lock is { } l) l.Locked = false;
+        if (LockSystem.WornShackles(c)?.Lock is { } l) l.Locked = false;
     }
 
     /// <summary>
