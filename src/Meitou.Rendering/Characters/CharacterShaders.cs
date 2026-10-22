@@ -75,7 +75,7 @@ static class CharacterShaders
         layout(location = 1) in vec3 aNormal;
         layout(location = 2) in vec2 aUv;
         layout(location = 3) in vec4 aTangent;
-        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's limb bits (bit k: limb slot k)
+        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's limb bits (bit k: limb slot k), z: curvature (1 / radius)
         layout(location = 5) in uvec4 aBones;
         layout(location = 6) in vec4 aWeights;
         layout(location = 7) in vec4 aInstance0;
@@ -89,7 +89,7 @@ static class CharacterShaders
         //MOTION_BUF
 
         out vec3 vWorld;
-        out vec3 vRel;      // eye-relative (the skin's curvature: the absolute position is too coarse for its derivatives)
+        out float vCurvature;   // the skin's curvature, baked per vertex (CharacterContent.MarkCurvature)
         out vec3 vNormal;
         out vec4 vTangent;
         out vec2 vUv;
@@ -113,7 +113,7 @@ static class CharacterShaders
             uint slot = floatBitsToUint(aColour.x);
             if (aInstanceData.w != 0u && slot != 0u && slot < 0x1000000u) local += morphs.deltas[aInstanceData.w + slot].xyz;
             vec4 p = world * vec4(local, 1.0);
-            vRel = p.xyz;
+            vCurvature = aColour.z;
             vWorld = p.xyz + view.eye;   // the instances are relative to the eye (CharacterRenderer.DrawView)
             mat3 n = mat3(world);
             vNormal = n * aNormal;
@@ -176,7 +176,7 @@ static class CharacterShaders
 
     public static string Fragment() => "#version 450\n" + NativeShaders.Prelude(PushMembers) + NativeShaders.AtmosphereFunctions + Structs + Lookup + $$"""
         in vec3 vWorld;
-        in vec3 vRel;
+        in float vCurvature;
         in vec3 vNormal;
         in vec4 vTangent;
         in vec2 vUv;
@@ -218,9 +218,8 @@ static class CharacterShaders
 
         void main()
         {
-            // The skin's curvature, before any discard (derivatives): how fast the smooth normal turns per unit of surface.
             vec3 geometric = normalize(vNormal);
-            float curvature = length(fwidth(geometric)) / max(length(fwidth(vRel)), 1e-5);
+            float curvature = vCurvature;
             if (vHidden > 0.0) discard;
             if (pc.depthIndex != 0u) { fragColour = vec4(pc.flatColour, 1.0); return; }
             CharMaterial m = materials.items[vMaterial];
@@ -320,9 +319,6 @@ static class CharacterShaders
 
             // Lit as the world's other meshes are (Shaders.MeshFragment): the game's deferred lighting with the game's sky, else the simple model.
             vec3 v = normalize(view.eye - vWorld);
-            // Towards the silhouette the screen-space curvature blows up (the normal turns fast across a pixel while the depth jump is not seen as surface),
-            // which drew a red rim along the outline: fade it out as the surface turns edge-on.
-            curvature *= smoothstep(0.0, 0.5, abs(dot(smoothNormal, v)));
             gloss = clamp(gloss, 0.0, 1.0);
             vec3 colour;
             giInterior = vInterior != 0u;

@@ -248,6 +248,7 @@ internal sealed class CharacterContent : IDisposable
             var model = Model.Build(mesh, boneCount, gameBinormals: true);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
             if (limbs is not null) MarkLimbs(model, limbs);
+            MarkCurvature(model);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
             var centre = mesh.Bounds is { } b ? (b.Min + b.Max) / 2 : model.Center;
             float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius, fileRadius = radius;
@@ -452,6 +453,41 @@ internal sealed class CharacterContent : IDisposable
                 bool below = limb >= 0 && v.Position.Y < (limb < 2 ? hide.ArmBelow : hide.LegBelow);
                 v.Colour.Y = below ? 1 << limb : 0;
             }
+    }
+
+    /// <summary>
+    /// Writes each vertex's curvature (1 / radius, world units) into its colour's Z, for the Meitou skin (docs/character-renderer.md "Skin"): over the edges at the vertex,
+    /// the mean of how far the normal turns per unit of length, then averaged over the vertices that share its position (a UV seam must not show). Baked per vertex and
+    /// interpolated, it is smooth across triangles; a screen-space estimate is constant per triangle and drew the low-poly faceting in red.
+    /// </summary>
+    static void MarkCurvature(Model model)
+    {
+        foreach (var part in model.Parts)
+        {
+            var v = part.Vertices;
+            var sum = new float[v.Length];
+            var count = new int[v.Length];
+            var idx = part.Indices;
+            for (int t = 0; t + 2 < idx.Length; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    uint a = idx[t + e], b = idx[t + (e + 1) % 3];
+                    float length = Vector3.Distance(v[a].Position, v[b].Position);
+                    if (length < 1e-5f) continue;
+                    float k = Vector3.Distance(Vector3.Normalize(v[a].Normal), Vector3.Normalize(v[b].Normal)) / length;
+                    sum[a] += k; count[a]++;
+                    sum[b] += k; count[b]++;
+                }
+            static Vector3 Key(Vector3 p) => new(MathF.Round(p.X, 3), MathF.Round(p.Y, 3), MathF.Round(p.Z, 3));
+            var byPosition = new Dictionary<Vector3, (float Sum, int Count)>();
+            for (int i = 0; i < v.Length; i++)
+                byPosition[Key(v[i].Position)] = byPosition.TryGetValue(Key(v[i].Position), out var s) ? (s.Sum + sum[i], s.Count + count[i]) : (sum[i], count[i]);
+            for (int i = 0; i < v.Length; i++)
+            {
+                var s = byPosition[Key(v[i].Position)];
+                v[i].Colour.Z = s.Count > 0 ? s.Sum / s.Count : 0;
+            }
+        }
     }
 
     /// <summary>How much farther a part's generated levels start (<see cref="HairLodScale"/> for a person's hair and beard).</summary>
