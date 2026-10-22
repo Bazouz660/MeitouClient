@@ -55,8 +55,11 @@ sealed partial class PlayerInterface
             var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
             if (id is "new-game" or "import") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
             if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
+            if (id == "inventory") characterInventoryLayout = layout;
             faithfulScreens.Register(id, layout, modal, centreRoot: id is "file");
         }
+        animalInventoryLayout = resolve("Kenshi_InventoryAnimalWindow.layout") is { } animalWindow ? MyGuiReader.ReadLayout(animalWindow) : null;
+        characterRowLayout = resolve("Kenshi_CharacterSelectionBox.layout") is { } characterRow ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(characterRow), uiResources) : null;
         // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
         faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
@@ -78,6 +81,7 @@ sealed partial class PlayerInterface
         ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false), ("storage", "Kenshi_InventoryGenericWindow", false),
         ("build", "Kenshi_BuildWindow", false), ("editor", "Kenshi_CharacterEditor", true), ("dialogue", "Kenshi_ConversationPanel", true),
         ("file", "Kenshi_OpenSaveFileDialog", true), ("prospect", "Kenshi_ProspectingWindow", false),
+        (CharacterTradeScreen, "Kenshi_CharacterSelectionWindow", false),
     ];
 
     /// <summary>The expanded layout and the current bindings of the HUD (<c>"hud"</c>) or of a faithful screen, for the layout audit test.</summary>
@@ -191,7 +195,10 @@ sealed partial class PlayerInterface
         SyncTradeScreens();
         SyncMachineScreens();
         SyncLootScreen();
+        SyncInventoryLayouts();
+        SyncLimbsScreen();
         SyncDialogueScreen();
+        SyncCharacterTradeScreen();
         ValidateInventoryDrag();
         var b = BindUi();
         faithfulScreens.FocusRing = UiMode == UiMode.Meitou;
@@ -342,8 +349,9 @@ sealed partial class PlayerInterface
             UpdateMenuPause(); return;
         }
         if (panel == "build") { if (buildMode) faithfulScreens.Open("build"); else SetBuildMode(true); return; }
-        if (panel is not ("inventory" or "stats")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
-        var control = ArrangeUi().First(c => c.Action == $"meitou:{panel}");
+        if (panel is not ("inventory" or "stats" or "limbs")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
+        var control = ArrangeUi().First(c => c.Action == $"meitou:{(panel == "limbs" ? "inventory" : panel)}");
         uiHost.Dispatch(control);
+        if (panel == "limbs") { limbsOwner = InventoryOwner()?.Id ?? CharacterId.None; faithfulScreens.Open("limbs"); PlaceLimbsWindow(); }
     }
 }

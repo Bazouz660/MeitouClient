@@ -153,6 +153,7 @@ public static class StandardSystems
         if (Has(StandardParts.Pursuit | StandardParts.Combat | StandardParts.Retaliation | StandardParts.Flee))
             combat = new CombatSystem(data.Combat.Techniques, data.Combat.Constants, data.Bodies.Constants, data.BodyOptions, o.AnimationLengths ?? new AnimationLengths(), o.Combat);
         if (combat is not null && Has(StandardParts.Aggro)) combat.Relations = data.Relations;
+        if (combat is not null) combat.Buildings = o.RagdollEnvironment;
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
         if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid));
@@ -173,7 +174,7 @@ public static class StandardSystems
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
         if (Has(StandardParts.Construction)) systems.Add(construction = new Meitou.Simulation.Construction.ConstructionSystem(data, o.Construction));
         Meitou.Simulation.Production.ProductionSystem? production = null;
-        if (Has(StandardParts.Production)) systems.Add(production = new Meitou.Simulation.Production.ProductionSystem(data, o.Production));
+        if (Has(StandardParts.Production)) systems.Add(production = new Meitou.Simulation.Production.ProductionSystem(data, o.Production) { Assembly = new CharacterAssembly(data) });
         if (Has(StandardParts.Combat)) systems.Add(combat!);
         if (Has(StandardParts.Animation))
         {

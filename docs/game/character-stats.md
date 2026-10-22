@@ -287,7 +287,8 @@ replaced, 3 crushed) and the fitted item (holder `FUN_1400cd3f0`; **Verified** b
   limb attaches no mesh. Hidden body vertices: [characters.md](../characters.md#hidden-body-parts-verified--140075600--140071f90--140531cc0-hlsl-skinhlsl).
 - Meitou in play: fitted items sit in the inventory's `*_replace` sections (the limbs window), weigh nothing, are not traded and
   are saved only through MEDICAL_STATE `limbs`. Dropping a LIMB_REPLACEMENT whose `slot` is 50 + k on slot k fits it when limb k is a
-  stump; dragging it out removes it. Whether the original also fits over a crushed limb is **Unknown** (Meitou refuses).
+  stump; lifting it out removes it (a right click puts a carried one on its stump or takes a fitted one off). The original cannot fit over a crushed limb: its slot is disabled
+  ([limbs window](ui-screens.md#limbs-window)); fitting and removing are instant, with no medic or timer (`FUN_140645690`, `FUN_1400d5a30`, **Verified** in the decompile).
 
 | Slot | Fields | Stat numbers |
 | --- | --- | --- |

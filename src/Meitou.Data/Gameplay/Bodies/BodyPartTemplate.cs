@@ -40,6 +40,9 @@ public sealed record BodyPartTemplate
     public float AffectsSkills { get; init; }
     /// <summary><c>KO mult</c>: weight of this part's damage in the knock-out time.</summary>
     public float KoMult { get; init; } = 1;
+    /// <summary><c>bone name</c> and <c>bone name 2</c>: the skeleton bones of the part (a bolt sticks in one, docs/game/combat.md "Bolt visuals").</summary>
+    public string BoneName { get; init; } = "";
+    public string BoneName2 { get; init; } = "";
 
     public BodySide Side => CollapsePart is 4 or 0x20 ? BodySide.Left : CollapsePart is 2 or 0x10 ? BodySide.Right : BodySide.None;
 
@@ -76,5 +79,7 @@ public sealed record BodyPartTemplate
         AffectsMoveSpeed = RecordReading.Float(r, "affects move speed", 0),
         AffectsSkills = RecordReading.Float(r, "affects skills", 0),
         KoMult = RecordReading.Float(r, "KO mult", 1),
+        BoneName = r.GetString("bone name"),
+        BoneName2 = r.GetString("bone name 2"),
     };
 }

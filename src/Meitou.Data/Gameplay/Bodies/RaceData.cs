@@ -47,6 +47,10 @@ public sealed class RaceData
     public float PathfindFootprintRadius { get; init; } = 4;
     public float PathfindAcceleration { get; init; } = 20;
     public int ExtraAttackSlots { get; init; }
+    /// <summary>
+    /// <c>buy value</c> (fcs.def default 100, "percentage of normal value when bought or sold as a slave"): the factor of a slave's price (docs/game/economy.md section 12).
+    /// </summary>
+    public float BuyValue { get; init; } = 100;
 
     public bool IsRobot { get; init; }
     public bool Swims { get; init; }
@@ -144,6 +148,7 @@ public sealed class RaceData
             PathfindFootprintRadius = RecordReading.Float(r, "pathfind footprint radius", 4),
             PathfindAcceleration = RecordReading.Float(r, "pathfind acceleration", 20),
             ExtraAttackSlots = RecordReading.Int(r, "extra attack slots", 0),
+            BuyValue = RecordReading.Float(r, "buy value", 100),
             IsRobot = RecordReading.Bool(r, "is robot", false),
             Swims = RecordReading.Bool(r, "swims", false),
             Carriable = RecordReading.Bool(r, "carriable", false),

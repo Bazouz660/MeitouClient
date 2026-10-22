@@ -49,6 +49,12 @@ public sealed class PlayerState
     public TownKnowledge[] Towns { get; private set; } = [];
     /// <summary>The squad AI options of the overview's AI tab that Meitou runs (<see cref="Simulation.SquadAi"/>); saved as CAMERA bools (<see cref="SquadAiKeys"/>).</summary>
     public SquadAi SquadAi { get; set; } = SquadAi.Defaults;
+    /// <summary>
+    /// The item on the mouse (<see cref="Items.HeldItem"/>, Items/HeldItems.cs), or null. Hashed; not saved: a save puts it back where it came from first (<see cref="World.ReturnHeldItem"/>).
+    /// </summary>
+    public Items.HeldItem? Held { get; set; }
+    /// <summary>The <see cref="Items.HeldCommand.Serial"/> of the last held-item command applied (display only: not hashed, not saved).</summary>
+    public long HeldSerial { get; set; }
 
     /// <summary>Adds <paramref name="flags"/> to a town's knowledge; true when that changed it.</summary>
     public bool Know(int site, TownKnowledge flags)
@@ -109,6 +115,12 @@ public sealed class PlayerState
         h.Add(Money);
         h.Add(Squad);
         if (SquadAi != SquadAi.Defaults) h.Add(0x53714169 + (int)SquadAi);
+        if (Held is { } held)
+        {
+            h.Add(0x48656c64);
+            h.Add(Rng.StableHash(held.Item.Record));
+            h.Add(held.Item.Quantity);
+        }
         h.Add(Selection.Count);
         foreach (var c in Selection)
         {
@@ -175,20 +187,11 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case Items.ReadMapItem read:
                     ReadMap(world, read);
                     break;
-                case Items.MoveInventoryItem move:
-                    if (table.TryResolveNext(move.Character, out int owner) && table.Cold(owner) is { IsPlayer: true, Inventory: { } inventory } cold)
-                    {
-                        if (Items.InventoryCommands.IsLimbSection(move.Item.Section) || Items.InventoryCommands.IsLimbSection(move.Section))
-                        {
-                            if (!MoveLimb(cold, inventory, move)) world.Post("Cannot fit or remove that limb: it needs a missing limb of its side, or the slot changed.");
-                        }
-                        else if (inventory.All().ElementAtOrDefault(move.Item.Index) is { LockedOn: true } && move.Section != move.Item.Section)
-                            world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
-                        else if (!Items.InventoryCommands.Move(inventory, move.Item, move.Section, move.X, move.Y))
-                            world.Post("Cannot move that item: the slot is occupied, incompatible or the inventory changed.");
-                        else if (Items.InventoryCommands.IsEquipmentSection(move.Item.Section) || Items.InventoryCommands.IsEquipmentSection(move.Section))
-                            assembly?.RefreshEquipment(cold);
-                    }
+                case Items.HeldCommand held:
+                    HeldInput(world, held);
+                    break;
+                case Items.QuickMoveItem quick:
+                    QuickMove(world, quick);
                     break;
                 case SquadAiCommand option:
                     player.SquadAi = option.On ? player.SquadAi | option.Option : player.SquadAi & ~option.Option;
@@ -208,24 +211,6 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case Items.PickUpItemOrder pick:
                     PickUpInput(world, pick);
                     break;
-                case Items.DropInventoryItem drop:
-                    if (table.TryResolveNext(drop.Character, out int dropper) && table.Cold(dropper) is { IsPlayer: true, Inventory: { } held } holder &&
-                        held.All().ElementAtOrDefault(drop.Item.Index) is { } item && item.Record == drop.Item.Record && item.Section == drop.Item.Section && item.X == drop.Item.X &&
-                        item.Y == drop.Item.Y && item.Quantity == drop.Item.Quantity && Items.InventoryCommands.IsMovableSection(item.Section))
-                    {
-                        if (item.LockedOn) { world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength."); break; }
-                        bool worn = Items.InventoryCommands.IsEquipmentSection(item.Section);
-                        held.Remove(item);
-                        item.Section = "main";
-                        // At the feet, a little ahead (engine choice), on the ground.
-                        ref var hot = ref table.Next[dropper];
-                        var at = hot.Position + new System.Numerics.Vector3(MathF.Sin(hot.Yaw), 0, MathF.Cos(hot.Yaw)) * 3;
-                        at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
-                        // Turned at random (the original's physics tumbles it), by a roll of the dropper and the tick.
-                        world.GroundItems.Drop(item, at, Rng.Float(Rng.Hash(world.Seed, (ulong)dropper, RngPurpose.Loot, (ulong)world.Tick)) * MathF.Tau);
-                        if (worn) assembly?.RefreshEquipment(holder);
-                    }
-                    break;
                 case Items.ArrangeInventory arrange:
                     if (table.TryResolveNext(arrange.Character, out int character) && table.Cold(character) is { IsPlayer: true, Inventory: { } carried } &&
                         !Items.InventoryCommands.Arrange(carried)) world.Post("Cannot arrange inventory: the items do not fit.");
@@ -240,34 +225,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
         SquadManagement.KeepActive(world);
         PickUpWorkers(world);
         ContainerWorkers(world);
-    }
-
-    /// <summary>
-    /// A prosthetic dragged into or out of the limbs window (docs/game/character-stats.md "Limb replacements and robots"): into a slot it is fitted when that limb is a stump and the
-    /// item's <c>slot</c> is that limb; out of one it is taken off and the limb becomes a stump. A move between two limb slots is refused.
-    /// </summary>
-    bool MoveLimb(CharacterCold cold, Items.Inventory inventory, Items.MoveInventoryItem move)
-    {
-        if (data is null || cold.Medical is not { } medical) return false;
-        int from = Items.InventoryCommands.LimbSlotOf(move.Item.Section), to = Items.InventoryCommands.LimbSlotOf(move.Section);
-        if (from >= 0 && to >= 0) return false;
-        var item = inventory.All().ElementAtOrDefault(move.Item.Index);
-        if (item is null) return false;
-        if (to >= 0)
-        {
-            if (data.Items.Limb(item.Record) is not { } limb || limb.LimbSlot != to || medical.LimbPart(to) is not { Limb: Bodies.LimbState.Stump }) return false;
-            if (!Items.InventoryCommands.Move(inventory, move.Item, move.Section, move.X, move.Y)) return false;
-            medical.FitReplacement(limb, item, item.LimbDamage, item.LimbWear, item.LimbStun);
-            (item.LimbDamage, item.LimbWear, item.LimbStun) = (0, 0, 0);
-        }
-        else
-        {
-            if (medical.LimbPart(from) is not { Limb: Bodies.LimbState.Replaced } part || part.ReplacementItem != item) return false;
-            if (!Items.InventoryCommands.Move(inventory, move.Item, move.Section, move.X, move.Y)) return false;
-            medical.RemoveReplacement(from);
-        }
-        assembly?.RefreshEquipment(cold);
-        return true;
+        KeepHeld(world);
     }
 
     /// <summary>A map item of a player character's inventory: its towns become discovered and recently discovered, and it is used up; with nothing new it stays.</summary>

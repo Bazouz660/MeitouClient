@@ -128,7 +128,7 @@ public sealed record CrossbowData
         AccuracyPerfectSkill = RecordReading.Int(r, "accuracy perfect skill", 0),
         AmmoId = FirstReference(r, "ammo"),
         ReloadAnimId = FirstReference(r, "reload anim"),
-        LiveAmmoMesh = r.GetString("live ammo"),
+        LiveAmmoMesh = r.GetPath("live ammo"),
     };
 }
 

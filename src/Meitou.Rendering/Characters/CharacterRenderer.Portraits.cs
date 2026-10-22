@@ -162,17 +162,17 @@ internal sealed unsafe partial class CharacterRenderer
         var light = Vector3.Normalize(toEye + 0.7f * Vector3.UnitY + 0.4f * left);
         // The still pose's palette in place of the live one: this view's own bone memory and attachments past the frame's, weapon sheathed.
         var (liveBones, livePrevious) = (bones, previousBones);
-        var (boneBase, attachBase, weapon) = (l.BoneBase, l.AttachBase, l.WeaponDrawn);
+        var (boneBase, attachBase, weapon, ranged) = (l.BoneBase, l.AttachBase, l.WeaponDrawn, l.RangedDrawn);
         int bonesCount = l.Asset.Rig.BoneCount;
         bones = previousBones = Gpu.Frame.Constants.Allocate((ulong)Math.Max(bonesCount, 1) * 64, 256);
         portraitBones.AsSpan(0, bonesCount).CopyTo(new Span<Matrix4x4>(bones.Pointer, bonesCount));
         if (attach.Length < attachCount + l.Asset.AttachCount) Array.Resize(ref attach, attachCount + l.Asset.AttachCount);
         portraitAttach.AsSpan(0, l.Asset.AttachCount).CopyTo(attach.AsSpan(attachCount));
-        (l.BoneBase, l.AttachBase, l.WeaponDrawn) = (0, attachCount, false);
+        (l.BoneBase, l.AttachBase, l.WeaponDrawn, l.RangedDrawn) = (0, attachCount, false, false);
         portraitLive = index;
         // The shader's plain model (fixed lights: a portrait is a still and does not follow the sky), unclamped either way; enhanced, the resolve finishes it.
         try { DrawView(new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = light }, eye, []); }
-        finally { portraitLive = -1; (bones, previousBones) = (liveBones, livePrevious); (l.BoneBase, l.AttachBase, l.WeaponDrawn) = (boneBase, attachBase, weapon); }
+        finally { portraitLive = -1; (bones, previousBones) = (liveBones, livePrevious); (l.BoneBase, l.AttachBase, l.WeaponDrawn, l.RangedDrawn) = (boneBase, attachBase, weapon, ranged); }
     }
 
     void DisposePortraitHdr()

@@ -12,7 +12,7 @@ accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; exc
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
 clocks, input and camera, and disposes systems/services.
 
-At player speed 0 (without a modal/loading pause), queued selection, inventory move/arrange
+At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
 and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
 commands stay queued; neither world ticks, game time nor simulation phases advance.
 
@@ -312,8 +312,8 @@ is explicit and uncertain; [character-stats.md](game/character-stats.md) owns or
 Limbs: `HealthPart.Limb` / `Replacement` / `ReplacementItem` per slot; saves round-trip them ([save.md](formats/save.md#limbs-medical_state-limbs)).
 A severed limb queues (character, limb) on `CharacterTable.LimbsChanged`; between ticks the population system rebuilds the look
 (`Loadout.Limbs`: stump or prosthetic mesh, natural limb hidden) and drops the race's severed-limb item (Ground items). Prosthetics are
-fitted and removed by dragging them onto or off the limbs window's slots (`MoveInventoryItem` into or out of a `*_replace` section,
-`PlayerSystem.MoveLimb`, rules in [character-stats.md](game/character-stats.md)).
+fitted and removed by holding them onto or off the limbs window's slots (a `*_replace` section takes a LIMB_REPLACEMENT of its side on a stump; lifting a fitted one leaves a
+stump; [held item](#items-and-eating), rules in [character-stats.md](game/character-stats.md)) or by a right click (`QuickMoveItem`).
 
 Ground items: `World.GroundItems`, loose items: the save's (zone `1-itemlist`, read and written by `Saving/GroundItemSave`,
 [save.md](formats/save.md#zone-files)) and the severed limbs combat drops; at most `GroundItems.Limit` dropped in play (default 1024, up to 4096 by the Advanced setting "Dropped items kept"; the oldest of those goes; read ones
@@ -335,9 +335,17 @@ Transfer/split/top-up through inventory APIs. Food/auto-eat uncertainty and cont
 Inventory moves validate snapshot identity, bounds, occupancy, stack limits and equipment
 type/armour slot. Weapon sections are 10×2 (back) and 7×1 (hip); other equipment slots hold
 one compatible item (the belt: an ITEM with `slot` 14, the lanterns, [lights](formats/lights.md#carried-lanterns)). These are engine constraints, not a complete original-game rule set.
-Backpacks move intact between pockets and their attachment slot; containers cannot be put
-inside a backpack. Equipment moves refresh worn appearance and combat gear; pocket armour
-does not grant worn bonuses. Race restrictions, swaps and prosthetic changes remain absent.
+Backpacks move intact between pockets and their attachment slot; a bag goes inside a bag only empty. Equipment moves refresh worn appearance and combat gear; pocket armour
+does not grant worn bonuses. Race restrictions remain absent. `InventoryCommands.Arrange` and `Inventory.AddTo` follow the original's ARRANGE and auto-add; a limited storage's
+stacks start from 1 (`Inventory.Limited`). Rules: [holding an item](game/ui-screens.md#6-inventory-trade-dialogue-build).
+
+Held item (`Items/HeldItems.cs`, part of `PlayerSystem`): `PlayerState.Held` is the item on the mouse with its origin (window `ItemOwner`: a character, the open trade's stock
+or a site; its root inventory, section and cell) and the character holding it. `LiftItem` takes it out (the whole stack or one unit; a fitted prosthetic comes off; a machine slot's
+units are made into an item), `PlaceHeld` places, merges or swaps it (the swapped item becomes the held one), `GiveHeld` adds it to a character in range, `DropHeld` puts it on the
+ground (own windows only), `ReturnHeld` puts it back (old cell, else `Inventory.Add`, else after arranging, else the ground). Stock goes only to the customer and is bought when placed
+(`TradeSystem.AffordHeld` / `PayHeld`, a stolen sale's `CaughtSelling`); out of the open loot it is marked stolen as a loot is and may butcher the body (`CarrySystem.TookHeld`); out of
+another faction's container it is marked stolen. It goes back each tick when its window closed or its holder is down or gone (`KeepHeld`) and before a save (`World.ReturnHeldItem`,
+`SaveCapture.Capture`). Hashed (record and quantity), not saved; the snapshot publishes `Held` and the serial of the last held command applied (`HeldSerial`).
 
 ## Combat
 
@@ -358,7 +366,10 @@ the CONSTANTS value; Meitou 3), the rest wait instead of circling; the block bre
 ### Ranged
 
 Crossbow reload/steady aim, skill spread, bolt flight, ammo, obstruction and friendly hits are
-simulation state; `Schedule` advances bolts. Targets without medical bodies do not stop bolts.
+simulation state; `Schedule` advances bolts. Targets without medical bodies do not stop bolts. Bolts and the line of fire stop at the
+terrain heightmap and the buildings' collision triangles (the ragdolls' environment, `SolidHits`), not the walkable surfaces (a roof over
+the shooter counted as ground). A building is there once its zone's collision has been read on a worker; until then bolts pass it, which
+breaks determinism for those first shots.
 Ranged state is hashed when used. Weapon/turret research: [combat.md](game/combat.md).
 
 ### Animals
@@ -381,9 +392,8 @@ paths; preserve current ordering. Original threshold/sense/retreat facts:
 looting. Carried bodies follow the carrier and affect load. Loot can raise witnessed theft and
 stolen ownership marks. [carry-loot.md](game/carry-loot.md). Loot window (engine choice):
 `OpenLootOrder` walks the looter over, then `PlayerState.OpenLoot` publishes the body's whole inventory
-(`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); `TakeLootItem` / `PutLootItem`
-move single items to a given slot or cell (`InventoryCommands.Transfer`, the move rules; taking counts as a
-loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
+(`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); items are held across with the mouse ([held item](#items-and-eating)),
+or right-clicked over (`TakeLootItem` / `PutLootItem`, `InventoryCommands.MoveInto`; taking counts as a loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
 body comes round or is lifted. It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
 
@@ -574,8 +584,15 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   `Enslave` (fight down, lift, cage; event 36 ESCAPING_SLAVE_SPOTTED as a bubble), and the caging makes it a slave (1) again. A town here is `InOwnTown`'s extent, else no farther
   from its centre than its gate nearest the point plus 100 (Rebirth's gates stand about 1500 out, its radius is 184); without gates, the extent only. **Observed** (probe): a start
   slave walking out of Rebirth is tagged just past the south gate, and once down is carried back and caged as a slave.
-- Not built: Slave AI Goals (obedience, work, following a master), beatings of idle slaves, slave trading windows (DA 41/42), the status panel's Slave / Escaped slave lines,
-  kidnapped captives made slaves ([Kidnapping](#kidnapping)).
+- **Slave trading** (DA 41 / 42, `DialogueSystem.CharacterTrade`; facts: [economy 12](game/economy.md#12-slaves-prisoners-animals)): the line ends the conversation and the window
+  opens as it closes (a speech-bubble line opens it at once; only for a player-character target). Rows, prices and the confirm's effects as in the original, with these **engine**
+  choices: the buying list is every character in slave state 1 whose `SlaveOwner` is the slaver's faction, not dead (the original's per-owner set is not modelled); the selling
+  buyer's money is the slaver's squad purse (`Squad.Money`, a trader's shop money); the confirm re-checks the window's gate (a row ticked, total within the buyer's money) and
+  does nothing otherwise; a slave bought free out of a squad of others leads a new "Wandering Squad" (`SquadManagement.DismissTemplate`, as a dismissed character) of its faction, or a new player squad for
+  one of the player's; event 51 fires after it is out of its cage; the window closes when the slaver or the customer is no longer awake. It is neither saved nor hashed.
+- Not built: Slave AI Goals (obedience, work, following a master), beatings of idle slaves, the status panel's Slave / Escaped slave lines, kidnapped captives made slaves
+  ([Kidnapping](#kidnapping)); from the slave windows: the squads' long-term memory tags (3 FREED_ME, 5 MY_CAPTOR; Meitou keeps none), task 133 as such (Meitou walks a bought caged
+  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**), the obedient-slave order (187) and the shackles put on a sold character; DA 48 (animals).
 
 
 ## Kidnapping
@@ -868,10 +885,10 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - The original's reading of these inventories is unverified: no sample holds a working player building.
 - **UI** (Faithful, `PlayerInterface.Production.cs`).
   - Selecting a machine opens its window beside the inventory: `Kenshi_GenericBuildingWindow`, or for a bench
-    `Kenshi_InventoryResearchWindow`. Items drag in and out.
+    `Kenshi_InventoryResearchWindow`. Items are held in and out with the mouse (an input takes its record up to its capacity; `out` takes nothing).
   - The site menu gains Operate (also the quick right click); Shift + quick right click adds a job instead ([job lists](#production)).
   - The HUD shows the farm's growth, ripeness and fertility, the output, workers and tech level.
-  - A crafting bench's window shows the current craft and QUEUE... (opens the Craft tab); finished items drag out of `out`.
+  - A crafting bench's window shows the current craft and QUEUE... (opens the Craft tab); finished items are lifted out of `out`.
   - The overview's Craft tab lists stations, their crafts (click to queue; red: locked), the queue (click to cancel),
     Repeat Queue and the hovered craft's time and inputs.
   - The overview's research tab lists categories, blueprints (click to queue), the queue (click to cancel) and a

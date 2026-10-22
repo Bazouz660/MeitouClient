@@ -24,7 +24,22 @@ internal sealed class AssetPart
     public int AttachIndex = -1;
     /// <summary>Only while the weapon in hand is sheathed or drawn (<see cref="CharacterPart.Shown"/>).</summary>
     public WeaponShown Shown;
-    public bool ShowsWith(bool weaponDrawn) => Shown == WeaponShown.Always || (Shown == WeaponShown.Drawn) == weaponDrawn;
+    /// <summary>When it shows by the bolts loaded in its crossbow (<see cref="CharacterPart.ShownShots"/>).</summary>
+    public int ShownShots;
+    /// <summary>The first loaded bolt of the crossbow in the hands: its origin is the muzzle (<see cref="CharacterRenderer.Muzzle"/>).</summary>
+    public bool Muzzle;
+    /// <summary>
+    /// Whether the part shows with a weapon drawn (<paramref name="weaponDrawn"/>), that weapon being the crossbow (<paramref name="ranged"/>), with <paramref name="shots"/>
+    /// bolts loaded in the crossbow.
+    /// </summary>
+    public bool ShowsWith(bool weaponDrawn, bool ranged, int shots = 1) => (ShownShots == 0 || (ShownShots < 0 ? shots <= 0 : shots >= ShownShots)) && Shown switch
+    {
+        WeaponShown.Drawn => weaponDrawn && !ranged,
+        WeaponShown.Sheathed => !weaponDrawn || ranged,
+        WeaponShown.RangedDrawn => weaponDrawn && ranged,
+        WeaponShown.RangedSheathed => !(weaponDrawn && ranged),
+        _ => true,
+    };
     public required PartMaterial Material;
     /// <summary>The mesh file's bounds (the LOD value's centre and radius), in the part's own space.</summary>
     public required Vector3 BoundsCentre;
@@ -536,7 +551,7 @@ internal sealed class CharacterContent : IDisposable
             var ap = new AssetPart
             {
                 Label = $"{part.Record.Type} '{part.Record.Name}' .{part.Field}", Mesh = loaded.Gpu, Shared = shared, Material = ItemMaterial(c, part, path, loaded),
-                BoundsCentre = loaded.Centre, BoundsRadius = loaded.Radius, Shown = part.Shown, HideSide = part.HideSide, PickBoxes = loaded.PickBoxes ?? [],
+                BoundsCentre = loaded.Centre, BoundsRadius = loaded.Radius, Shown = part.Shown, ShownShots = part.ShownShots, Muzzle = part is { Field: "live ammo", ShownShots: 1, Shown: WeaponShown.RangedDrawn }, HideSide = part.HideSide, PickBoxes = loaded.PickBoxes ?? [],
                 FileDistances = loaded.FileDistances, FileFirst = loaded.FileFirst, FileRadius = loaded.FileRadius,
             };
             if (!shared)
@@ -546,7 +561,8 @@ internal sealed class CharacterContent : IDisposable
                 int bone = point is null ? -1 : rig.Handle(point.Bone) ?? -1;
                 if (bone < 0) bone = rig.Skeleton.Bones.FirstOrDefault(b => b.Parent is null)?.Handle ?? 0;
                 ap.Bone = bone;
-                if (point is not null) ap.Offset = Matrix4x4.CreateFromQuaternion(point.Rotation) * Matrix4x4.CreateTranslation(point.Position);
+                if (point is not null) ap.Offset = Matrix4x4.CreateFromQuaternion(point.Rotation) * Matrix4x4.CreateTranslation(point.Position + part.PointOffset);
+                if (part.Local is { } local) ap.Offset = local * ap.Offset;
                 ap.AttachIndex = asset.AttachCount++;
             }
             asset.Parts.Add(ap);

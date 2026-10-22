@@ -282,7 +282,8 @@ public static class CharacterGenerator
         // val2 is an absolute chance, 0 counting as 100. One weapon per pool. Engine choice: a weapon goes where its footprint fits (hip 7x1,
         // back 10x2 by rows), so a large hip-pool weapon hangs on the back and a back-pool one falls back to the hip; one that fits neither is left out.
         var weapons = character.GetReferences("weapons").Where(r => r.Values.Value0 > 0).ToList();
-        int backRow = loadout.Crossbow is not null ? 1 : 0;
+        // The back weapon goes below the crossbow: a crossbow two rows tall fills the back section (10 x 2), so the weapon then takes the hip or is left out.
+        int backRow = crossbow is null ? 0 : Math.Clamp(crossbow.GetInt("inventory footprint height", 1), 1, 2);
         bool hipFree = true;
         foreach (var back in new[] { false, true })
         {

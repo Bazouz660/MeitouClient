@@ -103,7 +103,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public float Radius;
         public int BoneBase, AttachBase, LayerStart, LayerCount;
         public CharState State;
-        public bool Repose, WeaponDrawn;
+        public bool Repose, WeaponDrawn, RangedDrawn;
+        public int Shots;
+        public IReadOnlyList<StuckBoltMesh> Bolts;
         /// <summary>The ragdoll's bones over the animation (null: none).</summary>
         public BonePose? Bones;
         public long Key;
@@ -122,7 +124,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public long Posed = -1, Seen;
         /// <summary>What the last update drew it with, for picking (<see cref="RayHit"/>): its asset, weapon, bounding sphere, and whether it is drawn in the world.</summary>
         public CharacterAsset? Asset;
-        public bool WeaponDrawn, InWorld;
+        public bool WeaponDrawn, RangedDrawn, InWorld;
+        /// <summary>Each stuck bolt's transform in its bone's frame, fixed the first time it was drawn (by bolt id).</summary>
+        public readonly Dictionary<int, Matrix4x4> BoltLocal = [];
         public Vector3 Centre;
         public float Radius;
     }
@@ -187,6 +191,63 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public static CharacterRigs CreateRigs(GameDatabase db, AssetLocator assets) => CharacterContent.CreateRigs(db, assets);
 
     // ------------------------------------------------------------------ per frame
+
+    /// <summary>How far back along its flight a stuck bolt sits from its bone's origin (engine choice: the original takes 0.6 times a random vertex of the body near the bone).</summary>
+    const float BoltDepth = 2;
+
+    /// <summary>
+    /// The bolts stuck in this update's posed characters (docs/game/combat.md "Bolt visuals"), as loose meshes into <paramref name="into"/> (cleared first), after <see cref="Update"/>:
+    /// each fixed to its bone the first time it is seen, its +z along the flight and pulled back from the bone's origin by <see cref="BoltDepth"/>, then carried by the bone
+    /// (a ragdoll's included), as the original attaches it to the bone keeping its world orientation (<c>FUN_14052bfa0</c>).
+    /// </summary>
+    public void CollectBolts(List<DebrisPiece> into)
+    {
+        into.Clear();
+        for (int i = 0; i < liveCount; i++)
+        {
+            ref var l = ref live[i];
+            var state = l.State;
+            if (l.Bolts is not { Count: > 0 } bolts || l.PortraitOnly || l.Asset.IsIcon)
+            {
+                if (l.Bolts is not { Count: > 0 }) state?.BoltLocal.Clear();
+                continue;
+            }
+            var rig = l.Asset.Rig;
+            if (state.Bones.Length != rig.BoneCount) continue;
+            if (state.BoltLocal.Count > bolts.Count)
+                foreach (int id in state.BoltLocal.Keys.ToArray())
+                    if (!bolts.Any(b => b.Id == id)) state.BoltLocal.Remove(id);
+            int root = rig.Skeleton.Bones.FirstOrDefault(b => b.Parent is null)?.Handle ?? 0;
+            foreach (var bolt in bolts)
+            {
+                int h = rig.Handle(bolt.Bone) ?? root;
+                if ((uint)h >= (uint)state.Bones.Length) continue;
+                // The bone's posed frame: its binding transform times its skin matrix (which is relative to the binding), placed in the world.
+                var bind = Matrix4x4.CreateScale(rig.BindScale[h]) * Matrix4x4.CreateFromQuaternion(Quaternion.Conjugate(rig.BindRotationInverse[h]))
+                    * Matrix4x4.CreateTranslation(rig.BindPosition[h]);
+                var bone = bind * state.Bones[h] * l.World;
+                if (!state.BoltLocal.TryGetValue(bolt.Id, out var local))
+                {
+                    var flight = Vector3.TransformNormal(bolt.Direction, l.World);
+                    if (flight.LengthSquared() < 1e-8f || !Matrix4x4.Invert(bone, out var inverse)) continue;
+                    flight = Vector3.Normalize(flight);
+                    var placed = Matrix4x4.CreateFromQuaternion(TurnZ(flight)) * Matrix4x4.CreateTranslation(bone.Translation - flight * BoltDepth);
+                    state.BoltLocal[bolt.Id] = local = placed * inverse;
+                }
+                if (!Matrix4x4.Decompose(local * bone, out _, out var rotation, out var position)) continue;
+                into.Add(new DebrisPiece(bolt.Mesh, 1, rotation, position));
+            }
+        }
+    }
+
+    /// <summary>The rotation that turns +z onto <paramref name="to"/> (unit length).</summary>
+    static Quaternion TurnZ(Vector3 to)
+    {
+        var axis = Vector3.Cross(Vector3.UnitZ, to);
+        float s = axis.Length();
+        if (s < 1e-5f) return to.Z > 0 ? Quaternion.Identity : Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI);
+        return Quaternion.CreateFromAxisAngle(axis / s, MathF.Atan2(s, to.Z));
+    }
 
     /// <summary>Adds the carried lights of this update's posed characters to <paramref name="into"/>, at their world positions (after <see cref="Update"/>).</summary>
     public void CollectLamps(List<Meitou.Data.World.WorldLight> into)
@@ -257,7 +318,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             // Lowered by the body shape's lift, so a short body's feet stay on the ground (CharacterAsset.GroundOffset); an animal scaled by its size (its node's scale).
             l.World = Matrix4x4.CreateRotationY(inst.Yaw) * Matrix4x4.CreateTranslation(inst.Position - new Vector3(0, asset.GroundOffset, 0));
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
-            l.WeaponDrawn = inst.WeaponDrawn;
+            (l.WeaponDrawn, l.RangedDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.Shots, inst.Bolts);
             l.Centre = centre;
             l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
@@ -268,7 +329,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
-            (state.Asset, state.WeaponDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, !far, centre, l.Radius);
+            (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, !far, centre, l.Radius);
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
@@ -341,7 +402,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             float distance = Vector3.Distance(eye, live[i].Centre);
             foreach (var part in live[i].Asset.Parts)
             {
-                if (!part.ShowsWith(live[i].WeaponDrawn)) continue;
+                if (!part.ShowsWith(live[i].WeaponDrawn, live[i].RangedDrawn, live[i].Shots)) continue;
                 if (part.MaterialFrame != updateStamp)
                 {
                     part.MaterialFrame = updateStamp;

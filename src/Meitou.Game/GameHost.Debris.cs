@@ -137,6 +137,7 @@ sealed partial class GameHost
     {
         pieces.RemoveAll(p => world.Tick - p.Born >= BodySystem.CorpseTicks);
         gpu.DebrisPieces.Clear();
+        AddBolts();
         if (pieces.Count == 0) return;
         int steps = Math.Clamp((int)MathF.Ceiling(dt * 60), 1, 8);
         float h = dt / steps;
@@ -146,6 +147,52 @@ sealed partial class GameHost
             gpu.DebrisPieces.Add(new DebrisPiece(p.Mesh, p.Scale, p.Rotation, p.Position));
         }
     }
+
+    readonly Dictionary<int, ProjectileSnapshot> boltsBefore = [];
+    /// <summary>Each bolt in flight's gap from its shooter's muzzle when it was first drawn, and where that was (by bolt id).</summary>
+    readonly Dictionary<int, (Vector3 Gap, Vector3 From)> boltLaunches = [];
+    /// <summary>
+    /// How far (units) a drawn bolt takes to close the gap between the crossbow's muzzle, where it is first drawn, and its simulated flight, which starts at a fixed point by the
+    /// shooter (engine choice: the simulation has no posed bones).
+    /// </summary>
+    const float LaunchBlend = 150;
+
+    /// <summary>
+    /// The bolts of the snapshot (docs/game/combat.md "Bolt visuals"): each the crossbow's <c>live ammo</c> mesh with its +z along the flight, a bolt in flight between its last two
+    /// positions by the simulation's alpha and stretched along z by the snapshot's factor (the original's fake motion blur), a landed one where it stuck.
+    /// </summary>
+    void AddBolts()
+    {
+        var now = session.CurrentSnapshot.Projectiles;
+        if (now.Count == 0) boltLaunches.Clear();
+        if (now.Count == 0 || gpu.Debris is not { } debris) return;
+        boltsBefore.Clear();
+        if (session.PreviousSnapshot is { } previous)
+            foreach (var b in previous.Projectiles) boltsBefore[b.Id] = b;
+        float alpha = session.SimulationAlpha;
+        foreach (var p in now)
+        {
+            if (p.Mesh.Length == 0 || debris.Extent(p.Mesh, null) is null) continue;
+            var at = !p.Stuck && boltsBefore.TryGetValue(p.Id, out var b) && !b.Stuck ? Vector3.Lerp(b.Position, p.Position, alpha) : p.Position;
+            // A bolt leaves the crossbow: drawn from the muzzle, it joins its simulated flight over LaunchBlend units.
+            if (!p.Stuck)
+            {
+                if (!boltLaunches.TryGetValue(p.Id, out var launch))
+                    boltLaunches[p.Id] = launch = (gpu.Characters?.Muzzle(DrawKey(p.Shooter)) is { } muzzle ? muzzle - at : Vector3.Zero, at);
+                float left = 1 - Vector3.Distance(at, launch.From) / LaunchBlend;
+                if (left > 0) at += launch.Gap * left;
+            }
+            else boltLaunches.Remove(p.Id);
+            gpu.DebrisPieces.Add(new DebrisPiece(p.Mesh, 1, Turn(Vector3.UnitZ, p.Direction), at, p.Stuck ? 1 : p.Stretch));
+        }
+        if (boltLaunches.Count > now.Count)
+            foreach (int id in boltLaunches.Keys.ToArray())
+                if (!now.Any(p => p.Id == id)) boltLaunches.Remove(id);
+    }
+
+    /// <summary>A character's stuck bolts for the renderer.</summary>
+    static IReadOnlyList<StuckBoltMesh> BoltsOf(CharacterSnapshot c) =>
+        c.StuckBolts.Count == 0 ? [] : [.. c.StuckBolts.Select(b => new StuckBoltMesh(b.Id, b.Mesh, b.Bone, b.Direction))];
 
     void Step(Piece p, float h)
     {

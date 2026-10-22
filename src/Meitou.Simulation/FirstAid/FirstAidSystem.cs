@@ -250,6 +250,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         if (robot && body.BandageRoom(race, true) <= Done)
         {
             Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
+            patientCold.StuckBolts = null;   // the bolts go when first aid has nothing left to do (FUN_14064d800 -> FUN_14052bc10)
             End(table, m);   // nothing left to bandage
             return;
         }

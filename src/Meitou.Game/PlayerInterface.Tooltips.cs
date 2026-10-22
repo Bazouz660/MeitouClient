@@ -46,7 +46,7 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddHoverLabel(List<UiControl> controls)
     {
-        if (inventoryDrag is not null || tradeDrag is not null || jobDrag is not null || dragging || uiPainter is not { } painter) { HideTooltip(); return; }
+        if (held is not null || jobDrag is not null || dragging || uiPainter is not { } painter) { HideTooltip(); return; }
         if (TooltipTarget(controls) is not { } hit) { HideTooltip(); return; }
         long now = Stopwatch.GetTimestamp();
         if (hit.Name != tipTarget)
@@ -316,8 +316,9 @@ sealed partial class PlayerInterface
     static string Number(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// A prosthetic's rows (Meitou's; the original's limb rows are not decoded): the grade of its level in the grade colour, its HP, unarmed bonus and every multiplier that is not 1 at
-    /// that level (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.Multiplier"/>), a bonus in the good colour and a penalty in the bad one.
+    /// A prosthetic's rows (<c>FUN_1407a9080</c>, <b>Verified</b> in the decompile): the grade of its level in the grade colour, <c>-Max HP</c>, the <c>-----STATS-----</c> header, a row
+    /// per stat whose multiplier at that level is not 1 (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.Multiplier"/>) as int((m - 1) x 100) percent with its sign, a bonus in
+    /// the good colour and a penalty in the bad one, <c>-Unarmed damage bonus</c> when not 0, and a rule (the weight follows).
     /// </summary>
     static IEnumerable<TooltipLine> LimbRows(Meitou.Data.Gameplay.Bodies.LimbReplacement limb, int level)
     {
@@ -325,18 +326,17 @@ sealed partial class PlayerInterface
         yield return new(Loc.Tr("{1} Grade", Loc.Tr(ArmourTooltip.GradeNames[grade])), "", GradeTone(grade));
         float t = Math.Clamp(level * 0.01f, 0, 1);
         yield return new("-Max HP", Number(MathF.Floor(limb.Hp(t))), TooltipTone.Title, TooltipTone.Ink);
-        if (limb.UnarmedDamageBonus(t) is not 0 and var unarmed)
-            yield return new("-Martial arts bonus", unarmed.ToString(CultureInfo.InvariantCulture), TooltipTone.Title, unarmed < 0 ? TooltipTone.Bad : TooltipTone.Good);
-        (Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string Label)[] stats = limb.IsLeg
-            ? [(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Athletics, "Athletics"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Stealth, "Stealth"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Swimming, "Swimming")]
-            : [(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength, "Strength"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Dexterity, "Dexterity"),
-               (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Thieving, "Thievery"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Crossbows, "Crossbows"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Swimming, "Swimming")];
-        foreach (var (stat, label) in stats)
+        yield return new("-----STATS-----", "", TooltipTone.Grey);
+        foreach (var stat in Enum.GetValues<Meitou.Data.Gameplay.Bodies.StatsEnumerated>())
         {
             float m = limb.Multiplier(stat, t);
-            if (MathF.Abs(m - 1) < 0.005f) continue;
-            yield return new("-" + label, m.ToString("0.00", CultureInfo.InvariantCulture) + "x", TooltipTone.Title, m < 1 ? TooltipTone.Bad : TooltipTone.Good);
+            if (m == 1) continue;
+            int percent = (int)((m - 1) * 100);
+            yield return new("-" + StatLabel(stat), (percent >= 1 ? "+" : "") + percent.ToString(CultureInfo.InvariantCulture) + "%", TooltipTone.Title, m < 1 ? TooltipTone.Bad : TooltipTone.Good);
         }
+        if (limb.UnarmedDamageBonus(t) is not 0 and var unarmed)
+            yield return new("-Unarmed damage bonus", unarmed.ToString(CultureInfo.InvariantCulture), TooltipTone.Title, unarmed < 0 ? TooltipTone.Bad : TooltipTone.Good);
+        yield return new("----------------", "", TooltipTone.Grey);
     }
 
     /// <summary>

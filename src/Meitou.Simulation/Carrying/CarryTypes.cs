@@ -22,25 +22,21 @@ public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId T
 public sealed record OpenLootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
 
 /// <summary>
-/// Takes the open loot's <see cref="Item"/> (worn gear and the bag's contents included; <see cref="Items.Inventory.All"/> order) into the looter's: into <see cref="Section"/> at
-/// (<see cref="X"/>, <see cref="Y"/>) by <see cref="Items.InventoryCommands.Transfer"/>'s rules, or with no section (or a grid cell that does not take it) as <see cref="Items.Inventory.Add"/>
-/// (what does not fit stays). A theft as a loot is (<see cref="Crime.CrimeSystem.IsLootTheft"/>); a locked-on item stays.
+/// A right click on an item of the open loot (<see cref="Item"/>: worn gear and the bag's contents included, <see cref="Items.Inventory.All"/> order): <see cref="Count"/> units (0: until one
+/// fails) move into the looter's (<see cref="Items.InventoryCommands.MoveInto"/>: its open bag first with <see cref="BagFirst"/>, then its slots, then its grid). A theft as a loot is
+/// (<see cref="Crime.CrimeSystem.IsLootTheft"/>); a locked-on item stays. Dragging goes through the held item (<see cref="Items.LiftItem"/>).
 /// </summary>
-public sealed record TakeLootItem(Items.InventoryItemToken Item, string? Section = null, int X = 0, int Y = 0) : SimCommand
+public sealed record TakeLootItem(Items.InventoryItemToken Item) : SimCommand
 {
-    /// <summary>With no section: at most this many units (0: all; a right click takes one).</summary>
     public int Count { get; init; }
+    public bool BagFirst { get; init; }
 }
 
-/// <summary>
-/// Puts the looter's (<see cref="Character"/>, the one who opened it) <see cref="Item"/> into the open loot's <see cref="Section"/> at (<see cref="X"/>, <see cref="Y"/>): a free cell of its main
-/// grid or bag, or one of its equipment slots (<see cref="Items.InventoryCommands.Transfer"/>). A worn bag with contents is refused (as a container's put).
-/// </summary>
-public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken Item, int X, int Y, string Section = "main") : SimCommand
+/// <summary>A right click on the looter's (<see cref="Character"/>, the one who opened it) <see cref="Item"/>: units into the open loot, as <see cref="TakeLootItem"/> the other way.</summary>
+public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken Item) : SimCommand
 {
-    /// <summary>Into the first room of the loot (<see cref="Items.Inventory.Add"/>) instead of the place, at most <see cref="Count"/> units (0: all): a right click.</summary>
-    public bool FirstFit { get; init; }
     public int Count { get; init; }
+    public bool BagFirst { get; init; }
 }
 
 /// <summary>

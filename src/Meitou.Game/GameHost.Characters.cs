@@ -66,7 +66,10 @@ sealed partial class GameHost
     /// <summary>A character's key in the draw list: stable while it exists, new for every world (the renderer keeps its poses by it).</summary>
     long DrawKey(CharacterId id) => (((long)id.Slot << 32 | (uint)id.Generation) + 1) | (long)worldEpoch << 56;
 
-    /// <summary>The portraits for the renderer to draw this frame: the squad bar's and the squads screen's members in their cells (docs/character-renderer.md "Portraits").</summary>
+    /// <summary>
+    /// The portraits for the renderer to draw this frame: the squad bar's and the squads screen's members, the character trading window's rows and the conversation's two in
+    /// their cells (docs/character-renderer.md "Portraits").
+    /// </summary>
     void FillPortraits()
     {
         if (gpu.Characters is not { } characters) return;
@@ -78,6 +81,8 @@ sealed partial class GameHost
             var members = player.PortraitMembers();
             for (int i = 0; i < members.Count; i++)
                 characters.PortraitRequests.Add(new PortraitRequest(DrawKey(members[i].Id), i, members[i].PortraitSerial));
+            foreach (var (id, cell) in player.CharacterTradePortraits())
+                characters.PortraitRequests.Add(new PortraitRequest(DrawKey(id), cell, player.PortraitSerial(id)));
         }
         if (player.DialoguePortraitCharacters() is var (npc, talker))
         {
@@ -154,7 +159,7 @@ sealed partial class GameHost
             var glide = player.EditorBlend(c.Id);   // after the preview, which may just have swapped the look
             list.Add(new CharacterInstance(DrawKey(c.Id), look, position, yaw, poses)
             {
-                WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = aboveFloor.Contains(c.Id), FullRateAnimation = c.IsPlayer,
+                WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, Shots = c.CrossbowShots, Bolts = BoltsOf(c), Scale = c.Scale, Hidden = aboveFloor.Contains(c.Id), FullRateAnimation = c.IsPlayer,
                 Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha),
                 BlendFrom = glide?.From, Blend = glide?.Blend ?? 0, Build = c.Build,
             });

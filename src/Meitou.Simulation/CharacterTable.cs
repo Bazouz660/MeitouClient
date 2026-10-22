@@ -89,10 +89,17 @@ public sealed class CharacterCold
     public CharacterAnimation? Animation { get; set; }
     /// <summary>The kind of weapon drawn in the right hand (None while sheathed): the stance animations are chosen for.</summary>
     public Meitou.Data.Gameplay.WeaponKinds DrawnWeapon { get; set; }
+    /// <summary>The bolts loaded in the crossbow (the combat slot's, mirrored for the renderer's loaded string and bolts; display only: not hashed, not saved).</summary>
+    public int CrossbowShots { get; set; }
     /// <summary>The numbers of the HUD's extended lines, refreshed by <see cref="BodySystem"/> every tick (display only: not hashed, not saved).</summary>
     public ExtendedStats Extended { get; set; }
     /// <summary>The race, stats and medical state (null for animals and anything without a race record): see <see cref="BodySystem"/>.</summary>
     public Meitou.Data.Gameplay.Bodies.RaceData? Race { get; set; }
+    /// <summary>
+    /// The bolts stuck in the character (docs/game/combat.md "Bolt visuals"): shown on their bones until first aid has nothing left to bandage. A visual: not hashed, not saved
+    /// (the original keeps them in its appearance only).
+    /// </summary>
+    public List<StuckBolt>? StuckBolts { get; set; }
     public Meitou.Simulation.Bodies.CharacterStats? Stats { get; set; }
     public Meitou.Simulation.Bodies.MedicalState? Medical { get; set; }
     /// <summary>Sandbox only (the animation sandbox of the game host): replaces the movement mode of every order, and the speed the character walks at (0: the speed chain's). Not hashed; the normal game never sets them.</summary>

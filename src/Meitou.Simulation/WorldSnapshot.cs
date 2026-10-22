@@ -61,6 +61,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public int Faction { get; init; } = -1;
     /// <summary>A weapon is in hand (<c>CharacterCold.DrawnWeapon</c>): the renderer shows the drawn weapon meshes instead of the sheathed one.</summary>
     public bool WeaponDrawn { get; init; }
+    /// <summary>The weapon in hand is the crossbow (ranged combat): the renderer shows the crossbow in the hands and the melee weapon sheathed.</summary>
+    public bool RangedDrawn { get; init; }
+    /// <summary>The bolts loaded in its crossbow (<see cref="CharacterCold.CrossbowShots"/>).</summary>
+    public int CrossbowShots { get; init; }
+    /// <summary>The bolts stuck in the character (<see cref="CharacterCold.StuckBolts"/>).</summary>
+    public IReadOnlyList<StuckBolt> StuckBolts { get; init; } = [];
     public string Name { get; init; } = "";
     public int SquadId { get; init; } = -1;
     /// <summary>One of the player's characters, and whether it is selected.</summary>
@@ -90,6 +96,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<float> AllSkills { get; init; } = [];
     public IReadOnlyList<float> SkillXpMultipliers { get; init; } = [];
     public IReadOnlyList<HealthPartView> HealthParts { get; init; } = [];
+    /// <summary>The limbs' states (<c>MedicalState.LimbBits</c>: limb slot k's <c>LimbState</c> in bits 2k..2k+1; 0 when every limb is the original).</summary>
+    public int LimbBits { get; init; }
     /// <summary>The HUD's numbers for a selected character (null for the others).</summary>
     public HudView? Hud { get; init; }
     public InventoryView? ItemGrid { get; init; }
@@ -175,6 +183,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public Trading.TradeView? Trade { get; init; }
     /// <summary>The open player conversation (null: none).</summary>
     public Dialogue.ConversationView? Conversation { get; init; }
+    /// <summary>The open character trading window (slaves bought or sold; null: none).</summary>
+    public Dialogue.CharacterTradeView? CharacterTrade { get; init; }
     /// <summary>The lines on show over characters' heads: speech bubbles (empty when nobody speaks).</summary>
     public IReadOnlyList<Dialogue.SpeechBubble> Speech { get; init; } = [];
     /// <summary>The last thing a conversation asked the host to do (the host acts on each <see cref="Dialogue.DialogueRequest.Id"/> once).</summary>
@@ -192,6 +202,9 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     /// <summary>The downed character whose inventory window is open (<see cref="PlayerState.OpenLoot"/>; its snapshot has the <see cref="CharacterSnapshot.ItemGrid"/>), and who opened it.</summary>
     public CharacterId OpenLoot { get; init; } = CharacterId.None;
     public CharacterId LootOpener { get; init; } = CharacterId.None;
+    /// <summary>The item on the mouse (<see cref="PlayerState.Held"/>), null for none, and the serial of the last held-item command applied (<see cref="PlayerState.HeldSerial"/>).</summary>
+    public Items.HeldItemView? Held { get; init; }
+    public long HeldSerial { get; init; }
     /// <summary>Player-built buildings and construction sites, in creation order (docs/simulation.md "Buildings").</summary>
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
@@ -232,7 +245,17 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
 /// A bolt as the renderer needs it: the nose position, the unit direction of flight, the stretch of its mesh along its length (max(1, speed x 0.005) in flight, 1 once
 /// stuck; <c>FUN_1404380e0</c>), whether it is stuck in the ground, and the <c>live ammo</c> mesh of the crossbow that shot it.
 /// </summary>
-public readonly record struct ProjectileSnapshot(int Id, Vector3 Position, Vector3 Direction, float Stretch, bool Stuck, string Mesh);
+public readonly record struct ProjectileSnapshot(int Id, Vector3 Position, Vector3 Direction, float Stretch, bool Stuck, string Mesh)
+{
+    /// <summary>Who fired it (the renderer starts the drawn bolt at that character's crossbow).</summary>
+    public CharacterId Shooter { get; init; }
+}
+
+/// <summary>
+/// A bolt stuck in a character (the original sticks every bolt that hits one, <c>FUN_1406508d0</c>, <b>Observed</b>): its <c>live ammo</c> mesh, the bone of the struck part
+/// (<c>bone name</c>, or <c>bone name 2</c> by a coin toss when there is one), and its flight direction in the character's frame (its yaw taken off) at the hit.
+/// </summary>
+public readonly record struct StuckBolt(int Id, string Mesh, string Bone, Vector3 Direction);
 
 /// <summary>A system that has projectiles to publish (the combat system).</summary>
 public interface IProjectileSource

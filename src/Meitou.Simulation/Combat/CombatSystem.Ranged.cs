@@ -9,8 +9,11 @@ namespace Meitou.Simulation.Combat;
 /// <summary>Engine choices of the ranged fight where the research stops (each is labelled in docs/simulation.md "Combat", ranged).</summary>
 public static class RangedTuning
 {
-    /// <summary>Height of the barrel above the feet and how far ahead of the body it is (units): the crossbow's <c>barrel pos</c> is in the item's own space, not used.</summary>
-    public const float BarrelHeight = 15, BarrelForward = 3;
+    /// <summary>
+    /// Height of the barrel above the feet and how far ahead of the body it is (units): the original fires from the crossbow's <c>barrel pos</c> on the posed hands
+    /// (docs/game/combat.md "Shot origin"), which the simulation does not pose; a human's in-hand muzzle measured 13 to 15 up and 6 to 9 ahead in Meitou's renderer.
+    /// </summary>
+    public const float BarrelHeight = 15, BarrelForward = 8;
     /// <summary>Height above the feet the aim point (the original's bone <c>Bip01 Spine2</c>) stands for.</summary>
     public const float AimHeight = 13;
     /// <summary>The body a bolt hits: an upright cylinder of the footprint radius, this tall (the original tests the physics shape, <b>Unknown</b>).</summary>
@@ -96,7 +99,8 @@ public sealed partial class CombatSystem : IProjectileSource
         for (int k = 0; k < list.Length; k++)
         {
             var p = projectiles[k];
-            list[k] = new ProjectileSnapshot(p.Id, p.Position, p.Direction, p.Stuck ? 1 : MathF.Max(1, p.Speed * 0.005f), p.Stuck, p.Mesh);
+            list[k] = new ProjectileSnapshot(p.Id, p.Position, p.Direction, p.Stuck ? 1 : MathF.Max(1, p.Speed * 0.005f), p.Stuck, p.Mesh)
+                { Shooter = new CharacterId(p.Shooter, p.ShooterGeneration) };
         }
         return list;
     }
@@ -192,22 +196,17 @@ public sealed partial class CombatSystem : IProjectileSource
 
     /// <summary>
     /// The fire decision's line of fire (<c>FUN_140437ad0</c>): 1 fire, 0 something nearer than the target is in the way (close in), 2 a friend is in the way (hold).
-    /// The original holds when terrain is hit first; the engine closes in instead, so a shooter behind a dune does not stand for ever (the ray flags are <b>Unknown</b>).
-    /// Buildings are not tested: the simulation has no building shapes yet.
+    /// The original holds when terrain is hit first; the engine closes in instead, so a shooter behind a dune or a wall does not stand for ever (the ray flags are <b>Unknown</b>).
+    /// The terrain and the buildings' collision are tested (<see cref="SolidHits"/>).
     /// </summary>
     int LineOfFire(World world, int self, int target, Vector3 from, Vector3 to, int faction)
     {
         var seg = to - from;
         float length = seg.Length();
         if (length < 1e-3f) return 1;
-        // Terrain: samples along the line, the last few units at the target left out.
-        var walk = world.Walkability;
-        int samples = (int)(length / RangedTuning.TerrainStep);
-        for (int k = 1; k < samples; k++)
-        {
-            var p = from + seg * (k * RangedTuning.TerrainStep / length);
-            if (p.Y < walk.GroundHeight(p.X, p.Z)) return 0;
-        }
+        // Terrain and buildings, the last few units at the target left out.
+        float solid = length > RangedTuning.TerrainStep ? SolidHits.Hit(world.Walkability, Buildings, from, seg * (1 - RangedTuning.TerrainStep / length), RangedTuning.TerrainStep, out _) : -1;
+        if (solid >= 0) return 0;
         // Characters: the nearest body crossed before the target, the grid queried piece by piece.
         var scan = new LineScan { Table = world.Characters, Self = self, Target = target, From = from, Seg = seg, Best = 1, Hit = -1 };
         int chunks = Math.Max(1, (int)MathF.Ceiling(length / RangedTuning.LineChunk));
@@ -342,6 +341,7 @@ public sealed partial class CombatSystem : IProjectileSource
             {
                 s.ReloadLeft = 0;
                 s.Loaded = x.NumShots;
+                cold.CrossbowShots = s.Loaded;
                 s.Steady = RangedFormulas.SteadyAim;
                 s.RangedState = (byte)RangedStates.Aiming;
                 if (!x.InfiniteAmmo) effects.Emit(i, i, ReloadEffect);
@@ -391,6 +391,7 @@ public sealed partial class CombatSystem : IProjectileSource
         effects.Emit(i, t, FireEffect, 0, default, s.Shots);
         s.Shots++;
         s.Loaded--;
+        cold.CrossbowShots = s.Loaded;
         s.Steady = RangedFormulas.SteadyAim;
         s.ShotTick = now;
     }
@@ -464,7 +465,7 @@ public sealed partial class CombatSystem : IProjectileSource
     /// <summary>
     /// Advances every bolt one tick, in the order they were fired (serial, against the last tick's positions, which is what the grid holds; <c>FUN_1404380e0</c>):
     /// a straight line while range is left, then the nose pitching down 8 degrees a second; the first body or the ground on the step is hit. A friend in the way is
-    /// passed with the shooter's avoidance chance; the ground sticks the bolt (a grazing hit drops it). Stuck bolts stay up to <see cref="RangedTuning.StuckLimit"/>.
+    /// passed with the shooter's avoidance chance; the ground or a building sticks the bolt (a grazing hit on the ground drops it). Stuck bolts stay up to <see cref="RangedTuning.StuckLimit"/>.
     /// </summary>
     void FlyProjectiles(World world)
     {
@@ -499,8 +500,8 @@ public sealed partial class CombatSystem : IProjectileSource
             float after = -1;
             for (int pass = 0; pass < 4 && !done; pass++)
             {
-                // The ground first along the step, then the nearest body before it.
-                float ground = GroundHit(walk, p.Position, seg);
+                // The ground or a building first along the step, then the nearest body before it.
+                float ground = SolidHits.Hit(walk, Buildings, p.Position, seg, RangedTuning.FlightTerrainStep, out bool building);
                 var scan = new FlightScan { Table = table, Shooter = p.Shooter, Skip = p.Passed, From = p.Position, Seg = seg, After = after, Best = ground < 0 ? 1 : ground, Hit = -1 };
                 var mid = p.Position + seg * 0.5f;
                 world.Grid.Query(mid.X, mid.Z, step * 0.5f + RangedTuning.MaxBodyRadius, ref scan, static (int other, ref FlightScan st) =>
@@ -542,7 +543,7 @@ public sealed partial class CombatSystem : IProjectileSource
                     var at = p.Position + seg * ground;
                     var normal = GroundNormal(walk, at.X, at.Z);
                     done = true;
-                    if (MathF.Abs(Vector3.Dot(normal, p.Direction)) < RangedFormulas.Grazing) projectiles.RemoveAt(k--);
+                    if (!building && MathF.Abs(Vector3.Dot(normal, p.Direction)) < RangedFormulas.Grazing) projectiles.RemoveAt(k--);
                     else
                     {
                         p.Position = at;
@@ -568,27 +569,10 @@ public sealed partial class CombatSystem : IProjectileSource
             }
     }
 
-    /// <summary>The fraction of the step where it goes under the ground, -1 when it stays above.</summary>
-    static float GroundHit(IWalkability walk, Vector3 from, Vector3 seg)
-    {
-        float length = seg.Length();
-        int n = Math.Max(1, (int)MathF.Ceiling(length / RangedTuning.FlightTerrainStep));
-        float before = from.Y - walk.GroundHeight(from.X, from.Z);
-        if (before < 0) return 0;
-        for (int k = 1; k <= n; k++)
-        {
-            var p = from + seg * (k / (float)n);
-            float above = p.Y - walk.GroundHeight(p.X, p.Z);
-            if (above < 0) return (k - 1 + before / (before - above)) / n;
-            before = above;
-        }
-        return -1;
-    }
-
     static Vector3 GroundNormal(IWalkability walk, float x, float z)
     {
-        float dx = walk.GroundHeight(x - 1, z) - walk.GroundHeight(x + 1, z);
-        float dz = walk.GroundHeight(x, z - 1) - walk.GroundHeight(x, z + 1);
+        float dx = walk.TerrainHeight(x - 1, z) - walk.TerrainHeight(x + 1, z);
+        float dz = walk.TerrainHeight(x, z - 1) - walk.TerrainHeight(x, z + 1);
         return Vector3.Normalize(new Vector3(dx, 2, dz));
     }
 
@@ -604,6 +588,21 @@ public sealed partial class CombatSystem : IProjectileSource
     /// <c>hit</c> weight alone), armour and toughness, the global damage multiplier applied once more there (<b>Observed</b>, so bolts scale with its square). No block, no dodge.
     /// The victim takes "hit taken" XP; the shooter gains none for a hit. A heavy hit staggers as a melee one does.
     /// </summary>
+    /// <summary>
+    /// The bolt stays in the character it hit (<c>FUN_1406508d0</c>, <b>Observed</b>): on the struck part's <c>bone name</c>, or its <c>bone name 2</c> half the time when it has
+    /// one (<c>FUN_140649fd0</c>), keeping its flight direction (here in the character's frame; the renderer fixes it to the bone, docs/game/combat.md "Bolt visuals").
+    /// </summary>
+    static void StickBolt(World world, in Projectile p, int v, CharacterCold dc, int part)
+    {
+        if (p.Mesh.Length == 0 || dc.Medical is not { } med || (uint)part >= (uint)med.Parts.Count) return;
+        var template = med.Parts[part].Template;
+        bool second = template.BoneName2.Length > 0 && Rng.Float(Rng.Hash(world.Seed, (ulong)(uint)p.Id, RngPurpose.Ranged, 0x426F6E65)) < 0.5f;
+        string bone = second ? template.BoneName2 : template.BoneName;
+        float yaw = world.Characters.Previous[v].Yaw;
+        var local = Vector3.TransformNormal(p.Direction, Matrix4x4.CreateRotationY(-yaw));
+        (dc.StuckBolts ??= []).Add(new StuckBolt(p.Id, p.Mesh, bone, local));
+    }
+
     void BoltHit(World world, in Projectile p, int v, bool intended)
     {
         var table = world.Characters;
@@ -624,6 +623,7 @@ public sealed partial class CombatSystem : IProjectileSource
         Sound(world, SoundKind.BoltHit, v, p.Shooter, prev[v].Position, armoured: absorbed.Cut + absorbed.Blunt + absorbed.Pierce > 0, robot: false);
         Splash(world, v, dc, new Vector2(p.Direction.X, p.Direction.Z), damage.Cut + damage.Blunt + damage.Pierce);
 
+        StickBolt(world, p, v, dc, part);
         D.Taken++;
         D.HitTick = now;
         D.HitPart = part;

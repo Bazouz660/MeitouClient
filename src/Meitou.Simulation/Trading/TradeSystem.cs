@@ -63,12 +63,16 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public InventoryItemToken Token => new(Index, Record, Section, X, Y, Quantity, Quality);
 }
 
-/// <summary>Arranges the open trade's stock (the trader window's ARRANGE button): biggest items first into the first free cells, as <see cref="InventoryCommands.Arrange"/>.</summary>
+/// <summary>Arranges the open trade's stock (the trader window's ARRANGE button): the stock's grid as <see cref="InventoryCommands.Arrange"/>.</summary>
 public sealed record ArrangeStock : SimCommand;
 
 /// <summary>The open trade as the UI shows it (published with the snapshot).</summary>
 public sealed record TradeView(CharacterId Customer, CharacterId Trader, string TraderName, long ShopMoney, long PlayerMoney, int StockWidth, int StockHeight,
-    IReadOnlyList<TradeItemView> Stock, IReadOnlyList<TradeItemView> Goods, bool BuysStolen);
+    IReadOnlyList<TradeItemView> Stock, IReadOnlyList<TradeItemView> Goods, bool BuysStolen)
+{
+    /// <summary>The held item (<see cref="PlayerState.Held"/>) priced as stock (lifted from the stock) or as the customer's goods (lifted from the customer); null for none or another's.</summary>
+    public TradeItemView? Held { get; init; }
+}
 
 /// <summary>A system that has an open trade to publish (the trade system).</summary>
 public interface ITradeSource
@@ -314,6 +318,62 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             && item.Quality == token.Quality && (item.Contents is null || item.Quantity == 1) ? item : null;
     }
 
+    // ------------------------------------------------------------------ the held item (PlayerSystem, Items/HeldItems.cs)
+
+    /// <summary>The open trade's stock and its customer while the trade's windows show; null when no trade is open.</summary>
+    internal Inventory? OpenStock(World world, out CharacterId buyer)
+    {
+        buyer = CharacterId.None;
+        if (!open || !Resolve(world, out _, out _, out var shop)) return null;
+        buyer = customer;
+        return shop!.Stock;
+    }
+
+    /// <summary>
+    /// How many of <paramref name="units"/> of a held item the payer can afford (the drop caps the quantity so, <c>FUN_140715560</c>); none: "You can't afford that." or "The shopkeeper can't
+    /// afford that.".
+    /// </summary>
+    internal int AffordHeld(World world, ItemInstance item, int units, bool sell)
+    {
+        if (!Resolve(world, out int c, out int t, out var shop)) return 0;
+        var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
+        int n = Affordable(Market(world), item, Math.Clamp(units, 0, item.Quantity), sell, shop!.Terms, sell ? world.Characters.Cold(c)!.Faction : squad.Faction,
+            sell ? squad.Money : world.Player.Money);
+        if (n == 0) world.Post(sell ? "The shopkeeper can't afford that." : "You can't afford that.");
+        return n;
+    }
+
+    /// <summary>A held stolen item put on the stock of a shop that is no fence: the fence roll (8.4); caught, "Got caught selling stolen item." and the pending Fencing crime (true).</summary>
+    internal bool CaughtSelling(World world, ItemInstance item)
+    {
+        if (!Resolve(world, out int c, out int t, out var shop)) return false;
+        var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
+        if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction) || shop!.Terms.BuysStolen || !Caught(world, c, item, squad)) return false;
+        world.Post("Got caught selling stolen item.");
+        if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
+            crimes.Book(world, c, squad.Faction, trader);
+        return true;
+    }
+
+    /// <summary>
+    /// Pays for the first <paramref name="units"/> of a held item that changed hands (priced before it moves, a buyback at its receipt's coins): the price goes from the buyer's purse to
+    /// the seller's. Returns the moved units' receipt (null when this undid an earlier trade of this window).
+    /// </summary>
+    internal TradeReceipt? PayHeld(World world, ItemInstance item, int units, bool sell)
+    {
+        if (units <= 0 || !Resolve(world, out int c, out int t, out var shop)) return null;
+        var cold = world.Characters.Cold(c)!;
+        var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
+        var m = Market(world);
+        int holder = sell ? cold.Faction : squad.Faction;
+        var receipt = Receipt(m, item, units, sell, shop!.Terms, holder);
+        long price = Price(m, item, units, sell, shop.Terms, holder);
+        if (sell) { squad.Money -= price; world.Player.Money += price; }
+        else { world.Player.Money -= price; squad.Money += price; }
+        world.Post($"{cold.Name} {(sell ? "sold" : "bought")} {Units(units, item.Name)} for c.{price}");
+        return receipt;
+    }
+
     void Buy(World world, BuyItem buy)
     {
         if (!Resolve(world, out int c, out int t, out var shop)) return;
@@ -504,7 +564,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     static string Units(int n, string name) => n == 1 ? name : $"{n} x {name}";
 
     /// <summary>A bag trades only empty (engine choice; its contents would go unpriced and unchecked for theft).</summary>
-    const string BagNotEmpty = "That bag isn't empty.";
+    internal const string BagNotEmpty = "That bag isn't empty.";
 
     TradeView Publish(World world, int c, int t, Shop shop)
     {
@@ -542,6 +602,12 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         }
         var goods = cold.Inventory!.All().Select((item, index) => (item, index)).Where(p => InventoryCommands.IsMovableSection(p.item.Section))
             .Select(p => View(p.item, p.index, true, cold.Faction)).ToArray();
-        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen);
+        var held = world.Player.Held switch
+        {
+            { From.Holder: ItemHolder.Stock } h => View(h.Item, -1, false, squad.Faction),
+            { From.Holder: ItemHolder.Character } h when h.From.Character == customer => View(h.Item, -1, true, cold.Faction),
+            _ => null,
+        };
+        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen) { Held = held };
     }
 }

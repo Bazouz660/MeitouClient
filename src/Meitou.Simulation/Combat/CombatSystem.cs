@@ -58,6 +58,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>A late but successfully rolled dodge or block still counts (<see cref="CombatOptions.LateDefences"/>); off is the game's rule.</summary>
     public bool LateDefences { get; set; }
 
+    /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
+    public Ragdolls.IRagdollEnvironment? Buildings { get; set; }
+
     /// <summary>The live relation table the player's assaults and killings change (<c>PopulationData.Relations</c>); null: nothing changes (hand-built test worlds).</summary>
     public FactionRelations? Relations { get; set; }
     /// <summary>The crime system the player's assaults, killings and hits on the police are reported to (null: no crimes).</summary>

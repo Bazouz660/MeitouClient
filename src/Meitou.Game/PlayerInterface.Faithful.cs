@@ -11,7 +11,7 @@ namespace Meitou.Game;
 sealed partial class PlayerInterface
 {
     string selectedStat = ((int)StatsEnumerated.Katanas).ToString(CultureInfo.InvariantCulture);
-    public bool UiCapturesPointer => UiVisible && (faithfulScreens.CapturesPointer || mapDrag is not null || inventoryDrag is not null || tradeDrag is not null || scrollDrag is not null);
+    public bool UiCapturesPointer => UiVisible && (faithfulScreens.CapturesPointer || mapDrag is not null || liftPress is not null || scrollDrag is not null);
     /// <summary>Keys the host keeps for itself (the sandbox's letters), so the faithful window shortcuts leave them alone.</summary>
     public HashSet<Key> ReservedKeys { get; } = [];
     void UpdateMenuPause() => session.Simulation.RequestedPause = settingsOpen || faithfulScreens.HasModal;
@@ -88,6 +88,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "stats" && e.Action.StartsWith("stat:", StringComparison.Ordinal)) selectedStat = e.Action[5..];
         else if (e.Screen == "build") BuildAction(e);
         else if (e.Screen == "dialogue") DialogueAction(e);
+        else if (e.Screen == CharacterTradeScreen) CharacterTradeAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
@@ -96,7 +97,7 @@ sealed partial class PlayerInterface
         else if (e.Screen is "inventory" or "bag")
         {
             if (e.Widget == "OpenBagButton") ToggleBag();
-            else if (e.Widget == "LimbsButton") faithfulScreens.Open("limbs");
+            else if (e.Widget == "LimbsButton") ToggleLimbs();
             else if (e.Widget == "ArrangeButton" && InventoryOwner() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
         }
     }
@@ -111,6 +112,7 @@ sealed partial class PlayerInterface
         if (id == "file") { BindFileDialog(b); return b; }
         else if (id == "trader") BindTraderScreen(b);
         else if (id == "dialogue") BindDialogueScreen(b);
+        else if (id == CharacterTradeScreen) BindCharacterTradeScreen(b);
         else if (id == "prospect") BindProspectScreen(b);
         else if (id == "build") BindBuildScreen(b);
         else if (id is "building" or "bench" or "storage") BindMachineScreen(id, b);
@@ -120,6 +122,7 @@ sealed partial class PlayerInterface
             b.Text["Root"] = id == "stats" ? lead?.Name.ToUpperInvariant() ?? "CHARACTER STATS"
                 : id == "bag" ? lead?.ItemGrid?.Items.FirstOrDefault(i => i.Section == "backpack_attach")?.Name.ToUpperInvariant() ?? "BACKPACK"
                 : id == "limbs" ? "LIMBS" : lead?.Name.ToUpperInvariant() ?? "INVENTORY";
+            if (id == "limbs") { b.Text["lbLeftArm"] = "-ARMS-"; b.Text["lbLeftLeg"] = "-LEGS-"; }
             if (id is "inventory" or "bag" or "limbs")
             {
                 // Each window binds only what its own layout has: the character window the data panel and the limbs button, the generic (bag) window
@@ -135,7 +138,7 @@ sealed partial class PlayerInterface
                 }
                 if (id != "limbs")
                     foreach (string name in id == "inventory" ? new[] { "ArrangeButton", "LimbsButton" } : ["ArrangeButton"])
-                    { b.Disabled.Remove(name); b.Actions[name] = name; if (lead is null) b.Disabled.Add(name); }
+                    { b.Disabled.Remove(name); b.Actions[name] = name; if (lead is null || name == "LimbsButton" && !HasLimbWindow(lead)) b.Disabled.Add(name); }
             }
             else
             {
@@ -196,6 +199,7 @@ sealed partial class PlayerInterface
         if (id == "editor") { AddEditorContent(controls); return; }
         if (id == "build") { AddBuildContent(controls); return; }
         if (id == "dialogue") { AddDialogueChoices(controls); return; }
+        if (id == CharacterTradeScreen) { AddCharacterTradeRows(controls); return; }
         if (id == "prospect") { AddProspectContent(controls); return; }
         if (id is "building" or "bench" or "storage") { AddMachineContent(id, controls); return; }
         // The bag window has no caption buttons (the vanilla screenshot): OPEN BAG closes it.
@@ -209,11 +213,12 @@ sealed partial class PlayerInterface
         string gridSection = bagWindow ? "backpack_content" : "main";
         int columns = bagWindow ? grid.BagWidth : grid.Width, rows = bagWindow ? grid.BagHeight : grid.Height;
         if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
+        else if (id == "limbs") ArrangeLimbSlots(controls, lead);
         else ArrangeEquipmentGrid(controls, grid);
         if (id == "inventory") AddInventorySummary(controls, lead);
         foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {
-            if (inventoryDrag is { } drag && drag.Character == lead.Id && drag.Item.Index == item.Index) continue;
+            if (Lifted(Meitou.Simulation.Items.ItemOwner.Of(lead.Id), item.Index)) continue;
             if (controls.FirstOrDefault(c => c.Name == item.Section) is not { } slot) continue;
             var area = slot.Bounds;
             if (item.Section == gridSection && columns > 0 && rows > 0) area = new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows);

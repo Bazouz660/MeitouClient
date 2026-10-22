@@ -607,6 +607,8 @@ static class WorldFrame
         public TerrainDecalStore? DecalStore;
         /// <summary>luckyren Mode's flying bones and limbs (null until the host makes it) and the pieces it draws this frame (docs/game/luckyren.md).</summary>
         public DebrisRenderer? Debris;
+        /// <summary>This frame's bolts stuck in characters (<see cref="CharacterRenderer.CollectBolts"/>), drawn with the debris.</summary>
+        public readonly List<DebrisPiece> BoltPieces = [];
         public readonly List<DebrisPiece> DebrisPieces = [];
         /// <summary>The buildings' interior masks the terrain, foliage and map features are cut by (made with the first frame that has objects; docs/render-interior-cut.md).</summary>
         public InteriorMaskRenderer? InteriorMask;
@@ -1206,6 +1208,11 @@ static class WorldFrame
         gpu.Foliage?.Update(eye);
         StageClock.Lap(2);
         gpu.Characters?.Update(eye);
+        if (gpu.Characters is { } posed && gpu.Debris is { } boltMeshes)
+        {
+            posed.CollectBolts(gpu.BoltPieces);
+            foreach (var bolt in gpu.BoltPieces) boltMeshes.Extent(bolt.Mesh);   // loads a mesh the first time
+        }
         gpu.Characters?.DrawPortraits();   // the squad portraits, from this update's poses
         gpu.Characters?.DrawHoverMasks(gpu.HoverOutline is null ? [] : gpu.HoverKeys, width, height, camera.View, camera.FieldOfView, eye);   // before the colour pass, whose statistics stand
         gpu.Characters?.DrawIcons();   // the item icons being made, from the same update
@@ -1402,7 +1409,11 @@ static class WorldFrame
             StageClock.Lap(8);
             host.Stage(6);
             gpu.Terrain.DrawDeferred();   // the terrain colour where nothing nearer covers it (the depth is in from the draw above)
-            if (nearSlice && gpu.Debris is { } debris) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light);
+            if (nearSlice && gpu.Debris is { } debris)
+            {
+                debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light);
+                if (gpu.BoltPieces.Count > 0) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.BoltPieces), viewProjection, eye, frustum, light);
+            }
             StageClock.Lap(6);
             // Characters after the opaque geometry: they alone write the scene's alpha (SSAO's character mask), so nothing drawn later may cover them but water.
             if (gpu.Characters is { } fogCharacters) { fogCharacters.FogCull = fogCull; fogCharacters.InteriorObjects = gpu.Objects; }

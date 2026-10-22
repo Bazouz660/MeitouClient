@@ -125,6 +125,21 @@ an unnamed root-chain bone (pelvis) is no limb (the original's fallback part ind
 Boots (slot 9, not `is locked`) on a character with exactly one fitted leg prosthetic lose that leg's half (`AppearanceBase_SetupItemMaterial`,
 **Observed**): left leg replaced collapses the x >= 0 half, right the x < 0 half. Meitou: `CharacterPart.HideSide`, instance flag bits 16-17.
 
+### Crossbows
+
+**Observed** (decompile: `FUN_1405dbd80`, `FUN_1405dbf80`, `FUN_140535d50`, `FUN_14043d120`, `FUN_140436080`, `FUN_1405cc820`):
+carried, the whole `mesh` hangs at its section's point (`back`, `back2` past the first, or `hip`), pushed out along the point's z by
+the CROSSBOW's `equip offset` (fcs.def default 1.2). Drawn to shoot (task 264 "Equipping crossbow"), the same item moves to `hands`
+(`Bip01 Prop2`) with no offset; the melee weapon in hand goes back to its own section first (one item in the hands), and the empty
+`sheath` leaves the back bare. `extra mesh loaded` / `extra mesh unloaded` and one `live ammo` bolt per shot sit in child nodes of the
+crossbow (at all points): loaded shows with shots > 0, unloaded with 0, bolt i with i < shots; bolts at (`barrel pos Y`, `barrel pos Z`,
+0) turned X -90°, Z -90° (bolt +z along the crossbow's +y). Firing hides the loaded string and bolt[shots - 1]; the end of a reload shows them
+(`FUN_14043a730`, `FUN_140436fb0`). Meitou: carried and in-hand crossbow with the loaded or unloaded string and its bolts by the combat slot's loaded
+bolts (`CharacterCold.CrossbowShots`; 0 until the first reload, the original's starting count is **Unknown**); the snapshot's
+`RangedDrawn` selects them (#36: a staff was shown firing while the crossbow stayed on the back). A generated character's crossbow takes row 0 of `back`
+(10 x 2); a two-row crossbow fills it, so a rolled back weapon goes to `hip` when free, else is left out, and the inventory never puts two weapons
+on the same cells (taken cells: `hip`, then the pockets). The original's placement for this case is **Unknown** (Meitou engine choice).
+
 ### LOD of character meshes
 
 Bodies, hair and armour use their meshes' own generated LOD levels (no separate LOD meshes); each entity picks
@@ -276,7 +291,7 @@ a line gated only by money or `DC_IS_RECRUITABLE`.
   "Body shape sliders", "Hidden body parts" above). Left: which body region each part-map colour marks, and the
   stats/nutrition fields listed in animation.md's open questions.
 - Random appearance details: the untraced part of the morph-face name, the faction flag that re-rolls the skin tone
-  (and a body file's gender); crossbow placement; extra hip copies; `RaceLimiter` rules.
+  (and a body file's gender); extra hip copies; `RaceLimiter` rules.
 - Where the original puts a rolled weapon whose footprint doesn't fit its pool's slot (hip 7x1, back 10x2). Meitou (engine choice,
   `CharacterGenerator`): the slot it fits, hip pool preferring the hip and back pool the back; fitting neither, it is left out.
 

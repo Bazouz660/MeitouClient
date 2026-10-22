@@ -38,6 +38,18 @@ internal sealed partial class CharacterRenderer
     /// <see cref="float.PositiveInfinity"/> when it misses, or null when the character is not drawn in the world this frame (the caller then has nothing to test).
     /// Render thread, after <see cref="Update"/>.
     /// </summary>
+    /// <summary>
+    /// Where the crossbow in the character <paramref name="key"/>'s hands fires from: the place of its first loaded bolt (the original's muzzle, <c>barrel pos</c> in the crossbow's
+    /// frame), in the world, as last posed; null when it holds no crossbow or was not posed. Render thread, after <see cref="Update"/>.
+    /// </summary>
+    public Vector3? Muzzle(long key)
+    {
+        if (!states.TryGetValue(key, out var s) || !s.RangedDrawn || s.Asset is not { IsIcon: false } asset || s.Posed < 0) return null;
+        foreach (var part in asset.Parts)
+            if (part.Muzzle && part.AttachIndex >= 0 && part.AttachIndex < s.Attach.Length) return (s.Attach[part.AttachIndex] * s.World).Translation;
+        return null;
+    }
+
     public float? RayHit(long key, Vector3 origin, Vector3 direction)
     {
         if (!states.TryGetValue(key, out var s) || s.Seen != updateStamp || !s.InWorld || s.Asset is not { IsIcon: false } asset || s.Posed < 0) return null;
@@ -48,7 +60,7 @@ internal sealed partial class CharacterRenderer
         float best = float.PositiveInfinity;
         foreach (var part in asset.Parts)
         {
-            if (!part.ShowsWith(s.WeaponDrawn) || part.PickBoxes.Length == 0) continue;
+            if (!part.ShowsWith(s.WeaponDrawn, s.RangedDrawn) || part.PickBoxes.Length == 0) continue;
             if (!part.Shared && (part.AttachIndex < 0 || part.AttachIndex >= s.Attach.Length)) continue;
             var model = part.Shared ? s.World : s.Attach[part.AttachIndex] * s.World;
             foreach (var box in part.PickBoxes)

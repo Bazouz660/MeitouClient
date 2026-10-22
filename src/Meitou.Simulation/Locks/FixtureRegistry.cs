@@ -611,6 +611,9 @@ public sealed class FixtureRegistry
     /// </summary>
     public static void Enslave(World world, CharacterCold c, int owner) => SetSlave(world, c, 1, owner);
 
+    /// <summary>Clears a character's slave state and owner (state 0) without DA 53's "Free!" (a slave bought free, <c>FUN_1406add20</c>).</summary>
+    public static void ClearSlave(World world, CharacterCold c) => SetSlave(world, c, 0, -1);
+
     /// <summary><c>DA_TAG_ESCAPED_SLAVE</c> (25): the character becomes an escaped slave (state 2), keeping its owner (<c>FUN_140680560</c>).</summary>
     public static void TagEscaped(World world, CharacterCold c) => SetSlave(world, c, 2, c.SlaveOwner);
 

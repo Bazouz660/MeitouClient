@@ -25,7 +25,7 @@ public class TradeUiTests
 
     static void Drag(PlayerInterface ui, Vector2 from, Vector2 to)
     {
-        ui.MouseDown(MouseButton.Left, from, false);
+        ui.MouseDown(MouseButton.Left, from, true);   // Shift: the whole stack (without it one unit is lifted)
         ui.MouseMove(to);
         ui.MouseUp(MouseButton.Left, to, false);
     }
@@ -60,8 +60,9 @@ public class TradeUiTests
             ui.MouseMove(Centre(bottom));
             Assert.True(ui.UiFrame.Single(c => c.Name == "trade-item-1").Properties.ContainsKey("tooltip_item"));
             Drag(ui, Centre(bottom), Centre(ui.UiFrame.Single(c => c.Name == "main")));
-            var buy = Assert.Single(session.World.Commands.TakeDue(long.MaxValue).OfType<Meitou.Simulation.Trading.BuyItem>());
-            Assert.Equal("bottom", buy.Item.Record);
+            var sent = session.World.Commands.TakeDue(long.MaxValue);
+            Assert.Equal("bottom", Assert.Single(sent.OfType<LiftItem>()).Item.Record);
+            Assert.Equal(ItemHolder.Character, Assert.Single(sent.OfType<PlaceHeld>()).Into.Holder);
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "trade-item-1" && c.Caption.Contains("c.", StringComparison.Ordinal));
         }
         finally { ui.DisposeUi(); }
