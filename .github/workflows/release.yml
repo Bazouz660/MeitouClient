@@ -1,4 +1,4 @@
-# Manual release, or a nightly pre-release twice a day (05:00 nightly, 14:00 daily, UTC) when there are game changes since the last v* tag: builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
+# Manual release, or a nightly pre-release twice a day (05:00 nightly, 16:00 daily, UTC) when there are game changes since the last v* tag: builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
 # (tools/scripts/package-release.ps1; the Windows zip with NVIDIA DLSS/Streamline and AMD FidelityFX next to the exes), tags the commit
 # v<version> and publishes a GitHub release with one Meitou-<version>-<rid>.zip per runtime (docs/launcher.md), never marked Latest
 # (that is the newest full launcher release, launcher-release.yml).
@@ -21,7 +21,7 @@ on:
         default: false
   schedule:
     - cron: "0 5 * * *" # nightly, 05:00 UTC: after the late-evening work
-    - cron: "0 14 * * *" # daily, 14:00 UTC: the morning's work, before the evening
+    - cron: "0 16 * * *" # daily, 16:00 UTC: the morning's work, before the evening
 
 permissions:
   contents: write
@@ -49,7 +49,7 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           NIGHTLY: ${{ github.event_name == 'schedule' || inputs.nightly }}
-          KIND: ${{ github.event.schedule == '0 14 * * *' && 'Daily' || 'Nightly' }}
+          KIND: ${{ github.event.schedule == '0 16 * * *' && 'Daily' || 'Nightly' }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           if ($env:NIGHTLY -eq 'true') {
