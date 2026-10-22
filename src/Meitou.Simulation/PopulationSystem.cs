@@ -491,7 +491,6 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
                 RecordId = plan.RecordId,
                 SquadId = squad.Id,
                 Role = (int)plan.Role,
-                FormationOffset = plan.Offset - (leaderPlan?.Offset ?? Vector2.Zero),
                 IsPlayer = player,
                 Orders = player ? Orders.PlayerDefaults : CharacterOrders.None,
                 FootprintRadius = race?.GetFloat("pathfind footprint radius") ?? 0,

@@ -148,12 +148,6 @@ public sealed partial class PopulationSystem
         squad.SpawnSize = Math.Max(size, squad.Members.Count);
         stored.Members.Clear();
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
-        var lead = table.Next[squad.Leader.Slot].Position;
-        foreach (var id in squad.Members)
-        {
-            var at = table.Next[id.Slot].Position;
-            table.Cold(id.Slot)!.FormationOffset = MovementSystem.OffsetOfPlace(new Vector2(at.X - lead.X, at.Z - lead.Z));
-        }
         world.Squads.Add(squad);
         // A resident in its bed takes it again.
         world.Fixtures.Bind(world);

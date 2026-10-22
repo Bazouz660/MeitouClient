@@ -222,7 +222,7 @@ public class CarryTests
         var down3 = rig.Add(900, 2200, squad: 3, faction: 1);
         var leader = rig.Add(1600, 2000, player: false, squad: 4, faction: 0, leader: true);
         rig.Add(1650, 2000, player: false, squad: 4, faction: 0, task: CharacterTask.Wander);
-        rig.Add(1700, 2050, player: false, squad: 4, faction: 0, task: CharacterTask.Follow, yaw: -MathF.PI / 2);
+        rig.Add(1700, 2050, player: false, squad: 4, faction: 0, task: CharacterTask.Idle, yaw: -MathF.PI / 2);   // the witness, facing the looting
         foreach (var r in new[] { "a", "b", "c", "d" }) rig.Cold(down1).Inventory!.Add(Item(r, 2, 2));
         rig.Body(down1).KnockOut(10000);
         rig.Body(down2).KnockOut(3);

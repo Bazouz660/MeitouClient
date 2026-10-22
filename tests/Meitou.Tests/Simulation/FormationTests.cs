@@ -21,13 +21,4 @@ public class FormationTests
                 if (i != j && MathF.Abs(slots[i].Y - slots[j].Y) < 0.01f && positions[i].X != positions[j].X)
                     Assert.Equal(MathF.Sign(positions[i].X - positions[j].X), MathF.Sign(slots[i].X - slots[j].X));
     }
-
-    [Fact]
-    public void A_reloaded_followers_offset_is_its_distance_divided_by_the_scale_and_capped_at_the_factory_reach()
-    {
-        Assert.Equal(new Vector2(4, -2), MovementSystem.OffsetOfPlace(new Vector2(4, -2) * MovementSystem.FormationScale));
-        var far = MovementSystem.OffsetOfPlace(new Vector2(3000, 4000));
-        Assert.Equal(MovementSystem.MaxFormationOffset, far.Length(), 3);
-        Assert.Equal(0.6f, far.X / far.Length(), 3);   // the direction is kept
-    }
 }

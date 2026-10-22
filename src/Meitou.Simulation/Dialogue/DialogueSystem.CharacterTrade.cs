@@ -237,7 +237,6 @@ public sealed partial class DialogueSystem
         }
         c.SquadId = squad.Id;
         c.Role = (int)SquadRole.Leader;
-        c.FormationOffset = Vector2.Zero;
         squad.Members.Add(id);
         squad.Leader = id;
     }

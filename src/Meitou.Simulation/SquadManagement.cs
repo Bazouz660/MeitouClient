@@ -200,13 +200,12 @@ public static class SquadManagement
         if (source != target) Relead(table, target);
     }
 
-    /// <summary>Makes a character a member of <paramref name="squad"/>: its squad, no formation place and no stop order left from the old one.</summary>
+    /// <summary>Makes a character a member of <paramref name="squad"/>: its squad and no stop order left from the old one.</summary>
     static void Join(CharacterTable table, CharacterId id, Squad squad)
     {
         if (!table.TryResolveNext(id, out int slot)) return;
         var cold = table.Cold(slot)!;
         cold.SquadId = squad.Id;
-        cold.FormationOffset = Vector2.Zero;
     }
 
     /// <summary>The first member leads (role 2), the one that led before goes back to role 0 (<c>FUN_140796620</c> / <c>FUN_140792e60</c>: index 0 is made the leader).</summary>
@@ -259,7 +258,6 @@ public static class SquadManagement
         cold.RoadPreference = data.RoadPreferenceOf(faction);
         cold.SquadId = squad.Id;
         cold.Role = (int)SquadRole.Leader;
-        cold.FormationOffset = Vector2.Zero;
         cold.IsPlayer = false;
         cold.Orders = CharacterOrders.None;
         cold.Ai = null;

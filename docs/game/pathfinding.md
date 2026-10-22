@@ -338,7 +338,7 @@ cuts follow the blocky 36-unit terrain grid (generator inputs, terrain). The ori
   building flag at +0x1f0 → +0x2c that gates carvers and part of the WALKABLE rule; the global seed list DAT_14212f470;
   the ray-hit kind that still allows a ground seed; whether OverrideSettings material −1 means "any material".
 - Whether the path request converts the footprint radius to Havok units.
-- Steering rules for formation slots and the full avoidance parameters
+- Steering rules for formation slots (Meitou's engine choice: [simulation](../simulation.md#movement-and-paths)) and the full avoidance parameters
   (the repulsion's absolute magnitude).
 - Whether face data values other than 3, 4, 5 and the gate nibble exist; how building construction and destruction
   update faces (path mode switches at runtime).

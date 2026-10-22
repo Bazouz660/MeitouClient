@@ -3,7 +3,7 @@ using System.Numerics;
 namespace Meitou.Simulation;
 
 /// <summary>
-/// Where the characters of a move order end up: a block around the clicked point, its rows across the direction of travel, the
+/// Where followers keep station (<see cref="Slot"/>) and where the characters of a move order end up: a block around the clicked point, its rows across the direction of travel, the
 /// characters nearest the target in the front row. The original has formations (FACTION <c>squad formation</c> and a "Follow
 /// Formation" order) but the slot rules are <b>Unknown</b> (docs/game/pathfinding.md "Local avoidance and formation"), so this is an
 /// engine choice: a compact grid about as wide as it is deep, spaced so that neighbours do not push each other (footprint radius 4).
@@ -12,6 +12,21 @@ public static class Formation
 {
     /// <summary>Distance between neighbouring slots: twice the human footprint radius plus a margin.</summary>
     public const float Spacing = 9;
+
+    /// <summary>
+    /// Where follower number <paramref name="rank"/> of <paramref name="count"/> stands relative to the one it follows, facing <paramref name="yaw"/>
+    /// (forward is (sin, cos) on X/Z): a block behind it, about as wide as deep, rows across the heading, a short last row centred (engine choice, as
+    /// <see cref="Place"/>).
+    /// </summary>
+    public static Vector2 Slot(int rank, int count, float yaw, float spacing = Spacing)
+    {
+        int columns = Math.Max(1, (int)MathF.Ceiling(MathF.Sqrt(count)));
+        int row = rank / columns, inRow = Math.Min(columns, count - row * columns);
+        float lateral = (rank % columns - (inRow - 1) / 2f) * spacing;
+        var forward = new Vector2(MathF.Sin(yaw), MathF.Cos(yaw));
+        var right = new Vector2(forward.Y, -forward.X);
+        return right * lateral - forward * ((row + 1) * spacing);
+    }
 
     /// <summary>
     /// One target per character, in the order of <paramref name="positions"/> (X/Z where they stand now). One character goes to the

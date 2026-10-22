@@ -49,10 +49,11 @@ public sealed class CharacterCold
     public long SpawnedTick { get; set; }
     /// <summary>The CHARACTER (or ANIMAL_CHARACTER) record it was made from.</summary>
     public string RecordId { get; set; } = "";
-    /// <summary>The squad it belongs to (-1 for none), its role in it (the editor's SquadMemberType) and where it stands relative to the leader.</summary>
+    /// <summary>The squad it belongs to (-1 for none) and its role in it (the editor's SquadMemberType).</summary>
     public int SquadId { get; set; } = -1;
     public int Role { get; set; }
-    public System.Numerics.Vector2 FormationOffset { get; set; }
+    /// <summary>Seconds left that a follower blocked on its way straight to its slot takes paths (<see cref="MovementSystem.FollowPathSeconds"/>).</summary>
+    public float FollowPathTime { get; set; }
     /// <summary>The path being followed (world positions, the next one at <c>CharacterHot.PathCursor</c>); replaced whole in a serial phase.</summary>
     public Vector3[] Path { get; set; } = [];
     /// <summary>
@@ -444,7 +445,7 @@ public sealed class CharacterTable
             hasher.Add(k.SpawnedTick);
             hasher.Add(k.SquadId);
             hasher.Add(k.Role);
-            hasher.Add(k.FormationOffset);
+            hasher.Add(k.FollowPathTime);
             hasher.Add(k.Path.Length);
             hasher.Add(k.PathRequest);
             hasher.Add(k.IsPlayer);

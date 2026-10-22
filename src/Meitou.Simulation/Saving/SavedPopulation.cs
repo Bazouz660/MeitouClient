@@ -363,19 +363,12 @@ internal static class SavedCharacters
         foreach (var n in notes) context.Log(n);
         if (squad.Members.Count == 0) return null;
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
-        // The followers keep the places they had round the leader.
-        var lead = world.Characters.Next[squad.Leader.Slot].Position;
-        foreach (var id in squad.Members)
-        {
-            var at = world.Characters.Next[id.Slot].Position;
-            world.Characters.Cold(id.Slot)!.FormationOffset = MovementSystem.OffsetOfPlace(new Vector2(at.X - lead.X, at.Z - lead.Z));
-        }
         // Its shop as it was when it left the world, else the save's (a fresh fill when the save has none).
         squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);
         squad.SavedAi = sp.Ai;
         world.Squads.Add(squad);
         sp.Touched = true;
-        context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {lead.X:0}, {lead.Z:0}");
+        context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {world.Characters.Next[squad.Leader.Slot].Position.X:0}, {world.Characters.Next[squad.Leader.Slot].Position.Z:0}");
         return squad;
     }
 
