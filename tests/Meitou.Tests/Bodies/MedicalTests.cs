@@ -84,6 +84,33 @@ public class BloodAndKoTests
     }
 }
 
+public class LegCollapseTests
+{
+    /// <summary>A body whose right leg has flesh <paramref name="flesh"/>, bandage <paramref name="bandage"/> and rig <paramref name="rig"/>, ticked once so it holds the KO point of toughness 50.</summary>
+    static MedicalState Leg(float flesh, float bandage = 0, float rig = 0, LimbState limb = LimbState.Original)
+    {
+        var m = Healthy();
+        var leg = m.Parts[RLeg];
+        (leg.Flesh, leg.Bandage, leg.Rig, leg.Limb) = (flesh, bandage, rig, limb);
+        m.Tick(1e-4f, Context(toughness: 50));
+        return m;
+    }
+
+    [Fact]
+    public void One_leg_crawls_below_the_ko_point_not_below_zero_and_bandage_not_rig_lifts_it()
+    {
+        // docs/game/ragdolls.md "Forced crawl": KO point at toughness 50 = -(10 + 75 x 0.5) = -47.5.
+        Assert.Equal(-47.5f, Leg(100).LegKoPoint, 3);
+        var limping = Leg(-20);
+        Assert.True(limping.Parts[RLeg].IsDown);             // under 0 by the arm rule, but a leg only limps there
+        Assert.False(limping.Crawling);
+        Assert.True(Leg(-60).Crawling);                      // past the KO point: down
+        Assert.False(Leg(-60, bandage: 30).Crawling);        // h - s + b = -30: up again
+        Assert.True(Leg(-60, rig: 40).Crawling);             // a splint does not count in this test
+        Assert.True(Leg(100, limb: LimbState.Stump).Crawling);   // a stump is always down
+    }
+}
+
 public class DeterminismTests
 {
     [Fact]
