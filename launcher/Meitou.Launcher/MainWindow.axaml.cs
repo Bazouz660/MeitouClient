@@ -475,10 +475,11 @@ public sealed partial class MainWindow : Window
     MenuItem VersionItem(string header, string? version, string? picked)
     {
         object content = header;
-        // A nightly wears a brass tag with its build date: "v0.15.1  NIGHTLY 20 OCT".
+        // A nightly wears a brass tag with its build date, and a same-day second build its number: "v0.15.1  NIGHTLY 20 OCT #2".
         if (version is not null && version.Contains("-nightly.", StringComparison.Ordinal))
         {
-            var date = Releases.ParseVersion(version).Nightly?.ToString(" d MMM", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+            var parsed = Releases.ParseVersion(version);
+            var date = parsed.Nightly?.ToString(" d MMM", System.Globalization.CultureInfo.InvariantCulture) + (parsed.Build > 1 ? $" #{parsed.Build}" : "");
             content = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10,
