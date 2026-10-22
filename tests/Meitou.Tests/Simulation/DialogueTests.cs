@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Dialogue;
 using Meitou.Data.World;
 using Meitou.Simulation;
@@ -280,6 +281,76 @@ public class DialogueTests
         var talk = dialogue.PublishConversation();
         Assert.NotNull(talk);
         Assert.Equal((boss, "What do you want?"), (talk.Npc, talk.Text));
+    }
+
+    /// <summary>
+    /// A slaver of the jail town's faction whose reply carries DA 42 (CHOOSE_SLAVES_BUYING) lists its caged slave at the formula price, trunc(20 + 15 + 10.4) x 100 (docs/game/economy.md
+    /// 12); buying it takes the money, frees it from cage and slavery and makes it the hero's squadmate.
+    /// </summary>
+    [Fact]
+    public void Buying_a_caged_slave_lists_it_at_its_value_and_paying_frees_it_into_the_squad()
+    {
+        var data = ArrestTests.Town([
+            Rec("slaver-c", FcsRecordType.CHARACTER, r => { r.Name = "Slaver"; r.References["dialogue"] = [Ref("trade-d")]; }),
+            Rec("buy-da", FcsRecordType.DIALOG_ACTION, r => r.Ints["action name"] = 42),
+            Rec("trade-d", FcsRecordType.DIALOGUE, r => r.References["lines"] = [Ref("trade-l")]),
+            Rec("trade-l", FcsRecordType.DIALOGUE_LINE, r => { r.Strings["text0"] = "Looking to trade?"; r.References["lines"] = [Ref("buy-l")]; }),
+            Rec("buy-l", FcsRecordType.DIALOGUE_LINE, r => { r.Ints["speaker"] = (int)Talker.Target; r.Strings["text0"] = "I'm looking to buy some slaves"; r.References["effects"] = [Ref("buy-da")]; }),
+        ]);
+        var dialogue = new DialogueSystem(data);
+        var ground = new OpenGroundWalkability((_, _) => 150);
+        using var world = new SimWorld(new WorldSettings { Seed = 5, PublishSnapshots = false }, ground, [new MovementSystem(new PathService(ground, true)), dialogue]);
+        world.Fixtures.RegisterSite(world, data, 0);
+        world.Player.Faction = data.PlayerFaction;
+        int city = data.FactionIndex("50-a");
+        var centre = new Vector3(2000, 150, 2000);
+        CharacterId Spawn(string name, Vector3 at, Squad squad, Action<CharacterCold> tweak)
+        {
+            var cold = new Meitou.Tests.Combat.Combatant { Name = name }.MakeCold();
+            (cold.Inventory, cold.SquadId) = (new Inventory(), squad.Id);
+            tweak(cold);
+            var id = world.Characters.Spawn(new CharacterHot { Position = at, Health = 100, MaxSpeed = 60, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
+            squad.Members.Add(id);
+            if (squad.Leader.IsNone) squad.Leader = id;
+            return id;
+        }
+        Squad NewSquad(int faction, int town = -1)
+        {
+            var s = new Squad { Id = world.Squads.NextId(), TemplateId = "t", Faction = faction, Town = town, HomeCentre = new Vector2(centre.X, centre.Z), HomeRadius = 500 };
+            world.Squads.Add(s);
+            return s;
+        }
+        var players = NewSquad(data.PlayerFaction);
+        var slavers = NewSquad(city, town: 0);
+        var hero = Spawn("hero", centre + new Vector3(100, 0, 20), players, c => (c.Faction, c.IsPlayer) = (data.PlayerFaction, true));
+        var slaver = Spawn("Slaver", centre + new Vector3(100, 0, 0), slavers, c => (c.Faction, c.RecordId) = (city, "slaver-c"));
+        var slave = Spawn("Slave", centre, NewSquad(city), c =>
+        {
+            c.Faction = city;
+            (c.Stats![StatsEnumerated.Strength], c.Stats[StatsEnumerated.MeleeAttack], c.Stats[StatsEnumerated.Dexterity]) = (20, 15, 10.4f);
+        });
+        var sc = world.Characters.Cold(slave.Slot)!;
+        Meitou.Simulation.Locks.FixtureRegistry.Enslave(world, sc, city);
+        var cage = world.Fixtures.Find("0.0:cageA")!;
+        Assert.True(world.Fixtures.Imprison(world, slave, cage));
+        world.Player.Money = 10000;
+
+        world.Commands.Enqueue(new TalkOrder(hero, slaver) { Tick = world.Tick });
+        world.RunTicks(2);
+        Assert.Equal("Looking to trade?", dialogue.PublishConversation()!.Text);
+        world.Commands.Enqueue(new DialogueChoice(0) { Tick = world.Tick });
+        world.RunTicks(2);
+        var list = dialogue.PublishConversation()!;
+        Assert.Equal("Buying Slaves", list.Text);
+        Assert.Equal(["Slave (c.4,500)", "[Leave]"], list.Choices);
+
+        world.Commands.Enqueue(new DialogueChoice(0) { Tick = world.Tick });
+        world.RunTicks(2);
+        Assert.Equal(["[Leave]"], dialogue.PublishConversation()!.Choices);   // shown again, empty
+        Assert.Equal(5500, world.Player.Money);
+        Assert.Equal((0, false, true), (sc.SlaveState, sc.IsImprisoned, sc.IsPlayer));
+        Assert.False(cage.Lock!.Locked);
+        Assert.Contains(slave, players.Members);
     }
 
     /// <summary>The hero walks 300 up to the villager and talks twice (rich, buying; then plain), pinned in <see cref="GoldenHashTests"/>.</summary>
