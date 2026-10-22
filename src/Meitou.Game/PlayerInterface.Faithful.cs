@@ -211,6 +211,7 @@ sealed partial class PlayerInterface
         if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
         else ArrangeEquipmentGrid(controls, grid);
         if (id == "inventory") AddInventorySummary(controls, lead);
+        else if (id == "loot" && IsAnimal(lead)) AddInventorySummary(controls, lead, animal: true);
         if (id == "limbs") DisableIntactLimbSlots(controls, lead);
         foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {

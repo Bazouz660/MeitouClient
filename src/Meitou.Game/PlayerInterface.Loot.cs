@@ -17,6 +17,10 @@ sealed partial class PlayerInterface
     CharacterId shownLoot = CharacterId.None, closedLoot = CharacterId.None;
     /// <summary>The loot's bag window is wanted (OPEN BAG in the loot window toggles it).</summary>
     bool lootBagOpen = true;
+    /// <summary>The loot window's layouts: a person's (<c>Kenshi_InventoryCharacterWindow</c>) and an animal's (<c>Kenshi_InventoryAnimalWindow</c>: backpack slot and main grid, no gear slots).</summary>
+    (MyGuiLayout? Character, MyGuiLayout? Animal) lootLayouts;
+
+    static bool IsAnimal(CharacterSnapshot? c) => c?.Appearance?.Animal is not null;
 
     static bool IsLootScreen(string screen) => screen is "loot" or "loot-bag";
 
@@ -46,6 +50,7 @@ sealed partial class PlayerInterface
             if (!open.IsNone)
             {
                 if (Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
+                if ((IsAnimal(LootBody()) ? lootLayouts.Animal : lootLayouts.Character) is { } layout) faithfulScreens.Replace("loot", layout);
                 faithfulScreens.Open("loot");
                 PlaceInventoryBeside("loot", left: false);
                 inventoryScroll.Remove("loot-bag");

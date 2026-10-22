@@ -56,7 +56,9 @@ sealed partial class PlayerInterface
             if (id is "new-game" or "import") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
             if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
             faithfulScreens.Register(id, layout, modal, centreRoot: id is "file");
+            if (id == "loot") lootLayouts.Character = layout;
         }
+        lootLayouts.Animal = resolve("Kenshi_InventoryAnimalWindow.layout") is { } animal ? MyGuiReader.ReadLayout(animal) : null;
         // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
         faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only

@@ -155,13 +155,15 @@ sealed partial class PlayerInterface
             inventoryScroll[id] = Math.Clamp(inventoryScroll.GetValueOrDefault(id) - direction * view.View.Height, 0, view.Maximum);
     }
 
-    void AddInventorySummary(List<UiControl> controls, CharacterSnapshot lead)
+    /// <summary>The data panel's lines; an animal's window shows only the weight and burden rows (the original's animal inventory, observed).</summary>
+    void AddInventorySummary(List<UiControl> controls, CharacterSnapshot lead, bool animal = false)
     {
         string weight = lead.ItemGrid?.TotalWeight.ToString("0", CultureInfo.InvariantCulture) ?? "0";
         if (lead.ItemGrid?.CarryCapacity is { } capacity) weight += "/" + capacity.ToString("0", CultureInfo.InvariantCulture);
         var (burdenWord, burdenColour) = BurdenText(lead.Hud?.Encumbrance ?? 1);
         const string muted = "0.3 0.28 0.25";
-        AddLines(controls, "datapanel", [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour), new("Disguise:", "None"), new("", ""),
+        AddLines(controls, "datapanel", animal ? [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour)]
+            : [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour), new("Disguise:", "None"), new("", ""),
             new("Slave of:", "-", muted, muted), new("Looks like slave:", "-", muted, muted)], 20 * InventoryScale);
     }
 

@@ -384,7 +384,8 @@ stolen ownership marks. [carry-loot.md](game/carry-loot.md). Loot window (engine
 (`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); `TakeLootItem` / `PutLootItem`
 move single items to a given slot or cell (`InventoryCommands.Transfer`, the move rules; taking counts as a
 loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
-body comes round or is lifted. It also runs the stealth knock-out
+body comes round or is lifted. A downed animal's loot window uses `Kenshi_InventoryAnimalWindow` (backpack slot,
+main grid, weight and burden only; **Observed** in the original). It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
 
 ## Ragdolls
