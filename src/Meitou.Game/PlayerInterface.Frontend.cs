@@ -20,6 +20,8 @@ sealed partial class PlayerInterface
     /// <summary>When the credits were opened (Stopwatch): they scroll by the wall clock.</summary>
     long creditsStart;
     bool slotReadable;
+    /// <summary>The Faithful load window's Load button is live only with a readable save selected (Fixes settings); off, it is always live, as in the game.</summary>
+    public bool FixLoadButton { get; set; } = true;
     Meitou.Data.Save.SaveSlotInfo? slotInfo;
     /// <summary>The load and import windows' ticks (ImportGameMenu flags 0x1, 0x4, 0x8, 0x10, 0x20): reset squad positions, buildings, research, dead NPCs, relations.</summary>
     readonly bool[] slotTicks = new bool[5];
@@ -267,8 +269,8 @@ sealed partial class PlayerInterface
                 [s.Name.ToLowerInvariant(), s.ModifiedUtc.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture)])).ToArray();
             b.SelectedItems["GamesList"] = Array.FindIndex(visibleSlots, s => s == selectedSlot);
             if (faithful) b.Text["InfoPanel"] = ""; else Paragraph("InfoPanel", slotDetails);
-            // The original's Load button is always live (a click without a selection does nothing).
-            if (id == "save") Enable("SaveButton"); else if (id == "load" && (faithful || selectedSlot is not null && slotReadable)) Enable("LoadButton");
+            // The original's Load button is always live (a click without a selection does nothing); the fix waits for a readable save.
+            if (id == "save") Enable("SaveButton"); else if (id == "load" && (faithful && !FixLoadButton || selectedSlot is not null && slotReadable)) Enable("LoadButton");
             b.Properties[id == "save" ? "SaveButton" : "LoadButton"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
         }
         else if (id == "message")

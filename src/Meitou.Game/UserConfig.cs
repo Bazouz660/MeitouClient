@@ -77,6 +77,8 @@ sealed class UserConfig
     public bool FixDoorBreak { get; set; } = true;
     public bool FixAmbienceSuffix { get; set; } = true;
     public bool FixWindStop { get; set; } = true;
+    /// <summary>The Faithful load window's Load button waits for a readable save (Fixes settings; off: always live, as in the game).</summary>
+    public bool FixLoadButton { get; set; } = true;
     /// <summary>The strategy camera's turn and tilt rate in degrees per second per unit of input (Controls settings): the original's
     /// <c>mouse speed pan</c> / <c>mouse speed tilt</c> (slider 2 … 50, default 6), one value for both here.</summary>
     public float CameraRotateSpeed { get; set; } = Meitou.Data.World.KenshiCamera.DefaultRotateSpeed;

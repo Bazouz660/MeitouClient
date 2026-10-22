@@ -201,6 +201,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Toggle: new("Ambience after loading", () => config.FixAmbienceSuffix, v => config.FixAmbienceSuffix = v, Remaster: true, OnOff: true)));
             result.Add(new("Wind stops", "The wind's sound ends when the wind dies down. The game asks for a stop sound that does not exist, so once the wind has blown it never goes quiet.",
                 Toggle: new("Wind stops", () => config.FixWindStop, v => config.FixWindStop = v, Remaster: true, OnOff: true)));
+            result.Add(new("Load button", "The load window's Load button works only once a save that can be read is selected. "
+                + "The game keeps it live: with nothing selected a click does nothing, and an unreadable save fails to load.",
+                Toggle: new("Load button", () => config.FixLoadButton, v => player.FixLoadButton = config.FixLoadButton = v, Remaster: true, OnOff: true)));
         }
         if (page == 4)
         {
@@ -468,6 +471,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.DoorsCloseBehind = true;
         DoorsCloseChanged?.Invoke(true);
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
+        player.FixLoadButton = config.FixLoadButton = true;
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();
