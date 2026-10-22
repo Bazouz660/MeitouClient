@@ -34,7 +34,7 @@ sealed partial class GameHost
         using var display = new VulkanDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
-            Title = "Meitou",
+            Title = "MeitouClient",
             // Hidden while the device is made (a second or two in which nothing can be drawn), shown maximised with the first loading frame.
             IsVisible = false,
             FramesPerSecond = 0,
@@ -343,8 +343,8 @@ sealed partial class GameHost
         Console.WriteLine($"display   vsync {(vsync ? "on" : "off")}, frame limit {(vsync || fpsLimit <= 0 ? "none" : fpsLimit + " fps")}, control tick {session.Ticks.TickRate:0} Hz, world tick {SimulationClock.TickRate:0} per game second; settings in {config.Path}");
 
         var frame = Stopwatch.StartNew();
-        double last = 0, titleTimer = 0, cpuSum = 0;
-        int frames = 0, totalFrames = 0;
+        double last = 0;
+        int totalFrames = 0;
         bool quit = false;
         player.ScreenAction += e =>
         {
@@ -390,7 +390,6 @@ sealed partial class GameHost
                     strategy: actions.Pressed(InputAction.ToggleFreeCamera));
             }
         };
-        long windowRan = 0, windowDropped = 0;
         double drawTotal = 0, gpuSum = 0, statsTimer = 0;
         int gpuSamples = 0, statsFrames = 0;
         long statsTicks = 0;
@@ -516,7 +515,6 @@ sealed partial class GameHost
                 if (sceneLoading && skyArrival is { AtStars: true })
                     WorldFrame.DrawLoadingSky(gpu, scene, camera, size.X, size.Y, presentationHour ?? 0, (float)animSeconds, o.FogDistance);
                 else if (!sceneLoading || skyArrival is not null) DrawWorld(size.X, size.Y);
-                cpuSum += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 drawTotal += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 bool shot = screenshotRequested, take = takeFile is not null;
                 // The game's interface (markers, HUD, panels, debug overlays): hidden by F7, the cinema's clean picture and in recorded frames.
@@ -577,9 +575,7 @@ sealed partial class GameHost
                 statsFrames++;
                 if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
                 else if (shot) SaveScreenshot(display.Context, backbuffer, size.X, size.Y);
-                frames++;
             }
-            titleTimer += dt;
             statsTimer += dt;
             if (statsTimer >= 1)
             {
@@ -596,20 +592,6 @@ sealed partial class GameHost
                 if (audio is not null) stats.Add($"char audio  {CharacterAudioStats()}, {UiAudioStats()}");
                 statsTimer = gpuSum = 0;
                 statsFrames = gpuSamples = 0;
-            }
-            if (titleTimer >= 0.5)
-            {
-                var s = session.Camera.Current;
-                // The achieved speed over this window: the asked speed scaled by the share of the owed ticks that ran.
-                long ran = session.Simulation.TotalTicks - windowRan, dropped = session.Simulation.DroppedTicks - windowDropped;
-                windowRan = session.Simulation.TotalTicks;
-                windowDropped = session.Simulation.DroppedTicks;
-                double achieved = SimulationClock.AchievedSpeedOver(session.TimeScale, ran, dropped);
-                string speedText = session.Simulation.IsPaused ? "paused" + (session.Simulation.RequestedPause ? "" : $" (x{session.Simulation.LastNonZeroSpeed:0})") : $"x{session.TimeScale:0}" + (achieved < session.TimeScale - 0.05 ? $" (running x{achieved:0.0})" : "");
-                window.Title = $"Meitou | {frames / titleTimer:0} fps, cpu {cpuSum / Math.Max(frames, 1):0.00} ms | {(session.Camera.IsFree ? "free camera" : $"boom {s.Distance:0}")} | " +
-                    $"{session.Clock.TimeText} {session.Clock.DayText} {speedText} | {s.Target.X:0}, {s.Target.Z:0}{(gpu.Post is { Temporal: true } p ? $" | {p.ActiveUpscaler}" : "")}";
-                titleTimer = cpuSum = 0;
-                frames = 0;
             }
             totalFrames++;
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) { Console.WriteLine($"profile   {session.CurrentSnapshot.Characters.Count} characters in the snapshot, {session.CurrentSnapshot.Characters.Count(c => c.Appearance is not null)} drawable; per frame: simulation advance {advanceTotal / Math.Max(totalFrames, 1):0.000} ms ({session.Simulation.TotalTicks} ticks, {advanceTotal / Math.Max(session.Simulation.TotalTicks, 1):0.000} ms per tick), host draw-list fill {fillTotal / Math.Max(fillCalls, 1):0.000} ms, world draw cpu {drawTotal / Math.Max(totalFrames, 1):0.00} ms, {(gpu.Characters is { } chars ? chars.Statistics() : "no characters")}");
