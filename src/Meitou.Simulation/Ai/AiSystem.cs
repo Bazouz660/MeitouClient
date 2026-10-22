@@ -219,10 +219,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.GoHome => AtHomeTown(world, squad, board, self) ? 0 : 0.5f,
             // A turret is only wanted by a member its squad gave one (the nearest free one in <see cref="ClaimTurrets"/>).
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
-            AiBehaviour.TownNode => Places(board.Town).WithNodes.Count > 0 ? 1 : 0,
+            AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 ? 1 : 0,
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); without a home it sits where it is.
-            AiBehaviour.Relax => board.CurrentClass == PackageClass.Bar && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
+            AiBehaviour.Relax => board.BarTable >= 0 && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.Sit => board.Home is null || board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
             _ => 1,
@@ -244,31 +244,39 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         return best;
     }
 
-    /// <summary>A town's buildings with a general node, its shops and its bars, as <see cref="RefreshPlaces"/> last found them.</summary>
-    sealed record TownPlaces(IReadOnlyList<TownBuilding> WithNodes, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars);
+    /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
+    sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
+        IReadOnlyList<TownBuilding> OutdoorTables);
 
-    static readonly TownPlaces NoPlaces = new([], [], []);
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], []);
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
     TownPlaces Places(int site) => site >= 0 && places.TryGetValue(site, out var p) ? p : NoPlaces;
+
+    /// <summary>The buildings wandering in <paramref name="site"/> can go to from <paramref name="at"/>: its public ones with a general node in the zone of that point.</summary>
+    IReadOnlyList<TownBuilding> WanderIn(int site, Vector3 at) => Places(site).Wander.TryGetValue(WorldLayout.ZoneOf(at.X, at.Z), out var list) ? list : [];
 
     /// <summary>
     /// The towns' places for the AI's squads (serial, on the package cadence). A bar is a building whose residents' template has <c>building designation</c> BAR
     /// (the original's hang-around-bar package picks one of those in the home town, docs/game/ai-tasks.md "Town goals", Observed); a shop one whose residents
     /// trade (<see cref="SquadTemplate.HasShop"/>; the original's shopping looks for BF_SHOP furniture inside, which Meitou does not read: engine choice).
     /// Residents are the squads living there, else the level data's <c>residents template</c>; the layout flags <c>is bar</c> / <c>is shop</c> count too.
+    /// A building is public as its residents' template's <c>public day</c> (the original writes it over the home's flag), else as its level state's
+    /// <c>is public day</c>, else public (engine choice: the original's default is Unknown).
     /// </summary>
     void RefreshPlaces(World world)
     {
         places.Clear();
         var shops = new HashSet<TownBuilding>(ReferenceEqualityComparer.Instance);
         var bars = new HashSet<TownBuilding>(ReferenceEqualityComparer.Instance);
+        var publicFlag = new Dictionary<TownBuilding, bool>(ReferenceEqualityComparer.Instance);
         void Note(TownBuilding b, SquadTemplate? t)
         {
             if (t is null) return;
             if (t.HasShop) shops.Add(b);
             if (t.BuildingDesignation == DesignationBar) bars.Add(b);
+            publicFlag.TryAdd(b, t.PublicDay);
         }
         foreach (var squad in world.Squads.All)
             if ((squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home) Note(home, TemplateOf(squad.TemplateId).Template);
@@ -279,8 +287,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             var buildings = data.Sites[site].Buildings;
             foreach (var b in buildings)
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
-            places[site] = new([.. buildings.Where(b => b.Spots.Any(IsGeneralNode))], [.. buildings.Where(b => b.IsShop || shops.Contains(b))],
-                [.. buildings.Where(b => b.IsBar || bars.Contains(b))]);
+            bool IsPublic(TownBuilding b) => publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true;
+            var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
+            places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
+                [.. buildings.Where(b => b.IsOutdoorTable)]);
         }
     }
 
@@ -293,8 +303,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     const int NodeGeneral = 1;
 
     /// <summary>
-    /// Where a town goal goes (docs/game/ai-tasks.md "Town goals"): wandering in town, a random general node of a random building of the town (Observed; the
-    /// original draws from all its buildings and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town,
+    /// Where a town goal goes (docs/game/ai-tasks.md "Town goals"): wandering in town, a random general node of a random public building of the town in the walker's
+    /// zone (Observed; the original draws from all of those and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town,
     /// at a general node in it, else at it (the original first looks for a shop selling what the character wants to buy: shopping lists are not modelled); the
     /// wanderer, the nearest town. Null when there is none.
     /// </summary>
@@ -307,7 +317,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             {
-                var from = behaviour == AiBehaviour.TownNode ? places.WithNodes : places.Shops;
+                var from = behaviour == AiBehaviour.TownNode ? WanderIn(town, world.Characters.Previous[self.Slot].Position) : places.Shops;
                 if (from.Count == 0) return null;
                 var b = from[Rng.Int(roll, from.Count)];
                 // A general node; in a shop without one a guard post, else any other node (engine choice: where the original's Task_Shopping stands is not decoded).
@@ -824,7 +834,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         foreach (var (slot, spot) in board.SeatClaims) kept[slot] = spot;
         board.SeatClaims.Clear();
         if (board.Home is not { } home) return;
-        bool bar = board.CurrentClass == PackageClass.Bar;
+        bool bar = board.BarTable >= 0;
+        // The squad's table: members sit nearest it (engine choice); an outdoor table has no seats, they stand at it.
+        Vector3? near = bar ? board.BarTable < home.Tables.Count ? home.Tables[board.BarTable] : home.Position : null;
         HashSet<int>? taken = null;
         int hour = world.Hour;
         for (int k = 0; k < squad.Members.Count; k++)
@@ -852,9 +864,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 board.SeatClaims[s] = old;
                 continue;
             }
-            int seat = FreeSeat(home, taken, HomeSpotKind.Chair);
-            if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.Bar);
-            if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.General);
+            int seat = FreeSeat(home, taken, HomeSpotKind.Chair, near);
+            if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.Bar, near);
+            if (seat < 0 && relaxes) seat = FreeSeat(home, taken, HomeSpotKind.General, near);
+            if (seat < 0 && relaxes && home.IsOutdoorTable) board.SeatClaims[s] = new HomeSpot(HomeSpotKind.General, home.Position, home.Yaw);
             if (seat < 0) continue;
             taken.Add(seat);
             board.SeatClaims[s] = home.Spots[seat];
@@ -882,11 +895,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         return -1;
     }
 
-    static int FreeSeat(TownBuilding bar, HashSet<int> taken, HomeSpotKind kind)
+    /// <summary>The first free spot of <paramref name="kind"/> in <paramref name="bar"/>, or with <paramref name="near"/> the nearest free one to it; -1: none.</summary>
+    static int FreeSeat(TownBuilding bar, HashSet<int> taken, HomeSpotKind kind, Vector3? near = null)
     {
+        int best = -1;
+        float bestD = float.MaxValue;
         for (int i = 0; i < bar.Spots.Count; i++)
-            if (bar.Spots[i].Kind == kind && !taken.Contains(i)) return i;
-        return -1;
+        {
+            if (bar.Spots[i].Kind != kind || taken.Contains(i)) continue;
+            if (near is not { } p) return i;
+            float d = Vector3.DistanceSquared(bar.Spots[i].Position, p);
+            if (d < bestD) (best, bestD) = (i, d);
+        }
+        return best;
     }
 
     /// <summary>
@@ -1020,8 +1041,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         {
             PackageClass.Retreat => !board.Intact,
             PackageClass.Patrol or PackageClass.PatrolRunning => board.Town >= 0 && world.GameHours >= board.NextPatrol && world.Characters.IsAlive(squad.Leader),
-            // With building data, only where the town has a bar; without, the package runs and the squad keeps its spots.
-            PackageClass.Bar => board.Town < 0 || system.Data.Sites[board.Town].Buildings.Count == 0 || system.TownBar(board.Town) is not null,
+            // With building data, only where the town has a bar or an outdoor table; without, the package runs and the squad keeps its spots.
+            PackageClass.Bar => board.Town < 0 || system.Data.Sites[board.Town].Buildings.Count == 0
+                || system.Places(board.Town) is { } p && (p.Bars.Count > 0 || p.OutdoorTables.Count > 0),
             PackageClass.BarOutdoors => true,
             _ => false,
         };
@@ -1042,30 +1064,40 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     system.LayRoute(world, squad, board);
                     break;
                 case PackageClass.Bar:
-                    if (board.Town >= 0 && system.PickBar(world, board.Town, squad) is { } bar) board.Home = bar;
-                    break;
                 case PackageClass.BarOutdoors:
-                    board.Home = null;
+                    if (board.Town >= 0 && system.PickTable(world, board.Town, squad, outdoors: kind == PackageClass.BarOutdoors) is var (bar, table))
+                        (board.Home, board.BarTable) = (bar, table);
+                    else if (kind == PackageClass.BarOutdoors) board.Home = null;
                     break;
             }
         }
     }
 
-    /// <summary>The town's first bar (<see cref="RefreshPlaces"/>); null when it has none.</summary>
-    TownBuilding? TownBar(int site) => Places(site).Bars is { Count: > 0 } bars ? bars[0] : null;
-
     /// <summary>
-    /// The bar a squad starting a bar package goes to (as the original's <c>Package_HangAroundBar</c>, docs/game/ai-tasks.md "Town goals"): a random one of the town's
-    /// bars with a seat or spot no squad holds, else a random one of all; seeded by the squad and the tick. Null when the town has none.
+    /// The table a squad starting a bar package reserves (the original's <c>Package_HangAroundBar</c> start, docs/game/ai-tasks.md "Town goals"): the town's public bars
+    /// are tried in turn from a random one (seeded by the squad and the tick), the first table of one no other squad's bar package holds wins; a town without bars, or
+    /// <paramref name="outdoors"/>, takes the first free outdoor table. Null when all are taken: the squad stays home.
     /// </summary>
-    TownBuilding? PickBar(World world, int site, Squad squad)
+    (TownBuilding Bar, int Table)? PickTable(World world, int site, Squad squad, bool outdoors)
     {
-        var bars = Places(site).Bars;
-        if (bars.Count == 0) return null;
-        var free = bars.Where(b => !seatTaken.TryGetValue(b, out var taken) || FreeSeat(b, taken, HomeSpotKind.Chair) >= 0
-            || FreeSeat(b, taken, HomeSpotKind.Bar) >= 0 || FreeSeat(b, taken, HomeSpotKind.General) >= 0).ToList();
-        var from = free.Count > 0 ? free : bars;
-        return from[Rng.Int(Rng.Hash(world.Seed, (ulong)squad.Id << 32 ^ (ulong)world.Tick, RngPurpose.Think, SeedSalts.BarPick), from.Count)];
+        var places = Places(site);
+        var held = new HashSet<(TownBuilding, int)>();
+        foreach (var other in world.Squads.All)
+            if (other != squad && other.Ai is { BarTable: >= 0, Home: { } at } b && b.CurrentClass is PackageClass.Bar or PackageClass.BarOutdoors) held.Add((at, b.BarTable));
+        if (!outdoors && places.Bars.Count > 0)
+        {
+            int start = Rng.Int(Rng.Hash(world.Seed, (ulong)squad.Id << 32 ^ (ulong)world.Tick, RngPurpose.Think, SeedSalts.BarPick), places.Bars.Count);
+            for (int k = 0; k < places.Bars.Count; k++)
+            {
+                var bar = places.Bars[(start + k) % places.Bars.Count];
+                for (int t = 0; t < bar.Tables.Count; t++)
+                    if (!held.Contains((bar, t))) return (bar, t);
+            }
+            return null;
+        }
+        foreach (var table in places.OutdoorTables)
+            if (!held.Contains((table, 0))) return (table, 0);
+        return null;
     }
 
     /// <summary>

@@ -77,6 +77,13 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     /// <summary>The names of the interior and exterior layouts its record can take (its own and those of <c>shares interiors with</c>), case ignored.</summary>
     public IReadOnlySet<string> InteriorLayouts { get; init; } = EmptyNames;
     public IReadOnlySet<string> ExteriorLayouts { get; init; } = EmptyNames;
+    /// <summary>Its interior layout's furniture of function BF_TABLE, BF_CORPSE_DISPOSAL or BF_REFINERY (the original's tables to sit at, docs/game/ai-tasks.md "Town goals"), in layout order.</summary>
+    public IReadOnlyList<Vector3> Tables { get; init; } = [];
+    /// <summary>Its own record's BUILDING_FUNCTIONALITY <c>function</c> (-1: none); a placed table is an outdoor table to sit at.</summary>
+    public int Function { get; init; } = -1;
+    /// <summary>A table placed on its own in the town (not inside a building): one squad's outdoor table to hang around at.</summary>
+    public bool IsOutdoorTable => Function is TownBuildings.TableFunction or TownBuildings.CorpseDisposalFunction or TownBuildings.RefineryFunction
+        && !(LevelState?.GetBool("is inside building") ?? false);
     /// <summary>
     /// The slot (<c>I</c>) and serial (<c>S</c>) of the <c>handle</c> its level-data state carries (-1 / 0 when it has none). A save writes a base building's state with this
     /// same handle (docs/formats/save.md "Object handles"), so a platoon can name a building whose zone was never saved.
@@ -136,6 +143,7 @@ public static class TownBuildings
                 instances[(state.GetInt("handleC"), state.GetInt("handleI"))] = b.Key;
         var names = new Dictionary<(string, bool), IReadOnlySet<string>>();
         List<TownFixture>? fixtures = null;
+        List<Vector3>? tables = null;
         var result = new Dictionary<string, List<TownBuilding>>(StringComparer.Ordinal);
         foreach (var b in levels.Buildings())
         {
@@ -194,6 +202,7 @@ public static class TownBuildings
                     }
                     if (seats is not null && faced is not null)
                         foreach (var (s, flags) in seats) spots[s] = spots[s] with { Yaw = SeatYaw(spots[s], flags, faced) };
+                    tables = faced;
                 }
             }
             if (!result.TryGetValue(town.InstanceId, out var list)) result[town.InstanceId] = list = [];
@@ -212,8 +221,11 @@ public static class TownBuildings
                 ExteriorLayouts = LayoutNames(layouts, record, exterior: true, names),
                 HandleSlot = state is not null && state.Ints.ContainsKey("handleI") && state.GetInt("handleTYPE") == (int)FcsRecordType.BUILDING ? state.GetInt("handleI") : -1,
                 HandleSerial = state?.GetInt("handleS") ?? 0,
+                Tables = tables ?? [],
+                Function = functionality?.GetInt("function") ?? -1,
             });
             fixtures = null;
+            tables = null;
         }
         return result;
     }

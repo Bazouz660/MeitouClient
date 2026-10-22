@@ -106,6 +106,8 @@ public sealed class Blackboard
     public GatePost? Gate { get; set; }
     public TownBuilding? OwnHome { get; set; }
     public TownBuilding? Home { get; set; }
+    /// <summary>The table a bar package reserved for the squad: an index into <see cref="Home"/>'s <see cref="TownBuilding.Tables"/>, 0 for an outdoor table (the home itself); -1: none.</summary>
+    public int BarTable { get; set; } = -1;
     /// <summary>The members it was made with: the squad size of the intact rule.</summary>
     public int Size { get; set; }
     /// <summary>The squad is intact (docs/game/perception.md 7.3), as the last serial step found it.</summary>
@@ -201,6 +203,7 @@ public sealed class Blackboard
         Route = [];
         RouteIndex = 0;
         Home = OwnHome;
+        BarTable = -1;
         rules?.Started(this, package, PackageClasses.Of(package.Signal));
     }
 
@@ -275,6 +278,7 @@ public sealed class Blackboard
         hasher.Add(NextPatrol);
         hasher.Add(PatrolGiveUp);
         hasher.Add(Home?.Position ?? default);
+        if (BarTable >= 0) hasher.Add(BarTable);
     }
 }
 

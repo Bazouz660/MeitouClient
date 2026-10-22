@@ -1010,9 +1010,15 @@ the other PROTECT goals still join any fighting enemy (engine).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):
-wandering and patrolling in town walk to a general node of a town building, shopping to a node of a
+wandering and patrolling in town walk to a general node of a public town building in the walker's zone
+(public: the residents' template's `public day`, else the level state's `is public day`, else public; drawn
+among those with a general node, engine choice), shopping to a node of a
 shop, relaxing under a bar package and sitting around (275, in the home) sit on a seat claimed per
-member on the package cadence, and the wanderer walks to the nearest town. A home node goal takes a
+member on the package cadence, and the wanderer walks to the nearest town. A bar package (both kinds) reserves
+one table per squad as the original (`AiSystem.PickTable`: public bars tried from a random one, first table no
+other bar squad holds; no bar, or the outdoors kind: a free table placed outdoors in the town; none free: the
+squad keeps its home and does not relax); its members take the free seats nearest that table (engine choice),
+at an outdoor table they stand at it. A home node goal takes a
 node of its kind, a guard post a general node next (as the original), then any node but a shopkeeper's
 (engine; only the shopkeeper goal falls back onto the counter). Gates have no nodes: the gate guard
 (180, the home gate, else the town's gate nearest the squad) stands 15 out from the gate's first door
@@ -1043,8 +1049,7 @@ homeless squads placed under unmeshed platforms. The Storm House's upper storey 
 spots therefore stand on the floor below (Observed, 2026-10-18 probe). Engine choices: patrolling town acts as
 wandering (its task class is undecoded); a committed goal chosen again after its commitment ran out
 starts over with a new target; training and throne furniture of 275's mask are not used; shops stand customers at a general
-node, else a guard post, else any node; a bar package goes to a random bar of the town with a seat or spot no squad holds, else any
-(seeded by squad and tick; the original's `Package_HangAroundBar` reserves a free spot); a home or seat given up
+node, else a guard post, else any node; a home or seat given up
 after three failed walks is tried again when a new goal is taken up, and a member that gave its seat up
 leaves it to the next; a member keeps its seat while it still relaxes or sits (every squad's kept seats are reserved before any claims), so a
 patron coming or going does not move every later sitter to another chair. Headless Hub, Squin and Stack bars (2026-10-21): each patron sits once
