@@ -337,8 +337,12 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         // but for the centre zone of another town: a file there would tell the original that town was made, with no residents saved for it.
         foreach (var b in site.Buildings)
             if (b.Zone == site.Zone || !centres.Contains(b.Zone)) world.VisitedZones.Add(b.Zone);
-        foreach (var built in town.Squads)
+        var centre = new Vector2(site.Position.X, site.Position.Z);
+        foreach (var made in town.Squads)
         {
+            // A gate has no nodes and its origin is inside the wall, ~110 from the opening: its residents are made at their gate guard's post (engine choice).
+            var built = made.Home is { IsGate: true } gate && !HasNode(gate) && Ai.AiSystem.PostOf(world, gate, centre) is { } post
+                && Ai.AiSystem.FrontOf(post) is var front ? made with { Position = new Vector2(front.X, front.Z), NearY = front.Y + SpotLift } : made;
             var squad = SpawnSquad(world, built, site, radius);
             state.Squads.Add(squad.Id);
             MakePrisoners(world, built, squad, site, radius, state);

@@ -1019,8 +1019,9 @@ node of its kind, a guard post a general node next (as the original), then any n
 leaf, on the side away from the town centre (the side is an engine choice), facing out; a member whose
 guard or general node goal finds nothing in its home gate flanks the opening on that side, beyond the
 leaf's edges (half width + 6, steps of 7), alternately left and right in two rows 8 apart (engine).
-Headless (no door gate, no leaf) they keep their posts, the gate building's origin, which on Defensive
-Gates is about 110 along the wall from the opening. Seats are the home's
+A gate's residents are made at the gate guard's spot (engine choice), not the gate building's origin, which on
+Defensive Gates is inside the wall about 110 along it from the opening; headless (no door gate, no leaf) they
+are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
 in that building this pass; relaxing falls back to a bar node, then a general node, sitting around
 has none and is not wanted without a chair (without a home it sits where it is). A seated character

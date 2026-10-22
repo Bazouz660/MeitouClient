@@ -738,17 +738,24 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
         if (gate is null) { board.Gate = null; return; }
         if (board.Gate?.Building == gate) return;
-        board.Gate = null;
+        board.Gate = PostOf(world, gate, board.Town >= 0 ? Flat(data.Sites[board.Town].Position) : Flat(gate.Position));
+    }
+
+    /// <summary>The post of <paramref name="gate"/> (see <see cref="FindGate"/>) for a town centred at <paramref name="town"/>; null: no door, or its leaf's place not known.</summary>
+    internal static GatePost? PostOf(World world, TownBuilding gate, Vector2 town)
+    {
         Locks.Fixture? door = null;
         foreach (var f in world.Fixtures.OfBuilding(gate.Key))
             if (f.Kind == Locks.FixtureKind.Door && (door is null || f.DoorIndex < door.DoorIndex)) door = f;
-        if (door is null || world.Fixtures.DoorSpotOf(door) is not { } leaf) return;
+        if (door is null || world.Fixtures.DoorSpotOf(door) is not { } leaf) return null;
         var way = Vector2.Normalize(new Vector2(leaf.Normal.X, leaf.Normal.Z));
         // Out of the town: the original's side is not decoded (engine choice).
-        var town = board.Town >= 0 ? Flat(data.Sites[board.Town].Position) : Flat(gate.Position);
         if (Vector2.Dot(way, Flat(leaf.Centre) - town) < 0) way = -way;
-        board.Gate = new GatePost(gate, leaf.Centre with { Y = leaf.Foot }, way, leaf.HalfWidth);
+        return new GatePost(gate, leaf.Centre with { Y = leaf.Foot }, way, leaf.HalfWidth);
     }
+
+    /// <summary>Where a gate's gate guard stands: <see cref="GateGuardOut"/> out from its leaf.</summary>
+    internal static Vector3 FrontOf(GatePost gate) => gate.Door + new Vector3(gate.Out.X, 0, gate.Out.Y) * GateGuardOut;
 
     /// <summary>How far from a gate's leaf its gate guard stands (Observed, <c>Task_ManTheGate</c>: the door's point 15 along its normal).</summary>
     const float GateGuardOut = 15;
@@ -760,7 +767,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     static Vector3? GateSpot(Blackboard board, AiMind mind, TaskType type)
     {
         if (board.Gate is not { } gate) return null;
-        var front = gate.Door + new Vector3(gate.Out.X, 0, gate.Out.Y) * GateGuardOut;
+        var front = FrontOf(gate);
         if (type == TaskType.MAN_THE_GATE) return front;
         if (type is not (TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING_INDOORS_ONLY or TaskType.STAND_AT_GUARD_NODE_HOMETOWN_OUTSIDE
             or TaskType.STAND_AT_GENERAL_NODE) || board.Home != gate.Building) return null;
