@@ -223,7 +223,8 @@ static class AtmosphereShaders
         // The character editor's stage (a fog distance of -2): the game's rtt.hlsl (docs/characters.md "Character editor"): one punctual light of colour 0.6 (CalcPunctualLight: diffuse
         // pi * N.L * (1 - 0.04), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.04) plus the environment light of the irradiance and specular cubes
         // (CalcEnvironmentLight), times the exposure 0.5, stored as it is in an 8-bit target (UNORM, as the icons). l: towards the light, v: towards the eye.
-        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss)
+        // hdr (Meitou's stage and portraits, a fog distance of -3, CharacterRenderer.Look): unclamped, for the preview resolve's tone map.
+        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss, bool hdr)
         {
             const float PI = 3.14159265;
             vec3 hv = normalize(v + l);
@@ -243,7 +244,8 @@ static class AtmosphereShaders
                 vec4 r = textureLod(uAtmoSpecular, dominant, (1.0 - gloss) * 7.0);
                 envSpecular = kenshiEnvBrdf(gloss, nv) * r.rgb * r.a * 10.0;
             }
-            return clamp((albedo * (sunDiffuse + envDiffuse) + sunSpecular + envSpecular) * 0.5, 0.0, 1.0);
+            vec3 lit = (albedo * (sunDiffuse + envDiffuse) + sunSpecular + envSpecular) * 0.5;
+            return hdr ? lit : clamp(lit, 0.0, 1.0);
         }
         // What a lit fragment writes to the GI resolve's surface target (GiResolveShaders.WithAlbedo; RGBA16UI, 0: no probes here), set by kenshiLight:
         // x, y the shading normal's octahedral position (16 bits each), z sqrt(albedo) red | green << 8, w blue | 1 << 8 | interior << 9.

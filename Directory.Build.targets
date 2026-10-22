@@ -1,13 +1,15 @@
 <Project>
 
-  <!-- Local vendor binaries stay outside source control; both executable projects need the same runtime. -->
+  <!-- Local vendor binaries stay outside source control; both executable projects need the same runtime. Each one present is copied: Streamline
+       for DLSS, amd_fidelityfx_vk.dll for FSR (the release zips fetch them in tools/scripts/package-release.ps1). -->
   <PropertyGroup>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MEITOU_STREAMLINE_PATH)</StreamlineRuntimePath>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MSBuildThisFileDirectory)dlss-runtime</StreamlineRuntimePath>
   </PropertyGroup>
 
-  <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and Exists('$(StreamlineRuntimePath)/sl.interposer.dll') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win-')))">
-    <None Include="$(StreamlineRuntimePath)/sl.interposer.dll;$(StreamlineRuntimePath)/sl.common.dll;$(StreamlineRuntimePath)/sl.dlss.dll;$(StreamlineRuntimePath)/nvngx_dlss.dll;$(StreamlineRuntimePath)/NvLowLatencyVk.dll"
+  <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win-')))">
+    <!-- Wildcards, so only the files present are listed. -->
+    <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(StreamlineRuntimePath)/amd_fidelityfx_vk*.dll"
           Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

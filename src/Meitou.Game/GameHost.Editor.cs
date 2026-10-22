@@ -82,6 +82,7 @@ sealed partial class GameHost
         characters.Update(DrawnPosition(c));
         characters.DrawStage();
         DrawEditorPlatform(view.Character, characters);
+        characters.ResolveStage();
         if (characters.StageTexture is { } stage) player.SetUiTexture(PlayerInterface.StageTexture, stage.Texture, stage.Sampled);
     }
 
@@ -94,14 +95,14 @@ sealed partial class GameHost
     /// </summary>
     void DrawEditorPlatform(CharacterId character, CharacterRenderer characters)
     {
-        if (gpu.Objects is not { } objects || popData is not { } data || characters.StageView is not { } stage || characters.StageTexture is not { } colour || characters.StageDepth is not { } depth) return;
+        if (gpu.Objects is not { } objects || popData is not { } data || characters.StageView is not { } stage || characters.StageDrawTarget is not { } target) return;
         if (editorPlatformFor != character)
         {
             editorPlatformFor = character;
             objects.SetStageProp(Meitou.Data.World.WorldObjectLayout.EditorPlatformMesh(data.Db, Matrix4x4.CreateRotationY(MathF.PI) * stage.Feet));
         }
         objects.Update(stage.Eye);
-        objects.DrawStageProp(colour.Texture, depth, stage.ViewProjection, stage.Eye, stage.Light);
+        objects.DrawStageProp(target.Colour, target.Depth, stage.ViewProjection, stage.Eye, stage.Light, target.FogDistance);
     }
 
     /// <summary>Whether the editor's stage was drawn since it last closed (<see cref="ClearEditorStage"/>).</summary>

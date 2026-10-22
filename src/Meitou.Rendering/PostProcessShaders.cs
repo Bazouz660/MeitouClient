@@ -84,7 +84,14 @@ static class PostProcessShaders
 
             float radius = max(uRadius, 0.03 * z); // world radius, at least a few percent of the distance so far objects still get contact shading
             vec2 radiusUv = 0.5 * radius / (uTan * z);
-            radiusUv = min(radiusUv, vec2(0.06)); // bound the cost of close-ups
+            // Close-ups: at most 6 % of the screen (the cost), and the world radius shrunk with it, so the falloff and the weights below are of
+            // the area actually sampled (clamping only the taps packed them closer and strengthened every one).
+            float shrink = min(1.0, 0.06 / max(radiusUv.x, radiusUv.y));
+            radiusUv *= shrink;
+            radius *= shrink;
+            // An occluder must rise above the tangent plane by a share of the radius (so the look is the same at every distance) and two
+            // pixels' size (the rebuilt normal's error).
+            float bias = 0.5 * radius + 4.0 * uTan.y * z / uSize.y;
             float spin = ign(gl_FragCoord.xy) * 6.2831853;
             float sum = 0.0;
             const int N = 12;
@@ -95,7 +102,7 @@ static class PostProcessShaders
                 vec2 uv = vUv + vec2(cos(a), sin(a)) * radiusUv * t;
                 vec3 v = viewPos(uv) - p;
                 float len = length(v);
-                float vn = dot(v, n) - 0.02 * z;
+                float vn = dot(v, n) - bias;
                 float range = 1.0 - smoothstep(radius, 2.0 * radius, len);
                 float occluder = uCharacterOccluder < 1.0 ? mix(1.0, uCharacterOccluder, textureLod(uMask, uv, 0.0).a) : 1.0;
                 sum += max(vn, 0.0) / (len * len + 0.05 * radius * radius) * radius * range * occluder;
@@ -648,6 +655,7 @@ static class PostProcessShaders
         uniform vec3 uBalance;     // a white balance on the scene before the tone map (PostOptions.Balance; 1, 1, 1 in play)
         uniform float uNight;      // Meitou night grading strength (the `nightgrade` switch): 0 off; needs the auto exposure's mean (uAuto)
         uniform vec2 uSceneSize;   // the scene's size when it is smaller than the picture (render scale without an upscaler), else 0: sampled with Catmull-Rom then
+        uniform float uSharpen;    // after TAA or DLSS (neither sharpens): the upscaler sharpness, 0 off
         const float EXPOSURE_KEY = 0.55;   // hdr.material's EXPOSURE_KEY
 
         // Catmull-Rom through five bilinear taps (the corners of the 4 x 4 footprint are left out): a sharper plain upscale than bilinear.
@@ -691,12 +699,25 @@ static class PostProcessShaders
             return mix(c, grey * NIGHT_TINT, w);
         }
 
+        // The temporal resolve's softness taken back: the pixel pushed away from the mean of its four neighbours by the strength, then kept within
+        // their and its own range, so edges gain no halo and flat areas no noise beyond what is there (an unsharp mask limited like CAS).
+        vec3 sharpened(vec2 uv)
+        {
+            // Neighbours clamped to the picture: a fetch outside it is undefined (the border pixels repeat their own).
+            ivec2 size = textureSize(uScene, 0), last = size - 1, p = clamp(ivec2(uv * vec2(size)), ivec2(0), last);
+            vec3 c = texelFetch(uScene, p, 0).rgb;
+            vec3 n = texelFetch(uScene, ivec2(p.x, max(p.y - 1, 0)), 0).rgb, s = texelFetch(uScene, ivec2(p.x, min(p.y + 1, last.y)), 0).rgb;
+            vec3 w = texelFetch(uScene, ivec2(max(p.x - 1, 0), p.y), 0).rgb, e = texelFetch(uScene, ivec2(min(p.x + 1, last.x), p.y), 0).rgb;
+            vec3 lo = min(c, min(min(n, s), min(w, e))), hi = max(c, max(max(n, s), max(w, e)));
+            return clamp(c + uSharpen * (c - 0.25 * (n + s + w + e)), lo, hi);
+        }
+
         void main()
         {
             float exposure = uExposure;
             vec2 adapted = uAuto != 0 ? texture(uAdapted, vec2(0.5)).rg : vec2(1.0);   // the clamped adapted luminance, the smoothed mean
             if (uAuto != 0) exposure *= max(EXPOSURE_KEY / adapted.r, 0.001);   // Kenshi's exposure: key over the adapted luminance
-            vec3 raw = max(sceneAt(vUv), 0.0);
+            vec3 raw = max(uSharpen > 0.0 && uSceneSize.x <= 0.0 ? sharpened(vUv) : sceneAt(vUv), 0.0);
             vec3 c = raw * exposure * uBalance;
             float ao = texture(uAo, vUv).r;
             if (uUseAo != 0) c *= ao;

@@ -20,7 +20,7 @@ Current choices; implementation details belong in the linked references.
   loading, SustainedLowLatency during play. Render jobs preserve execution order.
   [docs/engine.md](docs/engine.md), [docs/bench.md](docs/bench.md).
 - **Upscaling:** single-sample jittered HDR scene; shadow maps/reused reflections unjittered.
-  FSR/DLSS LOD bias `log2(scale)-1`; TAA `log2(scale)-0.5`. [docs/render-post.md](docs/render-post.md).
+  LOD bias `log2(scale)-1` for TAA, FSR and DLSS. [docs/render-post.md](docs/render-post.md).
 - **Vendors:** Vulkan FidelityFX API DLL from SDK 1.1.4; Streamline 2.14.16 manual hooking for DLSS.
   Initialize Streamline before Vulkan, apply requested features/extensions and proxy presentation.
   Vendor binaries are not committed. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),

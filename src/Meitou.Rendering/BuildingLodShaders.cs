@@ -125,17 +125,22 @@ static class BuildingLodShaders
                 }
         """;
 
-    /// <summary>The caster's fragment shader with the same clip, so a site's shadow is its built part and scaffold.</summary>
+    /// <summary>
+    /// The caster's fragment shader with the same clip, so a site's shadow is its built part and scaffold; and the dither range taken at its middle (a caster
+    /// has no dither): of an instance's two blending levels exactly one casts, and a distant town casts only where it is drawn (the camera's distance fade).
+    /// Without that test the Hub's baked distant mesh, the intact town, cast its roofs' shadows into the ruins at every distance.
+    /// </summary>
     static string Depth()
     {
         string f = ShadowShaders.MeshDepthFragment;
         f = Replace(f, @"in\s+vec2\s+vUv\s*;", """
             in vec2 vUv;
             in vec3 vWorld;
+            in vec2 vRange;
             flat in float vScaffold;
             float gridLine(float v) { float f = fract(v); return min(f, 1.0 - f); }
             """);
-        return Replace(f, @"void\s+main\s*\(\s*\)\s*\{", "void main()\n{\n" + ScaffoldTest);
+        return Replace(f, @"void\s+main\s*\(\s*\)\s*\{", "void main()\n{\n    if (vRange.x > 0.5 || vRange.y <= 0.5) discard;\n" + ScaffoldTest);
     }
 
     // ---- the native model (docs/renderer-native.md 3.3, step O) ----

@@ -118,7 +118,7 @@ static class UpscaleShaders
                 {
                     ivec2 p = clamp(base + ivec2(x, y), ivec2(0), last);
                     vec3 c = tm(max(finite(texelFetch(uColour, p, 0).rgb), vec3(0.0)));
-                    vec2 d = vec2(base + ivec2(x, y)) - rp;
+                    vec2 d = (vec2(base + ivec2(x, y)) - rp) * uDisplaySize / uRenderSize;   // in display pixels, so upscaling doesn't widen it
                     float w = exp(-2.29 * dot(d, d));
                     sum += c * w;
                     wsum += w;
