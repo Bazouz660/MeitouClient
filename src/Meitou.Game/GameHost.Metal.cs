@@ -453,10 +453,8 @@ sealed partial class GameHost
             {
                 var (atlas, sampled) = characters.PortraitAtlas;
                 hud.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled);
-                hud.SetItemIcons(ItemIconsOfInstall());
-                hud.SetRenderedIcons(name => UiPainter.TryParseRenderedIcon(name, out string record, out string material, out string colour)
-                    && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null);
             }
+            ConnectItemIcons(hud);
             hud.ConfigureFrontend(scene.Database,
                 () => SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
@@ -679,6 +677,11 @@ sealed partial class GameHost
         // The real input path: the window's keys and pointer go to PlayerInterface first (its panels, builds and the world's
         // selection/order clicks), then to the session's bindings so the strategy camera pans, turns and zooms.
         using var input = Silk.NET.Input.InputWindowExtensions.CreateInput(window);
+        if (hud is not null)
+        {
+            hud.ClipboardRead = () => input.Keyboards.Count > 0 ? input.Keyboards[0].ClipboardText : null;
+            hud.ClipboardWrite = text => { if (input.Keyboards.Count > 0) input.Keyboards[0].ClipboardText = text; };
+        }
         bool shiftDown = false, statsVisible = false, frameStatsVisible = showFrameStats, screenshotNow = false;
         Vector2? lastMouse = null;
         Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),

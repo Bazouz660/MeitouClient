@@ -139,7 +139,7 @@ sealed partial class GameHost
         DrawWorld(w, h);
         display.EndFrame();
         using var overlay = DebugOverlay.TryCreate(context);
-        if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
+        if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(player); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
         string?[] panels = g.UiPanel is { Length: > 0 } one ? [one == "hud" ? null : one]
             : g.UiShowcase

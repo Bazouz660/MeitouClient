@@ -13,14 +13,14 @@ sealed partial class GameHost
     /// Gives the interface the install's item icons and, where the game has no saved picture, the character renderer's drawing of the item and the object renderer's of a building
     /// (from build mode's parts).
     /// </summary>
-    void ConnectItemIcons()
+    void ConnectItemIcons(PlayerInterface ui)
     {
-        player.SetItemIcons(ItemIconsOfInstall());
-        player.SetRenderedIcons(name =>
+        ui.SetItemIcons(ItemIconsOfInstall());
+        ui.SetRenderedIcons(name =>
         {
             if (UiPainter.TryParseRenderedIcon(name, out string record, out string material, out string colour))
-                return gpu.Characters is { } characters && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null;
-            if (UiPainter.TryParseRenderedBuildingIcon(name, out string building) && gpu.Objects is { } objects && player.BuildHost is { } host)
+                return ActiveCharacters is { } characters && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null;
+            if (UiPainter.TryParseRenderedBuildingIcon(name, out string building) && ActiveObjects is { } objects && ui.BuildHost is { } host)
                 return objects.TryGetBuildingIcon(building, host.Parts(building), out var picture) ? picture : null;
             return null;
         });
