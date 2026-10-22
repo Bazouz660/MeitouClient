@@ -23,9 +23,12 @@ profile of GPU Gems 3 ch. 14, each layer normalised along the ring; u = N·L, v 
 (`CharacterContent.MarkCurvature`, vertex colour Z: mean |Δnormal| / |Δposition| over the vertex's edges, averaged over vertices sharing a position) and
 interpolated; a screen-space fwidth estimate was constant per triangle and drew the low-poly facets and outlines in red. At 1 unit = 100 mm (an **Observed** scale, [terrain](formats/terrain.md)), times 30 (`SkinScatterScale`, a look: at true size the
 profile barely reaches a face's 5-8 cm radius, terminator red 0.016 → 0.019; ×30 gives about 0.16 and a tail past N·L −0.2). Red, green and blue read the table with the
-normal map mixed 0.6 / 0.3 / 0 towards the smooth normal. The result is never below plain N·L per channel: the table's loss of red on the lit
-side (energy moved into the shadow) turned sunlit skin cyan-grey, so only the warm band past the terminator is kept. Skin share: body-shaded parts of people (`CharacterShaders.Skin`; not
-animals, not RACE `is robot`; stumps included) times what vest layers and hair/beard overlays leave bare. World and Meitou
+normal map mixed 0.6 / 0.3 / 0 towards the smooth normal. Only what the table adds over plain N·L is kept (its strongest channel): its loss of red
+on the lit side (energy moved into the shadow) turned sunlit skin cyan-grey. That extra light takes the skin's own hue, saturated (albedo ÷ its
+brightest channel, squared): red-orange on human skin, amber on hive chitin, teal on fishmen, any modded race its own. Skin share: body-shaded
+parts of people (`CharacterShaders.Skin`; not animals; stumps included) whose race has it on, times what vest layers and hair/beard overlays leave
+bare. Per race (`CharacterRenderer.SkinRaces`, settings Graphics > Skin, `meitou.user.json` `skinRaces`: only races changed from the default): every
+person race of the loaded data (RACE records no ANIMAL_CHARACTER uses, mods included) is on unless RACE `is robot`. World and Meitou
 stage/portraits (fog distance -3); the game's stage and icons keep N·L. Faithful: push `skinLut` 0, unchanged.
 Limits: lamps stay Lambert; the sun shadow is not scattered, so the band past the terminator ends at the shadow edge; no back-lit
 translucency (ears).

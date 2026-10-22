@@ -12,7 +12,7 @@ namespace Meitou.Game;
 sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, InputBindings bindings, Action save, Slider frameLimit, UserConfig config)
 {
     static readonly string[] Pages = ["Display", "Graphics", "Interface", "Controls", "Advanced", "Audio", "Fixes"];
-    static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects"];
+    static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects", "Skin"];
     readonly float[] defaults = values.Sliders.Select(s => s.Get()).ToArray();
     readonly bool[] toggleDefaults = values.Toggles.Select(t => t.Get()).ToArray();
     readonly Slider mainMenuTransitionSpeed = new("Main menu transition speed", SkyArrival.MinSpeed, SkyArrival.MaxSpeed,
@@ -88,6 +88,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<bool>? DoorsCloseChanged { get; init; }
     /// <summary>Applies a new camera rotation speed (<see cref="UserConfig.CameraRotateSpeed"/>) to the camera.</summary>
     public Action<float>? CameraRotateSpeedChanged { get; init; }
+    /// <summary>The person races of the loaded data with their skin default (<c>CharacterRenderer.PersonRaces</c>), listed on Graphics > Skin.</summary>
+    public IReadOnlyList<(string Id, string Name, bool Default)> SkinRaceList { get; init; } = [];
+    /// <summary>A race's skin was turned on or off (the config's <see cref="UserConfig.SkinRaces"/> holds it); the game hands it to the character renderer.</summary>
+    public Action? SkinRacesChanged { get; init; }
     /// <summary>Called when an audio slider changes (the config holds the new values); the game applies them to the running sound.</summary>
     public Action? AudioChanged { get; init; }
     public bool Visible
@@ -122,7 +126,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     {
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
         "Water" => "Water",
-        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" or "Skin" => "Lighting",
+        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
+        "Skin" => "Skin",
         _ when toggle.Label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };
@@ -154,6 +159,15 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (page == 1)
             result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle) == section)
                 .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)).Prepend(LookEntry).Prepend(PresetEntry));
+        // Graphics > Skin: after the switch, one row per person race of the loaded data (mods too), on or off against its default.
+        if (page == 1 && section == "Skin")
+            foreach (var (id, name, byDefault) in SkinRaceList)
+                result.Add(new(name, byDefault ? "Skin scatters light on this race (the default)." : "A robot race: no skin scattering unless turned on.",
+                    Toggle: new(name, () => config.SkinRaces.TryGetValue(id, out bool on) ? on : byDefault, v =>
+                    {
+                        if (v == byDefault) config.SkinRaces.Remove(id); else config.SkinRaces[id] = v;
+                        SkinRacesChanged?.Invoke();
+                    }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
         if (page == 2)
             result.Add(new("UI style", "Choose original Kenshi skins or Meitou materials.", Choice: new(() => ["Faithful", "Meitou"],

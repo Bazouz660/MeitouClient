@@ -201,8 +201,9 @@ static class CharacterShaders
 
         // The Meitou skin's sun term in place of the clamped N.L (docs/character-renderer.md "Skin"; SkinScattering): the pre-integrated table at the surface's
         // curvature, read per channel with its own normal, red nearest the smooth geometric one (light that travels farther under the skin sees less of the bumps).
-        // curvature: 1 / radius in world units; share: how much of the fragment is bare skin.
-        vec3 skinDiffuse(vec3 n, vec3 geometric, vec3 l, float curvature, float share)
+        // curvature: 1 / radius in world units; share: how much of the fragment is bare skin. The light the table adds over the plain term takes the skin's own hue,
+        // saturated (albedo over its brightest channel, squared): red-orange on human skin as the table has it, amber or green on hive chitin, any modded race its own.
+        vec3 skinDiffuse(vec3 n, vec3 geometric, vec3 l, float curvature, float share, vec3 albedo)
         {
             float lambert = clamp(dot(n, l), 0.0, 1.0);
             if (share <= 0.0) return vec3(lambert);
@@ -211,9 +212,11 @@ static class CharacterShaders
             float v = sqrt(clamp(curvature * {{F(SkinCurvatureScale)}}, 0.0, 1.0)) * {{F((SkinScattering.Height - 1f) / SkinScattering.Height)}} + {{F(0.5f / SkinScattering.Height)}};
             uint t = pc.skinLut;
             vec3 s = vec3(textureLod(textures2D[t], vec2(u.r, v), 0.0).r, textureLod(textures2D[t], vec2(u.g, v), 0.0).g, textureLod(textures2D[t], vec2(u.b, v), 0.0).b);
-            // Never below the plain term: the table also takes red from the lit side (energy it moves into the shadow), which turned sunlit skin cyan-grey;
+            // Only what it adds over the plain term: the table also takes red from the lit side (energy it moves into the shadow), which turned sunlit skin cyan-grey;
             // only the warm band past the terminator is wanted.
-            return mix(vec3(lambert), max(s, vec3(lambert)), share);
+            float extra = max(max(s.r, max(s.g, s.b)) - lambert, 0.0);
+            vec3 hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
+            return vec3(lambert) + extra * hue * hue * share;
         }
 
         void main()
@@ -322,13 +325,13 @@ static class CharacterShaders
             gloss = clamp(gloss, 0.0, 1.0);
             vec3 colour;
             giInterior = vInterior != 0u;
-            if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld, skinDiffuse(n, smoothNormal, uAtmoLight.xyz, curvature, skin));
+            if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld, skinDiffuse(n, smoothNormal, uAtmoLight.xyz, curvature, skin, albedo));
             // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight); -3 the same unclamped (Meitou's stage and
             // portraits, which also take the Meitou skin; the game's stage keeps its plain N.L).
             else if (view.fogDistance < -1.5)
             {
                 vec3 l = normalize(view.lightDir);
-                colour = stageLight(albedo, n, v, l, gloss, view.fogDistance < -2.5, skinDiffuse(n, smoothNormal, l, curvature, view.fogDistance < -2.5 ? skin : 0.0));
+                colour = stageLight(albedo, n, v, l, gloss, view.fogDistance < -2.5, skinDiffuse(n, smoothNormal, l, curvature, view.fogDistance < -2.5 ? skin : 0.0, albedo));
             }
             else if (view.fogDistance < 0.0)
             {

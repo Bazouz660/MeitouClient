@@ -109,7 +109,7 @@ sealed partial class SettingsMenu
             for (int i = 0; i < GraphicsPages.Length; i++)
             {
                 int index = i;
-                Button(GraphicsPages[i], R(212 + i * 224, 98, 216, 30), () => { graphicsPage = index; scroll = scrollTarget = 0; contentProgress = 0; focus = -1; }, graphicsPage == i);
+                Button(GraphicsPages[i], R(212 + i * 896f / GraphicsPages.Length, 98, 896f / GraphicsPages.Length - 8, 30), () => { graphicsPage = index; scroll = scrollTarget = 0; contentProgress = 0; focus = -1; }, graphicsPage == i);
             }
             top = 134;
         }

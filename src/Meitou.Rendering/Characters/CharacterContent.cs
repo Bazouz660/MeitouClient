@@ -88,8 +88,11 @@ internal sealed class PartMaterial
     public bool ClipOnNormalAlpha, Dyed, DoubleSided;
     /// <summary>Worn on the body's skeleton (the original's Skinned template): matte (its glossMult is 0).</summary>
     public bool Worn;
-    /// <summary>A person's body (not an animal's, not a robot's): its bare skin scatters light under the <c>skin</c> switch (<see cref="CharacterShaders.Skin"/>).</summary>
-    public bool Skin;
+    /// <summary>A person's body (not an animal's): its bare skin may scatter light under the <c>skin</c> switch (<see cref="CharacterShaders.Skin"/>), by its race's choice
+    /// (<see cref="CharacterRenderer.SkinRaces"/>, else <see cref="SkinDefault"/>).</summary>
+    public bool Skin, SkinDefault;
+    /// <summary>The RACE record's string id of a body (<see cref="Skin"/>).</summary>
+    public string? Race;
     public int VestCount;
     public bool[] VestColoured = new bool[3];
     public Vector3 ShirtColour, SkinTone, HairColour;
@@ -635,8 +638,8 @@ internal sealed class CharacterContent : IDisposable
             HairAlpha = Channel(c.Hair?.GetInt("head alpha channel" + f, 1) ?? 1), HairMult = Channel(c.Hair?.GetInt("head channel" + f) ?? 0),
             BeardAlpha = Channel(c.Beard?.GetInt("head alpha channel" + f, 1) ?? 1),
             ShirtColour = colour is null ? Vector3.One : CharacterAppearance.Rgb(colour.GetInt("color 1")), HasShirtColour = colour is not null,
-            // RACE `is robot` (skeletons): metal, no skin; animals: fur and hide (docs/character-renderer.md "Skin").
-            Skin = c.Animal is null && !c.Race.GetBool("is robot"),
+            // Animals: fur and hide; a robot race (RACE `is robot`, skeletons) is off by default (docs/character-renderer.md "Skin").
+            Skin = c.Animal is null, SkinDefault = CharacterRenderer.SkinByDefault(c.Race), Race = c.Race.StringId,
         };
         // Animal meshes put the mirrored half of the body at u 1..2 (goat, bull, beak thing: Observed, the meshes' texture coordinates), so their textures repeat; a
         // person's body texture has the transparent border (the head sits beside it at v -1..0). That Kenshi repeats them is an engine reading (the animal material was not read).

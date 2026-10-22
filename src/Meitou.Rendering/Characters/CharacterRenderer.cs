@@ -67,6 +67,33 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     bool skinShading = true;
     readonly SkinScattering skinScattering;
 
+    /// <summary>
+    /// The skin per race, chosen against its default (RACE string id to on or off; the settings' Skin page): a race not in it takes <see cref="SkinByDefault"/>.
+    /// Read as the materials are written each frame, so a change shows at once; setting it (also the same, changed, dictionary) redraws the portraits.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? SkinRaces
+    {
+        get => skinRaces;
+        set { skinRaces = value; portraitShown.Clear(); }
+    }
+    IReadOnlyDictionary<string, bool>? skinRaces;
+
+    /// <summary>Whether a race's bodies scatter light unless chosen otherwise: every person race but a robot one (RACE <c>is robot</c>: skeletons, metal).</summary>
+    public static bool SkinByDefault(GameRecord race) => !race.GetBool("is robot");
+
+    bool SkinFor(PartMaterial m) => m.Race is not null && skinRaces is not null && skinRaces.TryGetValue(m.Race, out bool chosen) ? chosen : m.SkinDefault;
+
+    /// <summary>
+    /// The person races of the loaded data (base game and mods) for the Skin page: every RACE record no ANIMAL_CHARACTER uses, by name, with its default.
+    /// </summary>
+    public static IReadOnlyList<(string Id, string Name, bool Default)> PersonRaces(GameDatabase db)
+    {
+        var animal = db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER)
+            .SelectMany(r => r.GetReferences("race").Select(x => x.TargetStringId)).ToHashSet();
+        return [.. db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.RACE && !animal.Contains(r.StringId))
+            .OrderBy(r => r.Name.Trim(), StringComparer.OrdinalIgnoreCase).Select(r => (r.StringId, r.Name.Trim(), SkinByDefault(r)))];
+    }
+
     // Statistics of the last Update / Draw.
     public int Posed { get; private set; }
     public int DrawnCharacters { get; private set; }
@@ -475,7 +502,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.ClipOnNormalAlpha && has[CharacterShaders.SlotNormal]) flags |= CharacterShaders.ClipNormalAlpha;
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
         if (m.Worn) flags |= CharacterShaders.Worn;
-        if (m.Skin) flags |= CharacterShaders.Skin;
+        if (m.Skin && SkinFor(m)) flags |= CharacterShaders.Skin;
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
