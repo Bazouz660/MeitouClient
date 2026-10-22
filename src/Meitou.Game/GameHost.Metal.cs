@@ -466,6 +466,10 @@ sealed partial class GameHost
         // --new-game is a shortcut past the creation editor; the same follow the editor's close gives a menu New Game.
         if (hud is not null && start is not null && StartSave is null && o.Screenshot is null && playerSquad is { Leader.IsNone: false } squad)
             hud.Follow = squad.Leader;
+        // The camera rotation slider changes the same StrategyCamera settings the Vulkan host changes.
+        void ApplyCameraRotateSpeed(float speed) => session.Camera.Settings.RotateSpeedX = session.Camera.Settings.RotateSpeedY =
+            Math.Clamp(speed, UserConfig.MinCameraRotateSpeed, UserConfig.MaxCameraRotateSpeed);
+        ApplyCameraRotateSpeed(config.CameraRotateSpeed);
         // The shared settings layout: Metal supplies the settings it can change live (window, upscaler, distances,
         // shadows, sky and the composite); the Interface/Controls/Advanced/Audio pages are the game's own.
         SettingsPanel? settingsValues = null;
@@ -484,8 +488,10 @@ sealed partial class GameHost
                 OffscreenChanged = () =>
                 {
                     foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
-                        (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild) = (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild);
+                        (population.KeepRoamers, population.OffscreenFights, population.OffscreenHealing, population.CampaignAncestorsOnce, population.KeepWild, population.ResidentSchedule) =
+                            (config.KeepRoamers, config.OffscreenFights, config.OffscreenHealing, config.CampaignAncestorsOnce, config.KeepWild, config.ResidentSchedule);
                 },
+                CameraRotateSpeedChanged = ApplyCameraRotateSpeed,
                 AudioChanged = AudioSettingsChanged,
             };
             // The saved graphics values are the same keys the Vulkan panel uses. The Metal display choices have their own
@@ -603,6 +609,12 @@ sealed partial class GameHost
                     v => foliage.GrassRangeSetting = v, "0.00", Logarithmic: true));
                 sliders.Add(new Slider("Grass density x", 0.1f, 2, () => foliage.GrassDensitySetting,
                     v => foliage.GrassDensitySetting = v, "0.00"));
+                sliders.Add(new Slider("Large foliage range (F6 Meitou)", 1000, 120000, () => foliage.LargeRange,
+                    v => foliage.LargeRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+                sliders.Add(new Slider("Medium foliage range", 400, 80000, () => foliage.MediumRange,
+                    v => foliage.MediumRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+                sliders.Add(new Slider("Small foliage range", 200, 40000, () => foliage.SmallRange,
+                    v => foliage.SmallRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
                 sliders.Add(new Slider("Foliage LOD distance x (lod Meitou)", 0.25f, 8,
                     () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
                     v => foliage.LodTolerance = FoliageRenderer.DefaultLodTolerance / v, "0.00", Logarithmic: true));
@@ -641,6 +653,10 @@ sealed partial class GameHost
                 v => sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
             sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => sky.PlanetshineStrength,
                 v => sky.PlanetshineStrength = MathF.Round(v), "0"));
+            sliders.Add(new Slider("Ambient light strength (1 = game)", 0, 3, () => sky.AmbientStrength,
+                v => sky.AmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider("Night ambient light strength (1 = game)", 0, 5, () => sky.NightAmbientStrength,
+                v => sky.NightAmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
             if (worldGpu.ProbeGi is { } probeGi)
             {
                 toggles.Add(new Toggle("Indirect light", () => probeGi.Enabled, v => probeGi.Enabled = v));
@@ -652,8 +668,9 @@ sealed partial class GameHost
             toggles.Add(new Toggle("Night sky", () => sky.MeitouStars, v => sky.MeitouStars = v));
             toggles.Add(new Toggle("Clouds", () => sky.LitClouds, v => sky.LitClouds = v));
 
-            // Water: the faithful water's clarity controls (the Metal path has no reflection pass yet).
-            if (water is not null)
+            // Water: the Meitou clarity controls only mean something on the Meitou surface; the faithful surface has no reflection
+            // pass yet, so its Vulkan-only controls stay hidden instead of pretending to work.
+            if (water is { Meitou: true })
             {
                 sliders.Add(new Slider("Water clarity x (Meitou)", 0.25f, 8, () => water.Clarity,
                     v => water.Clarity = v, "0.00", Logarithmic: true));
@@ -679,8 +696,30 @@ sealed partial class GameHost
             sliders.Add(new Slider("Grading (0 = game)", 0, 1, () => o.Post.Grade ? 1 : 0,
                 v => o.Post.Grade = v >= 0.5f,
                 Text: v => v >= 0.5f ? $"saturation {PostOptions.Saturation:0.00}, contrast {PostOptions.Contrast:0.00}" : "off (as the game)"));
+            sliders.Add(new Slider("Heat haze strength (1 = game)", 0, 3, () => o.Post.HeatHazeStrength,
+                v => o.Post.HeatHazeStrength = MathF.Round(v * 20) / 20, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHeatHazeStrength));
+            sliders.Add(new Slider("Night grading strength (0 = game)", 0, 1, () => o.Post.NightGradeStrength,
+                v => o.Post.NightGradeStrength = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider("Light shafts strength", 0, 1, () => o.Post.ShaftStrength,
+                v => o.Post.ShaftStrength = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider("Light shafts air (0 = none)", 0, 4, () => o.Post.ShaftAir,
+                v => o.Post.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider("Light shafts air at dawn and dusk (x)", 0, 6, () => o.Post.ShaftAirDawn,
+                v => o.Post.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
             toggles.Add(new Toggle("Dithering", () => o.Post.Dither, v => o.Post.Dither = v));
-            return new SettingsPanel(overlay!, "Settings   (Tab hides this)", sliders, toggles, "Metal switches", [], null, null);
+            var actions = new List<PanelAction>();
+            if (foliage?.ImpostorDiskCache is { } cache)
+                actions.Add(new PanelAction("Delete billboard cache", () =>
+                {
+                    var (files, bytes) = cache.Measure();
+                    return $"Delete {files} billboard atlases ({bytes / 1048576.0:0} MB) in {cache.Root}?";
+                }, () =>
+                {
+                    var (files, bytes) = cache.Clear();
+                    Console.WriteLine($"impostors deleted {files} cached atlases ({bytes / 1048576.0:0} MB) from {cache.Root}");
+                    return $"Deleted {files} atlases ({bytes / 1048576.0:0} MB); they are baked again when next needed.";
+                }));
+            return new SettingsPanel(overlay!, "Settings   (Tab hides this)", sliders, toggles, "Metal switches", actions, null, null);
         }
         // The real input path: the window's keys and pointer go to PlayerInterface first (its panels, builds and the world's
         // selection/order clicks), then to the session's bindings so the strategy camera pans, turns and zooms.
@@ -692,6 +731,7 @@ sealed partial class GameHost
         }
         bool shiftDown = false, statsVisible = false, frameStatsVisible = showFrameStats, screenshotNow = false;
         Vector2? lastMouse = null;
+        var windowCursor = Silk.NET.Input.CursorMode.Normal;
         Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),
             window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
         bool Held(SilkKey a, SilkKey b) => input.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
@@ -987,6 +1027,8 @@ sealed partial class GameHost
                 if (characters is not null) Console.WriteLine($"metal     characters: {characters.Describe()}");
             }
             var size = window.FramebufferSize;
+            var pointerMouse = input.Mice.FirstOrDefault();
+            var pointerAt = pointerMouse is null ? Vector2.Zero : Pixels(pointerMouse.Position);
             // The original's background-loading bar follows the interface's mode, as on Vulkan; the Metal host keeps the same shared bar.
             bool faithfulUi = hud?.UiMode == Meitou.Data.Ui.UiMode.Faithful;
             loadBar.Update(faithfulUi ? PendingLoads() : 0);
@@ -1028,6 +1070,8 @@ sealed partial class GameHost
                 if (!tourHolds) ApplyCamera(session.CameraAt());
                 if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
                 gpu.Ahead = tour.ArrivalEye(TourPosition);
+                if (hud is not null)
+                    gpu.Kept = config.KeepTexturesAtCharacters ? [.. hud.SquadBarMembers().Select(c => TourPosition(c.Id)).OfType<Vector3>()] : [];
                 if (!tourHolds && hud is not null)
                 {
                     SandboxFollowCamera();
@@ -1245,6 +1289,20 @@ sealed partial class GameHost
                 {
                     settings.Draw(size.X, size.Y);
                     wrote = true;
+                }
+                // The mouse pointer over everything, as Vulkan draws it: the system cursor when Hardware mouse is on, else the
+                // game's own pointer. The free camera hides it, and saved pictures never contain it.
+                if (!still && !screenshotNow && pointerMouse is not null && hud is not null)
+                {
+                    bool pointerWorld = !Covered && !g.NoPopulation && settings?.Visible != true && !TitleVisible;
+                    bool freeLook = pointerWorld && session.Camera.IsFree;
+                    var cursorMode = config.HardwareMouse && !freeLook ? Silk.NET.Input.CursorMode.Normal : Silk.NET.Input.CursorMode.Hidden;
+                    if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
+                    if (!config.HardwareMouse && !freeLook)
+                    {
+                        hud.DrawPointer(pointerWorld ? hud.PointerName : "arrow", pointerAt, size.X, size.Y);
+                        wrote = true;
+                    }
                 }
                 if (wrote) overlay.Flush(size.X, size.Y);
                 // The scene changes use the same Kenshi loading screen as Vulkan; it covers the world until the sky arrival is done.
