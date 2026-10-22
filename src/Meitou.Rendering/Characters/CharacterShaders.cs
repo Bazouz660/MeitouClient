@@ -161,10 +161,16 @@ static class CharacterShaders
         """;
 
     /// <summary>
-    /// The skin's curvature (1 / radius in world units) to the table's axis (<see cref="SkinScattering.MaxInverseRadiusMm"/> at 1): 1 unit = 100 mm
-    /// (docs/formats/terrain.md, Observed: decimetres fit the bodies' sizes).
+    /// How many times more curved the skin is taken to be than it is (a look, not physics): at true size the profile's millimetres barely touch a face's
+    /// 5 to 8 cm radius (the terminator's red at N.L 0 goes from 0.016 to 0.019); 20 puts a face near r = 3 mm, red about 0.14 there, a tail to N.L -0.2.
     /// </summary>
-    const float SkinCurvatureScale = 1f / (100f * SkinScattering.MaxInverseRadiusMm);
+    public const float SkinScatterScale = 20;
+
+    /// <summary>
+    /// The skin's curvature (1 / radius in world units) to the table's axis (<see cref="SkinScattering.MaxInverseRadiusMm"/> at 1): 1 unit = 100 mm
+    /// (docs/formats/terrain.md, Observed: decimetres fit the bodies' sizes), times <see cref="SkinScatterScale"/>.
+    /// </summary>
+    const float SkinCurvatureScale = SkinScatterScale / (100f * SkinScattering.MaxInverseRadiusMm);
 
     static string F(float v) => v.ToString("0.0########", System.Globalization.CultureInfo.InvariantCulture);
 

@@ -12,8 +12,8 @@ namespace Meitou.Rendering.Characters;
 sealed class SkinScattering : IDisposable
 {
     public const int Width = 64, Height = 64;
-    /// <summary>The table's last row: a radius of 5 mm (a fingertip, an ear's rim); anything curved more tightly reads that row.</summary>
-    public const float MaxInverseRadiusMm = 0.2f;
+    /// <summary>The table's last row: a radius of 2 mm; anything curved more tightly reads that row (tighter rows tint the lit side cyan).</summary>
+    public const float MaxInverseRadiusMm = 0.5f;
 
     // The profile: variance (mm²) and the weights of red, green and blue (GPU Gems 3, ch. 14, table 14-1).
     static readonly (float Variance, float R, float G, float B)[] Profile =
@@ -76,7 +76,8 @@ sealed class SkinScattering : IDisposable
                 float r = 0, g = 0, b = 0;
                 foreach (var p in Profile)
                 {
-                    float gauss = MathF.Exp(-d * d / (2f * p.Variance)) / (2f * MathF.PI * p.Variance);
+                    // Normalised along the ring (1D), so each layer weighs by its share of the light: a 2D normalisation lets the narrowest layer swamp the ring.
+                    float gauss = MathF.Exp(-d * d / (2f * p.Variance)) / MathF.Sqrt(2f * MathF.PI * p.Variance);
                     r += p.R * gauss; g += p.G * gauss; b += p.B * gauss;
                 }
                 weight[3 * k] = r; weight[3 * k + 1] = g; weight[3 * k + 2] = b;
