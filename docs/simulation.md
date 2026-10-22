@@ -1083,6 +1083,8 @@ them again), the unreachable-cage memo (relearned by a failed walk), lock pickin
 Headless simulation/debug harnesses use selected StandardParts and synchronous services for
 repeatability. Sandbox omits Aggro when its scripted foe must remain idle; benchmarks must
 separate simulation work, startup and rendering.
+`--sandbox-races` adds one character of every person race (the first CHARACTER record whose `race` list holds only that race; base game and
+mods alike) in rings round the pair, for looking at races side by side.
 
 ## Duel
 
