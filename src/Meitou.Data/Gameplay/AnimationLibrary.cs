@@ -284,13 +284,14 @@ public sealed class AnimationLibrary
     // The leg health values the records' ranges are cut at (sorted, distinct), per leg. A stance is cached by the interval of these its leg values fall
     // in, not by the values: they change every tick of an injury that heals or rots, and a key per value would grow the caches without bound.
     readonly float[] leftBounds, rightBounds;
-    readonly int[] swimming;
+    readonly int[] swimming, grounded;
 
     public AnimationLibrary(IEnumerable<AnimationDefinition> definitions)
     {
         all = [.. definitions];
         for (int i = 0; i < all.Count; i++) if (all[i].Technique) techniques.TryAdd(all[i].Id, i);
         swimming = [.. Enumerable.Range(0, all.Count).Where(i => all[i].Category == SwimmingCategory && !all[i].Technique)];
+        grounded = [.. Enumerable.Range(0, all.Count).Where(i => all[i].Category == GroundedCategory && !all[i].Technique)];
         leftBounds = Bounds(all.SelectMany(d => new[] { d.LeftLegMin, d.LeftLegMax }));
         rightBounds = Bounds(all.SelectMany(d => new[] { d.RightLegMin, d.RightLegMax }));
     }
@@ -354,6 +355,11 @@ public sealed class AnimationLibrary
             // The swimming records (category 4: swim, swim carry, swim idle) last of all, again so no earlier index moves; only <see cref="SwimMovement"/> and <see cref="SwimIdle"/> choose them.
             .Concat(db.OfType(FcsRecordType.ANIMATION)
                 .Where(r => !r.GetBool("disabled") && r.GetInt("category") == SwimmingCategory && r.GetInt("weather type") == 0)
+                .OrderBy(r => r.StringId, StringComparer.Ordinal)
+                .Select(AnimationDefinition.From))
+            // The grounded records (category 5: crawling move, crawl idle up / down, crawl use) after those; only the crawl selectors choose them.
+            .Concat(db.OfType(FcsRecordType.ANIMATION)
+                .Where(r => !r.GetBool("disabled") && r.GetInt("category") == GroundedCategory && r.GetInt("weather type") == 0)
                 .OrderBy(r => r.StringId, StringComparer.Ordinal)
                 .Select(AnimationDefinition.From)));
         library.BuildAnimals(db);
@@ -473,6 +479,47 @@ public sealed class AnimationLibrary
         }
         return -1;
     }
+
+    /// <summary>CharacterAnimCategory 5, GROUNDED: what a crawling character plays (<c>AnimHuman_LowerCombat</c> picks it for posture 1 and 2, <b>Observed</b>).</summary>
+    public const int GroundedCategory = 5;
+
+    /// <summary>The leg health the crawl clips are weighed at: no lower than <c>crawling move</c>'s -100, so a leg past it still crawls (engine choice: the data has one crawl clip).</summary>
+    const float CrawlLegFloor = -100;
+
+    /// <summary>
+    /// Adds to <paramref name="into"/> the crawling movement clips (category 5, <c>move speed</c> set; <c>crawling move</c>) that fit <paramref name="stance"/> (prone), to play at
+    /// speed <paramref name="v"/>, weighed and normalised like <see cref="SwimMovement"/>, the legs read no lower than <see cref="CrawlLegFloor"/>. Nothing is added when none fits.
+    /// </summary>
+    public void CrawlMovement(float v, in AnimationStance stance, List<(int Index, float Weight)> into)
+    {
+        int first = into.Count;
+        float total = 0;
+        float left = MathF.Max(stance.LeftLeg, CrawlLegFloor), right = MathF.Max(stance.RightLeg, CrawlLegFloor);
+        foreach (int i in grounded)
+        {
+            var d = all[i];
+            if (d.Idle || d.MoveSpeed == 0 || d.IsAction || !d.FitsExceptLegs(stance)) continue;
+            float w = d.SpeedWeight(v) * d.LegWeight(left, right);
+            if (!(w > 0)) continue;
+            into.Add((i, w));
+            total += w;
+        }
+        for (int k = first; k < into.Count; k++) into[k] = (into[k].Index, into[k].Weight / total);
+    }
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<AnimationStance, (int Index, float Weight)[]> crawlIdles = new();
+
+    /// <summary>The crawling idles that fit <paramref name="stance"/> (<c>crawl idle up</c>, and out of combat <c>crawl idle down</c>), by <c>idle chance</c>; empty when none fits.</summary>
+    public IReadOnlyList<(int Index, float Weight)> CrawlIdles(in AnimationStance stance) => crawlIdles.GetOrAdd(Canonical(stance), static (s, self) =>
+    {
+        var list = new List<(int, float)>();
+        foreach (int i in self.grounded)
+        {
+            var d = self.all[i];
+            if (d.Idle && !d.IsAction && d.MoveSpeed == 0 && d.Fits(s)) list.Add((i, Math.Max(d.IdleChance, 0)));
+        }
+        return [.. list];
+    }, this);
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<(AnimationArea, AnimationStance), int[]> candidates = new();
     readonly System.Collections.Concurrent.ConcurrentDictionary<AnimationStance, (int Index, float Weight)[]> idles = new();

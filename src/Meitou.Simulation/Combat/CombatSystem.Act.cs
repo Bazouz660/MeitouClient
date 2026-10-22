@@ -209,7 +209,8 @@ public sealed partial class CombatSystem
         float weaponReach = fighter.Unarmed ? 99 : fighter.Weapon!.Data.Length * 0.5f;
         float skill = Eff(cold, fighter.WeaponSkill);
         float roll = CombatRolls.Float(world.Seed, key, CombatRoll.Technique, (ulong)(s.AttackSeq + 1));
-        int pick = TechniqueChooser.ChooseAttack(techniques, fighter.Kind, fighter.TechniqueCategory, false, skill, gap, moving, weaponReach, roll);
+        // A crawler attacks with the prone techniques only (ground attack L / R), a standing fighter never with them (the original's defence pick tests the posture, FUN_140887970).
+        int pick = TechniqueChooser.ChooseAttack(techniques, fighter.Kind, fighter.TechniqueCategory, cold.Medical!.Crawling, skill, gap, moving, weaponReach, roll);
         if (pick < 0) return;
         // In reach with a technique: ask the target (and hold an attack slot).
         if (!HasSlot(world, i, t, tc) || !HasInitiative(world, i, ref s, t, cold, tc, now)) return;
@@ -366,7 +367,7 @@ public sealed partial class CombatSystem
             float effective = DefenceFormulas.EffectiveDefence(Eff(cold, StatsEnumerated.MartialArts), fighter.EncumbranceFactor, Speed.LegFactor(cold.Medical!), fighter.DefenceBonus, Guarding(cold));
             dodge = DefenceFormulas.BlockChance(effective, attack.AttackSkill, combat, 0, 95);
         }
-        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.Kind, fighter.TechniqueCategory, false, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
+        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.Kind, fighter.TechniqueCategory, cold.Medical!.Crawling, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
         if (pick < 0)
         {
             // No defence (a failed dodge roll, or nothing fits): none is tried again for a while (the original's +0x14c).

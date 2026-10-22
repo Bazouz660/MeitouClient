@@ -120,6 +120,7 @@ public sealed partial class MedicalState
         var c = ctx.Constants;
         var race = ctx.Race;
         float chance = ctx.Options.ChanceOfDeath;
+        LegKoPoint = KoPoint(c, ctx.Toughness);
 
         // Part healing rates. Bed-like objects (kinds 6 and 0x19) force degeneration to 0 and scale the organic or the robotic rate.
         float degMult = ctx.Bed != BedKind.None ? 0 : DegenerationMult(c, ctx.Toughness);

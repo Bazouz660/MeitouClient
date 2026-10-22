@@ -85,6 +85,17 @@ public sealed class HealthPart(BodyPartTemplate template, int hitWeight, float b
     /// <summary>The part is down when h - s + extra &lt; 0: its collapse mask applies, and a vital part knocks the character out.</summary>
     public bool IsDown => Flesh - Stun + Rig < 0;
 
+    /// <summary>The part is a leg: its <c>collapse part</c> has the left (0x20) or right (0x10) leg bit.</summary>
+    public bool IsLeg => (Template.CollapsePart & 0x30) != 0;
+
+    /// <summary>
+    /// A leg's collapse test in the medical tick (<c>FUN_140644450</c>, <b>Observed</b> by decompilation, docs/game/ragdolls.md "Triggers"): down when it is a stump or crushed, when
+    /// h - s is under -(base x multiplier x scale) - wear, or when h - s + b is under <paramref name="koPoint"/> (<see cref="MedicalState.KoPoint"/>), not 0, and without the rig.
+    /// </summary>
+    public bool LegDown(float koPoint) => Limb is LimbState.Stump or LimbState.Crushed
+        || Flesh - Stun < -(EffectiveBaseHp * HpMultiplier * BodyScale) - Wear
+        || Flesh - Stun + Bandage < koPoint;
+
     /// <summary>A part is destroyed in the hit path when h - s + extra &lt; -M.</summary>
     public bool IsDestroyed => Flesh - Stun + Rig < -MaxHp;
 

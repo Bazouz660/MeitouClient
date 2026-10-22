@@ -61,6 +61,26 @@ public sealed partial class MedicalState
     /// <summary>Save key <c>incapacitated</c>: <b>Unknown</b> meaning; here, knocked out or dead.</summary>
     public bool Incapacitated => Unconscious || Dead;
 
+    /// <summary>
+    /// The KO point (<see cref="KoPoint"/>) the legs' collapse test uses, from the owner's toughness at the last <see cref="Tick"/> (0 before the first). Derived, not saved: the first tick
+    /// after a load sets it again.
+    /// </summary>
+    public float LegKoPoint { get; private set; }
+
+    /// <summary>
+    /// The original's forced crawl (posture 2, <c>FUN_140649320</c>, <b>Observed</b>): a conscious character with a stats object (not an animal) any of whose legs is down by
+    /// <see cref="HealthPart.LegDown"/>. One leg is enough; it moves at the speed floor (<see cref="Speed.Minimum"/>) and plays the grounded clips. Read live, so a hit shows at once.
+    /// </summary>
+    public bool Crawling
+    {
+        get
+        {
+            if (Incapacitated || !HasStatsObject) return false;
+            foreach (var p in parts) if (p.IsLeg && p.LegDown(LegKoPoint)) return true;
+            return false;
+        }
+    }
+
     /// <summary>The pain value P of the stat multiplier (1 = no penalty). Its source in the original is <b>Unknown</b>, so nothing drives it yet.</summary>
     public float Pain { get; set; } = 1;
 
