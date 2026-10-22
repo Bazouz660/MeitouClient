@@ -661,7 +661,9 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   (`FUN_1409fc6c0` over `FUN_1409fbb00`, a building filter **Unknown**), then a random node of type 1 (NODE_GENERAL) in it whose owner is unset or the
   character's faction (`FUN_14038c2f0`); none: 0. Effect `atNode`, acted out by 51 Stand at node.
 - **47 general node / 20 Shopkeeper** (`FUN_14099f280` / `FUN_14099e920`): a node of that type in the home building (owner unset or own faction),
-  reserved; guard posts fall back to general nodes.
+  reserved; guard posts fall back to general nodes. A node marker faces along its local −X: for 784 of 990 shopkeeper nodes in base-game town interiors,
+  yaw − 90° points at the nearest Shop Counter's side the node stands on (**Verified**, layouts placed by `TownBuildings`, compared with each counter's
+  yaw; the rest are corner or odd-angled counters). The engine turns a character arriving at a node that way.
 - **118 Shopping** (`FUN_1409997f0`): a shop of the town selling an item on the character's shopping list (`FUN_1409fc070`), else a random shop
   (`FUN_1409fc1b0`); factor 1 for a BF_SHOP building, 0.4 otherwise. Then 119 (`Task_Shopping`) at it.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating

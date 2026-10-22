@@ -165,7 +165,7 @@ public sealed partial class AiSystem
         }
 
         /// <summary>A spot as the act-out walks to it: one on a floor over a hole furniture cuts is at the nearest floor point (<see cref="GoToSpot"/>).</summary>
-        PlanTarget Spot(byte kind, (Vector2 Target, bool Home, float? Floor) s)
+        PlanTarget Spot(byte kind, (Vector2 Target, bool Home, float? Floor, float? Yaw) s)
         {
             if (s.Floor is { } y && world.Walkability.FloorNear(s.Target.X, s.Target.Y, y, FloorSlack) is { } floor) return new(kind, floor);
             return new(kind, new Vector3(s.Target.X, s.Floor ?? float.NaN, s.Target.Y));

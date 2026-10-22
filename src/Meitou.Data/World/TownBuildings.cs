@@ -165,7 +165,8 @@ public static class TownBuildings
                         bool node = item.Building.GetBool("is node");
                         HomeSpotKind? kind = node ? NodeKind(item.Building) : IsBed(db, item.Building, beds) ? HomeSpotKind.Bed : null;
                         var function = kind is null ? FunctionOf(db, item.Building, functions) : null;
-                        if (kind is { } k) spots.Add(new HomeSpot(k, at, YawOf(rotation)) { NodeType = node ? item.Building.GetInt("node type") : -1 });
+                        // A node marker looks along its local -X (docs/game/ai-tasks.md "Town goals"), a bed along +Z.
+                        if (kind is { } k) spots.Add(new HomeSpot(k, at, YawOf(rotation) - (node ? MathF.PI / 2 : 0)) { NodeType = node ? item.Building.GetInt("node type") : -1 });
                         else if (function?.GetInt("function") == ChairFunction)
                         {
                             (seats ??= []).Add((spots.Count, function.GetInt("flags")));

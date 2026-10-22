@@ -440,11 +440,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Post:
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
-                var (target, home, floor) = SpotFor(mind, board, behaviour, type);
+                var (target, home, floor, facing) = SpotFor(mind, board, behaviour, type);
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type == TaskType.RUN_AWAY_HOMETOWN ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     if (home && board.Gate is { } gate && GateSpot(board, mind, type) is not null) table.Next[slot].Yaw = MathF.Atan2(gate.Out.X, gate.Out.Y);   // looking out
+                    else if (facing is { } yaw) table.Next[slot].Yaw = yaw;   // at a node, facing its way (the barman over his counter)
                 }
                 break;
             case AiBehaviour.TownNode:
@@ -496,18 +497,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>
     /// Where a goal is acted out: a node of the home building by goal (shopkeeper, guard, throne, general; any node when the home has none of that kind), a bed for
     /// sleep (the home itself when it has no bed), the home or the town for going home; else (no home, or its spots kept failing) the character's post. True in
-    /// <c>Home</c> when the spot is the home's; <c>Floor</c> is the height of a node or bed (so the walk ends on the floor it is on, not on the ground below).
+    /// <c>Home</c> when the spot is the home's; <c>Floor</c> is the height of a node or bed (so the walk ends on the floor it is on, not on the ground below);
+    /// <c>Yaw</c> the way a node faces, which the character turns to on arriving.
     /// </summary>
-    (Vector2 Target, bool Home, float? Floor) SpotFor(AiMind mind, Blackboard board, AiBehaviour behaviour, TaskType type)
+    (Vector2 Target, bool Home, float? Floor, float? Yaw) SpotFor(AiMind mind, Blackboard board, AiBehaviour behaviour, TaskType type)
     {
         if (behaviour == AiBehaviour.GoHome)
         {
-            if (board.Home is { } h && !mind.HomeUnreachable) return (Flat(h.Position), true, null);
-            if (board.Town >= 0) return (Flat(data.Sites[board.Town].Position), true, null);
-            return (mind.Squad.HomeCentre, true, null);
+            if (board.Home is { } h && !mind.HomeUnreachable) return (Flat(h.Position), true, null, null);
+            if (board.Town >= 0) return (Flat(data.Sites[board.Town].Position), true, null, null);
+            return (mind.Squad.HomeCentre, true, null, null);
         }
-        if (!mind.HomeUnreachable && GateSpot(board, mind, type) is { } guard) return (Flat(guard), true, guard.Y);
-        if (board.Home is not { } home || mind.HomeUnreachable || type is TaskType.HOLD_POSITION or TaskType.MAN_THE_GATE) return (mind.Post, false, null);
+        if (!mind.HomeUnreachable && GateSpot(board, mind, type) is { } guard) return (Flat(guard), true, guard.Y, null);
+        if (board.Home is not { } home || mind.HomeUnreachable || type is TaskType.HOLD_POSITION or TaskType.MAN_THE_GATE) return (mind.Post, false, null, null);
         HomeSpotKind kind = behaviour == AiBehaviour.Sleep ? HomeSpotKind.Bed : type switch
         {
             TaskType.STAND_AT_SHOPKEEPER_NODE => HomeSpotKind.Shopkeeper,
@@ -515,13 +517,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             TaskType.SIT_ON_THRONE => HomeSpotKind.Throne,
             _ => HomeSpotKind.General,
         };
-        if (Pick(home, kind, mind.MemberIndex) is { } spot) return (Flat(spot.Position), true, spot.Position.Y);
+        if (Pick(home, kind, mind.MemberIndex) is { } spot) return (Flat(spot.Position), true, spot.Position.Y, spot.IsNode ? spot.Yaw : null);
         // Guard posts fall back to general nodes (docs/game/ai-tasks.md "Town goals"); the counter is the shopkeeper's, so only its goal falls back onto it.
-        if (kind == HomeSpotKind.Guard && Pick(home, HomeSpotKind.General, mind.MemberIndex) is { } general) return (Flat(general.Position), true, general.Position.Y);
-        if (kind != HomeSpotKind.Bed && Pick(home, null, mind.MemberIndex, kind != HomeSpotKind.Shopkeeper) is { } any) return (Flat(any.Position), true, any.Position.Y);
+        if (kind == HomeSpotKind.Guard && Pick(home, HomeSpotKind.General, mind.MemberIndex) is { } general)
+            return (Flat(general.Position), true, general.Position.Y, general.Yaw);
+        if (kind != HomeSpotKind.Bed && Pick(home, null, mind.MemberIndex, kind != HomeSpotKind.Shopkeeper) is { } any) return (Flat(any.Position), true, any.Position.Y, any.Yaw);
         // No bed: it sleeps in the house; a node goal without nodes stays at its own post, except staying home.
-        if (kind == HomeSpotKind.Bed || type == TaskType.STAY_IN_HOME) return (Flat(home.Position), true, null);
-        return (mind.Post, false, null);
+        if (kind == HomeSpotKind.Bed || type == TaskType.STAY_IN_HOME) return (Flat(home.Position), true, null, null);
+        return (mind.Post, false, null, null);
     }
 
     /// <summary>
