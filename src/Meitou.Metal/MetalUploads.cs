@@ -111,7 +111,9 @@ public sealed class MetalUploads : IGpuUploads
             {
                 // The blits already recorded in this batch still name the old buffer: keep it until the command completes.
                 if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging, string.Join(", ", written));
-                stagingSize = Math.Max((ulong)bytes, stagingSize == 0 ? 1 << 20 : stagingSize * 2);
+                // Many small batches (foliage meshes, textures) live until their command completes; a 1 MB floor each
+                // made the first foliage frame allocate several GB. Grow only to what this batch actually writes.
+                stagingSize = Math.Max((ulong)bytes, stagingSize == 0 ? 64 << 10 : stagingSize * 2);
                 staging = ctx.Device.NewBuffer(stagingSize, MTLResourceOptions.ResourceStorageModeShared);
                 stagingUsed = 0;
             }
