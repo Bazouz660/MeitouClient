@@ -44,7 +44,8 @@ public sealed partial class World
             list.Add(new CharacterSnapshot(id, cold?.Appearance, DrawnPosition(cold, state[i].Position), state[i].Yaw, cold?.Animation is { } anim && animations is not null ? animations.Publish(anim) : AnimationLayers.For(state[i].Animation, state[i].AnimationTime))
             {
                 Faction = cold?.Faction ?? -1,
-                WeaponDrawn = cold is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None,
+                Held = cold is null ? default : cold.DrawnCrossbow ? Meitou.Data.Characters.HeldWeapon.Crossbow
+                    : cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None ? Meitou.Data.Characters.HeldWeapon.Melee : Meitou.Data.Characters.HeldWeapon.None,
                 Name = cold?.Name ?? "",
                 SquadId = cold?.SquadId ?? -1,
                 IsPlayer = cold?.IsPlayer ?? false,

@@ -51,6 +51,7 @@ public sealed partial class PopulationSystem
         c.GoalHeight = float.NaN;
         c.Animation = null;
         c.DrawnWeapon = default;
+        c.DrawnCrossbow = false;
         c.ModeOverride = null;
         c.SpeedOverride = 0;
         c.InCombat = false;

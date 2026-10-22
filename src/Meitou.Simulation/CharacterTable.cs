@@ -89,6 +89,8 @@ public sealed class CharacterCold
     public CharacterAnimation? Animation { get; set; }
     /// <summary>The kind of weapon drawn in the right hand (None while sheathed): the stance animations are chosen for.</summary>
     public Meitou.Data.Gameplay.WeaponKinds DrawnWeapon { get; set; }
+    /// <summary>The crossbow is in hand (the ranged mode; <see cref="DrawnWeapon"/> then holds its animation kind): the renderer shows it instead of the first weapon. Display only: not hashed (CombatSlot.Ranged is the state).</summary>
+    public bool DrawnCrossbow { get; set; }
     /// <summary>The numbers of the HUD's extended lines, refreshed by <see cref="BodySystem"/> every tick (display only: not hashed, not saved).</summary>
     public ExtendedStats Extended { get; set; }
     /// <summary>The race, stats and medical state (null for animals and anything without a race record): see <see cref="BodySystem"/>.</summary>

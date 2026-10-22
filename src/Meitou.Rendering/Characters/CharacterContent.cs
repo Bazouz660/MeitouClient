@@ -22,9 +22,16 @@ internal sealed class AssetPart
     public Matrix4x4 Offset = Matrix4x4.Identity;
     /// <summary>Index among the character's bone-attached parts (the matrices <see cref="CharacterRenderer"/> keeps per frame); -1 for shared parts.</summary>
     public int AttachIndex = -1;
-    /// <summary>Only while the weapon in hand is sheathed or drawn (<see cref="CharacterPart.Shown"/>).</summary>
+    /// <summary>Only while the weapon or crossbow is stowed or in hand (<see cref="CharacterPart.Shown"/>).</summary>
     public WeaponShown Shown;
-    public bool ShowsWith(bool weaponDrawn) => Shown == WeaponShown.Always || (Shown == WeaponShown.Drawn) == weaponDrawn;
+    public bool ShowsWith(HeldWeapon held) => Shown switch
+    {
+        WeaponShown.Sheathed => held != HeldWeapon.Melee,
+        WeaponShown.Drawn => held == HeldWeapon.Melee,
+        WeaponShown.CrossbowStowed => held != HeldWeapon.Crossbow,
+        WeaponShown.CrossbowHeld => held == HeldWeapon.Crossbow,
+        _ => true,
+    };
     public required PartMaterial Material;
     /// <summary>The mesh file's bounds (the LOD value's centre and radius), in the part's own space.</summary>
     public required Vector3 BoundsCentre;

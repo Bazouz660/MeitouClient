@@ -51,6 +51,11 @@ vests/backpacks, hair-hidden/part-map flags, stumps and missing limbs are not or
 checkboxes. Weapon inventory choice, equipped/drawn location and sheath/back/hip attach bone
 are separate; .phs attachment points are data. Part scales/transforms must follow skeletal axes.
 
+**Crossbow in hand.** Meitou (engine choice): the fighting crossbow (first CROSSBOW on the back, else the hip, as `CharacterAssembly.MakeFighter`)
+has its `mesh` twice, at its point while stowed and in the `hands` point (`Bip01 Prop2`, as a drawn `bare sword`) while the ranged mode holds
+it; the first weapon then stays sheathed. Which bone the original holds it by is **Unknown**: the `aimshoot` and `reload 1..3` clips of both
+skeletons move `Bip01 Prop1` and `Prop2` alike (**Observed**, track ranges compared).
+
 **Verified** (decompilation, `AppearanceBase::setupItemMaterial` `FUN_140536210`): an attached item without a material record whose type is
 LIMB_REPLACEMENT (111) gets the appearance's body material (its textures, skin tone and stat-driven normal blend). The races' stumps
 (`Human Left Arm Stump` and the others in `Newwworld.mod`, mesh material `default`, no texture fields) are drawn so; prosthetics have a
@@ -276,7 +281,7 @@ a line gated only by money or `DC_IS_RECRUITABLE`.
   "Body shape sliders", "Hidden body parts" above). Left: which body region each part-map colour marks, and the
   stats/nutrition fields listed in animation.md's open questions.
 - Random appearance details: the untraced part of the morph-face name, the faction flag that re-rolls the skin tone
-  (and a body file's gender); crossbow placement; extra hip copies; `RaceLimiter` rules.
+  (and a body file's gender); the crossbow's hand bone (above); extra hip copies; `RaceLimiter` rules.
 - Where the original puts a rolled weapon whose footprint doesn't fit its pool's slot (hip 7x1, back 10x2). Meitou (engine choice,
   `CharacterGenerator`): the slot it fits, hip pool preferring the hip and back pool the back; fitting neither, it is left out.
 

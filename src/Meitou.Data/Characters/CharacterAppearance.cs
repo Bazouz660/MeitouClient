@@ -41,8 +41,14 @@ public sealed record CharacterPart
     public int HideSide { get; init; }
 }
 
-/// <summary>When a <see cref="CharacterPart"/> shows: the first weapon has its sheathed <c>mesh</c> and its drawn <c>bare sword</c> and <c>sheath</c> in one appearance.</summary>
-public enum WeaponShown : byte { Always, Sheathed, Drawn }
+/// <summary>
+/// When a <see cref="CharacterPart"/> shows: the first weapon has its sheathed <c>mesh</c> and its drawn <c>bare sword</c> and <c>sheath</c> in one appearance, the first
+/// crossbow its <c>mesh</c> twice, stowed at its point and held in the <c>hands</c> point.
+/// </summary>
+public enum WeaponShown : byte { Always, Sheathed, Drawn, CrossbowStowed, CrossbowHeld }
+
+/// <summary>What a character holds ready (<see cref="WeaponShown"/> picks the parts): nothing, the first weapon or the first crossbow.</summary>
+public enum HeldWeapon : byte { None, Melee, Crossbow }
 
 /// <summary>A clothing texture layered onto the body (ARMOUR <c>vest texture</c>; character.hlsl "vest").</summary>
 public sealed record BodyLayer(GameRecord Record, string Diffuse, string? Normal, string? ColourMap);
@@ -284,9 +290,13 @@ public sealed class CharacterAppearance
         }
         result.LoadAttachmentPoints(installRoot, race);
         // The weapon a fight draws is the first WEAPON (hip, then back: CharacterAssembly.MakeFighter); it gets its sheathed and drawn meshes, the renderer shows one set.
+        // The crossbow a fight shoots is the first CROSSBOW (back, then hip, as MakeFighter): stowed at its point and held in the hands, the renderer shows one.
         int inHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON);
+        int crossbow = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW && w.Point != "hip");
+        if (crossbow < 0) crossbow = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW);
         for (int i = 0; i < weapons.Count; i++)
-            result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model, both: !options.WeaponDrawn && i == inHand);
+            if (i == crossbow && !options.WeaponDrawn) result.AddCrossbow(weapons[i].Weapon, female, weapons[i].Point);
+            else result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model, both: !options.WeaponDrawn && i == inHand);
         var lightRoll = new Random(loadout?.Seed ?? options.Seed ?? 0);
         foreach (var item in worn.Concat(items.Where(i => i.Type is FcsRecordType.ATTACHMENT or FcsRecordType.CONTAINER)).Concat(loadout?.Carried.Select(c => c.Record) ?? []))
             if (CarriedLights.From(db, installRoot, item, female, lightRoll) is { } carried) result.Lights.Add(carried);
@@ -399,6 +409,15 @@ public sealed class CharacterAppearance
         if (weapon.GetPath(field) is not { Length: > 0 } mesh) { Notes.Add($"'{weapon.Name}' has no mesh"); return; }
         Parts.Add(new CharacterPart { Record = weapon, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Material = model,
             Shown = both && bare ? WeaponShown.Sheathed : WeaponShown.Always });
+    }
+
+    /// <summary>The fighting crossbow's <c>mesh</c> at its point while stowed and in the <c>hands</c> point while held (docs/characters.md "Crossbow in hand").</summary>
+    void AddCrossbow(GameRecord crossbow, bool female, string slot)
+    {
+        string field = female && crossbow.GetPath("mesh female").Length > 0 ? "mesh female" : "mesh";
+        if (crossbow.GetPath(field) is not { Length: > 0 } mesh) { Notes.Add($"'{crossbow.Name}' has no mesh"); return; }
+        Parts.Add(new CharacterPart { Record = crossbow, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Shown = WeaponShown.CrossbowStowed });
+        Parts.Add(new CharacterPart { Record = crossbow, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands", Shown = WeaponShown.CrossbowHeld });
     }
 
     /// <summary>

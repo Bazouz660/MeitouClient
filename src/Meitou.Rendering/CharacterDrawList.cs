@@ -13,8 +13,8 @@ public readonly record struct CharacterPose(string Animation, float Time, float 
 /// </summary>
 public readonly record struct CharacterInstance(long Key, CharacterAppearance Appearance, Vector3 Position, float Yaw, IReadOnlyList<CharacterPose> Poses)
 {
-    /// <summary>Show the weapon in hand (the parts tagged <see cref="WeaponShown.Drawn"/>) instead of sheathed.</summary>
-    public bool WeaponDrawn { get; init; }
+    /// <summary>What is in hand: the parts tagged <see cref="WeaponShown.Drawn"/> or <see cref="WeaponShown.CrossbowHeld"/> show instead of the stowed ones.</summary>
+    public HeldWeapon Held { get; init; }
     /// <summary>Uniform size the body is drawn at (an animal's age-dependent size; 1 for people).</summary>
     public float Scale { get; init; } = 1;
     /// <summary>Not drawn in the world (still posed for its portrait): on a floor of a building that the interior view hides (docs/formats/zones.md "Interior view").</summary>

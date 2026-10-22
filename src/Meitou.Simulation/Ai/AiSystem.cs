@@ -387,7 +387,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 Become(table, slot, CharacterTask.Idle);
                 return;
             case TaskType.UNEQUIP_WEAPON:
-                table.Cold(slot)!.DrawnWeapon = WeaponKinds.None;
+                var unequipped = table.Cold(slot)!;
+                unequipped.DrawnWeapon = WeaponKinds.None;
+                unequipped.DrawnCrossbow = false;
                 return;
         }
         if (mind.Resume)

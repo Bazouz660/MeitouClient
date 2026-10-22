@@ -172,6 +172,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
         cold.DrawnWeapon = s.Ranged ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(cold.Fighter);
+        cold.DrawnCrossbow = s.Ranged;
         return true;
     }
 
@@ -192,6 +193,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         cold.CombatRunning = false;
         cold.TargetFleeingTime = 0;
         cold.DrawnWeapon = WeaponKinds.None;
+        cold.DrawnCrossbow = false;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) table.Next[slot].Task = (byte)CharacterTask.Idle;
     }
 

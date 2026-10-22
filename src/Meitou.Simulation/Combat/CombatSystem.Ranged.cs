@@ -304,6 +304,7 @@ public sealed partial class CombatSystem : IProjectileSource
         s.ReloadLeft = 0;
         s.ClearTime = 0;
         cold.DrawnWeapon = want ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(fighter);
+        cold.DrawnCrossbow = want;
     }
 
     /// <summary>

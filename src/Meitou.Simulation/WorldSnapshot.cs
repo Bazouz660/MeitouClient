@@ -59,8 +59,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 {
     /// <summary>The owner faction (a position in the world's faction list; -1 none), for debug markers.</summary>
     public int Faction { get; init; } = -1;
-    /// <summary>A weapon is in hand (<c>CharacterCold.DrawnWeapon</c>): the renderer shows the drawn weapon meshes instead of the sheathed one.</summary>
-    public bool WeaponDrawn { get; init; }
+    /// <summary>What is in hand (<c>CharacterCold.DrawnWeapon</c>, <c>DrawnCrossbow</c>): the renderer shows its held meshes instead of the stowed ones.</summary>
+    public Meitou.Data.Characters.HeldWeapon Held { get; init; }
     public string Name { get; init; } = "";
     public int SquadId { get; init; } = -1;
     /// <summary>One of the player's characters, and whether it is selected.</summary>
