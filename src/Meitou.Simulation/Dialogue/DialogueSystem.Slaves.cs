@@ -91,8 +91,8 @@ public sealed partial class DialogueSystem
             return false;
         if (world.Player.Money < price) { world.Post(Loc.Tr("You can't afford that.")); return false; }
         if (!c.IsPlayer && PlayerHeads(world) >= data.Bodies.Constants.MaxFactionSize) { world.Post(Loc.Tr("It looks like your squad is a little full.")); return false; }
-        if (c.IsImprisoned) world.Fixtures.Release(world, who);
         if (!c.IsPlayer && !JoinPlayer(world, slot, bc)) return false;
+        if (c.IsImprisoned) world.Fixtures.Release(world, who, announce: false);
         Locks.FixtureRegistry.Unslave(world, c);
         world.Player.Money -= price;
         world.Post(Loc.Tr("Bought {1} for c.{2}", c.Name, price));

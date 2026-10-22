@@ -9,8 +9,8 @@ public sealed partial class DialogueSystem
 {
     /// <summary>
     /// A line's effects (<c>FUN_140680560</c>, docs/game/dialogue.md "Effects"), run as it is said or clicked, with <paramref name="me"/> the NPC-side speaker and the player character the
-    /// target, in the original's order: locks, interrupt, relation changes, then the DA effects in data order. Not built yet: crowd triggers, items given, AI changes and
-    /// contracts, arrests other than the bounty desk's hand-over, and DA 48 (animals for sale).
+    /// target, in the original's order: locks, interrupt, relation changes, then the DA effects in data order, then AI changes and contracts. Not built yet: arrests other
+    /// than the bounty desk's hand-over, and DA 48 (animals for sale).
     /// </summary>
     void RunEffects(World world, Conversation c, DialogueNode line, CharacterId me)
     {

@@ -537,9 +537,9 @@ public sealed class FixtureRegistry
     /// <summary>
     /// Frees a prisoner (Task_ReleasePrisoner, economy.md 11.5, <b>Observed</b>): the cage is unlocked and emptied, the state and sentence cleared; when the releaser's faction books
     /// bounties its entry and the jail's (the cage owner's) are erased. A player-faction prisoner gets "{1} has been released from prison.". The prisoner stays where it stands
-    /// (getting out of the cage is the caller's walk). False when the character is not imprisoned.
+    /// (getting out of the cage is the caller's walk); <paramref name="announce"/> false: no message (a slave bought). False when the character is not imprisoned.
     /// </summary>
-    public bool Release(World world, CharacterId prisoner, int releaserFaction = -1, CrimeSystem? crimes = null)
+    public bool Release(World world, CharacterId prisoner, int releaserFaction = -1, CrimeSystem? crimes = null, bool announce = true)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(prisoner, out int s) || table.Cold(s) is not { IsImprisoned: true } c) return false;
@@ -557,8 +557,8 @@ public sealed class FixtureRegistry
         }
         Clear(c);
         c.Escaped = false;
-        SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406add20, FUN_1406ae170)
-        if (c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
+        SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406ae170)
+        if (announce && c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
         return true;
     }
 
