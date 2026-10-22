@@ -88,7 +88,7 @@ public sealed class Inventory(int width, int height)
         if (limit <= 1) return false;
         foreach (var other in into.Items)
         {
-            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null || other.Section is not ("main" or "backpack_content")) continue;
+            if (item.Buyback is not null || other.Buyback is not null || ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null || other.Section is not ("main" or "backpack_content")) continue;
             int move = Math.Min(limit - other.Quantity, item.Quantity);
             if (move <= 0) continue;
             other.Quantity += move;
@@ -161,6 +161,13 @@ public sealed class Inventory(int width, int height)
             h.Add(i.Level);
             h.Add(i.Quality);
             h.Add(i.Charges);
+            if (i.Buyback is { } receipt)
+            {
+                h.Add(Rng.StableHash("Buyback"));
+                h.Add(receipt.Sell);
+                h.Add(receipt.Coins.Length);
+                foreach (long coins in receipt.Coins) h.Add(coins);
+            }
             i.Contents?.Hash(ref h);
         }
     }
