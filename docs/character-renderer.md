@@ -20,7 +20,7 @@ pass preserves alpha coverage. Face morphs and body shape precede skinning.
 Faithful lights skin as every surface (`kenshiLight`, the game's deferred pass: clamped N·L). Meitou: Penner's pre-integrated skin
 diffuse replaces the sun's N·L on bare skin (`SkinScattering`: a 64² RGBA16F table baked at start-up from the six-Gaussian skin
 profile of GPU Gems 3 ch. 14, each layer normalised along the ring; u = N·L, v = √(1/r ÷ 1 mm⁻¹)). Curvature 1/r = |fwidth(smooth normal)| / |fwidth(eye-relative
-position)|, at 1 unit = 100 mm (an **Observed** scale, [terrain](formats/terrain.md)), times 30 (`SkinScatterScale`, a look: at true size the
+position)|, times smoothstep(0, 0.5, |N·V|) (it spikes towards the silhouette and drew a red outline), at 1 unit = 100 mm (an **Observed** scale, [terrain](formats/terrain.md)), times 30 (`SkinScatterScale`, a look: at true size the
 profile barely reaches a face's 5-8 cm radius, terminator red 0.016 → 0.019; ×30 gives about 0.16 and a tail past N·L −0.2). Red, green and blue read the table with the
 normal map mixed 0.6 / 0.3 / 0 towards the smooth normal. The result is never below plain N·L per channel: the table's loss of red on the lit
 side (energy moved into the shadow) turned sunlit skin cyan-grey, so only the warm band past the terminator is kept. Skin share: body-shaded parts of people (`CharacterShaders.Skin`; not

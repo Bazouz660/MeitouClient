@@ -320,6 +320,9 @@ static class CharacterShaders
 
             // Lit as the world's other meshes are (Shaders.MeshFragment): the game's deferred lighting with the game's sky, else the simple model.
             vec3 v = normalize(view.eye - vWorld);
+            // Towards the silhouette the screen-space curvature blows up (the normal turns fast across a pixel while the depth jump is not seen as surface),
+            // which drew a red rim along the outline: fade it out as the surface turns edge-on.
+            curvature *= smoothstep(0.0, 0.5, abs(dot(smoothNormal, v)));
             gloss = clamp(gloss, 0.0, 1.0);
             vec3 colour;
             giInterior = vInterior != 0u;
