@@ -303,7 +303,8 @@ sealed partial class GameHost
             Console.WriteLine($"metal     particles ready: {particles.Library.Systems.Count} systems, {placers.Count} placers ({particleWatch.ElapsedMilliseconds} ms)");
         }
         TerrainTextures? terrainTextures = null;
-        if (!o.NoTextures && scene.Database is { } textureDb)
+        bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
+        if (!o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
         {
             terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
             terrain.SetTextures(terrainTextures);
