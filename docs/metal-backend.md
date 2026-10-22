@@ -477,13 +477,13 @@ start chooser, save/load slots and confirmations, the in-game Esc menu, the load
 audio system (main theme, interface sounds, ambience, music and world emitters, with the saved volume sliders).
 Still missing: the pointer sprite, the free camera and a runtime pass over the shared trade/dialogue/build/editor screens.
 
-**Current Metal safe mode (2026-10-22).** The host defaults to no foliage, water, cloud shadows or shadows;
-`MEITOU_METAL_FOLIAGE`, `_WATER`, `_CLOUD_SHADOWS` and `_SHADOWS` opt each back in. Terrain textures are on (disable
-with `MEITOU_METAL_NO_TERRAIN_TEXTURES=1`); the former black/miscoloured terrain was a Metal upload bug: a
-sub-rectangle's x offset was applied both to the source row and the destination origin in `MetalUploads.Write`, shifting
-every map-window piece. The water path separately produced a black plane and GPU faults at the acid pools. A saved
-Shadow distance could re-enable shadows after the safe-mode flag; it is now forced off once settings load. The safe
-mode is a baseline for fixing these paths, not the target look.
+**Current Metal mode (2026-10-22).** Terrain textures, water, foliage, terrain shadows and cloud shadows are on.
+Turn any of them off for diagnosis with `MEITOU_METAL_FOLIAGE=0`, `_WATER=0`, `_SHADOWS=0`, `_CLOUD_SHADOWS=0` or
+`MEITOU_METAL_NO_TERRAIN_TEXTURES=1`; far impostors stay off. The former black/miscoloured terrain and the acid-pool
+water GPU fault were the same Metal bug: `MetalUploads.Write` applied a sub-rectangle's x offset to both the packed
+source row and the destination origin, shifting every map-window piece. Screenshots at `-16134,26409`, `-44047,250`
+and `-12213,36572`, plus 15-second all-feature runs, are clean. Saved shadow settings now control shadows normally
+instead of being forced off.
 
 **Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
 headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
