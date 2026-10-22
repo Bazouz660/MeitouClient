@@ -32,6 +32,18 @@ public sealed partial class FoliageRenderer
 
     /// <summary>The <c>impostors</c> switch (Enhancements): Meitou (default) draws far instances as impostors; Faithful never loads or draws one.</summary>
     public bool Impostors { get; set; } = true;
+
+    /// <summary>
+    /// Turns impostors off and releases every atlas already resident (the Metal host's workaround while the atlas path is broken). A later
+    /// <see cref="Impostors"/> true can load them again.
+    /// </summary>
+    public void DisableImpostors()
+    {
+        Impostors = false;
+        foreach (var a in ImpostorAssets().ToArray())
+            if (a.Impostor is not null) UnloadImpostor(a);
+        DisposeImpostors();
+    }
     /// <summary>The transition distance (units along the ground) of meshes below the large size class (the small impostor class scales it by size).</summary>
     public float ImpostorDistance { get; set; } = DefaultImpostorDistance;
     /// <summary>The transition distance of meshes of the large size class (<see cref="FoliageSizes.LargeFrom"/> and up), instead of <see cref="ImpostorDistance"/>.</summary>

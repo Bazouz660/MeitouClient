@@ -511,6 +511,8 @@ sealed partial class GameHost
             foreach (var toggle in settingsValues.Toggles)
                 if (config.Graphics.TryGetValue("Meitou: " + toggle.Label, out float value) && (value >= 0.5f) != toggle.Get())
                     toggle.Set(value >= 0.5f);
+            // The impostor atlas path is still corrupt on Metal: a saved "Far impostors" setting must not turn it back on.
+            if (foliage is not null) foliage.DisableImpostors();
             if (openSettingsForStill) settings.Visible = true;
         }
         // The loading screen is backend-neutral: the same Kenshi layout, picture and tips the Vulkan host draws.
@@ -609,7 +611,6 @@ sealed partial class GameHost
                     () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
                     v => foliage.LodTolerance = FoliageRenderer.DefaultLodTolerance / v, "0.00", Logarithmic: true));
                 toggles.Add(new Toggle("Foliage ranges", () => foliage.MeitouRange, v => foliage.MeitouRange = v));
-                toggles.Add(new Toggle("Far impostors", () => foliage.Impostors, v => foliage.Impostors = v));
             }
             sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => render.TerrainPixelError,
                 v => render.TerrainPixelError = v, "0.0", Logarithmic: true,
