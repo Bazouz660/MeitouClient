@@ -878,12 +878,10 @@ sealed partial class GameHost
             }
             StepSceneLoad();
             AdvanceSkyArrival(dt);
-            // Metal has no character editor yet: finish the start's creation after its world is in, rather than leaving the squad in creation.
-            if (pendingCreation is not null && sceneLoad is null)
-            {
-                session.World.Commands.Enqueue(new FinishCreation { Tick = session.World.Tick });
-                pendingCreation = null;
-            }
+            // The merged character editor is shared with Vulkan: a new game opens it once the squad is in the snapshot, and the world resumes when it closes.
+            OpenPendingEditor();
+            ResumeAfterCreation();
+            if (hud is not { EditorOpen: true }) ClearEditorStage();
             ApplyCamera(session.CameraAt());
             if (hud is not null) ApplyTitleCamera();
             // The pointer's Ctrl/Alt modifiers and the Highlight key (Alt): labels on the ground items near the focus, signs and the hover outlines agree.
@@ -919,6 +917,8 @@ sealed partial class GameHost
             double drawableWait = display.LastDrawableWaitMilliseconds;
             long recordStart = Stopwatch.GetTimestamp();
             var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
+            // The editor's own scene replaces the world picture: the shared host draws the character and its platform into the stage texture the interface shows.
+            if (hud is { EditorOpen: true }) DrawEditorStage(size.X, size.Y);
             // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
             ctx.LodBias = noTaa || spatial ? 0 : MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle

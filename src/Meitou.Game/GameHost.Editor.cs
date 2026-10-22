@@ -47,6 +47,12 @@ sealed partial class GameHost
         if (!creationWarmOwed || pendingCreation is not null || player.EditorOpen || sceneLoad is not null) return;
         creationWarmOwed = false;
         if (playerSquad is { Leader.IsNone: false } squad) player.Follow = squad.Leader;   // a new game starts with the camera locked to the leader
+        if (gpu is null)
+        {
+            // Metal has no Vulkan loading/warm loop here: the world was loaded and drawn under the editor already. Apply the edits at once.
+            session.World.RunTick();
+            return;
+        }
         if (loading is null) return;
         session.World.RunTick();
         loading.Restart();
