@@ -79,7 +79,13 @@ public sealed class MetalFxUpscaler : IUpscaler
         }
         if (scaler.NativePtr != IntPtr.Zero && inputWidth == width && inputHeight == height &&
             outputWidth == displayWidth && outputHeight == displayHeight) return true;
-        if (scaler.NativePtr != IntPtr.Zero) scaler.Dispose();
+        // A resize replaces the scaler while the previous frame ring may still name it. Disposing it here can
+        // fault the GPU and make every following submission fail; hold it until the ring has passed.
+        if (scaler.NativePtr != IntPtr.Zero)
+        {
+            var previous = scaler;
+            ctx.DeferDelete(() => previous.Dispose());
+        }
         var d = new MTLFXTemporalScalerDescriptor
         {
             InputWidth = (ulong)width,
