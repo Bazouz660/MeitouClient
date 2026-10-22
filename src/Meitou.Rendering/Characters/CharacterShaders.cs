@@ -355,11 +355,13 @@ static class CharacterShaders
             {
                 vec3 l = normalize(view.lightDir);
                 float diff = max(dot(n, l), 0.0);
+                // The portraits' plain model takes the Meitou skin too (the switch, per race).
+                vec3 diffSkin = skinDiffuse(n, smoothNormal, l, curvature, skin, albedo);
                 vec3 ambient = mix(vec3(0.22, 0.20, 0.18), vec3(0.42, 0.45, 0.50), 0.5 + 0.5 * n.y);
                 vec3 h = normalize(l + v);
                 float spec = pow(max(dot(n, h), 0.0), 8.0 + 56.0 * gloss) * gloss * 0.5;
                 vec3 sunLight = vec3(1.0, 0.97, 0.92);
-                colour = albedo * (ambient + diff * sunLight) + spec * diff * sunLight;
+                colour = albedo * (ambient + diffSkin * sunLight) + spec * diff * sunLight;
             }
             // A presentation fill (CharacterRenderer.Fill, 0 in play): ambient light, stronger towards the silhouette as a back light rims it.
             if (view.fogDistance > 0.0) colour += albedo * pc.fill.rgb * (1.0 + 2.0 * pow(1.0 - max(dot(n, v), 0.0), 3.0));
