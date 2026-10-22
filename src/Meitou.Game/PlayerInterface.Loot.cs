@@ -59,7 +59,7 @@ sealed partial class PlayerInterface
             (closedLoot, shownLoot) = (open, CharacterId.None);
             return;
         }
-        if (shownLoot != open && open != closedLoot)
+        if (shownLoot != open && (open.IsNone || open != closedLoot))
         {
             if (!shownLoot.IsNone) faithfulScreens.Close("loot");
             shownLoot = open;
