@@ -55,6 +55,8 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     public ZoneCoordinate Zone { get; init; }
     /// <summary>Its run-time name (<see cref="BuildingKey"/>): what fixtures, doors and the renderer's placements know it by.</summary>
     public string Key => BuildingKey.Of(Zone, InstanceId);
+    /// <summary>The level placement it was resolved from (full rotation, record, state): what its indoor volume and lights are built from.</summary>
+    public ResolvedBuilding? Resolved { get; init; }
     /// <summary>
     /// Whether residents can be housed in it (docs/game/factions-squads-towns.md "Town residents"): a BUILDING with <c>interior</c> parts that does not
     /// <c>links together</c> (a wall), or an <c>is wall gate</c> gate.
@@ -196,7 +198,7 @@ public static class TownBuildings
             string? owner = state?.GetString("owner faction ID") is { Length: > 0 } o ? o : null;
             list.Add(new TownBuilding(b.InstanceId, record.StringId, record.Name, resolved.Position, YawOf(b.Rotation), shop, bar, spots)
             {
-                OwnerFactionId = owner, Fixtures = fixtures ?? [], Zone = b.Zone,
+                OwnerFactionId = owner, Fixtures = fixtures ?? [], Zone = b.Zone, Resolved = resolved,
                 CanHouse = record.GetBool("is wall gate") || record.GetReferences("interior").Count > 0 && !record.GetBool("links together"),
                 IsGate = record.GetBool("is wall gate"),
                 Destroyed = resolved.Destroyed,

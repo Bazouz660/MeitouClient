@@ -6,12 +6,31 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
 
 ## Sight
 
-Range500 indoors or1500*race-mult outdoors, daylight lerp0.5..1. Weather reduces by strength/
-protection: dust0.4, other affected weather0.75; inside/upper-floor/slot60 branches differ.
-Cone=(cos(angle)-0.2)/0.8, zero past78.46deg. Crawling/ground posture*0.5; sneaking/posture
-adds0.75/0.5 and lerp(stealth,1,0.6). Stealth scales skill*carry0.75*crawl2*load/equipment/race/
-injury, clamps0..1. Light contrast clamp(target-light-looker-light+1,0,2), ambient clamp(mean,0,1),
-light floor0.2 (no home town0.4). Visibility=light*contrast*range*cone; require>0.01.
+- **Range** (`FUN_140851bc0`, **Verified** literals): 500 inside a building, else 1500 x race `vision range mult`; x
+  lerp(daylight, 0.5, 1); weather (outdoors only): dust x0.4, other affecting weather x0.75, less with protection.
+- **Cone**: v = (cos a - 0.2) / 0.8, zero past 78.46 deg. Crawling/ground posture x0.5; sneaking x0.75 (v >= 0.5) or x0.5,
+  then x lerp(stealth, 1, 0.6). Stealth scales skill x carry 0.75 x crawl 2 x load/equipment/race/injury, clamped 0..1.
+- **Seen** (`FUN_140852f70`, **Verified** literals): d <= lerp(ambient, F, 1) x contrast x R x v, R x2 when the looker is on
+  top (below); contrast = clamp(target light - looker light + 1, 0, 2), ambient = clamp(mean of both, 0, 1); F = 0.2 when the
+  looker is inside a building (character vfunc +0x78, the building it is in; **Observed**), else 0.4. v must exceed 0.01.
+- **Place** (**Observed**, `FUN_140857b10`, Character slots 59/60): each character has a location (slot 59: a carried one its
+  carrier's, a caged or bedded one its building's, else its own handle `+0x80`, whose writer is not traced; type 0xb is
+  outdoors). Looker and target must share it unless either is **on top**: slot 60, in a building and `+0xd5` set, from an
+  upward physics query (mask `0x8079e00`, in the character update) finding nothing over it, i.e. a roof or roofless part.
+  The location compare (vfunc +0x10) is read as "same building". A physics ray (`FUN_1408533a0`, start 18 above the looker,
+  blocked by anything more than 2 short of the target) runs in some branches.
+- **Light level** (`+0xd8`, `FUN_140a0af10`, `FUN_140a08da0`, **Verified** literals): set each update to the daylight factor;
+  when requested by a sight test (`+0xdc`) and the character is the player's or daylight < 0.75, it is resampled: 1 above
+  daylight 0.5, else 2 x daylight + per light within 500 of the zone search: 1.5 x power scale x (1 - d^2 / r^2) (x the spot
+  cone (cos - cos(outer/2)) / (cos(inner/2) - cos(outer/2)), clamped) while d <= r; a light counts only when its indoor flag
+  equals the character's and, both inside, its floor (custom parameter w) equals the character's (slot 0x60). Building
+  lights and characters' carried lights both count.
+
+Meitou (`SightMap`): every sight test (aggro, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
+rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
+buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
+compared only within the character's building). No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
+evaluated every tick for everyone.
 
 Can-see first checks state/squad-shared sightings (within2R, no cone/light), then player rules,
 building compatibility, NPC test/stealth accumulation and conditional physics ray. Ray starts
@@ -45,7 +64,7 @@ Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-s
 a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime witnesses keep the
 same meters on a sneaking culprit in `CrimeSystem` (any faction, not just hostile lookers). A sneaking player
 character gets the pointers (from 0.35 of their length to the tip, with a head) and the original's stealth icon left of its name in the tag
-colours: seen if any watcher detects, almost seen if any notices, else hidden. No light model, so no sun icon.
+colours: seen if any watcher detects, almost seen if any notices, else hidden. The light-level (sun) icon is not drawn.
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).
 
@@ -93,7 +112,8 @@ not be equated with the attack planner or discarded immediately after a lost sig
 - Slot 14 `+0xb4`, `+0x2f8` = 1, `FUN_140436610`, `FUN_140856bc0`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
 - Whether the run-away ratios are read at all; the leash.
-- The building rules of can-see and can-hear; the alertness goal float and the +0x3f0 (green pointer) test of spotting.
+- The writer of a character's location handle `+0x80`; when can-see casts its physics ray; the building rules of can-hear;
+  the alertness goal float and the +0x3f0 (green pointer) test of spotting.
 
 ## Evidence index
 

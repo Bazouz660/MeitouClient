@@ -81,12 +81,19 @@ public sealed class FixtureRegistry
 
     // ------------------------------------------------------------------ registration
 
-    /// <summary>Registers the fixtures of a town's buildings (<see cref="TownSite.Buildings"/>) once, then binds the held characters whose <see cref="CharacterCold.InWhat"/> names one.</summary>
+    /// <summary>
+    /// Registers the fixtures of a town's buildings (<see cref="TownSite.Buildings"/>) once, then binds the held characters whose <see cref="CharacterCold.InWhat"/> names one. Their rooms and
+    /// lamps go to <see cref="World.Sight"/> with them.
+    /// </summary>
     public void RegisterSite(World world, PopulationData data, int site)
     {
         if (site < 0 || site >= data.Sites.Count || !sites.Add(site)) return;
         int townFaction = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
-        foreach (var b in data.Sites[site].Buildings) RegisterBuilding(world, data, site, b, townFaction);
+        foreach (var b in data.Sites[site].Buildings)
+        {
+            RegisterBuilding(world, data, site, b, townFaction);
+            if (data.Sight is { } sight) world.Sight.Add(sight, b);
+        }
         Bind(world);
     }
 

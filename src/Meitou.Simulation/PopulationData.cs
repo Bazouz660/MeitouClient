@@ -100,6 +100,8 @@ public sealed class PopulationData
     public BiomeMap? Biomes { get; init; }
     /// <summary>The world's mineable rocks (ore mines' yield); null: none known, so ore mines yield nothing.</summary>
     public Meitou.Data.Gameplay.Construction.IResourceNodes? ResourceNodes { get; set; }
+    /// <summary>The town buildings' rooms and lamps for the sight tests (<see cref="SightMap"/>); null: everyone outdoors and unlit.</summary>
+    public ISightSource? Sight { get; set; }
     /// <summary>The road network squads travel by, off screen here and on screen through the walkability's long routes (null: none, they go straight).</summary>
     public RoadNetwork? Roads { get; init; }
     /// <summary>The new-game options that change the body mechanics (hunger time, chance of death...).</summary>

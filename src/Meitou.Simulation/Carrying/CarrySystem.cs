@@ -483,7 +483,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         bool seen = false;
-        if (taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(table, i, t))
+        if (taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t))
         {
             seen = true;
             if (penalise && Relations is { } relations) PlayerRelations.Event(world, relations, victim.Faction, RelationEventKind.Stealing);
@@ -673,11 +673,11 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// Whether a member of the victim's faction sees the looter: awake, not carried, and the looter within its sight by the original's daylight test (<see cref="AggroSystem.Visibility"/>,
-    /// range <see cref="CarrySettings.Sight"/> x its race's <c>vision range mult</c>, the view cone). The original's witness rules are richer (docs/game/carry-loot.md "Witnesses"); this is the
+    /// Whether a member of the victim's faction sees the looter: awake, not carried, and the looter within its sight (<see cref="SightMap.Sees"/>, outdoor range
+    /// <see cref="CarrySettings.Sight"/> x its race's <c>vision range mult</c>). The original's witness rules are richer (docs/game/carry-loot.md "Witnesses"); this is the
     /// part the engine has.
     /// </summary>
-    bool Witnessed(CharacterTable table, int looter, int victim)
+    bool Witnessed(World world, CharacterTable table, int looter, int victim)
     {
         var next = table.Next;
         int faction = table.Cold(victim)!.Faction;
@@ -686,7 +686,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         {
             if (w == looter || w == victim || !next[w].Alive) continue;
             if (table.Cold(w) is not { Medical.Incapacitated: false } c || c.Faction != faction || !c.CarriedBy.IsNone) continue;
-            if (AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, AggroSystem.RangeOf(c, Settings.Sight)) > 0) return true;
+            if (world.Sight.Sees(w, looter, next[w].Position, next[w].Yaw, at, AggroSystem.RangeOf(c, Settings.Sight)) > 0) return true;
         }
         return false;
     }

@@ -54,6 +54,9 @@ public sealed record WorldSettings
     public int MinPartitionSize { get; init; } = 16;
     /// <summary>The game hours at tick 0 (day x 24 + hour; the default is day 1 at 13:00, the host's new game): <see cref="World.GameHours"/> starts there.</summary>
     public double StartHours { get; init; } = 37;
+    /// <summary>The CONSTANTS <c>sunrise</c> and <c>sunset</c> (game hours) the daylight factor ramps at (<see cref="SightMap.Daylight"/>).</summary>
+    public float Sunrise { get; init; } = 5;
+    public float Sunset { get; init; } = 23;
 }
 
 /// <summary>
@@ -130,6 +133,8 @@ public sealed partial class World : IDisposable
     public PlayerState Player { get; } = new();
     /// <summary>Doors, lockable containers, cages and beds of the registered towns, with their occupants (docs/simulation.md "Cages, beds and locks").</summary>
     public Locks.FixtureRegistry Fixtures { get; } = new();
+    /// <summary>The characters' places and light levels for the sight tests (docs/game/perception.md "Sight"), worked out each tick.</summary>
+    public SightMap Sight { get; } = new();
     /// <summary>The unique (story) characters made, dead or captured (docs/game/factions-squads-towns.md "Unique characters").</summary>
     public UniqueCharacters Uniques { get; } = new();
     /// <summary>The player-built buildings and construction sites, in creation order (docs/simulation.md "Buildings").</summary>
@@ -198,6 +203,7 @@ public sealed partial class World : IDisposable
         // 2. Schedule (serial): the grid of the last tick's positions, then the systems.
         table.Phase = TablePhase.Schedule;
         Grid.Build(table.Previous);
+        Sight.Update(this);
         MakePartitions();
         foreach (var s in systems) s.Schedule(this);
 

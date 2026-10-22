@@ -430,9 +430,9 @@ Carry/combat report deeds; serial sweep observes current positions. Bounty expir
 `0.04 hours/cat`, permanent at >=10000. Original categories, witness rules, imprisonment and
 remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while imprisoned. The police's response:
 [Arrest and jail](#arrest-and-jail).
-Witness sight: the view cone at full range; a sneaking culprit is seen only once the witness's spot meter is full
-([perception](game/perception.md#spotting-a-sneaker); meters kept by `CrimeSystem`, not saved). Engine gap: no indoor/outdoor
-or line-of-sight test, so a witness in its cone sees through walls.
+Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
+sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
+meters kept by `CrimeSystem`, not saved).
 
 ## Cages, beds and locks
 

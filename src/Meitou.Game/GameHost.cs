@@ -104,9 +104,14 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         LoadingStep("people");
         var (heights, (walkability, systems, constants)) = AwaitLoading(simulation);
         LoadingStep("world");
+        var clock = GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay);
         session = new WorldSession(scene.Focus, (scene.X0, scene.Z0, scene.X1, scene.Z1), gpu.Terrain.HeightAt, o.Hour, config.TickRate,
-            clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
-            simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
+            clock: clock,
+            simulation: worldSettings = new Meitou.Simulation.WorldSettings
+            {
+                Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
+                Sunrise = (float)clock.Sunrise, Sunset = (float)clock.Sunset,
+            },
             systems: systems, walkability: walkability);
         BootPlayer(display, interactive);
     }
@@ -154,6 +159,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
             var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root), biomes: biomes, buildings: buildings, roads: levels?.Roads());
+            if (levels is not null) data.Sight = new BuildingSight(install, gameDb, levels, scene.Objects?.Layouts ?? new Meitou.Data.World.BuildingLayouts(gameDb, levels.Interiors));
             if (nav is not null) nav.Walkability.Roads = data.Roads;   // one network for both: on-screen long routes take the roads as the off-screen squads do
             // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
             if (levels is not null)

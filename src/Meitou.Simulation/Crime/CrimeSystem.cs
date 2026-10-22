@@ -268,10 +268,10 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             float range = AggroSystem.RangeOf(wc, Settings.Sight);
             if (sneaking)
             {
-                float v = AggroSystem.SneakVisibility(next[w].Position, next[w].Yaw, at, range, stealth);
+                float v = world.Sight.Sees(w, culprit, next[w].Position, next[w].Yaw, at, range, stealth);
                 if (v <= 0 || !Spot(culpritId, table.IdOf(w), v, stealth, seconds)) continue;
             }
-            else if (AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, range) <= 0) continue;
+            else if (world.Sight.Sees(w, culprit, next[w].Position, next[w].Yaw, at, range) <= 0) continue;
             if (body is not null && !Friendly(wf, c.Faction) && Friendly(wf, body.Faction))
                 SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer);
             if (c.Pending is not { } p) continue;

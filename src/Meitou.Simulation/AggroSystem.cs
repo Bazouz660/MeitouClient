@@ -30,7 +30,7 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// <list type="bullet">
 /// <item><b>Look</b> (<c>Act</c>, parallel, own slot, reading the last tick's positions through the <see cref="SpatialGrid"/>): an awake NPC with a fighter, not fighting,
 /// not fleeing, not treating or resting, whose turn it is (one in <see cref="AggroSettings.ScanEveryTicks"/>, by slot) finds the nearest living, awake character with a body
-/// that it sees (the original's daylight test: within its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
+/// that it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
 /// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that neither faction coexists with; ties go to the lower slot. It emits one
 /// effect at that target.</item>
 /// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
@@ -231,6 +231,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public HashSet<(int Squad, int Slot)>? SquadFights;
         public Vector3 Eye;
         public float Yaw, Range;
+        /// <summary>The looker's outdoor sight (race multiplier applied) for the places and lights (<see cref="SightMap.Sees"/>); <see cref="Range"/> is the farthest it can see anyone.</summary>
+        public float Outdoor;
+        public SightMap Sight;
         public ulong Seed, Key, Tick;
         /// <summary>The looker's AI stance (<see cref="Ai.AiStance.Aggressive"/> for a character the AI does not run) and, for the territorial one, its home.</summary>
         public Ai.AiStance Stance;
@@ -265,12 +268,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
             if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet) continue;
-            float range = RangeOf(cold, Settings.SightRange);
-            if (!(range > 0)) continue;
+            float outdoor = RangeOf(cold, Settings.SightRange);
+            if (!(outdoor > 0)) continue;
+            float range = world.Sight.MaxRange(i, outdoor);
             var scan = new Scan
             {
                 Table = table, Relations = Relations, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
-                Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Best = -1, BestD2 = float.MaxValue,
+                Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
                 Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
@@ -353,7 +357,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool seen;
         if (sneaking)
         {
-            float v = SneakVisibility(s.Eye, s.Yaw, other.Position, s.Range, stealth);
+            float v = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth);
             bool full = SpotOf(s.Spots, slot, other.Generation) > 1;
             if (v > 0) s.Sightings.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
             if (d2 <= s.Range * s.Range)
@@ -361,7 +365,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!better) return;
             seen = full && v > 0;
         }
-        else seen = Visibility(s.Eye, s.Yaw, other.Position, s.Range) > 0;
+        else seen = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0;
         if (!seen)
         {
             float speed = new Vector2(other.Velocity.X, other.Velocity.Z).Length();
