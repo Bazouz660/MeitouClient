@@ -100,10 +100,12 @@ sealed partial class GameHost
         bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") == "1";
         bool metalWater = Environment.GetEnvironmentVariable("MEITOU_METAL_WATER") == "1";
         bool metalShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_SHADOWS") == "1";
+        bool metalTerrainTextures = Environment.GetEnvironmentVariable("MEITOU_METAL_TERRAIN_TEXTURES") == "1";
         if (!metalFoliage) Console.WriteLine("metal     foliage disabled (safe mode; MEITOU_METAL_FOLIAGE=1 to test)");
         if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (safe mode; F10 or MEITOU_METAL_CLOUD_SHADOWS=1)");
         if (!metalWater) Console.WriteLine("metal     water disabled (safe mode; MEITOU_METAL_WATER=1 to test)");
         if (!metalShadows) Console.WriteLine("metal     shadows disabled (safe mode; F10 or MEITOU_METAL_SHADOWS=1)");
+        if (!metalTerrainTextures) Console.WriteLine("metal     terrain textures disabled (safe mode; MEITOU_METAL_TERRAIN_TEXTURES=1 to test)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -313,7 +315,7 @@ sealed partial class GameHost
         }
         TerrainTextures? terrainTextures = null;
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
-        if (!o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
+        if (metalTerrainTextures && !o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
         {
             terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
             terrain.SetTextures(terrainTextures);
