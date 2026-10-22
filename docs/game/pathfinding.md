@@ -67,7 +67,7 @@ mode3 follows group's slowest. The HUD sets them as character orders 2/1/0/0x10 
 uses the squad members walking in mode3. FCS force-speed3 means NO_SPEED_CHANGE and remaps to4, not runtime
 mode3. FCS `MoveSpeed` (editor enum, **Verified**): WALK 0, JOG 1, RUN 2, GROUPED 3, NO_SPEED_CHANGE 4. Follow/avoidance/formation use character footprint and previous neighbour state.
 Original formation details and off-screen arrival remain partly unknown. Whether living characters block each other beyond the
-separation steering is **Unknown** (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
+separation steering is **Unknown**; sitting characters are never pushed (**Observed** in play) (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
 
 ## Own builder
 

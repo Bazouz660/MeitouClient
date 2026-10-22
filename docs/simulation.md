@@ -275,7 +275,8 @@ hold translation while facing changes. Original speeds/encumbrance and research 
 Heights use the character's (or clicked) Y to pick stacked floors; long paths have a provisional tail.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
 character takes half the overlap with each separation neighbour's predicted position (last position + last velocity × dt), so a walker
-shoves a stander aside; one in a bed or cage does not give, lying and carried bodies are not in the way, a character closing on its spot
+shoves a stander aside; one in a bed or cage does not give; a sitter (resting or on a used seat, no path) is
+never moved, by contact or separation (**Observed**: the original pushes no sitter), and is not solid (walkers steer past), lying and carried bodies are not in the way, a character closing on its spot
 is not stopped, and an unwalkable result falls back to its own step.
 
 ## Navmesh

@@ -17,7 +17,7 @@ namespace Meitou.Simulation;
 /// proportionality to a speed is an engine choice (<see cref="SeparationStrength"/>).</item>
 /// <item>Body contact (engine choice; whether the original's characters collide is Unknown): two standing bodies (<see cref="BodyShare"/> of their footprints) do not stay
 /// overlapped. Each takes half of the overlap between its stepped position and where the other's last velocity takes it, so a walker shoves a stander aside; an imprisoned
-/// one does not give.</item>
+/// or bedded one does not give. A sitter is never moved, by contact or separation (the original pushes no sitter, Observed), and is not solid to others.</item>
 /// <item>Paths: a character that wants one is flagged in Think; the Schedule step of the next tick asks the <see cref="PathService"/>;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
@@ -424,10 +424,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     s.Sum += (len > 1e-4f ? d / len : (s.Self < other ? Vector2.UnitX : -Vector2.UnitX)) * (100 * (1 - len / SeparationRadius));
                 });
 
-            // Closing on its spot it is not held off by those standing round it (they are pushed aside as it arrives).
-            if (closing) push.Sum = Vector2.Zero;
+            // Closing on its spot it is not held off by those standing round it (they are pushed aside as it arrives); a sitter is not moved at all.
+            bool seated = Seated(n, cold);
+            if (closing || seated) push.Sum = Vector2.Zero;
             var step = (dir * speed + push.Sum * SeparationStrength) * dt;
-            var shove = closing ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
+            var shove = closing || seated ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
             step += shove;
             float x = p.Position.X + step.X, z = p.Position.Z + step.Y, y = 0;
             bool stands = false;
@@ -495,8 +496,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
 
     /// <summary>
     /// How far a character stepped to <paramref name="at"/> is put out of the standing bodies among its separation neighbours (partition-safe: the last tick's state of the
-    /// others): half of each overlap with where the other's velocity takes it this tick, all of it against one held in a bed or cage. Lying and carried bodies are not in the
-    /// way, and a carried or bedded one is not moved.
+    /// others): half of each overlap with where the other's velocity takes it this tick, all of it against one held in a bed or cage. Lying, sitting and carried bodies are not in the
+    /// way (a walker only steers past a sitter, so a ring of sitters cannot wall it in), and a carried or bedded one is not moved.
     /// </summary>
     static Vector2 Contact(World world, int self, CharacterCold cold, ref SeparationState near, Vector2 at)
     {
@@ -510,6 +511,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             int other = near.Near[k];
             if (table.Cold(other) is not { } them || them.Medical is { Incapacitated: true }) continue;
             ref readonly var o = ref all[other];
+            if (Seated(o, them)) continue;
             var d = at - new Vector2(o.Position.X + o.Velocity.X * dt, o.Position.Z + o.Velocity.Z * dt);
             float len = d.Length(), reach = mine + BodyRadius(them);
             if (len >= reach) continue;
@@ -518,6 +520,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
         return shove;
     }
+
+    /// <summary>Sitting (resting, on a chair or the floor, or on a seat it uses) with no path to follow: the original does not push sitters (Observed in play).</summary>
+    static bool Seated(in CharacterHot h, CharacterCold c) => ((MoveFlags)h.Flags & MoveFlags.HasPath) == 0
+        && (h.Task == (byte)CharacterTask.Rest || h.Task == (byte)CharacterTask.Operate && c.Implicit == Meitou.Data.Gameplay.Ai.TaskType.SIT_AROUND);
 
     /// <summary>
     /// The heading turned from <paramref name="yaw"/> towards <paramref name="wanted"/> by at most <see cref="TurnRate"/> x <paramref name="dt"/>,
