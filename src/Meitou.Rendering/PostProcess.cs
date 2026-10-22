@@ -1371,10 +1371,11 @@ public sealed unsafe partial class PostProcess : IDisposable
         adaptClock.Restart();
         // Seed both ping-pong targets before smoothing; the next frame reads the other one.
         float blend = InstantAdaptation || !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
+        var previous = adaptB;   // the target written last frame; the swap below makes it adaptA
         (adaptA, adaptB) = (adaptB, adaptA);
         var ap = adaptPass;
         Bind(ap.P, ap.Luminance, lum);
-        Bind(ap.P, ap.Last, adaptA);
+        Bind(ap.P, ap.Last, previous);
         ap.P.Set(ap.Level, MathF.Log2(LuminanceSize));
         ap.P.Set(ap.Blend, blend);
         var band = AutoExposure!.Value;

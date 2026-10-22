@@ -151,8 +151,9 @@ sealed class PostComposite : IDisposable
         cmd.GenerateMips(luminanceTarget!);
         cmd.Order();
 
-        // The adaptation: this frame's mean against the last, blended at the game's rate (instant for a still) inside the band.
-        var previous = adaptA;
+        // The adaptation: this frame's mean against the last output, blended at the game's rate (instant for a still)
+        // inside the band. adaptB is the target written last frame; the swap below makes it adaptA.
+        var previous = adaptB;
         (adaptA, adaptB) = (adaptB, adaptA);
         long now = Stopwatch.GetTimestamp();
         float dt = adaptClock == 0 ? 0 : (float)Stopwatch.GetElapsedTime(adaptClock, now).TotalSeconds;
