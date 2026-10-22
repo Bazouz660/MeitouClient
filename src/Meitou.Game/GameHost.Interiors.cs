@@ -48,6 +48,7 @@ sealed partial class GameHost
             if (c.IsPlayer && objects.InteriorAt(DrawnPosition(c), InsideMargin) is { } building && interiorView.TryAdd(building.PlacementId, viewedFloor))
                 viewed.Add(building);
         objects.InteriorView = interiorView;
+        session.Camera.Floors ??= CameraFloor;
         foreach (var c in characters)
         {
             var at = DrawnPosition(c);
@@ -76,6 +77,18 @@ sealed partial class GameHost
         int floor = objects.InteriorAt(at, InsideMargin) is { } building ? building.FloorAt(at) : 0;
         if (floorFollow != id || floor != followedFloor) ViewedFloor = floor;
         (floorFollow, followedFloor) = (id, floor);
+    }
+
+    /// <summary>
+    /// The highest floor up to the viewed one of the buildings in the interior view at (x, z), or null: the strategy camera's pivot rides on it, so a followed
+    /// character's floor stays the view's centre when panning lets go of it. Engine limit: other buildings are not ground to the camera (the game's rays hit them too).
+    /// </summary>
+    float? CameraFloor(float x, float z)
+    {
+        float? best = null;
+        foreach (var b in viewed)
+            if (interiorView.TryGetValue(b.PlacementId, out int floor) && b.FloorHeightAt(x, z, floor) is { } y && (best is null || y > best)) best = y;
+        return best;
     }
 
     /// <summary>How far (units) outside the indoor hull a character still counts as inside (engine choice: the feet stand on the floor at the hull's bottom).</summary>
