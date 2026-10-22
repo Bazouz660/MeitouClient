@@ -162,9 +162,9 @@ static class CharacterShaders
 
     /// <summary>
     /// How many times more curved the skin is taken to be than it is (a look, not physics): at true size the profile's millimetres barely touch a face's
-    /// 5 to 8 cm radius (the terminator's red at N.L 0 goes from 0.016 to 0.019); 20 puts a face near r = 3 mm, red about 0.14 there, a tail to N.L -0.2.
+    /// 5 to 8 cm radius (the terminator's red at N.L 0 goes from 0.016 to 0.019); 30 puts a face near r = 2 mm, red about 0.16 there, a tail past N.L -0.2.
     /// </summary>
-    public const float SkinScatterScale = 20;
+    public const float SkinScatterScale = 30;
 
     /// <summary>
     /// The skin's curvature (1 / radius in world units) to the table's axis (<see cref="SkinScattering.MaxInverseRadiusMm"/> at 1): 1 unit = 100 mm
@@ -211,7 +211,9 @@ static class CharacterShaders
             float v = sqrt(clamp(curvature * {{F(SkinCurvatureScale)}}, 0.0, 1.0)) * {{F((SkinScattering.Height - 1f) / SkinScattering.Height)}} + {{F(0.5f / SkinScattering.Height)}};
             uint t = pc.skinLut;
             vec3 s = vec3(textureLod(textures2D[t], vec2(u.r, v), 0.0).r, textureLod(textures2D[t], vec2(u.g, v), 0.0).g, textureLod(textures2D[t], vec2(u.b, v), 0.0).b);
-            return mix(vec3(lambert), s, share);
+            // Never below the plain term: the table also takes red from the lit side (energy it moves into the shadow), which turned sunlit skin cyan-grey;
+            // only the warm band past the terminator is wanted.
+            return mix(vec3(lambert), max(s, vec3(lambert)), share);
         }
 
         void main()

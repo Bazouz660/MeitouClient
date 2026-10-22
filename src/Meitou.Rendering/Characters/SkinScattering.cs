@@ -12,8 +12,8 @@ namespace Meitou.Rendering.Characters;
 sealed class SkinScattering : IDisposable
 {
     public const int Width = 64, Height = 64;
-    /// <summary>The table's last row: a radius of 2 mm; anything curved more tightly reads that row (tighter rows tint the lit side cyan).</summary>
-    public const float MaxInverseRadiusMm = 0.5f;
+    /// <summary>The table's last row: a radius of 1 mm; anything curved more tightly reads that row.</summary>
+    public const float MaxInverseRadiusMm = 1f;
 
     // The profile: variance (mm²) and the weights of red, green and blue (GPU Gems 3, ch. 14, table 14-1).
     static readonly (float Variance, float R, float G, float B)[] Profile =
