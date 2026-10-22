@@ -95,6 +95,11 @@ sealed partial class GameHost
         bool noTaa = false;
         bool spatial = false;
 
+        // Safe Metal defaults while the foliage mesh path and the cloud-shadow path are being fixed: both are opt-in.
+        bool metalFoliage = Environment.GetEnvironmentVariable("MEITOU_METAL_FOLIAGE") == "1";
+        bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") == "1";
+        if (!metalFoliage) Console.WriteLine("metal     foliage disabled (safe mode; MEITOU_METAL_FOLIAGE=1 to test)");
+        if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (safe mode; F10 or MEITOU_METAL_CLOUD_SHADOWS=1)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -105,7 +110,7 @@ sealed partial class GameHost
             PlanetshineStrength = o.PlanetshineStrength,
             MeitouStars = o.MeitouStars,
             LitClouds = o.MeitouClouds,
-            CloudShadows = o.CloudShadows,
+            CloudShadows = metalCloudShadows,
         };
         if (scene.Database is { } skyDb) sky.LoadWorld(install, skyDb);
         // The weather scheduler, as WorldFrame.CreateGpu makes it: its state feeds the sky's fog and colour, and the surface shaders' wetness and dust.
@@ -341,7 +346,7 @@ sealed partial class GameHost
         // The world's foliage (the catalog's meshes, the grass pages and the TERRAIN-mode rocks), as WorldFrame.CreateGpu makes it. The
         // impostor bakes and the GPU culls stay Vulkan-only for now: the CPU cull draws the meshes and the CPU grass path the blades.
         FoliageRenderer? foliage = null;
-        if (!o.NoFoliage && scene.Database is { } foliageDb)
+        if (!o.NoFoliage && metalFoliage && scene.Database is { } foliageDb)
         {
             foliage = new FoliageRenderer(ctx, install, foliageDb,
                 scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install), assets)
