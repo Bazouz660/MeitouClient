@@ -3,7 +3,7 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Base HEAD: `4791a496 metal: share WorldFrame construction and SceneHost on IGpuContext`  
-Workspace: content/testability Milestone A implemented and manually accepted; Milestones B-E remain.  
+Workspace: content/testability Milestones A-C implemented; A is manually accepted and B's blood path is validated (debris/luckyren and C stills await manual checks).
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
@@ -71,8 +71,29 @@ The Metal host now wires the content test paths tracked in
 - `WorldNews()` drains relation, knockout, town, wild and aggro messages to the HUD/log.
 
 Accepted by the user in a normal Metal `--new-game Wanderer` run (352 s, about 35 fps): startup,
-HUD, discovery messages and camera follow. The remaining content plan is Milestones B-E: blood
-and debris, deterministic stills, settings no-ops and renderer-only parity.
+HUD, discovery messages and camera follow.
+
+## Content/testability Milestones B-C (2026-10-22)
+
+- `SetUpBlood` now takes `IGpuContext`; Metal calls it after the shared world renderers exist and
+  before a loaded save's decals are read. `UpdateBlood` runs before every `WorldFrame.Draw`, so
+  blood marks, decal ageing, luckyren Mode and debris advance in normal play and stills.
+  `WorldFrame.Gpu.Dispose` already owns `Decals` and `Debris`; the decal store is managed data.
+- `PrepareStill(IGpuContext)` is shared by Vulkan and Metal: it selects the showcase leader, issues
+  `--move-to`, runs `--ticks` of control and simulation time (and duel/title per-tick work), puts
+  the camera on the walker and settles the streamers. The Metal still loop freezes the simulation
+  after that and captures the same panel set as Vulkan, including `--ui-showcase` output names.
+- `--ui-panel inventory`, `stats`, editor panels, trade, talk and the other shared layouts use the
+  same `ShowUiPanel` calls on Metal. Unsupported `trade`/`talk` panels are skipped when the shared
+  showcase cannot open them.
+- The first Metal run crashed compiling debris: the full atmosphere lighting plus its diffuse map
+  is 17 direct fragment samplers (Metal allows 16). Metal now uses the debris renderer's simple
+  sun/ambient fragment; Vulkan keeps the full `kenshiLight`/`atmoApply` version. This is a
+  documented Metal-only lighting fallback until the diffuse map moves into a bindless/atlas path.
+
+Build after B-C: Release 0 warnings / 0 errors; quick suite 476 passed / 2 skipped. Manual Metal
+validation: blood decals were confirmed by the user on 2026-10-22; debris/luckyren and the
+deterministic still commands remain to check.
 
 ## Shared frame draw
 
@@ -140,16 +161,15 @@ Verified clean:
 
 ## Next work
 
-1. Content/testability Milestone B: blood decals, debris and luckyren Mode (`SetUpBlood` on `IGpuContext`,
-   `UpdateBlood`/`UpdateDebris` in the Metal loop).
-2. Milestone C: deterministic stills (`--ticks`, `--move-to`, `--ui-showcase`).
-3. Milestone D: Metal settings values and callbacks with no visible no-ops.
-4. Milestone E/parity: blood-independent effects and the remaining renderer gaps; keep Vulkan as the reference.
-5. Long full-feature Metal soak with the slot fence is clean (120 s serial, 120 s and 180 s reused-slot); the upload-fault class and the `SubmissionsIgnored`/hang class are fixed.
-6. Far impostors are re-enabled by default; verify them interactively. `MEITOU_METAL_NO_IMPOSTORS=1` is the fallback.
-7. Re-run the runtime acceptance pass for the merged interaction layer (trade, dialogue, build, editor).
-8. Performance/shipping per `docs/metal-backend.md`.
-9. GI decision: the Metal ray-tracing probe is in; decide whether to port `GiScene`/`GiProbes` or ship no-GI. The probe trace cost is low; test real scene build/refit and memory before committing.
+1. Manual Metal acceptance of Milestones B-C: damage and luckyren blood/debris, save/load decals,
+   `--ticks`/`--move-to` repeatability, and the `--ui-panel`/`--ui-showcase` pictures.
+2. Milestone D: Metal settings values and callbacks with no visible no-ops.
+3. Milestone E/parity: renderer-only effects and the remaining gaps; keep Vulkan as the reference.
+4. Long full-feature Metal soak with the slot fence is clean (120 s serial, 120 s and 180 s reused-slot); the upload-fault class and the `SubmissionsIgnored`/hang class are fixed.
+5. Far impostors are re-enabled by default; verify them interactively. `MEITOU_METAL_NO_IMPOSTORS=1` is the fallback.
+6. Re-run the runtime acceptance pass for the merged interaction layer (trade, dialogue, build, editor).
+7. Performance/shipping per `docs/metal-backend.md`.
+8. GI decision: the Metal ray-tracing probe is in; decide whether to port `GiScene`/`GiProbes` or ship no-GI. The probe trace cost is low; test real scene build/refit and memory before committing.
 
 ## Commands
 

@@ -503,6 +503,13 @@ and the finished-picture overlays. Metal's local scene/post loop is gone; its ho
 interface and the present. Vulkan still uses `PostProcess`'s reflection, GI, far-depth slice and low-resolution
 particles; Metal's chain reports one depth slice and no GI/reflection/low-res particles, so the shared draw skips them.
 
+**Combat feedback and deterministic stills (2026-10-22).** `SetUpBlood` takes `IGpuContext`; Metal checks the blood
+setting and makes the decal store and debris renderer before a loaded save's decals are read. `UpdateBlood` runs
+before each `WorldFrame.Draw`, applying luckyren Mode, draining `World.BloodMarks`, ageing decals and moving debris.
+The still preparation is shared (`PrepareStill`): `--ticks`, `--move-to` and the duel/title per-tick work run once
+before the frame loop, and Metal then freezes the simulation while `--ui-panel`/`--ui-showcase` warm up and capture.
+Vulkan keeps its own post/capture path. See [metal-content-testability-plan](metal-content-testability-plan.md).
+
 **Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
 headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
 game rather than moving the benchmark. The clean Release window remains ~30-32 fps at 0.50, while the macOS Vulkan
@@ -520,9 +527,9 @@ and the shared trade/dialogue/build/editor interaction layer are wired. The rema
    rocks, factions, tooltips, editor previews) now come from `ConfigurePlayerInterface`.
 2. **Full UI input.** The panel keys (I/C, M/T/Y, Esc, F7) and pointer hover/clicks/scroll work; the loop now also
    feeds the camera, selection, box select, move orders, F8/F11/F12, F10 settings and Alt+Enter. The highlight key
-   now labels ground items and lights the signs. Still missing: the pointer sprite and the free camera.
-3. **Metal `--ui-showcase`.** `--ui-panel <name>` opens one panel for a still; the Vulkan showcase's multi-panel
-   sequence still needs the same loop here.
+   labels ground items and lights the signs. Still missing: the pointer sprite and the cinema camera.
+3. **Still acceptance.** `--ui-panel <name>` and the full `--ui-showcase` panel set now go through the shared still
+   preparation and Metal's frozen warm-up loop; verify the pictures and the `--ticks`/`--move-to` state.
 4. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
    need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
@@ -537,14 +544,13 @@ Vulkan at default settings, the remaining scope is:
 1. **The rest of the real game loop (largest).** The first playable slice is in: camera bindings, edge/turn/zoom,
    left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
    the loop uses `WorldFrame.CreateGpu`, `SceneHost` and `WorldFrame.Draw` through `IWorldPostChain`; the host keeps
-   the title staging and interface. Also the free camera, fly-to, warm-up, resize/fullscreen, HDR/EDR and the
-   remaining present details.
+   the title staging and interface. Also warm-up, resize/fullscreen, HDR/EDR and the remaining present details.
    Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world rebuild, the loading
    screen, audio/UI sounds, the sky transitions, mesh/building/surface hits and floor stepping are wired.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu, title, New Game, save/load and the
    in-game menu render and act; the shared trade/dialogue/build/editor screens and their host callbacks are wired.
-   Still missing: the pointer sprite, full selection/orders input, a Metal `--ui-showcase` and a runtime pass over
-   the shared screens.
+   Still missing: the pointer sprite and a runtime pass over the shared screens (including the deterministic
+   `--ticks`/`--move-to` stills).
 3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
    `ReflectionPass`, refraction); the Meitou volumetric clouds/fog; post (`FogRate`, full TAA with character/grass
    motion, MetalFX reactive mask); and the character motion/stage/hover passes.
@@ -673,11 +679,11 @@ backend-neutral once `DebugOverlay` took `IGpuContext` (`UiPainter` had no `GpuC
 **What renders on Metal:** the faithful HUD at the Hub (information/medical, squad bar, clock, money, speed,
 orders, jobs), the inventory with item icons, the stats and overview/map windows, and the pause menu. Portraits
 are drawn into the character renderer's atlas and the item icons come from the install's files or the renderer.
-`--ui-panel inventory|stats|overview|menu` opens one in a still; `--ui-showcase` is still Vulkan-only.
-`RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal) makes the runtime images (portraits,
-icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
+`--ui-panel inventory|stats|overview|menu` opens one in a still; `--ui-showcase` now uses the same panel set and
+shared still preparation as Vulkan. `RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal)
+makes the runtime images (portraits, icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
 
-**What is not wired:** the pointer sprite and the free camera. The shared trade/dialogue/build/editor screens use the
+**What is not wired:** the pointer sprite and the cinema camera. The shared trade/dialogue/build/editor screens use the
 host callbacks `ConfigurePlayerInterface` supplies (build services, rocks, factions, tooltips, editor previews); the
 character editor opens on a new game. The settings panel, title, New Game, save/load and audio are wired; the panel
 keys and pointer hover/clicks/scroll work, and camera movement, selection and orders belong to the interactive loop.
@@ -791,11 +797,15 @@ default.
   viewport/scissor are restored and the pipeline filter reset. Sets the depth-stencil state for the clear.
 - A Metal `drawPrimitives…indirectBuffer` is one command; `DrawIndexedIndirect` loops, and the count variants issue
   every `maxCount` slot (the slots at/after the count must hold zero counts).
-- Metal screenshots are not byte-comparable run to run: the screenshot clock advances by the real frame time, so the
-  sun and clouds differ. Compare regions / means, or freeze the clock for a pixel comparison.
+- Metal screenshots are not byte-comparable run to run: cloud/water time still follows the real frame time, so the
+  picture differs even when `--ticks` freezes simulation state. Compare regions / means, or freeze that clock for a
+  pixel comparison.
 - Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
   refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
   reduced. A Metal Meitou water should put the maps in one array (or an atlas) rather than add slots.
+- The full atmosphere lighting (`kenshiLight`/`atmoApply`) plus a material's diffuse map needs 17 direct samplers in
+  a legacy fragment. Debris therefore uses its simple sun/ambient light path on Metal; Vulkan keeps the
+  atmosphere-lit and hazed version. Full debris haze parity needs a bindless or atlas path for the diffuse map.
 - UI shots: the Metal HUD is part of every screenshot. `--new-game --ui-panel inventory|stats|overview|menu`
   opens a panel; `MEITOU_METAL_OVERLAY=1` adds the frame-stats lines at the top-left. The Vulkan HUD/panel still
   renders (verified with `--ui-panel inventory` after the shared changes).

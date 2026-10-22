@@ -267,6 +267,8 @@ sealed partial class GameHost
             vramSample: guardEnabled ? () => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget) : null);
         worldGpu.PostChain = postChain;
         gpu = worldGpu;
+        // The combat aftermath's renderers and store exist before a loaded save's decals are read and before the first frame.
+        SetUpBlood(ctx);
         // Native Metal GI is experimental and opt-in: on this M1 Pro it could freeze the machine during a save load.
         // Keep the unfinished path out of normal launches; --no-gi still wins, and F10 can turn it off after it is on.
         bool metalGi = o.Gi && Environment.GetEnvironmentVariable("MEITOU_METAL_GI") is "1" or "true";
@@ -429,9 +431,6 @@ sealed partial class GameHost
                 () => SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
                 assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
-            // A still or a run can open one of the shared layouts by name for review.
-            if (g.UiPanel is { Length: > 0 } selectedPanel)
-                hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
             // The picks the interface asks the host for: the drawn character meshes, the buildings' floors and their closed shells.
             hud.MeshHit = (id, origin, direction) => characters?.RayHit(DrawKey(id), origin, direction);
             hud.Floor = (() => viewedFloor, StepFloor);
@@ -891,6 +890,52 @@ sealed partial class GameHost
             }
             if (streamer is { } flown) Console.WriteLine($"metal     fly-to settled: {flown.Describe()}");
         }
+        // The still's selection, --move-to walk and --ticks happen before the loop; the loop then only lets the picture warm up.
+        if (o.Screenshot is not null) PrepareStill(ctx);
+        bool still = o.Screenshot is not null;
+        string?[] stillPanels = hud is not null && still ? StillPanels() : new string?[] { null };
+        int stillPanel = 0, stillPanelFrames = 0;
+        // A run can still open one shared layout by name for manual review; the still loop owns its panels.
+        if (!still && hud is not null && g.UiPanel is { Length: > 0 } selectedPanel && selectedPanel is not ("trade" or "talk" or "edited"))
+            hud.ShowUiPanel(selectedPanel is "hud" or "hud-expanded" ? null : selectedPanel, selectedPanel == "hud-expanded");
+        bool BeginStillPanel(string? panelName)
+        {
+            if (panelName == "trade")
+            {
+                if (player is null || !ShowcaseTrade()) return false;
+                // The trade picture shows a stock item's tooltip: the pointer rests on the first item.
+                if (player.UiFrame.FirstOrDefault(c => c.Name.StartsWith("trade-item-", StringComparison.Ordinal) &&
+                        !c.Name.EndsWith("-background", StringComparison.Ordinal) && !c.Name.EndsWith("-icon", StringComparison.Ordinal)) is { } item)
+                    player.MouseMove(new Vector2(item.Bounds.X + item.Bounds.Width / 2, item.Bounds.Y + item.Bounds.Height / 2));
+                return true;
+            }
+            if (panelName == "talk") return player is not null && ShowcaseTalk();
+            if (panelName == "edited" && player is not null)
+            {
+                player.ShowcaseEdit();
+                session.AdvanceSimulation(session.Ticks.TickSeconds);
+            }
+            if (panelName?.StartsWith("editor", StringComparison.Ordinal) == true && hud is not null)
+            {
+                hud.ShowUiPanel(panelName);
+                EditorCamera();
+            }
+            return true;
+        }
+        void ApplyStillPanel(string? panelName)
+        {
+            if (player is null) return;
+            if (g.TitlePreview) player.ShowTitle();
+            else if (hud is not null && panelName is not ("trade" or "talk"))
+                hud.ShowUiPanel(panelName is "hud-expanded" or "edited" ? null : panelName, panelName == "hud-expanded");
+            if (hud is not null) ApplyTitleCamera();
+        }
+        void KeepStillPanel(string? panelName)
+        {
+            if (player is null) return;
+            if (hud is not null && panelName?.StartsWith("editor", StringComparison.Ordinal) == true) EditorCamera();
+            if (hud is not null) ApplyTitleCamera();
+        }
 
         var clock = Stopwatch.StartNew();
         double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;
@@ -956,79 +1001,105 @@ sealed partial class GameHost
                 fpsWindow = 0;
                 fpsFrames = 0;
             }
-            // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
-            session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
-                hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
-            // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
-            if (hud is not null)
+            bool ctrlHeld = false, altHeld = false, highlighting = false;
+            if (!still)
             {
-                DuelFrame(false);
-                if (!Covered) session.Advance(dt);
-                DuelHoldClock();
-                WorldNews();
+                // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
+                session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
+                    hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
+                // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
+                if (hud is not null)
+                {
+                    DuelFrame(false);
+                    if (!Covered) session.Advance(dt);
+                    DuelHoldClock();
+                    WorldNews();
+                }
+                else if (!Covered) session.Advance(dt);
+                if (hud is not null)
+                {
+                    HandleSaves();
+                    HandleNewGame();
+                    HandleMainMenu();
+                }
+                StepSceneLoad();
+                AdvanceSkyArrival(dt);
+                // The squad tour and character flights hold the camera while they fly; otherwise the rig owns the view.
+                if (!tourHolds) ApplyCamera(session.CameraAt());
+                if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
+                gpu.Ahead = tour.ArrivalEye(TourPosition);
+                if (!tourHolds && hud is not null)
+                {
+                    SandboxFollowCamera();
+                    FollowCamera();
+                    EditorCamera();
+                }
+                // The merged character editor is shared with Vulkan: a new game opens it once the squad is in the snapshot, and the world resumes when it closes.
+                OpenPendingEditor();
+                ResumeAfterCreation();
+                if (hud is not { EditorOpen: true }) ClearEditorStage();
+                if (!tourHolds && hud is not null) ApplyTitleCamera();
+                // A flight puts the focus where it lands, so the towns there populate during the flight; otherwise the
+                // followed character's pivot is already in the rig.
+                SendFocus(tour.Active && tour.Current is { } tourLanding && TourPosition(tourLanding) is { } tourAt ? tourAt
+                    : tourHolds ? camera.Target : null);
+                // The strategy camera's eye clearance for the followed character and the tour's arcs over hills.
+                if (skyArrival is null && hud is not null && !TitleVisible && (tour.Active || !session.Camera.IsFree && !tourHolds))
+                {
+                    var clearEye = camera.Eye;
+                    float shortfall = session.Camera.GroundAt(clearEye.X, clearEye.Z) +
+                        Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - clearEye.Y;
+                    if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
+                }
+                // The pointer's Ctrl/Alt modifiers and the Highlight key (Alt): labels on the ground items near the focus, signs and the hover outlines agree.
+                ctrlHeld = Ctrl();
+                altHeld = Alt();
+                highlighting = altHeld && !Covered && !TitleVisible && hud is { UiVisible: true } &&
+                    settings?.Visible != true && !session.Camera.IsFree;
+                if (hud is not null)
+                {
+                    hud.CtrlHeld = ctrlHeld;
+                    hud.AltHeld = altHeld;
+                    hud.HighlightFocus = highlighting ? camera.Target : null;
+                }
+                if (objects is not null) objects.HighlightSigns = highlighting;
+                if (!Covered && hud is not null && TitleVisible) titleBattle?.Advance(dt);
+                if (skyArrival is not null)
+                {
+                    ApplyCamera(session.Camera.Current);
+                    if (hud is not null) ApplyTitleCamera();
+                    ApplySkyArrival();
+                }
+                if (!Covered) UpdateAudio(dt);
+                UpdateNav();
+                UpdateNavOverlay();
+                // Diagnostic isolation for the far-travel freeze: skip the runtime building/ground-item/lamps diff.
+                if (Environment.GetEnvironmentVariable("MEITOU_METAL_NO_BUILDINGS") != "1") UpdateBuildings();
+                // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
+                // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
+                UpdateInteriorView();
             }
-            else if (!Covered) session.Advance(dt);
-            if (hud is not null)
+            else
             {
-                HandleSaves();
-                HandleNewGame();
-                HandleMainMenu();
+                // A still freezes the simulation after PrepareStill: only the panel and the warm-up frames change, never the tick.
+                if (hud is not null) { hud.Width = size.X; hud.Height = size.Y; }
+                bool panelReady = false;
+                while (stillPanel < stillPanels.Length)
+                {
+                    string? candidate = stillPanels[stillPanel];
+                    if (stillPanelFrames == 0 && !BeginStillPanel(candidate))
+                    {
+                        stillPanel++;
+                        continue;
+                    }
+                    panelReady = true;
+                    break;
+                }
+                if (!panelReady) break;
+                string? panelName = stillPanels[stillPanel];
+                if (stillPanelFrames == 0) ApplyStillPanel(panelName);
+                KeepStillPanel(panelName);
             }
-            StepSceneLoad();
-            AdvanceSkyArrival(dt);
-            // The squad tour and character flights hold the camera while they fly; otherwise the rig owns the view.
-            if (!tourHolds) ApplyCamera(session.CameraAt());
-            if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
-            gpu.Ahead = tour.ArrivalEye(TourPosition);
-            if (!tourHolds && hud is not null)
-            {
-                SandboxFollowCamera();
-                FollowCamera();
-                EditorCamera();
-            }
-            // The merged character editor is shared with Vulkan: a new game opens it once the squad is in the snapshot, and the world resumes when it closes.
-            OpenPendingEditor();
-            ResumeAfterCreation();
-            if (hud is not { EditorOpen: true }) ClearEditorStage();
-            if (!tourHolds && hud is not null) ApplyTitleCamera();
-            // A flight puts the focus where it lands, so the towns there populate during the flight; otherwise the
-            // followed character's pivot is already in the rig.
-            SendFocus(tour.Active && tour.Current is { } tourLanding && TourPosition(tourLanding) is { } tourAt ? tourAt
-                : tourHolds ? camera.Target : null);
-            // The strategy camera's eye clearance for the followed character and the tour's arcs over hills.
-            if (skyArrival is null && hud is not null && !TitleVisible && (tour.Active || !session.Camera.IsFree && !tourHolds))
-            {
-                var clearEye = camera.Eye;
-                float shortfall = session.Camera.GroundAt(clearEye.X, clearEye.Z) +
-                    Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - clearEye.Y;
-                if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
-            }
-            // The pointer's Ctrl/Alt modifiers and the Highlight key (Alt): labels on the ground items near the focus, signs and the hover outlines agree.
-            bool ctrlHeld = Ctrl(), altHeld = Alt();
-            bool highlighting = altHeld && !Covered && !TitleVisible && hud is { UiVisible: true } &&
-                settings?.Visible != true && !session.Camera.IsFree;
-            if (hud is not null)
-            {
-                hud.CtrlHeld = ctrlHeld;
-                hud.AltHeld = altHeld;
-                hud.HighlightFocus = highlighting ? camera.Target : null;
-            }
-            if (objects is not null) objects.HighlightSigns = highlighting;
-            if (!Covered && hud is not null && TitleVisible) titleBattle?.Advance(dt);
-            if (skyArrival is not null)
-            {
-                ApplyCamera(session.Camera.Current);
-                if (hud is not null) ApplyTitleCamera();
-                ApplySkyArrival();
-            }
-            if (!Covered) UpdateAudio(dt);
-            UpdateNav();
-            UpdateNavOverlay();
-            // Diagnostic isolation for the far-travel freeze: skip the runtime building/ground-item/lamps diff.
-            if (Environment.GetEnvironmentVariable("MEITOU_METAL_NO_BUILDINGS") != "1") UpdateBuildings();
-            // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
-            // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
-            UpdateInteriorView();
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
@@ -1103,6 +1174,7 @@ sealed partial class GameHost
             // effects, the particles and the post chain, then the overlays over the finished picture. The Metal chain fills the
             // seam's Vulkan-only gaps (no reflection, GI, low-resolution particles or fog-rate target).
             gpu.GameHours = session.Clock.HoursSinceStart;
+            UpdateBlood();
             var savedParticles = gpu.Particles;
             if (titleLook) { gpu.Weather = null; gpu.Particles = null; }   // the staged title sky and its own dust, not the world's weather
             try
@@ -1140,7 +1212,7 @@ sealed partial class GameHost
                     {
                         hud.SelectionRings = config.SelectionRings;
                         hud.Draw(overlay, size.X, size.Y);
-                        if (IsSandbox) DrawSandbox(overlay, size.X, size.Y);
+                        if (IsSandbox && !g.UiShowcase) DrawSandbox(overlay, size.X, size.Y);
                     }
                 }
                 bool wrote = false;
@@ -1227,13 +1299,22 @@ sealed partial class GameHost
                 screenshotNow = false;
             }
             // A panel's item icons are drawn after the frame that asks for them, and their textures stream in: let a UI still
-            // wait for them (up to a bound), while an ordinary world still keeps its 40 frames.
+            // wait for them (up to a bound), while an ordinary world still keeps its 40 frames. The simulation stays frozen.
             int pendingIcons = (characters?.PendingIcons ?? 0) + (hud?.PendingIconFiles ?? 0);
-            if (o.Screenshot is { } shot && frames >= 40 && (pendingIcons == 0 || frames >= 400))
+            bool pendingStillContent = pendingIcons > 0 || objects is { StagePropPending: true } || objects is { PendingBuildingIcons: > 0 };
+            if (still)
             {
-                if (foliage is not null) Console.WriteLine($"metal     foliage: {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
-                Capture(ctx, backbuffer, shot);
-                break;   // one picture, as the Vulkan flow's does
+                stillPanelFrames++;
+                if (stillPanelFrames >= 40 && (!pendingStillContent || stillPanelFrames >= 400))
+                {
+                    string? panelName = stillPanels[stillPanel];
+                    if (foliage is not null && stillPanel == stillPanels.Length - 1)
+                        Console.WriteLine($"metal     foliage: {foliage.DrawnInstances} instances, {foliage.DrawnBlades} blades, {foliage.DrawCalls} calls");
+                    Capture(ctx, backbuffer, StillPicturePath(panelName));
+                    stillPanel++;
+                    stillPanelFrames = 0;
+                    if (stillPanel >= stillPanels.Length) break;
+                }
             }
             titleTimer += dt;
             if (titleTimer >= 0.5)

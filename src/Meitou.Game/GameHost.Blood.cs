@@ -31,7 +31,7 @@ sealed partial class GameHost
     readonly Random bloodRandom = new();
 
     /// <summary>Makes the store and the renderer when the install's <c>Blood</c> setting is on (missing: on).</summary>
-    void SetUpBlood(GpuContext context)
+    void SetUpBlood(IGpuContext context)
     {
         gpu.Debris ??= new DebrisRenderer(context, gpu.Objects?.Resolver, assets.Find);   // made now: its shaders compile here, not at the first burst
         gpu.Particles?.PrepareBursts(BurstSplash, BurstSpray);

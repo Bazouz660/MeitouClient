@@ -11,9 +11,9 @@ public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion R
 
 /// <summary>
 /// Loose meshes thrown about by the host (luckyren Mode's bones and limbs, docs/game/luckyren.md): each a static mesh, centred on its bounds, textured with
-/// its first resolved diffuse map and lit as the world's objects (<c>kenshiLight</c> under the game sky, the plain light otherwise, then the haze). Drawn
-/// in the scene pass of the near slice before the characters (colour only, leaving the alpha to them); they cast no shadow. A mesh is loaded the first time
-/// its <see cref="Extent"/> is asked for.
+/// its first resolved diffuse map and lit as the world's objects (<c>kenshiLight</c> under the game sky, the plain light otherwise, then the haze). Metal
+/// uses the plain light path: the full atmosphere declarations exceed its 16 fragment samplers. Drawn in the scene pass of the near slice before the
+/// characters (colour only, leaving the alpha to them); they cast no shadow. A mesh is loaded the first time its <see cref="Extent"/> is asked for.
 /// </summary>
 public sealed unsafe class DebrisRenderer : IDisposable
 {
@@ -70,6 +70,36 @@ public sealed unsafe class DebrisRenderer : IDisposable
         }
         """;
 
+    /// <summary>
+    /// The Metal fragment: the full atmosphere declarations put 17 direct samplers in one fragment stage (Metal allows 16), and
+    /// the debris only needs its own material plus the frame's simple light. Vulkan keeps <see cref="Fragment"/>.
+    /// </summary>
+    static readonly string MetalFragment = """
+        #version 330 core
+        in vec3 vWorld;
+        in vec3 vNormal;
+        in vec2 vUv;
+        out vec4 fragColour;
+        uniform sampler2D uDiffuse;
+        uniform int uTextured;
+        uniform float uAlphaThreshold;
+        uniform vec3 uEye;
+        uniform vec3 uLightDir;
+        uniform vec3 uSunColour;
+        uniform vec3 uAmbientSky;
+        uniform vec3 uAmbientGround;
+        void main()
+        {
+            vec4 base = uTextured != 0 ? texture(uDiffuse, vUv) : vec4(0.78, 0.72, 0.62, 0.3);
+            if (uAlphaThreshold > 0.0 && base.a < uAlphaThreshold) discard;
+            vec3 n = normalize(vNormal);
+            if (!gl_FrontFacing) n = -n;
+            vec3 ambient = mix(uAmbientGround, uAmbientSky, 0.5 + 0.5 * n.y);
+            vec3 colour = base.rgb * (ambient + max(dot(n, normalize(uLightDir)), 0.0) * uSunColour);
+            fragColour = vec4(colour, 1.0);
+        }
+        """;
+
     /// <summary>A loaded mesh: one buffer of vertices and one of indices, a draw per part.</summary>
     sealed class Mesh(DeviceBuffer vertices, DeviceBuffer indices, (uint First, uint Count, int VertexOffset, SampledImage? Diffuse, float AlphaThreshold)[] parts, Vector3 extent)
     {
@@ -97,7 +127,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         this.gpu = gpu;
         this.resolver = resolver;
         this.find = find;
-        program = LegacyProgram.Create(gpu, Vertex, Fragment, "debris");
+        program = LegacyProgram.Create(gpu, Vertex, gpu is GpuContext ? Fragment : MetalFragment, "debris");
         segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "debris");
         viewProjection = program.Uniform("uViewProjection");
         model = program.Uniform("uModel");

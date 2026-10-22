@@ -89,14 +89,28 @@ sealed partial class GameHost
         return true;
     }
 
-    unsafe int Screenshot()
+    /// <summary>The panels a still captures: the one named by <c>--ui-panel</c>, the showcase's set, or only the HUD.</summary>
+    string?[] StillPanels() => g.UiPanel is { Length: > 0 } one ? [one == "hud" ? null : one]
+        : g.UiShowcase
+            ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"]
+            : [null];
+
+    /// <summary>The file a still panel is written to: the requested picture, or one per panel for the showcase.</summary>
+    string StillPicturePath(string? panelName) => g.UiShowcase
+        ? Path.Combine(Path.GetDirectoryName(o.Screenshot!) ?? "", $"{Path.GetFileNameWithoutExtension(o.Screenshot!)}-{panelName ?? "hud"}.png")
+        : o.Screenshot!;
+
+    /// <summary>
+    /// The deterministic state before a still: the showcase's selection, a <c>--move-to</c> order, the requested control ticks
+    /// and their simulation time, the duel/title per-tick work, the camera on where the leader got to, and the streamers settled.
+    /// Vulkan and Metal both call this after their world and interface are up.
+    /// </summary>
+    void PrepareStill(IGpuContext context)
     {
-        VulkanDisplay.RayTracing = o.WantsRayTracing;
-        using var display = new VulkanDisplay(null, vsync: false, streamline: true);
-        streamline = display.Streamline;
-        Boot(display, interactive: false);
-        if (g.TitlePreview) ApplyTitleCamera();
-        if (g.UiShowcase && playerSquad is not null) player.Select([playerSquad.Leader], additive: false);
+        if (o.Screenshot is null) return;
+        if (g.TitlePreview && player is not null) ApplyTitleCamera();
+        if (g.UiShowcase && player is not null && playerSquad is not null)
+            player.Select([playerSquad.Leader], additive: false);
         if (playerSquad is not null && g.MoveTo is { } to)
         {
             session.World.Commands.Enqueue(new Meitou.Simulation.SelectCommand(playerSquad.Members.ToList()) { Tick = session.World.Tick });
@@ -108,7 +122,7 @@ sealed partial class GameHost
             session.AdvanceSimulation(session.Ticks.TickSeconds);   // one control tick of real time, at speed 1
             UpdateNav(wait: true);
             DuelHoldClock();
-            DuelFrame(false);   // the duel's laps run on in a long still too
+            if (player is not null) DuelFrame(false);   // the duel's laps run on in a long still too
             if (g.TitlePreview) titleBattle?.Advance(session.Ticks.TickSeconds);
         }
         PrintSavedLog();
@@ -116,7 +130,7 @@ sealed partial class GameHost
             foreach (var line in population.TakeTownLog()) Console.WriteLine($"town      {line}");
         SandboxFollowCamera();
         ApplyCamera(session.Camera.Current);
-        if (g.TitlePreview) ApplyTitleCamera();
+        if (g.TitlePreview && player is not null) ApplyTitleCamera();
         // After a walk (--move-to) the picture is of where the leader got to.
         if (g.MoveTo is not null && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.IsPlayer) is { } walker)
         {
@@ -128,7 +142,16 @@ sealed partial class GameHost
         gpu.Objects?.Settle(camera.Eye);
         gpu.Foliage?.Settle(camera.Eye);
         gpu.Characters?.Settle(camera.Eye);
-        WorldFrame.FinishLoading(display.Context);
+        WorldFrame.FinishLoading(context);
+    }
+
+    unsafe int Screenshot()
+    {
+        VulkanDisplay.RayTracing = o.WantsRayTracing;
+        using var display = new VulkanDisplay(null, vsync: false, streamline: true);
+        streamline = display.Streamline;
+        Boot(display, interactive: false);
+        PrepareStill(display.Context);
         var context = display.Context;
         int w = o.Width, h = o.Height;
         using var target = context.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h,
@@ -141,10 +164,7 @@ sealed partial class GameHost
         using var overlay = DebugOverlay.TryCreate(context);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(player); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
-        string?[] panels = g.UiPanel is { Length: > 0 } one ? [one == "hud" ? null : one]
-            : g.UiShowcase
-                ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"]
-                : [null];
+        string?[] panels = StillPanels();
         foreach (string? panelName in panels)
         {
             if (panelName == "trade" && !ShowcaseTrade()) continue;
@@ -184,7 +204,7 @@ sealed partial class GameHost
             }
             display.EndFrame();
             context.Finish();
-            string output = g.UiShowcase ? Path.Combine(Path.GetDirectoryName(o.Screenshot!) ?? "", $"{Path.GetFileNameWithoutExtension(o.Screenshot!)}-{panelName ?? "hud"}.png") : o.Screenshot!;
+            string output = StillPicturePath(panelName);
             FramebufferCapture.SavePng(context, target, output, w, h);
             Console.WriteLine($"saved     {Path.GetFullPath(output)}");
         }

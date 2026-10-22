@@ -1,8 +1,9 @@
 # Metal content testability plan
 
-Status: **Milestone A implemented and manually accepted** (2026-10-22); Milestones B-E pending.
-This plan is about making the game's content and systems easy to exercise through the native Metal
-host. Read it with [metal-backend](metal-backend.md); Vulkan remains the reference path.
+Status: **Milestones A-C implemented** (2026-10-22); A is manually accepted, B's blood path is
+validated, and debris/luckyren, C and D-E still await manual checks. This plan is about making the
+game's content and systems easy to exercise through the native Metal host. Read it with
+[metal-backend](metal-backend.md); Vulkan remains the reference path.
 
 The content data and simulation are already shared. Metal loads the same world, population,
 towns, items, dialogue, trade, crafting, construction, farming, combat and saves. The gaps below
@@ -57,19 +58,20 @@ Normal gameplay works on Metal today:
 - HUD panels, most interaction, audio, weather and day/night
 - faithful water, shadows, particles and object/foliage streaming
 
-Milestone A (items 1-4) is wired in the Metal host:
+Milestones A-C are wired in the Metal host:
 
 - `SandboxSpawn`, `DuelStart`, `SpawnCrowd` and startup `FinishCreation`
 - `FollowCamera`, `SandboxFollowCamera`, `EditorCamera`, `SquadTour`, `player.FlyTo` and
   `player.SkipFlight`
 - `WorldNews`
 - `DrawDebugMenu`, `DebugMenuKey` and `DebugMenuText` (Ctrl+F10; F10 remains settings)
+- `SetUpBlood(IGpuContext)` and `UpdateBlood`/`UpdateDebris`/luckyren Mode
+- the shared `PrepareStill` path for `--ticks`, `--move-to` and `--ui-showcase`; the Metal still
+  loop freezes the simulation after preparation
 
 Still absent or only partly wired:
 
-- `SetUpBlood`, `UpdateBlood`, `UpdateDebris`
 - `Cinema` and the Metal frame profiler
-- the shared still-preparation path (`--ticks`, `--move-to`, `--ui-showcase`)
 - the settings callbacks listed in item 7
 
 ## Item 1: Sandbox, duel, crowd and startup new-game state
@@ -253,8 +255,9 @@ also part of the `luckyren Mode` and blood settings, so those menu entries are c
 ### Why
 
 Vulkan's still path lets a content check run a known number of simulation ticks and move a squad
-before the picture. Metal currently waits roughly 40 real frames, so the same command can show a
-different state. `--ui-showcase` is also absent.
+before the picture. Metal used to wait roughly 40 real frames, so the same command could show a
+different state; `--ui-showcase` was also absent. The shared preparation now runs first, then the
+Metal warm-up frames render without advancing the simulation.
 
 ### Changes
 
