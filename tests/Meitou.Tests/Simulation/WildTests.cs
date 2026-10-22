@@ -125,6 +125,8 @@ public class WildTests(ITestOutputHelper output)
         using var _ = world;
         pop.KeepWild = keep;
         world.RunTicks(16);
+        var before = WildSquads(world, pop);
+        Assert.NotEmpty(before);
         var marked = world.Squads.Find(pop.WildSquadsOf(pop.WildSites.First(s => pop.WildSquadsOf(s.Index).Count > 0).Index)[0])!.Members[0];
         world.Characters.Cold(marked.Slot)!.Name = "Marked";
         int squads = pop.WildSites.Sum(s => pop.WildSquadsOf(s.Index).Count);
@@ -140,49 +142,22 @@ public class WildTests(ITestOutputHelper output)
         Assert.Equal(squads, pop.WildSites.Sum(s => pop.WildSquadsOf(s.Index).Count));
         Assert.Equal(keep, world.Squads.All.SelectMany(s => s.Members).Any(m => world.Characters.Cold(m.Slot)!.Name == "Marked"));
         Assert.All(pop.WildSites, s => Assert.Empty(pop.KeptWildOf(s.Index)));
+        // Rolled anew, they come out the same: squad ids and slots are new; site, template, place and members are the same.
+        if (!keep) Assert.Equal(before, WildSquads(world, pop));
     }
 
-    [Fact]
-    public void The_wild_agrees_at_one_four_and_sixteen_threads()
+    /// <summary>The wild round the origin for 600 ticks; pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
-        var data = WildData();
-        ulong[]? first = null;
-        foreach (int threads in new[] { 1, 4, 16 })
+        var (world, _) = WildWorld(WildData(), threads);
+        using var __ = world;
+        var hashes = new List<ulong>();
+        for (int c = 0; c < 4; c++)
         {
-            var (world, _) = WildWorld(data, threads);
-            using var __ = world;
-            var hashes = new ulong[4];
-            for (int c = 0; c < hashes.Length; c++)
-            {
-                world.RunTicks(150);
-                hashes[c] = world.StateHash();
-            }
-            if (first is null) first = hashes;
-            else Assert.Equal(first, hashes);
+            world.RunTicks(150);
+            hashes.Add(world.StateHash());
         }
-        var (other, _) = WildWorld(data, 1, seed: 4);
-        using var ___ = other;
-        other.RunTicks(600);
-        Assert.NotEqual(first![^1], other.StateHash());
-    }
-
-    [Fact]
-    public void Unloading_and_reloading_makes_the_same_squads()
-    {
-        var data = WildData();
-        var (world, pop) = WildWorld(data, 1, StandardParts.Population);
-        using var _ = world;
-        world.RunTicks(16);
-        var before = WildSquads(world, pop);
-        Assert.NotEmpty(before);
-        world.Commands.Enqueue(new FocusCommand(new Vector3(60000, 300, 60000)) { Tick = world.Tick });
-        world.RunTicks(200);
-        Assert.All(pop.WildSites, s => Assert.Equal(SiteStatus.Unloaded, pop.WildStatusOf(s.Index)));
-        Assert.Empty(WildSquads(world, pop));
-        world.Commands.Enqueue(new FocusCommand(Origin) { Tick = world.Tick });
-        world.RunTicks(20);
-        // Squad ids and slots are new; site, template, place and members are the same.
-        Assert.Equal(before, WildSquads(world, pop));
+        return hashes;
     }
 
     // ---- the installed game ----

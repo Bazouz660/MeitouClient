@@ -151,13 +151,14 @@ public class DoorTests(ITestOutputHelper output)
     }
 
     [Fact, Slow]
-    public void Every_door_in_the_hub_has_a_known_position()
+    public void Every_door_in_the_hub_has_a_known_position_and_its_destroyed_gates_have_none()
     {
         Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
         var db = InstallData.BaseGame!;
         var levels = InstallData.Levels!;
         var data = PopulationData.Create(db, levels.Towns(), buildings: TownBuildings.Build(db, levels, null, (_, _) => 0));
-        var hub = data.Sites.Single(s => s.Town.Name == "The Hub");
+        int site = data.Sites.ToList().FindIndex(s => s.Town.Name == "The Hub");
+        var hub = data.Sites[site];
         var geometry = new NavDoorGeometry(InstallData.Install!, db);
         int doors = 0;
         var missing = new List<string>();
@@ -169,23 +170,14 @@ public class DoorTests(ITestOutputHelper output)
         }
         Assert.True(doors > 10, $"{doors} doors");
         Assert.Empty(missing);
-    }
 
-    [Fact, Slow]
-    public void The_hubs_destroyed_gates_register_no_doors_while_its_intact_buildings_keep_theirs()
-    {
-        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
-        var db = InstallData.BaseGame!;
-        var levels = InstallData.Levels!;
-        var data = PopulationData.Create(db, levels.Towns(), buildings: TownBuildings.Build(db, levels, null, (_, _) => 0));
-        int site = data.Sites.ToList().FindIndex(s => s.Town.Name == "The Hub");
         var walk = new OpenGroundWalkability((_, _) => 150);
         using var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, walk, []);
         world.Fixtures.RegisterSite(world, data, site);
-        // The level data marks both Defensive Gate IV destroyed; a ruin has no doors (docs/game/locks.md "Doors").
-        var gates = data.Sites[site].Buildings.Where(b => b.IsGate).ToList();
+        // The level data marks both Defensive Gate IV destroyed; a ruin has no doors (docs/game/locks.md "Doors"), the intact buildings keep theirs.
+        var gates = hub.Buildings.Where(b => b.IsGate).ToList();
         Assert.Equal(2, gates.Count(b => b.Destroyed));
         Assert.All(gates.Where(b => b.Destroyed), g => Assert.DoesNotContain(world.Fixtures.OfBuilding(g.Key), f => f.Kind == FixtureKind.Door));
-        Assert.Contains(data.Sites[site].Buildings.Where(b => !b.Destroyed), b => world.Fixtures.OfBuilding(b.Key).Any(f => f.Kind == FixtureKind.Door));
+        Assert.Contains(hub.Buildings.Where(b => !b.Destroyed), b => world.Fixtures.OfBuilding(b.Key).Any(f => f.Kind == FixtureKind.Door));
     }
 }

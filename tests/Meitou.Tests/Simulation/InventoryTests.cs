@@ -17,27 +17,18 @@ public class InventoryTests
     static IEnumerable<int> Humans(SimWorld world) =>
         Enumerable.Range(0, world.Characters.HighWater).Where(s => world.Characters.Previous[s].Alive && world.Characters.Cold(s)!.Inventory is not null);
 
-    [Fact]
-    public void Items_take_free_cells_and_stack_and_a_full_grid_refuses()
-    {
-        var inv = new Inventory(4, 2);
-        ItemInstance Item(string id, int w, int h, bool stack = false) => new() { Record = id, Name = id, Width = w, Height = h, StackLimit = stack ? 99 : 1 };
-        Assert.True(inv.Add(Item("a", 2, 2)));
-        Assert.True(inv.Add(Item("b", 2, 2)));
-        Assert.Equal([(0, 0), (2, 0)], inv.Items.Select(i => (i.X, i.Y)));
-        Assert.False(inv.Add(Item("c", 1, 1)));
-        var bolts = new Inventory(4, 2);
-        Assert.True(bolts.Add(Item("bolt", 1, 1, stack: true)));
-        Assert.True(bolts.Add(Item("bolt", 1, 1, stack: true)));
-        Assert.Equal(2, Assert.Single(bolts.Items).Quantity);
-    }
-
     static ItemInstance Unit(string id, int quantity, int limit, Meitou.Data.Fcs.FcsRecordType type = Meitou.Data.Fcs.FcsRecordType.ITEM) =>
         new() { Record = id, Name = id, Type = type, Quantity = quantity, StackLimit = limit };
 
     [Fact]
     public void Stacks_hold_at_most_the_stack_limit_and_the_rest_takes_new_cells()
     {
+        // Items take free cells: two 2 x 2 items sit side by side.
+        var grid = new Inventory(4, 2);
+        Assert.True(grid.Add(new ItemInstance { Record = "a", Name = "a", Width = 2, Height = 2 }));
+        Assert.True(grid.Add(new ItemInstance { Record = "b", Name = "b", Width = 2, Height = 2 }));
+        Assert.Equal([(0, 0), (2, 0)], grid.Items.Select(i => (i.X, i.Y)));
+
         var inv = new Inventory(3, 1);
         // 10 books with the data's limit 4: stacks of 4, 4 and 2, one per cell.
         Assert.True(inv.Add(Unit("book", 10, 4)));

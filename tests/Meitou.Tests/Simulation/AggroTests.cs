@@ -89,7 +89,7 @@ public class AggroTests
         public bool Fighting(CharacterId id) => World.Characters.Cold(id.Slot)!.InCombat;
     }
 
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, int minPartition = 1)
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -98,7 +98,7 @@ public class AggroTests
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = minPartition }, walk,
+        var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro]);
         return new Arena(world, combat, aggro, relations);
     }
@@ -107,9 +107,9 @@ public class AggroTests
     /// Raiders between villagers (hostile), nomads (coexisting), hermits (coexisting from their side) and friends (allied), each a squad 150 units off.
     /// Returns the squads in that order.
     /// </summary>
-    static (Arena Arena, Squad Raiders, Squad Villagers, Squad Nomads, Squad Hermits, Squad Friends) Crossroads(ulong seed, int threads, int minPartition = 1)
+    static (Arena Arena, Squad Raiders, Squad Villagers, Squad Nomads, Squad Hermits, Squad Friends) Crossroads(ulong seed, int threads)
     {
-        var a = Make(seed, threads, minPartition: minPartition);
+        var a = Make(seed, threads);
         var o = new Vector2(2000, 2000);
         var raiders = a.Squad(Raiders, o, o, o + new Vector2(0, 12));
         var villagers = a.Squad(Villagers, o + new Vector2(150, 0), o + new Vector2(150, 0), o + new Vector2(160, 10));
@@ -168,11 +168,10 @@ public class AggroTests
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);
     }
 
-    internal static List<ulong> Hashes(int threads, int minPartition = 1) => Hashes(threads, out _, minPartition);
-
-    internal static List<ulong> Hashes(int threads, out (long RelationChanges, long Started, int Blows) seen, int minPartition = 1)
+    /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Hashes(int threads)
     {
-        var (a, _, _, _, _, _) = Crossroads(11, threads, minPartition);
+        var (a, _, _, _, _, _) = Crossroads(11, threads);
         using var _a = a;
         // A player character close to the raiders, who hate the player: it is attacked and defends itself; at tick 120 it is ordered onto a villager, an assault on the villagers.
         var me = a.PlayerCharacter(new Vector2(2000, 2080));
@@ -183,37 +182,10 @@ public class AggroTests
             if (target == 120) a.World.Commands.Enqueue(new AttackOrder([me], a.World.Squads.All.First(s => s.Faction == Villagers).Members[0]) { Tick = a.World.Tick });
             hashes.Add(a.World.StateHash());
         }
-        seen = (a.Relations.Changes, a.Aggro.Started, a.Combat.Log.Count);
-        return hashes;
-    }
-
-    [Fact]
-    public void The_aggro_scenario_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Hashes(1, out var seen);
+        var seen = (RelationChanges: a.Relations.Changes, a.Aggro.Started, Blows: a.Combat.Log.Count);
         // The scenario covers what it is for: fights started by hostility, blows, and a relation changed by the player's assault (so the table is hashed).
         Assert.True(seen.RelationChanges > 0 && seen.Started > 0 && seen.Blows > 0, $"{seen}");
-        Assert.Equal(one, Hashes(4));
-        Assert.Equal(one, Hashes(16));
-        Assert.NotEqual(one[^1], one[^2]);
-    }
-
-    // ------------------------------------------------------------------ the AI's stances (docs/simulation.md "AI", Combat goals)
-
-    static void Stance(Arena a, Squad squad, Meitou.Simulation.Ai.AiStance stance)
-    {
-        foreach (var m in squad.Members) a.World.Characters.Cold(m.Slot)!.Ai = new Meitou.Simulation.Ai.AiMind { Squad = squad, Stance = stance };
-    }
-
-    [Fact]
-    public void A_territorial_stance_fights_enemies_inside_its_home()
-    {
-        var (a, raiders, _, _, _, _) = Crossroads(3, 1);
-        using var _ = a;
-        Stance(a, raiders, Meitou.Simulation.Ai.AiStance.Territorial);
-        raiders.HomeRadius = 400;
-        a.World.RunTicks(90);
-        Assert.NotEmpty(a.Aggro.Log);
-        Assert.All(a.Aggro.Log, e => Assert.Equal(Villagers, e.TargetFaction));
+        Assert.NotEqual(hashes[^1], hashes[^2]);
+        return hashes;
     }
 }

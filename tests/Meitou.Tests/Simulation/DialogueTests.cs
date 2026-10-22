@@ -374,12 +374,12 @@ public class DialogueTests
     }
 }
 
-/// <summary>Talking to the Hub's barman over the installed game's data. Skipped without the game.</summary>
+/// <summary>Talking to the Hub's barman, and the residents' speech bubbles, over the installed game's data. Skipped without the game.</summary>
 [Slow]
 public class DialogueInstallTests
 {
     [Fact]
-    public void The_hub_barman_talks_and_offers_two_replies()
+    public void The_hub_barman_talks_and_offers_two_replies_and_a_resident_says_a_speech_bubble()
     {
         Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
         var install = InstallData.Install!;
@@ -389,7 +389,7 @@ public class DialogueInstallTests
         var buildings = TownBuildings.Build(db, levels, new BuildingLayouts(db, levels.Interiors), (x, z) => map.HeightAt((float)x, (float)z));
         var data = PopulationData.Create(db, levels.Towns(), buildings: buildings);
         var hub = data.Sites.Single(s => s.Town.Name == "The Hub");
-        var dialogue = new DialogueSystem(data);
+        var dialogue = new DialogueSystem(data, new DialogueSettings { AmbientEvents = true });
         var walk = new OpenGroundWalkability((_, _) => 300);
         using var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, walk,
             [new PopulationSystem(data, new PopulationSettings { CheckEveryTicks = 1 }), new MovementSystem(new PathService(walk, true)), dialogue]);
@@ -419,40 +419,8 @@ public class DialogueInstallTests
         Assert.Equal("Barman", talk.SpeakerName);
         Assert.NotEmpty(talk.Text);
         Assert.Equal(2, talk.Choices.Count);   // trade or decline; their texts are picked at random
-    }
 
-    [Fact]
-    public void A_hub_resident_next_to_a_player_character_says_a_speech_bubble_within_a_few_game_hours()
-    {
-        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
-        var install = InstallData.Install!;
-        var db = InstallData.BaseGame!;
-        var levels = WorldLevelData.Load(install, includeInteriors: true);
-        using var map = TerrainHeightmap.Open(install);
-        var buildings = TownBuildings.Build(db, levels, new BuildingLayouts(db, levels.Interiors), (x, z) => map.HeightAt((float)x, (float)z));
-        var data = PopulationData.Create(db, levels.Towns(), buildings: buildings);
-        var hub = data.Sites.Single(s => s.Town.Name == "The Hub");
-        var dialogue = new DialogueSystem(data, new DialogueSettings { AmbientEvents = true });
-        var walk = new OpenGroundWalkability((_, _) => 300);
-        using var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, walk,
-            [new PopulationSystem(data, new PopulationSettings { CheckEveryTicks = 1 }), new MovementSystem(new PathService(walk, true)), dialogue]);
-        world.Player.Faction = data.PlayerFaction;
-        world.Commands.Enqueue(new FocusCommand(hub.Position) { Tick = 0 });
-        world.RunTicks(5);
-
-        var table = world.Characters;
-        int barman = Enumerable.Range(0, table.HighWater).First(i => table.Next[i].Alive && table.Cold(i) is { Name: "Barman" });
-        var squad = new Squad { Id = world.Squads.NextId(), TemplateId = "p", Faction = data.PlayerFaction };
-        world.Squads.Add(squad);
-        var cold = new Meitou.Tests.Combat.Combatant { Name = "hero" }.MakeCold();
-        cold.Faction = data.PlayerFaction;
-        cold.IsPlayer = true;
-        cold.Inventory = new Inventory();
-        cold.SquadId = squad.Id;
-        var hero = table.Spawn(new CharacterHot { Position = table.Next[barman].Position + new Vector3(20, 0, 0), Health = 100, MaxSpeed = 60, WalkSpeed = 15 }, cold, 0);
-        squad.Members.Add(hero);
-        squad.Leader = hero;
-
+        // A resident next to the player character says a speech bubble within a few game hours.
         // The Hub is allied with the player: its residents have event 67 lines (most event 3 lines are disabled or conditional in the data); each is said at a chance of 30 % once per squad per half game hour, so the loop spans a few of those.
         for (int i = 0; i < table.HighWater; i++)
             if (table.Next[i].Alive && table.Cold(i) is { IsPlayer: false } resident) data.Relations.Set(resident.Faction, data.PlayerFaction, 100);

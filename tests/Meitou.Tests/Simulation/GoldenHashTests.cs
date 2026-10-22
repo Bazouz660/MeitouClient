@@ -4,35 +4,43 @@ namespace Meitou.Tests.Simulation;
 
 /// <summary>
 /// Pins the state hashes of the scripted scenarios the other tests use, so a refactor that is meant to change nothing is checked to
-/// change nothing (the thread-count tests only check that the threads agree with each other). A change of behaviour that is meant must
+/// change nothing (<see cref="A_scenario_hashes_the_same_at_1_4_and_16_threads"/> only checks that the threads agree with each other). A change of behaviour that is meant must
 /// update these numbers in the same commit and say so.
 /// </summary>
 public class GoldenHashTests(ITestOutputHelper output)
 {
-    static readonly (string Name, Func<List<ulong>> Run)[] Scenarios =
+    static readonly (string Name, Func<int, List<ulong>> Run)[] Scenarios =
     [
-        ("wander", () => DeterminismTests.Hashes(7, 4)),
-        ("player", () => PlayerTests.Scripted(4)),
-        ("roaming", () => RoamingTests.Scripted(4)),
-        ("bodies", () => BodyWiringTests.Hashes(9, 4, 2000)),
-        ("fight", () => FightWiringTests.Hashes(4)),
-        ("duels", () => DuelTests.Hashes(5, 4, out _)),
-        ("wander-parts", () => Parts(WanderSystem.Create(11, 4, 200, minPartition: 4), 1, 30, 90, 300)),
-        ("town-parts", () => Parts(TownParts(), 1, 40, 200, 700)),
-        ("first-aid", () => FirstAidTests.Scripted(4)),
-        ("aggro", () => AggroTests.Hashes(4)),
-        ("ranged", () => RangedTests.Hashes(4)),
-        ("carry", () => CarryTests.Scripted(4)),
-        ("crime", () => CrimeTests.Scripted(4)),
-        ("build", () => ConstructionTests.Scripted(4)),
-        ("dialogue", () => DialogueTests.Scripted(4)),
+        ("wander", t => DeterminismTests.Hashes(7, t)),
+        ("player", PlayerTests.Scripted),
+        ("roaming", RoamingTests.Scripted),
+        ("bodies", t => BodyWiringTests.Hashes(9, t, 2000)),
+        ("fight", FightWiringTests.Hashes),
+        ("duels", t => DuelTests.Hashes(5, t, out _)),
+        ("wander-parts", t => Parts(WanderSystem.Create(11, t, 200, minPartition: 4), 1, 30, 90, 300)),
+        ("town-parts", t => Parts(TownParts(t), 1, 40, 200, 700)),
+        ("first-aid", FirstAidTests.Scripted),
+        ("aggro", t => AggroTests.Hashes(t)),
+        ("ranged", t => RangedTests.Hashes(t)),
+        ("carry", CarryTests.Scripted),
+        ("crime", CrimeTests.Scripted),
+        ("build", ConstructionTests.Scripted),
+        ("dialogue", DialogueTests.Scripted),
+        ("ai", AiTests.Scripted),
+        ("arrest", ArrestTests.Scripted),
+        ("kidnap", KidnapTests.Scripted),
+        ("production", ProductionTests.Scripted),
+        ("wild", WildTests.Scripted),
+        ("luckyren", LuckyrenTests.Scripted),
     ];
 
+    public static TheoryData<string> ScenarioNames => [.. Scenarios.Select(s => s.Name)];
+
     /// <summary>A roaming town with bodies and feeding, cut into many partitions (the other worlds here are mostly one partition at the default size).</summary>
-    static Meitou.Simulation.World TownParts()
+    static Meitou.Simulation.World TownParts(int threads)
     {
         var db = SyntheticTown.Database(roaming: true, anatomy: true, items: true);
-        return SyntheticTown.World(21, 4, db: db, bodies: true, bodyTimeScale: 2000, feed: new Meitou.Simulation.Items.FeedSettings(), minPartition: 4);
+        return SyntheticTown.World(21, threads, db: db, bodies: true, bodyTimeScale: 2000, feed: new Meitou.Simulation.Items.FeedSettings(), minPartition: 4);
     }
 
     static List<ulong> Parts(Meitou.Simulation.World w, params int[] checkpoints)
@@ -66,6 +74,12 @@ public class GoldenHashTests(ITestOutputHelper output)
         ["crime"] = [0x8CE03D2F6E7CB231UL, 0xD84CAC87714684FDUL, 0xD5BC6BAFFE093CE1UL, 0x51F3181AD1563895UL, 0xEADF84A676D4CEBAUL, 0x6DBA93A485327B89UL],
         ["build"] = [0x5FD895B94DA240C1UL, 0x53E8274898C7DC09UL, 0xD9F65927413D60C5UL, 0x68EF60B1127E77C1UL, 0x8D3419D9F8A421A2UL, 0x3C82488B44D2F1A2UL, 0x2665970E23ECF4C7UL, 0xB7B06F3728C4666AUL],
         ["dialogue"] = [0xD808F202FB909A02UL, 0xC375E8653110647AUL, 0x0A47829C60CB019CUL, 0x42F95AE1DF6D1368UL, 0x65ABF95A2B78CC38UL, 0xDC5BFEB735B99ADAUL],
+        ["ai"] = [0x530111E7DB579696UL, 0x820E7E080B19CEDBUL],
+        ["arrest"] = [0x4535462D0CDFC65FUL, 0x7F9B7CC9E25D955BUL, 0x38A21D7BC8B6EE7BUL, 0x878BBE5814EE3CCFUL, 0x02EE03591C2490F2UL],
+        ["kidnap"] = [0xFC10A59EE2C35144UL, 0x9BB42B61A1B43523UL, 0x59BC5B8933806D8CUL, 0x7F8C2D8F2A4F67C6UL, 0x623D8753F369EAB2UL],
+        ["production"] = [0x8E4E889F61AD09D3UL, 0xF9CC599CA115E5C0UL, 0x09B6A788A58DAB83UL, 0x8BCB46DF5F8A38CDUL, 0x99AF5F24C474D3DDUL, 0xA1E4C7A85FD5D986UL],
+        ["wild"] = [0x3A8FBCF8F2618264UL, 0x1ADEC1EDF6EE4BCDUL, 0xD03EB69B26C968CAUL, 0x9594229B470E1727UL],
+        ["luckyren"] = [0xD3E7E62DA92D120EUL],
     };
 
     [Fact]
@@ -76,11 +90,20 @@ public class GoldenHashTests(ITestOutputHelper output)
         var failures = new List<string>();
         foreach (var (name, run) in Scenarios)
         {
-            var got = run();
+            var got = run(4);
             output.WriteLine($"[\"{name}\"] = [{string.Join(", ", got.Select(h => $"0x{h:X16}UL"))}],");
             if (!Golden.TryGetValue(name, out var want)) failures.Add($"{name}: not pinned");
             else if (!want.SequenceEqual(got)) failures.Add($"{name}: hashes changed");
         }
         Assert.True(failures.Count == 0, string.Join("; ", failures));
+    }
+
+    [Theory, MemberData(nameof(ScenarioNames))]
+    public void A_scenario_hashes_the_same_at_1_4_and_16_threads(string name)
+    {
+        var run = Scenarios.Single(s => s.Name == name).Run;
+        var one = run(1);
+        Assert.Equal(one, run(4));
+        Assert.Equal(one, run(16));
     }
 }

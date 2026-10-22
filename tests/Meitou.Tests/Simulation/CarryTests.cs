@@ -205,12 +205,9 @@ public class CarryTests
 
     /// <summary>
     /// A scripted game: player characters pick up, carry, put down and loot; one has the rescue job; an NPC squad rescues its leader; a carrier is knocked out mid-carry.
-    /// Cut into one-slot partitions.
+    /// Cut into one-slot partitions; pinned in <see cref="GoldenHashTests"/>.
     /// </summary>
-    internal static List<ulong> Scripted(int threads) => Scripted(threads, out _);
-
-    /// <summary>The scripted scenario; <paramref name="happened"/> lists what the script did (to show it does something).</summary>
-    internal static List<ulong> Scripted(int threads, out string happened)
+    internal static List<ulong> Scripted(int threads)
     {
         var relations = TwoFactions();
         using var rig = new Rig(threads, minPartition: 1, relations: relations, seed: 21);
@@ -250,18 +247,9 @@ public class CarryTests
             }
             hashes.Add(rig.World.StateHash());
         }
-        happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
-        return hashes;
-    }
-
-    [Fact]
-    public void A_scripted_game_of_carrying_rescue_and_looting_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var happened);
+        string happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
         // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (relation 10 to 0) and loots an emptied body.
         Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 0", happened);
-        Assert.Equal(one, Scripted(4));
-        Assert.Equal(one, Scripted(16));
-        Assert.Equal(one, Scripted(1));
+        return hashes;
     }
 }

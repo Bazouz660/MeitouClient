@@ -130,18 +130,16 @@ public class AiTests(ITestOutputHelper output)
         return world;
     }
 
-    [Fact]
-    public void The_AI_is_the_same_at_any_thread_count()
+    /// <summary>The town's AI by day, then from 23:00 on; pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
-        ulong Run(int threads)
-        {
-            using var world = Town(threads, out _);
-            world.RunTicks(120);
-            world.GameHours = 24 + 23;
-            world.RunTicks(240);
-            return world.StateHash();
-        }
-        Assert.Equal(Run(1), Run(4));
+        using var world = Town(threads, out _);
+        world.RunTicks(120);
+        var hashes = new List<ulong> { world.StateHash() };
+        world.GameHours = 24 + 23;
+        world.RunTicks(240);
+        hashes.Add(world.StateHash());
+        return hashes;
     }
 
     /// <summary>The counts docs/game/ai.md gives for the merged base game (gamedata.base, Newwworld, Dialogue, rebirth), read through <see cref="AiDatabase"/>.</summary>
@@ -283,25 +281,55 @@ public class AiTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void A_roaming_platoons_package_is_saved_and_loaded()
+    public void A_dialogue_contract_change_AI_and_a_roaming_platoons_package_are_saved_and_loaded()
     {
+        // The town of the AI tests with roaming folk whose packages are "Patrol near home" and "Stay home".
         var near = Rec("116-t", FcsRecordType.AI_PACKAGE, "Patrol near home");
         near.Ints["unloaded func"] = 2;
         var stay = Rec("117-t", FcsRecordType.AI_PACKAGE, "Stay home");
         stay.Ints["unloaded func"] = 4;
-        var db = SyntheticTown.Database(roaming: true, extra: [.. Records(), near, stay], changeFolk: t => t.References["AI packages"] = [Ref("116-t", 0), Ref("117-t", 0)]);
-        var data = SyntheticTown.Data(db);
+        var data = SyntheticTown.Data(SyntheticTown.Database(roaming: true, extra: [.. Records(), near, stay],
+            changePatrol: p => p.References["AI packages"] = [Ref("111-t", 0), Ref("112-t", 1)], changeFolk: t => t.References["AI packages"] = [Ref("116-t", 0), Ref("117-t", 0)]));
+
+        using (var world = Town(1, out _, data, null))
+        {
+            world.RunTicks(50);
+            var squad = world.Squads.All.First(s => s.Ai is not null);
+            world.Commands.Enqueue(new ChangeAi(squad.Id, "113-t") { Tick = world.Tick });
+            world.Commands.Enqueue(new StartContract(squad.Id, "115-t", 8) { Tick = world.Tick });
+            world.RunTicks(2);
+            double end = squad.Ai!.ContractEnd;
+            var save = Meitou.Simulation.Saving.SaveCapture.Capture(world, data, new Meitou.Simulation.Saving.SaveClock(1, 13, 0), null);
+            var record = save.Platoons.Single(p => p.Record.Strings.GetValueOrDefault("contractjob") is { Length: > 0 }).Record;
+            Assert.Equal(("115-t", "113-t"), (record.Strings["contractjob"], record.Strings["replacementAI"]));
+            Assert.Equal((float)end, record.Floats["jobhr"]);
+
+            string folder = Path.Combine(Path.GetTempPath(), "meitou-ai-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                save.Write(folder);
+                using var b = Town(1, out _, data, null);
+                Meitou.Simulation.Saving.SaveLoader.Load(b, Meitou.Data.Save.SaveGame.Load(folder), data);
+                b.RunTicks(50);
+                var board = Assert.Single(b.Squads.All, s => s.Ai?.Contract is not null).Ai!;
+                Assert.Equal(("115-t", "113-t"), (board.Contract!.Id, board.Replacement?.Id));
+                Assert.Equal((float)end, (float)board.ContractEnd);
+            }
+            finally { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); }
+        }
+
+        // A roaming platoon's package: the saved one is run, and the one it runs now is written back.
         var builder = Meitou.Simulation.Saving.SaveCapture.PrepareBase(data);
         var saved = builder.AddPlatoon("Testfolk_7", "Testfolk", "20-t", "12-t", new Vector3(Centre.X + 500, 300, Centre.Z));
         saved.Record.Strings["basetown"] = "30-t";
         saved.Record.Strings["currentPackage"] = "117-t";   // not the one the slot rule picks (116-t, the first)
         builder.Game.UpdateDerived();
-        string folder = Path.Combine(Path.GetTempPath(), "meitou-ai-" + Guid.NewGuid().ToString("N"));
+        string platoonFolder = Path.Combine(Path.GetTempPath(), "meitou-ai-" + Guid.NewGuid().ToString("N"));
         try
         {
-            builder.Game.Write(folder);
+            builder.Game.Write(platoonFolder);
             using var world = new SimWorld(new WorldSettings { Seed = 3, PublishSnapshots = false }, new OpenGroundWalkability(Ground), [new PlayerSystem()]);
-            var loaded = Meitou.Simulation.Saving.SaveLoader.Load(world, Meitou.Data.Save.SaveGame.Load(folder), data);
+            var loaded = Meitou.Simulation.Saving.SaveLoader.Load(world, Meitou.Data.Save.SaveGame.Load(platoonFolder), data);
             var p = Assert.Single(world.Platoons.All);
             Assert.Equal(("117-t", PlatoonJob.GoHome), (p.Package, p.Job));
             // Captured again: the package it runs now is written back.
@@ -309,35 +337,6 @@ public class AiTests(ITestOutputHelper output)
             var again = Meitou.Simulation.Saving.SaveCapture.Capture(world, data, new Meitou.Simulation.Saving.SaveClock(1, 12, 0), loaded);
             Assert.Equal("116-t", again.Platoons.Single(x => x.Name == "Testfolk_7").Record.Strings["currentPackage"]);
         }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); }
-    }
-
-    [Fact]
-    public void A_dialogue_contract_and_change_AI_are_saved_and_loaded()
-    {
-        using var world = Town(1, out var data);
-        world.RunTicks(50);
-        var squad = world.Squads.All.First(s => s.Ai is not null);
-        world.Commands.Enqueue(new ChangeAi(squad.Id, "113-t") { Tick = world.Tick });
-        world.Commands.Enqueue(new StartContract(squad.Id, "115-t", 8) { Tick = world.Tick });
-        world.RunTicks(2);
-        double end = squad.Ai!.ContractEnd;
-        var save = Meitou.Simulation.Saving.SaveCapture.Capture(world, data, new Meitou.Simulation.Saving.SaveClock(1, 13, 0), null);
-        var record = save.Platoons.Single(p => p.Record.Strings.GetValueOrDefault("contractjob") is { Length: > 0 }).Record;
-        Assert.Equal(("115-t", "113-t"), (record.Strings["contractjob"], record.Strings["replacementAI"]));
-        Assert.Equal((float)end, record.Floats["jobhr"]);
-
-        string folder = Path.Combine(Path.GetTempPath(), "meitou-ai-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            save.Write(folder);
-            using var b = Town(1, out _, data, null);
-            Meitou.Simulation.Saving.SaveLoader.Load(b, Meitou.Data.Save.SaveGame.Load(folder), data);
-            b.RunTicks(50);
-            var board = Assert.Single(b.Squads.All, s => s.Ai?.Contract is not null).Ai!;
-            Assert.Equal(("115-t", "113-t"), (board.Contract!.Id, board.Replacement?.Id));
-            Assert.Equal((float)end, (float)board.ContractEnd);
-        }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); }
+        finally { if (Directory.Exists(platoonFolder)) Directory.Delete(platoonFolder, recursive: true); }
     }
 }

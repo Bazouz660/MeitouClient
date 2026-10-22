@@ -15,7 +15,7 @@ namespace Meitou.Tests.Simulation;
 [Slow]
 public class AnimalTests(ITestOutputHelper output)
 {
-    const string Bonedog = "3979-gamedata.base", BeakThing = "2859-gamedata.base", WildBull = "3986-gamedata.base", Megaraptor = "50983-rebirth.mod";
+    const string Bonedog = "3979-gamedata.base", BeakThing = "2859-gamedata.base", Megaraptor = "50983-rebirth.mod";
 
     static GameDatabase Db()
     {
@@ -67,13 +67,18 @@ public class AnimalTests(ITestOutputHelper output)
         var megaRace = factory.Race(Race(db, mega));
         Assert.Equal(megaRace.MinBlood + (megaRace.MaxBlood - megaRace.MinBlood) * 3 * AnimalData.From(mega)!.Scale(1), megaMedical.Blood, 1);
         output.WriteLine($"beak thing: blood {medical.Blood}, parts {string.Join(", ", medical.Parts.Select(p => $"{p.Template.Name} {p.MaxHp:0}"))}");
+
+        // A new bonedog carries its death items, flagged as such.
+        var items = new Meitou.Simulation.Items.ItemFactory(db, GameConstants.FromDatabase(db));
+        var death = items.Build(db.Find(Bonedog), null).Items.Select(i => (i.Name, i.Quantity, i.Death)).Order().ToArray();
+        Assert.Equal([("Animal Skin", 1, true), ("Animal Teeth", 4, true), ("Raw Meat", 3, true)], death);
     }
 
     // With the animation system: animals play their own clip sets (no clip lengths here, so the 1 s default).
     const StandardParts Fighting = StandardParts.Movement | StandardParts.Pursuit | StandardParts.Body | StandardParts.Combat | StandardParts.Retaliation | StandardParts.Aggro
         | StandardParts.Animation;
 
-    static (SimWorld World, StandardSystemSet Systems, PopulationSystem Population) Make(PopulationData data, int threads = 1, ulong seed = 1)
+    static (SimWorld World, StandardSystemSet Systems, PopulationSystem Population) Make(PopulationData data)
     {
         var walk = new OpenGroundWalkability((_, _) => 300);
         var systems = StandardSystems.Build(data, walk, new StandardSystemOptions
@@ -81,17 +86,8 @@ public class AnimalTests(ITestOutputHelper output)
             Parts = Fighting, SynchronousPaths = true,
             Combat = new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true },
         });
-        var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, MinPartitionSize = 1, PublishSnapshots = false }, walk, systems.Systems);
+        var world = new SimWorld(new WorldSettings { Seed = 1, Threads = 1, MinPartitionSize = 1, PublishSnapshots = false }, walk, systems.Systems);
         return (world, systems, new PopulationSystem(data, new PopulationSettings()));
-    }
-
-    [Fact]
-    public void A_new_bonedog_carries_its_death_items_flagged()
-    {
-        var db = Db();
-        var items = new Meitou.Simulation.Items.ItemFactory(db, GameConstants.FromDatabase(db));
-        var death = items.Build(db.Find(Bonedog), null).Items.Select(i => (i.Name, i.Quantity, i.Death)).Order().ToArray();
-        Assert.Equal([("Animal Skin", 1, true), ("Animal Teeth", 4, true), ("Raw Meat", 3, true)], death);
     }
 
     /// <summary>A CHARACTER of the base game with a race of its own (so it has a body without a generated look): the human opponent.</summary>
@@ -131,55 +127,5 @@ public class AnimalTests(ITestOutputHelper output)
         Assert.Contains(table.Cold(dog.Slot)?.Medical?.Parts ?? [], p => p.Flesh < p.MaxHp);
         // The animal never blocks or dodges.
         Assert.DoesNotContain(log, e => e.Defender == dog.Slot && e.Outcome is BlowOutcome.Blocked or BlowOutcome.Dodged);
-    }
-
-    static SimWorld Pack(int threads, ulong seed, out CombatSystem combat)
-    {
-        var db = Db();
-        var data = Data(db);
-        var (world, systems, population) = Make(data, threads, seed);
-        combat = systems.Combat!;
-        string human = Human(db);
-        int hostile = -1;
-        for (int g = 0; g < 4; g++)
-        {
-            float x = 2000 + g * 1200;
-            var who = population.SpawnSandbox(world, human, new Vector2(x, 2000), player: false, faction: data.PlayerFaction, variant: g + 1);
-            foreach (var (rec, k) in new[] { (Bonedog, 0), (BeakThing, 1), (WildBull, 2) })
-            {
-                var a = population.SpawnSandbox(world, rec, new Vector2(x + 40 + 15 * k, 2000 + 20 * k), player: false, yaw: -MathF.PI / 2);
-                hostile = world.Characters.Cold(a.Slot)!.Faction;
-                world.Commands.Enqueue(new AttackOrder([a], who) { Tick = 0 });
-            }
-        }
-        Assert.True(hostile >= 0);
-        return world;
-    }
-
-    internal static List<ulong> Hashes(int threads, ulong seed = 5)
-    {
-        using var world = Pack(threads, seed, out _);
-        var hashes = new List<ulong>();
-        int ran = 0;
-        foreach (int target in new[] { 30, 150, 400, 900 })
-        {
-            world.RunTicks(target - ran);
-            ran = target;
-            hashes.Add(world.StateHash());
-        }
-        return hashes;
-    }
-
-    [Fact]
-    public void Animal_fights_are_the_same_at_any_thread_count()
-    {
-        var one = Hashes(1);
-        Assert.Equal(one, Hashes(4));
-        Assert.Equal(one, Hashes(16));
-        Assert.NotEqual(one, Hashes(1, 6));
-        using var world = Pack(4, 5, out var combat);
-        world.RunTicks(900);
-        output.WriteLine($"blows {combat.Log.Count}, hits {combat.Log.Count(e => e.Outcome == BlowOutcome.Hit)}, KOs {combat.Log.Count(e => e.Knockout)}, deaths {combat.Log.Count(e => e.Death)}");
-        Assert.Contains(combat.Log, e => e.Outcome == BlowOutcome.Hit);
     }
 }

@@ -21,14 +21,6 @@ public class DeterminismTests
     }
 
     [Fact]
-    public void One_four_and_sixteen_threads_reach_the_same_state_at_every_checkpoint()
-    {
-        var one = Hashes(7, 1);
-        Assert.Equal(one, Hashes(7, 4));
-        Assert.Equal(one, Hashes(7, 16));
-    }
-
-    [Fact]
     public void The_workload_really_exercises_deaths_births_and_slot_reuse()
     {
         using var world = WanderSystem.Create(7, 4, 300);

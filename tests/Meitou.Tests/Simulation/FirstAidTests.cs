@@ -19,7 +19,7 @@ public class FirstAidTests
     // ------------------------------------------------------------------ the formulas (docs/game/character-stats.md "First aid, medkits and robot repair")
 
     [Fact]
-    public void The_treatment_rate_and_the_kit_drain_follow_the_documented_formulas()
+    public void The_treatment_rate_the_kit_drain_and_splinting_follow_the_documented_formulas()
     {
         var c = BaseGame;   // medic speed mult 3, robot medic speed mult 0.33, medkit drain 1 / 99 = 2 / 0.1 after the loader's scaling
         // lerp(1, 15, min(skill, quality) x 0.01) x medic speed mult: skill 50 with a quality 40 kit is limited by the kit (t = 0.4).
@@ -35,11 +35,7 @@ public class FirstAidTests
         Assert.Equal(0.1f, MedicalState.KitDrain(c, 100, 1, false), 4);
         Assert.Equal(20f, MedicalState.KitDrain(c, 0, 1, false) / MedicalState.KitDrain(c, 100, 1, false), 3);
         Assert.Equal(2 * 0.33f, MedicalState.KitDrain(c, 0, 1, true), 4);
-    }
 
-    [Fact]
-    public void Splint_need_and_splinting_follow_the_documented_rules()
-    {
         // docs/game/character-stats.md "Splints": a broken right leg, h = -20 with 60 bandaged.
         var m = Healthy();
         var leg = m.Parts[RLeg];
@@ -213,10 +209,8 @@ public class FirstAidTests
 
     // ------------------------------------------------------------------ determinism
 
-    internal static List<ulong> Scripted(int threads) => Scripted(threads, out _);
-
-    /// <summary>The scripted scenario; <paramref name="bandaged"/> is the bandage the players and the NPCs had put on at the end (to show the script does something).</summary>
-    internal static List<ulong> Scripted(int threads, out (float Players, float Npcs) bandaged)
+    /// <summary>The scripted scenario of treating, resting and the medic job, pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
         using var rig = new Rig(threads, minPartition: 1, seed: 12);
         var a = rig.Add(1000, 2000, player: true, medic: 60, kits: "72-t");
@@ -243,18 +237,9 @@ public class FirstAidTests
             ran = target;
             hashes.Add(rig.World.StateHash());
         }
-        bandaged = (Bandage(rig.Body(b)) + Bandage(rig.Body(c)) + Bandage(rig.Body(a)), Bandage(rig.Body(e)) + Bandage(rig.Body(f)));
-        return hashes;
-    }
-
-    [Fact]
-    public void A_scripted_game_of_first_aid_and_rest_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var done);
+        var done = (Players: Bandage(rig.Body(b)) + Bandage(rig.Body(c)) + Bandage(rig.Body(a)), Npcs: Bandage(rig.Body(e)) + Bandage(rig.Body(f)));
         Assert.True(done.Players > 100 && done.Npcs > 100, $"the script treats: {done}");
-        Assert.Equal(one, Scripted(4));
-        Assert.Equal(one, Scripted(16));
-        Assert.Equal(one, Scripted(1));
+        return hashes;
     }
 }
 

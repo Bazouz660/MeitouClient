@@ -159,8 +159,8 @@ public class ProductionTests
     // ------------------------------------------------------------------ determinism
 
     /// <summary>A well, a farm and a powered workshop are worked, water goes into the farm, books into the bench and crops into the workshop, the study and three gadgets
-    /// are queued, a fuelled generator powers the workshop and charges a battery, the labourer hauls the well's water to a tank; hashes at six checkpoints.</summary>
-    static List<ulong> Scripted(int threads, out (int Water, int Crops, bool Studied, int Gadgets, float Charge, int Stored) seen)
+    /// are queued, a fuelled generator powers the workshop and charges a battery, the labourer hauls the well's water to a tank; hashes at six checkpoints, pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
         using var rig = new Rig(Database(), Constants, [Well, Farm, Bench, PoweredWorkshop, Generator, Battery, Tank], threads);
         var labourer = rig.Add(0, StatsEnumerated.Labouring, Unit);
@@ -185,18 +185,10 @@ public class ProductionTests
             rig.World.RunTicks(target - (int)rig.World.Tick);
             hashes.Add(rig.World.StateHash());
         }
-        seen = (rig.Machine(0).Output!.Count, rig.Machine(1).Output!.Count, rig.World.Research.IsDone(Study), rig.Machine(3).Craft!.Done.Sum(i => i.Quantity), rig.Machine(5).Charge,
-            rig.Machine(6).Storage!.Items.Sum(i => i.Quantity));
-        return hashes;
-    }
-
-    [Fact]
-    public void Wells_farms_research_crafting_and_power_hash_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var seen);
+        var seen = (Water: rig.Machine(0).Output!.Count, Crops: rig.Machine(1).Output!.Count, Studied: rig.World.Research.IsDone(Study),
+            Gadgets: rig.Machine(3).Craft!.Done.Sum(i => i.Quantity), rig.Machine(5).Charge, Stored: rig.Machine(6).Storage!.Items.Sum(i => i.Quantity));
         Assert.True(seen.Water > 0 && seen.Crops > 0 && seen.Studied && seen.Gadgets == 3 && seen.Charge > 0 && seen.Stored > 0, $"{seen}");
-        Assert.Equal(one, Scripted(4, out _));
-        Assert.Equal(one, Scripted(16, out _));
+        return hashes;
     }
 
     // ------------------------------------------------------------------ items and research costs
@@ -466,7 +458,7 @@ public class ProductionTests
     }
 
     [Fact]
-    public void Adding_a_job_follows_the_originals_rows()
+    public void Adding_a_job_follows_the_originals_rows_and_a_job_list_saves_and_reads_back()
     {
         using var rig = new Rig(Database(), Constants, [Well, Tank]);
         var cold = new CharacterCold();
@@ -481,24 +473,20 @@ public class ProductionTests
         Assert.False(PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, new PermaJob(Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, b)));
         Assert.True(PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, new PermaJob(Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, b)));
         Assert.Null(PermaJobs.JobOf(Meitou.Data.Gameplay.Ai.TaskType.USE_BED));
-    }
 
-    [Fact]
-    public void A_job_list_saves_its_switch_off_and_reads_back_without_doubling_companions()
-    {
-        using var rig = new Rig(Database(), Constants, [Well, Tank]);
-        var cold = new CharacterCold();
-        PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, new PermaJob(Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, rig.Sites[0]));
-        cold.Orders &= ~CharacterOrders.Jobs;
+        // A job list saves its switch off and reads back without doubling companions.
+        var saved = new CharacterCold();
+        PermaJobs.Add(saved, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, new PermaJob(Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, a));
+        saved.Orders &= ~CharacterOrders.Jobs;
         var ai = new FcsRecord { Type = (int)FcsRecordType.GAMESTATE_AI, Name = "ai" };
-        Meitou.Simulation.Saving.PermaJobSave.Write(ai, cold, rig.World.Buildings, new Dictionary<string, FcsRecord>());
+        Meitou.Simulation.Saving.PermaJobSave.Write(ai, saved, rig.World.Buildings, new Dictionary<string, FcsRecord>());
         Assert.Equal((152, 124, false), (ai.Ints["pjob0"], ai.Ints["pjob1"], ai.Bools["jobs"]));
         var quick = new Meitou.Data.Save.SaveFile();
         quick.Data.Records.Add(new FcsRecord { Type = (int)FcsRecordType.CAMERA, StringId = "1051", Name = "camera" });
         var back = new CharacterCold { Orders = Orders.PlayerDefaults };
         Meitou.Simulation.Saving.PermaJobSave.Read(ai, null, back, rig.World.Buildings, new Meitou.Data.Save.SaveGame(quick).BuildHandles(), new Dictionary<FcsRecord, string>());
         // Re-adding 152 brings 124 again and the saved 124 is then refused as a duplicate; the switch is read last.
-        Assert.Equal(cold.Jobs.Select(j => (j.Type, j.Site)), back.Jobs.Select(j => (j.Type, j.Site)));
+        Assert.Equal(saved.Jobs.Select(j => (j.Type, j.Site)), back.Jobs.Select(j => (j.Type, j.Site)));
         Assert.True((back.Orders & CharacterOrders.Jobs) == 0);
     }
 
@@ -576,10 +564,10 @@ public class ProductionTests
     /// <summary>
     /// The installed Small Generator (1976, 40) with Upgraded Small Generators gives 55; the Battery Bank (1855, rate 40, store 60) with Battery Power, Advanced Battery Power,
     /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x the wind fraction
-    /// (docs/game/buildings-production.md "Power").
+    /// (docs/game/buildings-production.md "Power"). The resource storages take only their resource.
     /// </summary>
     [Fact, Slow]
-    public void The_installed_generators_and_battery_take_their_research_improvements()
+    public void The_installed_generators_and_battery_take_their_research_improvements_and_storages_their_resource()
     {
         var db = InstallData.BaseGame;
         Assert.SkipWhen(db is null, "Kenshi install not found");
@@ -592,6 +580,14 @@ public class ProductionTests
         var (generator, battery, wind) = (rig.Machine(0), rig.Machine(1), rig.Machine(2));
         Assert.True(wind.Data.IsWind && !generator.Data.IsWind && battery.Data.IsBattery);
         Assert.Equal((55f, 50 * ProductionSystem.WindFraction, 60f, 180f), (generator.Demand, wind.Demand, battery.Granted, battery.Store));
+
+        // The Water Tower (1950) takes only Water and Storage: Ore only Raw Iron (1866), both resource storages with stacks x 100 (docs/game/buildings-production.md "Storage").
+        var tower = MachineData.From(db!, db!.Find("1950-gamedata.base")!)!;
+        var ore = MachineData.From(db!, db!.OfType(FcsRecordType.BUILDING).First(r => r.Name == "Storage: Ore"))!;
+        string water = db!.OfType(FcsRecordType.ITEM).First(r => r.Name == "Water").StringId, iron = "1866-gamedata.base";
+        Assert.True(tower.IsStorage && ore.IsStorage);
+        Assert.Equal((true, false, false, true), (tower.Accepts(water, FcsRecordType.ITEM), tower.Accepts(iron, FcsRecordType.ITEM), ore.Accepts(water, FcsRecordType.ITEM), ore.Accepts(iron, FcsRecordType.ITEM)));
+        Assert.Equal((100f, 100f), (tower.StackBonusMult, ore.StackBonusMult));
     }
 
     /// <summary>
@@ -612,19 +608,5 @@ public class ProductionTests
         float own = field.NodeYield(ResourceField.IronResource, rocks[0].Position);
         Assert.InRange(own, 0.1f, 1f);
         Assert.Equal(own, field.Yield(ResourceField.IronResource, rocks[0].Position));
-    }
-
-    /// <summary>The installed Water Tower (1950) takes only Water and Storage: Ore only Raw Iron (1866), both resource storages with stacks x 100 (docs/game/buildings-production.md "Storage").</summary>
-    [Fact, Slow]
-    public void The_installed_water_tower_and_ore_storage_take_only_their_resource()
-    {
-        var db = InstallData.BaseGame;
-        Assert.SkipWhen(db is null, "Kenshi install not found");
-        var tower = MachineData.From(db!, db!.Find("1950-gamedata.base")!)!;
-        var ore = MachineData.From(db!, db!.OfType(FcsRecordType.BUILDING).First(r => r.Name == "Storage: Ore"))!;
-        string water = db!.OfType(FcsRecordType.ITEM).First(r => r.Name == "Water").StringId, iron = "1866-gamedata.base";
-        Assert.True(tower.IsStorage && ore.IsStorage);
-        Assert.Equal((true, false, false, true), (tower.Accepts(water, FcsRecordType.ITEM), tower.Accepts(iron, FcsRecordType.ITEM), ore.Accepts(water, FcsRecordType.ITEM), ore.Accepts(iron, FcsRecordType.ITEM)));
-        Assert.Equal((100f, 100f), (tower.StackBonusMult, ore.StackBonusMult));
     }
 }

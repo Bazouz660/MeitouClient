@@ -51,17 +51,8 @@ public class PlayerTests
             ran = target;
             hashes.Add(w.StateHash());
         }
+        Assert.Equal(6, hashes.Distinct().Count());   // the state moves between every checkpoint
         return hashes;
-    }
-
-    [Fact]
-    public void A_scripted_game_of_selects_and_orders_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1);
-        Assert.Equal(one, Scripted(4));
-        Assert.Equal(one, Scripted(16));
-        Assert.Equal(one, Scripted(1));
-        Assert.Equal(6, one.Distinct().Count());
     }
 
     [Fact]

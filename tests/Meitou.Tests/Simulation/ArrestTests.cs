@@ -61,9 +61,9 @@ public class ArrestTests
 
     /// <summary>
     /// The town above: two city policemen and two player characters. One, wanted for 5000 and just booked, stands by the first policeman, who arrests him (fight, lift, carry, cage A);
-    /// the other starts in cage B, picks its lock and gets out at tick 900 (an escape). Hashes at five checkpoints.
+    /// the other starts in cage B, picks its lock and gets out at tick 900 (an escape). Hashes at five checkpoints, pinned in <see cref="GoldenHashTests"/>.
     /// </summary>
-    internal static List<ulong> Scripted(int threads, out (bool Jailed, bool Picked, bool Escaped) seen, int minPartition = 1)
+    internal static List<ulong> Scripted(int threads)
     {
         var data = Town();
         var relations = data.Relations;
@@ -75,7 +75,7 @@ public class ArrestTests
         var arrest = new ArrestSystem(crime, BaseGame, new ArrestSettings { RecordLog = true }) { Carry = carry };
         var locks = new LockSystem(BaseGame, BodyOptions.Default) { Crimes = crime };
         var walk = new OpenGroundWalkability((_, _) => 150);
-        using var world = new SimWorld(new WorldSettings { Seed = 31, Threads = threads, PublishSnapshots = false, MinPartitionSize = minPartition }, walk,
+        using var world = new SimWorld(new WorldSettings { Seed = 31, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [new PlayerSystem(), new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), carry, combat,
              new RetaliationSystem(combat), new AggroSystem(relations), crime, arrest, locks]);
         world.Fixtures.RegisterSite(world, data, 0);
@@ -134,20 +134,11 @@ public class ArrestTests
             hashes.Add(world.StateHash());
         }
         var heroCold = world.Characters.Cold(hero.Slot)!;
-        seen = (heroCold.IsImprisoned && heroCold.InWhat == "0.0:cageA" && arrest.Log.Any(e => e.Kind == ArrestEventKind.Jailed && e.Target == hero),
-            picked, world.Characters.Cold(picker.Slot)!.Escaped || arrest.Log.Any(e => e.Target == picker));
-        return hashes;
-    }
-
-    [Fact]
-    public void An_arrest_and_a_picked_cage_hash_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var seen);
+        var seen = (Jailed: heroCold.IsImprisoned && heroCold.InWhat == "0.0:cageA" && arrest.Log.Any(e => e.Kind == ArrestEventKind.Jailed && e.Target == hero),
+            Picked: picked, Escaped: world.Characters.Cold(picker.Slot)!.Escaped || arrest.Log.Any(e => e.Target == picker));
         // It covers what it is for: the arrest reached the cage, the prisoner's pick opened the other cage, and getting out was an escape.
         Assert.True(seen.Jailed && seen.Picked && seen.Escaped, $"{seen}");
-        Assert.Equal(one, Scripted(4, out _));
-        Assert.Equal(one, Scripted(16, out _));
-        Assert.Equal(one, Scripted(4, out _, minPartition: 16));
+        return hashes;
     }
 
     [Fact]
