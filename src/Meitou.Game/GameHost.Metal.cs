@@ -100,10 +100,12 @@ sealed partial class GameHost
         bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") != "0";
         bool metalWater = Environment.GetEnvironmentVariable("MEITOU_METAL_WATER") != "0";
         bool metalShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_SHADOWS") != "0";
+        bool metalImpostors = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_IMPOSTORS") != "1";
         if (!metalFoliage) Console.WriteLine("metal     foliage disabled (MEITOU_METAL_FOLIAGE=0)");
         if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (MEITOU_METAL_CLOUD_SHADOWS=0)");
         if (!metalWater) Console.WriteLine("metal     water disabled (MEITOU_METAL_WATER=0)");
         if (!metalShadows) Console.WriteLine("metal     shadows disabled (MEITOU_METAL_SHADOWS=0)");
+        if (!metalImpostors) Console.WriteLine("metal     impostors disabled (MEITOU_METAL_NO_IMPOSTORS=1)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -348,8 +350,8 @@ sealed partial class GameHost
         // The buildings' interior masks (docs/render-interior-cut.md): the depth range the terrain, foliage and map features are cut by
         // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.
         InteriorMaskRenderer? interiorMask = objects is null ? null : new InteriorMaskRenderer(ctx, objects);
-        // The world's foliage (the catalog's meshes, the grass pages and the TERRAIN-mode rocks), as WorldFrame.CreateGpu makes it. The
-        // impostor bakes and the GPU culls stay Vulkan-only for now: the CPU cull draws the meshes and the CPU grass path the blades.
+        // The GPU culls stay Vulkan-only for now; the CPU cull draws the meshes and their far impostors. The impostor
+        // atlas path is re-enabled after the frame-slot fence; the env switch is only a diagnostic fallback.
         FoliageRenderer? foliage = null;
         if (!o.NoFoliage && metalFoliage && scene.Database is { } foliageDb)
         {
@@ -361,9 +363,9 @@ sealed partial class GameHost
                 Lod = o.FoliageLod,
                 Terrain = terrain,
                 Guard = memoryGuard,
-                // The Metal impostor atlas still comes out corrupt (red/black bands, and a gray
-                // full-screen card under MetalFX); keep the meshes and grass until that path is fixed.
-                Impostors = false,
+                // The Metal impostor atlas path is re-enabled after the frame-slot fence; keep a diagnostic off switch
+                // for a quick A/B if the atlas content regresses.
+                Impostors = metalImpostors,
                 // Diagnostic/workaround: keep the tree, bush and rock meshes but skip the grass page draws.
                 DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1",
                 // Diagnostic isolation for the far-travel GPU hang: trees/bushes off, the TERRAIN-mode rocks still draw.
@@ -525,8 +527,9 @@ sealed partial class GameHost
             foreach (var toggle in settingsValues.Toggles)
                 if (config.Graphics.TryGetValue("Meitou: " + toggle.Label, out float value) && (value >= 0.5f) != toggle.Get())
                     toggle.Set(value >= 0.5f);
-            // The impostor atlas path is still corrupt on Metal: a saved "Far impostors" setting must not turn it back on.
-            if (foliage is not null) foliage.DisableImpostors();
+            // The impostor atlas path is re-enabled after the frame-slot fence. Keep the diagnostic off switch as a
+            // fallback; the saved "Far impostors" toggle is otherwise allowed through.
+            if (foliage is not null && !metalImpostors) foliage.DisableImpostors();
             // The saved Cloud shadows and Shadow distance settings can re-enable the safe-mode suspects after the sky and the
             // shadow pass were made; keep both off until the black-terrain path is fixed, unless the diagnostic env asks.
             if (!metalCloudShadows) sky.CloudShadows = false;
@@ -629,6 +632,11 @@ sealed partial class GameHost
                     () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
                     v => foliage.LodTolerance = FoliageRenderer.DefaultLodTolerance / v, "0.00", Logarithmic: true));
                 toggles.Add(new Toggle("Foliage ranges", () => foliage.MeitouRange, v => foliage.MeitouRange = v));
+                toggles.Add(new Toggle("Far impostors", () => foliage.Impostors, v => foliage.Impostors = v));
+                sliders.Add(new Slider("Impostor distance (F7 Meitou)", 500, 40000, () => foliage.ImpostorDistance,
+                    v => foliage.ImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+                sliders.Add(new Slider("Large impostor distance (F7 Meitou)", 500, 40000, () => foliage.LargeImpostorDistance,
+                    v => foliage.LargeImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
             }
             sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => render.TerrainPixelError,
                 v => render.TerrainPixelError = v, "0.0", Logarithmic: true,

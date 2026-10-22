@@ -349,10 +349,11 @@ and adds them as cascade casters. Two backend facts this surfaced:
 seam gained `IGpuFrame.PreFrame` (Metal's frame list, recorded before its passes), `IGpuReadback` with
 `CreateReadback`/`FrameCompleted`, and `CopyTextureToBuffer`. Metal implements the bake's halving blit as a fullscreen
 sampling pass (Metal's blit cannot scale), copies the row into a shared readback buffer, and reports a frame completed
-when the drawable ring has turned. **Temporarily disabled in the Metal host:** the bake now validates, but some atlases
-still draw as red/black bands or a gray full-screen card, so `GameHost.Metal` calls `FoliageRenderer.DisableImpostors()`
-after settings load and draws the meshes instead. A saved `Far impostors` setting used to re-enable them after the
-initial `Impostors = false`; the Metal settings no longer offer the toggle. Re-enable when the atlas content is fixed.
+when the drawable ring has turned. **Re-enabled after the frame-slot fence:** the atlas path was previously disabled
+because some atlases drew as red/black bands or a gray full-screen card. With slot reuse now fenced, a far-foliage still
+loaded 146 atlases (244 MB) cleanly and a 60 s auto-camera run used 172 atlases (up to 256 MB) at 47 fps with no
+validation errors. `MEITOU_METAL_NO_IMPOSTORS=1` remains as a diagnostic fallback; the Metal settings again expose
+"Far impostors" and the impostor distance sliders.
 Two Metal fixes the bake surfaced:
 
 - **Argument buffers are padded to 16 bytes.** A one-member set was allocated 8 bytes and failed Metal's validation;
