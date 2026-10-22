@@ -138,7 +138,7 @@ public sealed class Releases(HttpClient http)
         return [.. list.OrderByDescending(r => r.Published)];
     }
 
-    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> or a same-day second build <c>….20261020.2</c> (release.yml): its number, build date and that day's build (1 for the plain date).</summary>
+    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> or a same-day second build <c>….20261020.2</c> (nightly.yml): its number, build date and that day's build (1 for the plain date).</summary>
     public static (string Number, DateOnly? Nightly, int Build) ParseVersion(string version)
     {
         int at = version.IndexOf("-nightly.", StringComparison.Ordinal);
