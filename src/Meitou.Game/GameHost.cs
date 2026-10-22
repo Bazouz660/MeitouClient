@@ -79,6 +79,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         finally { DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
     }
 
+    /// <summary>The start opens on the title (no start, save, sandbox or duel was asked for).</summary>
+    bool OpensOnTitle(bool interactive) => g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation;
+
     void Boot(VulkanDisplay display, bool interactive)
     {
         var context = display.Context;
@@ -243,7 +246,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
             assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
         ConfigureEditor();
-        if (g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation) player.ShowTitle();
+        if (OpensOnTitle(interactive)) player.ShowTitle();
         if (nav is not null && (start is not null || !interactive))
         {
             // The squad is placed on the mesh, and a still has its town at once: wait for the zones round the start (a cold build is about 2 s, then cached).

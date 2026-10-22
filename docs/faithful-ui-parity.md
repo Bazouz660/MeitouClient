@@ -37,19 +37,24 @@ Brought in line with a documented fact:
 | What | Now | Source |
 | --- | --- | --- |
 | HUD money | `c.1,234`, no space after the point | format string `c.{1,num}` (ui-screens.md section 1) |
-| Save/load info panel | the five original labels in order: File version, Faction name, Funds, Members size, Location; the extra "Day" line is gone | FUN_14047e390 / FUN_14047e780 (section 3) |
+| Save/load info panel | empty until a save is selected, then the seven lines of the original's data panel: Date, File version, Faction name, Funds, Members size, Location, Day ([Title screen and its windows](game/ui-screens.md#title-screen-and-its-windows)) | FUN_14047e390 / FUN_14047e780 |
 | Continue | hidden, not greyed, when no readable save exists | section 3 |
 | Esc on a message box | presses its last button (Return already pressed the first) | ui-input.md section 5 |
 | T / Y | open the overview on Research / Craft (M on Map); faction has no default key | events 3..6, ui-input.md sections 4 and 6 |
 
 Engine choices that remain; the original is **Unknown** for each:
 
-- Message box captions (YES / CANCEL), window titles ("INVENTORY - name"; "Prospecting Results" is the exe's text, shown upper-cased like the other titles), confirmation texts other than "Are you sure you want to exit?".
+- Message box captions other than the Exit dialog's ([Title screen and its windows](game/ui-screens.md#title-screen-and-its-windows)), window titles ("INVENTORY - name"; "Prospecting Results" is the exe's text, shown upper-cased like the other titles), confirmation texts other than "Are you sure you want to exit?".
 - Overview faction name shows "Player"; the original shows the player faction's name.
 - Tooltips: the HUD's texts show in a Fixed tooltip on the `TooltipPanel` rectangle; the Floating and Inventory ones use the metrics of [Tooltips](game/ui-screens.md#tooltips).
 - Medical rows: the parts in the original's part array order ([part order](game/character-stats.md#part-order)).
-- Save list rows carry a `[Meitou]` / `[Kenshi]` source tag; the title's version text reads "Meitou - Faithful UI" (the original's is "Kenshi 1.0.68 - x64 (Newland)"), on purpose.
 - The sandbox keeps Z X C Y P G; with `--sandbox` the faithful C (stats) and Y (craft) shortcuts give way to it.
+
+Deliberate differences from the original:
+
+- The title's version text reads "Meitou - Faithful UI" (the original's is "Kenshi 1.0.68 - x64 (Newland)").
+- The message box (Exit and the other confirmations) centres its buttons and draws its text in the light Main colour, for readability (the original:
+  buttons where the layout puts them, left of centre, and dark text on the dark window).
 
 `FaithfulInteractionTests.EveryWidgetTheFaithfulModeFillsExistsInTheOriginalLayout` [Slow] binds the HUD and every faithful screen against the installed layouts. It
 fails on any text, action, list or progress bound to a widget the layout lacks. It also prints the absent widgets that are only hidden or styled, and the named widgets
@@ -70,7 +75,7 @@ found the front end, inventory, bag and limb windows sharing one set of bindings
 | Inventory mutations | Validated pocket/bag/equipment moves and arrangement, paused interface commands, worn appearance/combat refresh; stack/split, swaps, race constraints, prosthetics and character transfers remain |
 | Advanced new-game options | Seven numeric options wired to new worlds: hunger, death, damage, production, research, building and nests. Expand below the raised start panel; toggle/Esc collapses it. The bottom panel explains the hovered row (label, slider, arrows or value). Bandit looting and easy prospecting switches remain unsupported. [Persistence](simulation.md#new-game-difficulty) |
 | Character creation | `Kenshi_CharacterEditor` after a new game (all start characters, `force race`) and at plastic surgeons (context menu stand-in for the dialogue line); validated `EditCharacter` commands; rows from the original templates, catalog captions, stats panel, platform and stage lighting ([characters](characters.md#character-editor)) |
-| Import/reset squad positions | Save loading exists; import/reset rules need a separate backend |
+| Import/reset squad positions | The import window is the original's (list, ticks, advanced options); importing into a new world is not implemented (its rules: [Title screen and its windows](game/ui-screens.md#title-screen-and-its-windows)); the reset tick does nothing yet |
 
 ## Validation
 

@@ -15,6 +15,11 @@ public sealed partial class UiBindings
     public Dictionary<string, (float Width, float Height)> Canvas { get; } = new(StringComparer.Ordinal);
     /// <summary>ScrollViews whose scrolling the screen implements itself (the map): the generic canvas, bars and offsets leave them alone.</summary>
     public HashSet<string> NativeScroll { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// The height of a control's text as the host's painter would draw it (wrapped to its width when it has <c>WordWrap</c>); null when the host measures no text, so an
+    /// EditBox never shows its vertical bar.
+    /// </summary>
+    public Func<UiControl, float>? TextHeight { get; set; }
     /// <summary>The ComboBox whose popup list is open (set by the host).</summary>
     public string? OpenCombo { get; set; }
 }
@@ -54,7 +59,10 @@ public static partial class MyGuiPresentation
         if (!b.Lists.TryGetValue(name, out var items)) return [];
         var order = Enumerable.Range(0, items.Count);
         if (b.Columns.ContainsKey(name) && b.Sorts.TryGetValue(name, out var sort))
-            order = sort.Ascending ? order.OrderBy(i => CellOf(items[i], sort.Column), StringComparer.Ordinal) : order.OrderByDescending(i => CellOf(items[i], sort.Column), StringComparer.Ordinal);
+        {
+            string Key(int i) => items[i].SortKeys is { } keys && sort.Column >= 0 && sort.Column < keys.Count ? keys[sort.Column] : CellOf(items[i], sort.Column);
+            order = sort.Ascending ? order.OrderBy(Key, StringComparer.Ordinal) : order.OrderByDescending(Key, StringComparer.Ordinal);
+        }
         return order.ToArray();
     }
 
@@ -78,6 +86,7 @@ public static partial class MyGuiPresentation
             int i = result.FindLastIndex(c => c.Name == child.Name);
             if (i >= 0) result[i] = result[i] with { Action = $"mygui:step:{w.Name}:{part.ToLowerInvariant()}", Pickable = true, Enabled = enabled };
         }
+        if (w.Type == "EditBox") EditBoxScroll(result, b, w, props);
         if (w.Type == "ComboBox") Combo(result, b, w, props, bounds, enabled, viewport, visit, deferred);
         else if (w.Type == "MultiListBox" && b.Columns.ContainsKey(w.Name)) MultiColumns(result, b, w, props, enabled, alpha, visit);
         else if (props.TryGetValue("ListSource", out var source) && b.Lists.TryGetValue(source, out var sourceItems))
@@ -85,6 +94,37 @@ public static partial class MyGuiPresentation
                 props.GetValueOrDefault("ListBar") != "false", props.GetValueOrDefault("RowAction") ?? "mygui:list");
         else if (b.Lists.TryGetValue(w.Name, out var items))
             ListRows(result, b, w, props, bounds, clip, enabled, w.Name, w.Name, items, ListOrder(b, w.Name), 0, true, "mygui:list");
+    }
+
+    /// <summary>
+    /// An EditBox's vertical bar (MyGUI 3.2 EditBox and ScrollViewBase::updateScrollSize): it shows only when <c>VisibleVScroll</c> is not false and the text is taller than the
+    /// client without it, and scrolls the text by its position (the client's <c>TextScroll</c>, page 16, wheel 50 pixels at the template's scale). The client is the template's
+    /// plus the bar's width while the bar is hidden, less it while shown (Observed in the editor's race description: a Hive Prince's wraps 6 px inside the frame, a skeleton's
+    /// 14 px clear of the bar).
+    /// </summary>
+    static void EditBoxScroll(List<UiControl> result, UiBindings b, MyGuiWidget w, Dictionary<string, string> props)
+    {
+        if (PartOf(w, "VScroll") is not { } barWidget || result.FindLastIndex(c => c.Name == barWidget.Name) is not (var bi and >= 0)) return;
+        int ci = IndexOfPart(result, w, "Client");
+        float widen = result[bi].Bounds.Width;
+        if (ci >= 0 && props.GetValueOrDefault("VisibleVScroll") != "false" && b.TextHeight is { } measure)
+        {
+            var client = result[ci];
+            float view = client.Bounds.Height;
+            if (measure(client with { Bounds = client.Bounds with { Width = client.Bounds.Width + widen } }) > view + 0.5f)
+            {
+                // Shown, the bar's width comes off the template's client (Observed: the skeleton's description wraps 14 px clear of the bar, where the
+                // template's client reaches under it).
+                client = client with { Bounds = client.Bounds with { Width = Math.Max(0, client.Bounds.Width - widen) } };
+                float content = measure(client), max = Math.Max(0, content - view), offset = Math.Clamp(b.ScrollOffsets.GetValueOrDefault(w.Name), 0, max);
+                result[ci] = client with { Properties = new Dictionary<string, string>(client.Properties, StringComparer.Ordinal) { ["TextScroll"] = N(offset) } };
+                LayoutBar(result, b, barWidget, true, max, offset, view / content, ScrollViewPage * b.TemplateScale, view, ScrollViewWheel * b.TemplateScale, true, w.Name, w.Name, false, true);
+                props["ScrollKey"] = w.Name; props["ScrollMax"] = N(max); props["ScrollWheel"] = N(ScrollViewWheel * b.TemplateScale);
+                return;
+            }
+        }
+        RemoveBar(result, bi);
+        if ((ci = IndexOfPart(result, w, "Client")) >= 0) result[ci] = result[ci] with { Bounds = result[ci].Bounds with { Width = result[ci].Bounds.Width + widen } };
     }
 
     /// <summary>
@@ -119,12 +159,15 @@ public static partial class MyGuiPresentation
         for (int d = 0; d < order.Length; d++)
         {
             int source = order[d];
-            var row = new UiRect(area.X + 3, area.Y + d * line - offset, Math.Max(0, area.Width - 6), line);
+            // A line of the list's SkinLine spans the client and its skin places the text (MyGUI ListBox; the base game's save list: 6 px in at 1440 lines);
+            // without one, Meitou's 3 px inset and text padding.
+            var row = lineSkin is null ? new UiRect(area.X + 3, area.Y + d * line - offset, Math.Max(0, area.Width - 6), line) : new UiRect(area.X, area.Y + d * line - offset, area.Width, line);
             if (row.Intersect(rowClip).Height <= 0) continue;
             var rowProperties = new Dictionary<string, string>
             {
-                ["ListOwner"] = scrollKey, ["ListCount"] = count, ["FontName"] = props.GetValueOrDefault("LineFont") ?? "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter", ["TextPadding"] = "4 2 4 2",
+                ["ListOwner"] = scrollKey, ["ListCount"] = count, ["FontName"] = props.GetValueOrDefault("LineFont") ?? "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter",
             };
+            if (lineSkin is null) rowProperties["TextPadding"] = "4 2 4 2";
             if (lineSkin is null || props.ContainsKey("TextColour")) rowProperties["TextColour"] = ink;
             if (lineSkin is not null && selected == source) rowProperties["Checked"] = "true";
             result.Add(new(w.Name + "@row" + source, "Button", row, CellOf(items[source], column), $"{rowAction}:{sel}:{source}", lineSkin ?? "", enabled, rowProperties,

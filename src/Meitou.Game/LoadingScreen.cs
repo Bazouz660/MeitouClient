@@ -141,6 +141,59 @@ sealed class LoadingScreen : IDisposable
         }
     }
 
+    /// <summary>
+    /// The original's splash (<c>FUN_140916140</c>, stepped by <c>FUN_140913720</c>; docs/game/ui-screens.md "Splash"): on black, the <c>Kenshi_Splash_Logos</c> picture
+    /// (its height × 100, so the screen's height) and then <c>Kenshi_Splash_LoFi</c> (× 0.7), each centred, at the image's height × the UI scale × that factor, capped
+    /// at the screen's height.
+    /// </summary>
+    static readonly (string ImageSet, float Scale)[] SplashSlides = [("Kenshi_Splash_Logos", 100), ("Kenshi_Splash_LoFi", 0.7f)];
+    int splashSlide = -1, fullFrames;
+    double slideStart;
+    bool skipSlide;
+
+    /// <summary>Plays the splash from its first picture (the Faithful start, which opens on the title); the loading screen shows once it is over.</summary>
+    public void StartSplash()
+    {
+        if (painter is null || resources is null) return;
+        (splashSlide, fullFrames, skipSlide, slideStart) = (0, 0, false, clock.Elapsed.TotalSeconds);
+    }
+
+    /// <summary>The splash is still showing a picture.</summary>
+    public bool SplashPlaying => splashSlide >= 0 && splashSlide < SplashSlides.Length;
+
+    /// <summary>A key or button was pressed: the picture showing ends once it is fully shown.</summary>
+    public void SkipSplash() { if (SplashPlaying) skipSlide = true; }
+
+    /// <summary>
+    /// One frame of the splash: the picture fades in at 3 a second and ends after 4 seconds, or on a press, once it has been drawn fully opaque on more than three
+    /// frames; then the next one starts at once, with no fade out.
+    /// </summary>
+    void DrawSplash(int width, int height)
+    {
+        double elapsed = clock.Elapsed.TotalSeconds - slideStart;
+        float alpha = (float)Math.Min(1, elapsed * 3);
+        if (alpha == 1) fullFrames++;
+        bool ended = (skipSlide || elapsed > 4) && fullFrames > 3;
+        overlay.Rect(0, 0, width, height, new Vector4(0, 0, 0, 1));
+        overlay.Flush(width, height);
+        if (!ended && resources!.Resources.TryGetValue(SplashSlides[splashSlide].ImageSet, out var set)
+            && set.Element("Group")?.Attribute("size")?.Value.Split(' ') is [var w, var h]
+            && float.TryParse(w, CultureInfo.InvariantCulture, out float imageWidth) && float.TryParse(h, CultureInfo.InvariantCulture, out float imageHeight) && imageHeight > 0)
+        {
+            // The scale is Unknown (DAT_1421337ec, beside the UI scale DAT_1421337f0): taken as the UI scale, height / 1080 (engine choice).
+            int shownHeight = (int)Math.Min(imageHeight * (height / 1080f) * SplashSlides[splashSlide].Scale, height);
+            int shownWidth = (int)(imageWidth / imageHeight * shownHeight);
+            var bounds = new UiRect((int)(width * 0.5f - shownWidth * 0.5f), (int)(height * 0.5f - shownHeight * 0.5f), shownWidth, shownHeight);
+            var properties = new Dictionary<string, string>
+            {
+                ["ImageResource"] = SplashSlides[splashSlide].ImageSet, ["ImageGroup"] = "Main", ["ImageName"] = "Main", ["Alpha"] = alpha.ToString(CultureInfo.InvariantCulture),
+            };
+            painter!.Mode = UiMode.Faithful;
+            painter.Draw([new UiControl("Splash", "ImageBox", bounds, "", "", "", true, properties, Vector4.Zero)], width, height, new Vector2(-1, -1), null);
+        }
+        if (ended) (splashSlide, fullFrames, skipSlide, slideStart) = (splashSlide + 1, 0, false, clock.Elapsed.TotalSeconds);
+    }
+
     /// <summary>Starts the bar again (a new load between scenes), with a new tip and picture.</summary>
     public void Restart() { shown = 0; from = to = 0; exitStart = null; drawn = false; Pick(); }
 
@@ -149,6 +202,7 @@ sealed class LoadingScreen : IDisposable
         float t = ExitProgress;
         if (t >= 1) return;
         drawn = true;
+        if (SplashPlaying && exitStart is null) { DrawSplash(width, height); return; }
         if (Faithful && painter is not null && layout is not null && resources is not null)
         {
             // Hidden at once when done, also when the mode was switched to Faithful during the Meitou slide-out.

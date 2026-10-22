@@ -51,11 +51,18 @@ Sources: the configured Kenshi install's `data/gui/`, the existing
   the hhea ascender and descender each rounded to the nearest pixel at the fractional
   em (each at least the OS/2 Windows value at the rounded ppem). At 1080 p,
   Sentencia 25 pt draws at 22 pt (15.3 px) and Exo2 20 pt stays 20 pt (13.9 px).
-  At 1440 p (2026-10-22, the same French loading tip side by side), Exo2 24 pt draws
-  at 23 pt: lines within 1 % of vanilla's width, where rounding up gives 24 pt and
-  5 % too wide. MailartRubberstamp 110 pt gives 108 pt, its stamp matching vanilla's
-  to 2 px. Rounding at the integer ppem (head flag bit 3) gives 20 pt for Sentencia and
-  does not fit. Meitou: `KenshiFontSize` (default 3).
+  Above 1080 lines the size is scaled by height / 1080 and cut to whole points before that
+  reset (**Observed**, 1440 p, 2026-10-22, the French editor beside vanilla's): Exo2 20 pt
+  draws at `Effective(26)` = 25 pt, its race description within 1.2 % of vanilla's nine
+  line widths (the reset of the scaled 26.67 pt gives 26 pt, +4 %; the 1080 size reset and
+  then scaled, 26.67 pt, +9.5 %), 22 px lines as vanilla's; Sentencia 20 pt headings
+  ("DESCRIPTION RACE", "STATS RACE") match vanilla's widths to the pixel (scaled after the
+  reset: +7 %). The loading tip (`Kenshi_FloaterFont_Large`, Exo2 26 pt) is still +5.5 %
+  wide (**Unknown** why). MailartRubberstamp 110 pt gives 108 pt at 1080 p and 144 pt at
+  1440 p either way, its stamp matching vanilla's to 2 px. Rounding at the integer ppem
+  (head flag bit 3) gives 20 pt for Sentencia and does not fit. Meitou: `KenshiFontSize`
+  (default 3), scaled by `UiPainter.ScaledFontSize` (Faithful); the Faithful minimum text
+  size is the standard font's size so found (`UiPainter.StandardTextPixels`).
 - **Verified** against MyGUI 3.2.2 (`TextView`), **Observed** on the loading screen:
   text is never scaled to its widget. A line taller than its box overflows it and is
   clipped by the widget. Meitou's Faithful mode does the same for font resources
@@ -228,6 +235,17 @@ Code: `UiDocument.Widgets.cs` (layout), `MyGuiScreenHost.Widgets.cs` (input). **
   sits by `CanvasAlign` (centred when unset; `Default` = Left Top); bar page 16 px, wheel 50 px (vertical first). MyGUI re-reads the sizes once per update, Meitou iterates to the fixed point.
   The source passes the cross-axis view size as ViewPage (as read); Meitou pages by the view along the axis (**Unknown** which is intended). Children of the client are placed against the scrolled canvas.
   A screen that scrolls a view itself lists it in `NativeScroll` (the map). Without a canvas nothing scrolls and the bars hide: the Overview's `RelationsPanel` (no `CanvasSize` in the layout) loses its static bars.
+- **Template clients** (**Observed**, the title's credits): a template's `Client` part takes the layout's children only for the widgets that set it as
+  their client (windows, views, edit boxes, lists); a plain Widget, TextBox, ImageBox or Button keeps its children itself (`MyGuiTemplates`).
+- **Lines and long text** (**Observed**, the save list at 1440 lines): a list with a `SkinLine` lays its lines across the whole client and the
+  line skin places the text (Meitou's 3 px inset and padding only without one); a resource font's line longer than its widget is cropped, never
+  shortened with "..." (Faithful). The save list's lines are 28 px apart at 1440 lines: the template's `HeightLine` 21 times height / 1080, which
+  Meitou applies to the load, save and import windows (whether every template scales so is **Unknown**).
+- **EditBox** (`EditBox.cpp` with `ScrollViewBase.cpp`; **Observed** in the editor's race description, `Kenshi_WordWrap`, which sets no `VisibleVScroll`):
+  the vertical bar shows only when the text is taller than the client (and `VisibleVScroll` is not false); hidden, its thickness goes to the client, so text
+  wraps up to 6 px inside the frame (a Hive Prince's description); shown, its thickness comes off the template's client, so the text keeps 14 px clear of it (a
+  skeleton's, 1440 p). Meitou measures the wrapped text with
+  the painter (`UiBindings.TextHeight`) and scrolls it by the bar (`TextScroll`; page 16, wheel 50 px at the template scale, as the ScrollView's).
   Multi-line EditBox scroll bars are not done. An EditBox's `TextAlign` aligns its client's text (MyGUI `EditBox::setTextAlign`), as its `WordWrap`. A template part's `position_real` becomes pixels once, at the template's own size (`Kenshi_ListBoxEmpty`'s client sits 19 x 18 px in). A ListBox's lines are its `SkinLine` template's skin and font; the selected line is that skin's checked state (`Kenshi_ListBoxItemSkin`: lighter text, no bar). A second click on a line within 0.5 s accepts it (`eventListSelectAccept`). A checked button's caption takes the skin's `*_checked` text colour.
 - **Slider** (Observed): no installed layout uses `Kenshi_Slider`, `Kenshi_ListSlider` or `Kenshi_MultiSlider(Small)`; they are supported as templates. `Kenshi_Slider`'s bar has `Range` 100 and no
   `MoveToClick` (so a track press pages by one), giving positions 0 to 99 although its example caption reads 100. Text of template parts is set with `Text["<owner>.NumberText"]`

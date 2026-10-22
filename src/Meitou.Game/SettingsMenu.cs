@@ -232,6 +232,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Picture: SettingsMenuArt.LuckyrenImage));
             result.Add(new(GroundItemsSlider.Label, "How many items dropped during play (severed limbs, luckyren Mode's gear) stay on the ground; past it the oldest disappears. "
                 + "Items that were on the ground in the save always stay.", Slider: GroundItemsSlider));
+            result.Add(new("Splash screens", "The game's logos at startup (Faithful UI); a key or a click skips each one. Off, the menu shows as soon as the game has loaded.",
+                Toggle: new("Splash screens", () => config.SplashScreens, v => config.SplashScreens = v, Remaster: true, OnOff: true)));
             result.Add(new("Main menu scene transitions", "Sky flight to/from the main menu (Meitou UI).",
                 Toggle: new("Main menu scene transitions", () => config.MainMenuTransitions, v => config.MainMenuTransitions = v)));
             result.Add(new(mainMenuTransitionSpeed.Label, "Higher values make the camera ascend and descend faster.", Slider: mainMenuTransitionSpeed));
@@ -451,6 +453,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         for (int i = 0; i < values.Toggles.Count; i++)
             if (values.Toggles[i].Get() != toggleDefaults[i]) values.Toggles[i].Set(toggleDefaults[i]);
         frameLimit.Set(240);
+        config.SplashScreens = true;
         config.MainMenuTransitions = true;
         config.InGameTransitions = true;
         config.MainMenuTransitionSpeed = 1.5f;

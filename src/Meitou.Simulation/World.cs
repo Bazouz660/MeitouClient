@@ -105,8 +105,11 @@ public sealed partial class World : IDisposable
     public WorldSettings Settings { get; private set; }
     public ulong Seed => Settings.Seed;
 
-    /// <summary>A loaded save's world seed (docs/formats/save.md CAMERA <c>meitou seed</c>), so its seeded layout rolls as before the save; only before the first tick.</summary>
-    internal void RestoreSeed(ulong seed)
+    /// <summary>
+    /// Sets the world seed before the first tick: a loaded save's (docs/formats/save.md CAMERA <c>meitou seed</c>), so its seeded layout rolls as before the save, or a new
+    /// game's fresh one, so its names and other rolls differ from the last game's.
+    /// </summary>
+    public void RestoreSeed(ulong seed)
     {
         if (Tick != 0) throw new InvalidOperationException("The seed is restored before the world's first tick.");
         Settings = Settings with { Seed = seed };

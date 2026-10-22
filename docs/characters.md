@@ -151,7 +151,8 @@ a frame against 0.75M, +0.9 ms GPU in the picture and +0.9 ms in the shadows. Wh
 from the look's sex's list (appearance `sex female`): `data/namesM.txt` (men) or `data/namesF.txt` (women), with `data/namesMF.txt` appended to
 both. Lines are trimmed, blank ones skipped; each file is optional. An empty list gives a fixed fallback string (**Unknown**; Meitou: the record
 name). 135 of 639 merged CHARACTERs are `named`, among them most start-squad members (Wanderer, Nobody, start slave; not Citizen, Exile).
-Meitou: `NamePool`, rolled at spawn (`PopulationSystem.SpawnName`, `RngPurpose.Name`); files read from the install, not mods.
+Meitou: `NamePool`, rolled at spawn (`PopulationSystem.SpawnName`, `RngPurpose.Name`) from the world seed, which a new game from the menu rolls afresh
+(`--seed` keeps one), so the start squad's names differ from game to game as the original's; files read from the install, not mods.
 
 ## Character editor
 
@@ -164,10 +165,20 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
 - **Races**: RACE_GROUP name on RACE, RACE name on SUBRACE; a race is listed if not an animal, in a group, has its editor limits XML, `playable`
   (mode 0) and, with a `force race` list, in it (none left: "Game start has no valid races", the list is unrestricted). Base data: Human
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
-  (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
+  (Meitou: data order). Gender "-" when the race's gender list has fewer than two entries (**Verified**, `FUN_1405ee0c0`; Meitou: `single gender`); the
+  subrace box always shows the RACE name. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
   "Hit Points:" and the character's first medical part's maximum as an integer (Meitou, while the draft shows another race: that race's new medical state's), "No bleeding" below `bleed rate` 0.1, then the stat multipliers
   above 1, then those below 1, each as the stat's name (no colon) and (m-1)x100 %. Within each group the order is the race stat map's iteration order
   ([boost-unordered](formats/boost-unordered.md); `RaceData.StatMapOrder`), which gives vanilla's Greenlander Farming, Cooking, Science (**Observed**).
+  **Verified** (decompile): the lines go into a DatapanelGUI (`FUN_1406fe9f0`), whose ScrollView grows its canvas and shows its vertical bar when a line
+  passes the bottom (`FUN_1406fd4e0`); labels `#afa68b`, values above 1 `#a8b774` with "+", below 1 `#bf4834` (BadBright). The names are the editor's own
+  table (`FUN_140888440`), not the stats window's: 1 Strength, 2 Attack, 3 Labouring, 4 Science, 5 Engineering, 6 Robotics, 7 Weapon Smithing, 8 Armour
+  Smithing, 9 First Aid, 10 Thievery, 11 Turrets, 12 Farming, 13 Cooking, 14-15 Vet, 16 Stealth, 17 Athletics, 18 Dexterity, 19 Defence, 20 Weaponry,
+  21 Toughness, 22 Assassination, 23 Swimming, 24 Perception, 25 Katanas, 26 Sabres, 27 Hackers, 28 Heavy weapons, 29 Blunt, 30 Martial arts, 32 Dodging,
+  35 Crossbows, 36 Precision Shooting, 37 Lockpicking, 38 Crossbow Smithing, others empty. Row pitch 25.55 px at 1440 lines (**Observed**, a Hive Prince's
+  twelve lines; Meitou: 19.2 at 1080, text top-aligned). The rows are 355 px wide at 1440 lines with or without the bar; with it (20 px) they start at the
+  panel's left, without it 13 px right and 13 px down (**Observed**, a Hive Prince's and a skeleton's panels; Meitou: a canvas the bar's width narrower than the
+  panel, inset 13 px when it fits, text 6 px above the panel's top).
 - **Captions** (`FUN_1405f1a40`, **Observed**): the code sets every button and header from the catalog, upper case: Randomise, Reset (not the
   layout's RESET ALL), Randomise All, Body, Face, Hair, Import, Export, Clothes, Confirm, Race, Subrace, Gender, Change Character, Race
   Description, Race Stats. With one character CHANGE CHARACTER, its arrows and "1/1" stay on screen (vanilla screenshot), arrows inactive.

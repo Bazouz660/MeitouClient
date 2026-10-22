@@ -56,7 +56,9 @@ sealed partial class GameHost
             Stage("people", () =>
             {
                 Squad? spawned = null;
-                try { session.ReplaceWorld(built!.Systems, world => spawned = built.Population!.StartPlayer(world, chosen)); }
+                // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
+                ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
+                try { session.ReplaceWorld(built!.Systems, world => { world.RestoreSeed(seed); spawned = built.Population!.StartPlayer(world, chosen); }); }
                 catch (Exception e) { Console.Error.WriteLine($"new game  {e}"); throw new SceneLoadFailed($"New game failed: {e.Message}"); }
                 popData = nextData; difficulty = nextDifficulty;
                 population = built.Population; aggro = built.Aggro; playerSquad = spawned;

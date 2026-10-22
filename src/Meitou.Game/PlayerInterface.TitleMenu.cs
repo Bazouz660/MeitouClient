@@ -34,6 +34,12 @@ sealed partial class PlayerInterface
         MenuChip = "meitou:menu:chip", MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
     /// <summary>The kit's numbers at 1600×900.</summary>
     const float MenuLeft = 56, MenuBottom = 36, MenuWidth = 320, MenuButton = 38, MenuGap = 6, MenuExitGap = 4, MenuCardGap = 8, MenuCardHeight = 78, MenuShadow = 22;
+    /// <summary>The title's buttons and the catalog messages their captions are (FUN_140918ef0, upper-cased).</summary>
+    static readonly (string Widget, string Caption)[] TitleCaptions =
+    [
+        ("ContinueButton", "Continue"), ("NewGameButton", "New game"), ("LoadGameButton", "Load game"), ("ImportGameButton", "Import game"),
+        ("OptionsButton", "Options"), ("CreditsButton", "Credits"), ("ExitButton", "Exit"),
+    ];
     static readonly (string Widget, string Caption, UiRect Icon)[] MenuButtons =
     [
         ("NewGameButton", "NEW GAME", new(108, 90, 31, 32)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 34)),

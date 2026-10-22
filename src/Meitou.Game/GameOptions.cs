@@ -8,6 +8,8 @@ sealed class GameOptions
     public bool TitlePreview;
     public int? FpsLimit;
     public ulong Seed;
+    /// <summary><c>--seed</c> was given: a new game from the menu keeps it instead of rolling a fresh one.</summary>
+    public bool SeedGiven;
     public bool? VSync;
     public Meitou.Data.Ui.UiMode? UiMode;
     public bool UiShowcase;
@@ -75,7 +77,7 @@ sealed class GameOptions
             {
                 case "--ui-showcase": g.UiShowcase = true; break;
                 case "--fps-limit": g.FpsLimit = int.Parse(Next(), CultureInfo.InvariantCulture); break;
-                case "--seed": g.Seed = ulong.Parse(Next(), CultureInfo.InvariantCulture); break;
+                case "--seed": g.Seed = ulong.Parse(Next(), CultureInfo.InvariantCulture); g.SeedGiven = true; break;
                 case "--ui":
                     g.UiMode = Next().ToLowerInvariant() switch { "faithful" => Meitou.Data.Ui.UiMode.Faithful, "meitou" => Meitou.Data.Ui.UiMode.Meitou, _ => throw new ArgumentException("--ui must be faithful or meitou") };
                     break;

@@ -3,7 +3,8 @@ using System.Numerics;
 namespace Meitou.Data.Ui;
 
 /// <summary>A list row; <paramref name="Cells"/> are its per-column texts in a MultiListBox (null: the caption is the first column).</summary>
-public sealed record UiListItem(string Id, string Caption, IReadOnlyList<string>? Cells = null);
+/// <summary>A list row; <paramref name="SortKeys"/>, per column, what a MultiListBox sorts it by instead of its shown cells (a date by its time, as the save list's comparator).</summary>
+public sealed record UiListItem(string Id, string Caption, IReadOnlyList<string>? Cells = null, IReadOnlyList<string>? SortKeys = null);
 
 public sealed record UiControl(string Name, string Type, UiRect Bounds, string Caption, string Action,
     string Skin, bool Enabled, IReadOnlyDictionary<string, string> Properties, Vector4 Background,
