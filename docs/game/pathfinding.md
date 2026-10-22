@@ -157,7 +157,10 @@ fallback island.
 **Heights**: **Observed** polygons are up to ~15 off over stairs/ramps (Hub gate), so standing
 heights snap to walkable collision (`NavSurfaces`, also its edge within `EdgeReach`: the mesh overhangs raised floors, e.g. the Hub bar landing) or zone terrain (water-surface polygons keep their height); the layer is picked by mesh or real height within
 `StandRise` of the character wins. A layer more than `StandDrop` (12) below the character is not stepped onto (engine choice: the
-ground 22..28 under the Storm House floor, Observed, showed through furniture holes and walkers fell to it); with no layer in range, a
+ground 22..28 under the Storm House floor, Observed, showed through furniture holes and walkers fell to it). A snap more than `StandRise` off the
+character takes the collision surface at the character's own height instead when that is within `TerrainSnapRange` (30) of the mesh (engine choice;
+**Observed** at the rock by the Hub's gate, -51686, 2740: our polygon spans its top (1595) and slope, sags to ~1580 and lies nearer a face inside the
+rock (~1567), stranding a walker on the top; the original's cached tile has a polygon flat at 1594.8 there); with no layer in range, a
 polygon within `EdgeTolerance` counts. A character already off every layer near its height still steps down.
 **Long routes** (engine choice): goals in unloaded zones use `CoarseRoute` (192-unit terrain grid, slope and
 water costs; a step whose centre line crosses a building's footprint hull costs `BuildingCost` 40×, so routes go round
