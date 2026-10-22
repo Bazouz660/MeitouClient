@@ -224,7 +224,8 @@ static class AtmosphereShaders
         // pi * N.L * (1 - 0.04), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.04) plus the environment light of the irradiance and specular cubes
         // (CalcEnvironmentLight), times the exposure 0.5, stored as it is in an 8-bit target (UNORM, as the icons). l: towards the light, v: towards the eye.
         // hdr (Meitou's stage and portraits, a fog distance of -3, CharacterRenderer.Look): unclamped, for the preview resolve's tone map.
-        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss, bool hdr)
+        // diffuseNl: the sun's diffuse term in place of the clamped N.L (the Meitou skin, CharacterShaders.skinDiffuse).
+        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss, bool hdr, vec3 diffuseNl)
         {
             const float PI = 3.14159265;
             vec3 hv = normalize(v + l);
@@ -235,7 +236,7 @@ static class AtmosphereShaders
             float fresnel = exp2((-5.55473 * lh - 6.98316) * lh);
             float k = alpha * 0.5, k2 = k * k, vis = 1.0 / (lh * lh * (1.0 - k2) + k2);
             float sunSpecular = 0.6 * nl * D * (0.04 + 0.96 * fresnel) * vis / PI;
-            float sunDiffuse = PI * nl * 0.6 * 0.96;
+            vec3 sunDiffuse = PI * diffuseNl * 0.6 * 0.96;
             vec3 envDiffuse = atmoIrradiance(n) * 0.96;
             vec3 envSpecular = vec3(0.0);
             if (uAtmoMaps.y > 0.5)
@@ -247,12 +248,14 @@ static class AtmosphereShaders
             vec3 lit = (albedo * (sunDiffuse + envDiffuse) + sunSpecular + envSpecular) * 0.5;
             return hdr ? lit : clamp(lit, 0.0, 1.0);
         }
+        vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss, bool hdr) { return stageLight(albedo, n, v, l, gloss, hdr, vec3(clamp(dot(n, l), 0.0, 1.0))); }
         // What a lit fragment writes to the GI resolve's surface target (GiResolveShaders.WithAlbedo; RGBA16UI, 0: no probes here), set by kenshiLight:
         // x, y the shading normal's octahedral position (16 bits each), z sqrt(albedo) red | green << 8, w blue | 1 << 8 | interior << 9.
         uvec4 giAlbedoOut = uvec4(0u);
         bool giInterior = false;
         // A dielectric surface lit as Kenshi's main lighting pass lights it: HDR colour. v: towards the eye.
-        vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world)
+        // diffuseNl: the sun's diffuse term in place of the clamped N.L (the Meitou skin, CharacterShaders.skinDiffuse); the overload below passes N.L.
+        vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world, vec3 diffuseNl)
         {
             vec4 am = atmoAmbientMapAt(world);
             vec3 l = uAtmoLight.xyz;
@@ -260,7 +263,7 @@ static class AtmosphereShaders
             gloss = clamp(gloss, 0.0, 1.0);
             float roughness = 1.0 - gloss * 0.99, a = roughness * roughness, a2 = a * a;
             float nl = clamp(dot(n, l), 0.0, 1.0);
-            vec3 diffuse = ATMO_PI * nl * sun * {{F(1 - KenshiLighting.DielectricSpecular)}};
+            vec3 diffuse = ATMO_PI * diffuseNl * sun * {{F(1 - KenshiLighting.DielectricSpecular)}};
             vec3 h = normalize(v + l);
             float nh = clamp(dot(n, h), 0.0, 1.0), lh = clamp(dot(l, h), 0.0, 1.0);
             float denom = max(nh * nh * (a2 - 1.0) + 1.0, 1e-6);
@@ -311,6 +314,7 @@ static class AtmosphereShaders
             }
             return lit;
         }
+        vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world) { return kenshiLight(albedo, n, v, gloss, world, vec3(clamp(dot(n, uAtmoLight.xyz), 0.0, 1.0))); }
 
         // The distant water fades out before its far clip, revealing the sky already behind it.
         // The shafts use the same weight for their water correction, so it cannot leave a horizon band.

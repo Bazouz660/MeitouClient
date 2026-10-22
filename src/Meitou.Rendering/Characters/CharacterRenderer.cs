@@ -50,6 +50,23 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// </summary>
     public bool GeneratedLod { get; set; } = true;
 
+    /// <summary>
+    /// Pre-integrated skin scattering on people's bare skin (the <c>skin</c> switch's Meitou side, docs/character-renderer.md "Skin"); off: the plain N.L of the game.
+    /// A change redraws the portraits.
+    /// </summary>
+    public bool SkinShading
+    {
+        get => skinShading;
+        set
+        {
+            if (skinShading == value) return;
+            skinShading = value;
+            portraitShown.Clear();
+        }
+    }
+    bool skinShading = true;
+    readonly SkinScattering skinScattering;
+
     // Statistics of the last Update / Draw.
     public int Posed { get; private set; }
     public int DrawnCharacters { get; private set; }
@@ -176,6 +193,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         depthProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.DepthVertex(), CharacterShaders.DepthFragment(), "characters depth", CharacterShaders.InstanceLocation);
         motionProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.MotionVertex(), CharacterShaders.MotionFragment(), "characters motion", CharacterShaders.InstanceLocation);
         content = new CharacterContent(gpu, install, db, assetLocator, rigs);
+        skinScattering = new SkinScattering(gpu);
         colourTimer = new PassTimer(gpu);
         depthTimer = new PassTimer(gpu);
     }
@@ -457,6 +475,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.ClipOnNormalAlpha && has[CharacterShaders.SlotNormal]) flags |= CharacterShaders.ClipNormalAlpha;
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
         if (m.Worn) flags |= CharacterShaders.Worn;
+        if (m.Skin) flags |= CharacterShaders.Skin;
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
@@ -513,6 +532,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         motionProg.Dispose();
         nativeFrame.Dispose();
         content.Dispose();
+        skinScattering.Dispose();
         DisposePortraits();
         DisposeStage();
         DisposeHover();

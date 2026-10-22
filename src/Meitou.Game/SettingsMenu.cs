@@ -122,7 +122,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     {
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
         "Water" => "Water",
-        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
+        "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" or "Skin" => "Lighting",
         _ when toggle.Label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };

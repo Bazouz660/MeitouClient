@@ -94,6 +94,8 @@ sealed class WorldOptions
     public bool FoliageLod = true;
     /// <summary>Characters' generated LOD levels (the <c>charlod</c> switch's Meitou side); false: the mesh files' own levels (<c>CharacterRenderer.GeneratedLod</c>).</summary>
     public bool CharacterLod = true;
+    /// <summary>The <c>skin</c> switch's Meitou side: pre-integrated scattering on people's bare skin (<c>CharacterRenderer.SkinShading</c>).</summary>
+    public bool SkinShading = true;
     public float? ImpostorDistance, LargeImpostorDistance;
     public double? ImpostorBudgetMb;
     public float HazeStrength = Enhancements.MeitouHazeStrength; // the Meitou haze switch (default); 1 = the game's haze
@@ -272,7 +274,8 @@ sealed class WorldOptions
         () => o.CloudShadows, v => o.CloudShadows = v,
         () => o.CloudFog, v => o.CloudFog = v,
         () => o.InteriorGi, v => o.InteriorGi = v,
-        () => o.CharacterLod, v => o.CharacterLod = v);
+        () => o.CharacterLod, v => o.CharacterLod = v,
+        () => o.SkinShading, v => o.SkinShading = v);
 
     public static WorldOptions? Parse(string[] args)
     {
@@ -867,7 +870,7 @@ static class WorldFrame
         gpu.Shadow.SetTerrain(scene.Coarse, scene.CoarseSize);   // the Meitou shadows' terrain shadow beyond the range
         Console.WriteLine($"shadows   {gpu.Shadow.Settings.MapSize}² atlas, {gpu.Shadow.CascadeCount} cascades of {gpu.Shadow.Settings.TileSize}² ({(gpu.Shadow.Meitou ? "Meitou: a layer each" : "Faithful: tiles of one layer")}), range {gpu.Shadow.Settings.Range:0}");
         if (o.Crowd > 0 && scene.Database is not null) gpu.Characters = Characters.CrowdHarness.Create(context, install, scene, assets, o, interactive);
-        if (gpu.Characters is { } crowd) crowd.GeneratedLod = o.CharacterLod;
+        if (gpu.Characters is { } crowd) (crowd.GeneratedLod, crowd.SkinShading) = (o.CharacterLod, o.SkinShading);
         gpu.DebugShadows = o.DebugShadows;
         step?.Invoke("gi");
         if (o.GiDebug > 0 || o.Gi)
@@ -964,7 +967,8 @@ static class WorldFrame
             () => gpu()?.Sky.CloudShadows ?? o.CloudShadows, v => { o.CloudShadows = v; if (gpu() is { } g) g.Sky.CloudShadows = v; },
             () => gpu()?.Sky.CloudFog ?? o.CloudFog, v => { o.CloudFog = v; if (gpu() is { } g) g.Sky.CloudFog = v; },
             () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; },
-            () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; });
+            () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; },
+            () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
         Func<bool>? getVSync = null, Action<bool>? setVSync = null, IReadOnlyList<Enhancement>? switches = null,

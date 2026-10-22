@@ -15,6 +15,18 @@ state must match motion history. Skin/body/head/hair/item modes share world ligh
 Head uses UV+(0,1); dye/vest/overlays and cutout rules come from research. Same-instance caster
 pass preserves alpha coverage. Face morphs and body shape precede skinning.
 
+### Skin (Meitou `skin` switch)
+
+Faithful lights skin as every surface (`kenshiLight`, the game's deferred pass: clamped N·L). Meitou: Penner's pre-integrated skin
+diffuse replaces the sun's N·L on bare skin (`SkinScattering`: a 64² RGBA16F table baked at start-up from the six-Gaussian skin
+profile of GPU Gems 3 ch. 14; u = N·L, v = √(1/r ÷ 0.2 mm⁻¹)). Curvature 1/r = |fwidth(smooth normal)| / |fwidth(eye-relative
+position)|, at 1 unit = 100 mm (an **Observed** scale, [terrain](formats/terrain.md)). Red, green and blue read the table with the
+normal map mixed 0.6 / 0.3 / 0 towards the smooth normal. Skin share: body-shaded parts of people (`CharacterShaders.Skin`; not
+animals, not RACE `is robot`; stumps included) times what vest layers and hair/beard overlays leave bare. World and Meitou
+stage/portraits (fog distance -3); the game's stage and icons keep N·L. Faithful: push `skinLut` 0, unchanged.
+Limits: lamps stay Lambert; the sun shadow is not scattered, so the band past the terminator ends at the shadow edge; no back-lit
+translucency (ears).
+
 ## Content, LOD and memory
 
 `CharacterContent` owns buffers/textures/morph arena; worker fetching/preparation precedes render
