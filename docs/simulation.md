@@ -345,6 +345,8 @@ does not grant worn bonuses. Race restrictions, swaps and prosthetic changes rem
 `CombatSystem`, `CombatDatabase`, `Fighter`: attack scheduling, equipment/techniques, stance,
 block/dodge, armour and per-part damage, stun/KO/death, combat XP. Read previous combat state;
 ordered effects apply hits. `TickMedical=false` with BodySystem, `SelfApproach=false` with pursuit.
+A fighter faces its target only while it has no pursuit path; on one, movement steers (facing the target each tick
+undid the turn to a waypoint over 90° off the line to it, and the walker froze).
 Original formulas, constants and unresolved technique terms: [combat.md](game/combat.md).
 Hits, pauses and initiative follow combat.md "Hit reactions" / "Pacing"; the combat system picks the stumble
 clip (through the animation system's chooser) and holds the fighter for its length. Engine choices: a miss waits

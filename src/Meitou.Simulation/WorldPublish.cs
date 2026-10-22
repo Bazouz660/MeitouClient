@@ -31,6 +31,7 @@ public sealed partial class World
             if (table.TryResolveNext(s, out int k) && table.Cold(k) is { } c && Carrying.CarrySystem.CanKnockOut(c)) { koSlot = k; break; }
         var aggro = koSlot >= 0 ? systems.OfType<AggroSystem>().FirstOrDefault() : null;
         var talk = systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault();
+        var combat = systems.OfType<Combat.CombatSystem>().FirstOrDefault();
         for (int i = 0; i < state.Length; i++)
         {
             if (!state[i].Alive) continue;
@@ -78,6 +79,8 @@ public sealed partial class World
                 WorkingShackles = cold?.Shackles is { Work: Locks.ShackleWork.Pick or Locks.ShackleWork.Cut },
                 InBed = cold is { InSomething: Locks.HeldState.Bed },
                 InCombat = cold?.InCombat ?? false,
+                FightsPlayer = cold is { IsPlayer: false, InCombat: true } && combat?.StateOf(id) is { TargetSlot: >= 0 and var fought } fight
+                    && fought < state.Length && state[fought].Alive && state[fought].Generation == fight.TargetGeneration && table.Cold(fought) is { IsPlayer: true },
                 Shackled = cold?.Inventory is { } worn && worn.Items.Any(item => item.IsLocked && item.Section != "main"),
                 PortraitSerial = cold?.PortraitSerial ?? 0,
                 ShacklesLocked = Locks.LockSystem.WornShackles(cold) is not null,

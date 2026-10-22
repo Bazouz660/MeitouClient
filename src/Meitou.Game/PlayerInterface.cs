@@ -137,7 +137,12 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         // Only a hostile character is attacked this way; a neutral is left alone (the context menu still offers the attack).
         if (PickTarget(p) is { } mark && Hostile(mark) && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == mark) is { StealthKoChance: not null })
             return ("attk", mark, () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, mark) { Tick = session.World.Tick }));
-        if (PickTarget(p) is { } victim && Hostile(victim)) return ("attk", victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim) { Tick = session.World.Tick }));
+        // Fighting back at someone attacking the squad is defence, not an assault on its faction.
+        if (PickTarget(p) is { } victim && Hostile(victim))
+            return ("attk", victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim)
+            {
+                Tick = session.World.Tick, Defensive = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == victim) is { FightsPlayer: true },
+            }));
         if (PickHurtAlly(p) is { } patient) return ("med", patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick }));
         if (PickDowned(p, ownOnly: true) is { } ally) return ("lift", ally, () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], ally) { Tick = session.World.Tick }));
         // Anyone else's knocked-out or dead body: the nearest walks over and its inventory opens to take from (Alt + right click takes all at once).

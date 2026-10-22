@@ -72,9 +72,12 @@ sealed partial class PlayerInterface
     /// <summary>Whether a faction is hostile to the player's (the world's relations); set by the host. Without it every other faction counts as hostile.</summary>
     public Func<int, bool>? HostileFaction { get; set; }
 
-    /// <summary>Whether the character's faction is hostile to the player's: only a hostile one gets the attack pointer, the red outline and the quick-attack right click.</summary>
+    /// <summary>
+    /// Whether the character's faction is hostile to the player's, or it is fighting one of the player's characters (a neutral squad robbing them): only a hostile one gets
+    /// the attack pointer, the red outline and the quick-attack right click.
+    /// </summary>
     bool Hostile(CharacterId id) => session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } c || Hostile(c);
-    bool Hostile(CharacterSnapshot c) => HostileFaction?.Invoke(c.Faction) != false;
+    bool Hostile(CharacterSnapshot c) => c.FightsPlayer || HostileFaction?.Invoke(c.Faction) != false;
 
     (long Tick, Vector2 Mouse, bool Ctrl, bool Alt, string Name, CharacterId? Target) Point()
     {
