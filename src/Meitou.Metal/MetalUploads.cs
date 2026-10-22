@@ -63,7 +63,10 @@ public sealed class MetalUploads : IGpuUploads
             if ((ulong)data.Length < bytesPerImage) throw new ArgumentException($"the upload has {data.Length} bytes, the region needs {bytesPerImage}");
             // Metal's blit reads a source row from its start, then writes it at the destination origin. Repack a sub-rectangle
             // into full-width rows with the tile at offset zero; adding region.X to the source as well would shift it twice.
-            ulong levelWidth = (ulong)Math.Max(desc.Width >> level, 1), neededRow = ((levelWidth + (ulong)block - 1) / (ulong)block) * (ulong)texel;
+            // Metal's buffer-to-texture copy needs the source row stride 4-byte aligned. R16/R8 textures
+            // (the terrain heights and masks) can have odd widths, so pad the repacked rows.
+            ulong levelWidth = (ulong)Math.Max(desc.Width >> level, 1);
+            ulong neededRow = (((levelWidth + (ulong)block - 1) / (ulong)block) * (ulong)texel + 3) & ~3UL;
             var blit = list.OpenBlit();
             if (bytesPerRow != neededRow || region.X != 0)
             {
@@ -97,6 +100,13 @@ public sealed class MetalUploads : IGpuUploads
 
         public void Write(DeviceBuffer target, ulong offset, ReadOnlySpan<byte> data)
         {
+            written.Add($"{target.Name} buffer +{offset} ({data.Length} B)");
+            if (offset > target.Size || (ulong)data.Length > target.Size - offset)
+            {
+                Console.WriteLine($"warning   upload outside {target.Name} buffer: " +
+                    $"{offset} + {data.Length} bytes (buffer {target.Size})");
+                return;
+            }
             var buffer = Reserve(data.Length, out ulong stagingOffset);
             data.CopyTo(new Span<byte>((void*)(buffer.Contents + (nint)stagingOffset), data.Length));
             var blit = list.OpenBlit();
@@ -107,18 +117,22 @@ public sealed class MetalUploads : IGpuUploads
         /// <summary>The staging room for <paramref name="bytes"/> more (a grown buffer when the current is full).</summary>
         MTLBuffer Reserve(int bytes, out ulong offset)
         {
-            if (stagingSize - stagingUsed < (ulong)bytes)
+            // Buffer-to-texture copies require a 4-byte-aligned source offset, and the staging ring mixes
+            // texture rows (R16 height slabs) with buffer writes.
+            ulong aligned = (stagingUsed + 3) & ~3UL;
+            if (aligned > stagingSize || stagingSize - aligned < (ulong)bytes)
             {
                 // The blits already recorded in this batch still name the old buffer: keep it until the command completes.
                 if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging, string.Join(", ", written));
                 // Many small batches (foliage meshes, textures) live until their command completes; a 1 MB floor each
                 // made the first foliage frame allocate several GB. Grow only to what this batch actually writes.
-                stagingSize = Math.Max((ulong)bytes, stagingSize == 0 ? 64 << 10 : stagingSize * 2);
+                stagingSize = Math.Max((ulong)bytes + 3, stagingSize == 0 ? 64 << 10 : stagingSize * 2);
                 staging = ctx.Device.NewBuffer(stagingSize, MTLResourceOptions.ResourceStorageModeShared);
                 stagingUsed = 0;
+                aligned = 0;
             }
-            offset = stagingUsed;
-            stagingUsed += (ulong)bytes;
+            offset = aligned;
+            stagingUsed = aligned + (ulong)bytes;
             return staging;
         }
 
