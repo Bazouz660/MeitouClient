@@ -47,8 +47,8 @@ which are descriptive (RTTI knows `MessageBoxManager::Box`; the constructor of a
 
 | Screen (class) | Address | Layout | Layer | Data shown |
 |---|---|---|---|---|
-| TitleScreen | 140918ef0 | Kenshi_MainMenu | Main | Continue, New game, Load game, Import game, Options, Credits, Exit; version text "Kenshi 1.0.68 - x64 (Newland)" |
-| Splash | 140916140 (constructor), 140913720 (per-frame fade) | no layout file: widgets built in code from the image sets `Kenshi_Splash_Logos` (texture `physSplash.jpg`, 1024 x 768) and `Kenshi_Splash_LoFi` in `kenshi_images.xml` | - | logos; alpha rises at 3 per second (full in 1/3 s), a slide ends on any input after it is fully visible or after 4 s |
+| TitleScreen | 140918ef0 | Kenshi_MainMenu | Main | Continue, New game, Load game, Import game, Options, Credits, Exit (captions upper-cased, [Title screen and its windows](#title-screen-and-its-windows)); version text "Kenshi 1.0.68 - x64 (Newland)" |
+| Splash | 140916140 (constructor), 140913720 (per-frame fade) | no layout file: widgets built in code from the image sets `Kenshi_Splash_Logos` (texture `physSplash.jpg`, 1024 x 768) and `Kenshi_Splash_LoFi` in `kenshi_images.xml` | - | logos, see [Splash](#splash) |
 | EscMenu | 1409180e0 | Kenshi_MainMenuPopupPanel | Main | New game, Save game, Load game, Options, Exit game, Resume |
 | NewGameWindow | 140917530 | Kenshi_NewGamePanel | Window | start-off title, description, Difficulty, Cash, Play Style; Begin / Advanced options / Cancel |
 | NewGameOptionsWindow | 1409151d0 | Kenshi_AdvancedOptionsWindow | Window | difficulty sliders, see [combat.md](combat.md), [character-stats.md](character-stats.md#new-game-advanced-options-that-change-these-mechanics), [buildings-production.md](buildings-production.md#construction-tick) and [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) |
@@ -81,6 +81,58 @@ Root, Datapanel and TooltipPanel, with no option controls. Loading the layout al
 **Observed** (installed `locale/en_GB/LC_MESSAGES/main.pot` and the eight non-English catalogs, de/es/fr/ja/ko/pt/ru/zh; no test checks it):
 `kenshi/titlescreen.cpp:557..563` each identify a label and a longer description, in hunger/death/damage/production/research/building/nests
 order, and all seven have translations. Runtime reads the template and translates the exact message key.
+
+### Splash
+
+**Verified** (decompile of `FUN_140916140`, `FUN_140914850`, `FUN_140913720`): a full-screen `WhiteSkin` widget coloured black, holding one ImageBox per
+slide, `Kenshi_Splash_Logos` then `Kenshi_Splash_LoFi` (`lofi.png`, 677 x 700), all hidden at first. A slide's height is the image height x `DAT_1421337ec` x a
+factor (100 for Logos, 0.7 for LoFi), capped at the screen height; its width keeps the image's aspect; it is centred (integer pixels). Each frame the current
+slide is shown with alpha min(1, 3 x seconds since it started); a press (any of four input flags) is remembered; once the slide has been drawn at alpha 1
+on more than three frames, a press or more than 4 s ends it: hidden at once (no fade out) and the next starts. `DAT_1421337ec` is **Unknown** (beside the
+UI scale `DAT_1421337f0`; Meitou takes height / 1080, which leaves Logos at the screen height either way).
+
+Meitou plays it in the Faithful mode on a start that opens on the title, over the boot (`LoadingScreen.StartSplash`; the Interface setting "Splash
+screens", `UserConfig.SplashScreens`, turns it off), not in the Meitou mode; the loading screen shows if the boot outlasts it. The two slides take
+8 s or more, the boot 3 to 4 s (Observed, 2026-10-22): skipped, the title shows that much sooner. Presses skip only once input exists, after the world's boot (engine limit). The Faithful title is opaque, so the boot's view is not warmed
+behind it (the original loads a world only for a game; [engine](../engine.md) "Loading").
+
+### Title screen and its windows
+
+**Verified** (decompile 2026-10-22: TitleScreen `FUN_140918ef0`, its update `FUN_140913880`; LoadSaveWindow `FUN_140480100`, LoadGameMenu
+`FUN_140480b50`, SaveGameMenu `FUN_140481ed0`, ImportGameMenu `FUN_140481130`; NewGameWindow `FUN_140917530`, refresh `FUN_140916620`), **Observed**
+against French 1440-line screenshots. Every caption the code sets is the catalog's message upper-cased (boost::locale to_upper) unless noted.
+
+- **Title buttons**: "Continue", "New game", "Load game", "Import game", "Options", "Credits", "Exit". Each first closes the start, load and import
+  windows and the credits (`FUN_140914a90`); Load and Import close their own window when it is open, New game leaves its window as it is. Continue
+  shows only when the last save's `quick.save` exists. Version text: the literal "Kenshi 1.0.68 - x64 (Newland)" (Meitou: "Meitou - Faithful UI").
+- **Credits** (`FUN_140914230`, `FUN_140913880`): `data/credits.txt` read once, empty lines dropped, a "-" line a blank one, untranslated, in
+  `CreditsPanelContent` (white, "HCenter Top"); the content starts 0.85 of `CreditsPanel`'s height down and moves up 25 px a second of wall-clock
+  time, with no loop or stop. Credits again restarts it. `CreditsPanel` is a Widget skinned `Kenshi_EditBox`: its text box covers the panel, not
+  the template's Client ([MyGUI](../formats/mygui.md)).
+- **Placement**: the start and import windows at 0.5, 0.05 of the screen (0.6, 0.05 for the start window from the in-game menu); the load and save
+  windows centred, with the left edge at the screen's centre while the title exists; the advanced options under the start or import window.
+  Those windows leave the title's buttons live (another button replaces them; Meitou: modal screens that pass clicks through, `MyGuiScreenHost.PassThrough`).
+  Esc closes the top window, else the credits (Meitou).
+- **Advanced options help**: the last option whose name was under the pointer, kept while the panel is open (Meitou: the name column only, so the
+  pointer can reach the help's bar down the right side); a text taller than the panel scrolls with a
+  vertical bar (**Observed**).
+- **Exit** (`FUN_140914600`, message helper `FUN_140742130`): title "Exit", text "Are you sure you want to exit?", buttons Yes and Cancel, upper-cased;
+  the helper translates its captions (Ok, Yes, No, Cancel, Abort) once into statics, and the French game shows "CANCEL" untranslated (**Observed**).
+- **Start window**: "Choose your beginning", "Advanced options", "Begin", "Cancel"; the start's name. A DatapanelGUI in `DescriptionPanel`:
+  "Difficulty:", "Cash:", "Play Style:" (not upper-cased) with the record's `difficulty`, "c."`money`, `style` as stored (French keeps "Default",
+  "RPG"), then `description` as a wrapped line. Rows: pitch 0.94 / max(1, (int)(40 x panel height / screen height)) of the panel, from 0.03 of
+  it; label at 3 % of the width, 96 % wide; value right-aligned in 93 %. First start "1980-gamedata.base" (Wanderer); the arrows wrap.
+- **Load, save, import**: title "Load game" / "Save game" / "Import game"; buttons "Load", "Save", "Import", "Cancel"; column headers "Name" (fill)
+  and "Date" (180 screen pixels, so 1440-line dates are cut off) and "Reset squad positions", not upper-cased. Rows: every folder holding
+  `quick.save`, its name as is; the date is the folder's last write in the user's short date and time with seconds; newest first, names compared
+  without case and dates by time (`FUN_14047cdb0`). Nothing is selected on opening and the info box (a DatapanelGUI, not a picture) is empty; a
+  selection shows Date, File version ("Ancient" when empty), Faction name, Funds ("c."), Members size, Location, Day, at the DatapanelGUI's default
+  row count 55 (`FUN_1406fce20`; the start window sets 40, the advanced options 30). The Load button is always live.
+- **Import** (`FUN_14047bad0`, `FUN_140378a30`): ticks reset squad positions (off), buildings, research, dead NPCs, relations (on), flags 0x1, 0x4,
+  0x8, 0x10, 0x20 (0x2 always added); Import is live once a save is selected; Advanced options opens its own options window, filled from the save's
+  difficulty block. Importing resets the world as a new game does (no start), restores the clock, money, faction name, town discovery and the player's
+  squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
+  faction relations; with the reset tick the squads go to (-43500, 0, -6625). Meitou: the window only (Import shows a notice).
 
 ### Loading screen
 

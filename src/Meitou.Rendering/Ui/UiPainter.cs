@@ -87,6 +87,24 @@ public sealed partial class UiPainter : IDisposable
         }
     }
 
+    /// <summary>
+    /// The points a TrueType font resource is drawn at for the UI scale <paramref name="scale"/> (docs/formats/mygui.md): its size scaled and cut to whole points,
+    /// then resized as the original does on load (<see cref="KenshiFontSize"/>). At 1080 lines the resource's own size, resized.
+    /// </summary>
+    float ScaledFontSize(string path, MyGuiTrueTypeFont spec, float scale) =>
+        EffectiveFontSize(path, MathF.Floor((spec.Size > 0 ? spec.Size : 20) * scale + 1e-3f), spec.Resolution > 0 ? spec.Resolution : 50);
+
+    /// <summary>
+    /// The em pixels of the original's standard text (<c>Kenshi_StandardFont_Medium</c>) at <paramref name="viewportHeight"/> lines, as <see cref="ScaledFontSize"/> sizes it
+    /// (13.9 at 1080, 17.4 at 1440); the linear 13.9 per 1080 lines without the resource.
+    /// </summary>
+    public float StandardTextPixels(int viewportHeight)
+    {
+        if (FontSpec("Kenshi_StandardFont_Medium") is { } spec && FontPath(spec.Source) is { } path)
+            return ScaledFontSize(path, spec, viewportHeight / 1080f) * (spec.Resolution > 0 ? spec.Resolution : 50) / 72;
+        return 20 * 50 / 72f * viewportHeight / 1080f;
+    }
+
     /// <summary>The point size the original draws font resource <paramref name="path"/> at (<see cref="KenshiFontSize"/>).</summary>
     float EffectiveFontSize(string path, float size, float resolution)
     {
@@ -336,10 +354,14 @@ public sealed partial class UiPainter : IDisposable
                 font.Target = overlay.Target;
             }
             string text = c.Caption.Replace("\\n", "\n", StringComparison.Ordinal);
-            var lines = c.Properties.GetValueOrDefault("WordWrap") == "true" ? font.WrapText(text, textArea.Width, scale) : text.ReplaceLineEndings("\n").Split('\n').Select(line => font.FitText(line, textArea.Width, scale)).ToArray();
+            // A font resource's long line is cropped by the widget in the Faithful mode, as MyGUI does, never shortened with "...".
+            var lines = c.Properties.GetValueOrDefault("WordWrap") == "true" ? font.WrapText(text, textArea.Width, scale)
+                : text.ReplaceLineEndings("\n").Split('\n').Select(line => original ? line : font.FitText(line, textArea.Width, scale)).ToArray();
             if (focused && c.Properties.GetValueOrDefault("Numeric") == "true") lines = [text];
             string align = c.Properties.GetValueOrDefault("TextAlign") ?? "Left VCenter";
-            float y = textArea.Y + (align.Contains("Bottom", StringComparison.Ordinal) ? Math.Max(0, textArea.Height - font.LineHeight * scale * lines.Count) : align.Split(' ').Any(a => a is "Center" or "VCenter") ? Math.Max(0, (textArea.Height - font.LineHeight * scale * lines.Count) / 2) : 0);
+            // An EditBox scrolled by its bar (MyGuiPresentation: TextScroll pixels); the client clips the lines.
+            float scrolled = float.TryParse(c.Properties.GetValueOrDefault("TextScroll"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float textScroll) ? textScroll : 0;
+            float y = -scrolled + textArea.Y + (align.Contains("Bottom", StringComparison.Ordinal) ? Math.Max(0, textArea.Height - font.LineHeight * scale * lines.Count) : align.Split(' ').Any(a => a is "Center" or "VCenter") ? Math.Max(0, (textArea.Height - font.LineHeight * scale * lines.Count) / 2) : 0);
             if (focused)
             {
                 int Index(string key) => int.TryParse(c.Properties.GetValueOrDefault(key), out int at) ? Math.Clamp(at, 0, text.Length) : 0;

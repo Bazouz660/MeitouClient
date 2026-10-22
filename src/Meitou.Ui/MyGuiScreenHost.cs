@@ -33,6 +33,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public event Action<MyGuiEvent>? Activated;
     public bool HasWindows => open.Count > 0;
     public bool HasModal => open.Any(id => screens[id].Modal);
+    /// <summary>Modal screens whose empty surroundings let a click through to the screens under them (the title's windows: another title button replaces them).</summary>
+    public Func<string, bool>? PassThrough { get; set; }
     public bool CapturesPointer => drag is not null || CapturesWidget;
     public bool HasKeyboardFocus => focus is not null;
     public IReadOnlyList<string> Registered => screens.Keys.ToArray();
@@ -123,7 +125,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         foreach (var screen in frame.Reverse())
         {
             if (MyGuiPresentation.HitTest(screen.Controls, p.X, p.Y) is { } hit) return (screen.Id, hit);
-            if (screens[screen.Id].Modal) return (screen.Id, new("modal", "Widget", default, "", "", "", false, new Dictionary<string, string>(), default));
+            if (screens[screen.Id].Modal && PassThrough?.Invoke(screen.Id) != true) return (screen.Id, new("modal", "Widget", default, "", "", "", false, new Dictionary<string, string>(), default));
         }
         return null;
     }

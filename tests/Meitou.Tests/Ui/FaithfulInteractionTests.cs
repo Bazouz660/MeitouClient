@@ -41,7 +41,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             var controls = ui.UiFrame;
             var begin = controls.Last(c => c.Name == "BeginButton");
             var lower = controls.Last(c => c.Name == "advanced-Root");
-            Assert.True(begin.Bounds.Y < closedY);
+            Assert.Equal(closedY, begin.Bounds.Y);   // the start window stays where it is, the options panel opens under it (FUN_140918ef0)
             Assert.True(lower.Bounds.Y >= begin.Bounds.Y + begin.Bounds.Height);
             Assert.True(lower.Bounds.Y + lower.Bounds.Height <= height);
             Assert.DoesNotContain(controls, c => c.Name is "advanced-reset" or "advanced-close");
@@ -61,8 +61,8 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
                 ui.MouseUp(MouseButton.Left, Centre(track), false);
                 Assert.InRange(ui.NewGameOptions[i], NewGameSettings.Options[i].Min, NewGameSettings.Options[i].Max);
             }
-            ui.MouseMove(Vector2.Zero);
-            Assert.Empty(ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
+            ui.MouseMove(Vector2.Zero);   // the last option's help stays, so the pointer can reach its scroll bar
+            Assert.Equal(help.TextAt(NewGameSettings.Options[^1].HelpLine), ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
             float selectedHunger = ui.NewGameOptions[0];
             Click(ui, "AdvancedButton"); // The lower panel must not intercept the parent toggle.
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "advanced-track-0");

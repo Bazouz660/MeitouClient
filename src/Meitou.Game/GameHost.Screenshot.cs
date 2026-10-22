@@ -142,7 +142,7 @@ sealed partial class GameHost
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
         string?[] panels = g.UiShowcase
-            ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"] : [null];
+            ? [null, "hud-expanded", "inventory", "stats", "overview", "menu", "new-game", "save", "load", "title", "title-new-game", "title-load", "title-import", "title-credits", "title-exit", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"] : [null];
         foreach (string? panelName in panels)
         {
             if (panelName == "trade" && !ShowcaseTrade()) continue;

@@ -17,6 +17,8 @@ sealed partial class PlayerInterface
     internal static string TitleColour => MyGuiColours.Named("Title", "492620");
     internal static string BadColour => MyGuiColours.Named("Bad", "59231a");
     internal static string GoodColour => MyGuiColours.Named("Good", "a8b774");
+    /// <summary>The palette's BadBright: the editor's race stats below 1 (<c>FUN_1405ee0c0</c>, <c>#bf4834</c>).</summary>
+    internal static string BadBrightColour => MyGuiColours.Named("BadBright", "bf4834");
     internal static string AlertColour => MyGuiColours.Named("Alert", "000000");
 
     /// <summary>The stats panel's labels (MARTIAL ARTS, STRENGTH, ...): the grey of the orders buttons' text, not Main (docs/game/ui-screens.md).</summary>
@@ -151,9 +153,15 @@ sealed partial class PlayerInterface
     /// <summary>The original's standard text at 1080 p: <c>Kenshi_StandardFont_Medium</c>, 20 pt at 50 dpi (docs/game/ui-screens.md).</summary>
     const float StandardTextPixels = 20 * 50 / 72f;
 
+    /// <summary>
+    /// The standard text's em pixels at the window's height: the Faithful mode's as the original sizes its font at that scale (<see cref="UiPainter.StandardTextPixels"/>,
+    /// smaller than linear above 1080 lines), Meitou's the 1080-line size scaled.
+    /// </summary>
+    float StandardPixels => UiMode == UiMode.Faithful && uiPainter is { } painter ? painter.StandardTextPixels(Height) : StandardTextPixels * Height / 1080f;
+
     void AddHudText(List<UiControl> controls)
     {
-        float row = 20 * Height / 1080f, sidePixels = StandardTextPixels * Height / 1080f;
+        float row = 20 * Height / 1080f, sidePixels = StandardPixels;
         if (BuildingFocus() is { } focus)
         {
             var (name, state, stats, _, _) = BuildingLines(focus);

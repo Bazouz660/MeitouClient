@@ -15,11 +15,11 @@ public sealed partial class UiPainter
     DebugOverlay? ResourceFont(string fontName, float scale, float minimumTextPixels)
     {
         if (FontSpec(fontName) is not { } spec || FontPath(spec.Source) is not { } sourcePath) return null;
-        // TrueType resource sizes are points at the resource's DPI, resized as the original does on load (KenshiFontSize).
         float resolution = spec.Resolution > 0 ? spec.Resolution : 50;
-        float points = EffectiveFontSize(sourcePath, spec.Size > 0 ? spec.Size : 20, resolution) * scale;
-        float em = points * resolution / 72;
         bool faithful = Mode == UiMode.Faithful;
+        // Faithful: the original's size at this scale; Meitou: the 1080-line size scaled (its own look).
+        float points = faithful ? ScaledFontSize(sourcePath, spec, scale) : EffectiveFontSize(sourcePath, spec.Size > 0 ? spec.Size : 20, resolution) * scale;
+        float em = points * resolution / 72;
         long size64;
         uint dpi;
         if (faithful && em >= Math.Max(6, minimumTextPixels) && em <= 192)
@@ -41,6 +41,17 @@ public sealed partial class UiPainter
     /// The size <see cref="Draw"/> gives <paramref name="text"/> in font resource <paramref name="fontName"/> on a viewport <paramref name="viewportHeight"/> high: wrapped to
     /// <paramref name="wrapWidth"/> when that is above zero (a control with <c>WordWrap</c> true), else one line per line break. <paramref name="minimumTextPixels"/> is the value passed to <see cref="Draw"/>.
     /// </summary>
+    /// <summary>The height of <paramref name="control"/>'s caption as <see cref="Draw"/> would paint it: its font, wrapped to its text area when it has <c>WordWrap</c>.</summary>
+    public float TextHeight(UiControl control, int viewportHeight, float minimumTextPixels)
+    {
+        string fontName = control.Properties.GetValueOrDefault("FontName")
+            ?? (resources.Templates.TryGetValue(control.Skin, out var template)
+                ? template.Descendants("Property").FirstOrDefault(p => (string?)p.Attribute("key") == "FontName")?.Attribute("value")?.Value : null)
+            ?? "Kenshi_StandardFont_Medium";
+        float wrap = control.Properties.GetValueOrDefault("WordWrap") == "true" ? UiTextLayout.ContentRect(resources, control).Width : 0;
+        return MeasureText(fontName, control.Caption, viewportHeight, wrap, minimumTextPixels).Height;
+    }
+
     public TextSize MeasureText(string fontName, string text, int viewportHeight, float wrapWidth, float minimumTextPixels)
     {
         var font = ResourceFont(fontName, viewportHeight / 1080f, minimumTextPixels) ?? standardFont ?? overlay;

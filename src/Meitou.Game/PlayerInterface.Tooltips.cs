@@ -147,7 +147,7 @@ sealed partial class PlayerInterface
     }
     void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given)
     {
-        float minimum = TitleOpen ? 0 : StandardTextPixels * Height / 1080f;
+        float minimum = TitleOpen ? 0 : StandardPixels;
         Vector2 Measure(string text, float wrap)
         {
             var size = painter.MeasureText(TooltipFont, text, Height, wrap, minimum);

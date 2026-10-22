@@ -38,6 +38,8 @@ sealed class UserConfig
     public SpeedUnit SpeedUnit { get; set; } = SpeedUnit.Mph;
     /// <summary>The damage floaters (Interface settings): the original's <c>floaters</c> option, Simple by default; Meitou also floats a green "+N" over a player character that heals.</summary>
     public FloaterMode Floaters { get; set; } = FloaterMode.Simple;
+    /// <summary>The original's splash at startup in the Faithful UI (Interface settings); off, the menu shows as soon as the game has loaded.</summary>
+    public bool SplashScreens { get; set; } = true;
     public bool MainMenuTransitions { get; set; } = true;
     public bool InGameTransitions { get; set; } = true;
     public float MainMenuTransitionSpeed { get; set; } = 1.5f;

@@ -37,7 +37,10 @@ public static partial class MyGuiTemplates
                 ? new UiRect(node.Position.X * referenceWidth, node.Position.Y * referenceHeight, node.Position.Width * referenceWidth, node.Position.Height * referenceHeight)
                 : node.Position;
             var nested = node.Children.Select(c => Clone(c, position.Width, position.Height)).ToList();
-            if (originalName == "Client" && !placed && source.Type != "TabControl")
+            // The layout's children go into the template's Client only for the widgets that take one as their client (MyGUI's setWidgetClient: windows, views, edit
+            // boxes, lists); a plain Widget, TextBox, ImageBox or Button keeps them itself (the title's CreditsPanel, a Kenshi_EditBox-skinned Widget, holds its
+            // text box over its whole face).
+            if (originalName == "Client" && !placed && source.Type is not ("TabControl" or "Widget" or "TextBox" or "ImageBox" or "Button"))
             {
                 nested.AddRange(children);
                 placed = true;

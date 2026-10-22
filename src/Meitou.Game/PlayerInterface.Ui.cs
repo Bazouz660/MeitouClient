@@ -41,7 +41,7 @@ sealed partial class PlayerInterface
         uiResolve = resolve;
         var template = PotTemplate.Read(resolve("locale/en_GB/LC_MESSAGES/main.pot")
             ?? (Meitou.Content.GameInstall.Locate() is { } install ? Path.Combine(install.Root, "locale/en_GB/LC_MESSAGES/main.pot") : null));
-        advancedHelp = NewGameHelpCatalog.From(template);
+        advancedHelpCatalog = NewGameHelpCatalog.From(template);
         statHelp = StatHelpCatalog.From(template);
         MyGuiColours.LoadPalette(resolve("kenshi_colours.xml"));
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
@@ -53,10 +53,12 @@ sealed partial class PlayerInterface
         foreach (var (id, file, modal) in FaithfulScreenFiles)
         {
             var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
-            if (id == "new-game") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            if (id is "new-game" or "import") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
             if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
-            faithfulScreens.Register(id, layout, modal, centreRoot: id is "save" or "load" or "file");
+            faithfulScreens.Register(id, layout, modal, centreRoot: id is "file");
         }
+        // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
+        faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
         faithfulScreens.Follow("loot-bag", "loot");
         faithfulScreens.Activated += FaithfulAction;
@@ -71,7 +73,7 @@ sealed partial class PlayerInterface
         ("overview", "Kenshi_OverviewWindow", false), ("menu", "Kenshi_MainMenuPopupPanel", true),
         ("title", "Kenshi_MainMenu", true), ("new-game", "Kenshi_NewGamePanel", true),
         ("save", "Kenshi_SaveGamePanel", true),
-        ("load", "Kenshi_LoadGamePanel", true), ("message", "Kenshi_MessageBox", true),
+        ("load", "Kenshi_LoadGamePanel", true), ("import", "Kenshi_ImportGamePanel", true), ("message", "Kenshi_MessageBox", true),
         ("bag", "Kenshi_InventoryGenericWindow", false), ("loot", "Kenshi_InventoryCharacterWindow", false), ("loot-bag", "Kenshi_InventoryGenericWindow", false), ("limbs", "Kenshi_LimbReplacementWindow", false), ("trader", "Kenshi_InventoryTraderWindow", false),
         ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false), ("storage", "Kenshi_InventoryGenericWindow", false),
         ("build", "Kenshi_BuildWindow", false), ("editor", "Kenshi_CharacterEditor", true), ("dialogue", "Kenshi_ConversationPanel", true),
@@ -307,7 +309,7 @@ sealed partial class PlayerInterface
         IReadOnlyList<UiControl> controls = ArrangeUi();
         if (UiMode == UiMode.Faithful && LoadBar is { Visible: true } bar) controls = [.. controls, .. bar.Controls(uiResources, width, height)];
         uiPainter?.Draw(controls, width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
-            minimumTextPixels: TitleOpen ? 0 : StandardTextPixels * height / 1080f);
+            minimumTextPixels: TitleOpen ? 0 : StandardPixels);
     }
 
     /// <summary>For screenshot reviews: open the same panel through its registered button action.</summary>
@@ -324,6 +326,14 @@ sealed partial class PlayerInterface
         faithfulScreens.CloseAll();
         UpdateMenuPause();
         if (panel is null) return;
+        // The title with one of its buttons pressed (its window or the credits, placed as from the title).
+        if (panel.StartsWith("title-", StringComparison.Ordinal))
+        {
+            ShowTitle();
+            string button = panel[6..] switch { "load" => "LoadGameButton", "import" => "ImportGameButton", "new-game" => "NewGameButton", "exit" => "ExitButton", _ => "CreditsButton" };
+            HandleFrontendAction(new("title", button, button));
+            UpdateMenuPause(); return;
+        }
         if (panel is "overview" or "menu" or "new-game" or "save" or "load" or "title")
         {
             if (panel == "title") ShowTitle();

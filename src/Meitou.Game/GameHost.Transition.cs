@@ -107,6 +107,16 @@ sealed partial class GameHost
         if (seconds * 1000 > longestGap.Ms) longestGap = (seconds * 1000, currentStep);
         if (!warming) return;
         warmSeconds += seconds;
+        // The Faithful title is the original's opaque picture: nothing of the world shows behind it, so its view is not warmed (the original loads the world only for
+        // a game). The start's splash plays out first.
+        if (player.TitleOpen && player.UiMode == Meitou.Data.Ui.UiMode.Faithful && pendingCreation is null)
+        {
+            if (loading is { SplashPlaying: true }) return;
+            warming = false;
+            loading?.Finish();
+            ReportLoading("the Faithful title shows");
+            return;
+        }
         // A ready character mesh alone is insufficient: finish terrain, scenery and deferred textures too.
         // Content readiness has no pacing timeout that can expose missing NPCs or white stand-ins.
         bool populationReady = TitleVisible || session.World.PreparePopulation(session.Camera.Current.Target);

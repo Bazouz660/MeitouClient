@@ -73,7 +73,7 @@ sealed partial class PlayerInterface
     void AddProspectContent(List<UiControl> controls)
     {
         if (prospectReport is not { } r) return;
-        float row = 20 * Height / 1080f, pixels = StandardTextPixels * Height / 1080f;
+        float row = 20 * Height / 1080f, pixels = StandardPixels;
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         AddLines(controls, "OverviewDatapanel1",
         [

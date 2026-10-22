@@ -49,6 +49,8 @@ sealed partial class GameHost
         if (fullScreen) BorderlessFullScreen.Toggle(window);
         else window.WindowState = WindowState.Maximized;
         BeginLoadingScreen(display);   // its textures and fonts are made before the window shows
+        // The Faithful start shows the original's splash, as the game does before its title, instead of the loading screen (unless the Interface setting turns it off).
+        if (loading is { Faithful: true } && config.SplashScreens && OpensOnTitle(interactive: true)) loading.StartSplash();
         // The first loading frame is in the swapchain when the window shows, and on screen before the splash closes. Not on Wayland: a window gets its
         // shell role when it shows, and a buffer attached to the surface before that makes the compositor drop the client ("attached a buffer before
         // configure event"), so there the window shows first and takes the compositor's configure before anything is drawn.
@@ -197,6 +199,7 @@ sealed partial class GameHost
                 if (Covered)
                 {
                     if (k is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
+                    loading?.SkipSplash();
                     return;
                 }
                 // F7 hides the game's interface; F6 and the numpad are the cinema's (Space, Delete and the lens keys too while its editor is open).
@@ -295,7 +298,7 @@ sealed partial class GameHost
         {
             mouse.MouseDown += (m, b) =>
             {
-                if (Covered) return;
+                if (Covered) { loading?.SkipSplash(); return; }
                 player.UiVisible = PanelLive() && !g.NoPopulation;
                 var at = Pixels(m.Position);
                 if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }

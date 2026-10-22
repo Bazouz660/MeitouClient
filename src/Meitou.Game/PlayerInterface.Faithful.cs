@@ -23,7 +23,7 @@ sealed partial class PlayerInterface
         if (key == Meitou.Engine.Input.Key.Escape)
         {
             if (advancedOpen && faithfulScreens.OpenScreens.LastOrDefault() == "new-game") { advancedOpen = false; return true; }
-            if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) return true;
+            if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) { showCredits = false; return true; }
             // The editor stays under the game menu (the original's Esc in the editor; it has no cancel: CONFIRM closes it).
             if (EditorOpen && faithfulScreens.OpenScreens[^1] == "editor") { faithfulScreens.Open("menu"); UpdateMenuPause(); return true; }
             // Esc presses the last button of the top message box (Return the first, docs/game/ui-input.md section 5).
@@ -102,7 +102,7 @@ sealed partial class PlayerInterface
     }
     UiBindings BindFaithfulScreen(string id)
     {
-        var b = new UiBindings();
+        var b = new UiBindings { TextHeight = c => uiPainter?.TextHeight(c, Height, StandardPixels) ?? 0 };
         var layout = faithfulScreens.Layout(id);
         var lead = id is "inventory" or "bag" or "limbs" ? InventoryOwner() : Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
@@ -190,7 +190,9 @@ sealed partial class PlayerInterface
     {
         if (id == "title" && UiMode == UiMode.Meitou) { MeitouTitleMenu(controls); return; }
         if (id == "stats") { AddStatsContent(controls); return; }
-        if (id == "new-game") { AddAdvancedContent(controls); return; }
+        if (id == "new-game") { AddStartLines(controls); AddAdvancedContent(controls); return; }
+        if (id == "message") { StyleMessageBox(controls); return; }
+        if (id is "load" or "import" or "save" && UiMode == UiMode.Faithful) { AddSlotInfo(controls); if (id == "import") AddAdvancedContent(controls, "import"); return; }
         if (id == "editor") { AddEditorContent(controls); return; }
         if (id == "build") { AddBuildContent(controls); return; }
         if (id == "dialogue") { AddDialogueChoices(controls); return; }
