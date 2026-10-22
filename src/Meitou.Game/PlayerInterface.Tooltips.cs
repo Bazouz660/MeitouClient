@@ -279,6 +279,24 @@ sealed partial class PlayerInterface
         _ => null,
     };
 
+    /// <summary>
+    /// The bounty panel's rows (the character rows of <c>FUN_1405d2da0</c>, <b>Observed</b> in the decompile): per faction its name and <c>c.{1,num}</c>, a <c>-Wanted For:</c> row with the crimes,
+    /// and the expiry (<c>FUN_1405d1110</c>, which the original gives only for the local faction; Meitou for each).
+    /// </summary>
+    static List<(string Key, string Value)> BountyRows(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties)
+    {
+        var rows = new List<(string, string)>();
+        foreach (var bounty in bounties)
+        {
+            rows.Add((bounty.Faction, Loc.Tr("c.{1,num}", bounty.Amount)));
+            if (bounty.Crimes.Length > 0) rows.Add(("-Wanted For:", bounty.Crimes));
+            int hours = (int)Math.Max(0, bounty.HoursLeft);
+            rows.Add((double.IsPositiveInfinity(bounty.HoursLeft) ? "Notorious: The bounty will never expire."
+                : Loc.Tr(hours == 1 ? "The bounty will expire in {1,num} hr" : "The bounty will expire in {1,num} hrs", hours), ""));
+        }
+        return rows;
+    }
+
     /// <summary>Gives the HUD's widgets their tooltips (user strings through the bindings, which the arranged controls merge) and the selected building's status word its own.</summary>
     void BindTooltips(UiBindings b)
     {
@@ -289,6 +307,16 @@ sealed partial class PlayerInterface
             b.Properties[name] = properties;
         }
         foreach (var (widget, text) in HudTips) Add(widget, text);
+        if (Lead() is { Bounties.Count: > 0 } wanted)
+        {
+            var rows = BountyRows(wanted.Bounties);
+            foreach (string name in new[] { "BountyPanel", "BountyText" })
+            {
+                var properties = b.Properties.TryGetValue(name, out var existing) ? new Dictionary<string, string>(existing) : [];
+                foreach (var pair in UiTooltips.RowProperties(rows, "fixed")) properties[pair.Key] = pair.Value;
+                b.Properties[name] = properties;
+            }
+        }
         if (BuildingFocus() is { } focus)
         {
             var (_, _, _, status, _) = BuildingLines(focus);

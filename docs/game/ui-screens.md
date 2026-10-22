@@ -285,7 +285,10 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
   medical part array's order ([part order](character-stats.md#part-order), **Verified**): head, torso, arms, legs, left before right.
 - Information panel: `ExtendingPanel` starts collapsed, its bottom moved onto the panel's bottom (behind the Overlapped `StatsPanel`), and slides over
   0.5 s to its layout place when `ExtendedStatsButton` is pressed (**Verified**). `BountyPanel` shows only for one selected character with a bounty or
-  a status line (Imprisoned, Slave, Escaped slave, Committing Crime!, Leader...; **Verified**).
+  a status line (Imprisoned, Slave, Escaped slave, Committing Crime!, Leader...; **Verified**). `BountyText` sits on parchment (`Kenshi_GenericTextBoxFlat`): Meitou draws it in ink.
+  The HUD attaches a tooltip to `BountyPanel` (`FUN_14072d3b0`). Its rows (`FUN_1405d2da0`, **Observed**): per bounty faction the name and `c.{1,num}` (the local faction's in another colour, hex
+  **Unknown**), `-Wanted For:` and the crimes; then imprisonment rows, "This character is wanted by the authorities. Turn them in for a reward." and the local faction's expiry (`FUN_1405d1110`:
+  "The bounty will expire in {1,num} hr(s)", "Notorious: The bounty will never expire."). Meitou shows the faction rows with each faction's expiry.
 - Inspecting another faction's character (**Observed** in the original, not traced in the code): a left click on a character that is not yours fills the information and medical panels with that character (name, faction, state, stats, extended stats, medical rows). Meitou keeps this as display state, `PlayerState.Inspected` set by `InspectCommand` (not hashed, not saved); your selection is kept (Meitou: someone is always selected, `PlayerState.Prune` picks the first living character of yours when every selected one is gone or dead); a click on your own character or the ground clears the inspection.
 - Money panel: `MoneyLabelText` is set to "Money" (without the layout's colon; 25 % opacity when the amount would overlap it), `DayText` "Day: {1,num}", `TimeText` HH:MM (**Verified**). A "1x"
   seen next to the clock in a player's screenshot is not written by the vanilla code (**Observed**; most likely a mod).

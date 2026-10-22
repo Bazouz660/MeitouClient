@@ -139,6 +139,8 @@ sealed partial class PlayerInterface
         // The exe sets the money label without the layout's colon (docs/game/ui-screens.md section 4).
         b.Text["MoneyLabelText"] = "Money";
         b.Text["BountyText"] = lead is null || lead.Bounties.Count == 0 ? "" : $"Bounty c.{lead.Bounties.Sum(v => v.Amount)}";
+        // The panel is parchment (Kenshi_GenericTextBoxFlat): ink text, as on the other parchment boxes.
+        b.Properties["BountyText"] = new Dictionary<string, string> { ["TextColour"] = MyGuiColours.InkText };
         for (int i = 0; i < ButtonSpeeds.Length; i++) b.Actions[$"TimeSpeedButton{i + 1}"] = $"meitou:speed.{i}";
         b.Actions["ShortcutInventoryButton"] = "meitou:inventory";
         b.Actions["ShortcutStatsButton"] = "meitou:stats";
