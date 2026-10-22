@@ -426,6 +426,34 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         }
     }
 
+    /// <summary>Keeps an upload batch's staging buffer alive until its command buffer has completed (and reports the first upload failure).</summary>
+    internal void RetireUpload(MTLCommandBuffer command, MTLBuffer buffer)
+    {
+        if (buffer.NativePtr == IntPtr.Zero) return;
+        if (command.NativePtr == IntPtr.Zero) { buffer.Dispose(); return; }
+        Retain_objc_retain(command.NativePtr);
+        retiredUploads.Add((frameNumber, command, buffer));
+    }
+
+    void ReleaseRetiredUploads(bool force = false)
+    {
+        if (retiredUploads.Count == 0) return;
+        for (int i = 0; i < retiredUploads.Count;)
+        {
+            var retired = retiredUploads[i];
+            var status = retired.Command.Status;
+            if (!force && status is not (MTLCommandBufferStatus.Completed or MTLCommandBufferStatus.Error)) { i++; continue; }
+            if (status == MTLCommandBufferStatus.Error && !uploadErrorReported)
+            {
+                uploadErrorReported = true;
+                Console.WriteLine($"metal     upload command buffer failed: {retired.Command.Error.LocalizedDescription}");
+            }
+            retired.Buffer.Dispose();
+            retired.Command.Dispose();
+            retiredUploads.RemoveAt(i);
+        }
+    }
+
     void ReleaseDeferred(bool force = false)
     {
         List<Action>? run = null;
@@ -586,6 +614,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         // Free what the previous rings no longer name before asking for another drawable; a frame's worth at a time.
         ReleaseRetired();
         ReleaseRetiredLevelViews();
+        ReleaseRetiredUploads();
         ReleaseDeferred();
         if (!display.TryBeginFrame(out var command, out var drawable))
         {
@@ -826,6 +855,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         // hold an index for another ring. Dispose forces the remainder once no frame can run again. Level views and
         // deferred actions have no bindless entries; the marker has completed every command that can use them.
         ReleaseRetiredLevelViews(force: true);
+        ReleaseRetiredUploads(force: true);
         ReleaseDeferred(force: true);
     }
 
@@ -880,6 +910,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views, MetalTexture Texture)> retiredTextures = [];
     /// <summary>Mip-bake level views retained by their encoding command (the impostor bakes create these).</summary>
     readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views)> retiredLevelViews = [];
+    /// <summary>Upload batches' staging buffers, kept until the command buffer that reads them has completed.</summary>
+    readonly List<(long Frame, MTLCommandBuffer Command, MTLBuffer Buffer)> retiredUploads = [];
+    bool uploadErrorReported;
     /// <summary>Actions from <see cref="DeferDelete"/>, released after the frame ring has passed.</summary>
     readonly List<(long Frame, Action Release)> deferredDeletes = [];
     readonly object deferredGate = new();
@@ -1083,6 +1116,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         clearLibrary?.Dispose();
         ReleaseRetired(force: true);
         ReleaseRetiredLevelViews(force: true);
+        ReleaseRetiredUploads(force: true);
         ReleaseDeferred(force: true);
         bindless.Dispose();
         foreach (var t in dummyTextures) t.Dispose();

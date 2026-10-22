@@ -97,7 +97,8 @@ public sealed class MetalUploads : IGpuUploads
         {
             if (stagingSize - stagingUsed < (ulong)bytes)
             {
-                if (staging.NativePtr != IntPtr.Zero) staging.Dispose();
+                // The blits already recorded in this batch still name the old buffer: keep it until the command completes.
+                if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging);
                 stagingSize = Math.Max((ulong)bytes, stagingSize == 0 ? 1 << 20 : stagingSize * 2);
                 staging = ctx.Device.NewBuffer(stagingSize, MTLResourceOptions.ResourceStorageModeShared);
                 stagingUsed = 0;
@@ -111,7 +112,8 @@ public sealed class MetalUploads : IGpuUploads
         {
             list.EndBlit();
             command.Commit();
-            if (staging.NativePtr != IntPtr.Zero) staging.Dispose();
+            // The GPU reads the staging buffer after commit; the context releases it once this command has completed.
+            if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging);
         }
     }
 }
