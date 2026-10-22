@@ -266,6 +266,8 @@ a line gated only by money or `DC_IS_RECRUITABLE`.
   stats/nutrition fields listed in animation.md's open questions.
 - Random appearance details: the untraced part of the morph-face name, the faction flag that re-rolls the skin tone
   (and a body file's gender); crossbow placement; extra hip copies; `RaceLimiter` rules.
+- Where the original puts a rolled weapon whose footprint doesn't fit its pool's slot (hip 7x1, back 10x2). Meitou (engine choice,
+  `CharacterGenerator`): the slot it fits, hip pool preferring the hip and back pool the back; fitting neither, it is left out.
 
 ## Expression reference
 
