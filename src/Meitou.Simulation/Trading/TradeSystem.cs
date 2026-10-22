@@ -34,6 +34,8 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
 {
     /// <summary>The current transfer reverses a purchase or sale from this trade window at its original price.</summary>
     public bool Buyback { get; init; }
+    /// <summary>A bag (a container with a contents grid): it trades whole, and may go into the backpack slot.</summary>
+    public bool Container { get; init; }
     /// <summary>The item's material record ("" none), which picks its icon.</summary>
     public string Material { get; init; } = "";
     /// <summary>How full the item is (0 to 1); null: no charge bar.</summary>
@@ -98,7 +100,8 @@ public sealed class TradeSettings
 /// pending Fencing crime against the shop's faction, booked at once with the shopkeeper as the witness. The prompt that shows the chance is the UI's. The smuggling rules (8.5) are not
 /// decoded and not built.</item>
 /// </list>
-/// The shops' stock and restock times are in the state hash (through the squads); the open trade is not (it only decides what is published).
+/// The shops' stock and restock times are in the state hash (through the squads). The open trade is not, but the buyback receipts it leaves on items are, and they are not saved:
+/// a save made mid-trade reloads with a different hash (docs/simulation.md, trading).
 /// </summary>
 public sealed class TradeSystem : ITickSystem, ITradeSource
 {
@@ -317,6 +320,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var cold = world.Characters.Cold(c)!;
         var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
         if (Find(shop!.Stock, buy.Item) is not { } item) return;
+        if (item.Contents is { Items.Count: > 0 }) { world.Post(BagNotEmpty); return; }
         var m = Market(world);
         int units = Affordable(m, item, Math.Clamp(buy.Quantity, 1, item.Quantity), false, shop.Terms, squad.Faction, world.Player.Money);
         if (units == 0)
@@ -324,13 +328,16 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             world.Post("You can't afford that.");
             return;
         }
+        var receipt = Receipt(m, item, units, false, shop.Terms, squad.Faction);
         var bought = item.WithQuantity(units);
-        bought.Buyback = Receipt(m, item, units, false, shop.Terms, squad.Faction);
+        bought.Buyback = receipt;
         long price = Price(m, item, units, false, shop.Terms, squad.Faction);
         int placed;
         if (item.Contents is not null)
         {
+            // An empty bag moves itself (a copy would have no contents inventory); its receipt is replaced (none: this undid a sale).
             placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip);
+            if (placed > 0) item.Buyback = receipt;
             if (placed > 0 && InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
         }
         else if (buy.Section == "backpack_attach") placed = 0;
@@ -368,6 +375,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var squad = world.Squads.Find(tc.SquadId)!;
         if (Find(cold.Inventory!, sell.Item) is not { } item || !InventoryCommands.IsMovableSection(item.Section)) return;
         if (item.LockedOn) { world.Post("This item is locked in place and cannot be removed."); return; }
+        if (item.Contents is { Items.Count: > 0 }) { world.Post(BagNotEmpty); return; }
         var m = Market(world);
         int units = Affordable(m, item, Math.Clamp(sell.Quantity, 1, item.Quantity), true, shop!.Terms, cold.Faction, squad.Money);
         if (units == 0)
@@ -382,8 +390,9 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                 crimes.Book(world, c, squad.Faction, trader);
             return;
         }
+        var receipt = Receipt(m, item, units, true, shop.Terms, cold.Faction);
         var sold = item.WithQuantity(units);
-        sold.Buyback = Receipt(m, item, units, true, shop.Terms, cold.Faction);
+        sold.Buyback = receipt;
         long price = Price(m, item, units, true, shop.Terms, cold.Faction);
         bool equipped = InventoryCommands.IsEquipmentSection(item.Section);
         int placed = item.Contents is not null
@@ -394,6 +403,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             world.Post("No room for that item.");
             return;
         }
+        if (item.Contents is not null) item.Buyback = receipt;
         if (placed < units) price = Price(m, item, placed, true, shop.Terms, cold.Faction);
         if (item.Contents is null) Take(cold.Inventory!, item, placed);
         if (equipped) assembly.RefreshEquipment(cold);
@@ -493,6 +503,9 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     static string Units(int n, string name) => n == 1 ? name : $"{n} x {name}";
 
+    /// <summary>A bag trades only empty (engine choice; its contents would go unpriced and unchecked for theft).</summary>
+    const string BagNotEmpty = "That bag isn't empty.";
+
     TradeView Publish(World world, int c, int t, Shop shop)
     {
         var m = Market(world);
@@ -512,14 +525,21 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
                 item.Quality, sell ? sellValue : value, Price(m, item, 1, sell, shop.Terms, holder), stolen)
             {
-                Buyback = buyback,
+                Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
                 Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceChance(thievery, item.StolenFrom == squad.Faction) is < 1 and var odds ? Math.Max(odds, 0) : null,
             };
         }
-        var stock = shop.Stock.All().Select((item, index) => View(item, index, false, squad.Faction)).ToArray();
+        // Only the stock grid's own items, at their All() indices (which tokens use): a bag's contents are not loose stock.
+        var stock = new List<TradeItemView>(shop.Stock.Items.Count);
+        int at = 0;
+        foreach (var item in shop.Stock.Items)
+        {
+            stock.Add(View(item, at, false, squad.Faction));
+            at += 1 + (item.Contents?.All().Count() ?? 0);
+        }
         var goods = cold.Inventory!.All().Select((item, index) => (item, index)).Where(p => InventoryCommands.IsMovableSection(p.item.Section))
             .Select(p => View(p.item, p.index, true, cold.Faction)).ToArray();
         return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen);

@@ -80,10 +80,9 @@ sealed partial class PlayerInterface
 
         if (buying is { } b)
         {
-            // Stock dropped on the customer's pocket/bag grid or backpack slot: a purchase into the target.
+            // Stock dropped on the customer's pocket or bag grid: a purchase into the cell under the drop; a bag dropped on the backpack slot: into that slot.
             if (trade is null || hit.Screen is not ("inventory" or "bag") || InventoryOwner(trade.Customer)?.ItemGrid is not { } grid) return;
-            if (hit.Screen == "inventory" && faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent)
-                .First(f => f.Id == hit.Screen).Controls.Any(c => c.Name == "backpack_attach" && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true)))
+            if (b.Item.Container && EquipmentSlotAt(p, hit.Screen) == "backpack_attach")
             {
                 Say(new BuyItem(b.Item.Token, 1) { Tick = session.World.Tick, Section = "backpack_attach" });
                 return;
@@ -132,18 +131,19 @@ sealed partial class PlayerInterface
     /// </summary>
     bool DropPlace(Vector2 p, string screen, InventoryView grid, InventoryItemView item, Vector2 grab, int dragged, out string section, out int x, out int y)
     {
-        section = screen is "bag" or "loot-bag" ? "backpack_content" : "main";
+        section = EquipmentSlotAt(p, screen) ?? (screen is "bag" or "loot-bag" ? "backpack_content" : "main");
         x = y = 0;
-        if (screen is "inventory" or "loot")
-        {
-            var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
-            if (controls.LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true)) is { } equipment) section = equipment.Name;
-        }
         // Clothing and bags occupy one slot; weapon sections retain their grid rows.
         if (InventoryCommands.IsEquipmentSection(section) && section is not ("back" or "hip")) return true;
         var (columns, rows) = InventoryCommands.IsEquipmentSection(section) ? InventoryCommands.SectionSize(section) : section == "main" ? (grid.Width, grid.Height) : (grid.BagWidth, grid.BagHeight);
         return DropCell(p, screen, section, columns, rows, grab, item.Width, item.Height, Footprints(grid.Items, section, dragged), out x, out y);
     }
+
+    /// <summary>The equipment slot of a character window (<c>inventory</c> / <c>loot</c>) under <paramref name="p"/>, or null.</summary>
+    string? EquipmentSlotAt(Vector2 p, string screen) => screen is "inventory" or "loot"
+        ? faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls
+            .LastOrDefault(c => InventoryCommands.IsEquipmentSection(c.Name) && c.Bounds.Contains(p.X, p.Y) && (c.Clip?.Contains(p.X, p.Y) ?? true))?.Name
+        : null;
 
     /// <summary>The cells taken in <paramref name="section"/> by items other than the dragged one (<paramref name="dragged"/>, its index; -1 none).</summary>
     static IEnumerable<(int X, int Y, int Width, int Height)> Footprints(IEnumerable<InventoryItemView> items, string section, int dragged) =>

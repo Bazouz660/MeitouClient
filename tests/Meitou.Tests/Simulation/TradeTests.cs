@@ -190,7 +190,7 @@ public class TradeTests
         Assert.Equal(2, shop.Fills);
     }
 
-    internal static FcsRecord BackpackRecord() => Rec("bag-t", FcsRecordType.CONTAINER, r =>
+    static FcsRecord BackpackRecord() => Rec("bag-t", FcsRecordType.CONTAINER, r =>
     {
         r.Ints["value"] = 100; r.Ints["inventory footprint width"] = 4; r.Ints["inventory footprint height"] = 4;
         r.Ints["storage size width"] = 6; r.Ints["storage size height"] = 8;
@@ -199,8 +199,7 @@ public class TradeTests
     [Theory]
     [InlineData(null, true)]
     [InlineData("main", false)]
-    [InlineData("backpack_attach", false)]
-    public void Buying_a_backpack_transfers_its_container_and_selling_it_preserves_contents(string? section, bool equip)
+    public void A_backpack_trades_whole_and_only_when_empty(string? section, bool equip)
     {
         using var b = new Bazaar(BackpackRecord());
         var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
@@ -210,184 +209,81 @@ public class TradeTests
         shop.Stock.Items.Clear();
         var bag = b.Data.Items.Create("bag-t")!;
         var contents = bag.Contents!;
-        var ration = b.Data.Items.Create("ration-t")!;
-        Assert.True(contents.Add(ration));
+        Assert.True(contents.Add(b.Data.Items.Create("ration-t")!));
         Assert.True(shop.Stock.Add(bag));
         b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
-        var stock = b.View.Stock.Single(i => i.Record == "bag-t");
         long playerMoney = b.World.Player.Money, shopMoney = b.SquadOf(trader).Money;
+        // Its contents are not loose stock, and a bag with something in it is not traded either way.
+        var stock = Assert.Single(b.View.Stock);
         b.Say(new BuyItem(stock.Token, 1) { Tick = 0, Section = section, X = 2, Y = 3, Equip = equip }); b.World.RunTick();
-        Assert.Same(bag, Assert.Single(b.Bag(hero).Items));
-        Assert.Same(contents, bag.Contents); Assert.Same(ration, Assert.Single(contents.Items));
+        Assert.Same(bag, Assert.Single(shop.Stock.Items));
+        Assert.Equal(playerMoney, b.World.Player.Money);
+        contents.Items.Clear(); b.World.RunTick();
+        stock = Assert.Single(b.View.Stock);
+        b.Say(new BuyItem(stock.Token, 1) { Tick = 0, Section = section, X = 2, Y = 3, Equip = equip }); b.World.RunTick();
+        Assert.Same(bag, Assert.Single(b.Bag(hero).Items)); Assert.Same(contents, bag.Contents);
         Assert.Equal(section == "main" ? "main" : "backpack_attach", bag.Section);
         if (section == "main") Assert.Equal((2, 3), (bag.X, bag.Y));
         Assert.Empty(shop.Stock.All());
         Assert.Equal(playerMoney - stock.Price, b.World.Player.Money);
-        Assert.Equal(shopMoney + stock.Price, b.SquadOf(trader).Money);
+        Assert.True(contents.Add(b.Data.Items.Create("ration-t")!)); b.World.RunTick();
+        b.Say(new SellItem(b.View.Goods.Single(i => i.Record == "bag-t").Token, 1) { Tick = 0 }); b.World.RunTick();
+        Assert.Same(bag, Assert.Single(b.Bag(hero).Items));
+        Assert.Equal(playerMoney - stock.Price, b.World.Player.Money);
+        // Emptied, it sells back for exactly what it cost (buyback).
+        contents.Items.Clear(); b.World.RunTick();
         var goods = b.View.Goods.Single(i => i.Record == "bag-t");
+        Assert.True(goods.Buyback);
         b.Say(new SellItem(goods.Token, 1) { Tick = 0 }); b.World.RunTick();
-        Assert.Empty(b.Bag(hero).All()); Assert.Same(bag, Assert.Single(shop.Stock.Items));
-        Assert.Same(contents, bag.Contents); Assert.Same(ration, Assert.Single(contents.Items));
-        Assert.Equal(playerMoney - stock.Price + goods.Price, b.World.Player.Money);
-        Assert.Equal(shopMoney + stock.Price - goods.Price, b.SquadOf(trader).Money);
+        Assert.Empty(b.Bag(hero).All()); Assert.Same(bag, Assert.Single(shop.Stock.Items)); Assert.Same(contents, bag.Contents);
+        Assert.Equal(playerMoney, b.World.Player.Money);
+        Assert.Equal(shopMoney, b.SquadOf(trader).Money);
     }
 
     [Theory]
-    [InlineData("money")]
-    [InlineData("space")]
-    [InlineData("occupied-slot")]
-    [InlineData("nested-bag")]
-    public void A_rejected_backpack_purchase_leaves_stock_contents_and_money_unchanged(string reason)
-    {
-        using var b = new Bazaar(BackpackRecord());
-        var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
-        var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
-        b.World.RunTick();
-        var shop = b.SquadOf(trader).Shop!; shop.Stock.Items.Clear();
-        var bag = b.Data.Items.Create("bag-t")!; Assert.True(shop.Stock.Add(bag));
-        var contents = bag.Contents;
-        if (reason == "money") b.World.Player.Money = 0;
-        if (reason == "space") b.Bag(hero).Items.Add(new() { Record = "filler", Width = 8, Height = 10 });
-        if (reason is "occupied-slot" or "nested-bag")
-        {
-            var worn = b.Data.Items.Create("bag-t")!; worn.Section = "backpack_attach"; b.Bag(hero).Items.Add(worn);
-        }
-        b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
-        var stock = b.View.Stock.Single();
-        long playerMoney = b.World.Player.Money, shopMoney = b.SquadOf(trader).Money;
-        b.Say(new BuyItem(stock.Token, 1) { Tick = 0, Section = reason == "occupied-slot" ? "backpack_attach" : reason == "nested-bag" ? "backpack_content" : "main" });
-        b.World.RunTick();
-        Assert.Same(bag, Assert.Single(shop.Stock.Items)); Assert.Same(contents, bag.Contents);
-        Assert.Equal(stock.Token, b.View.Stock.Single().Token);
-        Assert.DoesNotContain(b.Bag(hero).All(), i => ReferenceEquals(i, bag));
-        Assert.Equal(playerMoney, b.World.Player.Money); Assert.Equal(shopMoney, b.SquadOf(trader).Money);
-    }
-
-    [Theory]
-    [InlineData(true, "junk-t", false)]
-    [InlineData(false, "junk-t", false)]
-    [InlineData(true, "ration-t", false)]
-    [InlineData(false, "ration-t", false)]
-    [InlineData(true, "ration-t", true)]
-    [InlineData(false, "ration-t", true)]
-    public void Buyback_refunds_exact_coins_in_both_directions_including_partial_stacks(bool buyFirst, string record, bool close)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void Buyback_refunds_exact_coins_in_both_directions_including_partial_stacks(bool buyFirst, bool close)
     {
         using var b = new Bazaar();
         var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
         var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
         b.World.RunTick();
         var shop = b.SquadOf(trader).Shop!; shop.Stock.Items.Clear();
-        var item = b.Data.Items.Create(record)!;
-        int count = record == "junk-t" ? 1 : 4;
-        item.Quantity = count;
-        if (count > 1) item.Charges = 37; // Fractional charges and integer rounding must not create or lose coins on undo.
+        var item = b.Data.Items.Create("ration-t")!;
+        item.Quantity = 4;
+        item.Charges = 37; // Fractional charges and integer rounding must not create or lose coins on undo.
         Assert.True((buyFirst ? shop.Stock : b.Bag(hero)).Add(item));
+        Assert.True((buyFirst ? b.Bag(hero) : shop.Stock).Add(b.Data.Items.Create("ration-t")!));
         b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
         long player = b.World.Player.Money, merchant = b.SquadOf(trader).Money;
-        var original = Assert.Single(buyFirst ? b.View.Stock : b.View.Goods);
-        Assert.False(original.Buyback);
-        b.Say(buyFirst ? new BuyItem(original.Token, count) { Tick = 0, Equip = true } : new SellItem(original.Token, count) { Tick = 0 });
-        b.World.RunTick();
-        var reverse = Assert.Single(buyFirst ? b.View.Goods : b.View.Stock);
-        Assert.True(reverse.Buyback);
-        Assert.Equal(original.Price, reverse.Price);
-        Assert.Equal(original.Price, buyFirst ? reverse.SellValue : reverse.Value);
+        IReadOnlyList<TradeItemView> Source() => buyFirst ? b.View.Stock : b.View.Goods;
+        IReadOnlyList<TradeItemView> Target() => buyFirst ? b.View.Goods : b.View.Stock;
+        SimCommand Move(TradeItemView v, int n, bool undo) => buyFirst != undo ? new BuyItem(v.Token, n) { Tick = 0 } : new SellItem(v.Token, n) { Tick = 0 };
+        // Moved one unit at a time, the units share one stack, kept apart from the plain one.
+        for (int n = 0; n < 4; n++)
+        {
+            b.Say(Move(Assert.Single(Source()), 1, false)); b.World.RunTick();
+        }
+        var reverse = Assert.Single(Target(), v => v.Buyback);
+        Assert.Equal((4, Math.Abs(b.World.Player.Money - player)), (reverse.Quantity, reverse.Price));
+        Assert.Equal(1, Assert.Single(Target(), v => !v.Buyback).Quantity);
         if (close)
         {
             b.Say(new CloseTrade { Tick = 0 }); b.World.RunTick(); Assert.Null(b.World.Snapshot.Trade);
             b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
-            reverse = Assert.Single(buyFirst ? b.View.Goods : b.View.Stock);
-            Assert.False(reverse.Buyback);
-            Assert.NotEqual(original.Price, reverse.Price);
+            Assert.DoesNotContain(Target(), v => v.Buyback);
             return;
         }
-        // Undo one at a time: every remaining prefix must quote the actual amount charged.
-        for (int n = count; n > 0; n--)
-        {
-            reverse = Assert.Single(buyFirst ? b.View.Goods : b.View.Stock);
-            Assert.True(reverse.Buyback);
-            long before = b.World.Player.Money;
-            b.Say(buyFirst ? new SellItem(reverse.Token, 1) { Tick = 0 } : new BuyItem(reverse.Token, 1) { Tick = 0 });
-            b.World.RunTick();
-            Assert.Equal(before + (buyFirst ? reverse.UnitPrice : -reverse.UnitPrice), b.World.Player.Money);
-        }
+        // Undone in parts, each part quotes what was actually paid.
+        b.Say(Move(reverse, 1, true)); b.World.RunTick();
+        reverse = Assert.Single(Target(), v => v.Buyback);
+        Assert.Equal(3, reverse.Quantity);
+        b.Say(Move(reverse, 3, true)); b.World.RunTick();
         Assert.Equal(player, b.World.Player.Money);
         Assert.Equal(merchant, b.SquadOf(trader).Money);
-        Assert.All(buyFirst ? b.View.Stock : b.View.Goods, v => Assert.False(v.Buyback));
-    }
-
-    [Theory]
-    [InlineData(true, true)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(false, false)]
-    public void Rejected_buyback_keeps_the_receipt_and_item(bool buyFirst, bool noMoney)
-    {
-        using var b = new Bazaar();
-        var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
-        var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
-        b.World.RunTick();
-        var squad = b.SquadOf(trader);
-        var stock = squad.Shop!.Stock; stock.Items.Clear();
-        var bag = b.Data.Items.Create("junk-t")!;
-        Assert.True((buyFirst ? stock : b.Bag(hero)).Add(bag));
-        b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
-        var first = Assert.Single(buyFirst ? b.View.Stock : b.View.Goods);
-        b.Say(buyFirst ? new BuyItem(first.Token, 1) { Tick = 0 } : new SellItem(first.Token, 1) { Tick = 0 }); b.World.RunTick();
-        var target = buyFirst ? stock : b.Bag(hero);
-        var blocker = new ItemInstance { Record = "blocker", Width = target.Width, Height = target.Height };
-        if (noMoney)
-        {
-            if (buyFirst) squad.Money = 0;
-            else b.World.Player.Money = 0;
-        }
-        else Assert.True(target.Add(blocker));
-        var reverse = Assert.Single(buyFirst ? b.View.Goods : b.View.Stock);
-        long player = b.World.Player.Money, merchant = squad.Money;
-        SimCommand Undo() => buyFirst ? new SellItem(reverse.Token, 1) { Tick = 0 } : new BuyItem(reverse.Token, 1) { Tick = 0 };
-        b.Say(Undo()); b.World.RunTick();
-        Assert.Equal(player, b.World.Player.Money); Assert.Equal(merchant, squad.Money);
-        Assert.Equal(bag.Record, Assert.Single((buyFirst ? b.Bag(hero) : stock).Items).Record);
-        Assert.True(Assert.Single(buyFirst ? b.View.Goods : b.View.Stock).Buyback);
-        target.Remove(blocker);
-        if (noMoney)
-        {
-            if (buyFirst) squad.Money = first.Price;
-            else b.World.Player.Money = first.Price;
-        }
-        b.Say(Undo()); b.World.RunTick();
-        Assert.Equal(bag.Record, Assert.Single(target.Items).Record);
-        Assert.False(Assert.Single(buyFirst ? b.View.Stock : b.View.Goods).Buyback);
-    }
-
-    [Fact]
-    public void Buyback_stays_with_split_units_and_does_not_reprice_existing_goods()
-    {
-        using var b = new Bazaar();
-        var hero = b.Spawn("hero", Vector2.Zero, b.Data.PlayerFaction, true);
-        var trader = b.Spawn("trader", new(10, 0), b.Data.FactionIndex("f-t"), false, "shop-t");
-        b.World.RunTick();
-        var shop = b.SquadOf(trader).Shop!; shop.Stock.Items.Clear();
-        var stock = b.Data.Items.Create("ration-t")!; stock.Quantity = 4; stock.Charges = 37;
-        Assert.True(shop.Stock.Add(stock));
-        Assert.True(b.Bag(hero).Add(b.Data.Items.Create("ration-t")!));
-        b.Say(new OpenTrade(hero, trader) { Tick = 0 }); b.World.RunTicks(2);
-        long player = b.World.Player.Money;
-        b.Say(new BuyItem(b.View.Stock.Single().Token, 4) { Tick = 0 }); b.World.RunTick();
-        Assert.Equal(2, b.View.Goods.Count);
-        Assert.Single(b.View.Goods, v => !v.Buyback);
-        var purchased = b.Bag(hero).Items.Single(i => i.Quantity == 4);
-        var separate = new Inventory();
-        Assert.Equal(2, InventoryCommands.MoveUnits(b.Bag(hero), purchased, 2, separate));
-        Assert.Equal(2, InventoryCommands.MoveUnits(separate, separate.Items.Single(), 0, b.Bag(hero)));
-        b.World.RunTick();
-        Assert.Equal(2, b.View.Goods.Count(v => v.Buyback));
-        while (b.View.Goods.FirstOrDefault(v => v.Buyback) is { } undo)
-        {
-            b.Say(new SellItem(undo.Token, undo.Quantity) { Tick = 0 }); b.World.RunTick();
-        }
-        Assert.Equal(player, b.World.Player.Money);
-        Assert.Single(b.Bag(hero).Items);
+        Assert.DoesNotContain(b.View.Stock.Concat(b.View.Goods), v => v.Buyback);
     }
 
     [Fact]

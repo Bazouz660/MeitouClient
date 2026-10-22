@@ -433,10 +433,10 @@ RACE `buy value` is 100 for most races (27 of 53 records); other values in the d
 
 ## Buyback during an open trade
 
-**Observed** (owner's original-game reproduction): buying an item and returning it before closing
-trade refunds its purchase price; selling then buying it back costs the sale proceeds. Closing
-trade ends this privilege. The item tooltip marks it `Buyback` (see [tooltips](ui-screens.md)).
-**Unknown:** original allocation rules for partially charged stacks and mixed-price stacks.
+**Observed** (reported by the PR #41 contributor from the original game; not checked by the owner): an item bought and returned before the trade closes refunds its
+purchase price; one sold and bought back costs what the sale paid; closing the trade ends this. The original's item rows have a `Buyback` row right after the name
+(**Observed**, decompile, [item rows](ui-screens.md#tooltips)); when it shows is **Unknown**, as is how partially charged or mixed-price stacks are allocated.
+Meitou: [simulation](../simulation.md#trade).
 
 ## Evidence index
 

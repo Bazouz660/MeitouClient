@@ -104,7 +104,7 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>The rows of a control's tooltip and its class: from its item, else from its user strings by <c>tooltip_type</c> (0 text, 1 rows, 2 data record, 4 map place).</summary>
-    internal (IReadOnlyList<TooltipLine>, TooltipKind)? ResolveTooltip(UiControl hit)
+    (IReadOnlyList<TooltipLine>, TooltipKind)? ResolveTooltip(UiControl hit)
     {
         var p = hit.Properties;
         if (p.TryGetValue(ItemTipKey, out string? key) && itemTips.TryGetValue(key, out var item)) return (ItemLines(item), TooltipKind.Inventory);
@@ -304,9 +304,11 @@ sealed partial class PlayerInterface
     {
         /// <summary>Only the name (the machine slots' items, which the original's tooltip shows the same way).</summary>
         public bool Brief { get; init; }
+        /// <summary>The customer's own item while trading (its Sell value is the transfer's price); otherwise a stock item's Value is.</summary>
+        public bool Goods { get; init; }
         public static ItemTip NameOnly(string record, string material, string name, int quantity) => new(record, material, name, quantity, 0, 0, "", 0, 0, 0, -1, null, null) { Brief = true };
         public static ItemTip Of(InventoryItemView v, TradeItemView? trade = null, string? mapNote = null) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote);
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null };
         public static ItemTip Of(TradeItemView v) =>
             new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null);
     }
@@ -412,8 +414,9 @@ sealed partial class PlayerInterface
             // Value and Sell value: the stack's prices, with the trader factor as a mark-up in the bad colour (FUN_14079e7a0).
             int percent = trade.PriceFactor > 1 ? (int)((trade.PriceFactor - 1) * 100) : trade.PriceFactor < 1 ? (int)((1 - trade.PriceFactor) * 100) : 0;
             string suffix = trade.PriceFactor == 1 ? "" : $" ({(trade.PriceFactor > 1 ? "+" : "-")}{percent}%)";
-            lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, suffix, TooltipTone.Bad));
-            lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, suffix, TooltipTone.Bad));
+            // A buyback price is the exact refund, not marked up.
+            lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && !t.Goods ? "" : suffix, TooltipTone.Bad));
+            lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && t.Goods ? "" : suffix, TooltipTone.Bad));
         }
         if (armour is not null)
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id)).Select(ArmourRow));

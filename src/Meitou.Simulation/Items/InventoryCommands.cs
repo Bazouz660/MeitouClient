@@ -27,7 +27,7 @@ public static class InventoryCommands
     /// <summary>
     /// Puts one unit into the equipment slot that takes it when that is free (the trade window's right click, <c>FUN_140713d20</c>: sections that accept the item's slot type are tried before
     /// the general grids): weapons the first free cell of <c>back</c>, then <c>hip</c>; armour its <see cref="ItemInstance.EquipmentSection"/> when nothing is worn there. The order of two
-    /// matching sections is <b>Unknown</b>; trade transfers bags whole with <see cref="Transfer"/> instead of copying them. False: no slot, the caller places it in a grid.
+    /// matching sections is <b>Unknown</b>. Bags are not equipped here: the trade moves them whole, into a free <c>backpack_attach</c> first (engine choice, docs/simulation.md). False: no slot, the caller places it in a grid.
     /// </summary>
     public static bool TryEquip(Inventory root, ItemInstance item)
     {

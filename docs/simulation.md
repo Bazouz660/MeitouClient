@@ -903,19 +903,18 @@ A squad shop holds one 18 x 18 stock grid (the building storage size and the van
 prisoners or slaves and whose home has stock containers gets a building shop instead ([building shops](game/economy.md#building-shops-observed-decompile)): one merged stock
 (`Shop.ForBuilding`, `Shop.Building`), its own purse rule, the containers' locks opened at each fill. Stock cells stack 50 x an item's `stackable`. A housed squad with vendors that is no
 trader has its home's containers filled instead (`FillHome`). Only members that trade (`DialogueSystem.Trades`, [who trades](game/economy.md#who-trades)) publish `IsTrader`, the
-Trade verb and pointer. Shop state and active buyback receipts are hashed; window geometry is not world state. A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
+Trade verb and pointer. Shop state is hashed; the open trade is not, except its buyback receipts (below). A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
 Transfers and money changes must succeed together.
-Backpacks transfer as whole instances, preserving their contents: right-click buys into a free backpack slot, then the main grid;
-dragging can target the backpack slot or main grid. Containers cannot nest inside bags. Rejected transfers leave stock and purses unchanged
-(engine contract, checked by `TradeTests` and `FaithfulInteractionTests`).
 
-Buyback receipts last for one open trade: reverse transfers use the exact coins previously paid,
-then clear the transferred units' receipt. Per-unit allocations preserve rounded totals through
-partial transfers and inventory splits; eligible stacks stay separate from other goods until
-trade closes. Closing or replacing the trade invalidates all receipts, including moved items;
-receipts are not saved. Tooltips expose the effective price and the original `Buyback` message key.
-Regression coverage: `TradeTests` and `TradeUiTests`.
+Bags (engine choice; how the original trades bags and their contents is **Unknown**): a bag trades whole, the same instance with its contents grid, and only empty ("That bag
+isn't empty."), since its contents would otherwise go unpriced and unchecked for theft; a bag's contents are not shown as stock. A right click puts a bought bag into a free
+backpack slot, else the main grid; a drag puts it where it is dropped, the backpack slot included, never into another bag. Other items: a right click tries `TryEquip`, then the grids.
+
+Buyback (the original's: [economy](game/economy.md#buyback-during-an-open-trade)): a purchase or sale leaves a receipt on the moved units (`TradeReceipt`, the coins paid per
+unit, kept through stack splits); moving them back in the same open trade costs or refunds exactly those coins and clears it. Units of the same trade and direction share a stack
+(their coins join); they top up plain stacks only when no free cell is left, losing the receipt for those units. Closing or replacing the trade voids every receipt, moved items'
+too; stacks it kept apart stay apart. Receipts are in the state hash but not saved, so a save made mid-trade reloads without them, with a different hash.
 
 ## Dialogue
 

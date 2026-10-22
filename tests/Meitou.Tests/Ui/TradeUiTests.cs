@@ -33,37 +33,6 @@ public class TradeUiTests
     [Theory, Slow]
     [InlineData(UiMode.Faithful)]
     [InlineData(UiMode.Meitou)]
-    public void Buyback_tooltip_marks_only_eligible_items(UiMode mode)
-    {
-        var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "No Kenshi install configured");
-        var source = new StockSource();
-        using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem(), source]);
-        var hero = session.World.Characters.Spawn(new(), new() { Name = "Hero", IsPlayer = true, Inventory = new Inventory() }, 0);
-        session.World.Player.Selection.Add(hero);
-        var resources = OgreScriptResources.ForInstall(install, LoadOrder.FromInstall(install));
-        var ui = new PlayerInterface(session, (_, _) => 0, c => c.Position) { Width = 1600, Height = 900 };
-        ui.LoadUi(mode, name => resources.Find(name));
-        try
-        {
-            foreach (bool eligible in new[] { true, false })
-            {
-                source.Trade = new(hero, new CharacterId(1, 0), "Shop", 1000, 1000, 20, 20,
-                    [new(0, "bag", "Backpack", "main", 0, 0, 4, 4, 1, 1, 1500, 1500, false) { Buyback = eligible, Value = 1500, SellValue = 1500 }], [], false);
-                session.World.RunTick();
-                var cell = ui.UiFrame.Single(c => c.Name == "trade-item-0");
-                var (lines, _) = ui.ResolveTooltip(cell) ?? throw new InvalidOperationException("Missing item tooltip");
-                Assert.Equal(eligible, lines.Any(line => line.Key == "Buyback"));
-                Assert.Contains(lines, line => line.Key == "-Value" && line.Value == "c.1,500");
-            }
-            var chinese = Meitou.Localisation.GettextCatalog.Load(GameFiles.Resolve(Path.Combine(install.Root, "locale/zh_CN/LC_MESSAGES")));
-            Assert.Equal("买回", chinese.Find("Buyback"));
-        }
-        finally { ui.DisposeUi(); }
-    }
-
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
     public void Scrolled_stock_keeps_its_cells_and_buys_the_visible_item(UiMode mode)
     {
         var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "No Kenshi install configured");

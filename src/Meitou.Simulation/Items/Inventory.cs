@@ -71,27 +71,32 @@ public sealed class Inventory(int width, int height)
     /// Puts an item in, honouring the stack limit of each inventory (<see cref="LimitOf"/>): first it tops up stacks of the same record and quality in the main grid, then in the
     /// backpack; what is left takes the first free cells of <c>main</c>, then of the backpack, at most a full stack per cell (the item itself goes into the last cell, split-off
     /// copies into the others). True when every unit found a place; otherwise what did not fit stays in <paramref name="item"/>'s <see cref="ItemInstance.Quantity"/> (the caller
-    /// keeps or drops it) and the units placed stay placed.
+    /// keeps or drops it) and the units placed stay placed. Units with a buyback receipt top up only stacks of the same trade and direction; with no free cell left they join plain
+    /// stacks too and lose the receipt (docs/simulation.md, trading).
     /// </summary>
     public bool Add(ItemInstance item)
     {
         var bag = Backpack?.Contents;
-        if (TopUp(this, item) || (bag is not null && TopUp(bag, item))) return true;
+        if (TopUp(this, item, false) || (bag is not null && TopUp(bag, item, false))) return true;
         if (Place(this, "main", item)) return true;
-        return bag is not null && Place(bag, "backpack_content", item);
+        if (bag is not null && Place(bag, "backpack_content", item)) return true;
+        return item.Buyback is not null && (TopUp(this, item, true) || (bag is not null && TopUp(bag, item, true)));
     }
 
-    /// <summary>Moves units of <paramref name="item"/> into stacks of <paramref name="into"/> with room left; true when none are left.</summary>
-    static bool TopUp(Inventory into, ItemInstance item)
+    /// <summary>Moves units of <paramref name="item"/> into stacks of <paramref name="into"/> with room left (<paramref name="dropReceipt"/>: plain stacks too); true when none are left.</summary>
+    static bool TopUp(Inventory into, ItemInstance item, bool dropReceipt)
     {
         int limit = into.LimitOf(item);
         if (limit <= 1) return false;
         foreach (var other in into.Items)
         {
-            if (item.Buyback is not null || other.Buyback is not null || ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null || other.Section is not ("main" or "backpack_content")) continue;
+            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null || other.Section is not ("main" or "backpack_content")) continue;
+            var (kept, coming) = (other.Buyback, item.Buyback);
+            if (kept is null ? coming is not null && !dropReceipt : coming is null || !kept.Joins(coming)) continue;
             int move = Math.Min(limit - other.Quantity, item.Quantity);
             if (move <= 0) continue;
-            other.Quantity += move;
+            other.Quantity += move;   // clears other's receipt; the joined one is set after
+            if (kept is not null) other.Buyback = kept.Append(coming!.Take(move));
             item.Quantity -= move;
             if (item.Quantity == 0) return true;
         }

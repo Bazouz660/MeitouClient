@@ -12,4 +12,7 @@ internal sealed record TradeReceipt(TradeSession Session, bool Sell, long[] Coin
     public long Price(int units) => Coins.Take(units).Sum();
     public TradeReceipt Take(int units) => this with { Coins = Coins.Take(units).ToArray() };
     public TradeReceipt Skip(int units) => this with { Coins = Coins.Skip(units).ToArray() };
+    /// <summary>Units of the same trade and direction share a stack: their coins join.</summary>
+    public bool Joins(TradeReceipt other) => ReferenceEquals(Session, other.Session) && Sell == other.Sell;
+    public TradeReceipt Append(TradeReceipt other) => this with { Coins = [.. Coins, .. other.Coins] };
 }
