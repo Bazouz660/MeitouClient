@@ -113,6 +113,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly MTLDevice device;
     readonly MTLCommandQueue queue;
     readonly MTLPixelFormat presentFormat;
+    readonly bool waitForSlot, waitOneFrame;
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
     readonly MetalBindlessTable bindless;
@@ -148,6 +149,15 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         this.device = device;
         this.queue = queue;
         this.presentFormat = presentFormat;
+        string slotWait = Environment.GetEnvironmentVariable("MEITOU_METAL_SLOT_WAIT") ?? "";
+        // Vulkan waits for the slot's fence before reusing it. That rule is now the Metal default; "0"/"false" restores
+        // the old frame-number-only behavior for A/B diagnostics, and "serial" waits for the immediately previous frame.
+        waitForSlot = slotWait is not ("0" or "false");
+        waitOneFrame = slotWait is "serial";
+        if (waitForSlot) Console.WriteLine(waitOneFrame
+            ? "metal     slot wait enabled: one frame in flight (serial diagnostic)"
+            : "metal     slot wait enabled: wait for the reused slot (Vulkan-style fence)");
+        else Console.WriteLine("metal     slot wait disabled (MEITOU_METAL_SLOT_WAIT=0)");
         frames = new MetalFrame[FrameRingDepth];
         for (int i = 0; i < FrameRingDepth; i++) frames[i] = new MetalFrame(this, i);
         Shaders = new MetalShaders(Device);
@@ -611,6 +621,14 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         if (framePoolOpen) { framePool.Dispose(); framePoolOpen = false; }
         framePool = new NSAutoreleasePool();
         framePoolOpen = true;
+        // Vulkan's FrameRing waits on the slot's fence before reusing per-frame memory or running deletions. The normal
+        // diagnostic waits for the slot that this frame will reuse; "serial" also waits for the immediately previous
+        // frame, making the whole backend one-frame-in-flight.
+        if (waitForSlot && slot >= 0)
+        {
+            if (waitOneFrame) frames[slot].WaitForCompletion();
+            else frames[(slot + 1) % FrameRingDepth].WaitForCompletion();
+        }
         // Free what the previous rings no longer name before asking for another drawable; a frame's worth at a time.
         ReleaseRetired();
         ReleaseRetiredLevelViews();

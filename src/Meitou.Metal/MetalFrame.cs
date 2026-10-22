@@ -140,6 +140,15 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     internal void End() => Open = false;
 
+    /// <summary>Waits for this slot's command buffer (the Vulkan fence diagnostic; the command is retained by the slot).</summary>
+    internal void WaitForCompletion()
+    {
+        if (Command.NativePtr == IntPtr.Zero) return;
+        Command.WaitUntilCompleted();
+        if (Command.Status == MTLCommandBufferStatus.Error)
+            Console.WriteLine($"metal     frame slot {Slot} command buffer failed: {Command.Error.LocalizedDescription}");
+    }
+
     /// <summary>The command buffer completed and the slot will be reused: drop the pointer so teardown releases do not retain
     /// a command object the queue may already have freed.</summary>
     internal void ForgetCommand()
