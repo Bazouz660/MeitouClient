@@ -104,21 +104,35 @@ public sealed class SightMap
             Array.Resize(ref place, size);
             Array.Resize(ref onTop, size);
             Array.Resize(ref light, size);
+            Array.Resize(ref floorOf, size);
+            Array.Resize(ref probed, size);
         }
         for (int s = 0; s < count; s++)
         {
+            int was = place[s];
             place[s] = -1;
-            onTop[s] = false;
-            if (!prev[s].Alive || rooms.Count == 0) continue;
+            if (!prev[s].Alive || rooms.Count == 0) { onTop[s] = false; probed[s] = default; continue; }
             var c = table.Cold(s);
             var at = prev[s].Position;
             if (c?.InWhat is { } held && world.Fixtures.Find(held) is { } fixture)
+            {
                 place[s] = roomOf.GetValueOrDefault(fixture.Building, -1);
+                onTop[s] = false;
+                if (place[s] != was) { floorOf[s] = -1; probed[s] = default; }
+            }
             else if (RoomAt(at) is var r and >= 0)
             {
                 place[s] = r;
-                onTop[s] = !rooms[r].Volume.Covered(at);
+                // The overhead and floor queries are triangle searches: kept while the character stays put in the same room.
+                var key = new Probe(at, r, prev[s].Generation);
+                if (r != was || probed[s] != key)
+                {
+                    onTop[s] = !rooms[r].Volume.Covered(at);
+                    floorOf[s] = -1;
+                    probed[s] = key;
+                }
             }
+            else onTop[s] = false;
         }
         // A carried body is where its carrier is (the original's location of a carried character is its carrier's).
         for (int s = 0; s < count; s++)
@@ -133,6 +147,11 @@ public sealed class SightMap
     }
 
     float brightest = 1;
+
+    /// <summary>Where a character's overhead and floor queries were last made (<see cref="floorOf"/> -1: not asked yet there).</summary>
+    readonly record struct Probe(Vector3 At, int Room, int Generation);
+    Probe[] probed = [];
+    int[] floorOf = [];
 
     /// <summary>The farthest the looker can see anyone this tick (<see cref="Range"/> with the brightest target and full ambient): a query radius.</summary>
     public float MaxRange(int looker, float outdoor)
@@ -157,7 +176,8 @@ public sealed class SightMap
         float sum = 2 * Daylight;
         if (!lampCells.TryGetValue((CellOf(at.X), CellOf(at.Z)), out var list)) return sum;
         bool inside = Inside(slot);
-        int floor = inside ? rooms[place[slot]].Volume.FloorAt(at) : 0;
+        int floor = 0;
+        if (inside && (floor = floorOf[slot]) < 0) floor = floorOf[slot] = rooms[place[slot]].Volume.FloorAt(at);
         foreach (int k in list)
         {
             var (l, room) = lamps[k];

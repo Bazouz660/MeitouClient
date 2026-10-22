@@ -30,7 +30,9 @@ Meitou (`SightMap`): every sight test (aggro, crime witnesses, bounty spotting, 
 rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
 buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
 compared only within the character's building). No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
-evaluated every tick for everyone.
+evaluated every tick for everyone. The overhead and floor queries are redone only when a character moves (headless, Release:
+0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data: the Hub's and Squin's houses have no
+interior lights, so indoors at night is unlit (light 0).
 
 Can-see first checks state/squad-shared sightings (within2R, no cone/light), then player rules,
 building compatibility, NPC test/stealth accumulation and conditional physics ray. Ray starts
