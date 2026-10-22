@@ -29,12 +29,25 @@ internal sealed class NavVolume(Vector2[] polygon, float yMin, float yMax)
     public float YMax { get; } = yMax;
 }
 
+/// <summary>
+/// A closed convex collision shape of a walkable part, as planes (unit normal outward; a point p is inside when every <c>Dot(n, p) + d</c> is below 0).
+/// Recast rasterises surfaces, not volumes, so the ground inside a solid foundation would stay as a floor under it; the builder removes the walkable spans
+/// inside (docs/game/pathfinding.md, "Solids").
+/// </summary>
+internal sealed class NavSolid(Vector4[] planes, Vector2 min, Vector2 max)
+{
+    public Vector4[] Planes { get; } = planes;
+    /// <summary>The shape's box on (X, Z).</summary>
+    public Vector2 Min { get; } = min;
+    public Vector2 Max { get; } = max;
+}
+
 /// <summary>Counters of what a gather found, for logs and the debug tool.</summary>
 internal sealed class GatherStats
 {
     public int Buildings, PartsWithCollision, Shapes, FoliageInstances, FoliageShapes, FoliageCutters, MissingFiles;
     public int WalkableTriangles, CuttingTriangles, TerrainTriangles, WaterTriangles;
-    public int Carvers, Painters, DoorSeeds, SeedsDropped, WallSeeds;
+    public int Carvers, Painters, DoorSeeds, SeedsDropped, WallSeeds, Solids;
 }
 
 /// <summary>
@@ -60,8 +73,12 @@ internal sealed class ZoneGeometry
 
     /// <summary>Volumes that remove the walkable mesh inside them (interior hulls, foliage cutters, convex obstacles).</summary>
     public List<NavVolume> Carvers { get; } = [];
+    /// <summary>Closed convex shapes of walkable parts: the walkable spans inside them are removed.</summary>
+    public List<NavSolid> Solids { get; } = [];
     /// <summary>Door hulls: walkable cells inside become <see cref="NavArea.Door"/>.</summary>
     public List<NavVolume> Painters { get; } = [];
+    /// <summary>Exterior doors' outer markers with the height of the door's base, until every surface is gathered (then they become <see cref="Seeds"/>).</summary>
+    public List<(Vector2 At, float Base)> DoorMarkers { get; } = [];
     /// <summary>Seed points: regions of the mesh near one stay, the rest is pruned (docs/game/pathfinding.md, "Region pruning by seeds").</summary>
     public List<Vector3> Seeds { get; } = [];
     /// <summary>

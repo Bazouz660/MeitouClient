@@ -211,9 +211,10 @@ internal sealed partial class ZoneGeometryGatherer
     }
 
     /// <summary>
-    /// A vertical ray against the walkable triangles in [first, last): the highest hit, or the lowest one above <paramref name="minY"/>.
+    /// A vertical ray against the walkable triangles in [first, last): the highest hit, or the lowest one above <paramref name="minY"/>; hits above
+    /// <paramref name="maxY"/> do not count.
     /// </summary>
-    public static bool RayDown(ZoneGeometry g, float x, float z, bool highest, float minY, int first, int last, out float y, bool anyArea = false)
+    public static bool RayDown(ZoneGeometry g, float x, float z, bool highest, float minY, int first, int last, out float y, bool anyArea = false, float maxY = float.PositiveInfinity)
     {
         y = highest ? float.MinValue : float.MaxValue;
         bool hit = false;
@@ -225,7 +226,7 @@ internal sealed partial class ZoneGeometryGatherer
             if (!NavGeometry.Barycentric(x, z, new Vector3(v[ia], v[ia + 1], v[ia + 2]), new Vector3(v[ib], v[ib + 1], v[ib + 2]), new Vector3(v[ic], v[ic + 1], v[ic + 2]), out float l1, out float l2, out float l3)) continue;
             if (l1 < -1e-4f || l2 < -1e-4f || l3 < -1e-4f) continue;
             float h = l1 * v[ia + 1] + l2 * v[ib + 1] + l3 * v[ic + 1];
-            if (h < minY) continue;
+            if (h < minY || h > maxY) continue;
             if (highest ? h > y : h < y) y = h;
             hit = true;
         }

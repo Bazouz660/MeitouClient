@@ -34,7 +34,8 @@ internal static partial class ZoneNavMeshBuilder
         var triBuckets = new List<int>[tilesPerSide * tilesPerSide];
         var carvers = new List<int>[tilesPerSide * tilesPerSide];
         var painters = new List<int>[tilesPerSide * tilesPerSide];
-        for (int i = 0; i < triBuckets.Length; i++) { triBuckets[i] = []; carvers[i] = []; painters[i] = []; }
+        var solids = new List<int>[tilesPerSide * tilesPerSide];
+        for (int i = 0; i < triBuckets.Length; i++) { triBuckets[i] = []; carvers[i] = []; painters[i] = []; solids[i] = []; }
         void Tiles(float x0, float z0, float x1, float z1, List<int>[] buckets, int id)
         {
             // A tile also takes what lies in its border (BuildTile).
@@ -65,6 +66,7 @@ internal static partial class ZoneNavMeshBuilder
             var (a, b) = Bounds(g.Painters[c]);
             Tiles(a.X, a.Y, b.X, b.Y, painters, c);
         }
+        for (int c = 0; c < g.Solids.Count; c++) Tiles(g.Solids[c].Min.X, g.Solids[c].Min.Y, g.Solids[c].Max.X, g.Solids[c].Max.Y, solids, c);
 
         var ticks = new TileTicks();
         var meshes = new RcPolyMesh?[tilesPerSide * tilesPerSide];
@@ -74,7 +76,7 @@ internal static partial class ZoneNavMeshBuilder
         {
             if (triBuckets[tile].Count == 0) return;
             int tx = tile % tilesPerSide, tz = tile / tilesPerSide;
-            meshes[tile] = BuildTile(g, s, verts, indices, areas, triBuckets[tile], carvers[tile], painters[tile], ticks,
+            meshes[tile] = BuildTile(g, s, verts, indices, areas, triBuckets[tile], carvers[tile], painters[tile], solids[tile], ticks,
                 g.ZoneMin.X + tx * tileWorld, g.ZoneMin.Y + tz * tileWorld, tileWorld);
         });
         times.Tiles = watch.Elapsed.TotalMilliseconds;
@@ -111,7 +113,7 @@ internal static partial class ZoneNavMeshBuilder
         return (lo, hi);
     }
 
-    static RcPolyMesh? BuildTile(ZoneGeometry g, NavBuildSettings s, float[] verts, int[] indices, int[] areas, List<int> tris, List<int> carvers, List<int> painters, TileTicks ticks,
+    static RcPolyMesh? BuildTile(ZoneGeometry g, NavBuildSettings s, float[] verts, int[] indices, int[] areas, List<int> tris, List<int> carvers, List<int> painters, List<int> solids, TileTicks ticks,
         float x0, float z0, float tileWorld)
     {
         var ctx = new RcContext();
@@ -153,6 +155,7 @@ internal static partial class ZoneNavMeshBuilder
         var chf = RcCompacts.BuildCompactHeightfield(ctx, walkableHeight, walkableClimb, hf);
 
         foreach (int c in carvers) Mark(ctx, g.Carvers[c], NavArea.Null, chf);
+        foreach (int c in solids) RemoveInside(g.Solids[c], chf);
         foreach (int c in painters) Mark(ctx, g.Painters[c], NavArea.Door, chf, s.CellSize * s.DoorInflateCells);
 
         long t2 = Stopwatch.GetTimestamp();
@@ -168,6 +171,34 @@ internal static partial class ZoneNavMeshBuilder
         Interlocked.Add(ref ticks.Contours, t4 - t3);
         Interlocked.Add(ref ticks.Mesh, t5 - t4);
         return result;
+    }
+
+    /// <summary>
+    /// How far below an upward face of a solid a span's floor has to be to count as inside (engine choice: one height cell). Recast rounds a span's top up to the
+    /// highest point of its surface over the cell, so a span on the solid's own top is on or above that face and stays.
+    /// </summary>
+    const float SolidTopInset = 1;
+
+    /// <summary>Removes the walkable spans whose floor, at the middle of their cell, lies inside the solid (docs/game/pathfinding.md, "Solids").</summary>
+    static void RemoveInside(NavSolid solid, RcCompactHeightfield chf)
+    {
+        float cs = chf.cs, ch = chf.ch;
+        int x0 = Math.Max(0, (int)MathF.Floor((solid.Min.X - chf.bmin.X) / cs)), x1 = Math.Min(chf.width - 1, (int)MathF.Floor((solid.Max.X - chf.bmin.X) / cs));
+        int z0 = Math.Max(0, (int)MathF.Floor((solid.Min.Y - chf.bmin.Z) / cs)), z1 = Math.Min(chf.height - 1, (int)MathF.Floor((solid.Max.Y - chf.bmin.Z) / cs));
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                var cell = chf.cells[x + z * chf.width];
+                for (int i = cell.index, end = cell.index + cell.count; i < end; i++)
+                {
+                    if (chf.areas[i] == NavArea.Null) continue;
+                    var p = new Vector3(chf.bmin.X + (x + 0.5f) * cs, chf.bmin.Y + chf.spans[i].y * ch, chf.bmin.Z + (z + 0.5f) * cs);
+                    bool inside = true;
+                    foreach (var plane in solid.Planes)
+                        if (plane.X * p.X + plane.Y * p.Y + plane.Z * p.Z + plane.W >= (plane.Y > 0 ? -SolidTopInset : 0)) { inside = false; break; }
+                    if (inside) chf.areas[i] = NavArea.Null;
+                }
+            }
     }
 
     static void Mark(RcContext ctx, NavVolume v, byte area, RcCompactHeightfield chf, float inflate = 0)

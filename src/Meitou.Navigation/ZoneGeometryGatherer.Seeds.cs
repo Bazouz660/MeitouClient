@@ -14,11 +14,30 @@ internal sealed partial class ZoneGeometryGatherer
     void AddDoorSeeds(ZoneGeometry g, GameRecord door, PreparedShape shape, Matrix4x4 node)
     {
         if (!DoorMarkers(door, shape, node, out var behind, out var ahead)) return;
+        float bottom = shape.Vertices.Min(v => Vector3.Transform(v, node).Y);
         foreach (var at in new[] { behind, ahead })
         {
             if (at.X < g.ZoneMin.X || at.X > g.ZoneMax.X || at.Z < g.ZoneMin.Y || at.Z > g.ZoneMax.Y) continue;
-            g.Seeds.Add(new Vector3(at.X, Math.Max(map.HeightAt(at.X, at.Z), WorldWater.Height), at.Z));
+            g.DoorMarkers.Add((new Vector2(at.X, at.Z), bottom));
             g.Stats.DoorSeeds++;
+        }
+    }
+
+    /// <summary>How far above a door's base the surface its seed stands on may be (engine choice: the agent's climb).</summary>
+    public const float DoorSeedRise = 5;
+
+    /// <summary>
+    /// A door marker's seed stands on the highest walkable surface under it at most <see cref="DoorSeedRise"/> above the door's base, as the original drops the
+    /// marker with a ray; the terrain (or the water) where there is none. The terrain under a raised doorstep would seed the ground inside the building's
+    /// foundation (docs/game/pathfinding.md, "Entrance seeds").
+    /// </summary>
+    void AddDoorMarkerSeeds(ZoneGeometry g)
+    {
+        foreach (var (at, bottom) in g.DoorMarkers)
+        {
+            float y = RayDown(g, at.X, at.Y, highest: true, float.MinValue, 0, g.TriangleCount, out float hit, maxY: bottom + DoorSeedRise)
+                ? hit : Math.Max(map.HeightAt(at.X, at.Y), WorldWater.Height);
+            g.Seeds.Add(new Vector3(at.X, y, at.Y));
         }
     }
 
@@ -57,6 +76,7 @@ internal sealed partial class ZoneGeometryGatherer
 
     void AddSeeds(ZoneGeometry g)
     {
+        AddDoorMarkerSeeds(g);
         float water = WorldWater.Height;
         // The original's ray rule (FUN_1403d4dd0): a seed.def point without a height (Y -99) that a ray from above hits on a building floor is moved onto it,
         // one with a height that hits a building is dropped. Our building triangles are all the zone's building shapes of the mask, not only groups 9 and 10 (approximation).

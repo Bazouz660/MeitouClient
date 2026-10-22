@@ -98,7 +98,17 @@ under the ruined roof) or an upper floor (Stationhouse `4-`, Y1703). Engine choi
 these nodeless ruins stood on the terrain under their floors. The island has no door join, as in the original.
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
-**Entrance seeds** (engine choice): cross the door's width axis, then use the lowest collision floor with agent-height headroom.
+**Entrance seeds** (engine choice): cross the door's width axis. An exterior seed stands on the highest walkable surface at its marker at most
+`DoorSeedRise` (5) above the door box's base (the original drops the marker with a ray), else on the terrain or water; an interior seed on the lowest
+collision floor with agent-height headroom. **Observed** (Defensive Gate IV `2934-Walls2.mod`, zone 24.27, "this gate is fucked" save): its walkable
+convex foundation spans Y 65..157 over ground at 138; seeds at the terrain height matched the ground inside the foundation (19 headroom) and kept it,
+and walkers stepped down onto it at the slab's edge. `tile24.27.hkt` has only the slab and its ramps there.
+**Solids** (engine choice): Recast rasterises surfaces, so ground inside a closed solid survives as floor. Every convex shape (box, capsule, hull) of a
+walkable part becomes a `NavSolid`; a walkable span whose floor, at its cell's middle, is inside every face plane (1 below the upward ones) is removed
+(obstacles keep the prism carver). **Observed** (`meitou-tools navmesh`, zones 24.27, 20.32, 21.32, 18.35, 19.29, 21.42, 21.31, 10.31, 18.39, 20.29, 23.22):
+unpruned polygons drop 1..24 %, kept area sampled against the original tiles changes under 0.3 %; the gate's under-floor layer is gone; interior area
+drops only in ruins (Hub Stationhouse `4-`, Bughouse `4937-`: floor strips inside the thick walls and fallen slabs). The door and stair paths listed
+in this section still resolve.
 **Interior seeds**: without a door seed the building's first shopkeeper or general node of its interior layout is the seed (the original's rule, below);
 Meitou also uses it when the door seeds find no polygon (engine choice). **Observed** (`meitou-tools navmesh`): doorless Hive Commune Huts (10.31
 `50-Newwworld-INGAME`, clipped at the zone border) kept nothing before and 75 of 102 polygons with it; Stack's Old Storm House `14-` (19.29), whose
