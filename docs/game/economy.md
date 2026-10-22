@@ -431,6 +431,13 @@ RACE `buy value` is 100 for most races (27 of 53 records); other values in the d
 - Pending crimes, witnesses and the cage sentence: `+0x34 == 8`
 - Slaves, prisoners, animals: `buyValue = clamp( trunc( strength * k + attack + dexterity * k ) * RACE buy value, 1000, 20000 )`
 
+## Buyback during an open trade
+
+**Observed** (owner's original-game reproduction): buying an item and returning it before closing
+trade refunds its purchase price; selling then buying it back costs the sale proceeds. Closing
+trade ends this privilege. The item tooltip marks it `Buyback` (see [tooltips](ui-screens.md)).
+**Unknown:** original allocation rules for partially charged stacks and mixed-price stacks.
+
 ## Evidence index
 
 Evidence scopes below apply only to their named sources/checks.

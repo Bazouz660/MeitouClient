@@ -31,6 +31,8 @@ public sealed record SellItem(InventoryItemToken Item, int Quantity) : SimComman
 /// <summary>One item of a trade window, with what it costs (stock) or fetches (the customer's goods) as a whole stack.</summary>
 public sealed record TradeItemView(int Index, string Record, string Name, string Section, int X, int Y, int Width, int Height, int Quantity, float Quality, long Price, long UnitPrice, bool Stolen)
 {
+    /// <summary>The current transfer reverses a purchase or sale from this trade window at its original price.</summary>
+    public bool Buyback { get; init; }
     /// <summary>The item's material record ("" none), which picks its icon.</summary>
     public string Material { get; init; } = "";
     /// <summary>How full the item is (0 to 1); null: no charge bar.</summary>
@@ -105,6 +107,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     Market? market;
     CharacterId customer = CharacterId.None, trader = CharacterId.None;
     bool open, traderWandered;
+    TradeSession session = new();
     long approachUntil;
     TradeView? view;
 
@@ -192,6 +195,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     void Close(World world)
     {
+        session.Active = false;
+        session = new();
         if (world.Characters.TryResolveNext(trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
         if (traderWandered && world.Characters.TryResolveNext(trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
             world.Characters.Next[t].Task = (byte)CharacterTask.Wander;
@@ -319,7 +324,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             return;
         }
         var bought = item.WithQuantity(units);
-        long price = m.StackPrice(bought, false, shop.Terms, squad.Faction);
+        bought.Buyback = Receipt(m, item, units, false, shop.Terms, squad.Faction);
+        long price = Price(m, item, units, false, shop.Terms, squad.Faction);
         int placed;
         if (buy.Section is { } section) placed = PlaceAt(cold.Inventory!, bought, units, section, buy.X, buy.Y);
         else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1)))
@@ -330,6 +336,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             if (units > 1)
             {
                 var rest = bought.WithQuantity(units - 1);
+                rest.Buyback = bought.Buyback?.Skip(1);
                 placed += Place(cold.Inventory!, rest, units - 1);
             }
         }
@@ -339,7 +346,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             world.Post("No room for that item.");
             return;
         }
-        if (placed < units) price = m.StackPrice(item.WithQuantity(placed), false, shop.Terms, squad.Faction);
+        if (placed < units) price = Price(m, item, placed, false, shop.Terms, squad.Faction);
         Take(shop.Stock, item, placed);
         world.Player.Money -= price;
         squad.Money += price;
@@ -369,14 +376,15 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             return;
         }
         var sold = item.WithQuantity(units);
-        long price = m.StackPrice(sold, true, shop.Terms, cold.Faction);
+        sold.Buyback = Receipt(m, item, units, true, shop.Terms, cold.Faction);
+        long price = Price(m, item, units, true, shop.Terms, cold.Faction);
         int placed = sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
         if (placed == 0)
         {
             world.Post("No room for that item.");
             return;
         }
-        if (placed < units) price = m.StackPrice(item.WithQuantity(placed), true, shop.Terms, cold.Faction);
+        if (placed < units) price = Price(m, item, placed, true, shop.Terms, cold.Faction);
         Take(cold.Inventory!, item, placed);
         if (InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
         squad.Money -= price;
@@ -403,14 +411,32 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     }
 
     /// <summary>How many of <paramref name="wanted"/> units the payer's <paramref name="money"/> covers (the trade window splits the stack to what is affordable).</summary>
-    static int Affordable(Market m, ItemInstance item, int wanted, bool sell, Trader terms, int holderFaction, long money)
+    int Affordable(Market m, ItemInstance item, int wanted, bool sell, Trader terms, int holderFaction, long money)
     {
         for (int n = wanted; n > 0; n--)
-            if (m.StackPrice(n == item.Quantity ? item : item.WithQuantity(n), sell, terms, holderFaction) <= money) return n;
+            if (Price(m, item, n, sell, terms, holderFaction) <= money) return n;
         return 0;
     }
 
-    /// <summary>Puts <paramref name="units"/> of an item into an inventory; returns how many went in.</summary>
+    bool IsBuyback(ItemInstance item, bool sell) => item.Buyback is { } r && ReferenceEquals(r.Session, session) && r.Sell == sell;
+
+    long Price(Market market, ItemInstance item, int units, bool sell, Trader terms, int holder) => IsBuyback(item, sell)
+        ? item.Buyback!.Price(units) : market.StackPrice(item.WithQuantity(units), sell, terms, holder);
+
+    TradeReceipt? Receipt(Market market, ItemInstance item, int units, bool sell, Trader terms, int holder)
+    {
+        if (IsBuyback(item, sell)) return null;
+        var coins = new long[units];
+        long previous = 0;
+        for (int n = 1; n <= units; n++)
+        {
+            long total = Price(market, item, n, sell, terms, holder);
+            coins[n - 1] = total - previous;
+            previous = total;
+        }
+        return new(session, !sell, coins);
+    }
+
     /// <summary>
     /// Puts the units at the cell they were dropped on (the trade window's <c>placeItemFromMouse</c>): the cell of <paramref name="section"/> in <paramref name="root"/> (the backpack's
     /// contents for <c>backpack_content</c>) when the footprint is inside the grid, free and the stack within the limit; otherwise wherever they fit, as <see cref="Place"/>.
@@ -454,10 +480,17 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         TradeItemView View(ItemInstance item, int index, bool sell, int holder)
         {
             long value = m.StackPrice(item, false, shop.Terms, holder), sellValue = m.StackPrice(item, true, shop.Terms, holder);
+            bool buyback = IsBuyback(item, sell);
+            if (buyback)
+            {
+                if (sell) sellValue = Price(m, item, item.Quantity, true, shop.Terms, holder);
+                else value = Price(m, item, item.Quantity, false, shop.Terms, holder);
+            }
             bool stolen = item.IsStolenFor(holder);
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
-                item.Quality, sell ? sellValue : value, m.UnitPrice(item.Quantity == 1 ? item : item.WithQuantity(1), sell, shop.Terms, holder), stolen)
+                item.Quality, sell ? sellValue : value, Price(m, item, 1, sell, shop.Terms, holder), stolen)
             {
+                Buyback = buyback,
                 Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
                 Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,

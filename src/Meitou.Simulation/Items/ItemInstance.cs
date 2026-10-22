@@ -28,7 +28,23 @@ public sealed class ItemInstance
     public string Section { get; set; } = "main";
     public int X { get; set; }
     public int Y { get; set; }
-    public int Quantity { get; set; } = 1;
+    int quantity = 1;
+    public int Quantity
+    {
+        get => quantity;
+        set
+        {
+            if (value < quantity && Buyback is { } receipt) Buyback = receipt.Skip(quantity - value);
+            else if (value > quantity) Buyback = null;
+            quantity = value;
+        }
+    }
+    TradeReceipt? buyback;
+    internal TradeReceipt? Buyback
+    {
+        get => buyback is { Session.Active: true } ? buyback : null;
+        set => buyback = value;
+    }
     public int Level { get; set; }
     public int ItemFunction { get; set; }
     /// <summary>Quality 0 to 100 (clothing from the character's armour grade).</summary>
@@ -70,7 +86,7 @@ public sealed class ItemInstance
     {
         Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = UnitWeight, StackLimit = StackLimit,
-        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death,
+        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };
 
     /// <summary>Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (carry-loot.md 4.4: the from-owner is set and of another faction).</summary>

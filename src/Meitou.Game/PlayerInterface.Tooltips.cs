@@ -104,7 +104,7 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>The rows of a control's tooltip and its class: from its item, else from its user strings by <c>tooltip_type</c> (0 text, 1 rows, 2 data record, 4 map place).</summary>
-    (IReadOnlyList<TooltipLine>, TooltipKind)? ResolveTooltip(UiControl hit)
+    internal (IReadOnlyList<TooltipLine>, TooltipKind)? ResolveTooltip(UiControl hit)
     {
         var p = hit.Properties;
         if (p.TryGetValue(ItemTipKey, out string? key) && itemTips.TryGetValue(key, out var item)) return (ItemLines(item), TooltipKind.Inventory);
@@ -350,6 +350,7 @@ sealed partial class PlayerInterface
         string? model = type == Meitou.Data.Fcs.FcsRecordType.WEAPON && t.Material.Length > 0 && RecordName?.Invoke(t.Material) is { Length: > 0 } m ? m : null;
         string name = t.Brief && model is not null ? model + " " + t.Name : t.Name;
         var lines = new List<TooltipLine> { new(t.Quantity > 1 ? $"{name} ({t.Quantity})" : name, "", TooltipTone.Title) };
+        if (t.Trade is { Buyback: true }) lines.Add(new("Buyback", ""));
         if (t.Brief) return lines;
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
         if (model is not null) lines.Add(new(model, "", GradeTone(ArmourTooltip.GradeOf(t.Level))));

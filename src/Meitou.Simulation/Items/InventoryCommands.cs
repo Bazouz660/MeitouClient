@@ -79,10 +79,9 @@ public static class InventoryCommands
         }
         var unit = item.WithQuantity(count);
         unit.Death = false;
-        item.Quantity -= count;
-        if (into.Add(unit)) return count;
-        item.Quantity += unit.Quantity;
-        return count - unit.Quantity;
+        int moved = into.Add(unit) ? count : count - unit.Quantity;
+        item.Quantity -= moved;
+        return moved;
     }
 
     /// <summary>

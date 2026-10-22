@@ -903,9 +903,16 @@ A squad shop holds one 18 x 18 stock grid (the building storage size and the van
 prisoners or slaves and whose home has stock containers gets a building shop instead ([building shops](game/economy.md#building-shops-observed-decompile)): one merged stock
 (`Shop.ForBuilding`, `Shop.Building`), its own purse rule, the containers' locks opened at each fill. Stock cells stack 50 x an item's `stackable`. A housed squad with vendors that is no
 trader has its home's containers filled instead (`FillHome`). Only members that trade (`DialogueSystem.Trades`, [who trades](game/economy.md#who-trades)) publish `IsTrader`, the
-Trade verb and pointer. Shop state is hashed; open UI trade is not world state. A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
+Trade verb and pointer. Shop state and active buyback receipts are hashed; window geometry is not world state. A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
 Transfers and money changes must succeed together.
+
+Buyback receipts last for one open trade: reverse transfers use the exact coins previously paid,
+then clear the transferred units' receipt. Per-unit allocations preserve rounded totals through
+partial transfers and inventory splits; eligible stacks stay separate from other goods until
+trade closes. Closing or replacing the trade invalidates all receipts, including moved items;
+receipts are not saved. Tooltips expose the effective price and the original `Buyback` message key.
+Regression coverage: `TradeTests` and `TradeUiTests`.
 
 ## Dialogue
 
