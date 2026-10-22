@@ -118,8 +118,14 @@ public sealed unsafe class MetalFrame : IGpuFrame
             ctx.DeferDelete(() => ctx.ReleaseBuffer(stale.Handle));
         }
         // The context retains this command for its slot (the queue's autorelease would otherwise end it after
-        // one frame); the slot is reused only after the three-frame ring has advanced.
-        if (Command.NativePtr != IntPtr.Zero) Command.Dispose();
+        // one frame); the slot is reused only after the three-frame ring has advanced. A failed command is the
+        // first thing to look for when the present stops advancing.
+        if (Command.NativePtr != IntPtr.Zero)
+        {
+            if (Command.Status == MTLCommandBufferStatus.Error)
+                Console.WriteLine($"metal     frame slot {Slot} command buffer failed: {Command.Error.LocalizedDescription}");
+            Command.Dispose();
+        }
         Number = number;
         Command = command;
         Commands.Rebind(command);
