@@ -427,12 +427,12 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     }
 
     /// <summary>Keeps an upload batch's staging buffer alive until its command buffer has completed (and reports the first upload failure).</summary>
-    internal void RetireUpload(MTLCommandBuffer command, MTLBuffer buffer)
+    internal void RetireUpload(MTLCommandBuffer command, MTLBuffer buffer, string label = "")
     {
         if (buffer.NativePtr == IntPtr.Zero) return;
         if (command.NativePtr == IntPtr.Zero) { buffer.Dispose(); return; }
         Retain_objc_retain(command.NativePtr);
-        retiredUploads.Add((frameNumber, command, buffer));
+        retiredUploads.Add((frameNumber, command, buffer, label));
     }
 
     void ReleaseRetiredUploads(bool force = false)
@@ -446,7 +446,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
             if (status == MTLCommandBufferStatus.Error && !uploadErrorReported)
             {
                 uploadErrorReported = true;
-                Console.WriteLine($"metal     upload command buffer failed: {retired.Command.Error.LocalizedDescription}");
+                string where = retired.Label.Length > 500 ? retired.Label[..500] + "..." : retired.Label;
+                Console.WriteLine($"metal     upload command buffer failed{ (where.Length > 0 ? $" ({where})" : "") }: {retired.Command.Error.LocalizedDescription}");
             }
             retired.Buffer.Dispose();
             retired.Command.Dispose();
@@ -917,7 +918,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>Mip-bake level views retained by their encoding command (the impostor bakes create these).</summary>
     readonly List<(long Frame, MTLCommandBuffer Command, MTLTexture[] Views)> retiredLevelViews = [];
     /// <summary>Upload batches' staging buffers, kept until the command buffer that reads them has completed.</summary>
-    readonly List<(long Frame, MTLCommandBuffer Command, MTLBuffer Buffer)> retiredUploads = [];
+    readonly List<(long Frame, MTLCommandBuffer Command, MTLBuffer Buffer, string Label)> retiredUploads = [];
     bool uploadErrorReported;
     /// <summary>Actions from <see cref="DeferDelete"/>, released after the frame ring has passed.</summary>
     readonly List<(long Frame, Action Release)> deferredDeletes = [];

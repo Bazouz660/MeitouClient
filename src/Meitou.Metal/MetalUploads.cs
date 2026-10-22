@@ -25,6 +25,7 @@ public sealed class MetalUploads : IGpuUploads
         readonly MetalContext ctx;
         readonly MTLCommandBuffer command;
         readonly MetalCommandList list;
+        readonly List<string> written = [];
         MTLBuffer staging;
         ulong stagingSize, stagingUsed;
 
@@ -42,6 +43,15 @@ public sealed class MetalUploads : IGpuUploads
         public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
         {
             var desc = target.Desc;
+            uint maxWidth = (uint)Math.Max(desc.Width >> level, 1), maxHeight = (uint)Math.Max(desc.Height >> level, 1);
+            if (region.X < 0 || region.Y < 0 || (uint)region.X + region.Width > maxWidth ||
+                (uint)region.Y + region.Height > maxHeight || (uint)layer >= (uint)desc.Layers)
+            {
+                Console.WriteLine($"warning   upload outside {desc.Name} L{level} layer {layer}: " +
+                    $"{region.X},{region.Y} {region.Width}x{region.Height} (texture {maxWidth}x{maxHeight}, {desc.Layers} layers)");
+                return;
+            }
+            written.Add($"{desc.Name} L{level}");
             int block = MetalConventions.BlockWidth(desc.Format);
             int texel = MetalConventions.TexelBytes(desc.Format);
             // A block-compressed row is whole blocks (a tail mip's 1x1 level still strides one block).
@@ -98,7 +108,7 @@ public sealed class MetalUploads : IGpuUploads
             if (stagingSize - stagingUsed < (ulong)bytes)
             {
                 // The blits already recorded in this batch still name the old buffer: keep it until the command completes.
-                if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging);
+                if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging, string.Join(", ", written));
                 stagingSize = Math.Max((ulong)bytes, stagingSize == 0 ? 1 << 20 : stagingSize * 2);
                 staging = ctx.Device.NewBuffer(stagingSize, MTLResourceOptions.ResourceStorageModeShared);
                 stagingUsed = 0;
@@ -113,7 +123,7 @@ public sealed class MetalUploads : IGpuUploads
             list.EndBlit();
             command.Commit();
             // The GPU reads the staging buffer after commit; the context releases it once this command has completed.
-            if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging);
+            if (staging.NativePtr != IntPtr.Zero) ctx.RetireUpload(command, staging, string.Join(", ", written));
         }
     }
 }
