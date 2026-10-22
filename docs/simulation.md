@@ -1043,7 +1043,8 @@ homeless squads placed under unmeshed platforms. The Storm House's upper storey 
 spots therefore stand on the floor below (Observed, 2026-10-18 probe). Engine choices: patrolling town acts as
 wandering (its task class is undecoded); a committed goal chosen again after its commitment ran out
 starts over with a new target; training and throne furniture of 275's mask are not used; shops stand customers at a general
-node, else a guard post, else any node; the first bar of a town is the package's; a home or seat given up
+node, else a guard post, else any node; a bar package goes to a random bar of the town with a seat or spot no squad holds, else any
+(seeded by squad and tick; the original's `Package_HangAroundBar` reserves a free spot); a home or seat given up
 after three failed walks is tried again when a new goal is taken up, and a member that gave its seat up
 leaves it to the next; a member keeps its seat while it still relaxes or sits (every squad's kept seats are reserved before any claims), so a
 patron coming or going does not move every later sitter to another chair. Headless Hub, Squin and Stack bars (2026-10-21): each patron sits once

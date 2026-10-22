@@ -1042,7 +1042,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     system.LayRoute(world, squad, board);
                     break;
                 case PackageClass.Bar:
-                    if (board.Town >= 0 && system.TownBar(board.Town) is { } bar) board.Home = bar;
+                    if (board.Town >= 0 && system.PickBar(world, board.Town, squad) is { } bar) board.Home = bar;
                     break;
                 case PackageClass.BarOutdoors:
                     board.Home = null;
@@ -1051,8 +1051,22 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
     }
 
-    /// <summary>The town's bar (<see cref="RefreshPlaces"/>; the first when it has several, the original picks one at random); null when it has none.</summary>
+    /// <summary>The town's first bar (<see cref="RefreshPlaces"/>); null when it has none.</summary>
     TownBuilding? TownBar(int site) => Places(site).Bars is { Count: > 0 } bars ? bars[0] : null;
+
+    /// <summary>
+    /// The bar a squad starting a bar package goes to (as the original's <c>Package_HangAroundBar</c>, docs/game/ai-tasks.md "Town goals"): a random one of the town's
+    /// bars with a seat or spot no squad holds, else a random one of all; seeded by the squad and the tick. Null when the town has none.
+    /// </summary>
+    TownBuilding? PickBar(World world, int site, Squad squad)
+    {
+        var bars = Places(site).Bars;
+        if (bars.Count == 0) return null;
+        var free = bars.Where(b => !seatTaken.TryGetValue(b, out var taken) || FreeSeat(b, taken, HomeSpotKind.Chair) >= 0
+            || FreeSeat(b, taken, HomeSpotKind.Bar) >= 0 || FreeSeat(b, taken, HomeSpotKind.General) >= 0).ToList();
+        var from = free.Count > 0 ? free : bars;
+        return from[Rng.Int(Rng.Hash(world.Seed, (ulong)squad.Id << 32 ^ (ulong)world.Tick, RngPurpose.Think, SeedSalts.BarPick), from.Count)];
+    }
 
     /// <summary>
     /// A patrol's route (<b>engine choice</b>: the original's <c>GoOutOnPatrol</c> is not decoded): <see cref="AiSettings.PatrolPoints"/> points round the home town at

@@ -37,6 +37,8 @@ internal static class SeedSalts
 
     /// <summary>Counter (under <see cref="RngPurpose.Spawn"/>) of the roll that decides whether a bar squad is present.</summary>
     public const ulong BarChance = 77;
+    /// <summary>Counter (under <see cref="RngPurpose.Think"/>) of the roll that picks which of a town's bars a squad starting a bar package goes to.</summary>
+    public const ulong BarPick = 78;
     /// <summary>Counter of the roll that picks which squad template a town's roaming pool draws.</summary>
     public const ulong RoamingPick = 5;
     /// <summary>Counter base of the roll for the look of member n of a town squad (n is added).</summary>
