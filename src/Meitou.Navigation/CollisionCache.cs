@@ -16,10 +16,11 @@ internal sealed class PreparedShape(CollisionShapeKind kind, Vector3[] vertices,
     public bool IsConvex { get; } = isConvex;
 }
 
-/// <summary>A collision file ready for placement: the triangles of every shape that gives any.</summary>
-internal sealed class PreparedCollision(PreparedShape[] shapes)
+/// <summary>A collision file ready for placement: the triangles of every shape that gives any, and its first box's frame (what a door leaf slides along).</summary>
+internal sealed class PreparedCollision(PreparedShape[] shapes, Meitou.Data.World.DoorFrame door)
 {
     public PreparedShape[] Shapes { get; } = shapes;
+    public Meitou.Data.World.DoorFrame Door { get; } = door;
 }
 
 /// <summary>Loads and triangulates collision files by record path, once each; safe from several threads.</summary>
@@ -62,7 +63,7 @@ internal sealed class CollisionCache(GameInstall install)
             if (s.Kind == CollisionShapeKind.TriangleMesh) FixClosedWinding(world, indices);
             shapes.Add(new PreparedShape(s.Kind, world, indices, convex));
         }
-        return new PreparedCollision([.. shapes]);
+        return new PreparedCollision([.. shapes], Meitou.Data.World.DoorFrame.Of(file));
     }
 
     /// <summary>What <see cref="FixClosedWinding"/> found.</summary>

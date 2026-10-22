@@ -27,9 +27,17 @@ public sealed class NavDoorGeometry(GameInstall install, GameDatabase db)
         var node = Matrix4x4.CreateScale(scale <= 0 ? 1 : scale);
         var lo = new Vector3(float.MaxValue);
         var hi = new Vector3(float.MinValue);
+        Vector3? slide = null;
         foreach (var mesh in WorldObjectLayout.Building(db, building, "", Vector3.Zero, Quaternion.Identity))
         {
             if (mesh.DoorIndex != key.Door || collision.Get(mesh.Source.GetPath("xml collision")) is not { } prepared) continue;
+            // As the renderer moves the leaf: its full-open offset along the part's unit axes, in world units.
+            if (slide is null)
+            {
+                var local = DoorLeaf.Of(mesh.Owner).LocalOffset(1, prepared.Door);
+                var m = mesh.Transform;
+                slide = Unit(m.M11, m.M12, m.M13) * local.X + Unit(m.M21, m.M22, m.M23) * local.Y + Unit(m.M31, m.M32, m.M33) * local.Z;
+            }
             foreach (var shape in prepared.Shapes)
                 foreach (var v in shape.Vertices)
                 {
@@ -40,6 +48,9 @@ public sealed class NavDoorGeometry(GameInstall install, GameDatabase db)
         }
         if (lo.X > hi.X) return null;
         var size = hi - lo;
-        return size.X <= size.Z ? new DoorSpot((lo + hi) / 2, Vector3.UnitX, size.Z / 2, size.Y / 2) : new DoorSpot((lo + hi) / 2, Vector3.UnitZ, size.X / 2, size.Y / 2);
+        var spot = size.X <= size.Z ? new DoorSpot((lo + hi) / 2, Vector3.UnitX, size.Z / 2, size.Y / 2) : new DoorSpot((lo + hi) / 2, Vector3.UnitZ, size.X / 2, size.Y / 2);
+        return spot with { Slide = slide ?? Vector3.Zero };
+
+        static Vector3 Unit(float x, float y, float z) => new Vector3(x, y, z) is var v && v.LengthSquared() > 1e-12f ? Vector3.Normalize(v) : Vector3.Zero;
     }
 }

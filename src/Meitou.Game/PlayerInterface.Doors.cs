@@ -26,12 +26,13 @@ sealed partial class PlayerInterface
         float bestDistance = DoorPickPixels;
         foreach (var door in snapshot.DoorPicks)
         {
-            if (Project(door.Position) is not { } at) continue;
+            // A door missing from the published table is closed and unlocked. The leaf is where it has slid to (linear in the open amount: exact at closed and open).
+            var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
+            var leaf = door.Position + door.Slide * state.Open;
+            if (Project(leaf) is not { } at) continue;
             float d = Vector2.Distance(at, pixel);
             if (d >= bestDistance) continue;
-            // A door missing from the published table is closed and unlocked.
-            var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
-            float t = Vector3.Distance(ray.Origin, door.Position);
+            float t = Vector3.Distance(ray.Origin, leaf);
             if (state.Broken || Hidden(ray, t - DoorPickSlack)) continue;
             (best, bestDistance) = (((door, state.Locked), t), d);
         }

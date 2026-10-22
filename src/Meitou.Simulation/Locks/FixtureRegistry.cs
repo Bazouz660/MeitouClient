@@ -51,7 +51,7 @@ public sealed class FixtureRegistry
     IReadOnlyList<DoorPick>? doorPicks;
 
     /// <summary>Every door, for the host's picking (<see cref="PublishedDoors"/> leaves closed unlocked town doors out); rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position))];
+    public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position, DoorSpotOf(f)?.Slide ?? Vector3.Zero))];
 
     public int Count => all.Count;
     /// <summary>Every fixture, in registration order.</summary>
@@ -309,7 +309,7 @@ public sealed class FixtureRegistry
         if (doors.DoorSpotOf(door.HostRecordId, door.DoorIndex) is { } local)
         {
             var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, door.Yaw);
-            door.Spot = local with { Centre = door.Position + Vector3.Transform(local.Centre, turn), Normal = Vector3.Transform(local.Normal, turn) };
+            door.Spot = local with { Centre = door.Position + Vector3.Transform(local.Centre, turn), Normal = Vector3.Transform(local.Normal, turn), Slide = Vector3.Transform(local.Slide, turn) };
         }
         return door.Spot;
     }
