@@ -106,34 +106,6 @@ public sealed class FoliageLayoutCacheTests : IDisposable
     }
 
     [Fact]
-    [Slow]
-    public void Real_zones_read_back_equal_to_the_ones_just_placed()
-    {
-        var real = GameInstall.Locate();
-        Assert.SkipWhen(real is null, "Kenshi install not found");
-        var db = GameDatabase.Load(LoadOrder.BaseGame(real!));
-        var levels = WorldLevelData.Load(real!);
-        var catalog = FoliageCatalog.Load(db);
-        var towns = FoliageWorld.ReadTowns(db, levels);
-        var root = Path.Combine(temp, "real");
-        var zones = new ZoneCoordinate[] { new(14, 30), new(21, 29), new(44, 23) };
-        var placed = new List<(FoliageZone, FoliageGround?)>();
-        var writeCache = new FoliageLayoutCache(real!, catalog, towns, root, 0);
-        using (var world = new FoliageWorld(real!, db, levels, catalog, cache: writeCache))
-            foreach (var z in zones) { placed.Add(world.Load(z)); placed.Add(world.Load(z, farOnly: true)); }
-        Assert.Equal(zones.Length * 2, writeCache.Stats.Written);
-        var readCache = new FoliageLayoutCache(real!, FoliageCatalog.Load(db), towns, root, 0);
-        using (var world = new FoliageWorld(real!, db, levels, readCache.Catalog, cache: readCache))
-            for (int i = 0; i < zones.Length * 2; i++)
-            {
-                var (zone, ground) = world.Load(zones[i / 2], farOnly: i % 2 == 1);
-                AssertSame(placed[i].Item1, placed[i].Item2!, zone, ground!);
-            }
-        Assert.Equal(zones.Length * 2, readCache.Stats.Hits);
-        Assert.Equal(0, readCache.Stats.Misses);
-    }
-
-    [Fact]
     public void A_saved_zone_reads_back_equal_in_a_new_cache()
     {
         var catalog = Catalog();

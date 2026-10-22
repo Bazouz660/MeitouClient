@@ -120,7 +120,7 @@ weather-protection, collector rain and generator wind; full effects untraced.
 limit min/max` (0..1); `sunlight color` (loaded, its use was not traced: **Unknown**). A season without weathers gets the
 "Default" weather (`5460-weather.mod`, clear) with limits 0..1 and logs "Warning: Season ... has no weather". If any of its
 weathers has a time window (`start time` ≠ `end time`), the "Default" weather is appended with weight 0 as the fallback.
-**Verified** against the merged records (`WeatherTests.Base_game_seasons_and_regions_follow_the_calendar_and_fallback_rules`): every
+**Verified** against the merged records (`WeatherTests.Base_game_records_follow_the_loader_rules`): every
 season of the base game without weathers becomes Default with limits 0..1; the only windowed weathers are "Desert Calm hot 0.6" and
 "venge beams", and every season that lists one ends with Default at weight 0. The duration given to the Default of an empty season (and
 to a region without seasons) is **Observed**: not read from the game, 120..720 minutes (the wind update time is 360).

@@ -24,18 +24,11 @@ public class BenchHarnessTests
         Assert.InRange(d.Delta, 0.7, 0.9);
         Assert.True(d.Significant);
         Assert.True(d.Ci95 < 0.1);
-    }
-
-    [Fact]
-    public void NoDifferenceIsNotSignificantAndDroppedFramesAreLeftOut()
-    {
-        var rng = new Random(2);
-        int n = 200;
-        var values = Enumerable.Range(0, n).Select(_ => 5 + rng.NextDouble()).ToArray();
-        var blocks = Enumerable.Range(0, n).Select(i => i).ToArray();
-        var keep = Enumerable.Repeat(true, n).ToArray();
-        Assert.False(BenchStats.Pair(values, blocks, keep)!.Significant);
-        Assert.Null(BenchStats.Pair(values, blocks, new bool[n]));   // nothing kept
+        // Without a step the difference is not significant, and with every frame dropped there is nothing to pair.
+        var noise = Enumerable.Range(0, n).Select(_ => 5 + rng.NextDouble()).ToArray();
+        var single = Enumerable.Range(0, n).ToArray();
+        Assert.False(BenchStats.Pair(noise, single, Enumerable.Repeat(true, n).ToArray())!.Significant);
+        Assert.Null(BenchStats.Pair(noise, single, new bool[n]));
     }
 
     [Fact]

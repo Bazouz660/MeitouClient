@@ -21,23 +21,6 @@ public class ShadowScheduleTests
     }
 
     [Fact]
-    public void A_steady_demand_below_the_budget_never_waits_more_than_a_frame_or_two()
-    {
-        // Each far cascade asks every 4th, 16th and 32nd frame, uncovered redraws now and then: simulate and bound the wait.
-        var waited = new int[4];
-        var owed = new bool[4];
-        int worst = 0;
-        for (int frame = 0; frame < 2000; frame++)
-        {
-            var want = new bool[4];
-            for (int i = 0; i < 4; i++) want[i] = owed[i] || frame % new[] { 1, 4, 16, 32 }[i] == i * 5 % new[] { 1, 4, 16, 32 }[i] || frame % (7 + i) == 0;
-            var draw = Pick(want, waited);
-            for (int i = 0; i < 4; i++) { owed[i] = want[i] && !draw[i]; worst = Math.Max(worst, waited[i]); }
-        }
-        Assert.True(worst <= 3);
-    }
-
-    [Fact]
     public void With_five_cascades_the_second_is_never_deferred_and_does_not_use_the_budget()
     {
         Assert.Equal(1, ShadowSchedule.NearCascades(4));

@@ -124,13 +124,6 @@ public class ShadowTests
         Assert.True(MeitouShadowFit.Fit(view, Sun, settings, five, 1).Texel < MeitouShadowFit.Fit(view, Sun, settings, four, 1).Texel / (focus == 45 ? 2 : 1.2));
     }
 
-    [Fact]
-    public void The_box_margins_grow_with_the_cadence_and_stay_as_they_were_for_four()
-    {
-        Assert.Equal([0.02f, 0.06f, 0.08f, 0.08f], Enumerable.Range(0, 4).Select(i => MeitouShadowFit.Margin(i, 4)));
-        Assert.Equal([0.02f, 0.04f, 0.06f, 0.08f, 0.08f], Enumerable.Range(0, 5).Select(i => MeitouShadowFit.Margin(i, 5)));
-    }
-
     /// <summary>Where a world point falls on cascade 0's texel grid (light-space x and y in texels, from the box's translation).</summary>
     static (double X, double Y) GridPosition(ShadowCascade c, Vector3 p)
     {

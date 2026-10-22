@@ -47,7 +47,7 @@ triplanar material modes and far-map tint. Do not infer biome/weather region fro
 - **`blendmap.png`** (same 1024² grid): R, G, B, A are the weights (0–255) of slots 0–3 of the pixel's cell and
   the remainder `255 − (R + G + B + A)` is the weight of slot 4. The largest weight names the biome
   `biomemap.png` shows at that pixel on all 1,048,576 pixels; the channel sums are 240–255, or 0 where slot 4
-  alone applies (67,292 pixels). Tested in `TerrainBiomeTests.Base_game_blend_map_channels_weight_the_cell_slots`.
+  alone applies (67,292 pixels). Tested in `TerrainBiomeTests.Base_game_slot_masks_and_channels_describe_the_blend_map`.
   Weights are mostly 0 or 255: biome borders are hard, 288 units wide (Observed, debug view).
 
 ## LOD, water and sun

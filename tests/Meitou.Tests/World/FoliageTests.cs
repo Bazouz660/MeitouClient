@@ -38,38 +38,6 @@ public class FoliageTests
 
     [Fact]
     [Slow]
-    public void Catalog_and_a_zone_load_from_the_game()
-    {
-        var install = GameInstall.Locate();
-        Assert.SkipWhen(install is null, "Kenshi install not found");
-        var order = LoadOrder.BaseGame(install!);
-        var db = GameDatabase.Load(order);
-        var catalog = FoliageCatalog.Load(db);
-        Assert.NotEmpty(catalog.ByBiome);
-        Assert.Contains(catalog.Layers.Values, l => l.IsGrass);
-        Assert.Contains(catalog.Meshes.Values, m => m.LeavesMesh is not null);
-        Assert.Contains(catalog.Meshes.Values, m => m.BuildingType is not null);   // mineable resource rocks
-
-        using var world = new FoliageWorld(install!, db, WorldLevelData.Load(install!), catalog);
-        var zone = new ZoneCoordinate(14, 30);
-        var (a, ground) = world.Load(zone);
-        var b = world.Zone(zone);
-        Assert.NotNull(ground);
-        Assert.NotEmpty(a.Instances);
-        Assert.NotEmpty(a.Grass);
-        Assert.Equal(a.Instances.Count, b.Instances.Count);
-        Assert.Equal(a.Instances.Select(i => i.Position), b.Instances.Select(i => i.Position));
-        var (x0, z0) = WorldLayout.ZoneOrigin(zone);
-        foreach (var i in a.Instances)
-        {
-            Assert.InRange(i.Position.X, x0, x0 + WorldLayout.ZoneSize);
-            Assert.InRange(i.Position.Z, z0, z0 + WorldLayout.ZoneSize);
-            Assert.InRange(i.Scale, FoliageLayout.MinScale, FoliageLayout.MaxScale);
-        }
-    }
-
-    [Fact]
-    [Slow]
     public void Far_only_layout_places_exactly_the_far_instances_of_the_whole_layout()
     {
         // docs/formats/foliage.md, "Distances": a layer reseeds its own generator and, without "limit to grass areas", reads nothing the
@@ -78,15 +46,34 @@ public class FoliageTests
         Assert.SkipWhen(install is null, "Kenshi install not found");
         var db = GameDatabase.Load(LoadOrder.BaseGame(install!));
         var catalog = FoliageCatalog.Load(db);
+        Assert.NotEmpty(catalog.ByBiome);
+        Assert.Contains(catalog.Layers.Values, l => l.IsGrass);
+        Assert.Contains(catalog.Meshes.Values, m => m.LeavesMesh is not null);
+        Assert.Contains(catalog.Meshes.Values, m => m.BuildingType is not null);   // mineable resource rocks
         using var whole = new FoliageWorld(install!, db, WorldLevelData.Load(install!), catalog);
         using var far = new FoliageWorld(install!, db, WorldLevelData.Load(install!), catalog);
         int farZones = 0, farInstances = 0;
         // Desert and canyon zones around (-60564, -45142) with CinderBall01 and canyon blocks, the forest of 14.30, the Hub's south.
         foreach (var zone in new ZoneCoordinate[] { new(17, 21), new(18, 21), new(18, 22), new(19, 22), new(17, 23), new(14, 30), new(20, 29), new(21, 29), new(44, 23), new(31, 45) })
         {
-            var full = whole.Load(zone).Zone;
+            var (full, ground) = whole.Load(zone);
             var part = far.Load(zone, farOnly: true).Zone;
             Assert.True(full.Complete);
+            if (zone == new ZoneCoordinate(14, 30))
+            {
+                // The forest zone: a ground and grass come with it, the zone cache returns the same instances, and every instance lies in the zone with a legal scale.
+                Assert.NotNull(ground);
+                Assert.NotEmpty(full.Instances);
+                Assert.NotEmpty(full.Grass);
+                Assert.Equal(full.Instances.Select(i => i.Position), whole.Zone(zone).Instances.Select(i => i.Position));
+                var (x0, z0) = WorldLayout.ZoneOrigin(zone);
+                foreach (var i in full.Instances)
+                {
+                    Assert.InRange(i.Position.X, x0, x0 + WorldLayout.ZoneSize);
+                    Assert.InRange(i.Position.Z, z0, z0 + WorldLayout.ZoneSize);
+                    Assert.InRange(i.Scale, FoliageLayout.MinScale, FoliageLayout.MaxScale);
+                }
+            }
             var expected = full.Instances.Where(i => FoliageLayout.IsFarLayer(i.Layer)).ToList();
             if (part.Complete) { Assert.Equal(full.Instances, part.Instances); continue; }   // a far layer that limits to grass areas: laid out whole
             farZones++;

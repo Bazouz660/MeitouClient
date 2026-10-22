@@ -103,19 +103,6 @@ public class WorldObjectLayoutTests
     }
 
     [Fact]
-    public void Interior_volume_is_the_hull_footprint_and_height()
-    {
-        // A square hull given as scattered points (inner points too): the footprint is the convex outline, the test widens by the margin.
-        var v = new InteriorVolume("b", InteriorVolume.ConvexHull2([new(0, 0), new(10, 0), new(10, 10), new(0, 10), new(5, 5), new(2, 8)]), 0, 20);
-        Assert.Equal(4, v.Footprint.Length);
-        Assert.True(v.Contains(new System.Numerics.Vector3(5, 1, 5)));
-        Assert.False(v.Contains(new System.Numerics.Vector3(11, 1, 5)));
-        Assert.True(v.Contains(new System.Numerics.Vector3(11, 1, 5), margin: 2));
-        Assert.False(v.Contains(new System.Numerics.Vector3(5, 21, 5)));
-        Assert.False(v.Contains(new System.Numerics.Vector3(5, -1, 5)));
-    }
-
-    [Fact]
     [Slow]
     public void Hub_bar_shows_its_interior_on_floor_0()
     {

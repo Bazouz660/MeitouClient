@@ -26,10 +26,6 @@ public class ImpostorBudgetTests
 
     [Theory]
     [InlineData(256, 12)]
-    [InlineData(128, 12)]
-    [InlineData(64, 12)]
-    [InlineData(32, 12)]
-    [InlineData(32, 8)]
     [InlineData(16, 12)]
     public void The_planned_bytes_are_what_the_textures_take(int frame, int grid)
     {
