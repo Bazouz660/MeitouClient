@@ -185,5 +185,8 @@ sealed partial class GameHost
         previousById.Clear();
         player.Reset();
         player.CloseFrontend();
+        OnWorldSettled();
     }
+
+    partial void OnWorldSettled();
 }

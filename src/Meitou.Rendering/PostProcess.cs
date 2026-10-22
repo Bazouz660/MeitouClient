@@ -22,7 +22,7 @@ namespace Meitou.Rendering;
 /// Native (docs/renderer-native.md 8, phase 8 stages 2 and 3): every target and texture is a native <see cref="Texture"/> ("post …"), every
 /// pass a rendering of its own in a native segment, the timings native timestamps; no GL names (stage 3).
 /// </remarks>
-public sealed unsafe partial class PostProcess : IDisposable
+public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
 {
     /// <summary>A native target with the GL sampler state its GL texture had (linear or nearest, clamped; the luminance's mipmapped
     /// minification).</summary>
@@ -39,12 +39,16 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8); ports use it instead of looking it up.</summary>
     public GpuContext Gpu { get; }
+    IGpuContext IWorldPostChain.Context => Gpu;
+    /// <summary>Vulkan keeps a far and a near depth slice (the far one has its own target for the motion vectors).</summary>
+    public bool DepthSlices => true;
     public PostOptions Options { get; }
     /// <summary>What the final image goes to: an RGBA8 colour target at least the display size (the window's backbuffer, or an offscreen
     /// texture). Set before <see cref="End"/>.</summary>
-    public GpuTexture? Target;
+    public GpuTexture? Target { get; set; }
     /// <summary>What the scene's slice is drawn into now (valid after <see cref="Begin"/>): the scene colour and the slice's depth, at the render size.</summary>
     public PassTargets SceneTargets { get; private set; } = null!;
+    PassTargets IWorldPostChain.SceneTargetsForParticles => SceneTargets;
     /// <summary>The scene's depth (the near slice's; valid after <see cref="Begin"/>).</summary>
     public GpuTexture SceneDepth => sceneDepth!.Texture;
     /// <summary>The scene's colour at the render size (valid after <see cref="Begin"/>; the Meitou water copies it for its refraction).</summary>

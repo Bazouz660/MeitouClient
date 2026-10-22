@@ -17,6 +17,7 @@ diaries, asset dumps or decompiled output. Current choices: [DECISIONS](../DECIS
 - [launcher](launcher.md): game release installer, mod list and presets
 - [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes; the native Metal path next to it
 - [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
+- [metal-content-testability-plan](metal-content-testability-plan.md): the content/testability gaps and the order to close them
 - [metal-performance-memory](metal-performance-memory.md): the Metal frame-rate and bounded-memory plan (baseline, targets, order)
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)

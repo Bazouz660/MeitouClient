@@ -14,6 +14,14 @@ using SharpMetal.QuartzCore;
 
 ObjectiveC.LinkMetal();
 
+// A headless ray-tracing probe: one Metal acceleration structure, a debug camera image, then the
+// GI's probe workload measured with GPU timestamps. It does not open a window or touch the game.
+if (args.Contains("--rt-bench"))
+{
+    RayTraceSpike.Run();
+    return;
+}
+
 // How many frames to present before exiting. The capture run uses a big number so the window
 // stays up while a screenshot is taken; the default run is a quick self-test.
 var framesToRun = 300;

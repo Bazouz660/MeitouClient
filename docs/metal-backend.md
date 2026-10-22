@@ -489,15 +489,19 @@ source row and the destination origin, shifting every map-window piece. Screensh
 and `-12213,36572`, plus 15-second all-feature runs, are clean. Saved shadow settings now control shadows normally
 instead of being forced off.
 
-**Shared world construction and host pass (2026-10-22).** `SceneHost` now takes `IGpuContext`; the seam carries the
+**Shared world construction and frame draw (2026-10-22).** `SceneHost` takes `IGpuContext`; the seam carries the
 Vulkan secondary-pass staging (`BeginHostPassParallel`, `SetPassStage`, `EndHostPassParallel`) and `ClearDepth`, and
 Metal's scene pass runs through the same `SceneHost` instead of a hand-rolled native segment. `WorldFrame.CreateGpu`
 also takes `IGpuContext`: it builds terrain, textures, streamer, sky/weather, particles, lamps, objects, foliage,
 water, shadows and the memory guard on either backend. Vulkan-only pieces (the full `PostProcess`, reflection and
 GI) are created only when the context is Vulkan; Metal supplies its allocation sample for `VramGuard`, starts water
-faithful, keeps its `PostComposite`/`PostTaa` chain, and now shares `WorldFrame.DrawShadows`. The Vulkan reference
-still uses the same path and screenshot. Remaining duplication is `WorldFrame.Draw`'s full post/reflection/GI flow,
-which needs the post-chain abstraction before Metal can call it.
+faithful, and uses `MetalPostChain` (`PostComposite`/`PostTaa` behind `IWorldPostChain`).
+
+`WorldFrame.Draw` now runs through that interface and owns the shared frame: weather and sky preparation, streaming,
+shadows, the scene host, the post-chain scene effects (fog volumes, shafts, SSAO), full-size particles, the post chain,
+and the finished-picture overlays. Metal's local scene/post loop is gone; its host keeps the title staging, the
+interface and the present. Vulkan still uses `PostProcess`'s reflection, GI, far-depth slice and low-resolution
+particles; Metal's chain reports one depth slice and no GI/reflection/low-res particles, so the shared draw skips them.
 
 **Current priority: the frontend shell and effects; optimization follows.** MetalFX now gives the frame-rate
 headroom (Balanced 0.50 by default, Performance 0.40 spatial, Native fallback), so the next work is completing the
@@ -524,17 +528,17 @@ and the shared trade/dialogue/build/editor interaction layer are wired. The rema
 
 **After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
 refraction); the character motion pass and the hover/stage host calls; the Meitou clouds; the remaining post
-(`FogRate`, dynamic motion, GPU culls/grass); resize and HDR/EDR; the remaining `WorldFrame.Draw` post/reflection
-flow (the shared construction and `SceneHost` are in); then the GI decision, parity, memory/tone and the macOS default.
+(`FogRate`, dynamic motion, GPU culls/grass); resize and HDR/EDR; then the GI decision, parity, memory/tone and the
+macOS default.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
 
 1. **The rest of the real game loop (largest).** The first playable slice is in: camera bindings, edge/turn/zoom,
    left click and box select, right-click move orders, the HUD keys, F7/F8/F11/F12 and Alt+Enter. Still to do:
-   the bespoke loop now uses `WorldFrame.CreateGpu` and `SceneHost` on `IGpuContext`; the remaining shared frame draw
-   (post/reflection/GI) still needs the post-chain abstraction. Also the free camera, fly-to, warm-up,
-   resize/fullscreen, HDR/EDR and the remaining present details.
+   the loop uses `WorldFrame.CreateGpu`, `SceneHost` and `WorldFrame.Draw` through `IWorldPostChain`; the host keeps
+   the title staging and interface. Also the free camera, fly-to, warm-up, resize/fullscreen, HDR/EDR and the
+   remaining present details.
    Title -> new game -> play, save/load/quickload, options, `ScreenAction`, the new-world rebuild, the loading
    screen, audio/UI sounds, the sky transitions, mesh/building/surface hits and floor stepping are wired.
 2. **UI actions and screens.** HUD, inventory, stats, overview/map, menu, title, New Game, save/load and the
@@ -691,9 +695,9 @@ faithful and Meitou look.
 
 The interactive host: input and camera controls (`MetalDisplay` events), the title/New Game/save/load and audio
 paths, resize, HDR/EDR and the present details, warm-up frames, `--screenshot`/`--ui` parity. The shared
-`WorldFrame.CreateGpu` and `SceneHost` now run on `IGpuContext`; the remaining shared frame draw
-(`WorldFrame.Draw`'s post/reflection/GI) must be split behind a post-chain abstraction before the bespoke Metal
-loop can disappear.
+`WorldFrame.CreateGpu`, `SceneHost` and `WorldFrame.Draw` run on `IGpuContext`; what remains is runtime acceptance
+of the shared frame on Metal (title, editor, overlays, resize, settings) and removing the now-duplicated host
+scaffolding.
 
 ### 8. Parity and the default (plan step 11)
 
@@ -705,7 +709,12 @@ default.
 - **GI**: the probe GI needs ray queries; Metal's ray tracing is a different model. Vulkan on this Mac reports GI
   off (MoltenVK exposes no `VK_KHR_ray_query`), so local parity is no-GI; on a machine where Vulkan has ray
   queries the target includes GI. Either port `GiScene`/`GiProbes` to Metal ray queries (a project of its own) or
-  accept the no-GI look as the macOS baseline.
+  accept the no-GI look as the macOS baseline. **Observed** (`Meitou.MetalSpike --rt-bench`, M1 Pro): one
+  524k-triangle terrain acceleration structure took about 75–100 ms to build (88 MB plus 97 MB scratch), while
+  the 131k-ray probe batch took about 0.25–0.31 ms. That is traversal only; real scene builds, object/foliage
+  structures, refit and resolve are still unmeasured. The trace cost looks promising; memory and scene-build
+  cadence are the constraints to check in a port. The in-game Metal path is **experimental and opt-in**
+  (`MEITOU_METAL_GI=1`): a save load with it enabled froze the test M1 Pro, so normal launches leave it off.
 - **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
   step 6.
 - **Upscaler**: MetalFX Balanced at render scale 0.50 is the Metal default, with Native as the fallback when

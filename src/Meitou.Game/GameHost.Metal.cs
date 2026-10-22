@@ -11,14 +11,17 @@ using Meitou.Data.Save;
 using Meitou.Data.Textures;
 using Meitou.Data.World;
 using Meitou.Engine;
+using Meitou.Engine.Cameras;
 using Meitou.Engine.Input;
 using Meitou.Engine.Time;
 using Meitou.Metal;
+using Meitou.Metal.Gi;
 using Meitou.Rendering;
 using Meitou.Rendering.Characters;
 using Meitou.Rendering.Display;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Ui;
+using Meitou.Simulation;
 using Meitou.Simulation.Editing;
 using Meitou.Simulation.Saving;
 using Silk.NET.Maths;
@@ -30,6 +33,8 @@ namespace Meitou.Game;
 
 sealed partial class GameHost
 {
+    bool settleAfterWorldLoad;
+    bool worldHasRendered;
     /// <summary>
     /// The Metal path (macOS): the game boots without the Vulkan renderer and draws the world through the seam's recording model
     /// (native segments around the scene's host pass, guests inside it, the frame committed with the present). The loop is
@@ -104,8 +109,8 @@ sealed partial class GameHost
         if (!metalWater) Console.WriteLine("metal     water disabled (MEITOU_METAL_WATER=0)");
         if (!metalShadows) Console.WriteLine("metal     shadows disabled (MEITOU_METAL_SHADOWS=0)");
         if (!metalImpostors) Console.WriteLine("metal     impostors disabled (MEITOU_METAL_NO_IMPOSTORS=1)");
-        // The world's renderers are built by the shared WorldFrame path after the display/upscaler setup. Metal keeps
-        // only its post chain here (PostComposite/PostTaa and the MetalFX adapters) until PostProcess itself is on the seam.
+        // The world's renderers are built by the shared WorldFrame path after the display/upscaler setup. Metal's post chain
+        // (PostComposite/PostTaa and the MetalFX adapters) sits behind IWorldPostChain, so WorldFrame.Draw owns the frame.
         // The final composite through the game's tone map: the scene draws into an HDR target, then this writes the LDR picture.
         var composite = new PostComposite(ctx, flipY: true);
         composite.LoadHeatHaze(assets);
@@ -168,6 +173,12 @@ sealed partial class GameHost
         }
         ApplyMode(mode);
         if (noTaa) Console.WriteLine("metal     no TAA/upscaler: native scene, no jitter");
+        // The seam's post chain for the shared WorldFrame.Draw: the scene effects and the composite are the same calls the local
+        // loop used, with the jitter and temporal choice decided live as the settings change them.
+        var postChain = new MetalPostChain(ctx, composite, taa, o.Post,
+            noTaa: () => noTaa,
+            temporal: () => mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa,
+            jitter: (frame, sceneWidth, displayWidth) => noTaa || spatial ? Vector2.Zero : PostTaa.Offset(frame, sceneWidth, displayWidth));
 
         int CurrentPresetIndex()
         {
@@ -245,18 +256,32 @@ sealed partial class GameHost
         // The world's renderers through the shared construction path: terrain, textures, streamer, sky and weather,
         // particles, lamps, objects, foliage, faithful water, shadows and the memory guard. The step callback is
         // unused here because Metal has no separate Vulkan loading-frame loop.
+        // --crowd means simulated characters (SpawnCrowd) here too; the posed harness is only for a renderer test.
+        crowd = o.Crowd;
+        o.Crowd = 0;
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
         if (terrainTexturesOff) Console.WriteLine("metal     terrain textures disabled (MEITOU_METAL_NO_TERRAIN_TEXTURES=1)");
         bool metalParticles = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1";
         var worldGpu = WorldFrame.CreateGpu(ctx, install, scene, assets, o, interactive: true,
             terrainTextures: !terrainTexturesOff, particlesEnabled: metalParticles, objectLoadBudget: 0,
             vramSample: guardEnabled ? () => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget) : null);
+        worldGpu.PostChain = postChain;
         gpu = worldGpu;
+        // Native Metal GI is experimental and opt-in: on this M1 Pro it could freeze the machine during a save load.
+        // Keep the unfinished path out of normal launches; --no-gi still wins, and F10 can turn it off after it is on.
+        bool metalGi = o.Gi && Environment.GetEnvironmentVariable("MEITOU_METAL_GI") is "1" or "true";
+        if (metalGi && ctx.Device.SupportsRaytracing)
+        {
+            worldGpu.ProbeGi = new MetalProbeGi(ctx) { Enabled = o.GiProbes, InteriorEnabled = o.InteriorGi };
+            Console.WriteLine($"gi        {worldGpu.ProbeGi.Describe()} (experimental, MEITOU_METAL_GI=1)");
+        }
+        else if (metalGi)
+            Console.WriteLine("gi        metal off: the device does not support ray tracing");
+        else if (o.Gi)
+            Console.WriteLine("gi        metal off: experimental (set MEITOU_METAL_GI=1 to enable)");
         memoryGuard = worldGpu.Guard;
-        var terrain = worldGpu.Terrain;
         var sky = worldGpu.Sky;
         var weather = worldGpu.Weather;
-        var surfaces = worldGpu.Surfaces;
         var fogVolumes = worldGpu.FogVolumes!;
         var shadow = worldGpu.Shadow!;
         var streamer = worldGpu.Streamer;
@@ -264,8 +289,6 @@ sealed partial class GameHost
         var foliage = worldGpu.Foliage;
         var water = worldGpu.Water;
         var lamps = worldGpu.Lamps;
-        var particles = worldGpu.Particles;
-        var weatherAreas = worldGpu.WeatherAreas;
         // The diagnostic opt-outs keep their old meaning now that the shared path owns construction.
         if (!metalFoliage) { foliage?.Dispose(); worldGpu.Foliage = null; foliage = null; }
         if (!metalWater) { water?.Dispose(); worldGpu.Water = null; water = null; }
@@ -286,7 +309,6 @@ sealed partial class GameHost
         hostLamps = lamps;
         hostObjects = objects;
         hostFoliage = foliage;
-        terrain.BeginFrame();
 
         // The simulation's side, using the same CPU height grid as the shared renderer.
         var heights = new Meitou.Data.World.GroundHeights(scene.Window, scene.Coarse, scene.CoarseSize, WorldFrame.CoarseStep);
@@ -297,9 +319,11 @@ sealed partial class GameHost
             clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
             simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
             systems: systems, walkability: walkability);
+        render.Grid = IsSandbox;
         session.Camera.Place(new Vector2((float)(o.X ?? scene.Focus.X), (float)(o.Z ?? scene.Focus.Z)), (float)(o.Yaw ?? 30) * MathF.PI / 180,
             (float)(o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180,
             (float)(o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance));
+        var startTarget = session.Camera.Current.Target;
         // The saved key bindings feed the same settings dialog and camera/order input as Vulkan.
         foreach (var problem in session.Bindings.Apply(config.Bindings)) Console.Error.WriteLine($"config    binding skipped: {problem}");
         // The game's new-game shortcut: the player's squad in the simulation, which the world draw list then shows.
@@ -308,7 +332,12 @@ sealed partial class GameHost
             try
             {
                 playerSquad = population.StartPlayer(session.World, start);
-                Console.WriteLine($"metal     player squad: {playerSquad.Members.Count} characters");
+                var lead = session.World.Characters.Previous[playerSquad.Leader.Slot].Position;
+                startTarget = lead;
+                Console.WriteLine($"metal     player squad: {playerSquad.Members.Count} characters, leader at {lead.X:0}, {lead.Z:0}");
+                // --new-game is a shortcut past the menus: the rolled characters are kept (the menu's New game opens the editor);
+                // a still keeps creation open for the showcase's editor pictures.
+                if (o.Screenshot is null) session.World.Commands.Enqueue(new Meitou.Simulation.Editing.FinishCreation { Tick = session.World.Tick });
             }
             catch (InvalidOperationException e) { Console.WriteLine($"metal     player squad skipped: {e.Message}"); }
         }
@@ -342,6 +371,20 @@ sealed partial class GameHost
             characters.Guard = memoryGuard;
             characters.InteriorObjects = objects;
         }
+        // The squad tour and character flights (docs/viewer.md "Squad tour"). Metal has no cinema, so a held camera is
+        // only the tour's; EndTour hands the view back to the rig as the Vulkan host does.
+        var tour = new SquadTour();
+        bool tourHolds = false, tourFollows = false;
+        Vector3? TourPosition(CharacterId id) =>
+            session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is { } c ? DrawnPosition(c) : null;
+        void EndTour()
+        {
+            tour.Stop();
+            tourHolds = false;
+            session.Camera.TakeOver(new CameraState(camera.Eye, camera.Forward, Vector3.UnitY, camera.Target, camera.Yaw, camera.Pitch,
+                camera.Distance, true), strategy: true);
+            if (tourFollows && tour.Current is { } id) player.Follow = id;
+        }
         // The game's HUD and panels. PlayerInterface is the interface's data/layout owner; ArrangeUi/BindUi and the UiPainter
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
         PlayerInterface? hud = null;
@@ -355,6 +398,27 @@ sealed partial class GameHost
             hud.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
             hud.CreateUiPainter(overlay, assets.Find);
             ConfigurePlayerInterface(hud);
+            if (IsSandbox)
+                hud.ReservedKeys.UnionWith([Meitou.Engine.Input.Key.Z, Meitou.Engine.Input.Key.X, Meitou.Engine.Input.Key.C,
+                    Meitou.Engine.Input.Key.Y, Meitou.Engine.Input.Key.P, Meitou.Engine.Input.Key.G]);
+            // A double click on a far squad member flies there (Advanced settings "Character flights"); the third press
+            // ends the flight on that member. With the setting off PlayerInterface centres on them instead.
+            hud.FlyTo = id =>
+            {
+                if (!config.CharacterFlights || IsDuel || session.Camera.IsFree || TourPosition(id) is not { } at) return false;
+                if (new Vector2(at.X - camera.Target.X, at.Z - camera.Target.Z).Length() <= UserConfig.FlightDistance) return false;
+                hud.Follow = null;
+                tour.HopSeconds = config.CharacterFlightSeconds;
+                tour.Fly(camera, id, TourPosition);
+                (tourHolds, tourFollows) = (true, true);
+                return true;
+            };
+            hud.SkipFlight = id =>
+            {
+                if (!tour.Active || !tourFollows || tour.Current != id) return;
+                tour.Finish(camera, TourPosition);
+                EndTour();
+            };
             if (characters is not null)
             {
                 var (atlas, sampled) = characters.PortraitAtlas;
@@ -379,8 +443,30 @@ sealed partial class GameHost
             hud.MoveMarker = moveMarker;
             navOverlay = new NavmeshOverlayRenderer(ctx);
             navOverlayRenderer = navOverlay;
+            // The shared frame draw owns the overlays after the post chain now.
+            worldGpu.MoveMarker = moveMarker;
+            worldGpu.NavmeshOverlay = navOverlay;
+            worldGpu.HoverOutline = hoverOutline;
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
         }
+        // The content test modes, in the Vulkan boot's order: a sandbox on the flat floor, the duel on its measured
+        // spot, then a simulated crowd round the start. The duel restarts a world, so it needs the HUD's player state.
+        if (IsSandbox && population is not null) startTarget = SandboxSpawn();
+        else if (IsDuel && population is not null)
+        {
+            if (hud is not null) startTarget = DuelStart();
+            else Console.Error.WriteLine("duel      skipped: the Metal host has no interface/player state");
+        }
+        if (!IsSandbox && crowd > 0 && population is not null) SpawnCrowd(startTarget, crowd);
+        var startRig = session.Camera;
+        startRig.Place(new Vector2(startTarget.X, startTarget.Z), (o.Yaw ?? 30) * MathF.PI / 180,
+            (o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180,
+            o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance);
+        SendFocus();
+        ApplyCamera(session.Camera.Current);
+        // --new-game is a shortcut past the creation editor; the same follow the editor's close gives a menu New Game.
+        if (hud is not null && start is not null && StartSave is null && o.Screenshot is null && playerSquad is { Leader.IsNone: false } squad)
+            hud.Follow = squad.Leader;
         // The shared settings layout: Metal supplies the settings it can change live (window, upscaler, distances,
         // shadows, sky and the composite); the Interface/Controls/Advanced/Audio pages are the game's own.
         SettingsPanel? settingsValues = null;
@@ -460,6 +546,7 @@ sealed partial class GameHost
                 var navmesh = SwapInSave(Task.FromResult(startSave), interactive: true, out string summary);
                 navmesh.Wait();
                 SettleNewWorld();
+                hud.FollowSelected();
                 FinishLoadNotice(summary);
                 ApplyCamera(session.Camera.Current);
             }
@@ -555,6 +642,11 @@ sealed partial class GameHost
                 v => sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
             sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => sky.PlanetshineStrength,
                 v => sky.PlanetshineStrength = MathF.Round(v), "0"));
+            if (worldGpu.ProbeGi is { } probeGi)
+            {
+                toggles.Add(new Toggle("Indirect light", () => probeGi.Enabled, v => probeGi.Enabled = v));
+                toggles.Add(new Toggle("Indoor GI", () => probeGi.InteriorEnabled, v => probeGi.InteriorEnabled = v));
+            }
             toggles.Add(new Toggle("Cloud shadows", () => sky.CloudShadows, v => sky.CloudShadows = v));
             toggles.Add(new Toggle("Night air", () => sky.NightAir, v => sky.NightAir = v));
             toggles.Add(new Toggle("Planetshine", () => sky.Planetshine, v => sky.Planetshine = v));
@@ -606,9 +698,14 @@ sealed partial class GameHost
         bool Held(SilkKey a, SilkKey b) => input.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
         bool Ctrl() => Held(SilkKey.ControlLeft, SilkKey.ControlRight);
         bool Alt() => Held(SilkKey.AltLeft, SilkKey.AltRight);
+        // Metal keeps F10 for its settings; the shared debug menu is on Ctrl+F10 (or another binding, except F10).
+        bool DebugToggle(SilkKey key) => key == SilkKey.F10
+            ? Ctrl()
+            : KeyMap.Map(key) is { } mapped && mapped != EngineKey.F10 &&
+              session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped));
         foreach (var keyboard in input.Keyboards)
         {
-            keyboard.KeyDown += (_, key, _) =>
+            keyboard.KeyDown += (keyboard, key, _) =>
             {
                 if (key is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; if (hud is not null) hud.SlowModifier = true; }
                 if (key == SilkKey.Enter && Alt()) { ToggleFullScreen(); return; }
@@ -617,17 +714,24 @@ sealed partial class GameHost
                     if (key is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
                     return;
                 }
-                if (key == SilkKey.F10 && settings is not null) { settings.Visible = !settings.Visible; return; }
+                bool ctrl = Ctrl();
                 // The full settings dialog (Metal's F10 used to be a preset overlay; the preset now lives in Display).
                 if (settings?.Visible == true)
                 {
                     if ((key == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(key)) is { } settingsKey)
                     {
                         if (settingsKey is EngineKey.F8 or EngineKey.PrintScreen) screenshotNow = true;
-                        else settings.KeyDown(settingsKey, shiftDown, Ctrl());
+                        else settings.KeyDown(settingsKey, shiftDown, ctrl);
                     }
                     return;
                 }
+                if (hud is not null && DebugToggle(key)) { debugMenuOpen = !debugMenuOpen; return; }
+                if (debugMenuOpen)
+                {
+                    if ((key == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(key)) is { } menuKey) DebugMenuKey(menuKey);
+                    return;
+                }
+                if (key == SilkKey.F10 && settings is not null) { settings.Visible = !settings.Visible; return; }
                 if (settings is not null && KeyMap.Map(key) is { } settingsToggle &&
                     session.Bindings.Get(InputAction.ToggleSettings).Contains(Binding.Of(settingsToggle)))
                 {
@@ -640,12 +744,50 @@ sealed partial class GameHost
                 if (key == SilkKey.F12) { frameStatsVisible = !frameStatsVisible; return; }
                 if (key is SilkKey.F8 or SilkKey.PrintScreen) { screenshotNow = true; return; }
                 if (key == SilkKey.F7 && hud is not null) { hud.UiVisible = !hud.UiVisible; return; }
+                // Ctrl+C copies the free camera's position as a viewer camera code; Ctrl+V flies to the clipboard's code.
+                if (key is SilkKey.C or SilkKey.V && session.Camera.IsFree && hud is not null && !hud.UiEditing && ctrl)
+                {
+                    if (key == SilkKey.C)
+                    {
+                        string code = WorldCameraCode.Encode(camera);
+                        keyboard.ClipboardText = code;
+                        Console.WriteLine($"camera    copied {code} ({WorldCameraCode.Describe(camera)})");
+                    }
+                    else if (WorldCameraCode.Decode(keyboard.ClipboardText) is { } pose)
+                    {
+                        Vector3 back = new(MathF.Cos(pose.Pitch) * MathF.Sin(pose.Yaw), MathF.Sin(pose.Pitch),
+                            MathF.Cos(pose.Pitch) * MathF.Cos(pose.Yaw));
+                        session.Camera.TakeOver(new CameraState(pose.Target + back * pose.Distance, -back, Vector3.UnitY, pose.Target,
+                            pose.Yaw, pose.Pitch, pose.Distance, true), strategy: false);
+                        hud.Follow = null;
+                        Console.WriteLine("camera    moved to the clipboard's camera code");
+                    }
+                    else Console.WriteLine("camera    the clipboard holds no camera code (Ctrl+C in a viewer copies one)");
+                    return;
+                }
+                // Numpad / flies the camera across the squad in portrait order; it holds the camera like the tour on Vulkan.
+                if (key == SilkKey.KeypadDivide && !IsDuel && hud is not null)
+                {
+                    if (tour.Active) EndTour();
+                    else
+                    {
+                        hud.Follow = null;
+                        tour.HopSeconds = config.CharacterFlightSeconds;
+                        tourFollows = false;
+                        tour.Start(camera, [.. hud.SquadBarMembers().Select(c => c.Id)], TourPosition);
+                        if (tour.Active) tourHolds = true;
+                        else Console.WriteLine("squad tour: nobody else in the squad to fly to");
+                    }
+                    return;
+                }
                 if (KeyMap.Map(key) is not { } mapped) return;
                 // The interface's keys come first (I/C, M/T/Y, Esc, B), as in the Vulkan host; what it does not take reaches
                 // the session (WASD, Q/E, Space, F2..F4, PageUp/PageDown, the camera bindings).
-                if (hud is not null && (hud.UiKey(mapped, Ctrl(), shiftDown) || hud.BuildKey(mapped, shiftDown))) return;
+                if (hud is not null && (hud.UiKey(mapped, ctrl, shiftDown) || hud.BuildKey(mapped, shiftDown))) return;
                 session.Input.SetKey(mapped, true);
                 if (hud is not null) hud.Key(mapped, shiftDown);
+                SandboxKey(mapped);
+                if (IsDuel && mapped == EngineKey.Backspace) duelRestartRequested = true;
             };
             keyboard.KeyUp += (_, key, _) =>
             {
@@ -656,6 +798,7 @@ sealed partial class GameHost
             {
                 if (Covered) return;
                 if (settings?.Visible == true) settings.TextInput(value);
+                else if (debugMenuOpen) DebugMenuText(value);
                 else hud?.UiText(value);
             };
         }
@@ -715,6 +858,15 @@ sealed partial class GameHost
             if (actions.Pressed(InputAction.QuickLoad)) quickLoadRequested = true;
             if (actions.Pressed(InputAction.FloorUp)) StepFloor(1);
             if (actions.Pressed(InputAction.FloorDown)) StepFloor(-1);
+            if (hud is not null)
+            {
+                // Panning, or leaving for the free camera, lets go of the character the camera follows; turning and
+                // zooming keep it, as in the Vulkan host.
+                if (actions.Held(InputAction.MoveForward) || actions.Held(InputAction.MoveBack) ||
+                    actions.Held(InputAction.MoveLeft) || actions.Held(InputAction.MoveRight) ||
+                    actions.Pressed(InputAction.ToggleFreeCamera)) hud.Follow = null;
+                if (tour.Active && CameraInput(actions)) EndTour();
+            }
         };
         // Put the title's camera and staging up before the streamers settle, so the menu's first frame is already the staged view.
         if (hud is not null) ApplyTitleCamera();
@@ -758,7 +910,6 @@ sealed partial class GameHost
             watchdog.Start();
         }
         var statsLines = new List<string>();
-        GpuTexture? sceneColour = null;
         double streamingIdleSince = 0, lastManagedTrim = double.NegativeInfinity;
         // Loading can take long enough for the terminal that started the game to take focus back: bring the game forward again
         // before the interactive loop (its title and FPS are watched there).
@@ -808,7 +959,15 @@ sealed partial class GameHost
             // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
             session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
                 hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
-            if (!Covered) session.Advance(dt);
+            // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.
+            if (hud is not null)
+            {
+                DuelFrame(false);
+                if (!Covered) session.Advance(dt);
+                DuelHoldClock();
+                WorldNews();
+            }
+            else if (!Covered) session.Advance(dt);
             if (hud is not null)
             {
                 HandleSaves();
@@ -817,12 +976,33 @@ sealed partial class GameHost
             }
             StepSceneLoad();
             AdvanceSkyArrival(dt);
+            // The squad tour and character flights hold the camera while they fly; otherwise the rig owns the view.
+            if (!tourHolds) ApplyCamera(session.CameraAt());
+            if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
+            gpu.Ahead = tour.ArrivalEye(TourPosition);
+            if (!tourHolds && hud is not null)
+            {
+                SandboxFollowCamera();
+                FollowCamera();
+                EditorCamera();
+            }
             // The merged character editor is shared with Vulkan: a new game opens it once the squad is in the snapshot, and the world resumes when it closes.
             OpenPendingEditor();
             ResumeAfterCreation();
             if (hud is not { EditorOpen: true }) ClearEditorStage();
-            ApplyCamera(session.CameraAt());
-            if (hud is not null) ApplyTitleCamera();
+            if (!tourHolds && hud is not null) ApplyTitleCamera();
+            // A flight puts the focus where it lands, so the towns there populate during the flight; otherwise the
+            // followed character's pivot is already in the rig.
+            SendFocus(tour.Active && tour.Current is { } tourLanding && TourPosition(tourLanding) is { } tourAt ? tourAt
+                : tourHolds ? camera.Target : null);
+            // The strategy camera's eye clearance for the followed character and the tour's arcs over hills.
+            if (skyArrival is null && hud is not null && !TitleVisible && (tour.Active || !session.Camera.IsFree && !tourHolds))
+            {
+                var clearEye = camera.Eye;
+                float shortfall = session.Camera.GroundAt(clearEye.X, clearEye.Z) +
+                    Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - clearEye.Y;
+                if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
+            }
             // The pointer's Ctrl/Alt modifiers and the Highlight key (Alt): labels on the ground items near the focus, signs and the hover outlines agree.
             bool ctrlHeld = Ctrl(), altHeld = Alt();
             bool highlighting = altHeld && !Covered && !TitleVisible && hud is { UiVisible: true } &&
@@ -842,7 +1022,6 @@ sealed partial class GameHost
                 ApplySkyArrival();
             }
             if (!Covered) UpdateAudio(dt);
-            SendFocus();
             UpdateNav();
             UpdateNavOverlay();
             // Diagnostic isolation for the far-travel freeze: skip the runtime building/ground-item/lamps diff.
@@ -850,61 +1029,56 @@ sealed partial class GameHost
             // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
             // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
             UpdateInteriorView();
-            memoryGuard?.Tick();
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
             if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
+            if (settleAfterWorldLoad)
+            {
+                settleAfterWorldLoad = false;
+                Console.WriteLine($"metal     settling objects and foliage at the loaded view");
+                objects?.Settle(camera.Eye);
+                foliage?.Settle(camera.Eye);
+            }
             double drawableWait = display.LastDrawableWaitMilliseconds;
             long recordStart = Stopwatch.GetTimestamp();
-            var sceneSize = new Vector2D<int>(ctx.SceneWidth, ctx.SceneHeight);
+            var backbuffer = ctx.Backbuffer;
             // The editor's own scene replaces the world picture: the shared host draws the character and its platform into the stage texture the interface shows.
             if (hud is { EditorOpen: true }) DrawEditorStage(size.X, size.Y);
-            // TAA's mip bias: the scene samples at the render scale, the history at the display size (PostProcess's TAA rule).
-            ctx.LodBias = noTaa || spatial ? 0 : MathF.Log2(sceneSize.X / (float)Math.Max(size.X, 1)) - 0.5f;
             // The still's objects are all resident before the first picture, as the Vulkan screenshot path settles them (its Settle
             // opens its own frame; here the frame is the first one's).
             if (frames == 0) { objects?.Settle(camera.Eye); foliage?.Settle(camera.Eye); }
-            streamer?.Update(camera.Eye);
-            foliage?.Update(camera.Eye);
-
-            var taaJitter = noTaa || spatial ? Vector2.Zero : PostTaa.Offset(frames + 1, sceneSize.X, size.X);
-            if (objects is not null) { objects.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView); objects.Update(camera.Eye); }
+            // What the shared draw needs before it updates the characters: the squad's portrait requests and the hover masks.
             if (characters is not null)
             {
                 characters.PortraitRequests.Clear();
                 if (hud is not null)
                     foreach (var (member, cell) in hud.SquadBarMembers().Select((member, cell) => (member, cell)))
                         characters.PortraitRequests.Add(new PortraitRequest(DrawKey(member.Id), cell, member.PortraitSerial));
-                characters.SetView(sceneSize.X, sceneSize.Y, camera.FieldOfView);
-                characters.Update(camera.Eye);
-                characters.DrawPortraits();
-                var hoverKeys = new List<(long Key, Vector4 Colour)>();
-                bool outlining = config.HoverOutline && !session.Camera.IsFree && hud is { UiVisible: true } &&
-                    !Covered && settings?.Visible != true;
-                if (outlining)
-                {
-                    if (highlighting)
-                        hoverKeys.AddRange(hud!.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius)
-                            .Select(t => (DrawKey(t.Id), t.Colour)));
-                    else if (hud!.HoverTarget is { } hover)
-                        hoverKeys.Add((DrawKey(hover.Id), hover.Colour));
-                }
-                characters.DrawHoverMasks(hoverOutline is null ? [] : hoverKeys, sceneSize.X, sceneSize.Y,
-                    camera.View, camera.FieldOfView, camera.Eye);
-                characters.DrawIcons();
             }
+            var hoverKeys = new List<(long Key, Vector4 Colour)>();
+            bool outlining = config.HoverOutline && !session.Camera.IsFree && hud is { UiVisible: true } &&
+                !Covered && settings?.Visible != true;
+            if (outlining)
+            {
+                if (highlighting)
+                    hoverKeys.AddRange(hud!.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius)
+                        .Select(t => (DrawKey(t.Id), t.Colour)));
+                else if (hud!.HoverTarget is { } hover)
+                    hoverKeys.Add((DrawKey(hover.Id), hover.Colour));
+            }
+            gpu.HoverKeys = hoverKeys;
+            gpu.HoverOutline = hoverOutline;
             // The frame's inputs, as WorldFrame.Draw prepares them: the weather at the camera, the atmosphere's tables for the sun and the
             // eye's height, the fog distance the light ends at, and the view distance that keeps the haze complete before the far plane.
             bool titleLook = hud is not null && TitleVisible;
             float hour = presentationHour ?? (titleLook ? TitleHour : (float)session.Clock.HourOfDay);
-            var aspect = sceneSize.X / (float)Math.Max(sceneSize.Y, 1);
+            var aspect = size.X / (float)Math.Max(size.Y, 1);
             var eye = camera.Eye;
             var view = camera.View;
-            var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
-            var viewProjection = rotation * camera.Projection(aspect, 1, 1000);
             // The title stages the world as the poster: clear morning light, the sun right of the view, the moons full and the ruin
             // beside the logo. Save the gameplay values and put them back after the world pass.
             var savedClock = scene.Clock;
+            var savedWeather = gpu.Weather;
             var savedSkyWeather = sky.Weather;
             float? savedCloudCoverage = sky.CloudCoverage;
             var savedCloudWind = sky.CloudWind;
@@ -925,182 +1099,32 @@ sealed partial class GameHost
                 if (characters is not null) characters.Fill = new Vector3(0.064f, 0.052f, 0.04f) * fill;
                 fogVolumes.HidePlaced = true;
             }
-            var sun = scene.Clock.SunDirection(hour);
-            const bool held = true;   // a still picture: the weather's timers snap, as the post chain's InstantAdaptation does
-            if (!titleLook && weather is { } current)
+            // One shared frame: the weather and sky preparation, streaming, shadows, the scene host pass, the post-chain scene
+            // effects, the particles and the post chain, then the overlays over the finished picture. The Metal chain fills the
+            // seam's Vulkan-only gaps (no reflection, GI, low-resolution particles or fog-rate target).
+            gpu.GameHours = session.Clock.HoursSinceStart;
+            var savedParticles = gpu.Particles;
+            if (titleLook) { gpu.Weather = null; gpu.Particles = null; }   // the staged title sky and its own dust, not the world's weather
+            try
             {
-                current.Update(eye, hour, sun.Y, held);
-                current.Apply(sky);
+                WorldFrame.Draw(gpu, scene, camera, render, size.X, size.Y, hour, (float)now / 600f, o.FogDistance);
             }
-            if (!titleLook && surfaces is { } weatherSurfaces)
+            finally
             {
-                weatherSurfaces.GameTime = hour;
-                weatherSurfaces.Apply(weather?.State ?? Meitou.Data.World.WeatherState.Clear);
-            }
-            var weatherState = titleLook ? Meitou.Data.World.WeatherState.Clear : weather?.State ?? Meitou.Data.World.WeatherState.Clear;
-            water?.Animate(session.Clock.HoursSinceStart, weatherState.WindDirection, weatherState.WindSpeed);
-            // The weather's particles and map placers step on the game clock; the draw follows the scene effects.
-            if (particles is not null && !titleLook)
-            {
-                if (weather is not null)
+                gpu.Weather = savedWeather;
+                gpu.Particles = savedParticles;
+                if (titleLook)
                 {
-                    if (weatherAreas is { } areas)
-                    {
-                        var (cx, cz) = WeatherAreas.CellOf(eye.X, eye.Z);
-                        if (WeatherAreas.InMap(cx, cz)) particles.World.Area = RegionArea.At(areas, eye.X, eye.Z);
-                    }
-                    particles.SetWeather(weather.EffectInput());
-                }
-                particles.World.Density = o.ParticleDensity;
-                particles.Update(session.Clock.HoursSinceStart * 3600, camera);
-            }
-            sky.SetEye(eye, heights.HeightAt, float.NegativeInfinity);
-            sky.Eye = eye;
-            sky.Clock = scene.Clock;
-            sky.Day = weather?.Day ?? 0;
-            sky.Hour = hour;
-            sky.StarHours = session.Clock.HoursSinceStart;
-            sky.StarSeconds = (float)(now % 3600);
-            var (colours, light) = sky.Prepare(sun, eye.Y, o.FogDistance + 3 * Math.Max(eye.Y, 0));
-            if (titleLook) sky.StepClouds((float)dt);
-            else if (weather is { } drift) sky.StepClouds(drift.Times.Game); else sky.StepClouds(held);
-            // Far enough that the haze closes before the far plane and the water quad ends (WorldFrame.Draw's rule).
-            camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
-            fogVolumes.Update(eye, camera.Forward, camera.FieldOfView, aspect, camera.ViewDistance, sun.Y, true, null, sky.FogCullDistance);
-            // The scene's projection, its frustum and the interior masks all use the same jittered view: the mask is read with the
-            // scene's pixel coordinates (texelFetch), and the casters' LOD needs the rendered pixel scale.
-            render.TerrainPixelScale = Meitou.Data.World.TerrainLod.ProjectionScale(sceneSize.Y, camera.FieldOfView);
-            var worldProjection = view * Jitter.Apply(camera.Projection(aspect, camera.Near, camera.ViewDistance), taaJitter, sceneSize.X, sceneSize.Y);
-            var frustum = WorldCamera.FrustumPlanes(worldProjection);
-            // The near-view interior masks, before the scene's passes: the terrain, foliage and map features over a mask discard their
-            // fragments between its front and back faces (the game's InteriorMask compositor node).
-            interiorMask?.Record(worldProjection, eye, sceneSize.X, sceneSize.Y);
-            // The world's lamps, and the lanterns the characters carry, in this frame's grid.
-            if (lamps is not null)
-            {
-                lamps.Moving.Clear();
-                characters?.CollectLamps(lamps.Moving);
-                lamps.Update(eye, objects, WorldLights.DaylightFactor(hour, scene.Clock.Sunrise, scene.Clock.Sunset));
-            }
-            // The casters' cascades, before the scene reads the receiver block: the same shared pass Vulkan runs.
-            shadow.RangeCap = fogVolumes.AtmosphereDistance;
-            shadow.SetFogHide(fogVolumes.ShadowHideDistance, fogVolumes.ShadowHidePending);
-            WorldFrame.DrawShadows(gpu, camera, render, light, sceneSize.X, sceneSize.Y, sky.ShadowSunHeight,
-                temporal: mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa);
-
-            // The shared host pass: a native segment, a rendering into the scene colour and depth (cleared by its load
-            // ops; the sky fills every pixel), and the guests below.
-            var host = gpu.Scene ??= new SceneHost(ctx);
-            var backbuffer = ctx.Backbuffer;
-            var depth = ctx.Depth;
-            var albedo = ctx.Albedo;
-            if (sceneColour is null || sceneColour.Desc.Width != sceneSize.X || sceneColour.Desc.Height != sceneSize.Y)
-            {
-                sceneColour?.Dispose();
-                sceneColour = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, sceneSize.X, sceneSize.Y,
-                    Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "scene colour"));
-            }
-            var targets = PassTargets.Of(sceneColour, depth, albedo);
-            host.Open(5, targets, new ClearColour(0, 0, 0, 0), clearDepth: true);
-
-            sky.Draw(viewProjection, colours);
-
-            // The terrain: the camera's projection (near 0.5 .. the view distance), the quadtree's LOD in rendered pixels, the sky's light.
-            terrain.BeginFrame();
-            terrain.InteriorCut = interiorMask;
-            terrain.Draw(worldProjection, eye, frustum, render, light);
-            terrain.InteriorCut = null;
-            if (render.Objects && objects is not null)
-            {
-                objects.InteriorCut = interiorMask;
-                objects.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
-                objects.InteriorCut = null;
-            }
-            foliage?.InteriorCut = interiorMask;
-            foliage?.Draw(worldProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, terrain);
-            if (foliage is not null) foliage.InteriorCut = null;
-            // Characters after the opaque geometry: they alone write the scene's alpha (the SSAO character mask in the Vulkan post chain).
-            characters?.Draw(worldProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance);
-            water?.Draw(worldProjection, eye, light, colours, (float)session.Clock.HoursSinceStart, camera.ViewDistance * 1.5f);
-
-            host.Close();
-
-            var postInputs = new PostComposite.SceneInputs(eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance,
-                characters is not null && characters.DrawnCharacters > 0, water is not null ? Meitou.Data.World.WorldWater.Height : null);
-            composite.HeatHazeAmount = titleLook ? 0 : weatherState.HeatHaze;
-            composite.HeatHazeHours = session.Clock.HoursSinceStart;
-            // Fog volumes, light shafts and SSAO are scene effects: they run before the temporal resolve, as the Vulkan chain does them.
-            var sceneEffects = (MetalCommandList)ctx.BeginNative("post scene effects");
-            if (shadow.Enabled)
-            {
-                float darkening = WorldFrame.ShaftDarkening(o.Post, light, sun.Y) *
-                    WorldFrame.ShaftCloudFade(WorldFrame.Overcast(sky.CloudDensity, surfaces?.Rain ?? 0));
-                float shaftFar = Math.Min(camera.ViewDistance, sky.HazeCompleteDistance ?? sky.HazeDistance);
-                float shaftFloor = terrain.HeightAt(eye.X, eye.Z);
-                if (water is not null) shaftFloor = Math.Max(shaftFloor, Meitou.Data.World.WorldWater.Height);
-                composite.RunLightShafts(sceneEffects, sceneColour, depth, postInputs, o.Post, darkening, shaftFar, shaftFloor,
-                    WorldFrame.ShaftAirByTime(o.Post, scene.Clock, hour), !noTaa);
-            }
-            composite.ApplyScene(sceneEffects, sceneColour, depth, postInputs, fogVolumes.UsedData > 0, o.Post.Ssao);
-            ctx.EndNative(sceneEffects);
-
-            // The weather's and map placers' particles, over the scene after SSAO and before the temporal resolve. Metal draws
-            // them full size for now (the low-resolution particle targets are Vulkan-only): the game's queue 84.
-            if (particles is not null && !titleLook && Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_DRAW") != "1")
-            {
-                float particleNear = camera.Near;
-                var particleNearProjection = view * Jitter.Apply(
-                    camera.Projection(aspect, Math.Min(0.5f, particleNear * 0.5f), particleNear), taaJitter, sceneSize.X, sceneSize.Y);
-                particles.Prepare(worldProjection, particleNearProjection, particleNear, view, eye, light.SunDirection,
-                    0, sceneSize.X * sceneSize.Y, forcedDivisor: 1);
-                if (particles.FullCount > 0)
-                {
-                    var particleCmd = (MetalCommandList)ctx.BeginNative("particles");
-                    var particleTargets = PassTargets.Of(sceneColour, depth);
-                    particleCmd.BeginRendering(particleTargets.Rendering);
-                    ctx.BeginHostPass(particleCmd, particleTargets, DrawState.Scene(particleTargets.Formats));
-                    particles.Record(1);
-                    ctx.EndHostPass(particleCmd);
-                    particleCmd.EndRendering();
-                    ctx.EndNative(particleCmd);
+                    scene.Clock = savedClock;
+                    sky.Weather = savedSkyWeather;
+                    sky.CloudCoverage = savedCloudCoverage;
+                    sky.CloudWind = savedCloudWind;
+                    sky.PlanetTurn = savedPlanetTurn;
+                    sky.PlanetFill = savedPlanetFill;
+                    if (characters is not null) characters.Fill = savedFill;
+                    fogVolumes.HidePlaced = savedHidePlaced;
                 }
             }
-
-            // The temporal resolve: the jittered scene against the history, at the scene's size (the vendor upscalers are not ported yet).
-            GpuTexture resolved;
-            if (noTaa) resolved = sceneColour;
-            else
-            {
-                var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
-                resolved = taa.Draw(taaCmd, sceneColour, depth, eye, view, camera.FieldOfView, aspect, camera.Near, camera.ViewDistance, taaJitter, size.X, size.Y, (float)dt);
-                ctx.EndNative(taaCmd);
-            }
-
-            // The composite: the scene's HDR colour through the game's tone map into the backbuffer the present shows.
-            var post = (MetalCommandList)ctx.BeginNative("post composite");
-            composite.Draw(post, resolved, depth, backbuffer, o.Post, (sky.MinLuminance, sky.MaxLuminance), postInputs, temporal: !noTaa);
-            ctx.EndNative(post);
-            if (titleLook)
-            {
-                scene.Clock = savedClock;
-                sky.Weather = savedSkyWeather;
-                sky.CloudCoverage = savedCloudCoverage;
-                sky.CloudWind = savedCloudWind;
-                sky.PlanetTurn = savedPlanetTurn;
-                sky.PlanetFill = savedPlanetFill;
-                if (characters is not null) characters.Fill = savedFill;
-                fogVolumes.HidePlaced = savedHidePlaced;
-            }
-            // The overlays that sit on the finished picture, before the interface: the move marker, the navmesh debug view and the hover outline.
-            var (overlayNear, overlayFar) = camera.Slices().Last();
-            var overlayProjection = view * camera.Projection(aspect, overlayNear, overlayFar);
-            if (moveMarker is { Strength: > 0 })
-                moveMarker.Record(backbuffer, size.X, size.Y, depth, sceneSize.X, sceneSize.Y, overlayProjection, eye, sun);
-            if (navOverlay is { Visible: true })
-                navOverlay.Record(backbuffer, size.X, size.Y, depth, sceneSize.X, sceneSize.Y, overlayProjection, eye);
-            if (hoverOutline is not null && characters is { HoverMasks.Count: > 0 } hovered)
-                hoverOutline.Record(backbuffer, size.X, size.Y, hovered.HoverMasks, depth, sceneSize.X, sceneSize.Y,
-                    overlayNear, overlayFar, overlayProjection);
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
@@ -1112,7 +1136,12 @@ sealed partial class GameHost
                     hud.ViewProjection = view * camera.Projection(aspect, camera.Near, camera.ViewDistance);
                     // The move order under a held right button follows the cursor once a frame, as the Vulkan host's Steer does.
                     hud.Steer();
-                    if (hud.UiVisible) hud.Draw(overlay, size.X, size.Y);
+                    if (hud.UiVisible)
+                    {
+                        hud.SelectionRings = config.SelectionRings;
+                        hud.Draw(overlay, size.X, size.Y);
+                        if (IsSandbox) DrawSandbox(overlay, size.X, size.Y);
+                    }
                 }
                 bool wrote = false;
                 // The framebuffer is 2x the window's points on a Retina display: the fixed-pixel debug text would be half size.
@@ -1135,6 +1164,11 @@ sealed partial class GameHost
                         (16 + overlay.LineHeight) * textScale, DebugOverlay.TextColour, textScale);
                     wrote = true;
                 }
+                if (debugMenuOpen && hud is not null)
+                {
+                    DrawDebugMenu(overlay, size.X, size.Y, (hud.UiVisible ? hud.HudBottom : 0) + 8, "Ctrl+F10");
+                    wrote = true;
+                }
                 if (settings?.Visible == true)
                 {
                     settings.Draw(size.X, size.Y);
@@ -1154,6 +1188,7 @@ sealed partial class GameHost
             lastWait = drawableWait;
             lastRecord = Stopwatch.GetElapsedTime(recordStart).TotalMilliseconds;
             frames++;
+            worldHasRendered = true;
             // Once the terrain, object and foliage streamers have been quiet for two seconds, the large decode/upload
             // buffers are garbage. Compact at that idle point (at most once a minute) so the LOH does not keep them
             // for the rest of the session. Active streaming is never interrupted.
@@ -1248,7 +1283,7 @@ sealed partial class GameHost
         // The shared world owns terrain (and its textures), sky, weather surfaces, particles, lamps, objects, foliage,
         // water, characters, interior masks, streamer and shadow. Metal's post chain and the picture target are local.
         gpu?.Dispose();
-        sceneColour?.Dispose();
+        postChain.Dispose();
         composite.Dispose();
         taa.Dispose();
         metalFx?.Dispose();           // PostTaa owns it while selected; safe to dispose again after a preset switch
@@ -1257,6 +1292,14 @@ sealed partial class GameHost
         Console.WriteLine($"metal     {frames} frames in {elapsed:0.0} s: {frames / Math.Max(elapsed, 1e-3):0} fps, " +
             $"camera {camera.Target.X:0}, {camera.Target.Z:0}, yaw {camera.Yaw * 180 / MathF.PI:0}, pitch {camera.Pitch * 180 / MathF.PI:0}, boom {camera.Distance:0}");
         return 0;
+    }
+
+    partial void OnWorldSettled()
+    {
+        // A save load or a new game swaps the world after the first frame: force the object and foliage streamers
+        // to settle at the new camera, as the first world does at frame 0. Otherwise they can stay empty until the
+        // camera moves, even though the characters and the simulation are already there.
+        if (worldHasRendered) settleAfterWorldLoad = true;
     }
 
     /// <summary>The backbuffer's picture as a PNG (the readback's rows are the picture's own: Metal draws right side up).</summary>

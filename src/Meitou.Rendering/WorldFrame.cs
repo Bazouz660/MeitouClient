@@ -630,13 +630,18 @@ static class WorldFrame
         internal Gi.GiScene? Gi;
         internal Gi.GiDebugPass? GiDebugPass;
         internal Gi.GiProbes? Probes;
+        /// <summary>A backend-owned probe GI (Metal's native ray tracing); Vulkan uses <see cref="Gi"/> and <see cref="Probes"/> instead.</summary>
+        internal Gi.IProbeGi? ProbeGi;
         internal WorldLamps? Lamps;
         public int GiDebug;
         /// <summary>Whether the traced scene is updated (and the debug view drawn) this frame: the bench's gi-scene switch.</summary>
         public bool GiActive = true;
         /// <summary>The GI resolve's divisor (0 the lit fragments read the probes, 1 full size, 2 half; the bench's gi-resolve switch; docs/render-gi.md "Resolve").</summary>
         public int GiResolve = 2;
+        /// <summary>The Vulkan post chain (its reflection and GI also read it); null on a backend with a seam-only chain.</summary>
         public PostProcess? Post;
+        /// <summary>The chain <see cref="WorldFrame.Draw"/> runs: <see cref="Post"/> on Vulkan, the host's seam chain on Metal.</summary>
+        public IWorldPostChain? PostChain;
         public WorldObjectRenderer? Objects;
         public FoliageRenderer? Foliage;
         /// <summary>The characters (null without <c>--crowd</c> or a host that feeds them).</summary>
@@ -663,6 +668,7 @@ static class WorldFrame
         public void Dispose()
         {
             GiDebugPass?.Dispose();
+            ProbeGi?.Dispose();
             Probes?.Dispose();
             Lamps?.Dispose();
             Gi?.Dispose();
@@ -680,7 +686,7 @@ static class WorldFrame
             Surfaces?.Dispose();
             Reflection?.Dispose();
             Shadow?.Dispose();
-            Post?.Dispose();
+            Post?.Dispose();   // a seam-only chain (MetalPostChain) is owned by its host
             Sky.Dispose();
             Terrain.Dispose();
         }
@@ -764,11 +770,10 @@ static class WorldFrame
             terrain.SetTextures(textures);
         }
         step?.Invoke("sky");
-        // The full post chain is still the Vulkan implementation; Metal owns its PostComposite/PostTaa slice. The
-        // shared renderer construction below can therefore run on either backend without pretending PostProcess is
-        // ported yet: the frame loop only reaches Post when the context made one.
+        // WorldFrame.Draw runs a post chain through IWorldPostChain. Vulkan's PostProcess is complete here; Metal supplies its
+        // PostComposite/PostTaa slice as a host-constructed chain and leaves the Vulkan-only reflection and GI paths null.
         var post = context is GpuContext vulkanPost ? new PostProcess(vulkanPost, o.Post) : null;
-        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = post };
+        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = post, PostChain = post };
         post?.LoadHeatHaze(assets);
         // The placed fog volumes (docs/formats/fogfeatures.md): the swamp's fog and the like, part of the game's look.
         // Always made: the weather's fog spheres go through it too, with or without a fogfeatures.dat.
@@ -885,10 +890,9 @@ static class WorldFrame
         if (gpu.Characters is { } crowd) crowd.GeneratedLod = o.CharacterLod;
         gpu.DebugShadows = o.DebugShadows;
         step?.Invoke("gi");
-        if (o.GiDebug > 0 || o.Gi)
+        if ((o.GiDebug > 0 || o.Gi) && context is GpuContext giContext)
         {
-            if (context is not GpuContext giContext) Console.WriteLine("gi        off: the Metal backend has no ray queries yet");
-            else if (!giContext.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
+            if (!giContext.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
             else
             {
                 gpu.Gi = new Gi.GiScene(giContext);
@@ -923,6 +927,11 @@ static class WorldFrame
         }
         return gpu;
     }
+
+    /// <summary>The depth slices this chain's scene targets can hold: Vulkan's far and near depth, or one slice for a backend with a
+    /// single scene depth target.</summary>
+    static IEnumerable<(float Near, float Far)> SceneSlices(IWorldPostChain post, WorldCamera camera) =>
+        post.DepthSlices ? camera.Slices() : [(camera.Near, camera.ViewDistance)];
 
     /// <summary>Draws a frame: the sky, then the far depth slice (terrain, water), then the near one (terrain, objects, water).</summary>
     // The Tab panel: draw distances and LOD.
@@ -979,14 +988,16 @@ static class WorldFrame
             () => gpu()?.Water?.Meitou ?? o.MeitouWater, v => { o.MeitouWater = v; if (gpu()?.Water is { } w) w.Meitou = v; },
             () => gpu()?.Foliage?.Lod ?? o.FoliageLod, v => { o.FoliageLod = v; if (gpu()?.Foliage is { } f) f.Lod = v; },
             // Without probes (--no-gi, no ray queries) the switch reads off: the picture has the flat ambient whatever it is set to.
-            () => gpu() is { } giGpu ? giGpu.Probes?.Enabled ?? false : o.GiProbes, v => { o.GiProbes = v; if (gpu()?.Probes is { } p) p.Enabled = v; },
+            () => gpu() is { } giGpu ? giGpu.Probes?.Enabled ?? giGpu.ProbeGi?.Enabled ?? false : o.GiProbes,
+                v => { o.GiProbes = v; if (gpu()?.Probes is { } p) p.Enabled = v; if (gpu()?.ProbeGi is { } m) m.Enabled = v; },
             () => gpu()?.Sky.NightAir ?? o.NightAir, v => { o.NightAir = v; if (gpu() is { } g) g.Sky.NightAir = v; },
             () => gpu()?.Sky.Planetshine ?? o.Planetshine, v => { o.Planetshine = v; if (gpu() is { } g) g.Sky.Planetshine = v; },
             () => gpu()?.Sky.MeitouStars ?? o.MeitouStars, v => { o.MeitouStars = v; if (gpu() is { } stars) stars.Sky.MeitouStars = v; },
             () => gpu()?.Sky.LitClouds ?? o.MeitouClouds, v => { o.MeitouClouds = v; if (gpu() is { } g) g.Sky.LitClouds = v; },
             () => gpu()?.Sky.CloudShadows ?? o.CloudShadows, v => { o.CloudShadows = v; if (gpu() is { } g) g.Sky.CloudShadows = v; },
             () => gpu()?.Sky.CloudFog ?? o.CloudFog, v => { o.CloudFog = v; if (gpu() is { } g) g.Sky.CloudFog = v; },
-            () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; },
+            () => gpu()?.Probes?.InteriorEnabled ?? gpu()?.ProbeGi?.InteriorEnabled ?? o.InteriorGi,
+                v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; if (gpu()?.ProbeGi is { } m) m.InteriorEnabled = v; },
             () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
@@ -1166,7 +1177,7 @@ static class WorldFrame
     public static void DrawLoadingSky(Gpu gpu, WorldScene scene, WorldCamera camera, int width, int height, float hour, float seconds, float fogDistance)
     {
         gpu.Terrain.Activate();
-        var post = gpu.Post ?? throw new InvalidOperationException("the sky frame needs the post-processing chain");
+        var post = gpu.PostChain ?? throw new InvalidOperationException("the sky frame needs the post-processing chain");
         post.GiResolve = 0;
         post.Begin(width, height);
         float aspect = width / (float)Math.Max(height, 1);
@@ -1184,34 +1195,34 @@ static class WorldFrame
         post.SetCamera(eye, view, camera.FieldOfView, aspect);
         post.BeginNearSlice(1, 1000);
         post.SetNearSlice(1, 1000, camera.FieldOfView, aspect);
-        var host = gpu.Scene ??= new SceneHost(post.Gpu);
+        var host = gpu.Scene ??= new SceneHost(post.Context);
         host.Open(5, post.SceneTargets, new ClearColour(0, 0, 0, 0), clearDepth: true);
         gpu.Sky.Draw(vp, colours);
         host.Close();
         // Motion and particle callbacks belong to the world that is being replaced.
-        var motion = post.ObjectMotion;
-        var particles = post.Particles;
-        post.ObjectMotion = null;
-        post.Particles = null;
+        var motion = gpu.Post?.ObjectMotion;
+        var particles = gpu.Post?.Particles;
+        if (gpu.Post is { } postProcess) (postProcess.ObjectMotion, postProcess.Particles) = (null, null);
         try { post.End(); }
-        finally { post.ObjectMotion = motion; post.Particles = particles; }
+        finally { if (gpu.Post is { } restorePost) (restorePost.ObjectMotion, restorePost.Particles) = (motion, particles); }
     }
 
     public static void Draw(Gpu gpu, WorldScene scene, WorldCamera camera, WorldRenderOptions render, int width, int height, float hour, float time, float fogDistance, float? weatherHour = null)
     {
         gpu.Terrain.Activate();
+        var post = gpu.PostChain ?? throw new InvalidOperationException("the world frame needs a post-processing chain");
         if (gpu.Surfaces is { } surfaces) surfaces.GameTime = time;
         // Everything is drawn into the post-processing chain's HDR framebuffer (before the reflection pass, which restores whatever is bound).
         // The GI resolve while the probes light the world: the scene targets carry the albedo target, the lit fragments write it.
         bool giResolve = gpu.GiResolve > 0 && gpu.GiActive && gpu.Probes is { Enabled: true, Shade: true };
         if (gpu.Post is { } giPost) giPost.GiResolve = giResolve ? gpu.GiResolve : 0;
         if (gpu.Probes is { } giProbes) giProbes.Resolve = giResolve;
-        gpu.Post?.Begin(width, height);
+        post.Begin(width, height);
         // The scene is drawn at the render size (smaller than the display with an upscaler), its projection jittered by the upscaler.
-        int rw = gpu.Post?.RenderWidth ?? width, rh = gpu.Post?.RenderHeight ?? height;
+        int rw = post.RenderWidth, rh = post.RenderHeight;
         // The terrain LOD measures its error in the pixels actually rendered (after the upscaler's render scale).
         render.TerrainPixelScale = TerrainLod.ProjectionScale(rh, camera.FieldOfView);
-        var jitter = gpu.Post?.JitterPixels ?? Vector2.Zero;
+        var jitter = post.JitterPixels;
         var eye = camera.Eye;
         gpu.Guard?.Tick();
         var kept = ObjectStreamer.MergeKept(gpu.Kept, eye);
@@ -1243,7 +1254,7 @@ static class WorldFrame
         // haze takes longer to close in the higher the eye.
         var sun = scene.Clock.SunDirection(hour);
         // The weather at the camera (before the sky's tables are prepared: the colour multiplier feeds them). A held frame (a screenshot) has dt 0, the first frame snaps.
-        bool held = gpu.Post?.InstantAdaptation ?? true;
+        bool held = post.InstantAdaptation;
         if (gpu.Weather is { } weather)
         {
             float scheduleHour = weatherHour ?? hour;
@@ -1260,9 +1271,9 @@ static class WorldFrame
         gpu.Sky.Eye = new Vector3((float)eye.X, (float)eye.Y, (float)eye.Z);
         var (colours, light) = gpu.Sky.Prepare(sun, eye.Y, fogDistance + 3 * Math.Max(eye.Y, 0));
         // The game's exposure (0.55 over the mean luminance, clamped to its band) goes with the game's sky and light.
-        if (gpu.Post is { } exposed) exposed.AutoExposure = (gpu.Sky.MinLuminance, gpu.Sky.MaxLuminance);
-        if (gpu.Post is { } upscaling) upscaling.WaterHeight = render.Water && gpu.Water is not null ? WorldWater.Height : null;
-        if (gpu.Post is { } hazy) UpdateHeatHaze(gpu, hazy, sun.Y);
+        post.AutoExposure = (gpu.Sky.MinLuminance, gpu.Sky.MaxLuminance);
+        post.WaterHeight = render.Water && gpu.Water is not null ? WorldWater.Height : null;
+        UpdateHeatHaze(gpu, post, sun.Y);
         // The Meitou water's waves on the game clock (the heat haze's, held still for a still picture), led by the wind at the camera.
         gpu.Water?.Animate(gpu.GameHours ?? gpu.HeatHazeHours,gpu.WeatherState.WindDirection, gpu.WeatherState.WindSpeed);
         gpu.Water?.Track(eye, gpu.Terrain.Snapshot());
@@ -1291,7 +1302,7 @@ static class WorldFrame
         StageClock.Lap(13);
         if (gpu.Shadow is not null) gpu.Shadow.RangeCap = gpu.FogVolumes?.AtmosphereDistance;   // the cascades end where the weather fog hides everything
         gpu.Shadow?.SetFogHide(gpu.FogVolumes?.ShadowHideDistance, gpu.FogVolumes?.ShadowHidePending == true);   // or where the placed fog block the eye is in hides the whole view
-        if (gpu.Shadow is not null) { gpu.Shadow.Temporal = gpu.Post?.Temporal == true; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
+        if (gpu.Shadow is not null) { gpu.Shadow.Temporal = post.Temporal; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
 
         StageClock.Lap(12);
         if (gpu.Lamps is { } lamps)
@@ -1309,6 +1320,15 @@ static class WorldFrame
             StageClock.Sub("gi scene");
             gpu.Probes?.Update(gi, eye, heights, gpu.Lamps, gpu.FogVolumes, gpu.Objects?.GiInteriorFocus(camera.Target));
             StageClock.Sub("gi blend");
+        }
+        if (gpu.ProbeGi is { } probeGi)
+        {
+            probeGi.Active = gpu.GiActive;
+            if (gpu.GiActive)
+            {
+                probeGi.Update(eye, gpu.Terrain.Snapshot(), render.Objects ? gpu.Objects : null, gpu.Lamps, gpu.FogVolumes);
+                StageClock.Sub("gi metal");
+            }
         }
         // The blood on the ground near the eye (docs/game/blood-decals.md), before any terrain draw reads it.
         if (gpu.Decals is { } decals && gpu.DecalStore is { } decalStore) decals.Record(decalStore, eye);
@@ -1355,8 +1375,7 @@ static class WorldFrame
         // The scene's passes are a native host that hands its guests the targets and state (phase 8 stage 3); wave 4 (docs/renderer-native.md 6):
         // its rendering takes secondaries, the guests' segments recorded on the job threads when it ends.
         // The scene starts cleared to the fog colour and depth 1 (the rendering's load ops).
-        var post = gpu.Post ?? throw new InvalidOperationException("the world frame needs the post-processing chain");
-        var host = gpu.Scene ??= new SceneHost(post.Gpu);
+        var host = gpu.Scene ??= new SceneHost(post.Context);
         float aspect = width / (float)Math.Max(height, 1);
         var view = camera.View;
         // Rotation only: with the eye's world position in the matrix, the directions rebuilt from it lose float
@@ -1369,21 +1388,21 @@ static class WorldFrame
         if (skyHidden) gpu.Sky.SkipMainSky();
         else gpu.Sky.PrepareClouds(skyProjection, rw, rh, gpu.Sky.Eye, fogVolumes: gpu.FogVolumes is { UsedData: > 0 });
         // The interior masks with the near slice's camera, before the scene's passes (the terrain of that slice reads them).
-        if (render.Objects && gpu.Objects is { } maskObjects && camera.Slices().FirstOrDefault(s => s.Near <= camera.Near) is { Far: > 0 } maskSlice)
+        if (render.Objects && gpu.Objects is { } maskObjects && SceneSlices(post, camera).FirstOrDefault(s => s.Near <= camera.Near) is { Far: > 0 } maskSlice)
         {
-            gpu.InteriorMask ??= new InteriorMaskRenderer((GpuContext)maskObjects.Gpu, maskObjects);
+            gpu.InteriorMask ??= new InteriorMaskRenderer(post.Context, maskObjects);
             gpu.InteriorMask.Record(view * Jitter.Apply(camera.Projection(aspect, maskSlice.Near, maskSlice.Far), jitter, rw, rh), eye, post.RenderWidth, post.RenderHeight);
         }
         else if (gpu.InteriorMask is { } unused) unused.Record(default, eye, 0, 0);
         host.Open(5, post.WithShadingRate(post.SceneTargets), new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 0), clearDepth: true);   // alpha 0: no character (the SSAO mask)
         if (!skyHidden) gpu.Sky.Draw(skyProjection, colours);
         StageClock.Lap(5);
-        gpu.Post?.SetCamera(eye, view, camera.FieldOfView, aspect);
+        post.SetCamera(eye, view, camera.FieldOfView, aspect);
         gpu.Terrain.BeginFrame();
         bool first = true, foliageDrawn = false;
         Matrix4x4 particleViewProjection = default, particleNearProjection = default;
         float particleNear = 0;
-        foreach (var (near, far) in camera.Slices())
+        foreach (var (near, far) in SceneSlices(post, camera))
         {
             bool nearSlice = near <= camera.Near;
             // The slices draw into different framebuffers (the far slice has a depth of its own, which the fog volumes pass reads): one host per slice.
@@ -1393,12 +1412,12 @@ static class WorldFrame
             if (!first && host.IsOpen) host.ClearDepth();
             host.Open(6, post.WithShadingRate(post.SceneTargets), clearDepth: !first && !host.IsOpen);
             first = false;
-            if (nearSlice) gpu.Post?.SetNearSlice(near, far, camera.FieldOfView, aspect);
+            if (nearSlice) post.SetNearSlice(near, far, camera.FieldOfView, aspect);
             var viewProjection = view * Jitter.Apply(camera.Projection(aspect, near, far), jitter, rw, rh);
             var frustum = WorldCamera.FrustumPlanes(viewProjection);
-            if (nearSlice && gpu.Post is { Temporal: true } && gpu.Foliage is { } swaying)
+            if (nearSlice && post.Temporal && gpu.Post is { } motionPost && gpu.Foliage is { } swaying)
             {
-                gpu.Post.ObjectMotion ??= swaying.DrawGrassMotion;
+                motionPost.ObjectMotion ??= swaying.DrawGrassMotion;
                 swaying.SetMotionCamera(viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             }
             if (nearSlice) gpu.Characters?.AttachMotion(gpu.Post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
@@ -1458,70 +1477,72 @@ static class WorldFrame
         }
         // Records the last slice's jobs and executes them: the render thread's share (the fork-join) counts as "water", the last stage of the host.
         if (host.IsOpen) { host.Close(); StageClock.Lap(9); }
-        gpu.Post!.RunGiResolve();
+        post.RunGiResolve();
         StageClock.Lap(14, "gi resolve");   // the resolve is the gi stage's (its time was the particles stage's before, with the shafts and the fog volumes)
         // The Meitou light shafts (docs/render-shafts.md): the haze darkened where the sun is shadowed along the view, before the fog volumes blend over it.
-        if (gpu.Shadow is { Enabled: true }) { gpu.Post!.RunLightShafts(ShaftDarkening(post.Options, light, sun.Y) * ShaftCloudFade(Overcast(gpu)), Math.Min(camera.ViewDistance, gpu.Sky.HazeCompleteDistance ?? gpu.Sky.HazeDistance), floor, ShaftAirByTime(post.Options, scene.Clock, hour)); StageClock.Lap(StageClock.Shafts); }
-        if (gpu.DebugShadows >= 2 && gpu.Shadow is not null && gpu.Post is not null) gpu.Shadow.CaptureDepth(gpu.Post.SceneDepth, rw, rh);
+        if (gpu.Shadow is { Enabled: true }) { post.RunLightShafts(ShaftDarkening(post.Options, light, sun.Y) * ShaftCloudFade(Overcast(gpu)), Math.Min(camera.ViewDistance, gpu.Sky.HazeCompleteDistance ?? gpu.Sky.HazeDistance), floor, ShaftAirByTime(post.Options, scene.Clock, hour)); StageClock.Lap(StageClock.Shafts); }
+        if (gpu.DebugShadows >= 2 && gpu.Shadow is not null) gpu.Shadow.CaptureDepth(post.SceneDepth, rw, rh);
         // The placed fog volumes over the finished scene (opaque, water, sky; the haze is in the shaders), one pass reading the depth, as the game's queue 82 does.
-        gpu.Post!.RunFogVolumes(gpu.FogVolumes is { UsedData: > 0 });
-        gpu.Post.BuildShadingRate(eye);   // the next frame's fog shading rate (fog-vrs), from this frame's depth
+        post.RunFogVolumes(gpu.FogVolumes is { UsedData: > 0 });
+        post.BuildShadingRate(eye);   // the next frame's fog shading rate (fog-vrs), from this frame's depth
         StageClock.Lap(StageClock.Fog, "fog volumes");
         // The SSAO onto the scene before the particles: they are not occluded by the surfaces behind them (the post chain leaves it out of its composite).
-        gpu.Post.ApplySsao();
+        post.ApplySsao();
         // Then the particles, blended over it and tested against the near slice's depth (they are not fogged; docs/formats/fogfeatures.md).
         if (gpu.Particles is { } particleDraw && particleNear > 0)
         {
             particleDraw.Prepare(particleViewProjection, particleNearProjection, particleNear, view, eye, sun, post.ParticlePixelsPerUnit(camera.Projection(aspect, 1, 10).M22), (float)post.RenderWidth * post.RenderHeight, post.Options.ParticleDivisor);
             if (particleDraw.FullCount > 0)
             {
-                host.Open(13, post.SceneTargets);
+                host.Open(13, post.SceneTargetsForParticles);
                 particleDraw.Record(1);
                 host.Close();
             }
             // Meitou: the alpha and additive sprites that are big on screen into low-resolution targets (half, then quarter size), each over the scene with a depth-aware upsample.
-            foreach (int divisor in (ReadOnlySpan<int>)[2, 4])
-            {
-                if (particleDraw.CountFor(divisor) == 0) continue;
-                post.BeginParticlesLow(divisor);
-                host.Open(13, post.ParticleTargets(divisor));
-                particleDraw.Record(divisor);
-                host.Close();
-                post.MarkParticleDraws();
-                post.CompositeParticlesLow(divisor);
-            }
+            if (post.LowResParticles)
+                foreach (int divisor in (ReadOnlySpan<int>)[2, 4])
+                {
+                    if (particleDraw.CountFor(divisor) == 0) continue;
+                    post.BeginParticlesLow(divisor);
+                    host.Open(13, post.ParticleTargets(divisor));
+                    particleDraw.Record(divisor);
+                    host.Close();
+                    post.MarkParticleDraws();
+                    post.CompositeParticlesLow(divisor);
+                }
             StageClock.Lap(13);
         }
         post.MarkParticles();
         if (gpu.Post is { } coverageTarget) coverageTarget.Particles = gpu.Particles;
-        gpu.Post?.End(); // SSAO, upscaler, exposure, tone map, FXAA into gpu.Post.Target
+        post.End(); // SSAO, upscaler, exposure, tone map, FXAA into the chain's target
+        var slices = SceneSlices(post, camera).ToList();
         // The movement marker over the finished picture, in the material's own colours, sorted against the near slice's depth like the game's debug_marker.
-        if (gpu.MoveMarker is { Strength: > 0 } marker && particleNear > 0 && gpu.Post is { Target: { } picture } markerPost)
+        if (gpu.MoveMarker is { Strength: > 0 } marker && particleNear > 0 && post.Target is { } picture)
         {
-            var (markerNear, markerFar) = camera.Slices().Last();
-            marker.Record(picture, width, height, markerPost.SceneDepth, markerPost.RenderWidth, markerPost.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);
+            var (markerNear, markerFar) = slices[^1];
+            marker.Record(picture, width, height, post.SceneDepth, post.RenderWidth, post.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);
         }
         // The navmesh debug view over the finished picture (Meitou only).
-        if (gpu.NavmeshOverlay is { Visible: true } navOverlay && gpu.Post is { Target: { } navPicture } navPost)
+        if (gpu.NavmeshOverlay is { Visible: true } navOverlay && post.Target is { } navPicture)
         {
-            var (navNear, navFar) = camera.Slices().Last();
-            navOverlay.Record(navPicture, width, height, navPost.SceneDepth, navPost.RenderWidth, navPost.RenderHeight, view * camera.Projection(aspect, navNear, navFar), eye);
+            var (navNear, navFar) = slices[^1];
+            navOverlay.Record(navPicture, width, height, post.SceneDepth, post.RenderWidth, post.RenderHeight, view * camera.Projection(aspect, navNear, navFar), eye);
         }
         // The hover outline over the finished picture too (Meitou only): the mask drawn after the portraits, sorted against the near slice.
-        if (gpu.HoverOutline is { } outline && gpu.Characters?.HoverMasks is { Count: > 0 } hover && gpu.Post is { Target: { } hoverPicture } hoverPost)
+        if (gpu.HoverOutline is { } outline && gpu.Characters?.HoverMasks is { Count: > 0 } hover && post.Target is { } hoverPicture)
         {
-            var (hoverNear, hoverFar) = camera.Slices().Last();
-            outline.Record(hoverPicture, width, height, hover, hoverPost.SceneDepth, hoverPost.RenderWidth, hoverPost.RenderHeight, hoverNear, hoverFar, view * camera.Projection(aspect, hoverNear, hoverFar));
+            var (hoverNear, hoverFar) = slices[^1];
+            outline.Record(hoverPicture, width, height, hover, post.SceneDepth, post.RenderWidth, post.RenderHeight, hoverNear, hoverFar, view * camera.Projection(aspect, hoverNear, hoverFar));
         }
         if (gpu.DebugShadows > 0 && gpu.Shadow is not null)
         {
-            var (nearestNear, nearestFar) = camera.Slices().Last();
-            gpu.Shadow.DrawDebug(gpu.DebugShadows, gpu.Post!.Target!, width, height, view, camera.Projection(aspect, nearestNear, nearestFar), eye);
+            var (nearestNear, nearestFar) = slices[^1];
+            gpu.Shadow.DrawDebug(gpu.DebugShadows, post.Target!, width, height, view, camera.Projection(aspect, nearestNear, nearestFar), eye);
         }
-        if (gpu.GiDebug > 0 && gpu.GiActive && gpu.Gi is { } traced && gpu.GiDebugPass is { } giDebug && gpu.Post?.Target is { } giTarget)
+        if (gpu.GiDebug > 0 && gpu.GiActive && gpu.Gi is { } traced && gpu.GiDebugPass is { } giDebug && post.Target is { } giTarget)
         {
             // The near slice's depth back to positions relative to the eye: the rotation-only view and that slice's projection, inverted.
-            var (nearestNear, nearestFar) = camera.Slices().Last();
+            var (nearestNear, nearestFar) = slices[^1];
             Matrix4x4.Invert(rotation * camera.Projection(aspect, nearestNear, nearestFar), out var inverse);
             giDebug.Run(gpu.GiDebug, traced, post.SceneDepth, giTarget, post.RenderWidth, post.RenderHeight, inverse, eye, light);
         }
@@ -1571,7 +1592,7 @@ static class WorldFrame
     /// moves towards it at 1/3 per second of real time (game speed 1), and jumps there for still pictures. The animation's
     /// <c>gameTime</c> is the caller's game clock when it has one, else real time at game speed 1 (held still for pictures).
     /// </summary>
-    static void UpdateHeatHaze(Gpu gpu, PostProcess post, float sunY)
+    static void UpdateHeatHaze(Gpu gpu, IWorldPostChain post, float sunY)
     {
         float dt = (float)Math.Min(gpu.HeatHazeClock.Elapsed.TotalSeconds, 0.25);
         bool first = !gpu.HeatHazeClock.IsRunning;
@@ -1598,7 +1619,7 @@ static class WorldFrame
     {
         var shadow = gpu.Shadow!;
         // The caller's post chain owns the temporal decision (Metal's PostTaa/MetalFX is outside gpu.Post).
-        shadow.Temporal = temporal ?? gpu.Post?.Temporal == true;
+        shadow.Temporal = temporal ?? gpu.PostChain?.Temporal == true;
         var v = camera.View;
         var view = new ShadowView(camera.Eye, camera.Forward, Vector3.Normalize(new Vector3(v.M12, v.M22, v.M32)), camera.FieldOfView, width / (float)Math.Max(height, 1), camera.Near, camera.Distance);
         int objects = 0, foliage = 0;

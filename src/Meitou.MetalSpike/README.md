@@ -19,6 +19,7 @@ The backend that grew out of it is `src/Meitou.Metal/`; its state and the findin
 | 3 | A texture table whose layer is picked at runtime - the capability the engine's sampler arrays need | works |
 | 4 | A compute pass writing an rgba16f storage image, sampled back by the fragment stage - the ocean FFT / Hi-Z shape | works |
 | 5 | The bindless table itself: separate textures and separate samplers, both indexed at runtime, in a tier-2 argument buffer | works |
+| 6 | Metal ray tracing: a 524k-triangle primitive acceleration structure and the GI's 131k-ray probe batch, measured with command-buffer GPU timestamps | works |
 
 Findings worth keeping:
 
@@ -128,6 +129,23 @@ part of a Metal backend, and on Apple silicon most of it disappears - the engine
 would mostly become "use the right encoder order", with `MemoryBarrier(MTLBarrierScope)` (in
 SharpMetal) for the cases that still need one. On other Apple GPUs (and any future non-Apple
 Metal target) the automatic tracking is not there, and this part of the work comes back.
+
+## Ray-tracing probe
+
+`--rt-bench` is a headless viability test, not a GI implementation. It builds one primitive
+acceleration structure over a synthetic 512² terrain (524,288 triangles), traces a debug camera
+image, then runs the DDGI-sized workload (32 rays/probe, one quarter of 16,384 probes = 131,072
+rays). It prints acceleration-structure memory/build time, GPU time for the probe batches, and a
+debug PPM in the temp directory.
+
+```
+dotnet run --project src/Meitou.MetalSpike -c Release -- --rt-bench
+```
+
+It does not include objects, foliage, a TLAS, acceleration-structure refit, probe accumulation or
+the resolve/apply passes. Treat the trace time as the cheap part and the scene build/memory as the
+remaining risk. On this M1 Pro the 131k-ray batch measured about 0.25 ms; see the command output
+for the current machine.
 
 ## Not proved yet (the remaining risk)
 

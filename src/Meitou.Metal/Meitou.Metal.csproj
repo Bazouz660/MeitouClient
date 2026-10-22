@@ -23,6 +23,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Meitou.Tests" />
+    <InternalsVisibleTo Include="MeitouClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Gi/ProbeGi.metal" LogicalName="Meitou.Metal.Gi.ProbeGi.metal" />
   </ItemGroup>
 
 </Project>
