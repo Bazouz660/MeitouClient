@@ -87,10 +87,12 @@ inside the bounds of `Storm_House_01_Interior-stairs` (`is stairs`, only in `int
 without the list that storey and the Watchtower `2-Newwworld-INGAME` floors +130/+190/+290 were unkept; with it paths from the door seed reach them.
 **Destroyed interiors**: a part with a `destroyed mesh` but no `destroyed collision` keeps its intact `xml collision` (**Verified**,
 `FUN_14055f6e0`; with no `phs or mesh` its `xml collision` is cleared instead). A destroyed building has no doors, so its interior has no seed.
-Engine choice: such an interior keeps nothing (no largest-region fallback); the ruin's floor is the exterior's. **Observed** (zone 20.32,
-`meitou-tools navmesh`, "flyin" save): all 17 seedless interiors there are destroyed; the Bughouse `4937-Newwworld-INGAME` kept 149
-polygons at Y1710..1757 (its `Storm_House_02_UpstairsWALLS-AND-ROOF.xml` floor and wall tops; terrain ~1580) and outlaws stood on them
-under the drawn ruined roof. The original exterior tile has no polygons above Y1680 there; whether its interior job keeps that island is **Unknown**.
+**Observed** (original tiles 20.32, 18.35, 19.29, 20.29, interior groups decoded as Info + 10 × vertex, matched to Meitou's interiors by box):
+the original keeps a mesh in each destroyed seedless interior, on its ground floor only (e.g. Storm House `32-Newwworld-INGAME` 6 faces at
+Y1571..1578, Bughouse `4937-` 32 faces at Y1608..1619). Meitou's largest region there can be wall tops (Bughouse: 149 polygons at Y1710..1757
+under the ruined roof) or an upper floor (Stationhouse `4-`, Y1703). Engine choice: keep every region whose lowest point is within
+`SeedPruner.DestroyedFloorBand` (40) of the interior's lowest polygon; upper storeys there are 60+ higher. Without it, squatters housed in
+these nodeless ruins stood on the terrain under their floors. The island has no door join, as in the original.
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
 **Entrance seeds** (engine choice): cross the door's width axis, then use the lowest collision floor with agent-height headroom.

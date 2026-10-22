@@ -75,8 +75,9 @@ internal sealed class ZoneGeometry
     /// </summary>
     public bool ClippedAtBorder { get; init; }
     /// <summary>
-    /// For the interior of a destroyed building: no seed keeps nothing (instead of the largest region). It has no door, hence no seed, and its largest region
-    /// can be an upper floor or wall tops under a roof whose intact collision stays (docs/game/pathfinding.md, "Destroyed interiors").
+    /// For the interior of a destroyed building: no seed keeps its ground floor (instead of the largest region, <see cref="SeedPruner.DestroyedFloorBand"/>). It has
+    /// no door, hence no seed, and its largest region can be an upper floor or wall tops under a roof whose intact collision stays (docs/game/pathfinding.md,
+    /// "Destroyed interiors").
     /// </summary>
     public bool InteriorDestroyed { get; init; }
     /// <summary>For a zone's exterior mesh: the terrain height; regions with an edge on the zone's border at ground level are kept (<see cref="SeedPruner"/>).</summary>

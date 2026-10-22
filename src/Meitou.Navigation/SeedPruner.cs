@@ -10,6 +10,12 @@ namespace Meitou.Navigation;
 /// </summary>
 internal static class SeedPruner
 {
+    /// <summary>
+    /// How far above a destroyed interior's lowest polygon a region may start and still be its ground floor (engine choice: well under a storey, 60+ in the
+    /// Hub's houses; docs/game/pathfinding.md "Destroyed interiors").
+    /// </summary>
+    public const float DestroyedFloorBand = 40;
+
     /// <summary>Marks the polygons not connected to any seed as not kept. Returns how many seeds found a polygon.</summary>
     public static int Prune(ZoneNavMesh mesh, ZoneGeometry g, NavBuildSettings s)
     {
@@ -20,10 +26,24 @@ internal static class SeedPruner
         int matched = Match(mesh, g.Seeds, s, keep, queue);
         int border = g.TerrainHeight is { } terrain ? MatchBorder(mesh, g, terrain, keep, queue) : 0;
 
-        if (matched == 0 && border == 0 && (g.ClippedAtBorder || g.InteriorDestroyed))
+        if (matched == 0 && border == 0 && g.InteriorDestroyed)
+        {
+            // A destroyed building's interior (no door, so no seed): its ground floor, every region starting within DestroyedFloorBand of the lowest polygon.
+            // Its largest region can be an upper floor or wall tops under a roof whose intact collision stays.
+            var component = Components(mesh);
+            var bottom = new Dictionary<int, float>();
+            for (int p = 0; p < n; p++)
+            {
+                float y = mesh.Polygons[p].Min(v => mesh.Vertices[v].Y);
+                bottom[component[p]] = bottom.TryGetValue(component[p], out float b) ? MathF.Min(b, y) : y;
+            }
+            float floor = bottom.Values.Min();
+            for (int p = 0; p < n; p++) mesh.Kept[p] = bottom[component[p]] <= floor + DestroyedFloorBand;
+            return 0;
+        }
+        if (matched == 0 && border == 0 && g.ClippedAtBorder)
         {
             // Part of an interior whose doors are across a zone border: the neighbour's kept border edges reach it (ZoneKeptClosure).
-            // A destroyed building's interior: its ruin floor is the exterior's, its largest region often a floor or wall tops up in the air.
             for (int p = 0; p < n; p++) mesh.Kept[p] = false;
             return 0;
         }
