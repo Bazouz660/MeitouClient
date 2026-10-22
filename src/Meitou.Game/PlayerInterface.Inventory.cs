@@ -15,6 +15,8 @@ sealed partial class PlayerInterface
     (TradeItemView Item, Vector2 Grab)? tradeDrag;
     /// <summary>The character the inventory window was pinned on (its caption's pin button), none while it is not pinned.</summary>
     CharacterId inventoryPin = CharacterId.None;
+    /// <summary>The pin last told to the simulation (<see cref="ShowInventoryCommand"/>), which publishes the pinned character's grid while it is not selected.</summary>
+    CharacterId inventoryPinSent = CharacterId.None;
 
     /// <summary>
     /// The character the inventory window (and its bag and limbs) shows: the lead, or while the window is pinned the one it was pinned on, whoever is selected
@@ -24,7 +26,8 @@ sealed partial class PlayerInterface
     {
         if (!faithfulScreens.IsPinned("inventory")) inventoryPin = CharacterId.None;
         else if (inventoryPin.IsNone) inventoryPin = Selected().FirstOrDefault()?.Id ?? CharacterId.None;
-        else if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == inventoryPin) is { } pinned) return pinned;
+        if (inventoryPin != inventoryPinSent) Say(new ShowInventoryCommand(inventoryPinSent = inventoryPin) { Tick = session.World.Tick });
+        if (!inventoryPin.IsNone && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == inventoryPin) is { } pinned) return pinned;
         return Selected().FirstOrDefault();
     }
     CharacterSnapshot? InventoryOwner(CharacterId id) => InventoryOwner() is { } owner && owner.Id == id ? owner : null;
