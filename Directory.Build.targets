@@ -5,13 +5,11 @@
   <PropertyGroup>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MEITOU_STREAMLINE_PATH)</StreamlineRuntimePath>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MSBuildThisFileDirectory)dlss-runtime</StreamlineRuntimePath>
-    <FfxRuntimePath Condition="'$(FfxRuntimePath)' == ''">$(MEITOU_FFX_PATH)</FfxRuntimePath>
-    <FfxRuntimePath Condition="'$(FfxRuntimePath)' == ''">$(StreamlineRuntimePath)</FfxRuntimePath>
   </PropertyGroup>
 
   <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win-')))">
     <!-- Wildcards, so only the files present are listed. -->
-    <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(FfxRuntimePath)/amd_fidelityfx_vk*.dll"
+    <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(StreamlineRuntimePath)/amd_fidelityfx_vk*.dll"
           Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

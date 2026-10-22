@@ -24,8 +24,8 @@ For FSR/DLSS the merged velocity kernel zeroes them in the scene colour in place
 (Observed: the FSR fallback on an RX 9070 XT still flickered without it).
 
 Game/viewer builds and publishes copy the Streamline/DLSS DLLs and FSR's `amd_fidelityfx_vk.dll` that
-are present in `MEITOU_STREAMLINE_PATH` (FSR: `MEITOU_FFX_PATH`) or the git-ignored root `dlss-runtime/`;
-`-p:StreamlineRuntimePath=` / `-p:FfxRuntimePath=` override the source. Without them a dev build logs
+are present in `MEITOU_STREAMLINE_PATH` or the git-ignored root `dlss-runtime/`;
+`-p:StreamlineRuntimePath=` overrides the source. Without them a dev build logs
 "not found" and runs TAA (a release folder's DLLs can be copied there). Release packaging fetches its own.
 
 TAA: 3x3 Gaussian exp(-2.29 d^2) with d in display pixels (upscaling doesn't widen it), Catmull-Rom history,
