@@ -329,7 +329,4 @@ sealed partial class PlayerInterface
 
     /// <summary>The speed icon per mode: the <c>Kenshi_CharacterSpeedSet</c> image names, in mode order.</summary>
     static readonly string[] RunSpeedIcons = ["Walk", "Jog", "Run", "Group"];
-
-    /// <summary>The move speed modes' names in the notice (the icons' names).</summary>
-    static string RunSpeedName(byte mode) => RunSpeedIcons[Math.Min((int)mode, RunSpeedIcons.Length - 1)].ToLowerInvariant();
 }
