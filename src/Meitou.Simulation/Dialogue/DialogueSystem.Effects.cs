@@ -65,13 +65,15 @@ public sealed partial class DialogueSystem
                     c.Ended = true;
                     request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
                     return;
+                case DialogueActions.ChooseSlavesSelling or DialogueActions.ChooseSlavesBuying when target != me:
+                    // The character trading window opens as the conversation closes (OpenCharacterTrade), a speech bubble's at once; val0 is the price override.
+                    characterTradeAfter = (effect.Action == DialogueActions.ChooseSlavesSelling ? CharacterTradeKind.SlaveSelling : CharacterTradeKind.SlaveBuying, me, target, effect.Value);
+                    if (!ReferenceEquals(open, c)) { OpenCharacterTrade(world); break; }
+                    c.Ended = true;
+                    return;
                 case ChoosePrisonerBail when Arrests is not null:
                     c.Ended = true;
-                    tradingAfter = (me, target, TradingKind.Bail, 0);   // the list opens as the conversation closes (OpenTrading)
-                    return;
-                case ChooseSlavesSelling or ChooseSlavesBuying when me != target:
-                    c.Ended = true;
-                    tradingAfter = (me, target, effect.Action == ChooseSlavesSelling ? TradingKind.SlavesSelling : TradingKind.SlavesBuying, effect.Value);
+                    bailAfter = (me, target);   // the bail list opens as the conversation closes (OpenBail)
                     return;
                 case DialogueActions.AssignBounty when tc is not null && mc is not null && effect.Value > 0 && data.Relations.Contains(mc.Faction):
                 {

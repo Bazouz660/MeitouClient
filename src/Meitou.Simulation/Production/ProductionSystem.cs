@@ -108,7 +108,7 @@ public sealed partial class ProductionSystem : ITickSystem
             Position = site.Position,
             Inputs = [.. data.Inputs.Select(i => new InputSlot(i))],
             Output = data.Output is { } o ? new OutputSlot(o) : null,
-            Storage = data.HasInventory ? new Inventory(data.StorageWidth, data.StorageHeight) { StackBonusMult = data.StackBonusMult } : null,
+            Storage = data.HasInventory ? new Inventory(data.StorageWidth, data.StorageHeight) { StackBonusMult = data.StackBonusMult, Limited = data.StorageLimit.Count > 0 } : null,
             Farm = data.Farm is { } fd ? new FarmState(Meitou.Data.Gameplay.Construction.FarmLayout.Count(fd)) : null,
             Craft = data.IsCrafting ? new CraftState() : null,
         };
@@ -784,19 +784,35 @@ public sealed partial class ProductionSystem : ITickSystem
     }
 
     /// <summary>
-    /// Take an item (<see cref="TakeFromMachine.Count"/> units) out of a container into the character's inventory; what does not fit stays in the container. Taken from another faction's
-    /// container it is stolen from that faction (engine choice: no witness or crime yet).
+    /// Take an item (<see cref="TakeFromMachine.Count"/> units) out of a container into the character's inventory (<see cref="InventoryCommands.MoveInto"/>); what does not fit stays in the
+    /// container. Taken from another faction's container it is stolen from that faction (engine choice: no witness or crime yet).
     /// </summary>
-    static void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
+    void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
         var storage = container.Contents!;
         if (take.Index < 0 || take.Index >= storage.Items.Count) return;
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
-        int moved = InventoryCommands.MoveUnits(storage, item, take.Count, cold.Inventory!);
+        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn);
         if (storage.Items.Contains(item)) item.StolenFrom = mark;   // what stayed keeps its mark
+        if (worn) Assembly?.RefreshEquipment(cold);
         if (moved > 0) world.Machines.Touch();
+    }
+
+    /// <summary>Re-dresses a character that put on something taken out of a storage or container (null: not re-dressed).</summary>
+    internal CharacterAssembly? Assembly { get; set; }
+
+    /// <summary>
+    /// The complete machine at <paramref name="site"/> when <paramref name="who"/> (one of the player's characters) may move items in and out of it from where it stands; posts
+    /// "Out of trading range." when it is too far. For the held item (<see cref="PlayerState.Held"/>).
+    /// </summary>
+    internal Machine? Reach(World world, CharacterId who, string site, out CharacterCold? cold)
+    {
+        cold = null;
+        if (Site(world, site) is not { Complete: true } built || Ensure(world, built) is not { } m || !Near(world, who, built, out var c)) return null;
+        cold = c;
+        return m;
     }
 
     void Put(World world, PutInMachine put)
@@ -860,7 +876,8 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             if (m.Storage is not { } storage || take.Index < 0 || take.Index >= storage.Items.Count) return;
             // What does not fit stays in the storage.
-            if (InventoryCommands.MoveUnits(storage, storage.Items[take.Index], take.Count, root) > 0) world.Machines.Touch();
+            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn) > 0) world.Machines.Touch();
+            if (worn) Assembly?.RefreshEquipment(cold);
             return;
         }
         if (take.Slot == -2 && m.Craft is { } craft)

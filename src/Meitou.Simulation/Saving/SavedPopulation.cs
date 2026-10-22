@@ -238,7 +238,7 @@ internal static class SavedCharacters
         cold.Save.InWhat = cold.InWhat;
         // The body: the saved stats and medical state go to the body systems, the rest of the assembly (inventory, fighter) is made as for a new character.
         if (race is not null && stats is not null && medical is not null)
-            assembly.AttachSaved(cold, race, stats, medical, p.Record, p.Inventory ?? (p.Items.Count > 0 ? SavedKit.ToInventory(p.Items, data.Items, notes) : null));
+            assembly.AttachSaved(cold, race, stats, medical, p.Record, p.Inventory ?? (p.Items.Count > 0 ? SavedKit.ToInventory(p.Items, data.Items, notes, p.Record) : null));
         else if (race is not null)
             notes?.Add($"{platoonName}: {cold.Name} has no stats or medical state that could be read; it has no body in the world.");
         return world.Characters.Spawn(hot, cold, world.Tick);

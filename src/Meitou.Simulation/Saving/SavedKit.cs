@@ -17,14 +17,15 @@ public static class SavedKit
 
     /// <summary>
     /// The items as an inventory, at their saved sections and cells. Items whose record the game data lacks are left out and named in <paramref name="notes"/>. The main
-    /// grid is 8 wide and as tall as the saved items need, at least 10 (the vanilla screenshot's pocket grid, <b>Observed</b>, docs/game/ui-screens.md).
+    /// grid is the <paramref name="owner"/>'s (<see cref="ItemFactory.MainSize"/>: 8 x 10 for a person, the vanilla screenshot's pocket grid, <b>Observed</b>, docs/game/ui-screens.md),
+    /// as tall as the saved items need.
     /// </summary>
-    public static Inventory ToInventory(IReadOnlyList<SaveItem> items, ItemFactory factory, List<string>? notes = null)
+    public static Inventory ToInventory(IReadOnlyList<SaveItem> items, ItemFactory factory, List<string>? notes = null, GameRecord? owner = null)
     {
-        int height = Inventory.MainHeight;
+        var (width, height) = ItemFactory.MainSize(owner);
         foreach (var s in items)
             if (s.Section == "main" && factory.Info(s.BaseId) is { } info) height = Math.Max(height, s.Y + Math.Max(info.Height, 1));
-        var inventory = new Inventory(Inventory.MainWidth, height);
+        var inventory = new Inventory(width, height);
         Fill(inventory, items, factory, notes);
         return inventory;
     }

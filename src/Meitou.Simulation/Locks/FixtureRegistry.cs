@@ -544,9 +544,9 @@ public sealed class FixtureRegistry
     /// <summary>
     /// Frees a prisoner (Task_ReleasePrisoner, economy.md 11.5, <b>Observed</b>): the cage is unlocked and emptied, the state and sentence cleared; when the releaser's faction books
     /// bounties its entry and the jail's (the cage owner's) are erased. A player-faction prisoner gets "{1} has been released from prison.". The prisoner stays where it stands
-    /// (getting out of the cage is the caller's walk); <paramref name="announce"/> false: no message (a slave bought). False when the character is not imprisoned.
+    /// (getting out of the cage is the caller's walk). False when the character is not imprisoned.
     /// </summary>
-    public bool Release(World world, CharacterId prisoner, int releaserFaction = -1, CrimeSystem? crimes = null, bool announce = true)
+    public bool Release(World world, CharacterId prisoner, int releaserFaction = -1, CrimeSystem? crimes = null)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(prisoner, out int s) || table.Cold(s) is not { IsImprisoned: true } c) return false;
@@ -564,8 +564,8 @@ public sealed class FixtureRegistry
         }
         Clear(c);
         c.Escaped = false;
-        SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406ae170)
-        if (announce && c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
+        SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406add20, FUN_1406ae170)
+        if (c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
         return true;
     }
 
@@ -618,6 +618,9 @@ public sealed class FixtureRegistry
     /// </summary>
     public static void Enslave(World world, CharacterCold c, int owner) => SetSlave(world, c, 1, owner);
 
+    /// <summary>Clears a character's slave state and owner (state 0) without DA 53's "Free!" (a slave bought free, <c>FUN_1406add20</c>).</summary>
+    public static void ClearSlave(World world, CharacterCold c) => SetSlave(world, c, 0, -1);
+
     /// <summary><c>DA_TAG_ESCAPED_SLAVE</c> (25): the character becomes an escaped slave (state 2), keeping its owner (<c>FUN_140680560</c>).</summary>
     public static void TagEscaped(World world, CharacterCold c) => SetSlave(world, c, 2, c.SlaveOwner);
 
@@ -631,14 +634,8 @@ public sealed class FixtureRegistry
         if (shackles is null && c.SlaveState == 0) return;
         world.Bark(world.Characters.IdOf(slot), Loc.Tr("Free!"));
         world.EmitSound(SoundKind.Unlocked, slot, world.Characters.Next[slot].Position);
-        Unslave(world, c);
-    }
-
-    /// <summary>Clears the slave state and unlocks worn shackles, without a word (a slave bought, <c>FUN_1406add20</c>).</summary>
-    public static void Unslave(World world, CharacterCold c)
-    {
         SetSlave(world, c, 0, -1);
-        if (LockSystem.WornShackles(c)?.Lock is { } l) l.Locked = false;
+        if (shackles?.Lock is { } l) l.Locked = false;
     }
 
     /// <summary>

@@ -285,10 +285,10 @@ public class DialogueTests
 
     /// <summary>
     /// A slaver of the jail town's faction whose reply carries DA 42 (CHOOSE_SLAVES_BUYING) lists its caged slave at the formula price, trunc(20 + 15 + 10.4) x 100 (docs/game/economy.md
-    /// 12); buying it takes the money, frees it from cage and slavery and makes it the hero's squadmate.
+    /// 12); buying it takes the money and frees it from cage and slavery, without joining the hero's squad.
     /// </summary>
     [Fact]
-    public void Buying_a_caged_slave_lists_it_at_its_value_and_paying_frees_it_into_the_squad()
+    public void Buying_a_caged_slave_lists_it_at_its_value_and_paying_frees_it()
     {
         var data = ArrestTests.Town([
             Rec("slaver-c", FcsRecordType.CHARACTER, r => { r.Name = "Slaver"; r.References["dialogue"] = [Ref("trade-d")]; }),
@@ -340,17 +340,17 @@ public class DialogueTests
         Assert.Equal("Looking to trade?", dialogue.PublishConversation()!.Text);
         world.Commands.Enqueue(new DialogueChoice(0) { Tick = world.Tick });
         world.RunTicks(2);
-        var list = dialogue.PublishConversation()!;
-        Assert.Equal("Buying Slaves", list.Text);
-        Assert.Equal(["Slave (c.4,500)", "[Leave]"], list.Choices);
+        var window = dialogue.PublishCharacterTrade()!;
+        Assert.Equal("Buying Slaves", window.Title);
+        Assert.Equal([(slave, 4500L)], window.Rows.Select(r => (r.Character, r.Price)));
 
-        world.Commands.Enqueue(new DialogueChoice(0) { Tick = world.Tick });
+        world.Commands.Enqueue(new ConfirmCharacterTrade([slave]) { Tick = world.Tick });
         world.RunTicks(2);
-        Assert.Equal(["[Leave]"], dialogue.PublishConversation()!.Choices);   // shown again, empty
+        Assert.Null(dialogue.PublishCharacterTrade());
         Assert.Equal(5500, world.Player.Money);
-        Assert.Equal((0, false, true), (sc.SlaveState, sc.IsImprisoned, sc.IsPlayer));
+        Assert.Equal((0, false, false), (sc.SlaveState, sc.IsImprisoned, sc.IsPlayer));
         Assert.False(cage.Lock!.Locked);
-        Assert.Contains(slave, players.Members);
+        Assert.DoesNotContain(slave, players.Members);
     }
 
     /// <summary>The hero walks 300 up to the villager and talks twice (rich, buying; then plain), pinned in <see cref="GoldenHashTests"/>.</summary>

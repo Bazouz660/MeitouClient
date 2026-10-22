@@ -31,6 +31,8 @@ public interface IDialogueSource
 {
     ConversationView? PublishConversation();
     DialogueRequest? PublishRequest();
+    /// <summary>The open character trading window (DA 41 / 42; null: none).</summary>
+    CharacterTradeView? PublishCharacterTrade() => null;
     /// <summary>The character answers the player's Talk (it has event-1 dialogue, and with <paramref name="talker"/> given, a line of it passes now).</summary>
     bool CanTalk(World world, int slot, CharacterId? talker = null);
     /// <summary>The lines on show over characters' heads (speech bubbles).</summary>
@@ -138,6 +140,12 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                     End(world);
                     CancelApproach(world);
                     break;
+                case ConfirmCharacterTrade confirm:
+                    ConfirmTrade(world, confirm.Selected);
+                    break;
+                case CloseCharacterTrade:
+                    characterTrade = null;
+                    break;
                 case DialogueEvent e:
                     if (e.Dialogue is { } id) { if (dialogue.Node(id) is { IsRoot: true } root) StartBubbles(world, e.Npc, e.Target, root, e.Event); }
                     else if (Settings.AmbientEvents) Fire(world, e.Npc, e.Target, e.Event);
@@ -152,6 +160,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     public void SlowWorld(World world)
     {
         ExpireSpeech(world);
+        KeepCharacterTrade(world);
         if (bubbles.Count > 0) StepBubbles(world);
         if (Settings.AmbientEvents && world.Tick % Settings.AmbientEveryTicks == 0) { SeeOthers(world); SeeGettingUp(world); }
         if (approaches.Count > 0) StepApproaches(world);
@@ -307,7 +316,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     void Choose(World world, Conversation c, int index)
     {
         if ((uint)index >= (uint)c.Choices.Count) return;
-        if (tradingList is not null) { ChooseTrading(world, c, index); return; }
+        if (bailList is not null) { ChooseBail(world, c, index); return; }
         var (reply, text) = c.Choices[index];
         DialogueNode? from = c.Line;
         if (reply is not null)
@@ -335,14 +344,15 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (open is not { } c) return;
         open = null;
         view = null;
-        if (tradingList is not null) { tradingList = null; Release(world, c.Npc); return; }   // a trading list closing: the conversation was counted already
+        if (bailList is not null) { bailList = null; Release(world, c.Npc); return; }   // the bail list closing: the conversation was counted already
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
         if (world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
         // An arrest the conversation started (DA 29, 30) keeps the guard held.
         if (Arrests?.Arrests.Any(a => a.Guard == c.Npc) != true) Release(world, c.Npc);
-        OpenTrading(world);
+        OpenBail(world);
+        OpenCharacterTrade(world);
     }
 
     void MarkUsed(World world, Conversation c, DialogueNode line)
@@ -360,6 +370,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     internal void RefreshView(World world)
     {
+        RefreshCharacterTrade(world);
         if (open is not { } c) { view = null; return; }
         view = new ConversationView(c.Npc, c.Player, c.Speaker, NameOf(world, c.Speaker.IsNone ? c.Npc : c.Speaker), NameOf(world, c.Player), c.Text,
             [.. c.Choices.Select(x => x.Text)], [.. c.Log], world.Player.Money);

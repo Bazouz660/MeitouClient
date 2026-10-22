@@ -90,7 +90,7 @@ sealed class TitleBattle : IDisposable
             }).ToArray();
             list.Add(new CharacterInstance(long.MinValue + 2 + i, c.Appearance, position,
                 Meitou.Engine.Time.Interp.LerpAngle(before.Yaw, c.Yaw, alpha), poses)
-                { Held = c.Held, Scale = c.Scale * DisplayScale, FullRateAnimation = true });
+                { WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, Shots = c.CrossbowShots, Scale = c.Scale * DisplayScale, FullRateAnimation = true });
         }
     }
 

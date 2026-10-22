@@ -31,10 +31,14 @@ public sealed record MoveJob(CharacterId Character, int From, int To) : SimComma
 public sealed record PutInMachine(CharacterId Character, InventoryItemToken Item, string Site, int Slot, int X = 0, int Y = 0, int Count = 0) : SimCommand;
 
 /// <summary>
-/// A character takes from a machine: <paramref name="Slot"/> -2 the output's items, k the items of input k, -1 the storage item at <paramref name="Index"/>; into its own <c>main</c> grid
-/// (or <paramref name="Section"/> "backpack_content") at the first free cells. <paramref name="Count"/> above 0 takes at most that many units, 0 all.
+/// A character takes from a machine: <paramref name="Slot"/> -2 the output's items, k the items of input k, -1 the storage item at <paramref name="Index"/>; into its inventory where they first
+/// fit (a storage item as the right click's move, <see cref="InventoryCommands.MoveInto"/>: its open bag first with <see cref="BagFirst"/>). <paramref name="Count"/> above 0 takes at most that
+/// many units, 0 all. Dragging goes through the held item (<see cref="LiftItem"/>).
 /// </summary>
-public sealed record TakeFromMachine(CharacterId Character, string Site, int Slot, int Index = 0, string Section = "main", int Count = 0) : SimCommand;
+public sealed record TakeFromMachine(CharacterId Character, string Site, int Slot, int Index = 0, int Count = 0) : SimCommand
+{
+    public bool BagFirst { get; init; }
+}
 
 /// <summary>Queues a research (paying its cost from the research benches when it was never paid).</summary>
 public sealed record QueueResearch(string Research) : SimCommand;

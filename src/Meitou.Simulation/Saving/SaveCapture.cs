@@ -71,6 +71,8 @@ public static partial class SaveCapture
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(data);
         options ??= new SaveCaptureOptions();
+        // The item on the mouse is not saved: it goes back into its window first (docs/game/ui-screens.md section 6 "Holding an item").
+        world.ReturnHeldItem();
 
         var builder = prepared ?? PrepareBase(data, loaded, options);
         var game = builder.Game;

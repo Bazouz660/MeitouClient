@@ -54,17 +54,20 @@ public sealed class Inventory(int width, int height)
     /// <summary>A backpack's contents: the CONTAINER's <c>stackable bonus minimum</c> and <c>stackable bonus mult</c> (1 and 1 for a character's own grid), see <see cref="LimitOf"/>.</summary>
     public int StackBonusMinimum { get; init; } = 1;
     public float StackBonusMult { get; init; } = 1;
+    /// <summary>A storage limited to listed items (a resource store's <c>storage limit</c>): its stacks start from 1 instead of the record's <c>stackable</c> (<see cref="LimitOf"/>).</summary>
+    public bool Limited { get; init; }
 
     /// <summary>
-    /// How many units of <paramref name="item"/> one cell of this inventory holds: its <see cref="ItemInstance.StackLimit"/>, with this inventory's bonus applied
-    /// (<see cref="ItemInfo.StackLimitIn"/>; a bag with mult 5 holds five of an item that does not stack elsewhere, <b>Observed</b>); 1 for the types that never stack.
+    /// How many units of <paramref name="item"/> one cell of this inventory holds (<c>FUN_1407466b0</c>, <b>Observed</b>): its <see cref="ItemInstance.StackLimit"/> (1 in a
+    /// <see cref="Limited"/> storage), with this inventory's bonus applied (<see cref="ItemInfo.StackLimitIn"/>; a bag with mult 5 holds five of an item that does not stack elsewhere,
+    /// <b>Observed</b>); 1 for the types that never stack (<see cref="InventoryCommands.NeverStacks"/>).
     /// </summary>
     public int LimitOf(ItemInstance item)
     {
-        if (item.Type is FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.MAP_ITEM or FcsRecordType.CROSSBOW or FcsRecordType.LIMB_REPLACEMENT)
-            return 1;
-        if (StackBonusMinimum == 1 && StackBonusMult == 1) return Math.Max(item.StackLimit, 1);
-        return ItemInfo.StackLimitIn(item.StackLimit, StackBonusMinimum, StackBonusMult);
+        if (InventoryCommands.NeverStacks(item.Type)) return 1;
+        int start = Limited ? 1 : item.StackLimit;
+        if (StackBonusMinimum == 1 && StackBonusMult == 1) return Math.Max(start, 1);
+        return ItemInfo.StackLimitIn(start, StackBonusMinimum, StackBonusMult);
     }
 
     /// <summary>
@@ -83,14 +86,24 @@ public sealed class Inventory(int width, int height)
         return item.Buyback is not null && (TopUp(this, item, true) || (bag is not null && TopUp(bag, item, true)));
     }
 
-    /// <summary>Moves units of <paramref name="item"/> into stacks of <paramref name="into"/> with room left (<paramref name="dropReceipt"/>: plain stacks too); true when none are left.</summary>
-    static bool TopUp(Inventory into, ItemInstance item, bool dropReceipt)
+    /// <summary>
+    /// The original's auto-add into one section (<c>FUN_14074c8b0</c>): tops up the stacks of <paramref name="section"/> first, then takes the first free cells row by row from the top, left to
+    /// right, a full stack per cell. True when every unit found a place; what did not fit stays in <paramref name="item"/>.
+    /// </summary>
+    public bool AddTo(string section, ItemInstance item) => TopUp(this, item, false, section) || Place(this, section, item);
+
+    /// <summary>
+    /// Moves units of <paramref name="item"/> into stacks of <paramref name="into"/> with room left (of <paramref name="section"/>, else of its grids; <paramref name="dropReceipt"/>:
+    /// plain stacks too); true when none are left.
+    /// </summary>
+    static bool TopUp(Inventory into, ItemInstance item, bool dropReceipt, string? section = null)
     {
         int limit = into.LimitOf(item);
         if (limit <= 1) return false;
         foreach (var other in into.Items)
         {
-            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null || other.Section is not ("main" or "backpack_content")) continue;
+            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Contents is not null
+                || (section is null ? other.Section is not ("main" or "backpack_content") : other.Section != section)) continue;
             var (kept, coming) = (other.Buyback, item.Buyback);
             if (kept is null ? coming is not null && !dropReceipt : coming is null || !kept.Joins(coming)) continue;
             int move = Math.Min(limit - other.Quantity, item.Quantity);

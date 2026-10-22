@@ -65,8 +65,8 @@ its slot +0x260 (meanings **Unknown**). Flagged: the owners must not be enemies 
 when the source is a building (class 0). Same owner: always allowed. **Unknown**: which windows the three drop callers flag; whether take-all uses the check.
 
 Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 200 of the building (the sim has no bounds
-radius), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. No faction or
-floor test, no sound.
+radius), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. A held item given to a
+character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRange` 60 out of a non-player window. No faction or floor test, no sound (`gui_notrade` is in no bank, [audio](../audio.md)).
 
 ### Who trades
 
@@ -357,11 +357,11 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
 
 ### 12. Slaves, prisoners, animals
 
-A slave's `buyValue` (`FUN_1406751f0`, **Observed**) is `clamp(trunc(strength + attack + dexterity * k) * RACE buy value, 1000, 20000)`,
-where `strength` = `CharStatsAnimal::vfunc_2`'s value (stat at `+0x80` times `CharStats+0x34`; `k` = `CharStats+0x34`), `attack` =
-the melee-attack stat (`+0x120`), `dexterity` = `+0x88`, with the stat offsets from [character-stats.md](character-stats.md).
-RACE `buy value` is 100 for most races (27 of 53 records); other values in the data: 400 x8, 10 x4, 50 x3, 75 x2, 200 x2, 250 x2,
-1000 x2, 0 x2, 300 x1 (**Verified** by probe).
+The slave value `buyValue` (`FUN_1406751f0`, **Observed**; [expression reference](#expression-reference)): `S` = `CharStatsAnimal::vfunc_2`'s value (the strength stat
+`+0x80` times `k`), `attack` = the melee-attack stat (`+0x120`), `D` = the dexterity stat (`+0x88`), `k` = `CharStats+0x34` (1 for people, an animal's age), stat offsets
+from [character-stats.md](character-stats.md). RACE `buy value` is 100 for most races (27 of 53 records); other values in the data: 400 x8, 10 x4, 50 x3, 75 x2, 200 x2,
+250 x2, 1000 x2, 0 x2, 300 x1 (**Verified** by probe). fcs.def gives it default 100, "percentage of normal value when bought or sold as a slave" (**Verified**); whether
+the exe scales it at load is **Unknown** (the formula is read as multiplying the stored value).
 
 | Window | Class | Price (**Observed**) |
 | --- | --- | --- |
@@ -370,16 +370,27 @@ RACE `buy value` is 100 for most races (27 of 53 records); other values in the d
 | Buying an animal | `CharacterTrading_AnimalBuying` `FUN_1406a9440` | override or 14000, times `(growth + 0.1)` where `growth` = the animal's `vfunc 0x398` (age/maturity 0..1) |
 | Paying bail | `CharacterTrading_PrisonerBailout` | section 11.5 |
 
-`k` is 1 for every humanoid ([animals](animals.md), slot 0x398). The windows are opened by the dialogue effects (`FUN_140680560`, **Observed**), never at the speaker
-itself; val0 is the override (used when above 0). Their confirm functions apply per chosen character, then move the summed price once:
+The override is the dialogue effect's val0 when it is 1 or more. **Slave windows** (DA 41 `CHOOSE_SLAVES_SELLING` / 42 `CHOOSE_SLAVES_BUYING`, `FUN_140680560`,
+**Observed**): the slaver is the dialogue's speaker, the customer its target (the player character); nothing happens when they are the same. Both open the
+`CharacterTradingWindow` (`FUN_14072a880`, one at a time: opening one closes the previous; layout in [ui-screens 6](ui-screens.md#6-inventory-trade-dialogue-build)) with a handler
+holding the slaver, the customer, the character list and val0.
+- **Selling** (41, title "Selling Slaves", confirm "Sell"): the members of the customer's squad that are not dead and within 300 units (3D) of the slaver, the customer
+  included; no slave or prisoner test. A row's first panel is ("Name:", name) and ("WARNING: Character will become a slave!", ""), the pair added 5 times in a loop (a quirk;
+  Meitou shows it once); the second is empty. Confirm (`FUN_1406a7740`), each ticked character: made the slaver's slave (slave state 1, "{1} has been enslaved" for a free
+  player-faction character, the owner set, AI order 187 obedient slave toward the owner, SHACKLES made and worn when it wears no locked armour); its faction and squad are
+  kept (it stays in the player's squad, uncaged); its squad remembers the customer with long-term tag 5 MY_CAPTOR; relations toward the player's faction: the slaver's +4,
+  its own -4. Then the total is **added** to the player faction's money; the slaver's money is not reduced.
+- **Buying** (42, title "Buying Slaves", confirm "Buy"): every character in the slaver's owned set that is a slave (state 1) and not dead; no radius, cage or count limit
+  (the set is per owner object, **Inferred**). Panels: Strength, Dexterity, Toughness, Melee Attack, Melee Defence | Labouring, Farming, Cooking, Engineering, Medic (stat
+  values). Confirm (`FUN_1406add20`), each ticked character not dead: its price added to the total; no longer owned; split from a squad of more than one into a new squad of
+  its own faction (it does not join the player); event 51 BOUGHT_ME_FROM_SLAVERY at it with the customer as target; its cage unlocked; slave state 0; it leaves its cage or
+  restraint; AI reset; its locked shackles unlocked (still worn); its squad remembers the customer with tag 3 FREED_ME; task 133 GET_OUT_OF_CAGE_LEGIT; relations toward the
+  player's faction: the slaver's +1, its own +4. Then the total is taken from the player faction's money (refused without deduction when it has less; the result is ignored);
+  nothing is paid to the slaver.
+- The window's gate (`FUN_1407281c0`) makes such a shortfall unreachable: confirm is enabled only with a row ticked and the total within the buyer's money (the slaver's when
+  selling, the player's when buying).
 
-- **Selling** (DA 41): the list is the living members of the talker's platoon (the talker too) within 300 of the speaker. Confirm (`vfunc_0` `FUN_1406a7740`): the
-  character is enslaved to the speaker (`FUN_14032e590`: slave state 1, owner the speaker's faction, put in SHACKLES or SHACKLES-BODY when not caged); a memory tag 5 on
-  its platoon; relations of the speaker's faction with the player's +4, of the character's faction -4; the player's purse gets the total (the slaver's purse is not touched).
-- **Buying** (DA 42): the list is the speaker's platoon's slave list, those in slave state 1 and alive. Confirm (`FUN_1406add20`): the slave joins the buyer's platoon
-  (`FUN_14032e430`), its slave state cleared, shackles unlocked, its cage unlocked and released flag set, it says event 51 `BOUGHT_ME_FROM_SLAVERY` to the buyer and gets
-  133 `GET_OUT_OF_CAGE_LEGIT`; a memory tag 3; relations of the speaker's faction with the player's +1 (and of the slave's, by then the player's, +4); the player pays.
-- "Selling Slaves" and "Buying Slaves" are the window titles; selling shows "WARNING: Character will become a slave!".
+Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
 
 ## Unknowns
 
@@ -408,7 +419,6 @@ itself; val0 is the override (used when above 0). Their confirm functions apply 
   `(0,100,0)`) is read for clothing, armour and weapon entries (`FUN_140956ba0` / `FUN_1409555d0` read them; "val0 is relative
   chance" per the editor, but 472 entries have (0, 100, 0)). It follows the NPC clothing rule in [characters.md](../characters.md)
   that quantity 0 never spawns, but this was not re-verified for shops.
-- **The slave price override** (the fifth argument of the slave windows) and where it comes from.
 - **The artifact placement** (`ArtifactTown`, which squad carries which artifact) beyond the six field readers.
 - **How a pending crime's timer counts down** (`+0x90`; set by `FUN_140851f40` / `FUN_140852e10`, the decrement was not found), and so how long an unseen crime stays pending.
 - **Whether CHARACTER `money min` / `money max`** exist in the data and are unused (the editor lists `money`; not found
@@ -441,7 +451,7 @@ itself; val0 is the override (used when above 0). Their confirm functions apply 
 - Stock size and money (`FUN_14095ab10`, squad shops; `FUN_14095b210`, building shops; **Observed**, decompile and: `fill = vendors fill total amount`; `wealth = clamp(FUN_1402dd530(faction), 0.2, 1.0)`; `n = round( uniform(0.8, 1.2) * fill * wealth )`; `money = trunc( clamp(0.25 * stockValue, 3000, 25000) * wealth )`; `money = trunc( (vendor money + r) * wealth )`
 - Restock: `+0x58 == 0`
 - Pending crimes, witnesses and the cage sentence: `+0x34 == 8`
-- Slaves, prisoners, animals: `buyValue = clamp( trunc( strength * k + attack + dexterity * k ) * RACE buy value, 1000, 20000 )`
+- Slaves, prisoners, animals: `buyValue = clamp( trunc( S + attack + D * k ) * RACE buy value, 1000, 20000 )`
 
 ## Buyback during an open trade
 

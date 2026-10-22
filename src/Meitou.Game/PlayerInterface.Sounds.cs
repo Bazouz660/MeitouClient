@@ -39,7 +39,7 @@ sealed partial class PlayerInterface
             soundScreens.Remove(id);
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
+                case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
                 case "stats": Sound("Stats_Close"); break;
                 case "overview": if (soundOverviewTab == 0) Sound("Map_Close"); else if (soundOverviewTab == 2) Sound("Tech_Close"); soundOverviewTab = -1; break;
                 case "menu": Sound("General_Click"); break;
@@ -50,7 +50,7 @@ sealed partial class PlayerInterface
             if (!soundScreens.Add(id)) continue;
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
+                case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
                 case "stats": Sound("Stats_Open"); break;
                 case "build": Sound("Building_Button"); break;
                 case "menu": Sound("General_Click"); break;
@@ -180,8 +180,6 @@ sealed partial class PlayerInterface
         if (UiSound is null) return;
         switch (command)
         {
-            case Meitou.Simulation.Items.MoveInventoryItem move: Sound("Item_Drop", item: move.Item.Record); return;
-            case Meitou.Simulation.Items.DropInventoryItem drop: Sound("Item_Drop", item: drop.Item.Record); return;
             case Meitou.Simulation.Trading.BuyItem buy: Sound("Sell_Item", item: buy.Item.Record); return;
             case Meitou.Simulation.Trading.SellItem sell: Sound("Sell_Item", item: sell.Item.Record); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).

@@ -130,6 +130,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         return null;
     }
     public bool Contains(Vector2 p) => Pick(p) is not null;
+    /// <summary>The screens as the last <see cref="Arrange"/> laid them out (what <see cref="HitTest"/> picks from).</summary>
+    public IReadOnlyList<MyGuiScreenFrame> LastFrame => frame;
     public (string Screen, UiControl Control)? HitTest(Vector2 p) => Pick(p);
     public bool PointerDown(Vector2 p)
     {

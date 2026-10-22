@@ -13,7 +13,8 @@ namespace Meitou.Game;
 /// <list type="bullet">
 /// <item>Selecting a complete machine of the player's opens its window beside the inventory: a well or farm the original's <c>Kenshi_GenericBuildingWindow</c> (inputs in <c>in1</c> / <c>in2</c>,
 /// the output in <c>out</c>, their bars and texts), a research bench <c>Kenshi_InventoryResearchWindow</c> (its storage grid; the RESEARCH button opens the overview's research tab).
-/// Items are dragged between the windows and the selected character's inventory (<see cref="PutInMachine"/>, <see cref="TakeFromMachine"/>).</item>
+/// Items are held with the mouse between the windows and the selected character's inventory (PlayerInterface.Inventory.cs), or moved with a right click (<see cref="PutInMachine"/>,
+/// <see cref="TakeFromMachine"/>).</item>
 /// <item>The site menu has Operate for a machine characters work; a quick right click on one gives it.</item>
 /// <item>The overview's research tab: TYPES lists the categories, BLUEPRINTS the research of the selected category that can be queued (a click queues it), QUEUE the queue (a click
 /// takes one off), DESCRIPTION the hovered or last clicked research. The original's row widgets and colours are <b>Unknown</b>; Meitou draws plain text rows.</item>
@@ -23,8 +24,6 @@ sealed partial class PlayerInterface
 {
     /// <summary>The site whose machine window is shown (null: none), and a site whose window the player closed (not reopened until the selection changes).</summary>
     string? shownMachine, closedMachine;
-    /// <summary>An item being dragged out of a machine window: its site, slot (-2 output, k input, -1 storage) and storage index.</summary>
-    (string Site, int Slot, int Index, string Record, string Name, int Quantity, int Width, int Height, Vector2 Grab)? machineDrag;
     string? researchCategory, researchFocus;
 
     MachineSnapshot? Machine(string? site) => site is null ? null : session.CurrentSnapshot.Machines.FirstOrDefault(m => m.Site == site);
@@ -52,14 +51,12 @@ sealed partial class PlayerInterface
             faithfulScreens.Close("storage");
             shownMachine = null;
             storageWithInventory = null;
-            machineDrag = null;
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
         {
             if (shown.IsContainer) Say(new Meitou.Simulation.Items.CloseContainer { Tick = session.World.Tick });
             closedMachine = shownMachine;
             shownMachine = null;
-            machineDrag = null;
             return;
         }
         if (m is null || shownMachine == m.Site || closedMachine == m.Site) return;
@@ -153,7 +150,7 @@ sealed partial class PlayerInterface
             var area = slot.Bounds;
             foreach (var item in grid.Items)
             {
-                if (machineDrag is { Slot: -1 } d && d.Index == item.Index) continue;
+                if (Lifted(ItemOwner.AtSite(m.Site), 1000 + item.Index)) continue;
                 AddItemCell(controls, $"machine-item-{item.Index}",
                     new(area.X + item.X * area.Width / grid.Width, area.Y + item.Y * area.Height / grid.Height, item.Width * area.Width / grid.Width, item.Height * area.Height / grid.Height),
                     item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index,
@@ -163,7 +160,7 @@ sealed partial class PlayerInterface
         }
         void Slot(string name, MachineSlotView view, int code)
         {
-            if (view.Count <= 0 || controls.FirstOrDefault(c => c.Name == name) is not { } slot || (machineDrag is { } d && d.Slot == code - 10)) return;
+            if (view.Count <= 0 || controls.FirstOrDefault(c => c.Name == name) is not { } slot || Lifted(ItemOwner.AtSite(m.Site), code)) return;
             var b = slot.Bounds;
             // The item at its own footprint, as the original draws it in a slot (a box of building material is 6 x 3 cells), centred in the slot.
             float cell = InventoryCell, w = view.Width * cell, h = view.Height * cell;
@@ -171,64 +168,12 @@ sealed partial class PlayerInterface
         }
         for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", m.Inputs[k], 10 + k);
         if (m.Output is { } output) Slot("out", output, 8);
-        else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && machineDrag is not { Slot: -2 })
+        else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && !Lifted(ItemOwner.AtSite(m.Site), 8))
         {
             var ob = outSlot.Bounds;
             float side = MathF.Min(ob.Width, ob.Height);
             AddItemCell(controls, "machine-out", new(ob.X, ob.Y, side, side), made.Record, made.Material, made.Name, made.Quantity, null, "MachineItem", 8, outSlot.Clip);
         }
-    }
-
-    /// <summary>A press on an item of the machine window starts its drag (true: taken).</summary>
-    bool MachinePointerDown(UiControl control, Vector2 grab)
-    {
-        if (!control.Properties.TryGetValue("MachineItem", out var raw) || Machine(shownMachine) is not { } m) return false;
-        int code = int.Parse(raw, CultureInfo.InvariantCulture);
-        if (code >= 1000)
-        {
-            if (m.Storage?.Items.FirstOrDefault(i => i.Index == code - 1000) is not { } item) return false;
-            machineDrag = (m.Site, -1, item.Index, item.Record, item.Name, item.Quantity, item.Width, item.Height, grab);
-            Sound("Item_Lift", item: item.Record);
-            return true;
-        }
-        int slot = code - 10;
-        if (slot == -2 && m.Craft is { Done: [var crafted, ..] })
-        {
-            machineDrag = (m.Site, -2, 0, crafted.Record, crafted.Name, crafted.Quantity, 1, 1, grab);
-            Sound("Item_Lift", item: crafted.Record);
-            return true;
-        }
-        MachineSlotView? view = slot == -2 ? m.Output : slot >= 0 && slot < m.Inputs.Count ? m.Inputs[slot] : null;
-        if (view is not { Count: > 0 } v) return false;
-        machineDrag = (m.Site, slot, 0, v.Item, v.Name, v.Count, 1, 1, grab);
-        Sound("Item_Lift", item: v.Item);
-        return true;
-    }
-
-    /// <summary>A machine item let go over the selected character's inventory or bag: taken into it.</summary>
-    void MachineDrop((string Site, int Slot, int Index, string Record, string Name, int Quantity, int Width, int Height, Vector2 Grab) d, string screen)
-    {
-        if (screen is not ("inventory" or "bag") || InventoryOwner() is not { } lead) return;
-        Say(new TakeFromMachine(lead.Id, d.Site, d.Slot, d.Index, screen == "bag" ? "backpack_content" : "main") { Tick = session.World.Tick });
-    }
-
-    /// <summary>A character's item let go over a machine window: into the input slot under it (or the first input taking it), or the bench's grid cell.</summary>
-    bool PutDrop(Vector2 p, string screen, CharacterId character, InventoryItemView item, InventoryItemToken token, Vector2 grab)
-    {
-        if (screen is not ("building" or "bench" or "storage") || Machine(shownMachine) is not { } m) return false;
-        if (screen is "bench" or "storage")
-        {
-            if (m.Storage is { } grid && DropCell(p, screen, "backpack_content", grid.Width, grid.Height, grab, item.Width, item.Height, grid.Items.Select(i => (i.X, i.Y, i.Width, i.Height)), out int x, out int y))
-                Say(new PutInMachine(character, token, m.Site, -1, x, y) { Tick = session.World.Tick });
-            return true;
-        }
-        var controls = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent).First(f => f.Id == screen).Controls;
-        int slot = -1;
-        for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++)
-            if (controls.FirstOrDefault(c => c.Name == $"Input{k + 1}Panel") is { } panel && panel.Bounds.Contains(p.X, p.Y)) slot = k;
-        if (slot < 0 || m.Inputs[slot].Item != item.Record) slot = m.Inputs.ToList().FindIndex(i => i.Item == item.Record);
-        if (slot >= 0) Say(new PutInMachine(character, token, m.Site, slot) { Tick = session.World.Tick });
-        return true;
     }
 
     void MachineAction(MyGuiEvent e)
