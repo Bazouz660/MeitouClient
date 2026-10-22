@@ -100,12 +100,10 @@ sealed partial class GameHost
         bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") == "1";
         bool metalWater = Environment.GetEnvironmentVariable("MEITOU_METAL_WATER") == "1";
         bool metalShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_SHADOWS") == "1";
-        bool metalTerrainTextures = Environment.GetEnvironmentVariable("MEITOU_METAL_TERRAIN_TEXTURES") == "1";
         if (!metalFoliage) Console.WriteLine("metal     foliage disabled (safe mode; MEITOU_METAL_FOLIAGE=1 to test)");
         if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (safe mode; F10 or MEITOU_METAL_CLOUD_SHADOWS=1)");
         if (!metalWater) Console.WriteLine("metal     water disabled (safe mode; MEITOU_METAL_WATER=1 to test)");
         if (!metalShadows) Console.WriteLine("metal     shadows disabled (safe mode; F10 or MEITOU_METAL_SHADOWS=1)");
-        if (!metalTerrainTextures) Console.WriteLine("metal     terrain textures disabled (safe mode; MEITOU_METAL_TERRAIN_TEXTURES=1 to test)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -315,7 +313,8 @@ sealed partial class GameHost
         }
         TerrainTextures? terrainTextures = null;
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
-        if (metalTerrainTextures && !o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
+        if (terrainTexturesOff) Console.WriteLine("metal     terrain textures disabled (MEITOU_METAL_NO_TERRAIN_TEXTURES=1)");
+        if (!o.NoTextures && !terrainTexturesOff && scene.Database is { } textureDb)
         {
             terrainTextures = TerrainTextures.Create(ctx, install, textureDb, assets, source: TerrainTextures.Prepare(install, textureDb));
             terrain.SetTextures(terrainTextures);
@@ -825,6 +824,24 @@ sealed partial class GameHost
         // The streamer settles the fine heights and biome maps round the camera before the first frame draws (the still's camera does not move).
         streamer?.Settle(camera.Eye);
         if (streamer is { } settled) Console.WriteLine($"metal     {settled.Describe()}");
+        // --fly-to with a still: walk the camera through the intervening windows before the picture, so the map-window
+        // recenter/upload path is exercised without needing an interactive flight.
+        if (o.Screenshot is not null && o.FlyToX is { } flyX && o.FlyToZ is { } flyZ)
+        {
+            var start = session.Camera.Current.Target;
+            const int Steps = 6;
+            for (int i = 1; i <= Steps; i++)
+            {
+                double t = i / (double)Steps;
+                float x = (float)(start.X + (flyX - start.X) * t), z = (float)(start.Z + (flyZ - start.Z) * t);
+                var view = session.Camera.Current;
+                session.Camera.Place(new Vector2(x, z), view.Yaw, view.Pitch, view.Distance);
+                ApplyCamera(session.Camera.Current);
+                streamer?.Settle(camera.Eye);
+                Console.WriteLine($"metal     fly-to {i}/{Steps}: {x:0}, {z:0}");
+            }
+            if (streamer is { } flown) Console.WriteLine($"metal     fly-to settled: {flown.Describe()}");
+        }
 
         var clock = Stopwatch.StartNew();
         double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;

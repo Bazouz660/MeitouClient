@@ -61,13 +61,13 @@ public sealed class MetalUploads : IGpuUploads
             ulong blockRows = (ulong)((region.Height + block - 1) / block);
             ulong bytesPerImage = bytesPerRow * blockRows;
             if ((ulong)data.Length < bytesPerImage) throw new ArgumentException($"the upload has {data.Length} bytes, the region needs {bytesPerImage}");
-            // Metal's blit takes the source row stride as the destination level's whole row, also for a sub-rectangle (the terrain's
-            // overlay and colour-map tiles): repack the rows with that stride and the tile's x offset.
+            // Metal's blit reads a source row from its start, then writes it at the destination origin. Repack a sub-rectangle
+            // into full-width rows with the tile at offset zero; adding region.X to the source as well would shift it twice.
             ulong levelWidth = (ulong)Math.Max(desc.Width >> level, 1), neededRow = ((levelWidth + (ulong)block - 1) / (ulong)block) * (ulong)texel;
             var blit = list.OpenBlit();
             if (bytesPerRow != neededRow || region.X != 0)
             {
-                ulong neededImage = neededRow * blockRows, xBytes = (ulong)(region.X / block) * (ulong)texel;
+                ulong neededImage = neededRow * blockRows;
                 var staged = Reserve(checked((int)neededImage), out ulong stagedOffset);
                 var dst = (byte*)staged.Contents + stagedOffset;
                 if (staged.Contents == IntPtr.Zero || dst is null) throw new InvalidOperationException($"no staging for {desc.Name} L{level}: {neededImage} bytes");
@@ -76,7 +76,7 @@ public sealed class MetalUploads : IGpuUploads
                 {
                     if (src is null) throw new InvalidOperationException($"no source for {desc.Name} L{level}: {data.Length} bytes");
                     for (ulong r = 0; r < blockRows; r++)
-                        Buffer.MemoryCopy(src + r * bytesPerRow, dst + (nint)(r * neededRow + xBytes), (long)neededRow - (long)xBytes, (long)bytesPerRow);
+                        Buffer.MemoryCopy(src + r * bytesPerRow, dst + (nint)(r * neededRow), (long)neededRow, (long)bytesPerRow);
                 }
                 blit.CopyFromBuffer(staged, stagedOffset, neededRow, neededImage,
                     new MTLSize { width = (ulong)region.Width, height = (ulong)region.Height, depth = 1 },
