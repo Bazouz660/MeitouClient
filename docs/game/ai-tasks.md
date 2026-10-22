@@ -657,9 +657,12 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 
 **Observed** (target finders named; TaskData effects lead the planner to the task that acts them out):
 
-- **37 Wandering town** (`FUN_140999a60`): keeps a target that is still a general node; else a random building of the character's town in its zone
-  (`FUN_1409fc6c0` over `FUN_1409fbb00`, a building filter **Unknown**), then a random node of type 1 (NODE_GENERAL) in it whose owner is unset or the
-  character's faction (`FUN_14038c2f0`); none: 0. Effect `atNode`, acted out by 51 Stand at node.
+- **37 Wandering town** (`FUN_140999a60`): keeps a target that is still a general node; else one building drawn uniformly from the **public**
+  buildings of the character's town in the zone it stands in (`FUN_1409fc6c0` over `FUN_1409fbb00`: the zone's building list, Building vfunc 82, which
+  returns +0xc8, the `public day` flag, see [locks](locks.md)), then a random node of type 1 (NODE_GENERAL) in it whose owner is unset or the
+  character's faction (`FUN_14038c2f0`); none (no public building, or the drawn one has no such node): 0. Effect `atNode`, acted out by 51 Stand at
+  node. Vfunc 82 is false for some building kinds (1, 0x22) under a player-side condition (**Unknown**); the flag's default on buildings without a
+  resident template is **Unknown**.
 - **47 general node / 20 Shopkeeper** (`FUN_14099f280` / `FUN_14099e920`): a node of that type in the home building (owner unset or own faction),
   reserved; guard posts fall back to general nodes. A node marker faces along its local −X: for 784 of 990 shopkeeper nodes in base-game town interiors,
   yaw − 90° points at the nearest Shop Counter's side the node stands on (**Verified**, layouts placed by `TownBuildings`, compared with each counter's
@@ -668,9 +671,16 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   (`FUN_1409fc1b0`); factor 1 for a BF_SHOP building, 0.4 otherwise. Then 119 (`Task_Shopping`) at it.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating
   machine, i.e. using furniture there; with no free one the plan fails and another goal wins.
-- **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6): its town is the squad's home town, else the nearest friendly one
-  (`FUN_1402916b0`); its bar a random one of the town's buildings of designation 3 (BD_BAR, the residents' template's `building designation`), with a
-  free spot reserved there; with none it settles for something else (`FUN_140292de0`, **Unknown**).
+- **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6; **Observed**): its town is the squad's home town, else the nearest friendly one
+  (`FUN_1402916b0`); only while that town's zone is loaded. The town's buildings of designation 3 (BD_BAR, the residents' template's
+  `building designation`; town vfunc `0x2d0`) are scanned cyclically from a random one; the first with a free **table** wins, that table is
+  reserved for the squad in a global table→squad map (`DAT_14212ddb8`) and becomes the package's target. A town with no bar takes a free table
+  outdoors in it; all bars full: no target. The table search (`FUN_140292de0`, `BuildingFinder_TableToSitAt` vfunc 5) keeps furniture of
+  function mask 0x10810 (BF_REFINERY, BF_CORPSE_DISPOSAL, BF_TABLE) in the town, of a faction not hostile to the squad's, inside the bar (or,
+  with no bar, inside no building), in a public building (vfunc 82) and not reserved. The outdoors variant (flag +0x151, BarOutdoors) skips the
+  bars and takes a free outdoor table. So a bar holds as many visiting squads as it has free tables.
+- **36 Patrolling town** (`Task_PatrolTown` slots 1-3, **Observed**): walks to its target's position (start, update and resume pass modes 0/1/2
+  to the mover `FUN_1405c6b30`); row 36 has no target finder, so where the target comes from is **Unknown**.
 - Building layouts' `is bar` / `is shop` are 0 on every exterior layout of the base game and mods checked (2 interior layouts set `is bar`, 9 `is shop`),
   so they do not mark bars and shops (**Verified** over the merged `interiors.level`).
 - **43 Staying home** (`FUN_1408cbc00`): furniture in the home whose BuildingFunction is in mask 0x2049a (bits MINE, RESEARCH, REFINERY, TRAINING,
@@ -689,7 +699,6 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   facing, turned round when that nearest one is behind it. With none found, the seat's facing. Layout stool rotations are arbitrary (Observed: the Hub's
   Storm House, up to 161° off their table).
 - **24 Wandering** (`FUN_140998040`): the nearest town; list A holds `atATown`, so it is dropped while in a town.
-- **36 Patrolling town**: `Task_PatrolTown`, behaviour **Unknown**.
 - **180 Man the gate** (`Task_ManTheGate` slot 2 `FUN_140342c50`, target `FUN_140338690`; **Observed**, disassembly): the gate is the
   task's target, else the Blackboard's home (`HOME_GATE`), else the town's gate nearest the character (town vfunc `0x308`), each only when it
   is a GatewayBuilding (vfunc `0x3d8`). The guard walks to its first door's point `+0x3bc` and turns along `+0x3bc - +0x3c8`. A door's
