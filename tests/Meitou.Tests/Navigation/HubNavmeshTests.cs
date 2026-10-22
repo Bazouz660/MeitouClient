@@ -65,8 +65,8 @@ public class HubNavmeshTests
     {
         Assert.SkipWhen(Load() is null, "Kenshi install not found");
         var (g, _) = Zone(West);
-        // 264 x 264 cells of the heightmap (the zone plus the margin), two triangles each.
-        Assert.Equal(264 * 264 * 2, g.Stats.TerrainTriangles + g.Stats.WaterTriangles);
+        // 132 x 132 quads of every second heightmap sample (the zone plus the margin), two triangles each.
+        Assert.Equal(132 * 132 * 2, g.Stats.TerrainTriangles + g.Stats.WaterTriangles);
         Assert.InRange(g.Stats.Buildings, 100, 200);
         Assert.True(g.Stats.PartsWithCollision > 100);
         Assert.True(g.Stats.WalkableTriangles > 500 && g.Stats.CuttingTriangles > 5000);
