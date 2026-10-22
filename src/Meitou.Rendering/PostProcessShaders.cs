@@ -703,10 +703,11 @@ static class PostProcessShaders
         // their and its own range, so edges gain no halo and flat areas no noise beyond what is there (an unsharp mask limited like CAS).
         vec3 sharpened(vec2 uv)
         {
-            ivec2 p = ivec2(uv * vec2(textureSize(uScene, 0)));
+            // Neighbours clamped to the picture: a fetch outside it is undefined (the border pixels repeat their own).
+            ivec2 size = textureSize(uScene, 0), last = size - 1, p = clamp(ivec2(uv * vec2(size)), ivec2(0), last);
             vec3 c = texelFetch(uScene, p, 0).rgb;
-            vec3 n = texelFetchOffset(uScene, p, 0, ivec2(0, -1)).rgb, s = texelFetchOffset(uScene, p, 0, ivec2(0, 1)).rgb;
-            vec3 w = texelFetchOffset(uScene, p, 0, ivec2(-1, 0)).rgb, e = texelFetchOffset(uScene, p, 0, ivec2(1, 0)).rgb;
+            vec3 n = texelFetch(uScene, ivec2(p.x, max(p.y - 1, 0)), 0).rgb, s = texelFetch(uScene, ivec2(p.x, min(p.y + 1, last.y)), 0).rgb;
+            vec3 w = texelFetch(uScene, ivec2(max(p.x - 1, 0), p.y), 0).rgb, e = texelFetch(uScene, ivec2(min(p.x + 1, last.x), p.y), 0).rgb;
             vec3 lo = min(c, min(min(n, s), min(w, e))), hi = max(c, max(max(n, s), max(w, e)));
             return clamp(c + uSharpen * (c - 0.25 * (n + s + w + e)), lo, hi);
         }
