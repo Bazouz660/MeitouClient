@@ -370,7 +370,14 @@ sealed partial class PlayerInterface
         int function = type == Meitou.Data.Fcs.FcsRecordType.ITEM ? record!.GetInt("item function") : 0;
         float unitWeight = t.Quantity > 0 ? t.Weight / t.Quantity : t.Weight;
         TooltipLine Row(string label, string value, TooltipTone valueTone = TooltipTone.Ink) => new("-" + label, value, TooltipTone.Ink, valueTone);
-        if (function == 3) lines.Add(new("[Food]", "", TooltipTone.Good));
+        if (function == 3)
+        {
+            // One unit's charges left, truncated, then the record's ingredients by name (", "-joined, empty for raw food); no leading hyphen.
+            lines.Add(new("[Food]", "", TooltipTone.Good));
+            lines.Add(new("Nutrition", ((int)t.Charges).ToString(CultureInfo.InvariantCulture) + " nu", TooltipTone.Ink, TooltipTone.Ink));
+            var ingredients = string.Join(", ", record!.GetReferences("ingredients").Select(r => RecordName?.Invoke(r.TargetStringId)).Where(n => n is { Length: > 0 }));
+            lines.Add(new("Ingredients", ingredients, TooltipTone.Ink, TooltipTone.Ink));
+        }
         else if (function == 15) lines.Add(new("Possibly Edible", "", TooltipTone.Good));
         else if (function == 13) lines.Add(new("[Book]", "", TooltipTone.Main));
         else if (function == 16) lines.Add(new("[Ammunition]", "", TooltipTone.Main));
