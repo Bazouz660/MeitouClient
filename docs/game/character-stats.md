@@ -288,6 +288,8 @@ replaced, 3 crushed) and the fitted item (holder `FUN_1400cd3f0`; **Verified** b
 - Meitou in play: fitted items sit in the inventory's `*_replace` sections (the limbs window), weigh nothing, are not traded and
   are saved only through MEDICAL_STATE `limbs`. Dropping a LIMB_REPLACEMENT whose `slot` is 50 + k on slot k fits it when limb k is a
   stump; dragging it out removes it. Whether the original also fits over a crushed limb is **Unknown** (Meitou refuses).
+- The limbs window draws an intact limb's slot in `Kenshi_InventorySlotSkin`'s `disabled` state (red tiles), a stump's or
+  prosthetic's in `normal` (**Observed**, user screenshot; a crushed limb's look is **Unknown**, Meitou disables it).
 
 | Slot | Fields | Stat numbers |
 | --- | --- | --- |

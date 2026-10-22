@@ -21,7 +21,9 @@ public enum CareKind { None, Treating, Resting }
 /// </summary>
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
     bool NeedsSplint = false, float KoTimer = 0);
-public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic);
+/// <summary>A body part the interface shows; <see cref="LimbSlot"/> as <see cref="Meitou.Data.Gameplay.Bodies.BodyPartTemplate.LimbSlot"/>, <see cref="Limb"/> whether it is a stump or a prosthetic.</summary>
+public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic, int LimbSlot = -1,
+    Bodies.LimbState Limb = Bodies.LimbState.Original);
 /// <summary>A line of the HUD's stats panel: the label, the value the character fights with and the value it would have unhurt (docs/game/ui-screens.md section 4).</summary>
 public readonly record struct HudStatLine(string Label, float Value, float Base);
 /// <summary>

@@ -211,6 +211,7 @@ sealed partial class PlayerInterface
         if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
         else ArrangeEquipmentGrid(controls, grid);
         if (id == "inventory") AddInventorySummary(controls, lead);
+        if (id == "limbs") DisableIntactLimbSlots(controls, lead);
         foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {
             if (inventoryDrag is { } drag && drag.Character == lead.Id && drag.Item.Index == item.Index) continue;
@@ -219,6 +220,20 @@ sealed partial class PlayerInterface
             if (item.Section == gridSection && columns > 0 && rows > 0) area = new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows);
             else area = new(area.X + item.X * InventoryCell, area.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell);
             AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
+        }
+    }
+    /// <summary>
+    /// A limb slot is drawn in its skin's disabled state (red) unless that limb is a stump or a prosthetic (the original's limbs window, user screenshot): only those take or give up
+    /// a prosthetic (<see cref="Meitou.Simulation.PlayerState"/>). Without the body parts (a character not selected) the slots stay as they are.
+    /// </summary>
+    static void DisableIntactLimbSlots(List<UiControl> controls, Meitou.Simulation.CharacterSnapshot lead)
+    {
+        if (lead.HealthParts.Count == 0) return;
+        for (int i = 0; i < controls.Count; i++)
+        {
+            int slot = Meitou.Simulation.Items.InventoryCommands.LimbSlotOf(controls[i].Name);
+            if (slot < 0 || lead.HealthParts.Any(p => p.LimbSlot == slot && p.Limb is Meitou.Simulation.Bodies.LimbState.Stump or Meitou.Simulation.Bodies.LimbState.Replaced)) continue;
+            controls[i] = controls[i] with { Properties = new Dictionary<string, string>(controls[i].Properties) { ["State"] = "disabled" } };
         }
     }
     readonly List<string> uiMessages = [];
