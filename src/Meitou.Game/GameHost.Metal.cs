@@ -526,9 +526,10 @@ sealed partial class GameHost
                     toggle.Set(value >= 0.5f);
             // The impostor atlas path is still corrupt on Metal: a saved "Far impostors" setting must not turn it back on.
             if (foliage is not null) foliage.DisableImpostors();
-            // The saved Cloud shadows toggle can re-enable the safe-mode suspect after the sky was made; keep it off until the
-            // black-terrain path is fixed, unless the diagnostic env explicitly asks for it.
+            // The saved Cloud shadows and Shadow distance settings can re-enable the safe-mode suspects after the sky and the
+            // shadow pass were made; keep both off until the black-terrain path is fixed, unless the diagnostic env asks.
             if (!metalCloudShadows) sky.CloudShadows = false;
+            if (!metalShadows) shadow.Enabled = false;
             if (openSettingsForStill) settings.Visible = true;
         }
         // The loading screen is backend-neutral: the same Kenshi layout, picture and tips the Vulkan host draws.
