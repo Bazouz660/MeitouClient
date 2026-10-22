@@ -63,7 +63,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     FoliageRenderer? ActiveFoliage => gpu is null ? hostFoliage : gpu.Foliage ?? hostFoliage;
     CharacterRenderer? ActiveCharacters => gpu is null ? hostCharacters : gpu.Characters ?? hostCharacters;
     WorldLamps? ActiveLamps => gpu is null ? hostLamps : gpu.Lamps ?? hostLamps;
-    float ActiveGround(float x, float z) => hostGround?.Invoke(x, z) ?? gpu.Terrain.HeightAt(x, z);
+    float ActiveGround(float x, float z) => hostGround?.Invoke(x, z) ?? (gpu is null ? 0 : gpu.Terrain.HeightAt(x, z));
     WorldCamera camera = null!;
     WorldRenderOptions render = null!;
     readonly Stopwatch realTime = Stopwatch.StartNew();
