@@ -99,9 +99,11 @@ sealed partial class GameHost
         bool metalFoliage = Environment.GetEnvironmentVariable("MEITOU_METAL_FOLIAGE") == "1";
         bool metalCloudShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_CLOUD_SHADOWS") == "1";
         bool metalWater = Environment.GetEnvironmentVariable("MEITOU_METAL_WATER") == "1";
+        bool metalShadows = Environment.GetEnvironmentVariable("MEITOU_METAL_SHADOWS") == "1";
         if (!metalFoliage) Console.WriteLine("metal     foliage disabled (safe mode; MEITOU_METAL_FOLIAGE=1 to test)");
         if (!metalCloudShadows) Console.WriteLine("metal     cloud shadows disabled (safe mode; F10 or MEITOU_METAL_CLOUD_SHADOWS=1)");
         if (!metalWater) Console.WriteLine("metal     water disabled (safe mode; MEITOU_METAL_WATER=1 to test)");
+        if (!metalShadows) Console.WriteLine("metal     shadows disabled (safe mode; F10 or MEITOU_METAL_SHADOWS=1)");
         // The sky as CreateGpu makes it: the world's sky textures (starfield, planets, clouds) and the same switches.
         var sky = new SkyRenderer(ctx, assets)
         {
@@ -139,7 +141,7 @@ sealed partial class GameHost
             Settings = new Meitou.Data.World.ShadowSettings(Meitou.Data.World.KenshiShadows.MapSize(o.ShadowQuality), o.ShadowRangeFor(o.MeitouShadows)),
             Meitou = o.MeitouShadows,
             FilterQuality = o.ShadowFilter,
-            Enabled = !o.ShadowsOff,
+            Enabled = metalShadows && !o.ShadowsOff,
             Guard = memoryGuard,
         };
         shadow.SetTerrain(scene.Coarse, scene.CoarseSize);
