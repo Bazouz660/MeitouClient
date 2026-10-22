@@ -14,7 +14,7 @@ agree across colour/depth/velocity passes. Transparent layers do not overwrite o
 
 Faithful uses the game's FXAA, exposure, haze and flat ambient where selected. Meitou switches
 independently select SSAO, TAA/upscalers, tone/colour/night grading, particle quality and GI.
-Do not clamp before HDR lighting/composite. FSR/DLSS mip bias=log2(scale)-1; TAA=log2(scale)-0.5.
+Do not clamp before HDR lighting/composite. Texture mip bias log2(render/display)-1 with any temporal method.
 Motion uses previous camera/depth plus moving-object/grass paths; near/far depth reconstruction
 must use the corresponding projection. `sun-motion` adds clock-driven sky motion near the sun.
 Reset temporal histories after cuts, target resize or incompatible setting changes.
@@ -23,9 +23,16 @@ in its inputs and output: GLSL `max` need not drop NaN (AMD keeps it), and one i
 For FSR/DLSS the merged velocity kernel zeroes them in the scene colour in place and in the motion
 (Observed: the FSR fallback on an RX 9070 XT still flickered without it).
 
-Game/viewer builds and publishes copy the five Streamline/DLSS DLLs from `MEITOU_STREAMLINE_PATH`
-or the git-ignored root `dlss-runtime/` folder when present; `-p:StreamlineRuntimePath=...`
-overrides the source. Both Debug and Release use it. Release packaging supplies its own runtime.
+Game/viewer builds and publishes copy the Streamline/DLSS DLLs and FSR's `amd_fidelityfx_vk.dll` that
+are present in `MEITOU_STREAMLINE_PATH` (FSR: `MEITOU_FFX_PATH`) or the git-ignored root `dlss-runtime/`;
+`-p:StreamlineRuntimePath=` / `-p:FfxRuntimePath=` override the source. Without them a dev build logs
+"not found" and runs TAA (a release folder's DLLs can be copied there). Release packaging fetches its own.
+
+TAA: 3x3 Gaussian exp(-2.29 d^2) with d in display pixels (upscaling doesn't widen it), Catmull-Rom history,
+YCoCg variance clip, blend 0.1. Upscaler sharpness: FSR's RCAS; after TAA and DLSS (DLSS ignores it) the
+composite pushes each pixel from its 4 neighbours' mean by 2 x sharpness, clamped to their range (no halos;
+the history stays unsharpened). Measured (Hub, 1080p, mean |Laplacian|): no AA 16.6, TAA 12.5 before
+and 23.1 after (bias -1, display-pixel kernel, sharpen), DLSS 26.6.
 
 ## SSAO, fog and layers
 

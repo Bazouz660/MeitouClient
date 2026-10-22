@@ -136,11 +136,11 @@ public sealed unsafe partial class PostProcess : IDisposable
     sealed class CompositePass : FullscreenProgram
     {
         public readonly SamplerSlot Scene, Ao, Adapted;
-        public readonly UniformHandle Auto, Exposure, UseAo, Dither, SceneSize, Tone, ToneMix, Grade, Saturation, Contrast, Night, Balance;
+        public readonly UniformHandle Auto, Exposure, UseAo, Dither, SceneSize, Sharpen, Tone, ToneMix, Grade, Saturation, Contrast, Night, Balance;
         public CompositePass(GpuContext gpu) : base(gpu, PostProcessShaders.Composite, "post composite")
         {
             (Scene, Ao, Adapted) = (P.Sampler("uScene"), P.Sampler("uAo"), P.Sampler("uAdapted"));
-            SceneSize = P.Uniform("uSceneSize");
+            (SceneSize, Sharpen) = (P.Uniform("uSceneSize"), P.Uniform("uSharpen"));
             (Auto, Exposure, UseAo, Dither) = (P.Uniform("uAuto"), P.Uniform("uExposure"), P.Uniform("uUseAo"), P.Uniform("uDither"));
             (Tone, ToneMix, Grade, Saturation, Contrast) = (P.Uniform("uTone"), P.Uniform("uToneMix"), P.Uniform("uGrade"), P.Uniform("uSaturation"), P.Uniform("uContrast"));
             (Night, Balance) = (P.Uniform("uNight"), P.Uniform("uBalance"));
@@ -515,8 +515,8 @@ public sealed unsafe partial class PostProcess : IDisposable
         Stamp("start");
         frameIndex++;
         JitterPixels = Temporal ? Jitter.Offset(frameIndex, JitterPhases) : Vector2.Zero;
-        // Textures at the display size's detail: log2 of the scale, and further for the vendor upscalers as they recommend (DECISIONS 15).
-        Gpu.LodBias = Temporal ? MathF.Log2(width / (float)displayWidth) - (allocatedKind == UpscalerKind.Taa ? 0.5f : 1f) : 0;
+        // Textures at the display size's detail: log2 of the scale, and one further as the vendor upscalers recommend (DECISIONS 15); TAA too.
+        Gpu.LodBias = Temporal ? MathF.Log2(width / (float)displayWidth) - 1 : 0;
         SceneTargets = PassTargets.Of(sceneColour!.Texture, sceneDepth!.Texture, GiAlbedoTarget);
     }
 
@@ -719,6 +719,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         // Without an upscaler the scene may still be smaller than the display (the render scale): the composite then resamples it (Catmull-Rom).
         bool plainScaled = postColour.Width != displayWidth || postColour.Height != displayHeight;
         c.P.Set(c.SceneSize, plainScaled ? postColour.Width : 0f, plainScaled ? postColour.Height : 0f);
+        c.P.Set(c.Sharpen, Temporal && sharpenAfter ? 2 * Math.Clamp(o.Upscale.Sharpness, 0, 1) : 0f);
         c.P.Set(c.Auto, auto ? 1 : 0);
         c.P.Set(c.Exposure, o.Exposure);
         c.P.Set(c.UseAo, ao && !aoApplied ? 1 : 0);   // applied before the particles: only the debug view still reads it
@@ -1037,6 +1038,9 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// </summary>
     public const float UpscaleNear = 1, UpscaleFar = 1_000_000;
 
+    /// <summary>Whether the composite sharpens the upscaled picture (<see cref="UpscaleOptions.Sharpness"/>): after TAA and DLSS, which leave it soft.</summary>
+    bool sharpenAfter;
+
     /// <summary>Motion vectors, then the vendor upscaler or TAA into the history; returns the display-size picture.</summary>
     Target2D RunUpscale()
     {
@@ -1066,6 +1070,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         (historyA, historyB) = (historyB, historyA);
         var output = historyB!;
         bool done = false;
+        sharpenAfter = true;
         if (external is not null)
         {
             if (!merged) Velocity(upscaleDepth!, 1);
@@ -1085,7 +1090,7 @@ public sealed unsafe partial class PostProcess : IDisposable
                 Eye = eyeNow, Right = new Vector3(viewRotation.M11, viewRotation.M21, viewRotation.M31), Up = new Vector3(viewRotation.M12, viewRotation.M22, viewRotation.M32),
                 Forward = -new Vector3(viewRotation.M13, viewRotation.M23, viewRotation.M33), Aspect = aspectNow,
             });
-            if (done) ActiveUpscaler = external.Name;
+            if (done) (ActiveUpscaler, sharpenAfter) = (external.Name, external.Kind != UpscalerKind.Fsr);   // FSR sharpens itself (RCAS)
             else
             {
                 Console.WriteLine($"upscaler  {external.Name} failed; using TAA from now on");

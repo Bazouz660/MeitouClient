@@ -234,10 +234,10 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         {
             Assert.Equal([first, second], ui.SquadBarMembers().Select(c => c.Id));
             var frame = ui.UiFrame;
-            // The renderer draws member i into atlas cell i (CharacterRenderer.PortraitRequests): the second cell is the atlas's second 128 px square.
+            // The renderer draws member i into atlas cell i (CharacterRenderer.PortraitRequests): the second cell is the atlas's second 256 px square.
             var portrait = Assert.Single(frame, c => c.Name == "portrait-1");
             Assert.Equal(PlayerInterface.PortraitTexture, portrait.Properties["ImageTexture"]);
-            Assert.Equal("128 0 128 128", portrait.Properties["ImageRect"]);
+            Assert.Equal("256 0 256 256", portrait.Properties["ImageRect"]);
             Assert.Contains(frame, c => c.Name == "portrait-name-1" && c.Caption == "Second");
             Click(ui, "member-1");
             session.World.RunTick();

@@ -344,6 +344,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
 
     void DrawWorld(int width, int height)
     {
+        // The stage and the portraits finished as the world is (a change of the options redraws the portraits).
+        if (gpu.Characters is { } previews) previews.Look = Meitou.Rendering.Characters.PreviewLook.Of(o.Post);
         if (TitleVisible) { DrawTitleWorld(width, height); return; }
         if (player.EditorOpen) { DrawEditorStage(width, height); return; }
         if (gpu.Characters is { StageRequest: not null } staged) staged.StageRequest = null;

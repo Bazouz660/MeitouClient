@@ -162,6 +162,8 @@ public sealed class ShadowCascade
     public double Texel { get; init; }
     /// <summary>The caster bias of this cascade in depth units (0..1 over <see cref="Extent"/>.Z).</summary>
     public float FixedBias { get; init; }
+    /// <summary>The slope bias's cap in depth units (the Meitou cascades; the game's CSM uses <see cref="KenshiShadows.MaxSlopeBias"/>).</summary>
+    public float MaxSlopeBias { get; init; }
     /// <summary>The PCF radius in the tile's UV units (0..1 across the tile).</summary>
     public float FilterRadius { get; init; }
     /// <summary>

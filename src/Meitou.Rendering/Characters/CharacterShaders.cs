@@ -277,8 +277,8 @@ static class CharacterShaders
             vec3 colour;
             giInterior = vInterior != 0u;
             if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld);
-            // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight).
-            else if (view.fogDistance < -1.5) colour = stageLight(albedo, n, v, normalize(view.lightDir), gloss);
+            // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight); -3 the same unclamped (Meitou's stage and portraits).
+            else if (view.fogDistance < -1.5) colour = stageLight(albedo, n, v, normalize(view.lightDir), gloss, view.fogDistance < -2.5);
             else if (view.fogDistance < 0.0)
             {
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient

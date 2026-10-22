@@ -17,7 +17,7 @@ public sealed class UpscaleOptions
     /// <summary>Render size over display size per axis; null selects Ultra Quality for temporal Meitou rendering, native when off.</summary>
     public float? Scale;
     public const float MeitouDefaultScale = 0.83f;
-    /// <summary>0..1: the external upscalers' sharpening (FSR's RCAS, DLSS's own); TAA ignores it.</summary>
+    /// <summary>0..1: FSR's own sharpening (RCAS); after TAA and DLSS the composite's (PostProcessShaders.Composite).</summary>
     public float Sharpness = 0.3f;
     /// <summary>Set on the command line: the saved settings don't override it.</summary>
     public bool Explicit;
