@@ -44,11 +44,13 @@ public sealed class MetalUploads : IGpuUploads
         {
             var desc = target.Desc;
             uint maxWidth = (uint)Math.Max(desc.Width >> level, 1), maxHeight = (uint)Math.Max(desc.Height >> level, 1);
+            // A cube's six faces are its type's slices, not array layers; the descriptor's Layers stays 1.
+            uint layers = desc.Kind == TextureKind.Cube ? 6u * (uint)Math.Max(desc.Layers, 1) : (uint)desc.Layers;
             if (region.X < 0 || region.Y < 0 || (uint)region.X + region.Width > maxWidth ||
-                (uint)region.Y + region.Height > maxHeight || (uint)layer >= (uint)desc.Layers)
+                (uint)region.Y + region.Height > maxHeight || (uint)layer >= layers)
             {
                 Console.WriteLine($"warning   upload outside {desc.Name} L{level} layer {layer}: " +
-                    $"{region.X},{region.Y} {region.Width}x{region.Height} (texture {maxWidth}x{maxHeight}, {desc.Layers} layers)");
+                    $"{region.X},{region.Y} {region.Width}x{region.Height} (texture {maxWidth}x{maxHeight}, {layers} layers)");
                 return;
             }
             written.Add($"{desc.Name} L{level}");
