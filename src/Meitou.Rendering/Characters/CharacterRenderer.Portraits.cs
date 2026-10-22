@@ -15,10 +15,13 @@ public readonly record struct PortraitRequest(long Key, int Cell, uint Serial);
 internal sealed unsafe partial class CharacterRenderer
 {
     /// <summary>
-    /// A cell's size in pixels and the atlas's cells across and down. The original's cells are 128 px; Meitou's are twice that in both modes (the squad bar shows
-    /// them 120 to 230 px wide from 1080 to 4K lines, so a 128 px cell was stretched and soft).
+    /// A cell's pitch in pixels and the atlas's cells across and down. A portrait fills <see cref="PortraitSizeFor"/> of its cell from the corner: the original's
+    /// 128 px faithfully, the whole 256 px enhanced (the squad bar shows them 120 to 230 px wide from 1080 to 4K lines, so a 128 px one is stretched and soft).
+    /// The pitch stays when the look changes, so the interface keeps the same atlas.
     /// </summary>
-    public const int PortraitSize = 256, PortraitColumns = 16, PortraitRows = 2;
+    public const int PortraitCell = 256, FaithfulPortraitSize = 128, PortraitColumns = 16, PortraitRows = 2;
+    /// <summary>How much of its cell a portrait fills under <paramref name="look"/> (<see cref="PortraitCell"/>).</summary>
+    public static int PortraitSizeFor(PreviewLook look) => look.Enhanced ? PortraitCell : FaithfulPortraitSize;
     /// <summary>The enhanced portraits' supersampling each way (<see cref="PreviewLook"/>): a still drawn once, so 16 samples a pixel cost nothing that matters.</summary>
     const int PortraitSupersample = 4;
     /// <summary>The vertical field of view of the portrait camera.</summary>
@@ -42,7 +45,7 @@ internal sealed unsafe partial class CharacterRenderer
         {
             if (portraitColour is null)
             {
-                int w = PortraitSize * PortraitColumns, h = PortraitSize * PortraitRows;
+                int w = PortraitCell * PortraitColumns, h = PortraitCell * PortraitRows;
                 portraitColour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
                 portraitDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
                 portraitSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
@@ -104,7 +107,7 @@ internal sealed unsafe partial class CharacterRenderer
         {
             // Each cell alone, PortraitSupersample times larger each way into the half-float square, then resolved into its cell (a still: drawn once).
             if (portraitHdr is null)
-                (portraitHdr, portraitHdrDepth, portraitHdrSampled) = PreviewResolve.Targets(Gpu, PortraitSize, PortraitSize, look with { Supersample = PortraitSupersample }, "portrait hdr");
+                (portraitHdr, portraitHdrDepth, portraitHdrSampled) = PreviewResolve.Targets(Gpu, PortraitCell, PortraitCell, look with { Supersample = PortraitSupersample }, "portrait hdr");
             preview ??= new PreviewResolve(Gpu);
             foreach (var request in PortraitRequests)
             {
@@ -119,8 +122,8 @@ internal sealed unsafe partial class CharacterRenderer
                 Gpu.EndHostPass(cmd);
                 cmd.EndRendering();
                 Gpu.EndNative(cmd);
-                int x = request.Cell % PortraitColumns * PortraitSize, y = request.Cell / PortraitColumns * PortraitSize;
-                preview.Run(portraitHdrSampled, atlas, look with { Supersample = PortraitSupersample }, [new Rect2D(new Offset2D(x, y), new Extent2D(PortraitSize, PortraitSize))]);
+                int x = request.Cell % PortraitColumns * PortraitCell, y = request.Cell / PortraitColumns * PortraitCell;
+                preview.Run(portraitHdrSampled, atlas, look with { Supersample = PortraitSupersample }, [new Rect2D(new Offset2D(x, y), new Extent2D(PortraitCell, PortraitCell))]);
             }
             return;
         }
@@ -132,8 +135,9 @@ internal sealed unsafe partial class CharacterRenderer
         foreach (var request in PortraitRequests)
         {
             if (!Due(request, out int index)) continue;
-            int x = request.Cell % PortraitColumns * PortraitSize, y = request.Cell / PortraitColumns * PortraitSize;
-            DrawPortraitCell(pass, request, index, new Viewport(x, y, PortraitSize, PortraitSize, 0, 1), new Rect2D(new Offset2D(x, y), new Extent2D(PortraitSize, PortraitSize)));
+            // The original's 128 px in the cell's corner; the whole cell cleared.
+            int x = request.Cell % PortraitColumns * PortraitCell, y = request.Cell / PortraitColumns * PortraitCell;
+            DrawPortraitCell(pass, request, index, new Viewport(x, y, FaithfulPortraitSize, FaithfulPortraitSize, 0, 1), new Rect2D(new Offset2D(x, y), new Extent2D(PortraitCell, PortraitCell)));
         }
         Gpu.EndHostPass(pass);
         pass.EndRendering();

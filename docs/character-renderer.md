@@ -43,10 +43,10 @@ temporal AA is on. The editor stage (stage light unclamped, fog distance -3, pla
 drawn into RGBA16F at 2x each way with Meitou AA (1x past 16.6 Mpx); each portrait (plain model) alone
 into a 1024 px RGBA16F square (4x its cell). `PreviewResolve` tone maps each sample, averages by
 coverage (anti-aliased edges on the transparent background), grades and dithers into the 8-bit
-picture. Atlas cells are 256 px in both modes (the original's 128 px were stretched to the squad
-bar's 120-230 px from 1080 to 4K lines and looked soft). Portraits keep the
+picture. Atlas cells are 256 px apart; enhanced portraits fill them (the original's 128 px were stretched to the
+squad bar's 120-230 px from 1080 to 4K lines and looked soft), faithful ones keep 128 px in the corner. Portraits keep the
 fixed plain light: a still drawn under the live sky would depend on the hour it was drawn. Faithful
-keeps the original's direct 8-bit stage and the plain portraits. No SSAO, shadows or GI (no scene).
+keeps the original's direct 8-bit stage and 128 px plain portraits. No SSAO, shadows or GI (no scene).
 Atlas layout (Meitou): squad members take cells 0-29; the conversation window's speaker and player
 character take the last two (30, 31) while a conversation is open.
 Item icons (`CharacterRenderer.Icons.cs`) are the same: an item's mesh drawn through the item shader into a texture of its own, as a pseudo-instance that the world and shadow views skip;
