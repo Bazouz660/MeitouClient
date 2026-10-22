@@ -96,6 +96,8 @@ sealed class WorldOptions
     public bool CharacterLod = true;
     /// <summary>The <c>skin</c> switch's Meitou side: pre-integrated scattering on people's bare skin (<c>CharacterRenderer.SkinShading</c>).</summary>
     public bool SkinShading = true;
+    /// <summary>The <c>interiorlamps</c> switch's Meitou side: interior lamps shine by day too (<c>WorldLamps.InteriorAllDay</c>).</summary>
+    public bool InteriorLamps = true;
     public float? ImpostorDistance, LargeImpostorDistance;
     public double? ImpostorBudgetMb;
     public float HazeStrength = Enhancements.MeitouHazeStrength; // the Meitou haze switch (default); 1 = the game's haze
@@ -275,7 +277,8 @@ sealed class WorldOptions
         () => o.CloudFog, v => o.CloudFog = v,
         () => o.InteriorGi, v => o.InteriorGi = v,
         () => o.CharacterLod, v => o.CharacterLod = v,
-        () => o.SkinShading, v => o.SkinShading = v);
+        () => o.SkinShading, v => o.SkinShading = v,
+        () => o.InteriorLamps, v => o.InteriorLamps = v);
 
     public static WorldOptions? Parse(string[] args)
     {
@@ -823,7 +826,7 @@ static class WorldFrame
             {
                 var levels = WorldLevelData.Load(install, includeInteriors: true);
                 return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
-            });
+            }) { InteriorAllDay = o.InteriorLamps };
         }
         if (scene.Heightmap is not null) gpu.Streamer = new TerrainStreamer(install, terrain, textures, scene.Window.Step) { MaterialDistance = o.MaterialDistance };
         if (!o.NoWater && scene.Database is not null)
@@ -970,7 +973,8 @@ static class WorldFrame
             () => gpu()?.Sky.CloudFog ?? o.CloudFog, v => { o.CloudFog = v; if (gpu() is { } g) g.Sky.CloudFog = v; },
             () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; },
             () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; },
-            () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; });
+            () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; },
+            () => gpu()?.Lamps?.InteriorAllDay ?? o.InteriorLamps, v => { o.InteriorLamps = v; if (gpu()?.Lamps is { } l) l.InteriorAllDay = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
         Func<bool>? getVSync = null, Action<bool>? setVSync = null, IReadOnlyList<Enhancement>? switches = null,
