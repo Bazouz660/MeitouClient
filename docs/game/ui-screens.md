@@ -91,8 +91,8 @@ slide is shown with alpha min(1, 3 x seconds since it started); a press (any of 
 on more than three frames, a press or more than 4 s ends it: hidden at once (no fade out) and the next starts. `DAT_1421337ec` is **Unknown** (beside the
 UI scale `DAT_1421337f0`; Meitou takes height / 1080, which leaves Logos at the screen height either way).
 
-Meitou plays it in the Faithful mode on a start that opens on the title, over the boot (`LoadingScreen.StartSplash`; the Interface setting "Splash
-screens", `UserConfig.SplashScreens`, turns it off), not in the Meitou mode; the loading screen shows if the boot outlasts it. The two slides take
+Meitou plays it in the Faithful mode on a start that opens on the title, over the boot (`LoadingScreen.StartSplash`) when the Interface setting "Splash
+screens" (`UserConfig.SplashScreens`, off by default) is on, never in the Meitou mode; the loading screen shows if the boot outlasts it. The two slides take
 8 s or more, the boot 3 to 4 s (Observed, 2026-10-22): skipped, the title shows that much sooner. Presses skip only once input exists, after the world's boot (engine limit). The Faithful title is opaque, so the boot's view is not warmed
 behind it (the original loads a world only for a game; [engine](../engine.md) "Loading").
 

@@ -453,7 +453,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         for (int i = 0; i < values.Toggles.Count; i++)
             if (values.Toggles[i].Get() != toggleDefaults[i]) values.Toggles[i].Set(toggleDefaults[i]);
         frameLimit.Set(240);
-        config.SplashScreens = true;
+        config.SplashScreens = false;
         config.MainMenuTransitions = true;
         config.InGameTransitions = true;
         config.MainMenuTransitionSpeed = 1.5f;
