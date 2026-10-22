@@ -369,7 +369,9 @@ The GPU culls remain the step's rest (Metal takes the CPU cull and the CPU grass
 viewport stores the scene flipped into its targets, Metal's do not (the present flips the picture
 instead). The exposure is the game's own too: the luminance at 256² (16 taps), its nine-level mip
 chain, and the 1×1 RG32F adaptation against the previous frame inside the sky's band
-(`uAuto` 1; a still picture uses the instant blend). The upscalers/TAA and `PostProcess`'s widening
+(`uAuto` 1; a still picture uses the instant blend). Both ping-pong adaptation targets are seeded
+before smoothing starts; an uninitialized second target made the first seconds flicker dark/bright.
+The upscalers/TAA and `PostProcess`'s widening
 to the seam remain step 2's rest. At the same view the picture's mean channels are within a few
 percent of the Vulkan screenshot's with GI and shadows switched off (98/78/72 against 96/71/67);
 the large per-pixel differences left are the missing shadows and GI (steps 4 and the game loop).

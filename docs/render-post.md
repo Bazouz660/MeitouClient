@@ -45,6 +45,8 @@ Coarse rates can alter fine cut-outs and temporal output; it is a quality/perfor
 ## Colour, night and particles
 
 Game HDR exposure is the reference; tone mapping/grading are Meitou controls, not original facts.
+Both auto-exposure ping-pong targets are seeded before smoothing starts; an undefined second target
+flickers dark/bright while it converges.
 Night grading weights scotopic luminance (Jensen2001 night-sky model evaluated at sRGB primaries)
 using measured scene luminance/adaptation; daylight contribution must fade to zero. Night red
 terrain can be original ambient-map colour rather than lamp/emissive input. Haze follows weather

@@ -74,6 +74,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     GpuTexture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
     Target2D? luminance, adaptA, adaptB;   // Kenshi's exposure: the luminance measure (mipmapped) and the adapted value (1 × 1, ping-pong)
     bool adaptedValid;
+    int adaptedFrames;
     readonly System.Diagnostics.Stopwatch adaptClock = new();
 
     // The native full-screen passes (docs/renderer-native.md 7.1, wave 3 agent E, step P): the same SPIR-V and layout as the GL programs they
@@ -361,6 +362,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         foreach (var l in lowTargets) l.Accum = l.Depth = null;
         giAlbedo = giLow = shaftInjected = shaftLight = null;
         adaptedValid = historyValid = false;
+        adaptedFrames = 0;
     }
 
     readonly Dictionary<InternalFormat, bool> storageSupport = [];
@@ -1351,10 +1353,12 @@ public sealed unsafe partial class PostProcess : IDisposable
         {
             float mdt = (float)adaptClock.Elapsed.TotalSeconds;
             adaptClock.Restart();
-            float mblend = InstantAdaptation || !adaptedValid ? 1 : 1 - MathF.Exp(-mdt * AdaptationRate);
+            // Seed both ping-pong targets before smoothing; the next frame reads the other one.
+            float mblend = InstantAdaptation || !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-mdt * AdaptationRate);
             (adaptA, adaptB) = (adaptB, adaptA);
             ExposureMerged(mblend, AutoExposure!.Value);
             adaptedValid = true;
+            adaptedFrames = Math.Min(adaptedFrames + 1, 2);
             return;
         }
         var lum = luminance!;
@@ -1365,7 +1369,8 @@ public sealed unsafe partial class PostProcess : IDisposable
         Segment().GenerateMips(lum.Texture);   // VkGl's GenerateMipmap: linear blits level by level, full barriers around
         float dt = (float)adaptClock.Elapsed.TotalSeconds;
         adaptClock.Restart();
-        float blend = InstantAdaptation || !adaptedValid ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
+        // Seed both ping-pong targets before smoothing; the next frame reads the other one.
+        float blend = InstantAdaptation || !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
         (adaptA, adaptB) = (adaptB, adaptA);
         var ap = adaptPass;
         Bind(ap.P, ap.Luminance, lum);
@@ -1376,6 +1381,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         ap.P.Set(ap.Band, band.Min, band.Max);
         Draw(ap.P, adaptB!);
         adaptedValid = true;
+        adaptedFrames = Math.Min(adaptedFrames + 1, 2);
     }
 
     public void Dispose()

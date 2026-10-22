@@ -44,6 +44,7 @@ sealed class PostComposite : IDisposable
     int sceneWidth, sceneHeight, displayWidth, displayHeight;
     long adaptClock;
     bool adaptedValid;
+    int adaptedFrames;
 
     /// <summary>What <see cref="ApplyScene"/> and <see cref="Draw"/> need from the frame's camera.</summary>
     public readonly record struct SceneInputs(Vector3 Eye, Matrix4x4 View, float FieldOfView, float Aspect, float Near, float Far,
@@ -156,7 +157,9 @@ sealed class PostComposite : IDisposable
         long now = Stopwatch.GetTimestamp();
         float dt = adaptClock == 0 ? 0 : (float)Stopwatch.GetElapsedTime(adaptClock, now).TotalSeconds;
         adaptClock = now;
-        float blend = !adaptedValid ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
+        // Both history targets must be seeded before the smoothing starts: the second ping-pong target is read on
+        // the next frame, and an undefined texture there makes the exposure alternate dark/bright as it converges.
+        float blend = !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
         adapt.Bind(lumSlot, luminanceSampler with { View = luminanceTarget!.View() });
         adapt.Bind(lastSlot, previous is { } last ? plainSampler with { View = last.View() } : ctx.Dummy(adapt.SamplerInfo(lastSlot)));
         adapt.Set(adaptLevel, MathF.Log2(LuminanceSize));
@@ -164,6 +167,7 @@ sealed class PostComposite : IDisposable
         adapt.Set(adaptBand, band.Min, band.Max);
         Fullscreen(cmd, adapt, adaptB!, 1, 1);
         adaptedValid = true;
+        adaptedFrames = Math.Min(adaptedFrames + 1, 2);
 
         // The composite: auto exposure (0.55 / adapted), the game's tone map, grade and dither.
         bool fxaaOn = o.Fxaa && !o.Smaa && !temporal && ldr is not null;
@@ -428,6 +432,7 @@ sealed class PostComposite : IDisposable
                 Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst, Name: "post luminance"));
             adaptA = ctx.CreateTexture(new TextureDesc(InternalFormat.RG32f, 1, 1, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "post exposure adapted"));
             adaptB = ctx.CreateTexture(new TextureDesc(InternalFormat.RG32f, 1, 1, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "post exposure adapted"));
+            (adaptedValid, adaptedFrames) = (false, 0);
         }
         if (ldr is null && displayWidth > 0 && displayHeight > 0)
         {
