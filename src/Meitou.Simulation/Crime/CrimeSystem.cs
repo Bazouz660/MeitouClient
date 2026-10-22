@@ -340,15 +340,15 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         if (ledger.Count == 0) c.Bounties = null;
     }
 
-    /// <summary>The bounty lines of a character for the HUD, with the hours left at <paramref name="tick"/>.</summary>
-    public static IReadOnlyList<BountyLine> Lines(CharacterCold c, long tick, float tickSeconds)
+    /// <summary>The bounty lines of a character for the HUD, with the hours left at <paramref name="tick"/>; <paramref name="local"/> is the local faction (-1: none).</summary>
+    public static IReadOnlyList<BountyLine> Lines(CharacterCold c, long tick, float tickSeconds, int local = -1)
     {
         if (c.Bounties is not { Count: > 0 } ledger) return [];
         double hoursPerTick = tickSeconds * 11.0 / 1200.0;
         var lines = new List<BountyLine>(ledger.Count);
         foreach (var e in ledger.Entries)
             if (e.Amount > 0)
-                lines.Add(new BountyLine(e.FactionName, e.Amount, CrimeTable.Names(e.Crimes), CrimeTable.LifetimeHours(e.Amount) - (tick - e.RaisedTick) * hoursPerTick));
+                lines.Add(new BountyLine(e.FactionName, e.Amount, CrimeTable.Names(e.Crimes), CrimeTable.LifetimeHours(e.Amount) - (tick - e.RaisedTick) * hoursPerTick, e.Faction == local));
         return lines;
     }
 

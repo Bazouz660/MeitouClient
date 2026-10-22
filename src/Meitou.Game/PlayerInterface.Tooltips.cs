@@ -279,23 +279,58 @@ sealed partial class PlayerInterface
         _ => null,
     };
 
+    // The colour tags of the bounty rows (kenshi_colours.xml Main, Title, Greyed; FUN_1405d2da0's static strings).
+    const string MainTag = "#afa68b", TitleTag = "#492620", GreyTag = "#444444";
+
     /// <summary>
-    /// The bounty panel's rows (the character rows of <c>FUN_1405d2da0</c>, <b>Observed</b> in the decompile): per faction its name and <c>c.{1,num}</c>, a <c>-Wanted For:</c> row with the crimes,
-    /// and the expiry (<c>FUN_1405d1110</c>, which the original gives only for the local faction; Meitou for each).
+    /// The bounty panel's tooltip rows (<c>FUN_1405d2da0</c>, docs/game/ui-screens.md section 4): per faction its name and <c>c.{1,num}</c> (Main for the local faction, else Greyed),
+    /// <c>-Wanted For: </c> with the first four crimes and a <c> </c> row with the rest; then the imprisonment row, or a rule, the turn-in line and the local faction's expiry.
+    /// <paramref name="everyExpiry"/> (Meitou UI): each faction's expiry under its own rows instead.
     /// </summary>
-    static List<(string Key, string Value)> BountyRows(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties)
+    static List<(string Key, string Value)> BountyRows(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties, PrisonView? prison, bool everyExpiry)
     {
         var rows = new List<(string, string)>();
         foreach (var bounty in bounties)
         {
-            rows.Add((bounty.Faction, Loc.Tr("c.{1,num}", bounty.Amount)));
-            if (bounty.Crimes.Length > 0) rows.Add(("-Wanted For:", bounty.Crimes));
-            int hours = (int)Math.Max(0, bounty.HoursLeft);
-            rows.Add((double.IsPositiveInfinity(bounty.HoursLeft) ? "Notorious: The bounty will never expire."
-                : Loc.Tr(hours == 1 ? "The bounty will expire in {1,num} hr" : "The bounty will expire in {1,num} hrs", hours), ""));
+            string tone = bounty.Local ? MainTag : GreyTag, wanted = bounty.Local ? "" : GreyTag;
+            rows.Add((tone + bounty.Faction, tone + Loc.Tr("c.{1,num}", bounty.Amount)));
+            var crimes = bounty.Crimes.Split(", ", StringSplitOptions.RemoveEmptyEntries);
+            if (crimes.Length > 0) rows.Add((wanted + Loc.Tr("-Wanted For:") + " ", wanted + string.Join(", ", crimes.Take(4))));
+            if (crimes.Length > 4) rows.Add((" ", wanted + string.Join(", ", crimes.Skip(4))));
+            if (everyExpiry) rows.Add((Expiry(bounty), ""));
         }
+        if (prison is { } p)
+        {
+            int left = (int)Math.Ceiling(p.HoursLeft);
+            rows.Add(p.Sentence >= 2000 ? (Loc.Tr("Imprisoned, sentence time:"), TitleTag + Loc.Tr("FOREVER"))
+                : left > 0 ? (Loc.Tr("Imprisoned, sentence time remaining:"), TitleTag + Loc.Tr(left == 1 ? "{1,num} hr" : "{1,num} hrs", left))
+                : (Loc.Tr("Imprisoned"), Loc.Tr("Waiting to be released")));
+            return rows;
+        }
+        rows.Add(("-------------------------", ""));
+        rows.Add((Loc.Tr("This character is wanted by the authorities. Turn them in for a reward."), ""));
+        // The original appends the expiry to the turn-in line after a line break; a row of its own here, so its colour tag leads it.
+        if (bounties.FirstOrDefault(v => v.Local) is { Amount: > 0 } local) { if (!everyExpiry) rows.Add((Expiry(local), "")); }
+        else rows.Add((MainTag + Loc.Tr("This character is not wanted by the local faction"), ""));
         return rows;
+
+        // FUN_1405d1110: int(lifetime - elapsed) hours, "Notorious" in Title above 9999 (the lifetime is then 9999999).
+        static string Expiry(Meitou.Simulation.Crime.BountyLine bounty)
+        {
+            if (double.IsPositiveInfinity(bounty.HoursLeft)) return TitleTag + Loc.Tr("Notorious: The bounty will never expire.");
+            int hours = (int)bounty.HoursLeft;
+            return MainTag + Loc.Tr(hours == 1 ? "The bounty will expire in {1,num} hr" : "The bounty will expire in {1,num} hrs", hours);
+        }
     }
+
+    /// <summary>
+    /// The bounty panel's own text (the other output of <c>FUN_1405d2da0</c>): wanted by the local faction, Title <c>Bounty:</c> and its amount in Main; else both Greyed
+    /// with the largest bounty (<c>FUN_140853740</c>).
+    /// </summary>
+    static HudLine BountyLine(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties) =>
+        bounties.FirstOrDefault(v => v.Local) is { Amount: > 0 } local
+            ? new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", local.Amount), TitleColour, MainColour)
+            : new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", bounties.Max(v => v.Amount)), GreyColour, GreyColour);
 
     /// <summary>Gives the HUD's widgets their tooltips (user strings through the bindings, which the arranged controls merge) and the selected building's status word its own.</summary>
     void BindTooltips(UiBindings b)
@@ -309,7 +344,7 @@ sealed partial class PlayerInterface
         foreach (var (widget, text) in HudTips) Add(widget, text);
         if (Lead() is { Bounties.Count: > 0 } wanted)
         {
-            var rows = BountyRows(wanted.Bounties);
+            var rows = BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou);
             foreach (string name in new[] { "BountyPanel", "BountyText" })
             {
                 var properties = b.Properties.TryGetValue(name, out var existing) ? new Dictionary<string, string>(existing) : [];

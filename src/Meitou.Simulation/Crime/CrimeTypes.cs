@@ -188,7 +188,8 @@ public sealed record PayBailOrder(CharacterId Prisoner) : SimCommand;
 public sealed record PutInCageOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand;
 
 /// <summary>A bounty line for the HUD (selected characters only): who wants the character, how much, for what, and the hours left (infinity: never expires).</summary>
-public readonly record struct BountyLine(string Faction, int Amount, string Crimes, double HoursLeft);
+/// <summary>One bounty for the HUD; <see cref="Local"/>: the local faction's (the cage owner's while imprisoned, else the town the character stands in; docs/game/ui-screens.md section 4).</summary>
+public readonly record struct BountyLine(string Faction, int Amount, string Crimes, double HoursLeft, bool Local = false);
 
 /// <summary>A crime booked by a police-like witness this tick (<see cref="CrimeSystem.BookingsOf"/>).</summary>
 public readonly record struct Booking(CharacterId Witness, CharacterId Culprit, int Faction);

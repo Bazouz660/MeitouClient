@@ -17,6 +17,7 @@ sealed partial class PlayerInterface
     internal static string TitleColour => MyGuiColours.Named("Title", "492620");
     internal static string BadColour => MyGuiColours.Named("Bad", "59231a");
     internal static string GoodColour => MyGuiColours.Named("Good", "a8b774");
+    internal static string GreyColour => MyGuiColours.Named("Greyed", "444444");
     /// <summary>The palette's BadBright: the editor's race stats below 1 (<c>FUN_1405ee0c0</c>, <c>#bf4834</c>).</summary>
     internal static string BadBrightColour => MyGuiColours.Named("BadBright", "bf4834");
     internal static string AlertColour => MyGuiColours.Named("Alert", "000000");
@@ -174,6 +175,7 @@ sealed partial class PlayerInterface
         string faction = FactionName?.Invoke(lead.Faction) ?? "";
         AddLines(controls, "NameText", [new(lead.Name, faction, TitleColour, TitleColour)], row, sidePixels);
         AddLines(controls, "StateText", StateLines(lead), row, sidePixels);
+        if (lead.Bounties.Count > 0) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
         // The base game draws the stats labels in the painted face (Observed: glyph shapes and widths match Sentencia at its resized 22 pt); the values
         // take the standard face, like the medical column's numbers.
         AddLines(controls, "StatsText", StatsLines(lead), row, font: "Kenshi_PaintedTextFont_Medium", valueFont: "Kenshi_StandardFont_Medium", valuePixels: sidePixels);

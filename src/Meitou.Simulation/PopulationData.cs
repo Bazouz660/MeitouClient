@@ -96,6 +96,19 @@ public sealed class PopulationData
     public FactionRelations Relations { get; init; } = FactionRelations.Build([]);
     /// <summary>The faction of every placed town, a position in <see cref="Factions"/> (-1: none).</summary>
     public IReadOnlyList<int> SiteFactions { get; init; } = [];
+
+    /// <summary>The nearest placed town whose radius holds a point (the game's position lookup, <c>FUN_140928890</c>), -1 when none.</summary>
+    public int TownAt(Vector3 p)
+    {
+        int best = -1;
+        float bestD = float.MaxValue;
+        for (int s = 0; s < Sites.Count; s++)
+        {
+            float r = Sites[s].Town.Radius, d = Vector2.DistanceSquared(new(p.X, p.Z), new(Sites[s].Position.X, Sites[s].Position.Z));
+            if (d <= r * r && d < bestD) (best, bestD) = (s, d);
+        }
+        return best;
+    }
     /// <summary>The area sectors and their BIOME_GROUPs (6.2, 6.3): when set, zones get their homeless squads and the biome groups their nests; null: no wild population (the worlds of the pinned tests).</summary>
     public BiomeMap? Biomes { get; init; }
     /// <summary>The world's mineable rocks (ore mines' yield); null: none known, so ore mines yield nothing.</summary>
