@@ -446,6 +446,11 @@ remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while i
 Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
 meters kept by `CrimeSystem`, not saved).
+Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside
+(`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it
+and does not regard its faction as friendly sets the pending crime when it lives there and the building is not open (template
+`public day`, kept as `Blackboard.HomePublic`; open 7:00-22:59), or when it is police-like and the building is not public and its
+residents' faction is not friendly. The witness rules above then fire event 17 and a police-like witness books 100.
 
 ## Cages, beds and locks
 

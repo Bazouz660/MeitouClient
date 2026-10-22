@@ -105,6 +105,8 @@ public sealed class Blackboard
     /// <summary>The gate the squad guards (its home when that is a gate, else for a gate guard goal the town's gate nearest the squad), as the last serial step found it (derived, not hashed); null: none, or its door's place not known.</summary>
     public GatePost? Gate { get; set; }
     public TownBuilding? OwnHome { get; set; }
+    /// <summary>The template's <c>public day</c>, which the original writes over <see cref="OwnHome"/>'s public flag (docs/game/locks.md "Data"): what trespassing reads.</summary>
+    public bool HomePublic { get; init; } = true;
     public TownBuilding? Home { get; set; }
     /// <summary>The table a bar package reserved for the squad: an index into <see cref="Home"/>'s <see cref="TownBuilding.Tables"/>, 0 for an outdoor table (the home itself); -1: none.</summary>
     public int BarTable { get; set; } = -1;

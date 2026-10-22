@@ -209,8 +209,9 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             }
             if (!c.IsPlayer || !c.CarriedBy.IsNone) continue;   // a carried suspect is not looked at (the game's witness function)
             bool kidnapping = !c.Carrying.IsNone && table.TryResolveNext(c.Carrying, out int body) && Innocent(c, table.Cold(body)!);
-            if (c.Pending is null && !kidnapping) continue;
-            Witnesses(world, s, c, kidnapping, seconds);
+            var premises = PremisesOf(world, s);
+            if (c.Pending is null && !kidnapping && premises is null) continue;
+            Witnesses(world, s, c, kidnapping, premises, seconds);
         }
         if (spots.Count == 0) return;
         foreach (var key in spots.Keys.ToArray())
@@ -248,9 +249,10 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     /// when it regards the culprit as friendly and the victim is of another faction. Theft and Looting need it to care about the victim (same faction or allied); Looting also that it
     /// does not regard the culprit as friendly; Kidnapping a victim and that care; an Assault a victim that it does not regard as an enemy; a Murder nothing more. A witness then sets the
     /// timer to 20 and, police-like of a faction that books bounties, books the crime. With <paramref name="kidnapping"/>, a witness that cares about the carried body first sets a pending
-    /// Kidnapping (timer 20) on the carrier (the carrying check that runs before the crime check). A sneaking culprit is seen only through a full spot meter (<see cref="spots"/>).
+    /// Kidnapping (timer 20) on the carrier (the carrying check that runs before the crime check); with <paramref name="premises"/>, a witness that <see cref="Trespasses"/> sets a pending
+    /// Trespassing against its own faction. A sneaking culprit is seen only through a full spot meter (<see cref="spots"/>).
     /// </summary>
-    void Witnesses(World world, int culprit, CharacterCold c, bool kidnapping, float seconds)
+    void Witnesses(World world, int culprit, CharacterCold c, bool kidnapping, Premises? premises, float seconds)
     {
         var table = world.Characters;
         var next = table.Next;
@@ -274,6 +276,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             else if (world.Sight.Sees(w, culprit, next[w].Position, next[w].Yaw, at, range) <= 0) continue;
             if (body is not null && !Friendly(wf, c.Faction) && Friendly(wf, body.Faction))
                 SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer);
+            if (premises is { } house && Trespasses(world, wc, c, house)) SetPending(world, culprit, CrimeCode.Trespassing, wf, table.IdOf(w), MinTimer);
             if (c.Pending is not { } p) continue;
             if (!Reacts(world, wc, c, p)) continue;
             p.Timer = WitnessTimer;
@@ -289,6 +292,43 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             if (!p.Booked && IsPoliceLike(world, wc) && Factions.Books(wf)) Book(world, culprit, wf, witness);
             if (p.Booked) return;
         }
+    }
+
+    /// <summary>A building with residents that a character is inside: its key, the residents' faction, and whether it is public (<see cref="Ai.Blackboard.HomePublic"/>).</summary>
+    readonly record struct Premises(string Key, int Faction, bool Public)
+    {
+        /// <summary>Open to visitors: public, from 7:00 to 22:59 (the original's hour test, <b>Observed</b>).</summary>
+        public bool Open(int hour) => Public && hour is >= OpensAt and <= ClosesAfter;
+    }
+
+    /// <summary>The hours a public building is open: the first and the last (the game clock's hour int, <c>DAT_1421303d0</c>+0).</summary>
+    public const int OpensAt = 7, ClosesAfter = 22;
+
+    static string? HomeKey(Squad q) => (q.Ai?.OwnHome ?? q.HomeBuilding)?.Key;
+
+    /// <summary>
+    /// The premises the character stands inside (<see cref="SightMap.BuildingOf"/>): a town building some squad lives in, the first such squad's (engine reading of the residents'
+    /// flag <c>+0xe8</c> the original requires, <b>Unknown</b>); null outdoors, on a roof, in a building nobody lives in, or caged.
+    /// </summary>
+    static Premises? PremisesOf(World world, int slot)
+    {
+        if (world.Characters.Cold(slot) is not { IsImprisoned: false } || world.Sight.BuildingOf(slot) is not { } key) return null;
+        foreach (var q in world.Squads.All)
+            if (HomeKey(q) == key) return new Premises(key, q.Faction, q.Ai?.HomePublic ?? true);
+        return null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="w"/>, seeing <paramref name="c"/> inside <paramref name="house"/>, calls it trespassing (the perception's test <c>FUN_140852350</c>, <b>Observed</b>, then
+    /// <c>FUN_140859680</c> sets the pending crime against the witness's faction): never a witness that regards the culprit as friendly (standing in for <c>FUN_14032e1e0</c>, <b>Unknown</b>).
+    /// A resident (the witness's squad lives there) when the building is not <see cref="Premises.Open"/>; a police-like witness, at any hour, when it is not public and its residents'
+    /// faction does not regard the culprit's as friendly.
+    /// </summary>
+    bool Trespasses(World world, CharacterCold w, CharacterCold c, Premises house)
+    {
+        if (Friendly(w.Faction, c.Faction)) return false;
+        if (w.SquadId >= 0 && world.Squads.Find(w.SquadId) is { } squad && HomeKey(squad) == house.Key) return !house.Open(world.Hour);
+        return !house.Public && IsPoliceLike(world, w) && !Friendly(house.Faction, c.Faction);
     }
 
     /// <summary>The dialogue event the witness says at the culprit (<c>FUN_140854d10</c>'s switch on the crime code, docs/game/dialogue.md "Event sources").</summary>

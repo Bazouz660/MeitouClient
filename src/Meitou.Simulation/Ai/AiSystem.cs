@@ -938,7 +938,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         ulong roll = Rng.Hash(world.Seed, (ulong)squad.Id, RngPurpose.Think, SeedSalts.AiPatrol);
         squad.Ai = new Blackboard(packages)
         {
-            Town = squad.Town, Size = squad.Members.Count, OwnHome = home, Home = home,
+            Town = squad.Town, Size = squad.Members.Count, OwnHome = home, Home = home, HomePublic = template?.PublicDay ?? true,
             NextPatrol = world.GameHours + Rng.Float(roll) * Settings.FirstPatrolHours,
         };
         if (squad.SavedAi is { } saved)

@@ -152,7 +152,7 @@ worker, when they differ); 31 `Contract_HiredAlly::vfunc_8` (betrayal); 36 the w
 
 **Witnesses** (`FUN_140854d10`, **Observed**): a witness reacting to a crime fires an event at the criminal by the crime code
 (economy.md 11.2): Burglary 2 and Terrorism 7 → 43; Theft 3, Looting 10, Fencing 13 → 42, or 8 when the victim is in the witness's
-platoon; Trespassing 11 → 17; Crop theft 14 → 57; Enslaving 1, Kidnapping 15 → 58; Uniform theft 16 → 34; the rest 41. Each case has
+platoon; Trespassing 11 → 17 (also fired by perception when it sets the crime, economy.md 11.2); Crop theft 14 → 57; Enslaving 1, Kidnapping 15 → 58; Uniform theft 16 → 34; the rest 41. Each case has
 further tests that return without firing (partly read).
 
 ### Choosing a line

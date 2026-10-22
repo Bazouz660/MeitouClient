@@ -223,6 +223,17 @@ Per-character hash map keyed by faction (`Character+0xf0`). Entry (`FUN_1405e7ee
 | 6 | Treason | 50000 |
 | 5, 10 (Looting), 0xe (14, Crop Theft), others | Assault, Looting, Crop Theft, default | 500 |
 
+- **Trespassing** (perception `FUN_140859680` -> test `FUN_140852350`, **Observed**): an NPC seeing a player character inside a
+  building sets a pending Trespassing (code 11) against **its own** faction (victim: itself), fires dialogue event 17 and calls
+  `FUN_140673a20(self, target, 1)` (**Unknown**). Never when the target's location is a code-0xb object, the target is "allowed" by
+  `FUN_14032e1e0` (**Unknown**; Meitou: the witness regards the culprit's faction as friendly), or caged. Two cases:
+  the **resident** case (the target is in the witness's own home): the home is not public (vfunc 82, `public day`) or `+0xc4 != 1`
+  (**Unknown**), or the hour is outside 7..22 (game clock `DAT_1421303d0`+0, the hour int); and the witness's home object has flag
+  `+0xe8` (**Unknown**; Meitou: the building has residents). Same-town targets of NPC class 1, 2, 5 are exempt. The **police**
+  case (a police-like witness, any building): the building's faction is not allied with the target's (`FactionRelationsIsAlly`)
+  and the building is not public and the target has a slave state, unless its residents' leader allows the target; the residents'
+  `+0xe8` makes it trespassing regardless. No hour test. The witness function then books it as any crime (amount 100).
+  `FUN_140852240` fires event 17 without a crime (a squad of the witness's town; NPC side).
 - **Spawn bounties** (`FUN_14062b210`, **Observed**): CHARACTER `bounty chance` vs an inclusive roll 0..100 (`roll < chance`);
   amount `trunc(bounty amount + 0.5*k)`, `k` an integer in `[0, 2*bounty amount fuzz]` (the fuzz only adds), for each
   `bounty factions` entry (else `defaultEmpireFactionSID`), added without a crime bit (`FUN_140853e20`). fcs.def: "Defaults to the

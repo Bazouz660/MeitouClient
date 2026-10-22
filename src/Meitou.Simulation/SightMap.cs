@@ -205,6 +205,9 @@ public sealed class SightMap
     /// <summary>In a building's indoor volume with something over it: the original's indoor sight and indoor lights.</summary>
     public bool Inside(int slot) => Known(slot) && place[slot] >= 0 && !onTop[slot];
 
+    /// <summary>The <see cref="TownBuilding.Key"/> of the building the character is <see cref="Inside"/>; null outdoors or on top.</summary>
+    public string? BuildingOf(int slot) => Inside(slot) ? rooms[place[slot]].Key : null;
+
     /// <summary>The light level of the character (1 in daylight; see the class remarks).</summary>
     public float Light(int slot) => Known(slot) ? light[slot] : 1;
 
