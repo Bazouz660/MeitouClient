@@ -31,7 +31,7 @@ sealed partial class GameHost
     /// <summary>Once a frame after <see cref="UpdateBuildings"/>.</summary>
     void UpdateFarms(WorldSnapshot snapshot)
     {
-        if (gpu.Objects is not { } objects || scene.Database is not { } db) return;
+        if (ActiveObjects is not { } objects || scene.Database is not { } db) return;
         var version = (snapshot.MachinesVersion, snapshot.BuildingsRevision);
         if (version == farmsVersion) return;
         farmsVersion = version;
@@ -67,7 +67,7 @@ sealed partial class GameHost
         if (!farmData.TryGetValue(site.Record, out var data))
             farmData[site.Record] = data = db.Find(site.Record) is { } r ? MachineData.From(db, r)?.Farm : null;
         if (data is not { Parts.Count: > 0 } || db.Find(site.Record) is not { } building) return null;
-        var plants = FarmLayout.Plant(data, site.Position, site.Rotation, gpu.Terrain.HeightAt, WorldObjectLayout.Seed(site.Id));
+        var plants = FarmLayout.Plant(data, site.Position, site.Rotation, ActiveGround, WorldObjectLayout.Seed(site.Id));
         var meshes = plants.Meshes.Select(m => data.Parts[m.Part])
             .Select(p => new PlacedMesh(p.Mesh, Matrix4x4.Identity, p.Record, building, site.Id, PlacedKind.BuildingPart) { Material = p.Material }).ToArray();
         float height = data.Parts.Max(p => objects.MeshTop(p.Mesh));
@@ -76,7 +76,7 @@ sealed partial class GameHost
 
     void ForgetFarms()
     {
-        foreach (string id in farms.Keys) gpu?.Objects?.RemoveFarmPlants(id);
+        foreach (string id in farms.Keys) ActiveObjects?.RemoveFarmPlants(id);
         farms.Clear();
         farmsVersion = (-1, -1);
     }

@@ -40,14 +40,14 @@ sealed partial class GameHost
             buildingsRevision = snapshot.BuildingsRevision;
         }
         // A lit building's lamps burn at its power share (granted / demand, 1 for one that draws nothing): dark without supply (docs/formats/lights.md "When a light is on").
-        if (gpu.Lamps is { } lamps && litBuildings.Count > 0)
+        if (ActiveLamps is { } lamps && litBuildings.Count > 0)
             foreach (var m in snapshot.Machines)
                 if (m.Power is { Kind: Meitou.Simulation.Production.PowerKind.Consumer } pw && litBuildings.Contains(m.Site))
                     lamps.SetRuntimePower(m.Site, pw.Demand > 0 ? pw.Granted / pw.Demand : 1);
         UpdateGroundItems(snapshot);
         UpdateDoors();
         UpdateFarms(snapshot);
-        if (gpu.Objects is not { } objects) return;
+        if (ActiveObjects is not { } objects) return;
         constructionLook.Clear();
         foreach (var site in snapshot.Buildings)
             if (!site.Complete) constructionLook[site.Id] = ConstructionLook(site);
@@ -71,9 +71,9 @@ sealed partial class GameHost
         foreach (var site in snapshot.Buildings) current[site.Id] = site;
         foreach (string id in shownBuildings.Keys.Where(id => !current.ContainsKey(id)).ToArray())
         {
-            gpu.Objects?.RemoveRuntime(id);
+            ActiveObjects?.RemoveRuntime(id);
             if (navBuildings.Remove(id)) nav?.RemoveRuntimeBuilding(id);
-            if (litBuildings.Remove(id)) gpu.Lamps?.RemoveRuntime(id);
+            if (litBuildings.Remove(id)) ActiveLamps?.RemoveRuntime(id);
             shownBuildings.Remove(id);
         }
         foreach (var site in current.Values)
@@ -87,8 +87,8 @@ sealed partial class GameHost
                 continue;
             }
             if (shown is not null && navBuildings.Remove(site.Id)) nav?.RemoveRuntimeBuilding(site.Id);   // moved or changed: out, then in again
-            if (shown is not null && litBuildings.Remove(site.Id)) gpu.Lamps?.RemoveRuntime(site.Id);
-            gpu.Objects?.AddRuntime(placement);
+            if (shown is not null && litBuildings.Remove(site.Id)) ActiveLamps?.RemoveRuntime(site.Id);
+            ActiveObjects?.AddRuntime(placement);
             AddToNavmesh(site, placement);
             UpdateLamps(site);
             shownBuildings[site.Id] = site;
@@ -101,7 +101,7 @@ sealed partial class GameHost
     /// </summary>
     void UpdateLamps(BuildingSnapshot site)
     {
-        if (gpu.Lamps is not { } lamps) return;
+        if (ActiveLamps is not { } lamps) return;
         if (!site.Complete)
         {
             if (litBuildings.Remove(site.Id)) lamps.RemoveRuntime(site.Id);
@@ -131,8 +131,8 @@ sealed partial class GameHost
 
     void ForgetBuildings()
     {
-        gpu?.Objects?.ClearRuntime();
-        gpu?.Lamps?.ClearRuntime();
+        ActiveObjects?.ClearRuntime();
+        ActiveLamps?.ClearRuntime();
         litBuildings.Clear();
         ForgetGroundItems();
         ForgetFarms();
@@ -141,7 +141,7 @@ sealed partial class GameHost
         shownBuildings.Clear();
         constructionLook.Clear();
         buildingsRevision = -1;
-        if (gpu?.Objects is { } objects) objects.Construction = null;
+        if (ActiveObjects is { } objects) objects.Construction = null;
     }
 
     /// <summary>
@@ -175,7 +175,7 @@ sealed partial class GameHost
             IconFile = icons.Find,
             Placement = new Building.PlacementServices
             {
-                Ground = gpu.Terrain.HeightAt,
+                Ground = ActiveGround,
                 Footprint = footprints.Of,
                 CollisionMesh = footprints.Mesh,
                 StaticAround = footprints.StaticAround,
@@ -212,7 +212,7 @@ sealed partial class GameHost
             },
             Towns = () => towns ??= popData is { } d ? [.. d.Sites.Select(s => new Meitou.Data.Gameplay.Construction.PlacementTown(s.Town, new(s.Position.X, s.Position.Z)))] : [],
             PlayerFactionId = () => popData is { } d && d.PlayerFaction is >= 0 and var mine && mine < d.Factions.Count ? d.Factions[mine].Id : "",
-            DrawGhosts = draws => gpu.Objects?.SetGhosts(draws),
+            DrawGhosts = draws => ActiveObjects?.SetGhosts(draws),
         };
     }
 }

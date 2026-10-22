@@ -10,7 +10,7 @@ sealed partial class GameHost
     /// <summary>Once a frame, with the buildings.</summary>
     void UpdateDoors()
     {
-        if (gpu?.Objects is not { } objects) return;
+        if (ActiveObjects is not { } objects) return;
         var doors = session.CurrentSnapshot.Doors;
         if (ReferenceEquals(doors, shownDoors)) return;
         shownDoors = doors;

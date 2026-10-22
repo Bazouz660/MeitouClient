@@ -26,14 +26,14 @@ sealed partial class GameHost
         var current = snapshot.GroundItems.Select(g => g.Id).ToHashSet();
         foreach (int id in shownGround.Where(id => !current.Contains(id)).ToArray())
         {
-            gpu.Objects?.RemoveRuntime(GroundId(id));
+            ActiveObjects?.RemoveRuntime(GroundId(id));
             shownGround.Remove(id);
         }
         foreach (var g in snapshot.GroundItems)
         {
             if (!shownGround.Add(g.Id)) continue;
             var (rotation, y) = g.Dropped ? LaidFlat(g) : (g.Rotation, g.Position.Y);
-            gpu.Objects?.AddRuntime(new BuildingPlacement(WorldLayout.ZoneOf(g.Position.X, g.Position.Z), GroundId(g.Id), g.Record, g.Position, rotation, null, y));
+            ActiveObjects?.AddRuntime(new BuildingPlacement(WorldLayout.ZoneOf(g.Position.X, g.Position.Z), GroundId(g.Id), g.Record, g.Position, rotation, null, y));
         }
     }
 

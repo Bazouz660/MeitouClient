@@ -283,6 +283,7 @@ sealed partial class GameHost
                 var levels = WorldLevelData.Load(install, includeInteriors: true);
                 return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
             });
+            hostLamps = lamps;
         }
         var terrain = new TerrainRenderer(ctx, scene.Coarse, scene.CoarseSize, scene.Window);
         // The weather's and map placers' particles: created here, updated each frame, and drawn after the scene effects.
@@ -447,27 +448,7 @@ sealed partial class GameHost
             player = hud;
             hud.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
             hud.CreateUiPainter(overlay, assets.Find);
-            if (popData is { } data)
-            {
-                hud.FactionName = faction => faction >= 0 && faction < data.Factions.Count ? data.Factions[faction].Name : null;
-                hud.MapTowns = () => data.Sites;
-                hud.MapFactionOf = id =>
-                {
-                    if (id is null || data.FactionIndex(id) is not (>= 0 and var town)) return null;
-                    var faction = data.Factions[town];
-                    if (session.World.Player.Faction is not (>= 0 and var mine))
-                        return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
-                    float relation = data.Relations.Get(mine, town);
-                    var standing = town == mine ? MapStanding.Player : data.Relations.IsAlly(mine, town) ? MapStanding.Ally
-                        : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
-                    return new MapFaction(faction.Name, relation, standing, faction.NotReal);
-                };
-                hud.MapItemTowns = record =>
-                {
-                    if (data.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
-                    return [.. Meitou.Simulation.Items.MapItems.Reveals(data, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => data.Sites[i].Town.Name)];
-                };
-            }
+            ConfigurePlayerInterface(hud);
             if (characters is not null)
             {
                 var (atlas, sampled) = characters.PortraitAtlas;
@@ -871,6 +852,11 @@ sealed partial class GameHost
                 if (characters is not null) Console.WriteLine($"metal     characters: {characters.Describe()}");
             }
             var size = window.FramebufferSize;
+            // The original's background-loading bar follows the interface's mode, as on Vulkan; the Metal host keeps the same shared bar.
+            bool faithfulUi = hud?.UiMode == Meitou.Data.Ui.UiMode.Faithful;
+            loadBar.Update(faithfulUi ? PendingLoads() : 0);
+            if (hud is not null) hud.LoadBar = loadBar;
+            if (loading is not null) (loading.LoadBar, loading.Faithful) = (loadBar, faithfulUi);
             // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
             fpsWindow += dt;
             fpsFrames++;
@@ -900,6 +886,17 @@ sealed partial class GameHost
             }
             ApplyCamera(session.CameraAt());
             if (hud is not null) ApplyTitleCamera();
+            // The pointer's Ctrl/Alt modifiers and the Highlight key (Alt): labels on the ground items near the focus, signs and the hover outlines agree.
+            bool ctrlHeld = Ctrl(), altHeld = Alt();
+            bool highlighting = altHeld && !Covered && !TitleVisible && hud is { UiVisible: true } &&
+                settings?.Visible != true && !session.Camera.IsFree;
+            if (hud is not null)
+            {
+                hud.CtrlHeld = ctrlHeld;
+                hud.AltHeld = altHeld;
+                hud.HighlightFocus = highlighting ? camera.Target : null;
+            }
+            if (objects is not null) objects.HighlightSigns = highlighting;
             if (!Covered && hud is not null && TitleVisible) titleBattle?.Advance(dt);
             if (skyArrival is not null)
             {
@@ -911,6 +908,7 @@ sealed partial class GameHost
             SendFocus();
             UpdateNav();
             UpdateNavOverlay();
+            UpdateBuildings();
             // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
             // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
             UpdateInteriorView();
@@ -945,7 +943,7 @@ sealed partial class GameHost
                     !Covered && settings?.Visible != true;
                 if (outlining)
                 {
-                    if (shiftDown)
+                    if (highlighting)
                         hoverKeys.AddRange(hud!.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius)
                             .Select(t => (DrawKey(t.Id), t.Colour)));
                     else if (hud!.HoverTarget is { } hover)

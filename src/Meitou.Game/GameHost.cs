@@ -56,11 +56,13 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     WorldObjectRenderer? hostObjects = null;
     FoliageRenderer? hostFoliage = null;
     CharacterRenderer? hostCharacters = null;
+    WorldLamps? hostLamps = null;
     Func<float, float, float>? hostGround = null;
     WorldWeather? ActiveWeather => gpu is null ? hostWeather : gpu.Weather ?? hostWeather;
     WorldObjectRenderer? ActiveObjects => gpu is null ? hostObjects : gpu.Objects ?? hostObjects;
     FoliageRenderer? ActiveFoliage => gpu is null ? hostFoliage : gpu.Foliage ?? hostFoliage;
     CharacterRenderer? ActiveCharacters => gpu is null ? hostCharacters : gpu.Characters ?? hostCharacters;
+    WorldLamps? ActiveLamps => gpu is null ? hostLamps : gpu.Lamps ?? hostLamps;
     float ActiveGround(float x, float z) => hostGround?.Invoke(x, z) ?? gpu.Terrain.HeightAt(x, z);
     WorldCamera camera = null!;
     WorldRenderOptions render = null!;
@@ -201,6 +203,43 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         return (walkability, systems, constants);
     }
 
+    /// <summary>
+    /// The callbacks the interface asks the host for: the game data, the map, the build services, the tooltips and the character editor. Shared by the Vulkan
+    /// and Metal loops so the two expose the same interaction layer.
+    /// </summary>
+    void ConfigurePlayerInterface(PlayerInterface ui)
+    {
+        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
+        ui.WindSpeed = () => ActiveWeather?.State.WindSpeed ?? 0;
+        ui.BuildHost = MakeBuildServices();
+        ui.FactionName = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        ui.SquadLimits = () => popData?.Bodies.Constants;
+        ui.Rocks = () => popData?.ResourceNodes;
+        ui.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
+        ui.MapTowns = () => popData?.Sites ?? [];
+        ui.MapFactionOf = id =>
+        {
+            if (popData is not { } d || id is null || d.FactionIndex(id) is not (>= 0 and var town)) return null;
+            var faction = d.Factions[town];
+            if (session.World.Player.Faction is not (>= 0 and var mine))
+                return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
+            float relation = d.Relations.Get(mine, town);
+            var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
+            return new MapFaction(faction.Name, relation, standing, faction.NotReal);
+        };
+        ui.ArmourOf = record => popData?.Combat.Armour(record);
+        ui.RecordName = id => popData?.Db.Find(id)?.Name;
+        ui.ItemRecordOf = id => popData?.Db.Find(id);
+        ui.CombatOf = () => popData?.Combat;
+        ui.MapItemTowns = record =>
+        {
+            if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
+            return [.. Meitou.Simulation.Items.MapItems.Reveals(d, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => d.Sites[i].Town.Name)];
+        };
+        ConfigureEditor(ui);
+    }
+
     /// <summary>The rest of <see cref="Boot"/> once the session exists: bindings, the player's interface, the start (a new game's squad, the sandbox, the duel), the camera, a <c>--load</c> save.</summary>
     void BootPlayer(VulkanDisplay display, bool interactive)
     {
@@ -223,9 +262,6 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
-        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
-        player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
-        player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
         player.MoveMarker = gpu.MoveMarker ??= MoveMarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
@@ -236,36 +272,12 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);
         player.SurfaceMoveHit = SurfaceMoveHit;
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
-        player.BuildHost = MakeBuildServices();
-        player.FactionName = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
-        player.SquadLimits = () => popData?.Bodies.Constants;
-        player.Rocks = () => popData?.ResourceNodes;
-        player.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
-        player.MapTowns = () => popData?.Sites ?? [];
-        player.MapFactionOf = id =>
-        {
-            if (popData is not { } d || id is null || d.FactionIndex(id) is not (>= 0 and var town)) return null;
-            var faction = d.Factions[town];
-            if (session.World.Player.Faction is not (>= 0 and var mine)) return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
-            float relation = d.Relations.Get(mine, town);
-            var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
-            return new MapFaction(faction.Name, relation, standing, faction.NotReal);
-        };
-        player.ArmourOf = record => popData?.Combat.Armour(record);
-        player.RecordName = id => popData?.Db.Find(id)?.Name;
-        player.ItemRecordOf = id => popData?.Db.Find(id);
-        player.CombatOf = () => popData?.Combat;
-        player.MapItemTowns = record =>
-        {
-            if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
-            return [.. Meitou.Simulation.Items.MapItems.Reveals(d, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => d.Sites[i].Town.Name)];
-        };
+        ConfigurePlayerInterface(player);
         if (IsSandbox) player.ReservedKeys.UnionWith([Meitou.Engine.Input.Key.Z, Meitou.Engine.Input.Key.X, Meitou.Engine.Input.Key.C, Meitou.Engine.Input.Key.Y, Meitou.Engine.Input.Key.P, Meitou.Engine.Input.Key.G]);
         player.ConfigureFrontend(scene.Database,
             () => Meitou.Data.Save.SaveCatalog.Scan(Meitou.Simulation.Saving.QuickSave.DefaultRoot, install.SaveDirectory,
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
             assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
-        ConfigureEditor();
         if (g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation) player.ShowTitle();
         if (nav is not null && (start is not null || !interactive))
         {
