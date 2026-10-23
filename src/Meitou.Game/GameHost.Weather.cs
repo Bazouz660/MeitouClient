@@ -16,9 +16,12 @@ sealed partial class GameHost
     {
         public readonly List<WeatherAffectZone> ZoneList = [];
         public IReadOnlyList<WeatherAffectZone> Zones => ZoneList;
+        /// <summary>A weather every point gets instead of the schedule's (the <c>--scene acid</c> harness).</summary>
+        public WeatherHere? Forced;
 
         public WeatherHere? At(float x, float z)
         {
+            if (Forced is { } forced) return forced;
             if (weather()?.World is not { } world) return null;
             var region = world.RegionAt(x, z);
             return new WeatherHere(region.Weather.AffectType, region.Strength, region.Def.AcidicGround, region.Def.AcidicWater);

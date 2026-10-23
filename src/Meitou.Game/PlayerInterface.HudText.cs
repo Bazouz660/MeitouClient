@@ -194,7 +194,9 @@ sealed partial class PlayerInterface
                     var textProperties = new Dictionary<string, string>(properties) { ["TextAlign"] = align, ["TextColour"] = colour ?? MyGuiColours.InkText };
                     // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
                     if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
-                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", row, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
+                    // A value beside a label keeps out of the label's column: a long one (a French weather notice) is cut short instead of running over the label.
+                    var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f } : row;
+                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", box, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
                         textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
                 }
         }

@@ -349,4 +349,27 @@ sealed partial class PlayerInterface
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Center" }, default, new Vector4(1 - p, p, 0, 1)));
         }
     }
+
+    /// <summary>
+    /// The <c>--scene menu</c> harness (GameHost.Scenes.cs): opens at once, with no hold, the context menu of the <paramref name="kind"/> ("character", "door", "container", "cage")
+    /// nearest to <paramref name="near"/> that is on screen; its title and verbs are printed. False when there is none or it has no verbs.
+    /// </summary>
+    internal bool OpenSceneMenu(string kind, Vector3 near)
+    {
+        CloseContextMenu();
+        var snap = session.CurrentSnapshot;
+        (string Title, Vector3 At, List<(string Caption, Action Give)> Verbs)? found = kind switch
+        {
+            "character" => snap.Characters.Where(c => !c.IsPlayer).OrderBy(c => Vector3.DistanceSquared(c.Position, near)).Select(c => (c.Name, c.Position, Verbs(c))).FirstOrDefault(),
+            "door" => snap.DoorPicks.OrderBy(d => Vector3.DistanceSquared(d.Position, near))
+                .Select(d => (Loc.Tr("Door"), d.Position, DoorVerbs((d, snap.Doors.GetValueOrDefault((d.Building, d.Door)).Locked)))).FirstOrDefault(),
+            "container" => snap.Containers.OrderBy(c => Vector3.DistanceSquared(c.Position, near)).Select(c => (c.Record, c.Position, ContainerVerbs(c))).FirstOrDefault(),
+            "cage" => snap.Cages.OrderBy(c => Vector3.DistanceSquared(c.Position, near)).Select(c => (Loc.Tr("Cage"), c.Position, CageVerbs(c))).FirstOrDefault(),
+            _ => null,
+        };
+        if (found is not { } f || f.Verbs is null || Project(f.At) is not { } px) return false;
+        contextMenu = Menu(f.Title, px, f.Verbs);
+        System.Console.WriteLine($"scene     menu {kind} '{f.Title}' at {f.At.X:0}, {f.At.Z:0}: {string.Join(" | ", f.Verbs.Select(v => v.Caption))}");
+        return contextMenu is not null;
+    }
 }
