@@ -11,10 +11,18 @@ Instance bones/material offsets index shared storage buffers; group compatible m
 The update places every in-range part once (model and previous matrix relative to the eye, LOD distance at bias 1) inside the
 parallel pose loop; the colour, motion and shadow views from that eye reuse it, cull and pick levels in parallel chunks of 16
 characters, and keep the serial order within each batch. Portraits, icons, hover masks and other eyes place their own.
+The shadow cascades drawn in a frame are gathered together before the first (`PrepareDepth`, from `ShadowPass`'s `CasterPrepare`): one
+parallel walk over the chunks tests each character and part against every cascade, then each cascade's batches and instance rows are
+filled in parallel; each cascade's draw only records. Every view has its own batches, named by an id per (mesh part, level, sidedness).
+Whether a character is indoors (the GI's interior flag; the host's hidden-indoors test too) is asked again only once it has moved farther
+than the nearest interior box was when last asked (at most 50 units) or the loaded interiors changed (`WorldObjectRenderer.InteriorMemo`).
 Each `PartMaterial` keeps its last record and is written again only in a new epoch (texture cache `Version`: an image loaded, swapped
-or unloaded; LOD bias, stand-in, sampler generation, skin settings) or after its own fields changed (blend, body build). Texture needs
+or unloaded; LOD bias, stand-in, sampler generation, skin settings) or after its own fields changed (blend, body build). The records live
+in `CharacterMaterialTable`, a persistent storage buffer (binding 7) with a slot per material: a record that came out different goes to a
+new slot (frames in flight still read the old one), uploaded in one copy; a slot comes back FramesInFlight + 1 frames after its material
+changed or went 600 updates undrawn. Texture needs
 are offered, and the textures marked used, only on the frame `CharacterTextureBudget` commits (every 500 ms, under the cache's 2 s idle limit).
-CharacterShaders set0 bindings: bones6, materials7, morphs8, previous bones9; material20 texture
+CharacterShaders set0 bindings: bones6, materials7 (persistent), morphs8, previous bones9; material20 texture
 slots. CharacterLayoutTests pins CPU/GLSL layouts. Push depthIndex is near-depth bindless index
 for motion,0 otherwise. Camera-relative transforms preserve precision; previous bone/transform
 state must match motion history. Skin/body/head/hair/item modes share world lighting/haze.

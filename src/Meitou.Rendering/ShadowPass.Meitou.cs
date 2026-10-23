@@ -215,7 +215,7 @@ public sealed unsafe partial class ShadowPass
         LandmarkCount = landmarkSpheres.Count;
     }
 
-    void RenderMeitou(ShadowView view, Vector3 toSun, CasterDraw draw, LandmarkCasters? landmarks)
+    void RenderMeitou(ShadowView view, Vector3 toSun, CasterDraw draw, LandmarkCasters? landmarks, CasterPrepare? prepare)
     {
         var watch = Stopwatch.StartNew();
         Array.Clear(PhaseMs);
@@ -256,20 +256,26 @@ public sealed unsafe partial class ShadowPass
         for (int i = 0; i < count; i++) owed[i] = want[i] && !drawNow[i];
 
         timer.Begin();
-        // Each cascade drawn is a rendering of its own layer, cleared by the load op; the other layers keep what they hold.
+        int drawn = 0;
         for (int i = 0; i < count; i++)
+            if (drawNow[i] && MeitouShadowFit.Fit(view, toSun, Effective, splits, i, gridAnchor) is var fitted)
+                casterViews[drawn++] = new CasterView(fitted, fitted.WorldToClip(), fitted.CullPlanes(), view.Eye);
+        prepare?.Invoke(casterViews.AsSpan(0, drawn));
+        // Each cascade drawn is a rendering of its own layer, cleared by the load op; the other layers keep what they hold.
+        for (int k = 0; k < drawn; k++)
         {
-            if (!drawNow[i]) continue;
-            var c = MeitouShadowFit.Fit(view, toSun, Effective, splits, i, gridAnchor);
+            var (c, worldToClip, planes, lodEye) = casterViews[k];
+            int i = c.Index;
             var host = BeginHost("shadow cascade", clear: true, layer: i);
             SetTile(0, 0, atlasSize);
             SetCasterBias(new Vector4(c.FixedBias, MeitouShadowFit.Slope, c.MaxSlopeBias, 0));
-            draw(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
+            draw(c, worldToClip, planes, lodEye);
             EndHost(host);
             stored[i] = c;
             storedSunDir[i] = toSun;
             CascadeDraws[i]++;
         }
+        Array.Clear(casterViews);
         bool blockers = ContactHardening && filterQuality > 0 && UpdateBlockers(drawNow, count);
         if (coarse is not null)
         {

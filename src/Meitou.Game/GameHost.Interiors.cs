@@ -57,8 +57,17 @@ sealed partial class GameHost
                 if (viewedFloor < 3 && inView.FloorAt(at) > viewedFloor) hiddenIndoors.Add(c.Id);
             }
             // Strictly inside (no margin): one on the doorstep stays drawn.
-            else if (objects.InteriorAt(at) is { } closed && objects.Construction?.ContainsKey(closed.PlacementId) != true) hiddenIndoors.Add(c.Id);
+            else if (objects.InteriorAt(at, ref InteriorMemo(c.Id.Slot)) is { } closed && objects.Construction?.ContainsKey(closed.PlacementId) != true) hiddenIndoors.Add(c.Id);
         }
+    }
+
+    // By character slot, the last answer of the test above (asked again once the character moves; a slot's new character only inherits a place's answer).
+    Meitou.Rendering.WorldObjectRenderer.InteriorMemo[] interiorMemos = [];
+
+    ref Meitou.Rendering.WorldObjectRenderer.InteriorMemo InteriorMemo(int slot)
+    {
+        if (slot >= interiorMemos.Length) Array.Resize(ref interiorMemos, Math.Max(slot + 1, interiorMemos.Length * 2));
+        return ref interiorMemos[slot];
     }
 
     /// <summary>

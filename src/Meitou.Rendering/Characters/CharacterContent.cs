@@ -48,9 +48,8 @@ internal sealed class AssetPart
     public required float BoundsRadius;
     /// <summary>Boxes round the mesh for picking (<see cref="PickBox"/>): one per bone of a skinned part, one for an unskinned one.</summary>
     public PickBox[] PickBoxes = [];
-    // This frame's slot in the material table (CharacterRenderer.Update).
+    // The frame (CharacterRenderer.Update) it was last listed in, so the material update takes each part once.
     public long MaterialFrame = -1;
-    public int MaterialSlot;
     /// <summary>The body mesh, whose vertices take the asset's morph.</summary>
     public bool Morphed;
     /// <summary>The body mesh, whose limb vertices the appearance's hidden limbs hide (<see cref="CharacterAppearance.HiddenLimbs"/>).</summary>
@@ -70,7 +69,7 @@ internal sealed class AssetPart
     /// <summary>Nearest distance of a user this frame, for the textures' mip streaming.</summary>
     public float Near;
     /// <summary>The draw batches of its mesh's parts by part, level and sidedness (<see cref="CharacterRenderer"/>'s gather), so the views do not look them up per instance.</summary>
-    public CharacterRenderer.Batch?[]? Batches;
+    public int[]? Batches;
     float uvScale;
     /// <summary>World length of a texture-coordinate unit on the part (the largest of the mesh's parts; infinity: unknown, every mip kept).</summary>
     public float UvScale
@@ -120,6 +119,9 @@ internal sealed class PartMaterial
     /// <summary>The record last written for it and the renderer's material epoch it holds for (<see cref="CharacterRenderer"/>); 0 after a field above changed: written again.</summary>
     public CharacterMaterialRecord Record;
     public int RecordEpoch;
+    /// <summary>Its slot in <see cref="CharacterMaterialTable"/> (-1: none) and the update it was last drawn in.</summary>
+    public int Slot = -1;
+    public long SlotUsed;
 }
 
 /// <summary>Everything the renderer keeps for one appearance: the skeleton and its shape, the parts, the posture layers that always apply.</summary>
@@ -205,6 +207,7 @@ internal sealed class CharacterContent : IDisposable
         resolver = new MaterialResolver(db, OgreMaterialLibrary.LoadConfigured(install, out _), assets);
         Textures = new WorldTextureCache(gpu, assets, "character textures");
         Morphs = new MorphArena(gpu);
+        Materials = new CharacterMaterialTable(gpu);
         Rigs = rigs ?? CreateRigs(db, assets);
     }
 
@@ -212,7 +215,10 @@ internal sealed class CharacterContent : IDisposable
 
     public MorphArena Morphs { get; }
 
-    /// <summary>Frees every mesh's buffers, the textures and the morph arena. The meshes' parts must not be drawn afterwards.</summary>
+    /// <summary>The parts' material records (binding 7), kept between frames.</summary>
+    public CharacterMaterialTable Materials { get; }
+
+    /// <summary>Frees every mesh's buffers, the textures, the morph arena and the material table. The meshes' parts must not be drawn afterwards.</summary>
     public void Dispose()
     {
         foreach (var mesh in meshes.Values)
@@ -227,6 +233,7 @@ internal sealed class CharacterContent : IDisposable
         MeshBytes = 0;
         Textures.Dispose();
         Morphs.Dispose();
+        Materials.Dispose();
     }
 
     /// <summary>Meshes are loaded by bare name (Kenshi reduces the path first), so resources.cfg's last location wins.</summary>

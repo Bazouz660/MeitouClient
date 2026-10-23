@@ -754,16 +754,54 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
     {
         // The zones within 200 units of the point (a building may stand over its zone's edge): the one it is in and at most three beside it.
-        const float Over = 200;
-        var (lo, hi) = (WorldLayout.ZoneOf(p.X - Over, p.Z - Over), WorldLayout.ZoneOf(p.X + Over, p.Z + Over));
+        var (lo, hi) = (WorldLayout.ZoneOf(p.X - InteriorOver, p.Z - InteriorOver), WorldLayout.ZoneOf(p.X + InteriorOver, p.Z + InteriorOver));
         for (int x = lo.X; x <= hi.X; x++)
             for (int y = lo.Y; y <= hi.Y; y++)
             {
-                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > Over) continue;
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > InteriorOver) continue;
                 foreach (var v in zone.Interiors)
                     if (v.Contains(p, margin)) return v;
             }
         return null;
+    }
+
+    const float InteriorOver = 200, InteriorKeep = 50;
+
+    /// <summary>A point's last <see cref="InteriorAt(Vector3, ref InteriorMemo)"/> answer, kept by the asker (a character): good while the interiors are the same and the point within <c>Clear</c> of where it was asked.</summary>
+    public struct InteriorMemo
+    {
+        internal bool Set;
+        internal int Version;
+        internal Vector3 At;
+        internal float Clear;
+        internal InteriorVolume? Volume;
+    }
+
+    /// <summary>
+    /// <see cref="InteriorAt(Vector3, float)"/> without a margin, asked again only once <paramref name="p"/> has moved farther than the nearest interior's box was (at most 50 units,
+    /// over every zone the moved point could ask) or the interiors changed. Standing still inside asks nothing either: there the distance kept is 0.
+    /// </summary>
+    public InteriorVolume? InteriorAt(Vector3 p, ref InteriorMemo memo)
+    {
+        // Strictly nearer: a point on a box's edge can be inside.
+        if (memo.Set && memo.Version == streamer.InteriorVersion && Vector3.DistanceSquared(p, memo.At) is var moved && (moved == 0 || moved < memo.Clear * memo.Clear)) return memo.Volume;
+        float clear = InteriorKeep, reach = InteriorOver + InteriorKeep;
+        InteriorVolume? found = null;
+        var (lo, hi) = (WorldLayout.ZoneOf(p.X - reach, p.Z - reach), WorldLayout.ZoneOf(p.X + reach, p.Z + reach));
+        for (int x = lo.X; x <= hi.X && found is null; x++)
+            for (int y = lo.Y; y <= hi.Y && found is null; y++)
+            {
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone) continue;
+                float zoneDistance = ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p);
+                if (zoneDistance > reach) continue;
+                foreach (var v in zone.Interiors)
+                {
+                    clear = MathF.Min(clear, v.Distance(p));
+                    if (zoneDistance <= InteriorOver && v.Contains(p)) { found = v; break; }
+                }
+            }
+        memo = new InteriorMemo { Set = true, Version = streamer.InteriorVersion, At = p, Clear = found is null ? clear : 0, Volume = found };
+        return found;
     }
 
     /// <summary>

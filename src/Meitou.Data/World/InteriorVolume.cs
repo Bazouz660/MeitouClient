@@ -65,6 +65,15 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
         return true;
     }
 
+    /// <summary>How far <paramref name="p"/> is from the volume's box (footprint box by height range): a point nearer than that to it is still outside (<see cref="Contains"/>, no margin).</summary>
+    public float Distance(Vector3 p)
+    {
+        var e = edges;
+        float dx = MathF.Max(MathF.Max(e.Min.X - p.X, p.X - e.Max.X), 0), dz = MathF.Max(MathF.Max(e.Min.Y - p.Z, p.Z - e.Max.Y), 0);
+        float dy = MathF.Max(MathF.Max(YMin - p.Y, p.Y - YMax), 0);
+        return MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     // Contains's footprint, worked out once: the most asked of it (every character and furniture piece near a building, each frame) are far outside.
     readonly FootprintEdges edges = FootprintEdges.Of(Footprint);
 

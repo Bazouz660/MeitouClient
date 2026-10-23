@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Characters;
@@ -178,6 +179,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public readonly Dictionary<int, Matrix4x4> BoltLocal = [];
         public Vector3 Centre;
         public float Radius;
+        /// <summary>Its last indoors answer (<see cref="Live.Interior"/>), asked again once it has moved.</summary>
+        public WorldObjectRenderer.InteriorMemo Interior;
     }
 
     readonly Dictionary<long, CharState> states = [];
@@ -211,7 +214,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     int layerCount;
     Matrix4x4[] attach = new Matrix4x4[256];
     int attachCount;
-    Transient bones, previousBones, materials;
+    Transient bones, previousBones;
     readonly List<AssetPart> slotParts = [];
     long updateStamp;
     readonly CharacterTextureBudget budget = new();
@@ -388,7 +391,6 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
             (l.WeaponDrawn, l.RangedDrawn, l.BackDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, inst.Shots, inst.Bolts);
             l.Centre = centre;
-            l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
             l.BoneBase = boneTotal;
             boneTotal += asset.Rig.BoneCount;
@@ -399,6 +401,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
+            l.Interior = !far && InteriorObjects?.InteriorAt(centre, ref state.Interior) is not null;
             (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.BackDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, !far, centre, l.Radius);
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
@@ -485,7 +488,6 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 if (part.MaterialFrame != updateStamp)
                 {
                     part.MaterialFrame = updateStamp;
-                    part.MaterialSlot = slotParts.Count;
                     part.Near = float.PositiveInfinity;
                     slotParts.Add(part);
                 }
@@ -502,17 +504,29 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                     if (t is not null) { t.OfferNow(need); _ = t.Key; }
             }
         budget.Update(content.Textures);
-        // A record is written again only when something it reads changed (materialEpoch, or the material's own fields), and copied over whole: the frame's
-        // constants are mapped GPU memory, where building a record field by field (its zeroing, the texture array's stores) cost about 14 µs a record.
+        // A record is written again only when something it reads changed (materialEpoch, or the material's own fields), and uploaded into the material table
+        // (CharacterMaterialTable) only when it came out different or the material has no slot.
         var inputs = (content.Textures.Version, textureBias, textureStandIn, Gpu.Samplers.Generation);
         if (inputs != materialInputs) (materialInputs, materialEpoch) = (inputs, materialEpoch + 1);
-        materials = Gpu.Frame.Constants.Allocate((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
+        var table = content.Materials;
+        table.BeginFrame();
+        if (updateStamp % 120 == 0) table.Sweep(updateStamp - CharacterMaterialTable.IdleUpdates);
+        CharacterMaterialRecord record = default;
         for (int s = 0; s < slotParts.Count; s++)
         {
             var m = slotParts[s].Material;
-            if (m.RecordEpoch != materialEpoch) { Write(m, ref m.Record); m.RecordEpoch = materialEpoch; }
-            *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = m.Record;
+            m.SlotUsed = updateStamp;
+            if (m.RecordEpoch != materialEpoch)
+            {
+                Write(m, ref record);
+                m.RecordEpoch = materialEpoch;
+                if (m.Slot >= 0 && SameRecord(in record, in m.Record)) continue;
+                m.Record = record;
+                table.Place(m);
+            }
+            else if (m.Slot < 0) table.Place(m);
         }
+        table.Flush();
         StageClock.Part(StageClock.PartMaterials);
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;
         updateCount++;
@@ -520,6 +534,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         poseCpu.Add(LastPoseMs);
         gatherCpu.Add(gatherMs);
     }
+
+    static bool SameRecord(in CharacterMaterialRecord a, in CharacterMaterialRecord b) =>
+        MemoryMarshal.AsBytes(new ReadOnlySpan<CharacterMaterialRecord>(in a)).SequenceEqual(MemoryMarshal.AsBytes(new ReadOnlySpan<CharacterMaterialRecord>(in b)));
 
     readonly List<long> staleKeys = [];
 

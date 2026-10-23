@@ -1599,9 +1599,13 @@ static class WorldFrame
         post.HeatHazeFarClip = KenshiHaze.FarDistance(Meitou.Data.World.HeatHaze.ViewDistanceSetting);   // the heat haze's D follows the install's `view distance`, not the sky haze's constant
     }
 
+    // DrawShadows's cascades for the characters (render thread).
+    static readonly (int, Vector4[], float, float)[] CasterSpecs = new (int, Vector4[], float, float)[ShadowSettings.MaxCascades];
+
     /// <summary>
     /// The sun's shadow cascades (ShadowPass, docs/formats/shadows.md): fitted to this camera, their casters drawn by the renderers'
     /// depth-only paths (terrain, objects, foliage meshes; detail chosen from the camera's eye), before the reflection and the main pass.
+    /// The characters of all the cascades drawn are gathered first, in one walk.
     /// </summary>
     /// <param name="sunHeight">The real sun's height: the map is drawn along the lighting direction while the sun still has a colour (as the game).</param>
     public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null)
@@ -1612,6 +1616,28 @@ static class WorldFrame
         int objects = 0, foliage = 0;
         gpu.Terrain.DepthTriangles = 0;
         var cascades = DetailedStats ? new System.Text.StringBuilder() : null;
+        // Characters take the far cascades' floor in both shadow modes: their levels are Meitou's own, and every character is in every cascade that holds the crowd.
+        // In Meitou's coarse cascades a part under a texel across casts nothing (ShadowPass.MinCharacterCasterTexels).
+        (float LodFloor, float MinRadius) CharacterCasting(ShadowCascade cascade)
+        {
+            float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
+            return (ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale),
+                ShadowPass.CharacterCasterCull ? coarse * ShadowPass.MinCharacterCasterTexels * 0.5f : 0);
+        }
+        // The characters of every cascade drawn this frame, gathered in one walk before the first (CharacterRenderer.PrepareDepth).
+        void PrepareCasters(ReadOnlySpan<ShadowPass.CasterView> views)
+        {
+            if (gpu.Characters is not { } characters || views.IsEmpty) return;
+            var specs = CasterSpecs.AsSpan(0, views.Length);
+            for (int k = 0; k < views.Length; k++)
+            {
+                var (floor, minRadius) = CharacterCasting(views[k].Cascade);
+                specs[k] = (views[k].Cascade.Index, views[k].Planes, floor, minRadius);
+            }
+            characters.PrepareDepth(views[0].LodEye, specs);
+            specs.Clear();
+            StageClock.Sub("characters");
+        }
         shadow.Render(view, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
         {
             long t0 = Stopwatch.GetTimestamp();
@@ -1623,10 +1649,9 @@ static class WorldFrame
             int oi = 0, oc = 0, fi = 0, fc = 0;
             if (render.Objects && gpu.Objects is { } o) { o.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, coarse); objects += o.DrawnInstances; (oi, oc) = (o.DrawnInstances, o.DrawCalls); }
             StageClock.Sub("objects");
-            // Characters take the far cascades' floor in both shadow modes: their levels are Meitou's own, and every character is in every cascade that holds the crowd.
-            // In Meitou's coarse cascades a part under a texel across casts nothing (ShadowPass.MinCharacterCasterTexels).
-            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale),
-                ShadowPass.CharacterCasterCull ? coarse * ShadowPass.MinCharacterCasterTexels * 0.5f : 0);
+            var (characterFloor, characterMinRadius) = CharacterCasting(cascade);
+            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, characterFloor, characterMinRadius, cascade.Index);
+            StageClock.Sub("characters");
             long t2 = Stopwatch.GetTimestamp();
             if (gpu.Foliage is { } f) { f.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, maxRange: shadow.EffectiveRange * 1.2f, minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0); foliage += f.DrawnInstances; (fi, fc) = (f.DrawnInstances, f.DrawCalls); }
             StageClock.Phase(CascadeLabels[cascade.Index]);
@@ -1639,7 +1664,7 @@ static class WorldFrame
         }, sunHeight, render.Objects && gpu.Objects is { HasLandmarks: true } lo
             ? new ShadowPass.LandmarkCasters(spheres => lo.LandmarkCasters(camera.Eye, spheres),
                 (_, worldToClip, planes, lodEye) => lo.DrawLandmarksDepth(worldToClip, lodEye, planes, render, gpu.Terrain))
-            : null);
+            : null, PrepareCasters);
         shadow.CasterStats = $"{gpu.Terrain.DepthTriangles:N0} terrain triangles, {objects} objects, {foliage} foliage meshes (over the cascades); cpu terrain {shadow.PhaseMs[0]:0.00}, objects {shadow.PhaseMs[1]:0.00}, foliage {shadow.PhaseMs[2]:0.00} ms;{cascades}"
             + (shadow.Meitou ? $"; meitou: {shadow.DescribeMeitou()}" : "");
     }
