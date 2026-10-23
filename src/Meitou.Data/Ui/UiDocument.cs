@@ -63,7 +63,10 @@ public static partial class MyGuiPresentation
                     ? new UiRect(w.Position.X * bindings.TemplateScale, w.Position.Y * bindings.TemplateScale, w.Position.Width * bindings.TemplateScale, w.Position.Height * bindings.TemplateScale)
                         .AlignTo(parent, float.Parse(rw, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, float.Parse(rh, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, w.Align)
                     : w.Position.RelativeTo(parent, false);
-            if (bindings.Progress.TryGetValue(w.Name, out float fraction)) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
+            // A ProgressBar template (TrackSkin) keeps its frame; its fill is added in TrackPlace below. Any other bound widget is cut to the fraction.
+            bool progress = bindings.Progress.TryGetValue(w.Name, out float fraction);
+            string? trackSkin = progress ? w.UserStrings.GetValueOrDefault("TrackSkin") : null;
+            if (progress && trackSkin is null) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
             string caption = bindings.Coded(w.Name) ?? PartText(bindings, props) ?? props.GetValueOrDefault("Caption") ?? "";
             if (props.TryGetValue("CaptionOwner", out string? owner))
             {
@@ -107,6 +110,13 @@ public static partial class MyGuiPresentation
             }
             else if (w.Type == "ScrollView") VisitScrollView(result, bindings, w, props, bounds, childClip, enabled, alpha, Visit);
             else foreach (var child in w.Children) Visit(child, ChildParent(props, bounds), childClip, enabled, alpha);
+            if (trackSkin is not null && result.FindLastIndex(c => c.Properties.GetValueOrDefault("TemplateOwner") == w.Name && c.Properties.GetValueOrDefault("TemplatePart") == "TrackPlace") is var place and >= 0)
+            {
+                // TrackFill (MyGUI ProgressBar): the track runs from the start of TrackPlace to the position, under the frame that follows it.
+                var track = result[place].Bounds;
+                result.Insert(place + 1, new(w.Name + "@track", "Widget", track with { Width = MathF.Round(track.Width * Math.Clamp(fraction, 0, 1)) }, "", "", trackSkin, enabled,
+                    new Dictionary<string, string>(StringComparer.Ordinal), default, Pickable: false, Clip: result[place].Clip));
+            }
             AddWidgetContent(result, bindings, w, props, bounds, clip, enabled, alpha, new(0, 0, width, height), Visit, deferred);
         }
         foreach (var root in layout.Roots.OrderBy(w => { int i = layers.IndexOfLayer(w.Layer); return i < 0 ? 0 : i; }))

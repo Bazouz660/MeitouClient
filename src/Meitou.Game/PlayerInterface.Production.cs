@@ -114,6 +114,7 @@ sealed partial class PlayerInterface
             b.Actions["QueueButton"] = "QueueButton";
         }
         else b.Hidden.Add("CraftingPanel");
+        b.TemplateScale = InventoryScale;
         if (m is null) return;
         for (int k = 0; k < 2; k++)
         {
@@ -165,17 +166,21 @@ sealed partial class PlayerInterface
             // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top left.
             var slot = controls[index];
             var b = slot.Bounds with { Width = view.Width * InventoryCell, Height = view.Height * InventoryCell };
+            // The grid and a moved bar may leave their content panel, so they clip to the window instead.
+            var clip = controls.FirstOrDefault(c => c.Type == "Window")?.Bounds ?? slot.Clip;
             controls[index] = slot with
             {
                 Bounds = b,
+                Clip = clip,
                 Properties = new Dictionary<string, string>(slot.Properties) { ["TileSize"] = FormattableString.Invariant($"{InventoryCell} {InventoryCell}"), ["State"] = "normal" },
             };
             // Engine choice: a grid taller than the room above the progress bar pushes the bar down under it.
-            int barIndex = controls.FindIndex(c => c.Name == bar);
-            if (barIndex >= 0 && controls[barIndex].Bounds is var pb && pb.Y < b.Y + b.Height + 4 * InventoryScale)
-                controls[barIndex] = controls[barIndex] with { Bounds = pb with { Y = b.Y + b.Height + 4 * InventoryScale } };
+            if (controls.FirstOrDefault(c => c.Name == bar) is { } root && b.Y + b.Height + 4 * InventoryScale - root.Bounds.Y is var dy and > 0)
+                for (int i = 0; i < controls.Count; i++)
+                    if (controls[i].Name == bar || controls[i].Name == bar + "@track" || controls[i].Properties.GetValueOrDefault("TemplateOwner") == bar)
+                        controls[i] = controls[i] with { Bounds = controls[i].Bounds with { Y = controls[i].Bounds.Y + dy }, Clip = clip };
             if (view.Count <= 0 || Lifted(ItemOwner.AtSite(m.Site), code)) return;
-            AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
+            AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, clip);
         }
         for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", $"Input{k + 1}ProgressBar", m.Inputs[k], 10 + k);
         if (m.Output is { } output) Slot("out", "OutputProgressBar", output, 8);
