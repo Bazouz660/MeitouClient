@@ -509,7 +509,7 @@ public sealed class FrameProfiler : IDisposable
         overlay.Rect(x0, y0, x1, y1, DebugOverlay.PanelColour);
         RefreshVram();
         // The process's RAM: its working set (all it holds in physical memory) and the managed heap within it.
-        string header = string.Create(CultureInfo.InvariantCulture, $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   " +
+        string header = string.Create(CultureInfo.InvariantCulture, $"{(showGpu ? "gpu" : "cpu")}   vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   " +
             $"ram {ram.WorkingSet / 1073741824.0:0.00} GB (managed {ram.Managed / 1073741824.0:0.00})   ");
         overlay.Text(header, x0 + pad, y0 + pad, DebugOverlay.TextColour);
         // The whole frame (FrameColour line): mean of the last frames, frames a second and the longest kept.
