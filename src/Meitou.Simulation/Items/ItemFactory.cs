@@ -95,6 +95,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             if (loadout.Crossbow is { } x) AddWeapon(inventory, x);
             foreach (var w in loadout.Weapons) AddWeapon(inventory, w);
         }
+        if (character is { Type: FcsRecordType.ANIMAL_CHARACTER }) AddAnimalBackpacks(inventory, character);
         if (character is not null)
             foreach (var r in character.GetReferences("inventory"))
             {
@@ -111,6 +112,25 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
                 inventory.Items.Add(item);
             }
         return inventory;
+    }
+
+    /// <summary>
+    /// A new animal's luggage (docs/game/animals.md "Pack animals", <c>FUN_14062a130</c>, <b>Observed</b>): every entry of the ANIMAL_CHARACTER's <c>backpack</c> list is made and
+    /// added, whatever its values (the Pack Bull's entry is (0, 0, 0)); the first goes on the <c>backpack_attach</c> slot, so a pack beast carries its bag's grid from the start.
+    /// More entries go where they fit (none in the data has two).
+    /// </summary>
+    void AddAnimalBackpacks(Inventory inventory, GameRecord animal)
+    {
+        foreach (var r in animal.GetReferences("backpack"))
+        {
+            if (Create(r.TargetStringId) is not { Type: FcsRecordType.CONTAINER } pack) continue;
+            if (inventory.Backpack is null)
+            {
+                pack.Section = "backpack_attach";
+                inventory.Items.Add(pack);
+            }
+            else inventory.Add(pack);
+        }
     }
 
     /// <summary>

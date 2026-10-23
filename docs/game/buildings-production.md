@@ -87,19 +87,44 @@ missing material type per action; progress later spends delivered units (stall r
 nothing is outstanding and fails to the planner when something is outstanding but nothing is carried. Whether the bar
 restarts between actions is **Unknown**.
 
-Fetching (**Verified** class, **Observed** meaning): `Task_EmptyMachine_BuildMats` (task 247 "Collecting resource")
-shares the Task_EmptyMachine update `FUN_14033cd10`: it faces a building and moves its items into the inventory while
-there is room, 2 per pickup (`FUN_1403411c0`). Which storages are chosen and the range are **Unknown**.
+Fetching (**Verified**, TaskData rows of `FUN_140319a60`, finder `FUN_1405a2a60` -> `FUN_14059d000`, factory `FUN_14032ebd0`
+case 247, `FUN_14033cd10`): the planner chain is 2 Building (needs 51) <- 71 Adding materials (needs 50) <- 115 "Finding
+building mats" (effect 150, a target finder) <- 247 "Collecting resource". The 115 finder takes the site's materials with
+`required - delivered > 0` (`FUN_14054a450`) in list order and returns the first one's source (factor 1; 0 when none):
+1. a source remembered for that item (a per-item map in the AI, re-used while valid);
+2. a loose item within 1200 of the character with the same record, not blacklisted and not lying in another faction's
+   building (`FUN_140997d80`, **Observed**); the first the world grid query meets;
+3. a complete building of the character's town (its current town, else the nearest town within 3953, plus its home
+   town; `FUN_1408cbea0`, query mask 0x4002436 = functions 1, 2, 4, 5, 10, 13, 26 read as bits, **Observed**) whose
+   owner it may use, that is not the excluded one, holds the item and has items: storages (`StorageBuilding`, slot
+   0x3b0 null) first, then production buildings (their output); nearest within the AI's range. An item matches when
+   it is the same record, or, when neither is an ITEM (type 4), any record of the same type.
+The range is the AI's mode `AI+0x2bc` (**Verified**, constructor `FUN_1406236d0` sets 2; character orders 8/9 of
+`FUN_1405caa50` change it, which HUD buttons send them is **Unknown**): mode 2 squared distance <= 4.246733e7 (about 6517)
+from the character; mode 0 `(18 + 40 + 5)`, mode 1 `(18 + 200 + 5)` (AI+8 = 18, AI+0xc = 5), others 1000.
+Task 247 is `Task_EmptyMachine_BuildMats` (+0x78 clear) for a building target, `Task_Pickup` for an item. At the building
+the update lists its records (a storage: every record it holds; a production building: its output), takes the first
+record whose count (slot 5, `FUN_1403411c0`: always 2) is above 0, i.e. the first listed record, and moves up to 2 units
+while the character has room, then ends. Meitou takes the material instead of the first listed record (engine choice).
 
 ### Builders and dismantle
 
-Task ids and AI conditions: [ai-tasks](ai-tasks.md#build-tasks). Auto-job (**Verified**, `FUN_1409a6900`,
-`FUN_1409a6c10`, `BuildingFinderForEngineers`): candidates are buildings of the character's owner that are not
-blacklisted, dismantled, holding dismantle work (+0x168 > 0) or paused; an incomplete building (or one needing repair,
-slot 0x328) is a candidate, a complete one contributes its mounted children that need work. Score
-`max(2 (1 - d^2 / 9000^2), 0.0001)`, x planner cost when the site is stalled and the character carries nothing, x0.5
-when slot 89 is set, / (n + 1) with n = characters already working it. No cap on builders per site (**Observed**: the
+Task ids and AI conditions: [ai-tasks](ai-tasks.md#build-tasks). Engineer job (**Verified**): row 125 "Engineer" has no
+lists, effect 2 and the finder `FUN_140999060`, which ignores the job's target and runs `BuildingFinderForEngineers`
+(`FUN_1409a6900`, `FUN_1409a6c10`) from the character's position. Candidates are
+buildings of the character's owner that are not blacklisted, dismantled, holding dismantle work (+0x168 > 0) or paused,
+and not (slot 0x2f0 = 19 and destroyed, slot 0x330 = +0x1a1); an incomplete building (or one needing repair, slot 0x328)
+is a candidate, a complete one contributes its mounted children that need work. Score `max(2 (1 - d^2 / 9000^2),
+0.0001)` (d 3D), x0.5 when slot 89 is set, / (n + 1) with n = characters already working it; a stalled site the
+character has no material for (condition 50 false) is multiplied by the planner cost of the 115 finder (`FUN_14060f1d0`)
+and skipped at 0, i.e. when no source exists. The highest score wins. No cap on builders per site (**Observed**: the
 score and the 0.75 falloff spread them). Work distance (`isAtLocation`) is **Unknown**.
+
+Repair (**Verified**, Building slot 0x328 `FUN_1400f6b70`, `Task_Build` `FUN_14034a440`): a building needs repair when
+`progress < target`; building health is construction progress. Orders 2 and 95 are both `Task_Build`, which pushes the
+same build work and ends once complete and `progress / target >= 1` (`FUN_140547200`). A complete building never stalls
+(`FUN_14054a3f0` tests only incomplete ones), so repairing takes no materials. What lowers a complete building's
+progress (attacks) and whether slot 70 clamps at the target are **Unknown**.
 
 Dismantle (**Verified**, `Task_Dismantle` `FUN_1403518c0`, Building slot 73 `FUN_1402a2860`): refused with "I have to
 dismantle the furniture first." / "...unmount the buildings first." while those exist; a door redirects to its
@@ -111,7 +136,8 @@ removed.
 Refund (**Verified**, `FUN_14029dc10`, called by slot 73 and by `FUN_14054c810` for mounted buildings that cannot
 move): skipped for doors; for each entry with delivered > 0, spawns `max(1, trunc(U[m, 1) x delivered))` items at
 random points in the building's bounds, `m` = CONSTANTS `min dismantle materials percentage` / 100 (60 -> 0.6,
-`g_Constants+0x134`). Cancelling an unbuilt site is a dismantle and returns 60-100 % of what was delivered.
+`g_Constants+0x134`): one item per unit, x and z uniform within the bounding box (`+0x27c`), the height from the
+navmesh or the ground below (**Observed**). Cancelling an unbuilt site is a dismantle and returns 60-100 % of what was delivered.
 
 ### Placement
 
@@ -532,8 +558,8 @@ storage` (function 2); Large Barrels also hold Water.
 
 ## Unknowns
 
-- How often Building slot 28 resets the builder counter, the work distance of builders, which storages
-  `Task_EmptyMachine_BuildMats` fetches from, and what `FUN_14025c6d0` (holding dismantle work) tests.
+- How often Building slot 28 resets the builder counter, the work distance of builders, which HUD orders set the AI
+  range mode, and what `FUN_14025c6d0` (holding dismantle work) tests.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
 - The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
 - Option slider defaults; the third value of reference triples; the record field of `BuildingClassType`.

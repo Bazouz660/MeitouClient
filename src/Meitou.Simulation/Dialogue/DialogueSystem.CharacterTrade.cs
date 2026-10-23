@@ -6,9 +6,9 @@ namespace Meitou.Simulation.Dialogue;
 
 /// <summary>
 /// What the character trading window trades (the original's <c>CharacterTrading_*</c> handler classes). The original's window also serves bail (DA 43,
-/// <c>CharacterTrading_PrisonerBailout</c>; Meitou shows bail as a conversation list, <see cref="DialogueSystem"/>) and animals (DA 48, <c>CharacterTrading_AnimalBuying</c>, not built).
+/// <c>CharacterTrading_PrisonerBailout</c>; Meitou shows bail as a conversation list, <see cref="DialogueSystem"/>) and animals (DA 48, <c>CharacterTrading_AnimalBuying</c>).
 /// </summary>
-public enum CharacterTradeKind : byte { SlaveSelling, SlaveBuying }
+public enum CharacterTradeKind : byte { SlaveSelling, SlaveBuying, AnimalBuying }
 
 /// <summary>One row of the window (<c>Kenshi_CharacterSelectionBox</c>): the character, its name, its price and the label/value lines of its two stats panels.</summary>
 public sealed record CharacterTradeRow(CharacterId Character, string Name, long Price, IReadOnlyList<(string Label, string Value)> Panel1, IReadOnlyList<(string Label, string Value)> Panel2);
@@ -38,6 +38,13 @@ public sealed partial class DialogueSystem
     const float SlaveSaleRange = 300;
     /// <summary>How far from the buyer a bought slave walks out of its cage to (engine choice).</summary>
     const float GetOutReach = 15;
+    /// <summary>DA 48's reach (<c>FUN_140680560</c>, <b>Observed</b>): the seller's faction's animals within 3000 units of it, and its own squad's within 2304.</summary>
+    const float AnimalTownRange = 3000, AnimalSquadRange = 2304;
+    /// <summary>An animal's base price (<c>FUN_1406a9440</c>, <b>Observed</b>): 14000 unless the line's val0 overrides it, times (age + 0.1).</summary>
+    const int AnimalBasePrice = 14000;
+    /// <summary>The stats a bought animal keeps a quarter of (<c>FUN_1406aa730</c>, <b>Observed</b>: CharStats +0x90, +0x94, +0x124, +0x120, +0x10c, +0xf0, +0xa4, +0x9c, +0xa8).</summary>
+    static readonly StatsEnumerated[] TamedStats = [StatsEnumerated.Toughness, StatsEnumerated.Athletics, StatsEnumerated.MeleeDefence, StatsEnumerated.MeleeAttack,
+        StatsEnumerated.MartialArts, StatsEnumerated.Dodge, StatsEnumerated.Stealth, StatsEnumerated.MassCombat, StatsEnumerated.Swimming];
 
     sealed record CharacterTrade(long Id, CharacterTradeKind Kind, CharacterId Slaver, CharacterId Player, IReadOnlyList<CharacterTradeRow> Rows);
 
@@ -89,6 +96,11 @@ public sealed partial class DialogueSystem
                     if (table.TryResolveNext(id, out int m) && table.Cold(m) is { Medical.Dead: false } mc && Vector3.Distance(table.Next[m].Position, table.Next[s].Position) <= SlaveSaleRange)
                         rows.Add(new(id, mc.Name, SalePrice(mc, t.Price), [(Loc.Tr("Name:"), mc.Name), (Loc.Tr("WARNING: Character will become a slave!"), "")], []));
         }
+        else if (t.Kind == CharacterTradeKind.AnimalBuying)
+        {
+            foreach (var (id, ac) in AnimalsForSale(world, s, sc))
+                rows.Add(new(id, ac.Name, AnimalPrice(ac, t.Price), AnimalPanel(ac), [(ac.Name, ""), (Loc.Tr("Age:"), AgeLine(ac))]));
+        }
         else if (sc.Faction >= 0)
         {
             for (int i = 0; i < table.HighWater; i++)
@@ -102,6 +114,51 @@ public sealed partial class DialogueSystem
         characterTrade = new(++characterTradeId, t.Kind, t.Slaver, t.Player, rows);
     }
 
+    /// <summary>
+    /// The animals DA 48 offers (<c>FUN_140680560</c>, <b>Observed</b>): every living animal of the seller's faction within <see cref="AnimalTownRange"/> of it that belongs to the
+    /// seller's town (engine reading of the original's test that the animal's town is the seller's: the same <see cref="Squad.Town"/>), then the animals of the seller's own squad
+    /// within <see cref="AnimalSquadRange"/> not listed yet.
+    /// </summary>
+    static List<(CharacterId Id, CharacterCold Cold)> AnimalsForSale(World world, int seller, CharacterCold sc)
+    {
+        var table = world.Characters;
+        var found = new List<(CharacterId Id, CharacterCold Cold)>();
+        var at = table.Next[seller].Position;
+        int town = world.Squads.Find(sc.SquadId)?.Town ?? -1;
+        bool Near(int slot, float range) => Vector3.Distance(table.Next[slot].Position, at) <= range;
+        for (int i = 0; i < table.HighWater; i++)
+            if (town >= 0 && table.Next[i].Alive && table.Cold(i) is { Animal: not null, Medical.Dead: false, IsPlayer: false } ac && ac.Faction == sc.Faction && Near(i, AnimalTownRange)
+                && (world.Squads.Find(ac.SquadId)?.Town ?? -1) == town)
+                found.Add((table.IdOf(i), ac));
+        if (world.Squads.Find(sc.SquadId) is { } own)
+            foreach (var id in own.Members)
+                if (table.TryResolveNext(id, out int m) && table.Cold(m) is { Animal: not null, Medical.Dead: false } ac && Near(m, AnimalSquadRange) && !found.Exists(f => f.Id == id))
+                    found.Add((id, ac));
+        return found;
+    }
+
+    /// <summary>An animal's price (<c>FUN_1406a9440</c>): the override when above 0, else <see cref="AnimalBasePrice"/>, times (age + 0.1), truncated.</summary>
+    public static long AnimalPrice(CharacterCold c, int priceOverride) => (int)(((c.Stats?.Scale ?? 1) + 0.1f) * (priceOverride > 0 ? priceOverride : AnimalBasePrice));
+
+    /// <summary>
+    /// The first panel of an animal's row (<c>FUN_1406a9440</c>): "Strength:" and "Melee Attack:" as whole stats read through the age, "Gender:" Female or Male (the look's
+    /// <c>sex female</c>; Meitou draws every animal male).
+    /// </summary>
+    static (string, string)[] AnimalPanel(CharacterCold c)
+    {
+        float k = c.Stats?.Scale ?? 1;
+        string Whole(StatsEnumerated stat) => ((int)((c.Stats?[stat] ?? 0) * k)).ToString(CultureInfo.InvariantCulture);
+        return [(Loc.Tr("Strength:"), Whole(StatsEnumerated.Strength)), (Loc.Tr("Melee Attack:"), Whole(StatsEnumerated.MeleeAttack)),
+            (Loc.Tr("Gender:"), Loc.Tr(c.Appearance?.Female == true ? "Female" : "Male"))];
+    }
+
+    /// <summary>The Age row: the age word (<see cref="AnimalData.AgeWord"/>) and the age x 100, as "Adult (85)".</summary>
+    static string AgeLine(CharacterCold c)
+    {
+        float age = c.Stats?.Scale ?? 1;
+        return $"{Loc.Tr(AnimalData.AgeWord(age))} ({((int)(age * 100)).ToString(CultureInfo.InvariantCulture)})";
+    }
+
     static (string, string)[] StatLines(CharacterCold c, params StatsEnumerated[] stats) =>
         [.. stats.Select(s => (Loc.Tr(StatName(s)), ((int)(c.Stats?[s] ?? 0)).ToString(CultureInfo.InvariantCulture)))];
 
@@ -112,7 +169,7 @@ public sealed partial class DialogueSystem
 
     /// <summary>The buyer's money the window shows and gates the confirm by: the slaver's squad purse when selling (its shop's money for a trader), the player's when buying.</summary>
     long BuyerMoney(World world, CharacterTrade t) =>
-        t.Kind == CharacterTradeKind.SlaveBuying ? world.Player.Money
+        t.Kind != CharacterTradeKind.SlaveSelling ? world.Player.Money
         : world.Characters.TryResolveNext(t.Slaver, out int s) && world.Squads.Find(world.Characters.Cold(s)!.SquadId) is { } squad ? squad.Money : 0;
 
     /// <summary>Closes the window when the slaver or the customer is no longer awake (engine choice).</summary>
@@ -126,8 +183,9 @@ public sealed partial class DialogueSystem
     void RefreshCharacterTrade(World world)
     {
         if (characterTrade is not { } t) { characterTradeView = null; return; }
-        bool buying = t.Kind == CharacterTradeKind.SlaveBuying;
-        characterTradeView = new(t.Id, t.Kind, t.Slaver, t.Player, Loc.Tr(buying ? "Buying Slaves" : "Selling Slaves"), Loc.Tr(buying ? "Buy" : "Sell"), BuyerMoney(world, t), t.Rows);
+        bool buying = t.Kind != CharacterTradeKind.SlaveSelling;
+        string title = t.Kind switch { CharacterTradeKind.SlaveBuying => "Buying Slaves", CharacterTradeKind.AnimalBuying => "Buying Animals", _ => "Selling Slaves" };
+        characterTradeView = new(t.Id, t.Kind, t.Slaver, t.Player, Loc.Tr(title), Loc.Tr(buying ? "Buy" : "Sell"), BuyerMoney(world, t), t.Rows);
     }
 
     /// <summary>
@@ -146,10 +204,15 @@ public sealed partial class DialogueSystem
             if (selected.Contains(row.Character) && table.TryResolveNext(row.Character, out int c) && table.Cold(c) is { Medical.Dead: false } cc) chosen.Add((c, cc, row.Price));
         long total = chosen.Sum(x => x.Price);
         if (chosen.Count == 0 || total > buyerMoney) return;
+        if (t.Kind == CharacterTradeKind.AnimalBuying)
+        {
+            BuyAnimals(world, t, s, chosen, total);
+            return;
+        }
         foreach (var (slot, c, _) in chosen)
         {
             if (t.Kind == CharacterTradeKind.SlaveBuying) BuyFree(world, slot, c, sc, t.Player);
-            else Sell(world, c, sc);
+            else Sell(world, c, sc, t.Player);
         }
         if (t.Kind == CharacterTradeKind.SlaveSelling) world.Player.Money += total;   // the slaver's purse is not touched
         else if (world.Player.Money >= total) world.Player.Money -= total;
@@ -186,19 +249,62 @@ public sealed partial class DialogueSystem
             MovementSystem.GoTo(table, slot, target, SpeedMode.Walk);
         }
         if (Locks.LockSystem.WornShackles(c)?.Lock is { } l) l.Locked = false;
+        Memory.Remember(world, c.SquadId, player, MemoryTag.FreedMe);   // its (new) squad remembers the buyer as the one who freed it (FUN_1406add20, Observed)
         if (Settings.AmbientEvents) Fire(world, id, player, BoughtMeFromSlavery);
         ChangeTowardPlayer(world, slaver.Faction, 1);
         ChangeTowardPlayer(world, c.Faction, 4);
     }
 
     /// <summary>
-    /// One character sold (<c>FUN_1406a7740</c>): it becomes the slaver faction's slave (state 1, "{1} has been enslaved" for a free player-faction character) and stays in its squad
-    /// and faction; relations toward the player's faction: the slaver's +4, the sold one's own -4. Not built: the obedient-slave order and the shackles the original puts on one
-    /// wearing no locked armour.
+    /// The animal buying confirm (<c>FUN_1406aac20</c>, docs/game/animals.md "Buying animals", <b>Observed</b>): refused with a "Character Limit Reached" message when the player
+    /// faction has fewer free places (CONSTANTS <c>max faction size</c> less its characters) than ticked rows, the window staying open. Otherwise each bought animal has its AI
+    /// orders dropped, keeps a quarter of its combat, athletic and stealth stats (<see cref="TamedStats"/>) and joins the player as a recruit does; what its backpack held goes back
+    /// to the seller's squad, each item into the first backpack of the seller's squad members (from the last member back) that takes it, the rest destroyed. Then the total is
+    /// taken from the player's money. The original then opens the character editor on the bought animals to name them (not opened: Meitou's editor does not edit animals).
     /// </summary>
-    void Sell(World world, CharacterCold c, CharacterCold slaver)
+    void BuyAnimals(World world, CharacterTrade t, int seller, List<(int Slot, CharacterCold Cold, long Price)> chosen, long total)
+    {
+        var table = world.Characters;
+        int free = data.Bodies.Constants.MaxFactionSize - PlayerHeads(world);
+        if (chosen.Count > free)
+        {
+            characterTrade = t;   // the original returns before closing
+            world.Post(free <= 0 ? Loc.Tr("You cannot hire any more characters")
+                : free == 1 ? Loc.Tr("You can only hire {1} more character", free) : Loc.Tr("You can only hire {1} more characters", free));
+            return;
+        }
+        if (!table.TryResolveNext(t.Player, out int p) || table.Cold(p) is not { IsPlayer: true } buyer) return;
+        var sellerSquad = world.Squads.Find(table.Cold(seller)!.SquadId);
+        foreach (var (slot, c, _) in chosen)
+        {
+            c.Ai = null;
+            if (c.Stats is { } stats) foreach (var stat in TamedStats) stats[stat] *= 0.25f;
+            var packed = c.Inventory?.Backpack?.Contents is { } bag ? bag.All().ToList() : [];
+            foreach (var item in packed) c.Inventory!.Remove(item);
+            if (!JoinPlayer(world, slot, buyer)) continue;
+            foreach (var item in packed) GiveBack(world, sellerSquad, item);
+        }
+        if (world.Player.Money >= total) world.Player.Money -= total;
+    }
+
+    /// <summary>Puts an item from a bought animal's bag into the first backpack of <paramref name="squad"/>'s members, from the last member back, that takes it; none: it is gone.</summary>
+    static void GiveBack(World world, Squad? squad, Items.ItemInstance item)
+    {
+        if (squad is null) return;
+        var table = world.Characters;
+        for (int k = squad.Members.Count - 1; k >= 0; k--)
+            if (table.TryResolveNext(squad.Members[k], out int m) && table.Cold(m)?.Inventory?.Backpack?.Contents is { } bag && bag.Add(item)) return;
+    }
+
+    /// <summary>
+    /// One character sold (<c>FUN_1406a7740</c>): it becomes the slaver faction's slave (state 1, "{1} has been enslaved" for a free player-faction character) and stays in its squad
+    /// and faction; its squad remembers the customer as its captor (long-term tag 5 MY_CAPTOR, <b>Observed</b>); relations toward the player's faction: the slaver's +4, the sold one's
+    /// own -4. Not built: the obedient-slave order and the shackles the original puts on one wearing no locked armour.
+    /// </summary>
+    void Sell(World world, CharacterCold c, CharacterCold slaver, CharacterId customer)
     {
         Locks.FixtureRegistry.Enslave(world, c, slaver.Faction);
+        Memory.Remember(world, c.SquadId, customer, MemoryTag.Captor);
         ChangeTowardPlayer(world, slaver.Faction, 4);
         ChangeTowardPlayer(world, c.Faction, -4);
     }

@@ -7,7 +7,7 @@ namespace Meitou.Simulation.Carrying;
 /// <summary>
 /// The stealth knock-out (<see cref="CharacterTask.StealthKo"/>, the original's <c>Task_StealthKO</c>; docs/game/combat.md "Stealth knock-out"): a sneaking character creeps to a point
 /// behind its target, swings the <c>knockout</c> clip at x1.2 and at half of it rolls 0-100 against <see cref="StealthKoChance"/>. A hit knocks the target out for
-/// <see cref="MedicalState.PutDownKoMinutes"/> with the attacker's assassination / 100; a miss turns the target on the attacker. Either trains assassination (a miss three times as much).
+/// <see cref="MedicalState.PutDownKoSeconds"/> with the attacker's assassination / 100; a miss turns the target on the attacker. Either trains assassination (a miss three times as much).
 /// The walk breaks off when the target has spotted the attacker (its <see cref="AggroSystem"/> spot meter is full) or is fighting.
 /// </summary>
 public sealed partial class CarrySystem
@@ -55,7 +55,7 @@ public sealed partial class CarrySystem
     public static float StealthKoChance(CharacterCold attacker, CharacterCold target, bool spotted = false)
     {
         if (spotted || attacker.Stats is not { } a || target.Stats is not { } t) return 0;
-        float Skill(CharacterCold c, CharacterStats s, StatsEnumerated stat) => s[stat] * (c.Medical?.StatMultiplier(stat) ?? 1);
+        float Skill(CharacterCold c, CharacterStats s, StatsEnumerated stat) => s[stat] * (c.Medical?.StatMultiplier(stat) ?? 1) * Combat.CombatSystem.GearFactor(c, stat);
         float defence = Skill(target, t, StatsEnumerated.Assassination);
         defence = MathF.Max(defence, Skill(target, t, StatsEnumerated.Thieving) * 0.5f);
         defence = MathF.Max(defence, Orders.Stealth(target) * 100 * 0.5f);
@@ -176,7 +176,7 @@ public sealed partial class CarrySystem
             {
                 var ctx = new MedicalContext(Constants, bodyOptions, targetRace) { Toughness = target.Stats?.Toughness ?? 0, Strength = target.Stats?.Strength ?? 50, HasStats = target.Stats is not null };
                 float assassination = (cold.Stats?[StatsEnumerated.Assassination] ?? 0) * (cold.Medical?.StatMultiplier(StatsEnumerated.Assassination) ?? 1);
-                medical.KnockOut(medical.PutDownKoMinutes(ctx, assassination * 0.01f));
+                medical.KnockOut(medical.PutDownKoSeconds(ctx, assassination * 0.01f));
                 MovementSystem.Stop(table, t);
                 table.Next[t].Velocity = Vector3.Zero;
             }

@@ -35,7 +35,11 @@ sealed partial class PlayerInterface
         if (editing is { } editKey) faithfulScreens.EditKey(editKey, shift);
         if (faithfulScreens.FocusReadOnly) return editing is not null;
         if (key == EngineKey.Tab) faithfulScreens.FocusNext(shift);
-        if (key == EngineKey.Enter) faithfulScreens.EditEnter(ctrl);
+        if (key == EngineKey.Enter)
+        {
+            faithfulScreens.EditEnter(ctrl);
+            if (faithfulScreens.Focus is { Screen: "overview", Widget: FactionNameBox }) faithfulScreens.Blur();   // Enter accepts the faction name
+        }
         return true;
     }
 }

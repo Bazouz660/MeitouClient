@@ -10,11 +10,23 @@ public sealed partial class CombatSystem
 {
     // ------------------------------------------------------------------ act
 
-    /// <summary>A stat as the combat formulas read it: times the injury and hunger multiplier and the stats' read-time scale (an animal's age, docs/game/animals.md).</summary>
     /// <summary>The guarding state: the fighter's own, or the Block order (its tooltip's +20 melee defence; docs/game/combat.md).</summary>
     static bool Guarding(CharacterCold c) => c.Fighter!.Guarding || Orders.Has(c, CharacterOrders.Block);
 
-    static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat);
+    /// <summary>
+    /// A stat as the combat formulas read it: times the injury, hunger and light multiplier and the stats' read-time scale (an animal's age, docs/game/animals.md); crossbows and
+    /// assassination also times the worn gear's factor (<see cref="Fighter.Factors"/>; the original's stat getter <c>FUN_140884ac0</c> asks for all of them). Dexterity's and the
+    /// weapon skills' gear factors are applied by the formulas themselves (<see cref="Fighter.DexterityMult"/>, <see cref="Fighter.DamageOutput"/>).
+    /// </summary>
+    static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
+
+    /// <summary>The worn gear's factor of a stat that <see cref="Eff"/> applies: <c>ranged skill mult</c> for crossbows, <c>asassination mult</c> for assassination, else 1.</summary>
+    internal static float GearFactor(CharacterCold c, StatsEnumerated stat) => stat switch
+    {
+        StatsEnumerated.Crossbows => c.Fighter?.Factors.Ranged ?? 1,
+        StatsEnumerated.Assassination => c.Fighter?.Factors.Assassin ?? 1,
+        _ => 1,
+    };
 
     int PauseTicks(World world, int slot, int counter)
     {
@@ -82,8 +94,10 @@ public sealed partial class CombatSystem
             {
                 events ??= [];
                 events.Clear();
-                cold.Medical.Tick(dt * HoursPerSecond, MakeContext(world, i, cold), events);
+                cold.Medical.Tick(dt, MakeContext(world, i, cold), events);
             }
+            // The weapon in hand follows the arms (docs/game/combat.md "Arms"): losing one puts the weapon away and the fight goes on with what the arms still allow.
+            if (cold.Fighter.SetArms(cold.Medical.ArmWorks(left: false), cold.Medical.ArmWorks(left: true)) && cold.InCombat && !s.Ranged) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)
             {
@@ -91,6 +105,7 @@ public sealed partial class CombatSystem
                 s.NextBlow = 0;
                 s.ReactTech = -1;
                 s.TargetSlot = -1;
+                s.Engaged = false;
                 if (cold.InCombat) EndFight(table, i);
                 continue;
             }
@@ -146,8 +161,10 @@ public sealed partial class CombatSystem
             {
                 s.TargetSlot = yielder;
                 s.TargetGeneration = prev[yielder].Generation;
+                s.Engaged = false;
                 fighting = true;
             }
+            if (!fighting) s.Engaged = false;
             bool aborted = false;
             if (s.AttackTech >= 0)
             {
@@ -189,6 +206,8 @@ public sealed partial class CombatSystem
             // may be swung at at once.
             if (s.ReactTech < 0 && s.AttackTech < 0)
             {
+                // Deciding, it first asks to be one of the fighters its target lets close in (FUN_140666e20); a fighter left out circles (PursuitSystem) and asks again each tick.
+                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot);
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
                 if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded)) StartAttack(world, i, ref s, cold, key, now, dt);
                 if (s.AttackTech < 0 && now >= s.DefendReadyTick) React(world, i, ref s, cold, key, now, dt);
@@ -203,27 +222,48 @@ public sealed partial class CombatSystem
         int t = s.TargetSlot;
         var fighter = cold.Fighter!;
         if (!fighter.CanAttack || Orders.Has(cold, CharacterOrders.Block)) return;   // the Block order: defends, starts no attack
+        if (!s.Engaged) return;   // left out by its target: it circles (PursuitSystem)
         var tc = table.Cold(t)!;
-        float gap = Vector2.Distance(new(prev[i].Position.X, prev[i].Position.Z), new(prev[t].Position.X, prev[t].Position.Z)) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
-        bool moving = new Vector2(prev[t].Velocity.X, prev[t].Velocity.Z).Length() >= 1;
-        float weaponReach = fighter.Unarmed ? 99 : fighter.Weapon!.Data.Length * 0.5f;
-        float skill = Eff(cold, fighter.WeaponSkill);
+        var medical = cold.Medical!;
+        float length = fighter.WeaponLength;
+        // The gap to where the target will be (a target that is not fighting is led by LeadSeconds, FUN_1402b4570).
+        var aim = prev[t].Position + (tc.InCombat ? Vector3.Zero : prev[t].Velocity * CombatTuning.AimLeadSeconds);
+        float e = fighter.EncumbranceFactor;
+        var query = new AttackQuery
+        {
+            Category = fighter.TechniqueCategory,
+            Skill = cold.Stats![fighter.WeaponSkill],
+            UnarmedSkill = WeaponStats.Lerp(e, 0.2f, 1) * (cold.Stats[StatsEnumerated.MartialArts] + fighter.UnarmedBonus),
+            Animal = fighter.IsAnimal,
+            Prone = medical.Crawling,
+            Encumbrance = e,
+            WeaponLength = length,
+            Scale = medical.ScaleK,
+            Gap = CombatTuning.Gap(prev[i].Position, aim, cold, tc),
+            Previous = s.LastTech,
+            TargetStaggered = now < read[t].StunUntil,
+            LeftArm = medical.ArmWorks(left: true),
+            RightArm = medical.ArmWorks(left: false),
+            LegDown = LegDown(medical),
+        };
         float roll = CombatRolls.Float(world.Seed, key, CombatRoll.Technique, (ulong)(s.AttackSeq + 1));
-        // A crawler attacks with the prone techniques only (ground attack L / R), a standing fighter never with them (the original's defence pick tests the posture, FUN_140887970).
-        int pick = TechniqueChooser.ChooseAttack(techniques, fighter.Kind, fighter.TechniqueCategory, cold.Medical!.Crawling, skill, gap, moving, weaponReach, roll);
+        int pick = TechniqueChooser.ChooseAttack(techniques, query, roll, out s.Reach);
         if (pick < 0) return;
         // In reach with a technique: ask the target (and hold an attack slot).
-        if (!HasSlot(world, i, t, tc) || !HasInitiative(world, i, ref s, t, cold, tc, now)) return;
+        if (!HasSlot(world, i, t, tc, now) || !HasInitiative(world, i, ref s, t, cold, tc, now)) return;
         var tech = techniques[pick];
         s.AttackSeq++;
         s.AttackTech = pick;
+        s.LastTech = pick;
         s.AttackStart = now;
         s.AttackTicks = Ticks(tech, PlayRate(cold, tech, attack: true), dt, cold);
         s.AttackEnd = now + Math.Max(1, (int)MathF.Ceiling(tech.EndProgress * s.AttackTicks));
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
-        s.AttackReach = TechniqueChooser.ReachOf(tech, moving, weaponReach);
-        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0));
+        s.AttackReach = TechniqueChooser.ReachOf(tech, length);
+        // Less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
+        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0))
+            - cold.Medical!.DustAttackPenalty;
     }
 
     /// <summary>
@@ -285,35 +325,98 @@ public sealed partial class CombatSystem
         return scan.Most;
     }
 
+    /// <summary>Any leg part is down (flesh - stun + rig &lt; 0): the original's two leg parts at medical +0x4d8 / +0x4e0 in the kick factor (<c>FUN_140886030</c>).</summary>
+    static bool LegDown(MedicalState medical)
+    {
+        foreach (var p in medical.Parts) if (p.IsLeg && p.IsDown) return true;
+        return false;
+    }
+
     struct SlotScan
     {
         public CombatSlot[] Read;
         public CharacterTable Table;
-        public int Self, Target, TargetGeneration, Ahead;
-        public float X, Z, MyDistance;
+        public CharacterCold TargetCold;
+        public int Self, Target, TargetGeneration, Now, Holders, Ahead;
+        public Vector3 TargetPosition;
     }
 
     /// <summary>
-    /// Whether <paramref name="i"/> holds one of its target's attack slots (docs/game/combat.md "Pacing": <see cref="AttackSlots"/> plus the target race's
-    /// <c>extra attack slots</c>, FUN_140666310): the fighters at the target, nearest first (slot order on a tie), take them; the rest wait (the original circles, not modelled).
+    /// Whether <paramref name="i"/> gets one of its target's attack slots for this swing (docs/game/combat.md "Attack slots and circling", <c>FUN_140666310</c> / <c>FUN_1406661d0</c>):
+    /// <see cref="AttackSlots"/> plus the target race's <c>extra attack slots</c> (1 to 5), only 1 while the target swings itself. A slot is held from the grant to the swing's last
+    /// blow (<c>FUN_14060a590</c> gives it back), so the holders are the fighters at the target whose swing has a blow to come. The original grants in its update order; here
+    /// the other fighters that may ask on the same tick (engaged, free, within their reach) and have a lower slot go first (engine choice).
     /// </summary>
-    bool HasSlot(World world, int i, int t, CharacterCold tc)
+    bool HasSlot(World world, int i, int t, CharacterCold tc, int now)
     {
-        int slots = Math.Max(1, AttackSlots + (tc.Race?.ExtraAttackSlots ?? 0));
+        int slots = read[t].AttackTech >= 0 ? 1 : Math.Clamp(AttackSlots + (tc.Race?.ExtraAttackSlots ?? 0), 1, MaxAttackSlots);
         var prev = world.Characters.Previous;
-        float x = prev[t].Position.X, z = prev[t].Position.Z;
-        var scan = new SlotScan { Read = read, Table = world.Characters, Self = i, Target = t, TargetGeneration = prev[t].Generation, X = x, Z = z };
-        scan.MyDistance = Vector2.DistanceSquared(new(prev[i].Position.X, prev[i].Position.Z), new(x, z));
-        world.Grid.Query(x, z, CombatTuning.ReactionScanRadius, ref scan, static (int other, ref SlotScan st) =>
+        var scan = new SlotScan { Read = read, Table = world.Characters, TargetCold = tc, Self = i, Target = t, TargetGeneration = prev[t].Generation, Now = now, TargetPosition = prev[t].Position };
+        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref SlotScan st) =>
         {
             if (other == st.Self) return;
             ref readonly var o = ref st.Read[other];
             if (o.TargetSlot != st.Target || o.TargetGeneration != st.TargetGeneration || o.Down || o.Ranged) return;
-            ref readonly var p = ref st.Table.Previous[other];
-            float d = Vector2.DistanceSquared(new(p.Position.X, p.Position.Z), new(st.X, st.Z));
-            if (d < st.MyDistance || d == st.MyDistance && other < st.Self) st.Ahead++;
+            if (o.AttackTech >= 0)
+            {
+                if (o.NextBlow > 0) st.Holders++;
+                return;
+            }
+            if (other > st.Self || !o.Engaged || o.ReactTech >= 0 || st.Now < o.StunUntil || st.Now < o.ReadyTick && !(st.Read[st.Target].YieldTo == other && st.Now < st.Read[st.Target].YieldUntil)) return;
+            if (o.YieldTo == st.Target && st.Now < o.YieldUntil) return;
+            var c = st.Table.Cold(other);
+            if (c is null || o.Reach <= 0 || CombatTuning.Gap(st.Table.Previous[other].Position, st.TargetPosition, c, st.TargetCold) > o.Reach) return;
+            st.Ahead++;
         });
-        return scan.Ahead < slots;
+        return scan.Holders + scan.Ahead < slots;
+    }
+
+    /// <summary>The most attack slots a target can have (the slot count is clamped to 1 to 5, <c>FUN_1406661d0</c>).</summary>
+    public const int MaxAttackSlots = 5;
+    /// <summary>The most fighters a target lets close in at once (<c>FUN_140666e20</c> adds an asker while it has at most four).</summary>
+    public const int MaxEngaged = 5;
+
+    struct JoinScan
+    {
+        public CombatSlot[] Read;
+        public int Self, Target, TargetGeneration, Count;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="i"/> may join the fighters its target lets close in (<see cref="MaxEngaged"/>, <c>FUN_140666e20</c>): it joins while fewer are in. The ones that are
+    /// not in yet ask on every tick; those with a lower slot ask first (engine choice for the original's update order).
+    /// </summary>
+    bool MayJoin(World world, int i, int t)
+    {
+        var prev = world.Characters.Previous;
+        var scan = new JoinScan { Read = read, Self = i, Target = t, TargetGeneration = prev[t].Generation };
+        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref JoinScan st) =>
+        {
+            if (other == st.Self) return;
+            ref readonly var o = ref st.Read[other];
+            if (o.TargetSlot != st.Target || o.TargetGeneration != st.TargetGeneration || o.Down || o.Ranged) return;
+            if (o.Engaged || other < st.Self) st.Count++;
+        });
+        return scan.Count < MaxEngaged;
+    }
+
+    struct CountScan
+    {
+        public CombatSlot[] Read;
+        public int Target, TargetGeneration, Count;
+    }
+
+    /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).</summary>
+    public int FightersAt(World world, int t)
+    {
+        var prev = world.Characters.Previous;
+        var scan = new CountScan { Read = read, Target = t, TargetGeneration = prev[t].Generation };
+        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref CountScan st) =>
+        {
+            ref readonly var o = ref st.Read[other];
+            if (o.TargetSlot == st.Target && o.TargetGeneration == st.TargetGeneration && !o.Down && !o.Ranged) st.Count++;
+        });
+        return scan.Count;
     }
 
     struct Scan
@@ -367,7 +470,7 @@ public sealed partial class CombatSystem
             float effective = DefenceFormulas.EffectiveDefence(Eff(cold, StatsEnumerated.MartialArts), fighter.EncumbranceFactor, Speed.LegFactor(cold.Medical!), fighter.DefenceBonus, Guarding(cold));
             dodge = DefenceFormulas.BlockChance(effective, attack.AttackSkill, combat, 0, 95);
         }
-        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.Kind, fighter.TechniqueCategory, cold.Medical!.Crawling, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
+        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.TechniqueCategory, cold.Medical!.Crawling, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
         if (pick < 0)
         {
             // No defence (a failed dodge roll, or nothing fits): none is tried again for a while (the original's +0x14c).
@@ -388,5 +491,7 @@ public sealed partial class CombatSystem
         s.ReactTech = pick;
         s.ReactStart = start;
         s.ReactTicks = ticks;
+        s.LastTech = -1;   // the original's current technique (+0x150) is now a defence, which the next attack choice does not count as its last
+
     }
 }

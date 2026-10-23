@@ -72,6 +72,9 @@ public sealed partial class PopulationSystem
         c.PickingLock = null;
         c.BuildSite = null;
         c.BuildBar = 0;
+        c.FetchSite = null;
+        c.FetchItem = null;
+        c.FetchRecord = null;
         c.SquadId = -1;
     }
 
@@ -149,6 +152,8 @@ public sealed partial class PopulationSystem
         stored.Members.Clear();
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
         world.Squads.Add(squad);
+        Memory?.Restore(squad.Id, stored.Memory);
+        stored.Memory = null;
         // A resident in its bed takes it again.
         world.Fixtures.Bind(world);
         return squad;

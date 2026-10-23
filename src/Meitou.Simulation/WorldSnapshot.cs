@@ -21,14 +21,23 @@ public enum CareKind { None, Treating, Resting }
 /// </summary>
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
     bool NeedsSplint = false, float KoTimer = 0);
-public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic);
+public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic)
+{
+    /// <summary>The part's LOCATIONAL_DAMAGE <c>death</c> flag (head and torso) and its type (leg, arm...): the medical row's tooltip text (docs/game/ui-screens.md "Tooltips").</summary>
+    public bool Vital { get; init; }
+    public Meitou.Data.Gameplay.Bodies.BodyPartType Type { get; init; }
+}
 /// <summary>A line of the HUD's stats panel: the label, the value the character fights with and the value it would have unhurt (docs/game/ui-screens.md section 4).</summary>
 public readonly record struct HudStatLine(string Label, float Value, float Base);
 /// <summary>
 /// What the HUD shows of a selected character besides <see cref="BodyStatus"/> (docs/game/ui-screens.md section 4): the blood in units and its capacity, the bleeding
 /// rate, the encumbrance factor (1 unburdened) and the stats panel's lines.
 /// </summary>
-public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, float Encumbrance, IReadOnlyList<HudStatLine> Stats, ExtendedStats? Extended = null);
+public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, float Encumbrance, IReadOnlyList<HudStatLine> Stats, ExtendedStats? Extended = null)
+{
+    /// <summary>The race's <c>bleed rate</c> multiplier (the Blood row's tooltip).</summary>
+    public float BleedRate { get; init; } = 1;
+}
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.
@@ -63,6 +72,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool WeaponDrawn { get; init; }
     /// <summary>The weapon in hand is the crossbow (ranged combat): the renderer shows the crossbow in the hands and the melee weapon sheathed.</summary>
     public bool RangedDrawn { get; init; }
+    /// <summary>The melee weapon in hand is the back one (<see cref="Combat.Fighter.WeaponIsBack"/>): its drawn meshes show, the hip one's sheathed.</summary>
+    public bool BackDrawn { get; init; }
     /// <summary>The bolts loaded in its crossbow (<see cref="CharacterCold.CrossbowShots"/>).</summary>
     public int CrossbowShots { get; init; }
     /// <summary>The bolts stuck in the character (<see cref="CharacterCold.StuckBolts"/>).</summary>
@@ -91,6 +102,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<string> Inventory { get; init; } = [];
     /// <summary>A selected character's bounties, one line per faction that wants it (empty for the others and for one nobody wants).</summary>
     public IReadOnlyList<Crime.BountyLine> Bounties { get; init; } = [];
+    /// <summary>Slave (state 1) or escaped slave (state 2) and its owner's name, for the status lines of the bounty panel's tooltip (docs/game/ui-screens.md section 4); null otherwise.</summary>
+    public SlaveView? Slave { get; init; }
     /// <summary>A selected character's trained stats (the host formats them); null for the others and for a character without stats.</summary>
     public SkillSummary? Skills { get; init; }
     public IReadOnlyList<float> AllSkills { get; init; } = [];
@@ -138,6 +151,9 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterId Carrying { get; init; } = CharacterId.None;
     /// <summary>The goal the AI is acting out, in the game's words (<c>Patrolling town</c>, <c>Shopkeeper</c>); null when the AI does not run the character now.</summary>
     public string? Activity { get; init; }
+    /// <summary>The weather effect that hurt this player character last tick and the protection it shows (the status notice, docs/formats/weather.md); None otherwise. Display only.</summary>
+    public WeatherNotice WeatherNotice { get; init; }
+    public float WeatherNoticeProtection { get; init; }
     /// <summary>
     /// A sneaking player character's state for its stealth tag (docs/game/perception.md "Spotting a sneaker"): <see cref="StealthExposure.Detected"/> seen,
     /// <see cref="StealthExposure.Noticed"/> almost seen, anything lower hidden; null when not a sneaking player character.
@@ -170,10 +186,27 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 /// <summary>A floating progress bar's caption and fill (0..1).</summary>
 public readonly record struct TaskBar(string Text, float Progress);
 
-public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
+public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft)
+{
+    /// <summary>The faction owning the cage it is in (-1 none) and the cage's fixture id.</summary>
+    public int CageOwner { get; init; }
+    public string? CageId { get; init; }
+}
 
-/// <summary>A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its <see cref="Meitou.Data.World.TownBuilding"/> key and BUILDING record, where it stands and faces (0 along +Z, turning towards +X) and its GUN_DATA record.</summary>
-public sealed record MannedTurret(string Key, string BuildingId, Vector3 Position, float Yaw, string GunId);
+/// <summary>A slave's state (1 slave, 2 escaped slave; <c>SlaveStateEnum</c>) and the name of the faction that owns it ("someone" is the caller's word for none).</summary>
+public readonly record struct SlaveView(int State, string Owner);
+
+/// <summary>
+/// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and
+/// faces (0 along +Z, turning towards +X) and its GUN_DATA record. <see cref="Simulated"/>: the combat system runs it, and <see cref="Aim"/> is the point its gun aims at (null: none yet).
+/// </summary>
+public sealed record MannedTurret(string Key, string BuildingId, Vector3 Position, float Yaw, string GunId)
+{
+    public bool Simulated { get; init; }
+    public Vector3? Aim { get; init; }
+    /// <summary>The turning of its parts so far, radians, in <c>TurretGun.Parts</c> order (a simulated turret only); the renderer turns the meshes by it.</summary>
+    public float[]? Angles { get; init; }
+}
 
 /// <summary>The trained stats the HUD shows for the selection.</summary>
 public readonly record struct SkillSummary(float Attack, float Defence, float Dodge, float Toughness, float Strength, float Athletics);
@@ -220,6 +253,10 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<Items.GroundItemSnapshot> GroundItems { get; init; } = [];
     /// <summary>The containers with an inventory (a building interior's chests and boxes), where they stand.</summary>
     public IReadOnlyList<Locks.ContainerSpot> Containers { get; init; } = [];
+    /// <summary>Every bed fixture, for picking (<see cref="Locks.FixtureRegistry.BedSpots"/>).</summary>
+    public IReadOnlyList<Locks.BedSpot> Beds { get; init; } = [];
+    /// <summary>Every cage fixture, for picking (<see cref="Locks.FixtureRegistry.CageSpots"/>); its occupant is as of this tick.</summary>
+    public IReadOnlyList<Locks.CageSpot> Cages { get; init; } = [];
     /// <summary>Every door, where its leaf is, for the right click (<see cref="Locks.DoorOrder"/>); its state is in <see cref="Doors"/>.</summary>
     public IReadOnlyList<Locks.DoorPick> DoorPicks { get; init; } = [];
     /// <summary>Bumped when an item is dropped or goes: the host diffs <see cref="GroundItems"/> by id when it changes.</summary>

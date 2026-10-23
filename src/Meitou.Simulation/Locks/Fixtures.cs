@@ -15,14 +15,26 @@ public enum FixtureKind : byte
     Container,
     /// <summary>BUILDING_FUNCTIONALITY function 8: cages, the prisoner pole and the peeler (<see cref="Fixture.Restrains"/>).</summary>
     Cage,
-    /// <summary>A bed of an interior layout; no lock.</summary>
+    /// <summary>A bed of an interior layout, or one the player built; no lock.</summary>
     Bed,
 }
+
+/// <summary>A bed as the host picks it (<see cref="WorldSnapshot.Beds"/>): its fixture id, BUILDING record, where it is and its owner faction (-1: none).</summary>
+public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1);
+
+/// <summary>
+/// What a bed's BUILDING says (docs/game/locks.md "Beds"): its functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED), the clip it is lain in (the functionality's <c>animation</c>:
+/// <c>sleepinbed</c>, <c>sleeponfloor</c>) and the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times).
+/// </summary>
+public readonly record struct BedData(int Function, string? Clip, float Materials);
 
 /// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
 public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
 
 /// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction, where its closed leaf is (else its building's origin) and how far it slides fully open (<see cref="DoorSpot.Slide"/>).</summary>
+/// <summary>A cage for picking: its fixture id, CAGE-function BUILDING record, place, owner faction (-1 none), whether its lock holds and who is in it (None: free).</summary>
+public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant);
+
 public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default);
 
 /// <summary>The door's motion state as saved in <c>state&lt;i&gt;</c> (docs/game/locks.md "Doors"; not the DoorState enum): 0 closed, 1 open, 2 opening, 3 closing.</summary>
@@ -99,6 +111,10 @@ public sealed class Fixture
     public bool Restrains { get; init; }
     public float UseRange { get; init; }
     public CharacterId Occupant { get; set; } = CharacterId.None;
+    /// <summary>Beds: its record's <see cref="BedData"/>; derived from the data, not hashed or saved.</summary>
+    public BedData Bed { get; init; }
+    /// <summary>Beds: inside a building (an interior's bed; the bed search weighs it twice), not one standing on its own.</summary>
+    public bool Indoors { get; init; }
 
     /// <summary>Its state came from a loaded save (the squad's <c>initial door state</c> then does not apply).</summary>
     public bool Restored { get; set; }
@@ -127,8 +143,8 @@ public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locke
 /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say.</summary>
 public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors);
 
-/// <summary>One door for the panel: open, effectively locked, its lock's level (0..100) and whether the door is broken.</summary>
-public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken);
+/// <summary>One door for the panel: open, effectively locked, its lock's level (0..100), whether the door is broken, and its BUILDING record (its Door Condition row).</summary>
+public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken, string Record = "");
 
 /// <summary>Where the simulation tells navigation that a building's doors are shut for paths (the game host forwards it to the navmesh's door table). Serial phases only.</summary>
 public interface IDoorGate

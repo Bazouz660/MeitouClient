@@ -19,6 +19,8 @@ public sealed partial class DialogueSystem
 
     /// <summary>The event of a crowd trigger's lines (EV_CROWD_TRIGGERED), and of a contract's end talk (EV_CONTRACT_JOB_ENDED).</summary>
     const int CrowdTriggered = 74;
+    /// <summary>EV_UNLOCK_MY_CAGE_OR_SHACKLES: a freed prisoner's thanks, which also makes its squad remember the liberator (<see cref="Freed"/>).</summary>
+    const int UnlockMyCageOrShackles = 13;
     public const int ContractJobEnded = 30;
     /// <summary>The AI-to-AI talking range (DC 16 TARGET_IN_TALKING_RANGE, 260 units): how near another squad's NPC must be to be greeted (engine choice).</summary>
     const float TalkingRange = 260;
@@ -233,13 +235,14 @@ public sealed partial class DialogueSystem
         }
     }
 
-    /// <summary>A bubble conversation's end (<c>FUN_140674830</c>): the event's counter and time, and the speaker squad's memory of the target.</summary>
+    /// <summary>A bubble conversation's end (<c>FUN_140674830</c>): the event's counter and time; only an event-1 conversation leaves the speaker's squad remembering the target.</summary>
     void EndBubbles(World world, Conversation c)
     {
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
-        if (!c.Player.IsNone && world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
+        if (c.Event == DialogueEvents.PlayerTalkToMe && !c.Player.IsNone && world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc)
+            Memory.Remember(world, nc.SquadId, c.Player, MemoryTag.None);
     }
 
     /// <summary>Drops the lines whose time is up or whose speaker is gone (serial, each tick).</summary>

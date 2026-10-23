@@ -3,29 +3,64 @@ using Meitou.Data.Gameplay.Combat;
 
 namespace Meitou.Simulation.Combat;
 
+/// <summary>What the attacker-side choice reads (docs/game/combat.md "Attack technique choice").</summary>
+public readonly record struct AttackQuery
+{
+    /// <summary>The weapon category in hand (<see cref="Fighter.TechniqueCategory"/>: 5 for fists, 9 to 20 for a creature's natural weapon).</summary>
+    public int Category { get; init; }
+    /// <summary>The level of that category's skill, as stored (no injury or gear term).</summary>
+    public float Skill { get; init; }
+    /// <summary>The unarmed skill of the fallback passes (<c>FUN_140884e00</c>): lerp(e, 0.2, 1) x (martial arts + the gear's unarmed bonus).</summary>
+    public float UnarmedSkill { get; init; }
+    /// <summary>A creature: one pass only, no unarmed fallback.</summary>
+    public bool Animal { get; init; }
+    /// <summary>Not standing (posture != 0): the <c>is prone</c> techniques only, and no kicks.</summary>
+    public bool Prone { get; init; }
+    /// <summary>The encumbrance factor e in [0, 1] (1 unburdened); a technique needs (1 - e) x 100 &lt;= <c>max encumbrance</c>.</summary>
+    public float Encumbrance { get; init; }
+    /// <summary>The weapon's <c>length</c> L (0 for fists).</summary>
+    public float WeaponLength { get; init; }
+    /// <summary>The character's size factor (slot 0x390: 1 for people, an animal's age scale).</summary>
+    public float Scale { get; init; }
+    /// <summary>The gap to the target (<see cref="CombatSystem.Gap"/>), floored at 0.</summary>
+    public float Gap { get; init; }
+    /// <summary>The fighter's last technique (index), -1 for none or a defence; it weighs x0.2 unless <see cref="TargetStaggered"/>.</summary>
+    public int Previous { get; init; }
+    public bool TargetStaggered { get; init; }
+    /// <summary>The limbs: the left and the right arm work (<c>MedicalState.ArmWorks</c>); a leg is down.</summary>
+    public bool LeftArm { get; init; }
+    public bool RightArm { get; init; }
+    public bool LegDown { get; init; }
+}
+
 /// <summary>
-/// Picking a technique, pure given the rolls (docs/game/combat.md "Technique choice, block and dodge"). The attacker-side choice was not read in the original (<b>Unknown</b>); the
-/// rules here are the engine's, built on the record fields: weapon type flags, the disabled / block / dodge / prone / animal fields, the skill range, and the distance fields.
+/// Picking a technique, pure given the rolls. The attack side is the original's (<c>FUN_140888030</c> / <c>FUN_1408876d0</c>, docs/game/combat.md "Attack technique choice"); the
+/// defence side is <c>FUN_140887970</c>.
 /// </summary>
 public static class TechniqueChooser
 {
     /// <summary>
-    /// The attack techniques usable now, by weighted random pick on <c>chance</c> (<paramref name="roll"/> in [0, 1)); -1 when none. A technique is a candidate when it is not disabled, not a
-    /// block or dodge, its weapon type flags include the wielder's, it is for the wielder's weapon category (<paramref name="category"/>, <see cref="Fits"/>), the standing / prone flag
-    /// matches, the skill is within <c>min skill</c> to <c>max skill</c>, and the gap between the two bodies is within both the weapon's reach and the technique's distance: <c>attack distance min
-    /// vs static</c> against a target that stands still, <c>attack distance</c> against one that moves (a negative distance means the technique is not for that case:
-    /// "Cut left static" has -999 for a moving target, "Cut left" has -10 for a static one).
+    /// The attack technique to start, by weighted pick (<paramref name="roll"/> in [0, 1)); -1 when none. Up to three passes over the attack techniques (not disabled, not a block
+    /// or dodge): the weapon's category and skill; then, for a person only, the unarmed techniques at <see cref="AttackQuery.UnarmedSkill"/>; then those again accepting hurt limbs.
+    /// <paramref name="maxReach"/> is the longest reach (<c>attack distance</c> + L / 2, at least 1) among the techniques the filters let through, whatever the distance:
+    /// the original's CharStats +0x150, which sets how close the fighter walks in.
     /// </summary>
-    public static int ChooseAttack(IReadOnlyList<CombatTechnique> all, WeaponKinds weaponKind, int category, bool prone, float skill, float gap, bool targetMoving, float weaponReach, float roll)
+    public static int ChooseAttack(IReadOnlyList<CombatTechnique> all, in AttackQuery q, float roll, out float maxReach)
     {
-        float total = 0;
-        for (int i = 0; i < all.Count; i++) total += Weight(all[i], weaponKind, category, prone, skill, gap, targetMoving, weaponReach);
+        maxReach = 1;
+        Span<float> weights = all.Count <= 256 ? stackalloc float[all.Count] : new float[all.Count];
+        float total = Pass(all, q, q.Category, q.Skill, false, weights, ref maxReach);
+        if (total <= 0 && !q.Animal)
+        {
+            total = Pass(all, q, (int)WeaponCategory.Unarmed, q.UnarmedSkill, false, weights, ref maxReach);
+            if (total <= 0) total = Pass(all, q, (int)WeaponCategory.Unarmed, q.UnarmedSkill, true, weights, ref maxReach);
+        }
         if (total <= 0) return -1;
         float target = roll * total;
         int last = -1;
         for (int i = 0; i < all.Count; i++)
         {
-            float w = Weight(all[i], weaponKind, category, prone, skill, gap, targetMoving, weaponReach);
+            float w = weights[i];
             if (w <= 0) continue;
             last = i;
             if (target < w) return i;
@@ -34,54 +69,101 @@ public static class TechniqueChooser
         return last;
     }
 
-    static float Weight(CombatTechnique t, WeaponKinds kind, int category, bool prone, float skill, float gap, bool moving, float weaponReach)
+    /// <summary>One pass of <c>FUN_1408876d0</c>: fills <paramref name="weights"/> and returns their sum.</summary>
+    static float Pass(IReadOnlyList<CombatTechnique> all, in AttackQuery q, int category, float skill, bool hurtLimbs, Span<float> weights, ref float maxReach)
     {
-        if (t.Disabled || t.IsBlock || t.IsDodge || !Fits(t, kind, category) || t.IsProne != prone) return 0;
-        if (skill < t.MinSkill || skill > t.MaxSkill) return 0;
-        float distance = Distance(t, moving);
-        if (distance < 0 || gap > MathF.Min(distance, weaponReach)) return 0;
-        return MathF.Max(t.Chance, 0);
+        float total = 0;
+        float half = q.WeaponLength * 0.5f;
+        float burden = (1 - q.Encumbrance) * 100;
+        for (int i = 0; i < all.Count; i++)
+        {
+            weights[i] = 0;
+            var t = all[i];
+            if (t.Disabled || t.IsBlock || t.IsDodge || !Fits(t, category)) continue;
+            if (skill > t.MaxSkill || skill < t.MinSkill || burden > t.MaxEncumbrance || t.IsProne != q.Prone) continue;
+            float limbs = LimbFactor(t, q);
+            if (limbs <= 0 || !hurtLimbs && limbs < 1) continue;
+            float reach = t.AttackDistance + half;
+            maxReach = MathF.Max(maxReach, reach);
+            if (q.Gap > reach) continue;
+            // Closeness of the gap to the technique's own distance (attack distance + L / 4, times the size), both + 3: the smaller over the larger.
+            float actual = q.Gap + 3, ideal = q.Scale * (t.AttackDistance + half * 0.5f) + 3;
+            float w = (ideal <= actual ? ideal / actual : actual / ideal) * limbs;
+            if (q.Gap < t.AttackDistanceMinVsStatic) w *= 0.02f;
+            if (i == q.Previous && !q.TargetStaggered) w *= 0.2f;
+            w *= t.Chance;
+            if (w <= 0) continue;
+            weights[i] = w;
+            total += w;
+        }
+        return total;
     }
 
-    /// <summary>The weapon types a technique is valid for, matched on the type bits (the "1 handed" flag is not tested).</summary>
-    internal static bool FitsKind(CombatTechnique t, WeaponKinds kind) => (t.Kinds & kind & ~WeaponKinds.OneHanded) != 0;
+    /// <summary>
+    /// The limb factor (<c>FUN_140886030</c>): the product over the blows of 1 for the weapon (limb 4), 0.001 for an arm (limb 0 left, 1 right) that does not work, x0.25 for a leg
+    /// (2, 3) while a leg is down; a kick while prone rules the technique out (0), and so does a product with no blow above 0.01.
+    /// </summary>
+    static float LimbFactor(CombatTechnique t, in AttackQuery q)
+    {
+        float product = 1;
+        bool any = false;
+        for (int blow = 1; blow <= t.Blows; blow++)
+        {
+            float f = 1;
+            switch (blow == 1 ? t.Limb1 : t.Limb2)
+            {
+                case 0: if (!q.LeftArm) f = 0.001f; break;
+                case 1: if (!q.RightArm) f = 0.001f; break;
+                case 2 or 3:
+                    if (q.Prone) return 0;
+                    if (q.LegDown) f = 0.25f;
+                    break;
+            }
+            if (f > 0.01f) any = true;
+            product *= f;
+        }
+        return any ? product : 0;
+    }
 
     /// <summary>
-    /// Whether a technique is for a fighter whose weapon category is <paramref name="category"/> (<see cref="Fighter.TechniqueCategory"/>: 5 for fists, 9 to 20 for a creature's natural
-    /// weapon). The record's <c>animal</c> reads as the one weapon category the technique is for, 0 meaning "by the weapon type flags" (docs/game/animals.md: the martial arts techniques
-    /// have 5 and the unarmed flag, the creature ones 9 to 20 and no flag at all, <b>Verified</b> over the records; the reading is the engine's). A creature (9 and up) takes only its
-    /// own; anyone else the flagged ones (<c>animal</c> 0) of its kind and those of its exact category.
+    /// Whether a technique is for weapon category <paramref name="category"/> (the technique's per-category table, <c>FUN_1406684c0</c>, <b>Verified</b>): a creature technique
+    /// (<c>animal</c> 9 and up) for that category only; any other by its flags, <c>katanas</c> 0, <c>sabre</c> 1, <c>blunt</c> 2, <c>heavy weapons</c> 3, <c>hackers</c> 4,
+    /// <c>unarmed</c> 5, <c>bow</c> 6 and <c>polearm</c> 8 (the <c>1 handed</c> flag is not read; a category 7 or a creature one never fits).
     /// </summary>
-    internal static bool Fits(CombatTechnique t, WeaponKinds kind, int category) =>
-        category >= FirstCreatureCategory ? t.Animal == category : t.Animal == 0 ? FitsKind(t, kind) : t.Animal == category;
+    internal static bool Fits(CombatTechnique t, int category)
+    {
+        if (t.Animal >= FirstCreatureCategory) return t.Animal == category;
+        var kind = category switch
+        {
+            (int)WeaponCategory.Katanas => WeaponKinds.Katana,
+            (int)WeaponCategory.Sabres => WeaponKinds.Sabre,
+            (int)WeaponCategory.Blunt => WeaponKinds.Blunt,
+            (int)WeaponCategory.Heavy => WeaponKinds.Heavy,
+            (int)WeaponCategory.Hackers => WeaponKinds.Hacker,
+            (int)WeaponCategory.Unarmed => WeaponKinds.Unarmed,
+            (int)WeaponCategory.Polearms => WeaponKinds.Polearm,
+            _ => WeaponKinds.None,   // bow (6): no technique has the flag (CombatTechnique does not read it)
+        };
+        return (t.Kinds & kind) != 0;
+    }
 
     /// <summary>The first creature attack category (9, ELEPHANT).</summary>
     public const int FirstCreatureCategory = 9;
 
-    /// <summary>
-    /// The technique's distance for a moving or a standing target. A creature technique's 0 (most of them, for one case or both) reads as contact: <see cref="CombatTuning.CloseInGap"/>,
-    /// the gap the pursuit closes to (an <b>engine choice</b>: read literally, a goat's only technique, 0 / 0, could never strike, nor a gorillo a moving target).
-    /// </summary>
-    static float Distance(CombatTechnique t, bool moving)
-    {
-        float d = moving ? t.AttackDistance : t.AttackDistanceMinVsStatic;
-        return t.Animal != 0 && d == 0 ? CombatTuning.CloseInGap : d;
-    }
-
-    /// <summary>The distance the technique can strike at (gap between bodies), for the reach the attack is chosen at.</summary>
-    public static float ReachOf(CombatTechnique t, bool targetMoving, float weaponReach) => MathF.Min(Distance(t, targetMoving), weaponReach);
+    /// <summary>How far a technique strikes: the gap it may start at, <c>attack distance</c> + half the weapon's <c>length</c>.</summary>
+    public static float ReachOf(CombatTechnique t, float weaponLength) => t.AttackDistance + weaponLength * 0.5f;
 
     /// <summary>The front directions (1 down, 2 left, 3 right, 4 thrust, 5 up, 6 pierced, 0 default) and the rear ones (7 to 9) are two classes; a wrong-direction block stays in the blow's class.</summary>
     internal static bool SameClass(int a, int b) => (a >= 7) == (b >= 7);
 
     /// <summary>
-    /// The defender's reaction (<c>FUN_140887970</c>, <b>Observed</b>), given the block roll and the pick roll. Candidates are the block or dodge techniques of the defender's weapon type,
-    /// standing posture and creature kind. A fighter with a weapon that can block rolls to block: on success the candidates are the techniques whose direction equals the blow's (the
+    /// The defender's reaction (<c>FUN_140887970</c>, <b>Observed</b>), given the block roll and the pick roll. Candidates are the block or dodge techniques of the defender's weapon category
+    /// (<see cref="Fits"/>) and posture. A fighter with a weapon that can block rolls to block: on success the candidates are the techniques whose direction equals the blow's (the
     /// base game's "Dodge back" rows are flagged as blocks too, so they are among them), on failure the block techniques of a different direction in the same class, never a dodge,
-    /// so the blow passes. A fighter without one is dodge-capable only when the roll against <paramref name="dodgeChance"/> succeeds, and then picks among the dodge techniques. The pick is
+    /// so the blow passes. A fighter without one is dodge-capable only when the roll against <paramref name="dodgeChancePercent"/> succeeds, and then picks among the dodge techniques. The pick is
     /// weighted on <c>chance</c>. -1 when there is no reaction.
     /// </summary>
-    public static int ChooseReaction(IReadOnlyList<CombatTechnique> all, WeaponKinds weaponKind, int category, bool prone, bool canBlock, int blowDirection,
+    public static int ChooseReaction(IReadOnlyList<CombatTechnique> all, int category, bool prone, bool canBlock, int blowDirection,
         float blockChancePercent, float dodgeChancePercent, float chanceRoll, float pickRoll)
     {
         ReactionPool pool;
@@ -89,13 +171,13 @@ public static class TechniqueChooser
         else if (chanceRoll * 100 < dodgeChancePercent) pool = ReactionPool.Dodges;
         else return -1;
         float total = 0;
-        for (int i = 0; i < all.Count; i++) total += ReactionWeight(all[i], weaponKind, category, prone, pool, blowDirection);
+        for (int i = 0; i < all.Count; i++) total += ReactionWeight(all[i], category, prone, pool, blowDirection);
         if (total <= 0) return -1;
         float target = pickRoll * total;
         int last = -1;
         for (int i = 0; i < all.Count; i++)
         {
-            float w = ReactionWeight(all[i], weaponKind, category, prone, pool, blowDirection);
+            float w = ReactionWeight(all[i], category, prone, pool, blowDirection);
             if (w <= 0) continue;
             last = i;
             if (target < w) return i;
@@ -115,9 +197,9 @@ public static class TechniqueChooser
         Dodges,
     }
 
-    static float ReactionWeight(CombatTechnique t, WeaponKinds kind, int category, bool prone, ReactionPool pool, int blowDirection)
+    static float ReactionWeight(CombatTechnique t, int category, bool prone, ReactionPool pool, int blowDirection)
     {
-        if (t.Disabled || t.IsStumbleDodge || !(t.IsBlock || t.IsDodge) || !Fits(t, kind, category) || t.IsProne != prone) return 0;
+        if (t.Disabled || t.IsStumbleDodge || !(t.IsBlock || t.IsDodge) || !Fits(t, category) || t.IsProne != prone) return 0;
         bool inPool = pool switch
         {
             ReactionPool.Facing => t.IsBlock && t.AttackDirection1 == blowDirection,

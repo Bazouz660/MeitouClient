@@ -54,8 +54,8 @@ sealed class UserConfig
     /// <summary>Borderless full screen (the Tab panel, Alt+Enter); <c>--windowed</c> starts in a window for one run.</summary>
     public bool FullScreen { get; set; } = true;
     public int TickRate { get; set; } = 30;
-    /// <summary>How many enemies may melee one target at once (Advanced settings, 1-5): Faithful 1 (the game's CONSTANTS), Meitou 3.</summary>
-    public int AttackSlots { get; set; } = MeitouAttackSlots;
+    /// <summary>How many enemies may swing at one target at once (Advanced settings, 1-5; plus the race's extra slots): Faithful 1 (the game's CONSTANTS, the default), Meitou 3.</summary>
+    public int AttackSlots { get; set; } = FaithfulAttackSlots;
     public const int FaithfulAttackSlots = 1, MeitouAttackSlots = 3;
     /// <summary>A late but successfully rolled dodge or block still counts (Advanced settings; Faithful off, Meitou on): a balance change for fights against several enemies.</summary>
     public bool LateDefences { get; set; } = true;

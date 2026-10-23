@@ -66,7 +66,7 @@ which are descriptive (RTTI knows `MessageBoxManager::Box`; the constructor of a
 | CharacterTradingWindow / Box | 14072a880 / 14072a070 | Kenshi_CharacterSelectionWindow / Box | Middle | character picker for trade ([economy.md](economy.md#12-slaves-prisoners-animals)) |
 | DialogueWindow | 140725740 | Kenshi_ConversationPanel | Middle | portraits, names, dialog line, money ([dialogue](dialogue.md#ui)) |
 | DialogueSpeechBubble | 140725f30 | Kenshi_SpeechPanel | Dialog | floating speech ([dialogue](dialogue.md#ui)) |
-| ContextMenuGUI | 1407977a0 | Kenshi_ContextMenu | Popup | verbs, see [ui-input.md](ui-input.md#dispatch-and-selection) |
+| ContextMenuGUI | 1407977a0 | Kenshi_ContextMenu | Popup | verbs, see [ui-input.md](ui-input.md#context-menu-verbs) |
 | BuildModeWindow | 1404e5210 | Kenshi_BuildWindow | Middle | categories, buildings, stats, Commands box, Confirm / Undo / Build, floor arrows |
 | CharacterEditWindow | 1405f4dd0 | Kenshi_CharacterEditor | Back | character editor |
 | MessageBox | 1406e70a0 | Kenshi_MessageBox | Info | message, buttons (Return = first, Esc = last) |
@@ -133,7 +133,7 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   0x8, 0x10, 0x20 (0x2 always added); Import is live once a save is selected; Advanced options opens its own options window, filled from the save's
   difficulty block. Importing resets the world as a new game does (no start), restores the clock, money, faction name, town discovery and the player's
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
-  faction relations; with the reset tick the squads go to (-43500, 0, -6625). Meitou: the window only (Import shows a notice).
+  faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
 ### Loading screen
 
@@ -216,7 +216,7 @@ the user's base-game save atlas shows a near-frontal face.
 - **Flash** (PortraitData `+0x28`, a direction of ±1). When flag 2 turns on, the direction starts at −1. Each frame the background's alpha
   changes by direction × frame time × 2. At 0 the direction flips to +1, and at 1 it flips back to −1. That is a full 0 → 1 → 0 cycle
   every second. Without flag 2, or with flag 4, the alpha stays at 1.
-- **Unknown:** what the AI `+0xb0` float means. AI slot 25 (the eat desire) also suppresses itself while it is > 0, so it reads as
+- **Unknown:** what the AI `+0xb0` float means. AI slot 25 (the eat desire, [eating](character-stats.md#eating)) also suppresses itself while it is > 0, so it reads as
   "danger seen". Also unknown: what `+0x279 & 7` holds. Sections 9 and 5 are the ARMOUR `slot` values of the shackle records (`Prisoner Shackles` 9, `Hive Prisoner Shackles` 5; **Observed**).
 - A portrait is re-rendered when its flags change, when its character changes, or when PortraitData `+0x30` / `+0x58` is set.
 - A cell wider than 94 px switches `NameText` to a larger font.
@@ -237,7 +237,7 @@ taken as the skins' `0.4 0.380392 0.356863` (#66615b, also the orders buttons' t
 Secondary at the `JobsPanelInfo` EditBox's `Alpha` 0.5 (**Verified** property, `Kenshi_MainPanel.layout`): MyGUI multiplies a
 widget's alpha into its children (`InheritsAlpha`, default true), and the text is drawn by the EditBox template's client.
 **Verified** (`Kenshi_MainPanel.layout`): `OrdersChaseButton` is captioned JOBS; Meitou binds it
-to Jobs, independent of the saved `chase mode` flag whose relationship is **Unknown**.
+to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](ai-tasks.md#perma-jobs)).
 
 - Shortcut buttons INV, STA, MAP, TEC (research; user-requested caption; installed layout says TCH, **Verified** by reading `Kenshi_MainPanel.layout`), SQD, HLP; floor panel with text "Floor {1,num}"; four speed
   buttons ([game-loop.md](game-loop.md#speed-and-pause): pause, 1x, 2x, 5x); money / day / time panel (money `c.{1,num}`; the clock text is described in [game-loop.md](game-loop.md#frame-clocks), money in [economy.md](economy.md#units-stacks-and-traders)); squad tab control; medical panel; orders panel;
@@ -286,6 +286,16 @@ to Jobs, independent of the saved `chase mode` flag whose relationship is **Unkn
 - Information panel: `ExtendingPanel` starts collapsed, its bottom moved onto the panel's bottom (behind the Overlapped `StatsPanel`), and slides over
   0.5 s to its layout place when `ExtendedStatsButton` is pressed (**Verified**). `BountyPanel` shows only for one selected character with a bounty or
   a status line (Imprisoned, Slave, Escaped slave, Committing Crime!, Leader...; **Verified**).
+- Status rows (`FUN_1405d4260`, **Observed**; the panel's tooltip builder with a mode argument, which tooltip it is is **Unknown**; Meitou puts the slave rows ahead of the bounty rows): a character in slave state 1 / 2 / 3
+  gets a title and a text, with `{1}` the owner's name ("someone" without one; the owner faction object's name `+0x1a8`, else the owner character's):
+  "Slave" - "A slave belonging to {1}. Not considered a person with rights, a slave works for his master until death and nothing more. {2}"; "Escaped slave" - "A slave of {1} that has been seen
+  escaping. Needs to lay low for a day and avoid getting spotted. {2}"; "Ex-slave" - "Was once a slave of {1} but has now escaped. The heat has died down but he still needs to avoid getting found out. {2}".
+  `{2}` is empty for a character with no squad (`+0x250`), else the hint: for state 1 "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will
+  automatically work for his master. You can remove this job, but beware of the consequences...", for 2 and 3 "Keep your [Looks Like A Slave] level as low as possible, wear clothing or disguises and
+  find a plastic surgeon to restore your hair. Don't get spotted." (3: "... You should be safe if you stay out of towns."). For state 2 and 3 the same tooltip adds rows "Situation:" ("Undiscovered" when the
+  status `+0x110` is 0 or less, else "Seen!"), "Looks like a slave:" (`+0xf4` x 100 %) and "Time remaining:" (`FUN_140598b10` hours); the free-person text ("You are a free person.", "You are no slave.",
+  "The faction that owns you.") belongs to the player's disguise tooltip. Other rows of the builder: "Leader", "War Leader", "Kidnapped", "Escaped Prisoner", "Committing Crime!", "Imprisoned:"
+  (not built). Meitou: `PlayerInterface.SlaveRows` (the hints for player characters only; engine choice).
 - Bounty panel (`FUN_1405d2da0`, **Observed**; colour strings **Verified**: their static initialisers `FUN_14158a2a0` `#afa68b` Main, `FUN_14158a320` `#492620` Title,
   `FUN_14158a460` `#444444` Greyed). The *local faction* (`FUN_140852010`): while imprisoned (`+0x2f8 == 2`) the owner of the cage at `+0x300`, else the faction of the
   status object's `+0x88` (**Unknown**; Meitou: the town the character stands in, nearest whose radius holds it).
@@ -376,16 +386,34 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   - 5: slot 113 (`FUN_1402fdea0`): the building's name left; right the owner faction's name, the player's faction always, another
     faction only when the building is in a town that passes slot 0x340 and town+0x111 is clear, else empty.
   - 3: `Type:` the record's name when it differs from the building's name, `Town:` the town's name, then the upgrade lines (slot 116:
-    Upgrade / Upgrades To: / Downgrade To:, power) and the construction buttons (slot 117 `FUN_1402fea10`: `Dismantle`, `PAUSE CONSTRUCTION`,
-    `[PAUSED]`; Dismantle confirmations in `FUN_14054db30`).
-  - 6: `Open to public:` coloured `Public` / `Private` for another faction's building; for the player's own building with +0x1f0 set (taken to be its
-    interior) a `Kenshi_Button2` toggle. `For sale:` `c.{price}` (price × `building cost mult`) with a button when slot 88 is true.
-  - 4 (status from slot 114 `FUN_1402fe040`: Normal / Broken / Under construction with a tooltip; slot 115 `FUN_140302380`: `Condition` bar,
-    `{1,num}/{2,num}` materials, "The building is under construction and at {1,num}% completion.") is asked by no HUD panel (**Unknown**
-    which panel shows it in the decompile). 7 gives nothing for buildings.
-  **Observed** (the owner's screenshot of a town house, base game): the medical panel does show a selected building: the header word
-  (`Normal`) and `LifeBar` rows `Door Condition` 10 and `Building Condition` 5, full yellow bars (the number is the current value, the
-  bar its fraction of the maximum, `FUN_140302380` / `FUN_140547200`; where the values come from is **Unknown**). The name bar read the
+    Upgrade / Upgrades To: / Downgrade To:, power) and the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
+    true: the owner is the player's faction and the building's +0xc0 byte is clear, with an exception for `creates player town` buildings not read in
+    full): a full-row button `Dismantle` (caption BadBright) and, while the construction state is not complete, `PAUSE CONSTRUCTION` (Main), captioned
+    `[PAUSED]` (#777777) while paused. Dismantle is slot 84 (`FUN_14054db30`, `General_Click`): "You cannot delete this building while it has mounted
+    buildings."; items in an inventory: "There are still items in the inventory, they will be lost.\nAre you sure you want to destroy this building?" (a
+    research building with items refuses: "You cannot delete this building while there are still items in its inventory.\nPrecious research artifacts and
+    stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
+    "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
+    the paused byte, `General_Click`.
+  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building with
+    +0x1f0 set (taken to be its interior) a `Kenshi_Button2` toggle (Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
+    82, `General_Click`). `For sale:` with a button `c.{1,num}` (both Good) when slot 88 (`FUN_14029c500`) is true: a building of class 0xb with no
+    parent whose town (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
+    allied, and its state's bool `sell home` set (true without a state). Price (`FUN_1407ad300`): int(f × target × the owner FACTION's float
+    `building cost mult` × 400), f = 0.375 when slot 102 (+0x330) answers true, else 1 (**Unknown** what that slot is). The button (slot 80
+    `FUN_1407ad410`) asks "Do you want to buy this building for c.{1,num}?".
+  - 4 is the medical panel's section (**Observed**: `MedicalDatapanel`'s constructor `FUN_140726a70` passes 4 to `FUN_1406fd7d0`; it finds the
+    `LifeBarN` widgets and their `Value`, `Yellow`, `Green`, `White`, `Datapanel`, `Tooltip`, `Robot` and `Crushed` children (and one more whose name string was not read), and `HealthText`). The
+    header word is slot 114 (`FUN_1402fe040`: Normal / Broken / Under construction with a tooltip); the rows slot 115 (`FUN_140302380`): `Condition`, or
+    `Building Condition` when the building has doors (+0x1c0), the number int(progress) and the bar progress / target capped at 1 (`FUN_140547200`; the
+    construction state at Building+0x160, [construction state](buildings-production.md#construction-state)), tooltip "The building is under construction
+    and at {1,num}% completion." (fraction × 100) while not complete, else "The building is in good condition." at 1 or "The building is damaged.";
+    then, while not complete, a row per material: its item's name, `{1,num}/{2,num}` delivered / required (as ints), the bar delivered / required, tooltip
+    "All necessary materials are ready." or, in Title, "{1} more 'Building Materials' will be needed to complete this construction." with the
+    missing amount (the number in Title, the rest in the default ink). A row's tooltip is set on its `LifeBarNTooltip` (`FUN_1407228a0`, the type 0
+    setter). 7 gives nothing for buildings.
+  **Observed** (the owner's screenshot of a town house, base game): the header word (`Normal`) and `LifeBar` rows `Door Condition` 10 and
+  `Building Condition` 5, full yellow bars: the targets of the door and the house (their materials, all delivered). The name bar read the
   state's own name ("Big Shop") left and the owner faction ("Swampers") right; the info panel `Type:` (the record's name, "Swamp Shack") and
   `Town:`; the stats panel `Open/Close:` "The door is open", `Security:` "Unlocked (lvl 47)" and `Open to public:` "Public", values pale green.
   **Observed** (game data, not the decompile): many shop states carry a generic name (`Shop`, `Big Shop`, `General Shop`, `Bar`); what the
@@ -393,12 +421,20 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   trader, its `vendors` VENDOR_LISTs ("medical and travel supplies"). The owner's screenshot shows "The Dancing Skeleton" in the name
   bar with `Type:` the record. Meitou names the building from `building name` when set, and, in the Meitou UI mode only, a trader's shop whose
   state name is only its layout's generic one ("Shop") from its first vendor list ("Medical and travel supplies"); the Faithful UI keeps "Shop".
-  Meitou shows the header word (Normal, Broken, or a site's construction state) and no condition rows (it models no building health); Open to
-  public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's buildings only.
-- **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`; 6 `Open/Close:` with
-  "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and `lvl {1,num}`, with tooltips ([Tooltips](#tooltips)). For the player's own door both
+  Meitou (`PlayerInterface.BuildingSelect.cs`): the header word (Normal, Broken, or a site's construction state); the condition rows as above, the bar
+  in the yellow layer, a finished building's progress being its target (Meitou models no building damage) and the target of a world building or door
+  the sum of its BUILDING record's materials; the player's own site gets Dismantle (after "Are you sure?" the selection dismantles it, `DismantleOrder`,
+  engine choice for the unknown callback) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
+  door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
+  buildings only; its toggle and the For sale line are not built: the simulation has no public flag on a player building (and its consumers in the town AI are **Unknown**) and no purchase of a town building.
+- **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
+  door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
+  6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
+  Value colours: open, closed and Unlocked in `#a8b774`, broken, a closed door that is locked, and Locked in BadBright. For the player's own door both
   lines are `Kenshi_Button2` buttons: Open/Close runs `FUN_140546fb0`, Security `FUN_140547060` ([locks](locks.md#doors); **Verified**: the
-  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text.
+  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. Meitou: the same lines, the buttons on the player's own
+  finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), drawn over the right half of the row (engine choice; the original's button width
+  argument, 1.0 here, 0.3 for the public toggle and 0.4 for For sale, is **Unknown** in meaning).
 - **Beds, cages, containers, lamps** (Useable / Storage / Light slot 40 `FUN_140304e90`): 3 `Town:`, `Training:` (function 7), `Cost to use:`
   `Private` or `Pay c.{1,num}` (beds), `Lock state:` Locked / Unlocked, `Lock complexity:` `Level {1,num}`, `Empty`; 6 `Healing bonus:`
   `x{1,num}` (beds), `Max Skill Level:` (training); 0xf `Money:`. Turrets, machines, generators and batteries have their own lines
@@ -500,6 +536,29 @@ decompile unless marked; Meitou's adapter is `PlayerInterface.Map.cs`.
 - **Roads:** `1404931d0` would draw the level's road network (`4-roadlist`) as polylines (hidden roads `#a0a0a0`), but its only caller `1404939f0` is
   never referenced in the exe: the base game shows no roads (**Verified**, xrefs and a raw pointer scan). Meitou draws none.
 - **Unknown:** where `NewDiscovered` sits on the marker (Meitou: the top-right corner, half size).
+
+### Faction tab
+
+Overview tab 1 (`FactionTab`), class `FactionsScreen` (RTTI; constructor `FUN_140493fe0`, update `FUN_140499960`). **Observed** (decompile, 2026-10-23)
+unless marked; Meitou: `PlayerInterface.Faction.cs`.
+- Captions: `lbFactionName` "Faction name", `lbFactionInfo` "Information". `FactionNameText` (EditBox) holds the player faction's name (PlayerInterface+8).
+  Accept or losing the key focus renames (`FUN_1404923d0`): a new name that no faction has yet (`FUN_1402e7950`) is written to PlayerInterface+8 and the
+  player faction's name (+0x1a8); a taken one shows the message box "Faction Name" / "This faction name already exists" and the box reverts. While the box
+  has the key focus the hotkeys are off (`DAT_142133440` = 0, back to 1 on focus loss).
+- `RelationsPanel` (ScrollView): one `Kenshi_FactionRelationsLine.layout` per faction (constructor `FUN_140491f60`: `FactionName` the faction's name,
+  `FactionValue`, `LeftBar` Hurt skin, `RightBar` LifeBar skin), made once per faction of the player faction's relation map (FactionRelations +0x78) that
+  passes `FUN_1407f4ac0` (present in a second map at FactionRelations +0x68, meaning **Unknown**), has its byte +0x1d0 clear (**Unknown**) and is not the
+  record `GENERATION_TEMPLATE_FACTION` (**Verified**: the string id of a FACTION in `gamedata.base`, named "generation template"). Every 2 s of real time
+  (+0x58) the values refresh; new lines are sorted by faction name (insertion sort, comparator `FUN_1409b3cd0`, case rule **Unknown**) and stacked
+  with 3 × a UI scale (`DAT_1421337ec`) between them, each the canvas's width (the view less its vertical bar). A line (`FUN_140499630`): the number
+  int(relation) in BadBright below -30, `#a8b774` above 60, else Main; below 0 the left bar's width is its layout width × -relation / 100, kept
+  right-aligned at the middle, above 0 the right bar's × relation / 100 from the middle (the other bar zero). The wheel over a line scrolls the panel.
+- `FactionInfoPanel` holds a DatapanelGUI ("mfactioninfo", `FUN_140494720`): `---Active Contracts---` (#444444) and the contract rows
+  (`FUN_1404927f0`: a "Renew" / "Manage Contract" button per contract and a `-----------` rule), then `---Upcoming Events---` (#444444) and the
+  rows of each entry of a list at `DAT_1421345b8` (`FUN_1407f2ef0`; what they are is **Unknown**).
+- Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has and posts "This faction name already exists" otherwise (the original's message box and the empty-name rule are not built / **Unknown**; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction but the player's, the `not real` ones and the template (engine
+  choice for the unknown filters), sorted ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
+  with nothing under them (no contracts or events are modelled).
 
 ### Squads tab
 
@@ -663,7 +722,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   `Illegal goods?` / `ILLEGAL GOODS!` (smuggling, not built).
 - **Burden row** under Total Weight (**Verified**, `FUN_1405d4260`): by the carry speed factor, >= 0.95 `-Weightless`, >= 0.75 `-Lightweight`, >= 0.5 `-Moderate` (Main), >= 0.1 `-Heavy`,
   else `-Overloaded` (both Bad). The same function gives a trading character's panel its name, `Money:`, `Merchant Info:`, `Prices:` +/-N % and `Buys Stolen Goods` lines.
-- Colour tags in code (**Verified**, static initialisers `FUN_14158a...`): #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #444444, #777777, #14ffdc.
+- Colour tags in code (**Verified**, static initialisers `FUN_14158a...`): #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #444444, #777777, #14ffdc. The strings `DAT_141f49248` + 0x28 k (k = 0..8; initialisers `FUN_14158a2a0` + 0x40 k, **Verified** 2026-10-23) are #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #a8b774 again, #444444, #777777.
 - **Unknown**: when an equipment slot is disabled (its red `disabled` state; the slot's enabled flag is the section's, `FUN_14014e3d0`; both trade screenshots show red empty clothing
   slots), the trader window's panel lines beyond Money.
 - Item placement failure messages (FUN_14070f7e0; the checks behind them are in [economy.md](economy.md#shops-and-transactions)): Out of trading range; No room for that item; You can't
@@ -834,15 +893,61 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
   construction.", "This machine has broken down as a result of damage. Send one of your engineers to repair it.", the farm and machine "Output full" / water / harvest / power texts; **Observed**, a title followed by its text
   in the exe's strings, Meitou uses them for every building). The door's `Security:` row: "The door is locked and will keep out intruders." / "The door is unlocked."; `Open/Close:` of a broken door: "It will no longer
   close and needs to be repaired." (`FUN_140304120`; the other door texts need door condition, which Meitou does not model).
-- **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the stats lines' breakdown texts and the health-word texts
-  (`FUN_14088a8f0` holds both ("Bleeding": "Losing blood, will collapse if blood goes below 0.", "Starving", "Crippled arm" ...) but which line each belongs to is not resolved; their data (encumbrance penalty, full speed
-  bonus) is not modelled), the `LifeBar#Tooltip` widgets, the lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.
+- **Medical tooltips** (`FUN_14088a8f0`, **Observed**; each row's text goes on its `LifeBarNTooltip` widget, the health word's on `HealthText`):
+  - Blood: "Racial bleed rate multiplier: x{1,num=fix,p=2}" (the race's `bleed rate`), Bad above 1, Good below.
+  - A part, with h its health (+0x40), d a pending amount (+0x48), s the stun (+0x44) and m the maximum: h + d - s at or below -m: "Your {1} is totally destroyed." +
+    " It's probably the reason you are dead." for a `death` part, else " Lucky it's not something you need to live."; h + d below 0: a `death` part above the KO
+    point "This is a dangerous wound and is getting worse. Get some medical attention fast.  Death at {1}" (-m), while unconscious (`FUN_14028dda0`, taken)
+    "This is a dangerous wound ... If you can regain consciousness before it goes below {1,num} then you could save yourself.\nIf it goes below that then you
+    will have to hope you get rescued by somebody else.\n" (KO point, Bad) + "You will die at {2}"; at or below the KO point "This is a critical wound. If it
+    doesn't get medical treatment you will die."; another part "This wound is getting worse. You need first aid.", replaced for a robotic one (`FUN_140643a70`)
+    by "This limb is severely damaged and in need of repairs. Luckily though skeleton limbs don't degenerate."; from 0 and more than 20 short of m: "Your {1}
+    needs bandaging." (robotic non-vital) or "Your {1} needs bandaging, it's slowly getting worse."; within 5 % of m (m × 0.95 - s ≤ h + d): "Your {1} is
+    okay." (d + s ≤ 5) or "Your {1} is in the process of healing.", then, wear (+0x50) above 5, the wear lines (up to 40: "You have {1} points of wear damage,
+    this detracts from your max health and can be fixed at a Skeleton Bed.", else "... The manual recommends you find a Skeleton Bed for maintenance.", Bad);
+    else "Your {1} needs bandaging, but it's not urgent.". Then with 0 < h + d - s < 60 a line: "Your stats will be negatively affected." (`death`), "Your movement
+    speed will be negatively affected." (leg), "Your combat and manual labour skills will be negatively affected." (arm); a leg when `FUN_140883fa0` is false "You
+    won't be able to kick."; a lost limb's text becomes "This limb is gone forever.".
+  - Hunger (h, the stomach store +0x64): h > 2 "You are well fed and currently have no problem."; 1 < h ≤ 2 "You are suffering from malnutrition, Your stats and
+    strength will be affected, you need to get some food as soon as possible. Stat penalty is {1}" (`FUN_1406457e0`, `x` suffix, Bad), with food stored "You are
+    suffering from malnutrition, but you have food so you are recovering. Stat penalty is {1}"; h ≤ 1 "You are starving to death. Get some food fast. When the red
+    bar goes below {1} you will pass out. When it reaches zero, you die.", passed out (`FUN_140644320`) "You have passed out from starvation. You're all alone and
+    going to die. Nobody cares." (squad under 2) or "... One of your squad mates will have to feed you or you're going to die.", with food stored "You are slowly
+    recovering from starvation." / "You have passed out from starvation. You have food though, so hopefully you will recover."; skeletons "Skeletons don't need to eat.".
+  - Health word / tooltip: Dead "Gone forever. RIP."; BEING EATEN ALIVE!! "Something is eating you alive! AAAAAAHHHHHHHHHH!!"; Dying "If you don't get medical
+    attention, you will die." or, blood at 0 with a destroyed limb, "Severe limb damage has now led to critical blood loss. You will die without medical attention.";
+    Unconscious (N) / Rebooting "Knocked out cold."; Recovery coma "You've suffered too much damage. You won't be getting up again until all critical body parts have
+    recovered above 0."; Playing dead... "This person has regained consciousness but is staying down, waiting for all the enemies to leave the area."; Blood loss KO
+    "Unconscious from blood loss. It will recover over time, bed rest will help."; Bleeding out "Unconscious from blood loss and bleeding to death. Hope that the
+    bleeding stops before it's too late."; Crippled "Your legs are incapable of supporting you."; Crippled arm "Your sword arm is crippled and you are unable to
+    fight."; Critical "Critical injuries will continue to degenerate without medical attention."; Limb trauma "One or more limbs have been seriously crippled by
+    critical injury."; Staying low "You are staying down, hoping to avoid drawing attention."; Starving "You are starving to death. Get some food fast."; Bleeding
+    "Losing blood, will collapse if blood goes below 0."; Disguise Blown! / Discovered! with "Cooldown {1,num} second(s)"; Hungry "You are hungry and suffering from
+    malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.", Malnourished "... but you are fed and slowly
+    recovering. Your stats and strength will be affected until you recover fully."; In Disguise "You are currently disguised as {1}"; Slightly Injured, Wounded
+    and Normal "You are kind of healthy for now.". In a bed whose recovery rate is above 1: "\nRecovery rate: {1}x" appended.
+  - Meitou (`PlayerInterface.MedicalTips.cs`): the Blood row, the part texts without wear, kick and lost-limb lines (d is the bandage's pending healing, the KO
+    point the extended line's), the hunger texts without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat
+    penalty and the pass-out threshold are not modelled), and the health words Meitou shows.
+- **Stats line tooltips** (**Observed**, `FUN_140892120` stats, `FUN_140895350` extended, `FUN_1405d4260` state): row tooltips with breakdowns. Labels seen:
+  `Total equipment bonuses:`, `Encumbrance penalty:`, `Weather penalty:`, `Weapon indoors penalty:`, `Indoors bonus:`, `Defensive mode:`, `Defensive combat mode:`,
+  `Leg injury penalty:`, `Equipment penalty:`, `Stat Multiplier:`, `Base hit chance:`, `Attack speed:`, `Block speed:`, `Damage:`, `Weapon cutting damage:`,
+  `Blunt weapon damage:`, `Damage resistance:`, `Max carry weight:`, `Health KO point:`, `Wound degeneration speed:`, `Dodge skill:`, `Careful Shooting`,
+  `Total:`, `-End total:`; the extended lines: Athletics XP (`Encumbrance penalty:`, `Full speed bonus:` when the speed is over 0.8 of the run value, then "This
+  is the rate at which your athletics skill is increasing while running."), Strength XP (`Encumbrance bonus:`, `Carrying somebody:`, or `Encumbrance:` /
+  `Weapon weight:`, then "This is the rate at which your strength is increasing."), Toughness XP (`Crippled left arm:`, `Crippled right arm:`, `Blood loss
+  trauma:`, `Critical wounds:`, then "This is the rate at which your toughness increases when you get hurt."), KO point (the single text "When an injury to a
+  body part goes below your KO point of {1,num} then you are down for good. Your body will enter a coma and won't regain consciousness until all critical body
+  parts have healed above 0."), Run speed (`Stealth mode:`, `Total:`, ...), Hunger Rate; Defense: "Your defense skill is your chance of blocking enemy attacks.".
+  Their values and order are not read. Meitou shows only the KO point's.
+- **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the
+  lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.
 
 ## Unknowns
 
 - Rise, lifetime and fade of the damage floaters, and the colour tests (section 8).
 - Meaning of the two id lists in `__tutorials.data`.
-- Why the code looks up ten life bars while the layout has nine (`LifeBar10` is missing); the medical panel's overall health h; where the stats labels' upper case and the default squad name come from.
+- Why the code looks up ten life bars while the layout has nine (`LifeBar10` is missing; the constructor `FUN_140726a70` looks up `LifeBar1`, `LifeBar2`, ... until one is missing); the medical panel's overall health h; where the stats labels' upper case and the default squad name come from.
 - Exact tab index of the AI tab and which layout widgets belong to which tab for tabs 4 to 6.
 - Trade, dialogue and research logic (other subsystems).
 - Layer of the secondary layouts without a `layer` attribute (Kenshi_OrdersPanelOrder, PortraitCharacter, SquadBox, SquadsPanel_PortraitCharacter, TutorialTooltipPanel, ItemListItem, CharacterSelectionBox): they are children of other widgets (**Observed**, not traced).

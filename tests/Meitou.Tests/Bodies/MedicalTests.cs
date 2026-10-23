@@ -11,7 +11,7 @@ public class HungerTests
     {
         var m = Healthy();
         var events = new List<MedicalEvent>();
-        Run(m, Context(toughness: 0), 200, step: 0.25f, events);
+        Run(m, Context(toughness: 0), 200 / MedicalState.GameHoursPerSecond, step: 0.25f / MedicalState.GameHoursPerSecond, events);   // 200 game hours
         Assert.True(m.Dead);
         Assert.Equal(DeathCause.Starvation, m.Cause);
         Assert.Contains(events, e => e.Kind == MedicalEventKind.KnockedOut);
@@ -66,7 +66,7 @@ public class BloodAndKoTests
     [Fact]
     public void Wounds_clot_and_blood_recovers_once_bleeding_stops()
     {
-        var race = new RaceData { StringId = "x", HungerRate = 0, Anatomy = Human.Anatomy };   // never hungry, so 4000 hours can pass
+        var race = new RaceData { StringId = "x", HungerRate = 0, Anatomy = Human.Anatomy };   // never hungry, so 4000 seconds can pass
         var m = Healthy(race);
         var ctx = Context(race);
         m.ApplyHit(LArm, new HitDamage(20, 0, 0), ctx);   // wound 20 x 0.001 = 0.02

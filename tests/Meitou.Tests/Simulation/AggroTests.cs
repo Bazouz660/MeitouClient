@@ -66,6 +66,7 @@ public class AggroTests
                 var cold = new Combatant { Name = $"f{faction}-{squad.Members.Count}" }.MakeCold();
                 cold.Faction = faction;
                 cold.SquadId = squad.Id;
+                cold.FactionImportance = 1;   // the most common CHARACTER value: blows on them move their faction's relations
                 bool leader = squad.Members.Count == 0;
                 var id = World.Characters.Spawn(new CharacterHot
                 {
@@ -95,6 +96,7 @@ public class AggroTests
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
         {
             Relations = relations,
+            Deeds = new FactionDeeds(relations),
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
@@ -141,7 +143,7 @@ public class AggroTests
     }
 
     [Fact]
-    public void The_players_assaults_turn_a_faction_hostile_with_the_games_message_and_its_people_then_attack()
+    public void A_war_on_the_player_turns_a_faction_hostile_with_the_games_messages_and_its_people_then_attack()
     {
         using var a = Make(7, 1);
         var o = new Vector2(2000, 2000);
@@ -150,19 +152,15 @@ public class AggroTests
         var me = a.PlayerCharacter(o + new Vector2(60, 60));
         a.World.RunTicks(20);
         Assert.Empty(a.Aggro.Log);   // neutral: 10
+        // The order itself changes no relation (the game's relation events come from the blows that land).
         a.World.Commands.Enqueue(new AttackOrder([me], town.Members[0]) { Tick = a.World.Tick });
         a.World.RunTick();
-        Assert.Equal(-10, a.Relations.Get(Townsfolk, Player));
-        // Ordering the same attack again is the same assault.
-        a.World.Commands.Enqueue(new AttackOrder([me], town.Members[0]) { Tick = a.World.Tick });
-        a.World.RunTick();
-        Assert.Equal(-10, a.Relations.Get(Townsfolk, Player));
+        Assert.Equal(10, a.Relations.Get(Townsfolk, Player));
         Assert.Empty(a.World.TakeMessages());
-        // A second victim: -30, hostile, and the game's message.
-        a.World.Commands.Enqueue(new AttackOrder([me], town.Members[1]) { Tick = a.World.Tick });
-        a.World.RunTick();
-        Assert.Equal(-30, a.Relations.Get(Townsfolk, Player));
-        Assert.Equal(["townsfolk are now hostile towards you"], a.World.TakeMessages());
+        // The townsfolk declare war on the player: -35, hostile, and the game's messages.
+        PlayerRelations.DeclareWar(a.World, a.Relations, Townsfolk, Player);
+        Assert.Equal(-35, a.Relations.Get(Townsfolk, Player));
+        Assert.Equal(["War breaks out between townsfolk and Nameless", "townsfolk are now hostile towards you"], a.World.TakeMessages());
         // Now another squad of theirs, which nobody attacked (the victims' mates join them anyway), picks the fight with the player by itself.
         a.World.RunTicks(30);
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);
@@ -183,7 +181,7 @@ public class AggroTests
             hashes.Add(a.World.StateHash());
         }
         var seen = (RelationChanges: a.Relations.Changes, a.Aggro.Started, Blows: a.Combat.Log.Count);
-        // The scenario covers what it is for: fights started by hostility, blows, and a relation changed by the player's assault (so the table is hashed).
+        // The scenario covers what it is for: fights started by hostility, blows, and relations changed by the blows (so the table is hashed).
         Assert.True(seen.RelationChanges > 0 && seen.Started > 0 && seen.Blows > 0, $"{seen}");
         Assert.NotEqual(hashes[^1], hashes[^2]);
         return hashes;

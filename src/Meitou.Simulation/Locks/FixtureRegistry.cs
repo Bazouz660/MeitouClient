@@ -18,7 +18,8 @@ namespace Meitou.Simulation.Locks;
 /// <item><b>Doors</b>: the squad's <c>initial door state</c> applies when its home is assigned (<see cref="ApplyInitialDoorState"/>). <see cref="Doors"/> hears a building as
 /// blocked for paths while every one of its doors is effectively locked and none broken (<b>engine choice</b>: the navmesh has one door state per building).</item>
 /// <item><b>Cages</b>: <see cref="FindCage"/> (the original's weights, cages a carrier cannot reach left out), <see cref="Imprison"/> (recorded in <see cref="CagingsOf"/> and <see cref="Caged"/>),
-/// <see cref="Release"/>, <see cref="GetOut"/>, <see cref="LiftOut"/>; beds <see cref="EnterBed"/> / <see cref="LeaveBed"/>.</item>
+/// <see cref="Release"/>, <see cref="GetOut"/>, <see cref="LiftOut"/>; beds <see cref="FindBed"/> (the original's bed search), <see cref="EnterBed"/> / <see cref="LeaveBed"/> (orders and
+/// trips: <see cref="BedSystem"/>).</item>
 /// </list>
 /// </summary>
 public sealed class FixtureRegistry
@@ -47,6 +48,17 @@ public sealed class FixtureRegistry
 
     /// <summary>Where the containers with an inventory stand, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
     public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }))];
+
+    List<Fixture>? cageList;
+
+    /// <summary>Every cage, for the host's picking; rebuilt (serial phases) when a building registers or goes, or a cage's lock or occupant changes (<see cref="Touch"/>).</summary>
+    public IReadOnlyList<CageSpot> CageSpots(CharacterTable table) =>
+        [.. (cageList ??= [.. all.Where(f => f.Kind == FixtureKind.Cage)]).Select(f => new CageSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }, IsFree(table, f) ? CharacterId.None : f.Occupant))];
+
+    IReadOnlyList<BedSpot>? bedSpots;
+
+    /// <summary>Every bed, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
+    public IReadOnlyList<BedSpot> BedSpots => bedSpots ??= [.. all.Where(f => f.Kind == FixtureKind.Bed).Select(f => new BedSpot(f.Id, f.RecordId, f.Position, f.Owner))];
 
     IReadOnlyList<DoorPick>? doorPicks;
 
@@ -121,7 +133,8 @@ public sealed class FixtureRegistry
             list.Add(new Fixture
             {
                 Id = $"{b.Key}@bed{bed.ToString(CultureInfo.InvariantCulture)}", Building = b.Key, Kind = FixtureKind.Bed, Site = site, Owner = owner,
-                Position = spot.Position, Yaw = spot.Yaw, UseRange = 15,
+                Position = spot.Position, Yaw = spot.Yaw, UseRange = 15, RecordId = spot.Record ?? "", Indoors = true,
+                Bed = spot.Record is { } bedRecord && db.Find(bedRecord) is { } bedItem ? BedDataOf(db, bedItem) ?? default : default,
             });
             bed++;
         }
@@ -131,6 +144,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
+        bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(StateKeys.Of(state), b.Key, list, level: false);
         else if (b.LevelState is { } levelState) Restore(StateKeys.Of(levelState), b.Key, list, level: true);
         SyncDoors(b.Key);
@@ -156,21 +170,47 @@ public sealed class FixtureRegistry
 
     /// <summary>
     /// Registers the doors of a finished building of the player (<see cref="Construction.BuildSite"/>; engine: when it is complete, the lock rolled from its owner's faction) and takes
-    /// their state from a loaded save. A building registered already is left as it is.
+    /// their state from a loaded save; a bed the player built is a bed fixture <c>&lt;site&gt;@bed0</c> at the site's origin and facing (the ones lain in bind to it). A building registered
+    /// already is left as it is.
     /// </summary>
     public void RegisterPlayerBuilding(World world, PopulationData data, Construction.BuildSite site)
     {
-        if (byBuilding.ContainsKey(site.Id) || data.Db.Find(site.Record) is not { } record || record.GetReferences("doors").Count == 0) return;
+        if (byBuilding.ContainsKey(site.Id) || data.Db.Find(site.Record) is not { } record) return;
+        var bed = BedDataOf(data.Db, record);
+        if (record.GetReferences("doors").Count == 0 && bed is null) return;
         var faction = site.Owner >= 0 && site.Owner < data.Factions.Count ? data.Factions[site.Owner] : null;
         var list = new List<Fixture>();
-        AddDoors(world, data.Db, record, site.Id, -1, site.Owner, faction, site.Position, TownBuildings.YawOf(site.Rotation), list);
+        float yaw = TownBuildings.YawOf(site.Rotation);
+        AddDoors(world, data.Db, record, site.Id, -1, site.Owner, faction, site.Position, yaw, list);
+        if (bed is { } b)
+            list.Add(new Fixture
+            {
+                Id = site.Id + "@bed0", Building = site.Id, Kind = FixtureKind.Bed, Site = -1, Owner = site.Owner, Position = site.Position, Yaw = yaw,
+                UseRange = 15, RecordId = record.StringId, Bed = b,
+            });
         byBuilding[site.Id] = list;
         buildings.Add(site.Id);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
+        bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
         SyncDoors(site.Id);
+        if (bed is not null) Bind(world);
+    }
+
+    /// <summary>
+    /// A BUILDING's bed data when one of its functionalities is a bed (<c>function</c> 6 BF_BED or 25 BF_SKELETON_BED): the function, the functionality's <c>animation</c> (the clip it is
+    /// lain in) and the sum of its construction materials (<see cref="Meitou.Data.Gameplay.Construction.BuildingBuildData.Target"/>). Null for anything else.
+    /// </summary>
+    public static BedData? BedDataOf(GameDatabase db, GameRecord building)
+    {
+        foreach (var list in building.ReferenceLists)
+            foreach (var r in building.GetReferences(list))
+                if (db.Find(r.TargetStringId) is { Type: FcsRecordType.BUILDING_FUNCTIONALITY } f && f.GetInt("function") is TownBuildings.BedFunction or TownBuildings.SkeletonBedFunction)
+                    return new BedData(f.GetInt("function"), f.GetReferences("animation").Select(a => db.Find(a.TargetStringId)?.Name).FirstOrDefault(n => n is not null),
+                        Meitou.Data.Gameplay.Construction.BuildingBuildData.From(building).Target);
+        return null;
     }
 
     /// <summary>Forgets a building's fixtures (a player building dismantled); its doors are opened in the navmesh.</summary>
@@ -181,6 +221,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Remove(f); byId.Remove(f.Id); }
         containerSpots = null;
         doorPicks = null;
+        bedSpots = null; cageList = null;
         initialApplied.Remove(buildingInstance);
         doors?.SetDoorsBlocked(buildingInstance, false);
     }
@@ -226,8 +267,14 @@ public sealed class FixtureRegistry
         var table = world.Characters;
         var next = table.Next;
         for (int s = 0; s < table.HighWater; s++)
-            if (next[s].Alive && table.Cold(s) is { InSomething: not HeldState.None, InWhat: { } what } && byId.TryGetValue(what, out var f) && IsFree(table, f))
-                f.Occupant = new CharacterId(s, next[s].Generation);
+        {
+            if (!next[s].Alive || table.Cold(s) is not { InSomething: not HeldState.None, InWhat: { } what } c) continue;
+            // The original's `in what` of one lying in a bed the player built names that bed's building.
+            if (!byId.TryGetValue(what, out var f) && !(c.InSomething == HeldState.Bed && byId.TryGetValue(what + "@bed0", out f) && f.Site < 0)) continue;
+            if (!IsFree(table, f)) continue;
+            f.Occupant = new CharacterId(s, next[s].Generation);
+            c.InWhat = f.Id;
+        }
     }
 
     // ------------------------------------------------------------------ doors
@@ -447,16 +494,75 @@ public sealed class FixtureRegistry
         unreachable[(f.Id, faction)] = world.GameHours + hours;
     }
 
-    /// <summary>The nearest free bed within <paramref name="range"/> of a building owned by <paramref name="faction"/> (any owner when negative). <b>Engine choice</b>: the original's bed search is Unknown.</summary>
-    public Fixture? FindBed(World world, Vector3 at, int faction, float range)
+    /// <summary>The bed within <paramref name="range"/> of <paramref name="at"/>, taken or not (where a sleeper lies: an AI asleep at its home's bed spot is not held in it).</summary>
+    public Fixture? BedAt(Vector3 at, float range)
     {
         Fixture? best = null;
         float bestD = range * range;
         foreach (var f in all)
         {
-            if (f.Kind != FixtureKind.Bed || (faction >= 0 && f.Owner != faction) || !IsFree(world.Characters, f)) continue;
+            if (f.Kind != FixtureKind.Bed) continue;
             float d2 = Vector3.DistanceSquared(at, f.Position);
             if (d2 <= bestD) (best, bestD) = (f, d2);
+        }
+        return best;
+    }
+
+    /// <summary>How far (X/Z) the bed search looks: the original takes the beds of the character's town, or of the nearest town within this distance (<c>FUN_1408cbea0</c>:
+    /// squared 1.5625e7); Meitou has no player towns, so it takes the beds within it (<b>engine choice</b>).</summary>
+    public const float BedSearchRange = 3952.85f;
+
+    /// <summary>
+    /// The bed search of a player-faction character (the original's <c>FUN_1408cfe00</c>, docs/game/locks.md "Beds", <b>Observed</b>): the bed it lies in; else among the complete BF_BED (6;
+    /// a skeleton bed is not searched) beds that are free for it (<see cref="IsFree"/>) and <see cref="Reachable"/> (standing in for the original's give-up list), a bed of its own faction
+    /// weighs 0.5, one of a faction that counts it as an ally (<paramref name="relations"/>, ally(bed's faction, character's)) 0.01, any other none; x3 when the bed needs more than one
+    /// construction material, x2 indoors. The heaviest wins, the first registered on a tie. The candidates are the beds within <see cref="BedSearchRange"/> (engine, for the town);
+    /// <paramref name="skip"/> leaves out beds others are on their way to. Null when none.
+    /// </summary>
+    public Fixture? FindBed(World world, int slot, FactionRelations? relations, Func<Fixture, bool>? skip = null)
+    {
+        var table = world.Characters;
+        if (table.Cold(slot) is not { } c) return null;
+        if (c is { InSomething: HeldState.Bed, InWhat: { } inBed } && Find(inBed) is { } own) return own;
+        var at = table.Next[slot].Position;
+        if (!c.IsPlayer) return FindBedNpc(world, slot, c, skip);
+        Fixture? best = null;
+        float bestWeight = 0, r2 = BedSearchRange * BedSearchRange;
+        foreach (var f in all)
+        {
+            if (f.Kind != FixtureKind.Bed || f.Bed.Function != TownBuildings.BedFunction || f.Owner < 0) continue;
+            float weight = f.Owner == c.Faction ? 0.5f : relations is not null && relations.Contains(f.Owner) && relations.Contains(c.Faction) && relations.IsAlly(f.Owner, c.Faction) ? 0.01f : 0;
+            if (weight <= 0 || Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z)) > r2) continue;
+            if (!IsFree(table, f) || !Reachable(world, f, c.Faction) || skip?.Invoke(f) == true) continue;
+            if (f.Bed.Materials > 1) weight *= 3;
+            if (f.Indoors) weight *= 2;
+            if (weight > bestWeight) (best, bestWeight) = (f, weight);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// The bed search of a character that is not the player's (the other half of <c>FUN_1408cfe00</c>, docs/game/locks.md "Beds", <b>Observed</b>): the first free bed (the give-up list stands in as
+    /// <see cref="Reachable"/>) of its squad's home building; with none there, those of the town's "designated" buildings of two kinds nearest it, then any BF_BED building near it. The original
+    /// takes the first in its building list's order (a set of pointers, or the finder's cell order) and, when the squad's home is not the building the character is in, passes over a bed with a
+    /// cost above 1 (<b>Unknown</b> field); Meitou has no designated buildings, takes the nearest free bed of its town for the last two steps, and has no cost test (engine choices).
+    /// </summary>
+    Fixture? FindBedNpc(World world, int slot, CharacterCold c, Func<Fixture, bool>? skip)
+    {
+        var table = world.Characters;
+        var squad = world.Squads.Find(c.SquadId);
+        var at = table.Next[slot].Position;
+        bool Usable(Fixture f) => f.Kind == FixtureKind.Bed && f.Bed.Function == TownBuildings.BedFunction && IsFree(table, f) && Reachable(world, f, c.Faction) && skip?.Invoke(f) != true;
+        if (squad?.HomeBuilding is { } home)
+            foreach (var f in OfBuilding(home.Key))
+                if (Usable(f)) return f;
+        Fixture? best = null;
+        float bestD = float.MaxValue;
+        foreach (var f in all)
+        {
+            if (!Usable(f) || squad is { Town: >= 0 } && f.Site != squad.Town) continue;
+            float d = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
+            if (d < bestD) (best, bestD) = (f, d);
         }
         return best;
     }
@@ -590,21 +696,30 @@ public sealed class FixtureRegistry
         return true;
     }
 
-    /// <summary>Lies a character down in a free bed (state 1, held at the bed's spot; beds have no lock). False when the bed is taken or the character is held, carried or carrying.</summary>
+    /// <summary>
+    /// Lies a character down in a free bed (state 1, held at the bed's spot facing its way; beds have no lock; the original's <c>FUN_14032e2f0</c>): its task becomes
+    /// <see cref="CharacterTask.Sleep"/> with the bed's clip (<see cref="CharacterCold.OperateClip"/>), its orders and path dropped. True when it lies there already. False when the bed is
+    /// taken or the character is held elsewhere, carried or carrying.
+    /// </summary>
     public bool EnterBed(World world, CharacterId sleeper, Fixture bed)
     {
         var table = world.Characters;
-        if (bed.Kind != FixtureKind.Bed || !IsFree(table, bed) || !table.TryResolveNext(sleeper, out int s)) return false;
+        if (bed.Kind != FixtureKind.Bed || !table.TryResolveNext(sleeper, out int s)) return false;
         var c = table.Cold(s)!;
-        if (c.InSomething != HeldState.None || !c.CarriedBy.IsNone || !c.Carrying.IsNone) return false;
+        if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) return true;
+        if (!IsFree(table, bed) || c.InSomething != HeldState.None || !c.CarriedBy.IsNone || !c.Carrying.IsNone) return false;
         c.InSomething = HeldState.Bed;
         c.InWhat = bed.Id;
         bed.Occupant = sleeper;
+        MovementSystem.Stop(table, s);
         Hold(table, s, c, bed);
+        table.Next[s].Task = (byte)CharacterTask.Sleep;
+        table.Next[s].Velocity = Vector3.Zero;
+        c.OperateClip = bed.Bed.Clip;
         return true;
     }
 
-    /// <summary>Gets a character out of its bed.</summary>
+    /// <summary>Gets a character out of its bed (the original's <c>FUN_140345620</c>): the bed is free and the state cleared; it stands where it lay.</summary>
     public bool LeaveBed(World world, CharacterId sleeper)
     {
         var table = world.Characters;
@@ -793,7 +908,7 @@ public sealed class FixtureRegistry
     {
         if (instance is null || !byBuilding.TryGetValue(instance, out var list)) return null;
         var doorList = list.Where(f => f.Kind == FixtureKind.Door).OrderBy(f => f.DoorIndex)
-            .Select(f => new DoorDetail(f.OpenAmount > 0 || f.Motion == DoorMotion.Open, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken)).ToArray();
+            .Select(f => new DoorDetail(f.OpenAmount > 0 || f.Motion == DoorMotion.Open, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId)).ToArray();
         return new BuildingDetail(instance, doorList);
     }
 

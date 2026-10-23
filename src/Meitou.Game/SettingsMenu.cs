@@ -221,7 +221,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         }
         if (page == 4)
         {
-            result.Add(new(AttackSlotsSlider.Label, "How many enemies may fight one character in melee at once (the game: 1).", Slider: AttackSlotsSlider));
+            result.Add(new(AttackSlotsSlider.Label, "How many enemies may swing at one character at once (the game: 1, plus its race's extra slots); the others wait at reach or circle.", Slider: AttackSlotsSlider));
             result.Add(new("Late dodges and blocks", "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, "
                 + "instead of failing as in the game. Makes skilled fighters much harder to wear down when several enemies attack at once.",
                 Toggle: new("Late dodges and blocks", () => config.LateDefences, v => { config.LateDefences = v; LateDefencesChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
@@ -447,7 +447,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     void SetBinding(InputAction action, Binding binding)
     {
         if (binding.IsMouse && binding.Button is MouseButton.Left or MouseButton.Right ||
-            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.F7 or Key.I or Key.C or Key.M or Key.T or Key.Y or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
+            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
         {
             notice = "That key is reserved. Choose another key, or Esc to cancel.";
             return;
@@ -478,7 +478,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.CharacterFlights = false;
         config.KeepTexturesAtCharacters = true;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
-        AttackSlotsSlider.Set(UserConfig.MeitouAttackSlots);
+        AttackSlotsSlider.Set(UserConfig.FaithfulAttackSlots);
         config.LateDefences = true;
         LateDefencesChanged?.Invoke(true);
         config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = true;

@@ -3,34 +3,49 @@ using Meitou.Data.Gameplay.Bodies;
 namespace Meitou.Data.Gameplay.Combat;
 
 /// <summary>
-/// A GUN_DATA record (the turret and crossbow firing data), read only (docs/game/combat.md "Ranged and turrets": the maths that uses these fields is <b>Unknown</b> for turrets).
+/// A GUN_DATA record: a turret's gun (docs/game/combat.md "Turrets"). Read as the shared gun loader <c>FUN_14043baa0</c> reads it: no damage fields (a turret's damage is its
+/// building's, <see cref="TurretGun"/>) and no ammunition (a turret never runs dry). fcs.def defaults where a record leaves a field out.
 /// </summary>
 public sealed record GunData
 {
     public required string StringId { get; init; }
     public string Name { get; init; } = "";
-    public float AccuracyDeviationAtZeroSkill { get; init; }
-    public int AccuracyPerfectSkill { get; init; }
-    public float AimSpeed { get; init; }
+    public float AccuracyDeviationAtZeroSkill { get; init; } = 4;
+    public int AccuracyPerfectSkill { get; init; } = 70;
+    /// <summary><c>aim speed</c>: the turning parts' speed in radians per second before the building's factors.</summary>
+    public float AimSpeed { get; init; } = 1;
     public int NumShots { get; init; } = 1;
-    public int Range { get; init; }
-    public float ReloadTimeMin { get; init; }
-    public float ReloadTimeMax { get; init; }
-    public float ShotSpeed { get; init; }
+    public int Range { get; init; } = 1000;
+    public float ReloadTimeMin { get; init; } = 1;
+    public float ReloadTimeMax { get; init; } = 5;
+    /// <summary><c>shot speed</c>; the loader makes 0 or less 1.</summary>
+    public float ShotSpeed { get; init; } = 1;
+    /// <summary><c>barrel pos Y</c>, <c>barrel pos Z</c>: the muzzle in the barrel part's frame (x 0).</summary>
+    public float BarrelY { get; init; }
+    public float BarrelZ { get; init; } = 5;
+    /// <summary><c>live ammo</c>: the mesh of the harpoon in flight.</summary>
+    public string LiveAmmoMesh { get; init; } = "";
 
-    public static GunData From(GameRecord r) => new()
+    public static GunData From(GameRecord r)
     {
-        StringId = r.StringId,
-        Name = r.Name,
-        AccuracyDeviationAtZeroSkill = RecordReading.Float(r, "accuracy deviation at 0 skill", 0),
-        AccuracyPerfectSkill = RecordReading.Int(r, "accuracy perfect skill", 0),
-        AimSpeed = RecordReading.Float(r, "aim speed", 1),
-        NumShots = RecordReading.Int(r, "num shots", 1),
-        Range = RecordReading.Int(r, "range", 0),
-        ReloadTimeMin = RecordReading.Float(r, "reload time min", 0),
-        ReloadTimeMax = RecordReading.Float(r, "reload time max", 0),
-        ShotSpeed = RecordReading.Float(r, "shot speed", 0),
-    };
+        float speed = RecordReading.Float(r, "shot speed", 1);
+        return new()
+        {
+            StringId = r.StringId,
+            Name = r.Name,
+            AccuracyDeviationAtZeroSkill = RecordReading.Float(r, "accuracy deviation at 0 skill", 4),
+            AccuracyPerfectSkill = RecordReading.Int(r, "accuracy perfect skill", 70),
+            AimSpeed = RecordReading.Float(r, "aim speed", 1),
+            NumShots = RecordReading.Int(r, "num shots", 1),
+            Range = RecordReading.Int(r, "range", 1000),
+            ReloadTimeMin = RecordReading.Float(r, "reload time min", 1),
+            ReloadTimeMax = RecordReading.Float(r, "reload time max", 5),
+            ShotSpeed = speed > 0 ? speed : 1,
+            BarrelY = RecordReading.Float(r, "barrel pos Y", 0),
+            BarrelZ = RecordReading.Float(r, "barrel pos Z", 5),
+            LiveAmmoMesh = r.GetPath("live ammo"),
+        };
+    }
 }
 
 /// <summary>

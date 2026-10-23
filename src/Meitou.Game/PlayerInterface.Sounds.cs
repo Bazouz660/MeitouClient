@@ -171,7 +171,7 @@ sealed partial class PlayerInterface
     static readonly HashSet<string> OrderCommands = new(StringComparer.Ordinal)
     {
         "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "OpenLootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
-        "OperateOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder",
+        "OperateOrder", "PutInBedOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder", "UseBedOrder",
     };
 
     /// <summary>A command the player is about to send: orders sound as the exe's order dispatcher (1407f9e20), item moves and trades as the inventory handlers.</summary>
@@ -191,7 +191,7 @@ sealed partial class PlayerInterface
             case Meitou.Simulation.Production.PutInMachine machine: Sound("Item_Lift", item: machine.Item.Record); return;
             case Meitou.Simulation.Production.TakeFromMachine: Sound("Item_Lift"); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).
-            case Meitou.Simulation.Production.AddJob: Sound("Permanent_Job"); return;
+            case Meitou.Simulation.Production.AddJob or Meitou.Simulation.Production.AddOrderJob: Sound("Permanent_Job"); return;
             case Meitou.Simulation.FirstAid.MedicJobCommand { Job: true } or Meitou.Simulation.Carrying.RescueJobCommand { Job: true }: Sound("Permanent_Job"); return;
         }
         string name = command.GetType().Name;

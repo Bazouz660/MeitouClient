@@ -31,12 +31,15 @@ sealed partial class PlayerInterface
         return best;
     }
 
-    /// <summary>A right click on a container: the open order (true), with a selection; with Alt another faction's locked one is picked (the sim gives the hint without it).</summary>
+    /// <summary>
+    /// A right press on a container (true, with a selection): released quickly, the open order, where Alt picks another faction's locked one (the sim gives the hint without it); held,
+    /// its context menu (<see cref="ContainerVerbs"/>).
+    /// </summary>
     bool ContainerClick(Vector2 p, bool alt)
     {
         if (SelectedIds().Count == 0 || PickContainer(p) is not { } container) return false;
-        closedMachine = null;   // a container whose window was closed opens again when it is asked for (the sim may not have dropped it yet, e.g. while paused)
-        Say(new Meitou.Simulation.Items.OpenContainerOrder([], container.Id, alt) { Tick = session.World.Tick });
+        string name = buildHost?.ItemName(container.Record) ?? container.Record;
+        if (!ContextPressOn(p, at => Menu(name, at, ContainerVerbs(container)), () => OpenContainer(container.Id, alt))) OpenContainer(container.Id, alt);
         return true;
     }
 

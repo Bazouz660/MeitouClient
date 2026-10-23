@@ -101,6 +101,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 }
                 continue;
             }
+            if (command is FollowOrder follow)
+            {
+                Follow(world, follow);
+                continue;
+            }
             if (command is not MoveOrder order) continue;
             // An empty list orders the selection (the UI sends orders for whatever is selected when the click happens).
             var who = order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray();
@@ -118,6 +123,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 ref var n = ref table.Next[slot];
                 var cold = table.Cold(slot)!;
                 var target = targets[k];
+                cold.FollowOrder = CharacterId.None;
                 bool busy = n.Task == (byte)CharacterTask.GoTo && (n.Flags & (ushort)MoveFlags.AnyPath) != 0;
                 if (order.Queued && busy)
                 {
@@ -148,6 +154,47 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     }
 
     /// <summary>Drops a character's orders and path and makes it stand (serial phases only).</summary>
+    /// <summary>
+    /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
+    /// </summary>
+    internal static void Follow(World world, FollowOrder order)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(order.Target, out int led)) return;
+        foreach (var id in order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray())
+        {
+            if (!table.TryResolveNext(id, out int s) || s == led || table.Cold(s) is not { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } cold) continue;
+            if (cold.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);
+            Stop(table, s);
+            cold.FollowOrder = order.Target;
+            cold.Guarding = order.Guard;
+            cold.FollowPathTime = 0;
+            table.Next[s].Task = (byte)CharacterTask.Follow;
+            table.Next[s].TaskTime = 0;
+            BreakCircle(table, id);
+        }
+    }
+
+    /// <summary>
+    /// The original drops a follow order that would close a circle (<c>FUN_1405c8c10</c>, run by the order giver <c>FUN_1405c8da0</c> for orders 31 and 45, <b>Observed</b>;
+    /// docs/game/animals.md "Following"): walking from whom <paramref name="leader"/> follows, the first character found following <paramref name="leader"/> stops (at most one).
+    /// </summary>
+    static void BreakCircle(CharacterTable table, CharacterId leader)
+    {
+        var at = table.Cold(leader.Slot)!.FollowOrder;
+        for (int guard = 0; guard < 64 && !at.IsNone && table.TryResolveNext(at, out int slot); guard++)
+        {
+            var cold = table.Cold(slot)!;
+            if (cold.FollowOrder == leader)
+            {
+                cold.FollowOrder = CharacterId.None;
+                if (table.Next[slot].Task == (byte)CharacterTask.Follow) Stop(table, slot);
+                return;
+            }
+            at = cold.FollowOrder;
+        }
+    }
+
     public static void Stop(CharacterTable table, int slot)
     {
         ref var n = ref table.Next[slot];
@@ -236,6 +283,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             bool busy = (flags & MoveFlags.AnyPath) != 0;
             if (task == CharacterTask.Follow)
             {
+                // A follow order whose target is gone ends: the character stands where it is.
+                if (!cold.FollowOrder.IsNone && !table.IsAlive(cold.FollowOrder))
+                {
+                    cold.FollowOrder = CharacterId.None;
+                    n.Task = (byte)CharacterTask.Idle;
+                    continue;
+                }
                 var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
                 var leader = Followed(squad, cold);
                 if (leader.IsNone || leader.Slot == i || !table.IsAlive(leader))
@@ -289,9 +343,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
     }
 
-    /// <summary>Whom a follower keeps its slot by: a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
+    /// <summary>Whom a follower keeps its slot by: the target of its <see cref="FollowOrder"/>, a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
     static CharacterId Followed(Squad? squad, CharacterCold cold) =>
-        cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
+        !cold.FollowOrder.IsNone ? cold.FollowOrder : cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
 
     /// <summary>A follower's slot relative to <paramref name="leader"/> facing <paramref name="yaw"/>: its rank among the squad's other members (<see cref="Formation.Slot"/>).</summary>
     static Vector2 SlotOffset(Squad? squad, CharacterId self, CharacterId leader, float yaw)
@@ -346,9 +400,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 n.Animation = 0;
                 continue;
             }
-            if (cold.IsImprisoned)
+            if (cold.IsImprisoned || cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep)
             {
-                // Held in its cage (put there by the fixture registry): no path, no steering, not pushed.
+                // Held in its cage or bed (put there by the fixture registry): no path, no steering, not pushed.
                 n.Velocity = Vector3.Zero;
                 n.Position = p.Position;
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);

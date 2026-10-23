@@ -30,6 +30,11 @@ public sealed class AiSettings
     public float PatrolRadiusMax { get; init; } = 3f;
     /// <summary>The patrol's leader is at a route point within this distance.</summary>
     public float RouteArrive { get; init; } = 40;
+    /// <summary>
+    /// The original's <c>attacks</c> (settings.cfg "Town attacks frequency": 0 Bombardment, 1 High, 2 Normal, 3 Fewer, 4 Rare, 5 Never; default 2): a faction's wait between
+    /// passing-by assaults on the player's towns (docs/game/ai.md "Package classes"); Never stops them.
+    /// </summary>
+    public int TownAttacks { get; init; } = 2;
 }
 
 /// <summary>
@@ -56,7 +61,7 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 /// choice, the patrol's progress and the crowding counts.</item>
 /// </list>
 /// </summary>
-public sealed partial class AiSystem(PopulationData data, AiSettings? settings = null) : ITickSystem
+public sealed partial class AiSystem(PopulationData data, AiSettings? settings = null) : ITickSystem, IStateHashed
 {
     /// <summary>Every character's default goal (docs/game/ai.md "Default tasks per character", Observed): IDLE at the fluff tier, weight 0.1.</summary>
     public static readonly AiGoal Idle = new(new AiTask("", "IDLE", TaskType.IDLE, TaskPriority.Fluff, TaskTargetType.Specific, TaskEndEvent.Nothing), 0, 100, 0.1f);
@@ -66,6 +71,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>How near a turret's gunner spot counts as arrived (units): well inside the turret's <c>use range</c>, which is 10 for the base game's turrets.</summary>
     public const float TurretSlack = 3;
+    /// <summary>How near an enemy must be for <c>isNoEnemiesInVicinity</c> to fail (units; <b>engine choice</b>, about a turret's range: the original's radius is <b>Unknown</b>).</summary>
+    public const float EnemyVicinity = 1000;
+    FactionRelations Relations => data.Relations;
 
     static readonly TaskPriority[] Tiers = [TaskPriority.Urgent, TaskPriority.NonUrgent, TaskPriority.Fluff];
 
@@ -118,7 +126,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow => true,
             // The walks to its spots, and lying or sitting there, are the AI's own.
             CharacterTask.GoTo => mind.Behaviour is AiBehaviour.Post or AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.GoHome or AiBehaviour.Patrol or AiBehaviour.Turret
-                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown,
+                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel or AiBehaviour.Work,
             CharacterTask.Rest => mind.Behaviour is AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.Relax,
             _ => false,
         };
@@ -221,10 +229,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
             AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 ? 1 : 0,
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
+            // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
+            AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); without a home it sits where it is.
             AiBehaviour.Relax => board.BarTable >= 0 && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.Sit => board.Home is null || board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
+            // To the package's mission town while not in it.
+            AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
             _ => 1,
         };
     }
@@ -246,9 +258,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
     sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
-        IReadOnlyList<TownBuilding> OutdoorTables);
+        IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces);
 
-    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], []);
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], []);
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
@@ -281,21 +293,51 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         foreach (var squad in world.Squads.All)
             if ((squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home) Note(home, TemplateOf(squad.TemplateId).Template);
         foreach (var squad in world.Squads.All)
+            for (int pass = 0; pass < 2; pass++)
+            {
+                // The squad's town, and the one it is in (a bar package away from home takes that town's bar).
+                int site = pass == 0 ? squad.Ai?.Town ?? -1 : squad.Ai?.InTown.Site ?? -1;
+                if (site >= 0 && !places.ContainsKey(site)) AddPlaces(site);
+            }
+
+        void AddPlaces(int site)
         {
-            int site = squad.Ai?.Town ?? -1;
-            if (site < 0 || places.ContainsKey(site)) continue;
             var buildings = data.Sites[site].Buildings;
             foreach (var b in buildings)
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
             bool IsPublic(TownBuilding b) => publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true;
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
             places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
-                [.. buildings.Where(b => b.IsOutdoorTable)]);
+                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);
         }
     }
 
     /// <summary>BuildingDesignation BD_BAR.</summary>
     const int DesignationBar = 3;
+
+    /// <summary>The BuildingFunction bits a worker looks for (mask <c>0x41a</c> of <c>FUN_1408cac60</c> / <c>FUN_1408cadb0</c>, read as bits, <b>Observed</b>): MINE, RESEARCH, REFINERY, CRAFTING.</summary>
+    const int WorkFunctions = 0x41a;
+
+    /// <summary>How near a worker's building it stands (units; engine choice: the functionality's <c>use range</c> is not read for the town's buildings).</summary>
+    const float WorkReach = 30;
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> workClips = new(StringComparer.Ordinal);
+
+    /// <summary>The clip a worker plays at a building: its functionality's <c>animation</c>, else <c>stonemine</c> (<c>Task_OperateMachine</c>, docs/game/buildings-production.md).</summary>
+    string WorkClipOf(TownBuilding b) => workClips.GetOrAdd(b.BuildingId, id =>
+        data.Db.Find(id)?.GetReferences("functionality") is [var link, ..] && data.Db.Find(link.TargetStringId)?.GetReferences("animation") is [var anim, ..]
+            && data.Db.Find(anim.TargetStringId) is { } clip ? clip.Name : "stonemine");
+
+    /// <summary>
+    /// The building a worker works at (the finders of goals 189 / 190: a random building of the town with a function in <see cref="WorkFunctions"/>, slot 2 of the building finder
+    /// <c>FUN_1409fb020</c>); the roll is the character's and its <paramref name="epoch"/> of picks (<see cref="AiMind.WorkEpoch"/>), so asking twice names the same one. Null: the town has none.
+    /// </summary>
+    TownBuilding? PickWork(World world, CharacterId self, int town, int epoch)
+    {
+        var list = Places(town).Workplaces;
+        if (list.Count == 0) return null;
+        return list[Rng.Int(Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)epoch << 20 ^ 0x57), list.Count)];
+    }
 
     static bool IsGeneralNode(HomeSpot s) => s.NodeType == NodeGeneral;
 
@@ -387,6 +429,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         mind.Version = board.Version;
         mind.WanderRadius = 0;
         mind.SitClip = null;   // set again below while it stays on its chair
+        if (mind.WorkActive && behaviour != AiBehaviour.Work)
+        {
+            // It stopped working: the next pick is a new one and the work clip goes.
+            mind.WorkActive = false;
+            mind.WorkEpoch++;
+            if (table.Cold(slot) is { } worker && mind.WorkClip is not null && worker.ActionClip == mind.WorkClip) worker.ActionClip = null;
+            mind.WorkClip = null;
+        }
         mind.FollowTarget = CharacterId.None;   // set again below for a follow goal aimed at the squad's mission
         ref var n = ref table.Next[slot];
         bool leader = mind.Squad.Leader == table.IdOf(slot);
@@ -449,7 +499,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
                 var (target, home, floor, facing) = SpotFor(mind, board, behaviour, type);
-                if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type == TaskType.RUN_AWAY_HOMETOWN ? SpeedMode.Run : SpeedMode.Walk, height: floor))
+                if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     if (home && board.Gate is { } gate && GateSpot(board, mind, type) is not null) table.Next[slot].Yaw = MathF.Atan2(gate.Out.X, gate.Out.Y);   // looking out
@@ -462,6 +512,33 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
+                    Become(table, slot, CharacterTask.Idle);
+                break;
+            case AiBehaviour.Work:
+                if (mind.Target is null)
+                {
+                    if (mind.WorkActive) mind.WorkEpoch++;
+                    mind.WorkActive = true;
+                    if (PickWork(world, table.IdOf(slot), board.Town, mind.WorkEpoch) is { } building)
+                    {
+                        mind.Target = new Vector3(building.Position.X, float.NaN, building.Position.Z);
+                        mind.WorkClip = WorkClipOf(building);
+                    }
+                }
+                if (mind.Target is not { } working) Become(table, slot, CharacterTask.Idle);
+                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(working), GiveUp.Target, SpeedMode.Walk, WorkReach))
+                {
+                    // At the building: facing it, at its work clip.
+                    Become(table, slot, CharacterTask.Idle);
+                    var face = working - n.Position;
+                    if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
+                    if (table.Cold(slot) is { } workerCold) workerCold.ActionClip = mind.WorkClip;
+                }
+                break;
+            case AiBehaviour.Travel:
+                // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.
+                if (DestinationCentre(world, board) is not { } town) Become(table, slot, CharacterTask.Idle);
+                else if (GoToSpot(world.Walkability, table, slot, mind, town, GiveUp.Target, type == TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk))
                     Become(table, slot, CharacterTask.Idle);
                 break;
             case AiBehaviour.Relax:
@@ -702,8 +779,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             else if (!cadence) continue;   // the rest is looked at on the package cadence only (and when the squad appears)
             var board = squad.Ai!;
             board.Intact = IsIntact(world, squad, board);
+            UpdateInTown(world, squad, board);
             rules.Bind(this, world, squad);
             board.Update(rules, world.GameHours);
+            StepPackage(world, squad, board);
             // A contract that ended: its leader says the package's contract end talk to the employer (event 30, FUN_14026a110).
             if (board.TakeEnded() is { Package.ContractEndTalk: { } talk, Target: var employer } && !squad.Leader.IsNone)
                 world.Defer(new Dialogue.DialogueEvent(squad.Leader, employer, Dialogue.DialogueSystem.ContractJobEnded, talk) { Tick = world.Tick + 1 });
@@ -728,6 +807,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             ClaimSeats(world, board, squad);
             FindGate(world, board, squad);
         }
+        if (merges.Count > 0) ApplyMerges(world);
     }
 
     /// <summary>
@@ -941,6 +1021,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             Town = squad.Town, Size = squad.Members.Count, OwnHome = home, Home = home, HomePublic = template?.PublicDay ?? true,
             NextPatrol = world.GameHours + Rng.Float(roll) * Settings.FirstPatrolHours,
         };
+        // The town it starts in, taken as already entered (engine choice: no ENTER_TOWN line for every squad a town makes).
+        if (LeaderPosition(world, squad) is { } at) (squad.Ai.InTown, squad.Ai.InTownSince) = (CurrentTown(world, at), world.GameHours);
         if (squad.SavedAi is { } saved)
         {
             rules.Bind(this, world, squad);
@@ -1040,20 +1122,62 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         public bool CanStart(Blackboard board, AiPackage package, PackageClass kind) => kind switch
         {
             PackageClass.Retreat => !board.Intact,
-            PackageClass.Patrol or PackageClass.PatrolRunning => board.Town >= 0 && world.GameHours >= board.NextPatrol && world.Characters.IsAlive(squad.Leader),
-            // With building data, only where the town has a bar or an outdoor table; without, the package runs and the squad keeps its spots.
-            PackageClass.Bar => board.Town < 0 || system.Data.Sites[board.Town].Buildings.Count == 0
-                || system.Places(board.Town) is { } p && (p.Bars.Count > 0 || p.OutdoorTables.Count > 0),
+            PackageClass.Patrol or PackageClass.PatrolRunning => board.Town >= 0 && world.GameHours >= board.NextPatrol && world.Characters.IsAlive(squad.Leader)
+                && !system.CannibalPatrolHeld(world, squad, board, package),
+            PackageClass.Bar => BarHere(board),
             PackageClass.BarOutdoors => true,
+            PackageClass.CannibalRetreat or PackageClass.CannibalsAtHome or PackageClass.PrisonerGathering or PackageClass.SlaverShipping => system.CaptiveCanStart(world, squad, board, package, kind),
+            PackageClass.WanderingTrader => system.TraderCanStart(world, squad, board),
+            PackageClass.PassingAssault => system.AssaultCanStart(world, squad, board),
+            PackageClass.Refugee => RefugeeCanStart(world, squad),
             _ => false,
         };
+
+        /// <summary>
+        /// Where a bar package can run: for a squad that is not a town's own (engine choice: a town's squads keep their town), away from home in a placed town not hostile to it that has a
+        /// public bar (the original's <c>Package_HangAroundBar</c> takes the town the squad is in, docs/game/ai.md "Package classes"), in a player town not (engine choice: their bars
+        /// are not read); at home (or in no town), with building data only where the town has a bar or an outdoor table, without it the package runs and the squad keeps its spots.
+        /// </summary>
+        bool BarHere(Blackboard board)
+        {
+            var t = board.InTown;
+            if (!squad.TownOwn && t.PlayerTown > 0) return false;
+            if (!squad.TownOwn && t.Site >= 0 && t.Site != board.Town)
+            {
+                int theirs = t.Site < system.Data.SiteFactions.Count ? system.Data.SiteFactions[t.Site] : -1;
+                return !(squad.Faction >= 0 && theirs >= 0 && system.Data.Relations.IsHostile(squad.Faction, theirs)) && system.Places(t.Site).Bars.Count > 0;
+            }
+            return board.Town < 0 || system.Data.Sites[board.Town].Buildings.Count == 0
+                || system.Places(board.Town) is { } p && (p.Bars.Count > 0 || p.OutdoorTables.Count > 0);
+        }
+
+        /// <summary>The town a bar package uses: for a squad that is not a town's own, the placed town it is in; else its own town.</summary>
+        int BarTown(Blackboard board) => !squad.TownOwn && board.InTown.Site >= 0 ? board.InTown.Site : board.Town;
 
         public bool Finished(Blackboard board, AiPackage package, PackageClass kind) => kind switch
         {
             PackageClass.Retreat => board.Intact,
             PackageClass.Patrol or PackageClass.PatrolRunning => board.RouteIndex >= board.Route.Length || world.GameHours >= board.PatrolGiveUp || !world.Characters.IsAlive(squad.Leader),
+            PackageClass.CannibalRetreat or PackageClass.CannibalsAtHome or PackageClass.PrisonerGathering or PackageClass.SlaverShipping => system.CaptiveFinished(world, squad, board, package, kind),
+            // Away from home a bar package ends where it could not start (the original's finished test is its start test negated).
+            PackageClass.Bar => !squad.TownOwn && !board.InTown.IsNone && board.InTown != CampaignTown.OfSite(board.Town) && !BarHere(board),
+            PackageClass.WanderingTrader => board.TraderState == 2,
+            PackageClass.PassingAssault => system.AssaultFinished(world, squad, board, package),
+            PackageClass.OccupyTown => system.OccupyFinished(world, squad, board),
+            PackageClass.Refugee => system.RefugeeFinished(world, squad, board),
             _ => false,
         };
+
+        public bool MayLead(Blackboard board, AiPackage package, PackageClass kind) => kind != PackageClass.PassingAssault || system.AssaultMayLead(world, squad, board);
+
+        public void Ended(Blackboard board, AiPackage package, PackageClass kind)
+        {
+            switch (kind)
+            {
+                case PackageClass.PassingAssault: system.AssaultEnded(world, squad); break;
+                case PackageClass.OccupyTown: system.OccupyEnded(world, squad, board); break;
+            }
+        }
 
         public void Started(Blackboard board, AiPackage package, PackageClass kind)
         {
@@ -1065,9 +1189,25 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     break;
                 case PackageClass.Bar:
                 case PackageClass.BarOutdoors:
-                    if (board.Town >= 0 && system.PickTable(world, board.Town, squad, outdoors: kind == PackageClass.BarOutdoors) is var (bar, table))
+                    if (BarTown(board) is >= 0 and var town && system.PickTable(world, town, squad, outdoors: kind == PackageClass.BarOutdoors) is var (bar, table))
                         (board.Home, board.BarTable) = (bar, table);
                     else if (kind == PackageClass.BarOutdoors) board.Home = null;
+                    break;
+                case PackageClass.CannibalRetreat:
+                case PackageClass.SlaverShipping:
+                    system.CaptiveStarted(world, squad, board, package, kind);
+                    break;
+                case PackageClass.WanderingTrader:
+                    system.TraderStart(world, squad, board);
+                    break;
+                case PackageClass.PassingAssault:
+                    system.AssaultStarted(world, squad, board);
+                    break;
+                case PackageClass.OccupyTown:
+                    system.OccupyStarted(world, squad, board);
+                    break;
+                case PackageClass.Refugee:
+                    system.RefugeeStarted(world, squad, board);
                     break;
             }
         }

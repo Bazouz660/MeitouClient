@@ -28,8 +28,14 @@ sealed partial class PlayerInterface
     /// <summary>Resolves a faction (a position in the world's faction list) to its name; the host sets it.</summary>
     public Func<int, string?>? FactionName { get; set; }
 
-    /// <summary>A line of a text panel: label and value, each with its colour (null: the text default).</summary>
-    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null);
+    /// <summary>
+    /// A line of a text panel: label and value, each with its colour (null: the text default). With <paramref name="Action"/> the value is a <c>Kenshi_Button2</c> button (the
+    /// DataPanel's button lines): over the right half of the row, or across the whole row when there is no label.
+    /// </summary>
+    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null, string? Action = null);
+
+    /// <summary>A medical panel row: its name, the green, yellow and red layers' fractions, the number, the arrows, the robot layer and the row's tooltip (the <c>LifeBarNTooltip</c> widget).</summary>
+    internal readonly record struct MedicalRow(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot, string? Tooltip = null);
 
     /// <summary>
     /// The status panel's prison line (<c>FUN_1405d2da0</c>, docs/game/economy.md 11.5, <b>Observed</b>): the hours left rounded up, "FOREVER" for a sentence of 2000 hours or more,
@@ -55,11 +61,46 @@ sealed partial class PlayerInterface
         CharacterTask.Build => Loc.Tr("Building"),
         CharacterTask.Dismantle => Loc.Tr("Dismantling"),
         CharacterTask.DeliverMaterials => Loc.Tr("Delivering materials"),
+        CharacterTask.FetchMaterials => Loc.Tr("Collecting resource"),
         CharacterTask.Operate => Loc.Tr("Operating machine"),
         CharacterTask.Haul => Loc.Tr("Hauling"),
         CharacterTask.Prospect => Loc.Tr("Prospecting"),
+        CharacterTask.Sleep => Loc.Tr("Sleeping"),
         _ => Loc.Tr("Aimless"),
     };
+
+    /// <summary>
+    /// The weather notice of a hurt player character (the medical object's short and long status strings, <c>FUN_1406472c0</c> and its siblings, docs/formats/weather.md): the short
+    /// word for the State line and the long sentence for its tooltip. A protection <paramref name="p"/> below 0.02 is none, from 0.99 total; the percentage is rounded (<b>engine choice</b>).
+    /// </summary>
+    internal static (string Short, string Long) WeatherText(WeatherNotice notice, float p)
+    {
+        string percent = Loc.Tr("{1,num}%", MathF.Round(Math.Clamp(p, 0, 1) * 100));
+        switch (notice)
+        {
+            case WeatherNotice.AcidWater: return (Loc.Tr("Acid!"), Loc.Tr("You are currently submersed in acid, get out of there as soon as you can."));
+            case WeatherNotice.AcidFeet: return (Loc.Tr("Feet Burning!"), Loc.Tr("The ground here is acidic and burns your feet, find some footwear!"));
+        }
+        string head = notice switch
+        {
+            WeatherNotice.AcidRain => Loc.Tr("Acid Rain ({1} protection)", percent),
+            WeatherNotice.Dust => Loc.Tr("Dust Storm ({1} protection)", percent),
+            WeatherNotice.Burning => Loc.Tr("Burning ({1} protection)", percent),
+            _ => Loc.Tr("Poison Gas ({1} protection)", percent),
+        };
+        string text = notice switch
+        {
+            WeatherNotice.AcidRain => p < 0.02f ? Loc.Tr("It is currently raining acid, and you aren't wearing anything to protect your skin.  Best to find shelter soon.")
+                : p < 0.99f ? Loc.Tr("It is currently raining acid, your gear is providing you with {1} protection.", percent) : Loc.Tr("It is currently raining acid, but your gear is providing you with total protection."),
+            WeatherNotice.Dust => p < 0.02f ? Loc.Tr("You are in a dust storm, it affects your accuracy in combat.")
+                : p < 0.99f ? Loc.Tr("You are in a dust storm, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from the storm."),
+            WeatherNotice.Burning => p < 0.02f ? Loc.Tr("You are currently on fire.")
+                : p < 0.99f ? Loc.Tr("You are currently on fire, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from being horribly burnt."),
+            _ => p < 0.02f ? Loc.Tr("You are currently breathing in poison gas.")
+                : p < 0.99f ? Loc.Tr("You are currently breathing in poison gas, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from breathing in any poisons."),
+        };
+        return (head, text);
+    }
 
     /// <summary>The state lines (State, Goal, Encumbrance) of the selected character.</summary>
     static HudLine[] StateLines(CharacterSnapshot lead)
@@ -72,8 +113,14 @@ sealed partial class PlayerInterface
             state = PrisonText(prison);
             colour = BadColour;
         }
+        string? tooltip = null;
+        if (body is not { Dead: true } && lead.Prison is null && lead.WeatherNotice != WeatherNotice.None)
+        {
+            (state, tooltip) = WeatherText(lead.WeatherNotice, lead.WeatherNoticeProtection);
+            colour = lead.WeatherNoticeProtection > 0.9f && lead.WeatherNotice is not (WeatherNotice.AcidWater or WeatherNotice.AcidFeet) ? GoodColour : BadColour;
+        }
         int encumbrance = (int)((1 - Math.Clamp(lead.Hud?.Encumbrance ?? 1, 0, 1)) * 100);
-        return [new(Loc.Tr("State:"), state, ValueColour: colour), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
+        return [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
             new(Loc.Tr("Encumbrance:"), encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
     }
 
@@ -105,7 +152,7 @@ sealed partial class PlayerInterface
         string run = change == 0 ? $"{speed} {suffix}" : change < 0 ? $"{speed} ({change}) {suffix}" : $"{speed} (+{change}) {suffix}";
         return [new(Loc.Tr("Athletics XP:"), Percent(e.AthleticsXp)), new(Loc.Tr("Strength XP:"), Percent(e.StrengthXp)),
             new(Loc.Tr("Toughness XP:"), ((int)e.ToughnessXp).ToString(CultureInfo.InvariantCulture) + "x"),
-            new(Loc.Tr("KO point:"), ((int)e.KoPoint).ToString(CultureInfo.InvariantCulture)),
+            new(Loc.Tr("KO point:"), ((int)e.KoPoint).ToString(CultureInfo.InvariantCulture), Tooltip: KoPointTip(e.KoPoint)),
             new(Loc.Tr("Run speed:"), run, ValueColour: change < 0 ? BadColour : change > 0 ? GoodColour : null),
             new(Loc.Tr("Hunger Rate:"), Percent(e.HungerRate))];
     }
@@ -130,14 +177,26 @@ sealed partial class PlayerInterface
         for (int i = 0; i < lines.Count; i++)
         {
             var row = new UiRect(area.X + area.Width * 0.03f, area.Y + i * rowHeight, area.Width * 0.93f, rowHeight);
+            if (lines[i].Action is { } action)
+            {
+                // The button holds the value; the row's label (if any) stays text on its left.
+                var button = lines[i].Label.Length == 0 ? row : row with { X = row.X + row.Width * 0.5f, Width = row.Width * 0.5f };
+                var buttonProperties = new Dictionary<string, string>(valueProperties) { ["TextAlign"] = "Center", ["TextColour"] = lines[i].ValueColour ?? MyGuiColours.InkText };
+                if (lines[i].Tooltip is { Length: > 0 } buttonTip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(buttonTip), "fixed")) buttonProperties[pair.Key] = pair.Value;
+                controls.Add(new($"{panel}-button-{i}", "Button", button with { Y = button.Y + 1, Height = button.Height - 2 }, Loc.Tr(lines[i].Value), action, "Kenshi_Button2", true,
+                    buttonProperties, Vector4.Zero, Clip: host.Clip));
+                if (lines[i].Label.Length == 0) continue;
+            }
             foreach (var (part, text, colour, align, properties) in new[] { ("label", lines[i].Label, lines[i].LabelColour, "Left Top", labelProperties),
-                ("value", lines[i].Value, lines[i].ValueColour, "Right Top", valueProperties) })
+                ("value", lines[i].Action is null ? lines[i].Value : "", lines[i].ValueColour, "Right Top", valueProperties) })
                 if (text.Length > 0)
                 {
                     var textProperties = new Dictionary<string, string>(properties) { ["TextAlign"] = align, ["TextColour"] = colour ?? MyGuiColours.InkText };
                     // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
                     if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
-                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", row, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
+                    // A value beside a label keeps out of the label's column: a long one (a French weather notice) is cut short instead of running over the label.
+                    var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f } : row;
+                    controls.Add(new($"{panel}-{part}-{i}", "TextBox", box, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
                         textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
                 }
         }
@@ -169,18 +228,25 @@ sealed partial class PlayerInterface
             AddLines(controls, "NameText", [name], row, sidePixels);
             AddLines(controls, "StateText", state, row, sidePixels);
             AddLines(controls, "StatsText", stats, row, sidePixels);
+            AddMedicalText(controls, sidePixels);
             return;
         }
         if (Lead() is not { } lead) return;
         string faction = FactionName?.Invoke(lead.Faction) ?? "";
         AddLines(controls, "NameText", [new(lead.Name, faction, TitleColour, TitleColour)], row, sidePixels);
         AddLines(controls, "StateText", StateLines(lead), row, sidePixels);
-        if (lead.Bounties.Count > 0) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
+        if (lead.Bounties.Count > 0 || lead.Slave is not null) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
         // The base game draws the stats labels in the painted face (Observed: glyph shapes and widths match Sentencia at its resized 22 pt); the values
         // take the standard face, like the medical column's numbers.
         AddLines(controls, "StatsText", StatsLines(lead), row, font: "Kenshi_PaintedTextFont_Medium", valueFont: "Kenshi_StandardFont_Medium", valuePixels: sidePixels);
         if (infoExpanded) AddLines(controls, "ExtendedStatsText", ExtendedLines(lead, SpeedUnit).Select(line => line with
             { Label = line.Label.ToUpperInvariant(), LabelColour = MainColour }).ToArray(), row, sidePixels);
+        AddMedicalText(controls, sidePixels);
+    }
+
+    /// <summary>The medical rows' names (centred on the bar), arrows and numbers.</summary>
+    void AddMedicalText(List<UiControl> controls, float sidePixels)
+    {
         foreach (var (bar, name, arrows) in medicalRows)
         {
             if (controls.FirstOrDefault(c => c.Name == bar + "Datapanel") is not { } host) continue;
@@ -211,33 +277,37 @@ sealed partial class PlayerInterface
     /// its number in the value column. A part's bar is green to its health less stun, red behind it to its maximum less stun (the lost part shows red); blood is
     /// green to its fraction of capacity; hunger (0..3) green to h - 2, yellow to h - 1, red to h.
     /// </summary>
-    void BindMedicalBars(UiBindings b, CharacterSnapshot? lead)
+    void BindMedicalBars(UiBindings b, CharacterSnapshot? lead, IReadOnlyList<MedicalRow>? buildingRows = null)
     {
         medicalRows.Clear();
-        var rows = new List<(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot)>();
-        if (lead?.Body is { } body)
+        var rows = new List<MedicalRow>(buildingRows ?? []);
+        if (buildingRows is null && lead?.Body is { } body)
         {
             var hud = lead.Hud;
             float capacity = Math.Max(hud?.BloodCapacity ?? 1, 1e-3f), blood = hud?.Blood ?? body.Blood * capacity;
             // A run of '<', one per 0.05 of bleeding (at most 100).
             int bleed = Math.Min(100, (int)MathF.Ceiling(Math.Abs(hud?.Bleeding ?? 0) / 0.05f));
-            rows.Add((Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false));
+            rows.Add(new(Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false, BloodTip(hud?.BleedRate ?? 1)));
             foreach (var part in lead.HealthParts)
             {
                 float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh + part.Rig - part.Stun;
                 string arrows = health < -max ? "!!!   " : health < 0 ? "<<   " : "";
-                rows.Add((part.Name, health / max, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture), arrows, part.Robotic));
+                rows.Add(new(part.Name, health / max, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture), arrows, part.Robotic,
+                    PartTip(part, hud?.Extended?.KoPoint, body.Unconscious)));
             }
             float hunger = body.Hunger;
-            rows.Add((Loc.Tr("Hunger"), hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hunger < 2 ? "<!   " : "<   ", false));
+            rows.Add(new(Loc.Tr("Hunger"), hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hunger < 2 ? "<!   " : "<   ", false,
+                HungerTip(hunger, body.Unconscious, ActiveSquadMembers().Count)));
         }
         for (int i = 1; i <= 9; i++)
         {
             string name = $"LifeBar{i}";
-            b.Hidden.Add(name + "Tooltip");
             b.Hidden.Add(name + "White"); b.Hidden.Add(name + "Crushed");
-            if (i > rows.Count) { b.Hidden.Add(name); b.Hidden.Add(name + "Value"); continue; }
+            if (i > rows.Count) { b.Hidden.Add(name); b.Hidden.Add(name + "Value"); b.Hidden.Add(name + "Tooltip"); continue; }
             var r = rows[i - 1];
+            // The row's tooltip sits on its LifeBarNTooltip widget (FUN_1407228a0 sets a type 0 text there).
+            if (r.Tooltip is { Length: > 0 } tip) b.Properties[name + "Tooltip"] = UiTooltips.TextProperties(tip, "fixed");
+            else b.Hidden.Add(name + "Tooltip");
             b.Progress[name + "Green"] = Math.Max(r.Green, 0);
             b.Progress[name + "Yellow"] = Math.Max(r.Yellow, 0);
             b.Progress[name + "Red"] = Math.Max(r.Red, 0);
@@ -247,7 +317,7 @@ sealed partial class PlayerInterface
             b.Properties[name + "Value"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = MyGuiColours.InkText };
             medicalRows.Add((name, r.Name, r.Arrows));
         }
-        if (lead?.Body is { } status)
+        if (buildingRows is null && lead?.Body is { } status)
         {
             var (word, colour) = HealthWord(status);
             b.Text["HealthText"] = word;

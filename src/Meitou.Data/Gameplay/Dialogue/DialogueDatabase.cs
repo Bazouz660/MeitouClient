@@ -103,9 +103,11 @@ public sealed class DialogueNode
 /// <summary>The <c>DialogActionEnum</c> numbers the engine runs (docs/game/dialogue.md "Effects").</summary>
 public static class DialogueActions
 {
-    public const int None = 0, Trade = 1, TalkToLeader = 2, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
-        BubbleWait = 12, TagEscapedSlave = 25, ArrestTarget = 29, ArrestTargetsCarriedPerson = 30, RemoveSlaveStatus = 53, SurrenderNonHumans = 47, GiveTargetMySlaves = 24, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, CrimeAlarm = 33, IncreaseFactionRank = 35, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57,
-        ChooseSlavesSelling = 41, ChooseSlavesBuying = 42;
+    public const int None = 0, Trade = 1, TalkToLeader = 2, JoinSquadWithEdit = 3, JoinSquadFast = 18, AffectRelations = 4, AffectReputation = 5, AttackChaseForever = 6, TakeMoney = 8, GiveMoney = 9, PayBounty = 10, CharacterEditor = 11,
+        BubbleWait = 12, TagEscapedSlave = 25, ArrestTarget = 29, ArrestTargetsCarriedPerson = 30, RemoveSlaveStatus = 53, SurrenderNonHumans = 47, GiveTargetMySlaves = 24, EnslaveTargetsCarriedPerson = 40, AssignBounty = 32, IncreaseFactionRank = 35, LockThisDialog = 36, AssaultPhase = 37, RetreatPhase = 38, ClearBounty = 49, AttackStayNearHome = 55, AttackIfNoCoexist = 57,
+        ChooseSlavesSelling = 41, ChooseSlavesBuying = 42, GoHome = 7, DeclareWar = 13, EndWar = 14, FollowWhileTalking = 16, RememberCharacter = 19,
+        FlagTempAlly = 20, FlagTempEnemy = 21, MakeTargetRunFaster = 23, SeparateToMyOwnSquad = 28, CrimeAlarm = 33, RunAway = 34, SummonMySquad = 52, OpenNearestGate = 54,
+        MassiveAlarm = 56, ChooseAnimalsBuying = 48;
 }
 
 /// <summary>The <c>DialogConditionEnum</c> numbers with special handling at load (docs/game/dialogue.md "Line check").</summary>

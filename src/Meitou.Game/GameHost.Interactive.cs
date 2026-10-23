@@ -204,8 +204,6 @@ sealed partial class GameHost
                     loading?.SkipSplash();
                     return;
                 }
-                // F7 hides the game's interface; F6 and the numpad are the cinema's (Space, Delete and the lens keys too while its editor is open).
-                if (k == SilkKey.F7) { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
                 player.UiVisible = PanelLive() && !g.NoPopulation;
                 if (panel?.Visible == true)
                 {
@@ -223,6 +221,10 @@ sealed partial class GameHost
                     if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } menuKey) DebugMenuKey(menuKey);
                     return;
                 }
+                // toggle_bar (F7, rebindable) hides the game's interface; F6 is the cinema's, and so is the numpad except the keys bound to the game's hotkeys
+                // (Space, Delete and the lens keys too while its editor is open).
+                if (KeyMap.Map(k) is { } hideKey && !player.UiEditing && session.Bindings.Get(InputAction.ToggleInterface).Contains(Binding.Of(hideKey)))
+                { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
                 // Ctrl+C copies the free camera's position as a viewer camera code, Ctrl+V flies the free camera to the code in the clipboard.
                 // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning, and so do they in a focused edit box.
                 if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && !player.UiEditing && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
@@ -269,7 +271,9 @@ sealed partial class GameHost
                     }
                     return;
                 }
-                if (Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
+                // A numpad key bound to a game hotkey (the orders, NUM0..NUM8 by default) is the game's, except with Ctrl (saving a shot) or the cinema's editor open (F6).
+                bool hotkey = !IsDuel && !ctrl && !cinema.EditorVisible && KeyMap.Map(k) is { } gameKey && player.IsHotkey(gameKey);
+                if (!hotkey && Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
                 // F9 is the game's quickload; the fps counter is on Ctrl+F9 (a modifier, so the key never reaches the input bindings).
                 if (k == SilkKey.F9 && ctrl) { fpsVisible = !fpsVisible; return; }
                 if (KeyMap.Map(k) is { } key)
@@ -353,6 +357,7 @@ sealed partial class GameHost
         {
             if (e.Action == "save") saveRequestedFolder = Meitou.Data.Save.SaveCatalog.Folder(Meitou.Simulation.Saving.QuickSave.DefaultRoot, e.Text);
             else if (e.Action == "load") loadRequestedFolder = e.Text;
+            else if (e.Action == "import") importRequested = (e.Text, player.ImportFlags);
             else if (e.Action == "new-game") newGameRequested = e.Text;
             else if (e.Action == "main-menu") mainMenuRequested = true;
             else if (e.Widget == "OptionsButton" && panel is not null) panel.Visible = true;

@@ -147,7 +147,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public float Radius;
         public int BoneBase, AttachBase, LayerStart, LayerCount;
         public CharState State;
-        public bool Repose, WeaponDrawn, RangedDrawn;
+        public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
         public int Shots;
         public IReadOnlyList<StuckBoltMesh> Bolts;
         /// <summary>The ragdoll's bones over the animation (null: none).</summary>
@@ -170,7 +170,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public long PoseBucket = long.MinValue;
         /// <summary>What the last update drew it with, for picking (<see cref="RayHit"/>): its asset, weapon, bounding sphere, and whether it is drawn in the world.</summary>
         public CharacterAsset? Asset;
-        public bool WeaponDrawn, RangedDrawn, InWorld;
+        public bool WeaponDrawn, RangedDrawn, BackDrawn, InWorld;
         /// <summary>Each stuck bolt's transform in its bone's frame, fixed the first time it was drawn (by bolt id).</summary>
         public readonly Dictionary<int, Matrix4x4> BoltLocal = [];
         public Vector3 Centre;
@@ -379,7 +379,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             // Lowered by the body shape's lift, so a short body's feet stay on the ground (CharacterAsset.GroundOffset); an animal scaled by its size (its node's scale).
             l.World = Matrix4x4.CreateRotationY(inst.Yaw) * Matrix4x4.CreateTranslation(inst.Position - new Vector3(0, asset.GroundOffset, 0));
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
-            (l.WeaponDrawn, l.RangedDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.Shots, inst.Bolts);
+            (l.WeaponDrawn, l.RangedDrawn, l.BackDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, inst.Shots, inst.Bolts);
             l.Centre = centre;
             l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
@@ -390,7 +390,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
-            (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, !far, centre, l.Radius);
+            (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.BackDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, !far, centre, l.Radius);
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
@@ -469,7 +469,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             float distance = Vector3.Distance(eye, live[i].Centre);
             foreach (var part in live[i].Asset.Parts)
             {
-                if (!part.ShowsWith(live[i].WeaponDrawn, live[i].RangedDrawn, live[i].Shots)) continue;
+                if (!part.ShowsWith(live[i].WeaponDrawn, live[i].RangedDrawn, live[i].Shots, live[i].BackDrawn)) continue;
                 if (part.MaterialFrame != updateStamp)
                 {
                     part.MaterialFrame = updateStamp;

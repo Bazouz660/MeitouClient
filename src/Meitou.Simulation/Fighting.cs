@@ -53,7 +53,15 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
             bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
             bool holding = Orders.Has(cold, CharacterOrders.Hold);
-            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= CombatTuning.CloseInGap || holding)
+            // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
+            int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
+            if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
+            {
+                Circle(world, i, ref n, cold, tc, t, d, gap, around);
+                continue;
+            }
+            float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
+            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= stand || holding)
             {
                 // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
                 if ((n.Flags & Path) != 0)
@@ -73,6 +81,48 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             n.TaskTime = RepathSeconds;
         }
     }
+
+    /// <summary>
+    /// Walks a fighter its target has not let close in round the target (<see cref="CombatTuning.CircleSpeedOf"/>): every <see cref="RepathSeconds"/> a path to the point
+    /// at least <see cref="CircleLookAhead"/> seconds of side-stepping further round (and past the arrival radius), at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
+    /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces and faces its target while it side-steps; here the walker follows the path and faces its way (engine).
+    /// </summary>
+    static void Circle(World world, int i, ref CharacterHot n, CharacterCold cold, CharacterCold? tc, int t, System.Numerics.Vector3 d, float gap, int around)
+    {
+        const ushort Path = (ushort)MoveFlags.AnyPath;
+        if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
+        float k = cold.Medical?.ScaleK ?? 1;
+        float own = 1.5f * CombatTuning.Footprint(cold) * k;
+        float near = MathF.Max(1, around * 0.25f + CombatTuning.CircleNear - own);
+        float far = MathF.Max(3 * around + CombatTuning.CircleFar - own, near + 5);
+        float bodies = CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc);
+        float radius = Math.Clamp(gap, near, far) + bodies;
+        var table = world.Characters;
+        ulong key = Rng.Key(table.IdOf(i)), counter = (ulong)(uint)t * 3;
+        float speed = CombatTuning.CircleSpeedOf(CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter), CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 1),
+            CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 2), cold.Fighter?.EncumbranceFactor ?? 1, cold.Fighter is not { IsAnimal: true });
+        var target = table.Next[t].Position;
+        // The point lies at least beyond the walker's arrival radius and one repath interval of walking, or a slow side-step (|s| of 12) would end the path after a stride and the
+        // fighter would creep; and it is pushed out so that the straight walk to it (a chord) keeps to the ring instead of cutting in towards the target.
+        float ahead = MathF.Max(MathF.Abs(speed) * CircleLookAhead, MovementSystem.ArriveRadius + CombatTuning.FootworkSpeed * RepathSeconds + 1);
+        float arc = MathF.Min(ahead / MathF.Max(radius, 1), 2);
+        float angle = MathF.Atan2(-d.Z, -d.X) + MathF.CopySign(arc, speed);
+        float goalRadius = radius / MathF.Max(MathF.Cos(arc / 2), 0.5f);
+        var goal = new Vector2(target.X + MathF.Cos(angle) * goalRadius, target.Z + MathF.Sin(angle) * goalRadius);
+        if (!world.Walkability.IsWalkable(goal.X, goal.Y, target.Y))
+        {
+            // Off the navmesh: it stands where it is (engine choice).
+            if ((n.Flags & Path) != 0) { n.Flags = (ushort)(n.Flags & ~Path); n.PathCursor = 0; cold.PathRequest = 0; }
+            return;
+        }
+        n.Goal = goal;
+        n.Mode = SpeedMode.Free;
+        n.Flags |= (ushort)MoveFlags.NeedPath;
+        n.TaskTime = RepathSeconds;
+    }
+
+    /// <summary>Seconds of side-stepping the circling walker's path point lies ahead at least (engine choice: twice the path interval; <c>Circle</c> also keeps it past the arrival radius).</summary>
+    public const float CircleLookAhead = 1;
 }
 
 
@@ -81,7 +131,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
 /// free too. An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed; the original's Passive toggle (non-combat mode) would turn it off and is not modelled (its default is off).
-/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>.
+/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
+/// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
 /// </summary>
 public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
 {
@@ -93,6 +144,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         if (world.Tick % CheckEveryTicks != 0) return;
         var table = world.Characters;
         var next = table.Next;
+        ResumeGuards(world, table);
         var taken = new HashSet<int>();
         for (int a = 0; a < table.HighWater; a++)
         {
@@ -101,16 +153,57 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var st = combat.StateOf(attacker);
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration || table.Cold(a) is not { Medical.Incapacitated: false }) continue;
-            if (!CanFight(table, t, taken)) continue;
-            var defenders = new List<CharacterId> { new(t, next[t].Generation) };
-            taken.Add(t);
-            JoinMates(world, table, t, defenders, taken, CanFight);
+            // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
+            if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
+            var defenders = new List<CharacterId>();
+            if (CanFight(table, t, taken))
+            {
+                defenders.Add(new(t, next[t].Generation));
+                taken.Add(t);
+                JoinMates(world, table, t, defenders, taken, CanFight);
+            }
+            // Bodyguards of the attacked character come too (Bodyguard, order 45).
+            Guards(world, table, t, a, defenders, taken);
+            // Allies come to a defender that is already fighting too.
+            HelpAllies(world, table, t, a, defenders, taken);
             // The Hold order answers only an attacker within reach (Orders.HoldReach).
             var from = next[a].Position;
             for (int k = defenders.Count - 1; k >= 0; k--)
                 if (Orders.Has(table.Cold(defenders[k].Slot), CharacterOrders.Hold) && !Orders.InHoldReach(next[defenders[k].Slot].Position, from)) defenders.RemoveAt(k);
             if (defenders.Count == 0) continue;
             world.Defer(new AttackOrder(defenders, attacker) { Tick = world.Tick + 1, Defensive = true });
+        }
+    }
+
+    /// <summary>
+    /// Bodyguard (order 45, <b>engine</b> reading): the free characters following <paramref name="slot"/> as bodyguards (<see cref="CharacterCold.Guarding"/>) within <see cref="JoinRange"/> of it
+    /// defend it against <paramref name="attacker"/>, in slot order; never against a character of their own faction.
+    /// </summary>
+    static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    {
+        var next = table.Next;
+        var target = new CharacterId(slot, next[slot].Generation);
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || s == attacker || table.Cold(s) is not { Guarding: true } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
+            var d = next[s].Position - next[slot].Position;
+            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            defenders.Add(new CharacterId(s, next[s].Generation));
+            taken.Add(s);
+        }
+    }
+
+    /// <summary>A bodyguard whose fight ended (its task fell back to idle) goes back to its target.</summary>
+    static void ResumeGuards(World world, CharacterTable table)
+    {
+        var next = table.Next;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Guarding: true, InCombat: false } c) continue;
+            if (c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) { c.Guarding = false; c.FollowOrder = CharacterId.None; continue; }
+            next[s].Task = (byte)CharacterTask.Follow;
+            next[s].TaskTime = 0;
+            c.FollowPathTime = 0;
         }
     }
 
@@ -133,6 +226,27 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         }
     }
 
+    /// <summary>
+    /// <see cref="SquadAi.Help"/> (the protect-allies finders <c>FUN_14099ca10</c> / <c>FUN_14099cf80</c>, which take a fighting character of another faction only with the global
+    /// +0x111 set, and then with the weight squared): the player's free characters within <see cref="JoinRange"/> of a defender of another, allied faction (relation 50 or more) join
+    /// its defence, in slot order. The original's distance weighting is not modelled (engine reduction).
+    /// </summary>
+    void HelpAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    {
+        if ((world.Player.SquadAi & SquadAi.Help) == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { IsPlayer: false, Medical.Incapacitated: false } ally || !relations.Contains(ally.Faction)) return;
+        if (table.Cold(attacker) is not { IsPlayer: false } foe || foe.Faction == world.Player.Faction) return;   // never against its own side
+        var next = table.Next;
+        var at = next[slot].Position;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
+            var d = next[s].Position - at;
+            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            defenders.Add(new CharacterId(s, next[s].Generation));
+            taken.Add(s);
+        }
+    }
+
     static bool CanFight(CharacterTable table, int slot, HashSet<int> taken)
     {
         if (taken.Contains(slot)) return false;
@@ -140,6 +254,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         if (task == (byte)CharacterTask.Attack) return false;
         if (table.Cold(slot) is not { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true } cold) return false;   // a carrier does not answer (the original's engagement weight is 0 while carrying)
         // The Passive order (non-combat mode) does not answer attacks by itself.
-        return !cold.IsPlayer || task == (byte)CharacterTask.Idle && (cold.Orders & CharacterOrders.Passive) == 0;
+        return !cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0;
     }
 }

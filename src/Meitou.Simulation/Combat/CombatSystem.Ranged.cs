@@ -636,7 +636,7 @@ public sealed partial class CombatSystem : IProjectileSource
         {
             switch (ev.Kind)
             {
-                case MedicalEventKind.KnockedOut: knockout = true; break;
+                case MedicalEventKind.KnockedOut: knockout = true; if (dc.Stats is { } ko) xp.ToughnessFromKnockOut(ko, dc.Race); break;
                 case MedicalEventKind.Died: death = true; break;
                 case MedicalEventKind.PartSevered: if (dc.Stats is { } st) xp.ToughnessFromLimbLoss(st, dc.Race); table.LimbsChanged.Enqueue((v, dc.Medical.Parts[ev.Part].Template.LimbSlot));
                     world.Defer(new Dialogue.DialogueEvent(table.IdOf(v), CharacterId.None, dc.Medical.Parts[ev.Part].Template.LimbSlot is 2 or 3 ? 70 : 71) { Tick = world.Tick + 1 });
@@ -658,12 +658,9 @@ public sealed partial class CombatSystem : IProjectileSource
             xp.Combat(vs, dc.Race, XpEvent.HitTaken, vf.Unarmed, StatsEnumerated.None, p.ShooterSkill, StrengthFactor(dc, vf));
         bool shooterAlive = p.Shooter < prev.Length && prev[p.Shooter].Alive && prev[p.Shooter].Generation == p.ShooterGeneration;
         if (shooterAlive && intended) write[p.Shooter].Landed++;
-        if (shooterAlive && Crimes is { } crimes)
-        {
-            crimes.Hit(world, p.Shooter, v);
-            if (death) crimes.Murder(world, p.Shooter, v);
-        }
-        if (death && Relations is not null && p.ShooterIsPlayer && !dc.IsPlayer) PlayerRelations.Event(world, Relations, dc.Faction, RelationEventKind.Murder);
+        if (shooterAlive) Crimes?.Hit(world, p.Shooter, v);
+        // The bolt hit's relation events (FUN_140439c90: none without a shooter; a bolt that was not meant for the victim is a minor knock-out and no hit).
+        if (shooterAlive) Deeds?.Blow(world, p.Shooter, v, dc.Medical.Incapacitated, death, bolt: true, aimed: intended);
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(v)) is { } unique) world.Uniques.Died(unique, p.ShooterIsPlayer);
         if (death && world.Luckyren) dc.Burst = new Vector2(p.Direction.X, p.Direction.Z);
         if (Settings.RecordLog)

@@ -46,6 +46,7 @@ sealed partial class PlayerInterface
         MyGuiColours.LoadPalette(resolve("kenshi_colours.xml"));
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
         faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
+        relationsLineLayout = resolve("Kenshi_FactionRelationsLine.layout") is { } relationsLine ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(relationsLine), uiResources) : null;
         squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
         messageLayout = resolve("Kenshi_MessagePanel.layout") is { } messages ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(messages), uiResources) : null;
         taskBarLayout = resolve("Kenshi_ProgressBarPanel.layout") is { } taskBar ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(taskBar), uiResources) : null;
@@ -159,7 +160,7 @@ sealed partial class PlayerInterface
         b.Actions["FloorArrowDown"] = "meitou:floor-down";
         b.Actions["BuildButton"] = "meitou:build";
         if (buildMode) foreach (string name in BuildHiddenHud) b.Hidden.Add(name);
-        if (lead is null || lead.Bounties.Count == 0) b.Hidden.Add("BountyPanel");
+        if (lead is null || lead.Bounties.Count == 0 && lead.Slave is null) b.Hidden.Add("BountyPanel");   // a bounty or a status line (Slave, Escaped slave) shows it
         // The information panel starts collapsed (as the original's, docs/game/ui-screens.md section 4): the extending part (name, state lines, extended stats) slid down
         // until its bottom is the panel's, behind the stats panel, so only the name and the state lines show; the ^ button between them toggles it.
         if (!infoExpanded && faithfulHud.Find("InformationPanel") is { } info && faithfulHud.Find("ExtendingPanel") is { } extending)
@@ -172,8 +173,8 @@ sealed partial class PlayerInterface
         if (session.Simulation.Speed != 0) b.Hidden.Add("PausedPanel");
         var buildingNow = BuildingFocus();
         bool buildingFocus = buildingNow is not null;
-        BindMedicalBars(b, buildingFocus ? null : lead);
-        // A selected building shows only the status word in the medical header (its condition bars are not modelled: Meitou has no building health).
+        BindMedicalBars(b, lead, buildingNow is { } shownBuilding ? BuildingRows(shownBuilding) : null);
+        // A selected building shows its status word in the medical header and its condition rows below it.
         if (buildingNow is not null)
         {
             var (_, _, _, buildingStatus, bad) = BuildingLines(buildingNow);
@@ -301,6 +302,7 @@ sealed partial class PlayerInterface
         else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
         else if (action == "rescue") Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
         else if (action == "prospect") ProspectAction();
+        else if (action.StartsWith("building-", StringComparison.Ordinal)) BuildingAction(action);
         else if (action == "job-remove") RemoveJob(argument);
         else if (action.StartsWith("order.", StringComparison.Ordinal) && Enum.TryParse(action[6..], out CharacterOrders order))
             Say(new OrdersCommand(SelectedIds(), order) { Tick = session.World.Tick });
@@ -344,12 +346,22 @@ sealed partial class PlayerInterface
             HandleFrontendAction(new("title", button, button));
             UpdateMenuPause(); return;
         }
-        if (panel is "overview" or "menu" or "new-game" or "save" or "load" or "title")
+        if (panel is "overview" or "overview-faction" or "menu" or "new-game" or "save" or "load" or "title")
         {
             if (panel == "title") ShowTitle();
             else if (panel is "save" or "load") OpenSlots(panel);
+            else if (panel == "overview-faction") { faithfulScreens.Open("overview"); faithfulScreens.SetTab("overview", "TabsMain", FactionTab); }
             else { faithfulScreens.Open(panel); if (panel == "overview") faithfulScreens.SetTab(panel, "TabsMain", 0); }
             UpdateMenuPause(); return;
+        }
+        // The first building found on a grid of picks over the view (its HUD panels); any other panel drops it.
+        if (panel != "building" && selectedBuilding is not null) SetBuilding(null);
+        if (panel == "building")
+        {
+            for (int y = Height / 8; selectedBuilding is null && y < Height * 2 / 3; y += 24)
+                for (int x = Width / 8; selectedBuilding is null && x < Width * 7 / 8; x += 24)
+                    if (PickBuilding(new(x, y)) is { Record: not null } found) SetBuilding(found);
+            return;
         }
         if (panel == "build") { if (buildMode) faithfulScreens.Open("build"); else SetBuildMode(true); return; }
         if (panel is not ("inventory" or "stats" or "limbs")) throw new ArgumentException("Unknown UI panel.", nameof(panel));

@@ -142,8 +142,16 @@ sealed partial class GameHost
         using var overlay = DebugOverlay.TryCreate(context, assets.Find);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
+        if (g.Scene is { } sceneName)
+        {
+            SceneShots(sceneName, display, target, overlay, w, h);
+            player.DisposeUi();
+            DisposeTitleScene();
+            gpu.Dispose();
+            return 0;
+        }
         string?[] panels = g.UiShowcase
-            ? [null, "hud-expanded", "inventory", "limbs", "stats", "overview", "menu", "new-game", "save", "load", "title", "title-new-game", "title-load", "title-import", "title-credits", "title-exit", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"] : [null];
+            ? [null, "hud-expanded", "inventory", "limbs", "stats", "overview", "overview-faction", "building", "menu", "new-game", "save", "load", "title", "title-new-game", "title-load", "title-import", "title-credits", "title-exit", "build", "editor", "editor-face", "editor-hair", "edited", "trade", "talk"] : [null];
         foreach (string? panelName in panels)
         {
             if (panelName == "trade" && !ShowcaseTrade()) continue;
@@ -154,6 +162,7 @@ sealed partial class GameHost
             bool showPanel = panelName is not ("trade" or "talk");   // the trade and the conversation open their own windows; closing them would end them
             if (panelName?.StartsWith("editor", StringComparison.Ordinal) == true) { player.ShowUiPanel(panelName); EditorCamera(); }
             if (panelName == "edited") { player.ShowcaseEdit(); session.AdvanceSimulation(session.Ticks.TickSeconds); }
+            if (panelName == "building") { UpdateView(w, h); player.ShowUiPanel("building"); session.AdvanceSimulation(session.Ticks.TickSeconds); }
             // Item icons are drawn from the frame after a cell asks for them, and their textures stream in: show the panel until they are done.
             for (int frames = 0; panelName is not null && overlay is not null && frames < 400 && (frames < 3 || gpu.Characters is { PendingIcons: > 0 } || gpu.Objects is { StagePropPending: true } || gpu.Objects is { PendingBuildingIcons: > 0 } || player.PendingIconFiles > 0); frames++)
             {

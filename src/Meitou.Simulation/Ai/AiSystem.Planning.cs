@@ -9,17 +9,19 @@ public sealed partial class AiSystem
     /// <summary>Kinds of <see cref="PlanTarget"/> the finders give.</summary>
     static class Targets
     {
-        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5;
+        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5, Work = 6;
     }
 
     /// <summary>How near a home's position counts as at home (units; engine stand-in for the original's inside-the-building test).</summary>
     const float HomeRadius = 20;
 
     /// <summary>
-    /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), standing at a node,
-    /// shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed. A plan ending in another step fails.
+    /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the mission town (the
+    /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed.
+    /// A plan ending in another step fails.
     /// </summary>
-    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
+    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
+        or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
         or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED;
 
@@ -84,7 +86,7 @@ public sealed partial class AiSystem
         {
             if (t.IsNone) return true;
             var p = Me.Position;
-            float slack = t.Kind == Targets.Turret ? TurretSlack : system.Settings.PostSlack;
+            float slack = t.Kind == Targets.Turret ? TurretSlack : t.Kind == Targets.Work ? WorkReach : system.Settings.PostSlack;
             if (Vector2.DistanceSquared(Flat(p), Flat(t.Position)) > slack * slack) return false;
             // A spot on a floor counts on that floor only (NaN: no floor).
             return float.IsNaN(t.Position.Y) || MathF.Abs(p.Y - t.Position.Y) <= FloorSlack;
@@ -114,16 +116,20 @@ public sealed partial class AiSystem
                 StateType.isAtHome => board.Home is not { } home || mind.HomeUnreachable || Vector2.DistanceSquared(Flat(Me.Position), Flat(home.Position)) <= HomeRadius * HomeRadius,
                 // Without a town it is never at its home town; its destination town (patrolling in town) is wherever it is.
                 StateType.isAtHomeTown => board.Town >= 0 && system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
-                StateType.atDestinationTown or StateType.atDestinationTown_94 => system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
-                StateType.hasDestinationTown => board.Town >= 0,
+                // The running package's mission town when it has one (the trader's next town), else the home town.
+                StateType.atDestinationTown or StateType.atDestinationTown_94 => board.Destination.IsNone
+                    ? system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)) : system.CurrentTown(world, Me.Position) == board.Destination,
+                StateType.hasDestinationTown => board.Town >= 0 || !board.Destination.IsNone,
                 StateType.atATown => system.TownAt(Me.Position) >= 0,
                 StateType.isLeaderDown => mind.Squad.Leader.IsNone || !world.Characters.IsAlive(mind.Squad.Leader),
                 StateType.isFullyRested => cold.Medical is not { Incapacitated: true },
                 StateType.hasOneWorkingArm => cold.Medical is not { } arms || arms.ArmWorks(left: true) || arms.ArmWorks(left: false),
                 StateType.hasTwoWorkingArm => cold.Medical is not { } arms2 || arms2.BothArmsWork,
+                // The turret goals' done test (149, 222, 234: list A "6*"): no enemy near, so guards man the turrets only while enemies come (docs/simulation.md "AI", turrets).
+                StateType.isNoEnemiesInVicinity => !EnemyNear(cold),
                 // Held true: moving, standing up, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").
                 StateType.isMovementAllowed or StateType.canGetUp or StateType.isBuildingComplete
-                    or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction or StateType.isNoEnemiesInVicinity
+                    or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction
                     or StateType.DOOR_IS_OPEN or StateType.DOOR_IS_OPEN_HERE or StateType.AT_LOCATION_BUILDING_DOOR or StateType.AT_CURRENT_LOCATION_BUILDING_DOOR
                     or StateType.AT_LOCATION_BUILDING_DOOR_INSIDE or StateType.AT_LOCATION_BUILDING_DOOR_OUTSIDE or StateType.DESTINATION_IS_ACCESSIBLE
                     or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS or StateType.AT_LOCATION_FORTIFICATION_GATE
@@ -133,6 +139,31 @@ public sealed partial class AiSystem
                 _ => false,
             };
             return value == condition.Holds;
+        }
+
+        struct EnemyScan
+        {
+            public CharacterTable Table;
+            public FactionRelations Relations;
+            public int Self, Faction;
+            public bool Found;
+        }
+
+        /// <summary>
+        /// An enemy is near (the negation of <c>isNoEnemiesInVicinity</c>): a living character up within <see cref="EnemyVicinity"/> whose faction is an enemy of this one's (the relations
+        /// table). <b>Engine choice</b>: the original's test and its radius are <b>Unknown</b>.
+        /// </summary>
+        bool EnemyNear(CharacterCold cold)
+        {
+            if (!system.Relations.Contains(cold.Faction)) return false;
+            var p = Me.Position;
+            var scan = new EnemyScan { Table = world.Characters, Relations = system.Relations, Self = slot, Faction = cold.Faction };
+            world.Grid.Query(p.X, p.Z, EnemyVicinity, ref scan, static (int other, ref EnemyScan st) =>
+            {
+                if (st.Found || other == st.Self || !st.Table.Previous[other].Alive || st.Table.Cold(other) is not { Medical.Incapacitated: false } oc) return;
+                if (AggroSystem.IsEnemy(st.Relations, st.Faction, oc.Faction)) st.Found = true;
+            });
+            return scan.Found;
         }
 
         /// <summary>The target finders of the goals Meitou acts out (the spots, beds, seats, turrets and towns it already picks); none for the rest.</summary>
@@ -159,6 +190,11 @@ public sealed partial class AiSystem
                 case TaskType.RELAX_IN_TOWN_PACKAGE or TaskType.SIT_AROUND:
                     if (type == TaskType.SIT_AROUND && board.Home is null) return new PlanTarget(Targets.Spot, Me.Position);
                     return board.SeatClaims.TryGetValue(slot, out var seat) && !mind.SeatUnreachable ? new PlanTarget(Targets.Seat, seat.Position) : default;
+                case TaskType.AUTO_LABOURING_MINES or TaskType.AUTO_LABOURING_MINES_PRETEND:
+                    // The building it works at: the one it walks to now, else the pick it will make (the same roll, AiMind.WorkEpoch).
+                    if (mind.Behaviour == AiBehaviour.Work && mind.Goal?.Task.Type == type && mind.Target is { } current) return new PlanTarget(Targets.Work, current);
+                    return system.PickWork(world, world.Characters.IdOf(slot), board.Town, mind.WorkEpoch + (mind.WorkActive ? 1 : 0)) is { } work
+                        ? new PlanTarget(Targets.Work, new Vector3(work.Position.X, float.NaN, work.Position.Z)) : default;
                 case TaskType.MAN_A_TURRET or TaskType.MAN_A_TURRET_ON_BUILDING or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TURRET:
                     return board.TurretClaims.TryGetValue(slot, out int t) && (uint)t < (uint)board.Turrets.Count && board.Turrets[t].Turret is { } turret
                         ? new PlanTarget(Targets.Turret, TurretSpot(world, turret)) : default;

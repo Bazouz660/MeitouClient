@@ -44,6 +44,7 @@ public class CampaignTests(ITestOutputHelper output)
     [Fact, Slow]
     public void A_raid_on_a_player_outpost_gathers_travels_wins_and_is_removed_and_a_save_in_the_middle_keeps_it()
     {
+        const float Distance = 12000;
         Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
         var levels = InstallData.Levels!;
         var data = PopulationData.Create(InstallData.FullLoadOrder!, levels.Towns());
@@ -53,7 +54,7 @@ public class CampaignTests(ITestOutputHelper output)
         world.Player.Faction = data.PlayerFaction;
 
         // A hostile town assault from a faction with a town, needing no leader or population and passing its world states as a new game answers them, whose squads
-        // plan someone then; the outpost 1500 from that town.
+        // plan someone then; the outpost Distance from that town, far enough that the player's watcher there does not load the raiders' town.
         bool Makes(CampaignData c) => c.SquadsToUse.All(e => data.Db.Find(e.Id) is { } r && SquadFactory.IsTemplate(r) && SquadFactory.Plan(data.Db, SquadTemplate.From(r), 1, 1, 1, population.States).TotalMembers > 0);
         (int Faction, CampaignData C, TownSite Town)? pick = null;
         for (int f = 0; f < data.Factions.Count && pick is null; f++)
@@ -67,7 +68,11 @@ public class CampaignTests(ITestOutputHelper output)
         }
         Assert.NotNull(pick);
         var (faction, campaign, home) = pick.Value;
-        var outpost = world.Buildings.AddTown(home.Position + new Vector3(1500, 0, 0), data.PlayerFaction);
+        var outpost = world.Buildings.AddTown(home.Position + new Vector3(Distance, 0, 0), data.PlayerFaction);
+        // A roll aims only at a player town one of the player's characters is in (Town slot 70); one stands there until the raid sets out.
+        string human = data.Db.OfType(Meitou.Data.Fcs.FcsRecordType.CHARACTER)
+            .First(r => r.GetReferences("race").Any(x => x.Values.Value0 > 0 && data.Db.Find(x.TargetStringId)?.BaseName == "Greenlander") && r.GetReferences("stats").Count > 0).StringId;
+        var watcher = population.SpawnSandbox(world, human, new Vector2(outpost.Position.X, outpost.Position.Z), player: true);
         output.WriteLine($"{data.Factions[faction].Name}: {campaign.Name} ({campaign.NumForces} men) against an outpost by {home.Town.Name}");
 
         world.RunTicks(15);
@@ -81,6 +86,11 @@ public class CampaignTests(ITestOutputHelper output)
 
         // The roll starts it: squads gathered beyond the men needed, the warning posted.
         Assert.True(RunUntil(() => war.Actives.Count > 0, 300));
+        // The watcher leaves and the camera looks far off, so the raid travels and fights unloaded as before.
+        int watchers = world.Characters.Cold(watcher.Slot)!.SquadId;
+        world.Characters.Remove(watcher);
+        world.Squads.Remove(watchers);
+        world.Commands.Enqueue(new FocusCommand(outpost.Position + new Vector3(0, 0, 60000)) { Tick = world.Tick + 1 });
         var inst = war.Actives[0];
         Assert.Equal(CampaignTown.OfPlayer(outpost.Number), inst.Target);
         Assert.True(inst.Men > inst.Required && inst.Platoons.Count > 0);

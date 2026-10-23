@@ -41,6 +41,14 @@ public struct CombatSlot
     public int YieldTo, YieldUntil;
     /// <summary>The tick before which it starts no defence (a failed defence roll, 1.2 s; docs/game/combat.md "Pacing").</summary>
     public int DefendReadyTick;
+    /// <summary>
+    /// The longest reach of its techniques at the last choice (<see cref="TechniqueChooser.ChooseAttack"/>, the original's CharStats +0x150; 0 before the first), which sets
+    /// how close it walks in; its last technique (-1: none, or a defence since), which weighs less in the next choice.
+    /// </summary>
+    public float Reach;
+    public int LastTech;
+    /// <summary>One of the (at most five) fighters its target lets close in (the target's CombatClass +0x1f8 list, docs/game/combat.md "Attack slots and circling"); the rest circle.</summary>
+    public bool Engaged;
 
     // The ranged controller (docs/simulation.md "Combat", ranged; the original keeps it at Character +0x2f0). All zero for a character that never used a crossbow.
     /// <summary>Fighting with the crossbow rather than the melee weapon; the controller's state (<see cref="RangedStates"/>).</summary>
@@ -57,7 +65,7 @@ public struct CombatSlot
 
     public static CombatSlot Fresh(int generation) => new()
     {
-        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, StumbleClip = -1, YieldTo = -1,
+        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
     };
 
     public readonly bool Fighting => TargetSlot >= 0;
@@ -101,6 +109,9 @@ public struct CombatSlot
         h.Add(YieldTo);
         h.Add(YieldUntil);
         h.Add(DefendReadyTick);
+        h.Add(Reach);
+        h.Add(LastTech);
+        h.Add(Engaged);
         // The ranged controller goes in only once it has been used, so worlds without crossbows hash as they did before it existed.
         if (!RangedUsed) return;
         h.Add(Ranged);

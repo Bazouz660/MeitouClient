@@ -140,7 +140,7 @@ into bus gains ([audio.md](../audio.md#volumes)). Meitou applies them at once fr
 | `Global population multiplier` | float; slider 0.5 … 4 | 1 | Global population multiplier (num NPC squads) | same |
 | `raidSizeMult` | float; slider 0.25 … 4 | 1 | Town raid events: size | same (FUN_1409c5ad0) |
 | `raidFrequencyMult` | float; slider 0.25 … 3 | 1 | Town raid events: frequency | same (FUN_1409c5740) |
-| `attacks` | int 0 … 5 | 2 | Town attacks frequency: Bombardment = 0, High = 1, Normal = 2, Fewer = 3, Rare = 4, Never = 5 | Timer for opportunistic attacks on the player's base, below |
+| `attacks` | int 0 … 5 | 2 | Town attacks frequency: Bombardment = 0, High = 1, Normal = 2, Fewer = 3, Rare = 4, Never = 5 | A faction's wait between passing-by assaults on the player's towns, uniform, in game hours (**Observed**: the elapsed-time helper `FUN_140791bf0` read as hours): 0, [6, 48), [32, 96), [72, 144), [130, 188); 5 stops them (`FUN_140286a70`, `FUN_140290450`; [ai.md](../game/ai.md#package-classes)) |
 | `Dismemberment` | int 0 … 2 | 1 | Dismemberment: Never = 0, Rare = 1, Frequent = 2 | [combat.md](../game/combat.md), [character-stats.md](../game/character-stats.md) |
 | `civilians` | bool | 1 | none | Loaded and saved; **no reader found** (no instruction addresses its global other than the writer; an access through the block's base pointer would not show up, so **Unknown**) |
 | `Fast zone hopping` | bool | 0 | Fast zone hopping | Keeps a larger area loaded so switching between distant characters skips loading ([game-loop.md](../game/game-loop.md); FUN_140a0f640) |
@@ -208,7 +208,6 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 - What town display state 4 is (set for reflections at levels 3 and 4), and when the water programs are rebuilt after
   `water reflection` changes to or from 0.
 - The reflection camera's far clip before FUN_1403e7490 first runs (Ogre's default assumed).
-- The unit of the `attacks` timers.
 - Whether anything reads `civilians`.
 - In-session effect of `feature range` 7 or 8 (above the loader's clamp).
 

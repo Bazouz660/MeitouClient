@@ -11,7 +11,22 @@ namespace Meitou.Simulation.Combat;
 /// </summary>
 public sealed class Fighter
 {
-    public WeaponInstance? Weapon { get; }
+    /// <summary>
+    /// The weapon in hand (docs/game/combat.md "Arms"): with both arms working the <see cref="BackWeapon"/>, else the hip one; with only the right arm the hip one; without
+    /// the right arm none (fists). An animal's natural weapon always.
+    /// </summary>
+    public WeaponInstance? Weapon => IsAnimal ? hip : !rightArm ? null : leftArm ? BackWeapon ?? hip : hip;
+    /// <summary>The first weapon in the <c>back</c> section, if any (the constructor's weapon is the <c>hip</c> one).</summary>
+    public WeaponInstance? BackWeapon { get; init; }
+    /// <summary>Whether <see cref="Weapon"/> is the <see cref="BackWeapon"/> (the renderer shows that one drawn).</summary>
+    public bool WeaponIsBack => Weapon is { } w && w == BackWeapon;
+    /// <summary>
+    /// The <c>length</c> of the weapon in hand, 0 for fists (CharStats +0x200: 0 from its constructor, set when a weapon is equipped; the original keeps the last weapon's length
+    /// after it is put away, which is not modelled).
+    /// </summary>
+    public float WeaponLength => Weapon?.Data.Length ?? 0;
+    readonly WeaponInstance? hip;
+    bool rightArm = true, leftArm = true;
     /// <summary>The crossbow carried in a weapon section (back or hip), if any: the ranged weapon (docs/simulation.md "Combat", ranged). The melee <see cref="Weapon"/> stays what it was.</summary>
     public CrossbowInstance? Crossbow { get; init; }
     /// <summary>The worn pieces, in the order they are stacked in.</summary>
@@ -42,18 +57,35 @@ public sealed class Fighter
     public float UnarmedBonus { get; }
     /// <summary>Product of the pieces' <c>damage output mult</c>.</summary>
     public float DamageOutput { get; }
-    /// <summary>Product of the pieces' <c>dexterity mult</c>.</summary>
-    public float DexterityMult { get; }
-    /// <summary>Product of the pieces' <c>dodge mult</c> (the gear's dodge value for <see cref="DefenceFormulas.DodgeSkill"/>, x 100).</summary>
-    public float DodgeMult { get; }
+    /// <summary>Product of the pieces' <c>dexterity mult</c>; 1.1 with no armour and no backpack (<see cref="Naked"/>).</summary>
+    public float DexterityMult => Naked ? NakedBonus : dexterity;
+    /// <summary>Product of the pieces' <c>dodge mult</c> (the gear's dodge value for <see cref="DefenceFormulas.DodgeSkill"/>, x 100); 1.1 when <see cref="Naked"/>.</summary>
+    public float DodgeMult => Naked ? NakedBonus : dodgeMult;
+    readonly float dexterity, dodgeMult, assassin, ranged;
+    /// <summary>The dodge and dexterity factor of a <see cref="Naked"/> character (Verified literal).</summary>
+    public const float NakedBonus = 1.1f;
+    /// <summary>
+    /// The gear factors of the stat multiplier (<see cref="StatFactors"/>, <c>CharStats</c> +0x40 to +0x50 as <c>FUN_140887030</c> writes them, <b>Verified</b>): the products of
+    /// <c>asassination mult</c>, <c>dexterity mult</c>, <c>damage output mult</c> and <c>ranged skill mult</c>. No dust storm here (its factor is 1).
+    /// </summary>
+    public StatFactors Factors => new(assassin, DexterityMult, DamageOutput, ranged, 1);
+    /// <summary>
+    /// Wearing no armour and no backpack: the gear refresh then puts 1.1 for dodge and dexterity and 1.2 for stealth (<c>FUN_140887030</c>, <b>Verified</b> literals). Meitou's
+    /// stealth does not read the gear's <c>stealth mult</c> yet, so only the first two apply. Never for an animal (engine choice: whether the refresh runs for animals is <b>Unknown</b>).
+    /// </summary>
+    public bool Naked => !IsAnimal && armour.Length == 0 && !backpack;
+    readonly bool backpack;
     /// <summary>Product of the pieces' <c>combat speed mult</c>: scales the speed attack animations play at.</summary>
     public float CombatSpeed { get; }
 
-    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null)
+    /// <param name="backpack">Whether a backpack is worn (only for <see cref="Naked"/>).</param>
+    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, bool backpack = false)
     {
-        Weapon = weapon;
+        hip = weapon;
         this.armour = armour is null ? [] : [.. armour];
+        this.backpack = backpack;
         float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = 1, speed = 1;
+        assassin = ranged = 1;
         foreach (var p in this.armour)
         {
             def += p.Data.CombatDefenceBonus;
@@ -63,14 +95,24 @@ public sealed class Fighter
             dex *= p.Data.DexterityMult;
             dodge *= p.Data.DodgeMult;
             speed *= p.Data.CombatSpeedMult;
+            assassin *= p.Data.AssassinationMult;
+            ranged *= p.Data.RangedSkillMult;
         }
         DefenceBonus = def;
         AttackBonus = atk;
         UnarmedBonus = unarmed;
         DamageOutput = output;
-        DexterityMult = dex;
-        DodgeMult = dodge;
+        dexterity = dex;
+        dodgeMult = dodge;
         CombatSpeed = speed;
+    }
+
+    /// <summary>Sets which arms work (<see cref="Weapon"/>); true when that changes the weapon in hand. Only in the owner's own Act or a serial phase.</summary>
+    public bool SetArms(bool right, bool left)
+    {
+        var before = Weapon;
+        (rightArm, leftArm) = (right, left);
+        return Weapon != before;
     }
 
     /// <summary>Fights with fists: no weapon, or a weapon record of the unarmed category (a creature attack).</summary>

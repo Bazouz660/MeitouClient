@@ -78,6 +78,8 @@ public sealed partial class ProductionSystem : ITickSystem
 
     public ProductionSettings Settings { get; }
     public ItemFactory Items => items;
+    /// <summary>The construction system the engineer job (125) builds through; null: the job never runs.</summary>
+    public ConstructionSystem? Construction { get; init; }
 
     /// <summary>What a BUILDING does once built (null for one that neither works nor stores); read once.</summary>
     public MachineData? Data(string record)
@@ -171,7 +173,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case OperateOrder order:
                 {
                     var site = Site(world, order.Site);
-                    if (site is not { Complete: true } || (Ensure(world, site) is not { Data.Operable: true } machine)) break;
+                    if (site is not { Complete: true } || (Ensure(world, site) is not { } machine) || !(machine.Data.Operable || machine.Data.IsTraining)) break;
                     var table = world.Characters;
                     foreach (var id in Who(world, order.Characters))
                     {
@@ -189,6 +191,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case UseTurretOrder turret: UseTurret(world, turret); break;
                 case ProspectOrder prospect: ProspectBegin(world, prospect); break;
                 case AddJob add: AddJobs(world, add); break;
+                case AddOrderJob add: AddOrderJobs(world, add); break;
                 case RemoveJob remove: RemoveJobAt(world, remove); break;
                 case MoveJob move: MoveJobTo(world, move); break;
                 case PutInMachine put: Put(world, put); break;
@@ -202,14 +205,13 @@ public sealed partial class ProductionSystem : ITickSystem
         }
     }
 
-    /// <summary>The nearest able one of the order's characters walks to the turret's gunner spot (engine choice: one gunner, the original's pick among several is Unknown).</summary>
+    /// <summary>
+    /// The nearest able one of the order's characters mans the turret (the original's <c>Task_UseTurret</c>): it operates it, walking to its gunner spot (engine choice: one gunner, the
+    /// original's pick among several is Unknown); someone else at it already: "is already in use".
+    /// </summary>
     void UseTurret(World world, UseTurretOrder order)
     {
-        if (Site(world, order.Site) is not { Complete: true } site || db.Find(site.Record) is not { } record ||
-            (record.GetReferences("functionality") is [var link, ..] ? db.Find(link.TargetStringId) : null) is not { } fn || fn.GetInt("function") != Meitou.Data.World.ObjectRanges.TurretFunction) return;
-        var forward = Vector3.Transform(Vector3.UnitZ, site.Rotation);
-        var post = new Meitou.Data.World.TurretPost(site.Position, MathF.Atan2(forward.X, forward.Z), fn.GetFloat("use range", 10),
-            record.GetReferences("gun turret").Select(r => r.TargetStringId).FirstOrDefault() ?? "", null);
+        if (Site(world, order.Site) is not { Complete: true } site || TurretPostOf(site) is not { } post || Ensure(world, site) is not { } m) return;
         var spot = Ai.AiSystem.TurretSpot(world, post);
         var table = world.Characters;
         int best = -1;
@@ -217,8 +219,38 @@ public sealed partial class ProductionSystem : ITickSystem
         foreach (var id in Who(world, order.Characters))
             if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
                 (best, bestGap) = (slot, gap);
-        if (best >= 0) MovementSystem.GoTo(table, best, new Vector2(spot.X, spot.Z), SpeedMode.Run);
+        if (best < 0 || table.Cold(best)!.OperateSite == site.Id) return;
+        if (OperatorsOf(world, site.Id) >= m.Data.MaxOperators)
+        {
+            world.Post($"{site.Name} is already in use.");
+            return;
+        }
+        Begin(world, best, site, m);
     }
+
+    /// <summary>A player turret's post (its functionality's <c>use range</c> and <c>gun turret</c>), null for a building that is no turret.</summary>
+    Meitou.Data.World.TurretPost? TurretPostOf(BuildSite site)
+    {
+        if (db.Find(site.Record) is not { } record || (record.GetReferences("functionality") is [var link, ..] ? db.Find(link.TargetStringId) : null) is not { } fn
+            || fn.GetInt("function") != Meitou.Data.World.ObjectRanges.TurretFunction) return null;
+        var forward = Vector3.Transform(Vector3.UnitZ, site.Rotation);
+        return new Meitou.Data.World.TurretPost(site.Position, MathF.Atan2(forward.X, forward.Z), fn.GetFloat("use range", 10),
+            record.GetReferences("gun turret").Select(r => r.TargetStringId).FirstOrDefault() ?? "", null);
+    }
+
+    /// <summary>Where an operator walks to: a turret's gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>), else the building's place.</summary>
+    Vector2 GoalOf(World world, BuildSite site, Machine m)
+    {
+        if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction && TurretPostOf(site) is { } post)
+        {
+            var spot = Ai.AiSystem.TurretSpot(world, post);
+            return turretSpots[site.Id] = new Vector2(spot.X, spot.Z);
+        }
+        return new Vector2(site.Position.X, site.Position.Z);
+    }
+
+    // The gunner spots of the player's turrets, as their walks found them (derived from the site and the ground; not saved, not hashed).
+    readonly Dictionary<string, Vector2> turretSpots = [];
 
     /// <summary>A character that can work: awake, not fighting, not carrying or carried, not caged.</summary>
     static bool Able(CharacterCold cold) =>
@@ -243,9 +275,18 @@ public sealed partial class ProductionSystem : ITickSystem
 
     bool AtSite(in CharacterHot n, BuildSite site, Machine m)
     {
+        // A turret's gunner stands at its spot (once its walk has found it).
+        if (turretSpots.TryGetValue(site.Id, out var spot))
+        {
+            float off = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), spot);
+            return off <= Ai.AiSystem.TurretSlack || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && off <= Ai.AiSystem.TurretSlack + Settings.SettleReach);
+        }
         float reach = ReachOf(site, m), gap = Gap(n.Position, site.Position);
         return gap <= reach || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && gap <= reach + Settings.SettleReach);
     }
+
+    /// <summary>The clip a turret's gunner holds.</summary>
+    public const string TurretClip = "combatstance";
 
     void Begin(World world, int slot, BuildSite site, Machine m)
     {
@@ -257,7 +298,8 @@ public sealed partial class ProductionSystem : ITickSystem
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
         cold.OperateSite = site.Id;
-        cold.OperateClip = m.Data.Animation;
+        // A gunner holds "combatstance" (Verified, Task_UseTurret FUN_1403474f0), not its functionality's clip.
+        cold.OperateClip = m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? TurretClip : m.Data.Animation;
         cold.OperateTool = m.Data.Tool;
         cold.HaulSite = null;
         cold.HaulFetch = null;
@@ -265,9 +307,10 @@ public sealed partial class ProductionSystem : ITickSystem
         cold.JobIndex = -1;
         cold.Implicit = null;
         cold.HaulTo = null;
+        var goal = GoalOf(world, site, m);
         if (!AtSite(n, site, m))
         {
-            n.Goal = new Vector2(site.Position.X, site.Position.Z);
+            n.Goal = goal;
             n.Flags |= (ushort)MoveFlags.NeedPath;
         }
         sweep = true;
@@ -277,7 +320,10 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        if (n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul)
+        bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
+            && cold.Jobs[cold.JobIndex].Type is Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD or Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET;
+        if (followJob) cold.FollowOrder = CharacterId.None;   // the job's follow ends with it; the character follows its squad's leader again
+        if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {
             MovementSystem.Stop(table, slot);
             // A job's task goes back to the following or wandering it took the character from.
@@ -295,7 +341,11 @@ public sealed partial class ProductionSystem : ITickSystem
 
     public void Schedule(World world)
     {
-        if (world.Machines.Count == 0 && !sweep) return;
+        // Job lists also run for the engineer job while a site is unfinished or damaged, and with no machine they can still send the injured to bed
+        // (the "Sleep when injured" option).
+        if (world.Tick % 30 == 0) ScanFollowJobs(world);
+        if (world.Machines.Count == 0 && !sweep && !followJobs && (Construction is null || !world.Buildings.AnyNeedsWork)
+            && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
         PickJobs(world);
         var table = world.Characters;
         float dt = world.TickSeconds;
@@ -306,10 +356,11 @@ public sealed partial class ProductionSystem : ITickSystem
             var cold = table.Cold(i)!;
             if (n.Task == (byte)CharacterTask.Haul)
             {
-                if (cold.HaulSite is { } to && Site(world, to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(ref n, cold, leg, legMachine, dt);
+                if (cold.HaulSite is { } to && Site(world, to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(world, ref n, cold, leg, legMachine, dt);
                 else End(table, i);
                 continue;
             }
+            if (n.Task == (byte)CharacterTask.Sleep) continue;   // the bed of the "Sleep when injured" option, in OperateSite (BedSystem walks it)
             if (cold.OperateSite is not { } id)
             {
                 // A hauler an order took off its job.
@@ -333,15 +384,16 @@ public sealed partial class ProductionSystem : ITickSystem
             }
             // A hauling operator walks to its storage instead.
             if (Hauling(world, cold) is { } haul) (site, m) = haul;
-            Approach(ref n, cold, site, m, dt);
+            Approach(world, ref n, cold, site, m, dt);
         }
         if (world.Machines.Count == 0) sweep = false;
     }
 
     /// <summary>Walks a character to a building: at it, its path is dropped; else a path is asked for, again every <see cref="PursuitSystem.RepathSeconds"/> while it has none.</summary>
-    void Approach(ref CharacterHot n, CharacterCold cold, BuildSite site, Machine m, float dt)
+    void Approach(World world, ref CharacterHot n, CharacterCold cold, BuildSite site, Machine m, float dt)
     {
         const ushort Path = (ushort)MoveFlags.AnyPath;
+        if (!turretSpots.ContainsKey(site.Id)) GoalOf(world, site, m);
         if (AtSite(n, site, m))
         {
             if ((n.Flags & Path) != 0)
@@ -356,7 +408,7 @@ public sealed partial class ProductionSystem : ITickSystem
         if ((n.Flags & Path) != 0) return;
         n.TaskTime -= dt;
         if (n.TaskTime > 0) return;
-        n.Goal = new Vector2(site.Position.X, site.Position.Z);
+        n.Goal = GoalOf(world, site, m);
         n.Mode = SpeedMode.Free;
         n.Flags |= (ushort)MoveFlags.NeedPath;
         n.TaskTime = PursuitSystem.RepathSeconds;
@@ -368,6 +420,7 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         ProspectStep(world);
         Sync(world);
+        Errands(world);
         var research = world.Research;
         research.Rate = 0;
         int bench = 0;
@@ -408,7 +461,17 @@ public sealed partial class ProductionSystem : ITickSystem
                 continue;
             }
             if (!AtSite(n, site, m)) continue;
-            // A chair or bed (an implicit job): sat or lain on, no work.
+            // A turret: manned, facing it; the combat system fires it (docs/simulation.md "Combat", turrets). Its gunner counts as an operator, so it draws its power.
+            if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
+            {
+                if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+                m.Operators++;
+                cold.Operating = true;
+                continue;
+            }
+            // A training dummy: the user trains the building's stat (docs/game/ai-tasks.md "Finders of the jobs").
+            if (m.Data.IsTraining) { Train(ref n, cold, site, m, dt); continue; }
+            // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
             if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
@@ -761,8 +824,9 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     static void PutInContainer(World world, Locks.Fixture container, CharacterCold cold, PutInMachine put)
     {
+        if (PlayerSystem.ShopOf(world, container) is not null) { world.Post("That stock is the shop's."); return; }   // engine choice: a shop's stock is not a place to leave things
         var root = cold.Inventory!;
-        var storage = container.Contents!;
+        var storage = PlayerSystem.GridOf(world, container);
         var item = root.All().ElementAtOrDefault(put.Item.Index);
         var token = put.Item;
         if (item is null || item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
@@ -789,7 +853,7 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
-        var storage = container.Contents!;
+        var storage = PlayerSystem.GridOf(world, container);
         if (take.Index < 0 || take.Index >= storage.Items.Count) return;
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;
@@ -802,6 +866,8 @@ public sealed partial class ProductionSystem : ITickSystem
 
     /// <summary>Re-dresses a character that put on something taken out of a storage or container (null: not re-dressed).</summary>
     internal CharacterAssembly? Assembly { get; set; }
+    /// <summary>The beds the "Sleep when injured" option lies in (null: the option does nothing).</summary>
+    public Locks.BedSystem? Beds { get; set; }
 
     /// <summary>
     /// The complete machine at <paramref name="site"/> when <paramref name="who"/> (one of the player's characters) may move items in and out of it from where it stands; posts

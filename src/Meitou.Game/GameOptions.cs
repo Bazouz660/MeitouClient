@@ -41,6 +41,14 @@ sealed class GameOptions
     public double? QuitAfter;
     /// <summary>A save folder (Meitou's or the original game's) started in instead of a new world, loaded as the game menu's Load does (<c>--load</c>).</summary>
     public string? Load;
+    /// <summary>With <c>--screenshot</c>: a staged scene to check behaviour offscreen (<c>--scene</c>: fight, turret, bed, acid, menu; GameHost.Scenes.cs).</summary>
+    public string? Scene;
+    /// <summary>The scene's frames and the control ticks between them (<c>--scene-frames</c>, <c>--scene-every</c>).</summary>
+    public int SceneFrames = 8, SceneEvery = 30;
+    /// <summary>The CHARACTER record (name or id) the fight and turret scenes spawn as enemies (<c>--scene-npc</c>).</summary>
+    public string SceneNpc = "Bandit";
+    /// <summary>The town (name, part of it) the turret scene moves the squad to first (<c>--scene-town</c>; null: the nearest turret to where the save is).</summary>
+    public string? SceneTown;
 
     public const string Usage = """
         meitou [where] [options]     boots into the world with the Kenshi camera (default --town "The Hub")
@@ -65,10 +73,15 @@ sealed class GameOptions
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
+          --scene <name>             with --screenshot (and --load): stage a scene and save a frame every --scene-every ticks (default 30), --scene-frames of them (default 8):
+                                     fight (enemies of --scene-npc spawned beside the leader and attacked), turret (the nearest town turret, enemies spawned in its range),
+                                     bed (the leader sleeps in the nearest bed), acid (acid rain forced on the characters), menu (the context menus of the nearest character,
+                                     door, container and cage, one frame each); the log prints the leader's state each frame; --scene-town <name> moves the squad to that town first (turret)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
           --yaw/--pitch/--distance   start view: heading, pitch above the horizon and boom (Kenshi: 30 degrees, boom 150; clamped to 10..2000)
           world options as meitou-viewer --world: --at, --zone, --town, --radius, --time, --screenshot, --size, --no-foliage, ...
-        Keys: W/A/S/D or arrows move (or the pointer at a screen edge), Q/E rotate, Comma/Period tilt, wheel or Home/End zoom, PageUp/PageDown floor up/down (lens in the free camera), middle drag or Ctrl orbit, left click or drag selects, right click moves (shift queues), 1..9 / ` select, R stops,
+        Keys: W/A/S/D or arrows move (or the pointer at a screen edge), Q/E rotate, Comma/Period tilt, wheel or Home/End zoom, PageUp/PageDown floor up/down (lens in the free camera), middle drag or Ctrl orbit, left click or drag selects, right click moves (shift queues), 1..9, 0 / ` select, [ / ] previous / next squad member, R stops,
+          numpad 0..8 Block, Hold, Passive, Ranged, Sneak, Taunt, run speed, Medic (also H), Rescue (also J), L rest, K put down, I/C/M/T/Y windows, Tab next squad (all rebindable),
           ; free camera (R/F up/down), Space pause, F2/F3/F4 speed 1x/2x/5x, F8 or PrintScreen screenshot,
           F5 quicksave, F9 quickload (Meitou's own slot under %LOCALAPPDATA%\Meitou\save), Ctrl+F9 fps counter, F10 debug menu (teleport, spawn, items, money, heal, max skills, damage), F11 statistics, F12 profiler (gpu, cpu, off), Esc game menu (save, load, exit). Shift+F1 Meitou on / off, Alt+Enter full screen,
           F6 cinematic camera editor (numpad keys as in the viewer; game-shots.json; Home the lens also in the free camera), F7 hide the interface,
@@ -137,6 +150,11 @@ sealed class GameOptions
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--load": g.Load = Next(); break;
+                case "--scene": g.Scene = Next().ToLowerInvariant(); break;
+                case "--scene-frames": g.SceneFrames = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 1, 200); break;
+                case "--scene-every": g.SceneEvery = Math.Max(int.Parse(Next(), CultureInfo.InvariantCulture), 1); break;
+                case "--scene-npc": g.SceneNpc = Next(); break;
+                case "--scene-town": g.SceneTown = Next(); break;
                 default: rest.Add(a); break;
             }
         }

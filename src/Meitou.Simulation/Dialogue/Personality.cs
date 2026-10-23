@@ -10,7 +10,7 @@ namespace Meitou.Simulation.Dialogue;
 /// </summary>
 public static class Personality
 {
-    public const int None = 0, Normal = 13, Count = 15;
+    public const int None = 0, Honorable = 1, Traitorous = 2, Normal = 13, Count = 15;
 
     /// <summary>The character's tag: its saved or earlier one, else rolled now (and kept on <paramref name="cold"/>).</summary>
     public static int Of(World world, GameDatabase db, CharacterId id, CharacterCold cold)

@@ -24,6 +24,8 @@ public enum DeathCause
     Starvation,
     /// <summary>One of its death items taken while it was down (docs/game/animals.md "Death items").</summary>
     Butchered,
+    /// <summary>Eaten alive by a captor (the original's death cause string "eaten", <c>FUN_140650370</c>; <see cref="MedicalState.BeingEaten"/>).</summary>
+    Eaten,
 }
 
 /// <summary>Something that happened to a character in a tick or a hit, for the caller to act on (XP, drops, messages, the commit phase).</summary>

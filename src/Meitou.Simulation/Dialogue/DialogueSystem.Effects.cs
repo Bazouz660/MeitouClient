@@ -10,7 +10,7 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// A line's effects (<c>FUN_140680560</c>, docs/game/dialogue.md "Effects"), run as it is said or clicked, with <paramref name="me"/> the NPC-side speaker and the player character the
     /// target, in the original's order: locks, interrupt, relation changes, then the DA effects in data order, then AI changes and contracts. Not built yet: arrests other
-    /// than the bounty desk's hand-over, and DA 48 (animals for sale).
+    /// than the bounty desk's hand-over, DA 48 (animals for sale), DA 5, 15, 17, 39 and 58 (docs/game/dialogue.md "Effects").
     /// </summary>
     void RunEffects(World world, Conversation c, DialogueNode line, CharacterId me)
     {
@@ -48,10 +48,15 @@ public sealed partial class DialogueSystem
                 case DialogueActions.AffectRelations when mc is not null && tc is not null:
                     ChangeRelation(world, mc.Faction, tc.Faction, effect.Value);
                     break;
+                case DialogueActions.AffectReputation when mc is not null:
+                    data.Relations.AddGlobalTrust(mc.Faction, effect.Value);   // the speaker's faction's global trust (slot 9), whoever the target is
+                    break;
                 case DialogueActions.AttackChaseForever or DialogueActions.AttackStayNearHome:
+                    if (mc is not null && tc is not null) FlagFrom(world, mc, me, target, tc, MemoryTag.TempEnemy);
                     Attack(world, me, target);
                     break;
                 case DialogueActions.AttackIfNoCoexist when mc is not null && tc is not null && !data.Relations.Coexists(mc.Faction, tc.Faction):
+                    FlagFrom(world, mc, me, target, tc, MemoryTag.TempEnemy);
                     Attack(world, me, target);
                     break;
                 case DialogueActions.TakeMoney when tc is not null:
@@ -65,9 +70,14 @@ public sealed partial class DialogueSystem
                     c.Ended = true;
                     request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
                     return;
-                case DialogueActions.ChooseSlavesSelling or DialogueActions.ChooseSlavesBuying when target != me:
+                case DialogueActions.ChooseSlavesSelling or DialogueActions.ChooseSlavesBuying or DialogueActions.ChooseAnimalsBuying when target != me:
                     // The character trading window opens as the conversation closes (OpenCharacterTrade), a speech bubble's at once; val0 is the price override.
-                    characterTradeAfter = (effect.Action == DialogueActions.ChooseSlavesSelling ? CharacterTradeKind.SlaveSelling : CharacterTradeKind.SlaveBuying, me, target, effect.Value);
+                    characterTradeAfter = (effect.Action switch
+                    {
+                        DialogueActions.ChooseSlavesSelling => CharacterTradeKind.SlaveSelling,
+                        DialogueActions.ChooseSlavesBuying => CharacterTradeKind.SlaveBuying,
+                        _ => CharacterTradeKind.AnimalBuying,
+                    }, me, target, effect.Value);
                     if (!ReferenceEquals(open, c)) { OpenCharacterTrade(world); break; }
                     c.Ended = true;
                     return;
@@ -104,6 +114,7 @@ public sealed partial class DialogueSystem
                     TalkToLeader(world, c, mc, target, tc);
                     break;
                 case DialogueActions.ArrestTarget when tc is not null:
+                    ArrestMemory(world, me, mc, target, tc);
                     Arrests?.ArrestFromDialogue(world, me, target);
                     break;
                 case DialogueActions.TagEscapedSlave when tc is not null:
@@ -127,6 +138,42 @@ public sealed partial class DialogueSystem
                     break;
                 case DialogueActions.AssaultPhase or DialogueActions.RetreatPhase:
                     population?.SetCampaignPhase(world, me, effect.Action == DialogueActions.AssaultPhase);
+                    break;
+                case DialogueActions.FollowWhileTalking when !target.IsNone && mc is { IsPlayer: false }:
+                    followers[me] = target;
+                    break;
+                case DialogueActions.RunAway when mc is not null && tc is not null:
+                    RunAway(world, me, mc, target, tc);
+                    break;
+                case DialogueActions.GoHome when mc is not null && tc is not null:
+                    GoHome(world, me, mc, target, tc);
+                    break;
+                case DialogueActions.RememberCharacter when mc is not null && tc is not null:
+                    Memory.Remember(world, mc.SquadId, target, MemoryTag.None);
+                    break;
+                case DialogueActions.FlagTempAlly or DialogueActions.FlagTempEnemy when mc is not null && tc is not null:
+                    Memory.Flag(world, mc.SquadId, target, effect.Action == DialogueActions.FlagTempAlly ? MemoryTag.TempAlly : MemoryTag.TempEnemy);
+                    break;
+                case DialogueActions.MakeTargetRunFaster when tc is not null && world.Characters.TryResolveNext(target, out int runner):
+                    world.Characters.Next[runner].Mode = SpeedMode.Free;   // the original's speed mode 2
+                    break;
+                case DialogueActions.SeparateToMyOwnSquad when mc is not null:
+                    Separate(world, mc.IsPlayer || mc.Faction == world.Player.Faction ? target : me);
+                    break;
+                case DialogueActions.DeclareWar when mc is not null && tc is not null && data.Relations.Contains(mc.Faction) && data.Relations.Contains(tc.Faction):
+                    PlayerRelations.DeclareWar(world, data.Relations, mc.Faction, tc.Faction);
+                    break;
+                case DialogueActions.EndWar when mc is not null && tc is not null && data.Relations.Contains(mc.Faction) && data.Relations.Contains(tc.Faction):
+                    PlayerRelations.EndWar(world, data.Relations, mc.Faction, tc.Faction);
+                    break;
+                case DialogueActions.SummonMySquad:
+                    Summon(world, me);
+                    break;
+                case DialogueActions.OpenNearestGate:
+                    OpenNearestGate(world, me);
+                    break;
+                case DialogueActions.MassiveAlarm when mc is not null && tc is not null:
+                    MassiveAlarm(world, me, mc, target, tc);
                     break;
                 case DialogueActions.JoinSquadWithEdit or DialogueActions.JoinSquadFast:
                     if (!Recruit(world, c, me, effect.Action == DialogueActions.JoinSquadWithEdit)) return;
@@ -162,8 +209,8 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// <c>DA_SURRENDER_NON_HUMANS</c> (47, <c>FUN_140680560</c>): the target faction's characters within 100 of the speaker, not animals, whose race is not the speaker's
-    /// (<c>FUN_14042ecd0</c>: its race or one of its sub-races; engine reading: the same RACE record) become slaves owned by the speaker's faction (<c>FUN_14032e590</c>), and its
-    /// squad remembers them. Their squads are left as they are (what follows is not read).
+    /// (<c>FUN_14042ecd0</c>: its race or one of its sub-races; engine reading: the same RACE record) become slaves owned by the speaker's faction (<c>FUN_14032e590</c>), and each
+    /// one's squad remembers the speaker. Their squads are left as they are (what follows is not read).
     /// </summary>
     void SurrenderNonHumans(World world, CharacterId me, CharacterCold mc, CharacterCold tc)
     {
@@ -176,8 +223,21 @@ public sealed partial class DialogueSystem
             if (c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null || c.Race is null || c.Race.StringId == race.StringId) continue;
             if (Vector3.DistanceSquared(table.Next[i].Position, at) > 100 * 100) continue;
             Locks.FixtureRegistry.Enslave(world, c, mc.Faction);
-            if (mc.SquadId >= 0) met[(mc.SquadId, table.IdOf(i))] = world.GameHours;
+            Memory.Remember(world, c.SquadId, me, MemoryTag.None);   // its squad remembers the speaker (the tag is not visible in the decompile; engine: none)
         }
+    }
+
+    /// <summary>
+    /// DA_ARREST_TARGET's memory (<c>FUN_140680560</c>): in the speaker's home town (and the target no animal) the target's squad tags the speaker MY_CAPTOR; elsewhere the speaker's squad
+    /// tags the target TEMP_ENEMY.
+    /// </summary>
+    void ArrestMemory(World world, CharacterId me, CharacterCold? mc, CharacterId target, CharacterCold tc)
+    {
+        if (mc is null) return;
+        bool inTown = world.Squads.Find(mc.SquadId) is { Town: >= 0 } squad && Position(world, me) is { } here && TownAt(here) == squad.Town
+            && tc.Fighter?.IsAnimal != true && tc.Appearance?.Animal is null;
+        if (inTown) Memory.Remember(world, tc.SquadId, me, MemoryTag.Captor);
+        else Memory.Flag(world, mc.SquadId, target, MemoryTag.TempEnemy);
     }
 
     static void Lock(CharacterCold cold, string dialogue, bool locked) => (cold.DialogueLocks ??= new(StringComparer.Ordinal))[dialogue] = locked;

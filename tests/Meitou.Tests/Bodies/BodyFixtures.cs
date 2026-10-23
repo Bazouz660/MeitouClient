@@ -86,10 +86,10 @@ static class BodyFixtures
 
     public static MedicalState Healthy(RaceData? race = null, float strength = 50) => MedicalState.Create(race ?? Human, strength);
 
-    /// <summary>Ticks in steps of <paramref name="step"/> hours until <paramref name="hours"/> have passed.</summary>
-    public static void Run(MedicalState m, in MedicalContext ctx, float hours, float step = 0.1f, List<MedicalEvent>? events = null)
+    /// <summary>Ticks in steps of <paramref name="step"/> seconds of character time until <paramref name="seconds"/> have passed.</summary>
+    public static void Run(MedicalState m, in MedicalContext ctx, float seconds, float step = 0.1f, List<MedicalEvent>? events = null)
     {
-        int n = (int)MathF.Round(hours / step);
+        int n = (int)MathF.Round(seconds / step);
         for (int i = 0; i < n; i++) m.Tick(step, ctx, events);
     }
 }

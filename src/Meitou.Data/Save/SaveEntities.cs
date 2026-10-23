@@ -4,8 +4,8 @@ using Meitou.Data.World;
 
 namespace Meitou.Data.Save;
 
-/// <summary>One entry of a faction's relation table: the faction it is about, the relation (-100 to 100) and the two trust values.</summary>
-public readonly record struct SaveRelation(string FactionId, float Relation, float Trust, float TrustNeg);
+/// <summary>One entry of a faction's relation table: the faction it is about, the relation (-100 to 100), the two trust values and the war flag (Meitou's own key <c>meitou war&lt;k&gt;</c>; the original saves none).</summary>
+public readonly record struct SaveRelation(string FactionId, float Relation, float Trust, float TrustNeg, bool War = false);
 
 /// <summary>A GAMESTATE_FACTION (type 37) with its WAR_SAVESTATE (type 9) (docs/formats/save.md "Factions").</summary>
 public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
@@ -26,6 +26,19 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
     /// <summary>The player's rank in this faction (<c>rank</c>, every faction but the player's; docs/game/factions-squads-towns.md "Faction rank").</summary>
     public int Rank { get => Record.Ints.GetValueOrDefault("rank"); set => Record.Ints["rank"] = value; }
 
+    /// <summary>Meitou-only key prefix of a relation entry's war flag (<c>meitou war&lt;k&gt;</c>, bool, written only while set).</summary>
+    public const string WarKey = "meitou war";
+
+    /// <summary>The faction's global trust (FactionRelations +0x18): Meitou-only <c>meitou global trust</c> (float, written only while not 0; the original's player-table <c>global trust</c> is another field, <see cref="PlayerGlobalTrust"/>).</summary>
+    public float GlobalTrust
+    {
+        get => Record.Floats.GetValueOrDefault("meitou global trust");
+        set { if (value != 0) Record.Floats["meitou global trust"] = value; else Record.Floats.Remove("meitou global trust"); }
+    }
+
+    /// <summary>The original's <c>global trust</c> of the player's faction (the PlayerFactionRelations float at +0x14; its link to the +0x18 DC_REPUTATION reads is <b>Unknown</b>).</summary>
+    public float PlayerGlobalTrust => Record.Floats.GetValueOrDefault("global trust");
+
     /// <summary>The player's faction has a <c>known</c> list and no relation table.</summary>
     public bool IsPlayer => Record.References.ContainsKey("known") || !Record.Strings.ContainsKey("relationSID0");
 
@@ -36,7 +49,7 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
         {
             var list = new List<SaveRelation>();
             for (int k = 0; Record.Strings.TryGetValue("relationSID" + k, out var sid); k++)
-                list.Add(new SaveRelation(sid, Record.Floats.GetValueOrDefault("relation" + k), Record.Floats.GetValueOrDefault("trust" + k), Record.Floats.GetValueOrDefault("trustNeg" + k)));
+                list.Add(new SaveRelation(sid, Record.Floats.GetValueOrDefault("relation" + k), Record.Floats.GetValueOrDefault("trust" + k), Record.Floats.GetValueOrDefault("trustNeg" + k), Record.Bools.GetValueOrDefault(WarKey + k)));
             return list;
         }
     }
@@ -50,6 +63,7 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
             Record.Floats.Remove("relation" + k);
             Record.Floats.Remove("trust" + k);
             Record.Floats.Remove("trustNeg" + k);
+            Record.Bools.Remove(WarKey + k);
         }
         int n = 0;
         foreach (var r in relations)
@@ -57,6 +71,7 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
             Record.Floats["relation" + n] = r.Relation;
             Record.Floats["trust" + n] = r.Trust;
             Record.Floats["trustNeg" + n] = r.TrustNeg;
+            if (r.War) Record.Bools[WarKey + n] = true;
             Record.Strings["relationSID" + n] = r.FactionId;
             n++;
         }

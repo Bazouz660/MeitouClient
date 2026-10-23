@@ -146,6 +146,11 @@ public sealed partial class World : IDisposable
     /// each that its loaded save has none of. Only read by saves, so not hashed.
     /// </summary>
     public HashSet<Meitou.Data.World.ZoneCoordinate> VisitedZones { get; } = [];
+    /// <summary>
+    /// The zones active as of the population's last look (null before one, so no zone is judged inactive). A corpse lying in a zone not in it is removed at once
+    /// (<see cref="BodySystem"/>, "corpse unloaded"). The collection is the population's own and swapped by it: read within a tick only. Not hashed.
+    /// </summary>
+    public IReadOnlyCollection<Meitou.Data.World.ZoneCoordinate>? ActiveZones { get; set; }
     /// <summary>The player's research: finished, queued, paid (docs/simulation.md "Production"); hashed once it changed in play.</summary>
     public Construction.ResearchState Research { get; } = new();
     /// <summary>The machines of the player's complete buildings: recipe slots, storage, farms (docs/simulation.md "Production").</summary>

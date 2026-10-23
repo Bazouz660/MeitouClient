@@ -24,8 +24,6 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>The <see cref="Effect.Kind"/> of a blow: <c>Arg</c> is the blow (1 or 2) and <c>Amount</c> the attacker's attack number.</summary>
     public const int BlowEffect = 1;
 
-    const float HoursPerSecond = 11f / 1200f;
-
     readonly CombatTechnique[] techniques;
     readonly CombatConstants combat;
     readonly GameConstants constants;
@@ -61,9 +59,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
     public Ragdolls.IRagdollEnvironment? Buildings { get; set; }
 
-    /// <summary>The live relation table the player's assaults and killings change (<c>PopulationData.Relations</c>); null: nothing changes (hand-built test worlds).</summary>
+    /// <summary>The live relation table (<c>PopulationData.Relations</c>) that says who is an enemy; null: everyone of another faction is (hand-built test worlds).</summary>
     public FactionRelations? Relations { get; set; }
-    /// <summary>The crime system the player's assaults, killings and hits on the police are reported to (null: no crimes).</summary>
+    /// <summary>The relation events of the landed blows (<see cref="FactionDeeds.Blow"/>); null: blows change no relation (hand-built test worlds).</summary>
+    public FactionDeeds? Deeds { get; set; }
+    /// <summary>The crime system the player's assaults and hits on the police are reported to (null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
     /// <summary>
     /// Picks the hit reaction clip of a hit (set by the animation system, which owns the clips): the defender, the hit part's LOCATIONAL_DAMAGE id, big stumble, the side
@@ -114,6 +114,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         for (int i = 0; i < read.Length; i++) read[i].Hash(ref hasher);
         hasher.Add(log.Count);
         HashRanged(ref hasher);
+        HashTurrets(ref hasher);
     }
 
     // ------------------------------------------------------------------ inputs
@@ -129,36 +130,23 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             {
                 case AttackOrder order:
                 {
-                    // The player's squad picking a fight with a character of another faction is an assault on that faction (engine choice of the
-                    // event kind, docs/simulation.md "Combat"): once per victim, when no player character is fighting it already.
-                    bool deed = Relations is not null && !order.Defensive && !PlayerFights(table, order.Target);
-                    bool byPlayer = false;
+                    // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer)
-                        {
-                            byPlayer = true;
-                            // An attack that is not self-defence is an assault (before the relation event below, which could make the victim's faction hostile).
-                            if (!order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot)) crimes.Assault(world, id.Slot, victimSlot);
-                        }
-                    if (deed && byPlayer && table.Cold(order.Target.Slot) is { IsPlayer: false } victim)
-                        PlayerRelations.Event(world, Relations!, victim.Faction, RelationEventKind.Assault);
+                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer
+                            && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                            crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }
+                case ShootAtOrder shoot:
+                    foreach (var id in shoot.Gunners.Count > 0 ? shoot.Gunners : world.Player.Selection.ToArray())
+                        if (table.TryResolveNext(id, out int g) && table.Cold(g) is { IsPlayer: true, Gunning: not null } gunner && table.TryResolveNext(shoot.Target, out int victim) && victim != g
+                            && table.Cold(victim) is { Medical.Dead: false }) gunner.TurretTarget = shoot.Target;
+                    break;
                 case StopCommand stop:
                     foreach (var id in stop.Characters) Disengage(table, id);
                     break;
             }
         }
-    }
-
-    /// <summary>Whether a player character is fighting <paramref name="target"/> (the combat state as of the inputs).</summary>
-    bool PlayerFights(CharacterTable table, CharacterId target)
-    {
-        if (!table.TryResolveNext(target, out int t)) return false;
-        var next = table.Next;
-        for (int i = 0; i < table.HighWater; i++)
-            if (read[i].TargetSlot == t && read[i].TargetGeneration == target.Generation && next[i].Alive && next[i].Task == (byte)CharacterTask.Attack && table.Cold(i)!.IsPlayer) return true;
-        return false;
     }
 
     bool Engage(World world, CharacterTable table, CharacterId attacker, CharacterId target, int now)
@@ -169,6 +157,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null || tc.Medical is null || cold.Medical.Incapacitated || tc.Medical.Incapacitated) return false;
         if (cold.IsImprisoned) return false;   // a prisoner does not fight (it may still be attacked: engine choice)
         ref var s = ref read[a];
+        if (s.TargetSlot != t || s.TargetGeneration != target.Generation)
+        {
+            s.Engaged = false;
+            s.LastTech = -1;
+        }
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
         s.ReadyTick = now + PauseTicks(world, a, 0);
@@ -185,6 +178,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.TargetSlot = -1;
         s.AttackTech = -1;
         s.NextBlow = 0;
+        s.Engaged = false;
         EndFight(table, slot);
     }
 
@@ -205,6 +199,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Sync(world.Characters);
         Array.Copy(read, write, world.Characters.HighWater);
         FlyProjectiles(world);
+        TickTurrets(world);
     }
 
     public void Move(World world, Partition part)
@@ -237,14 +232,15 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             bool shooting = s.Ranged && s.RangedState != (byte)RangedStates.Closing;
             bool busy = s.Down || s.AttackTech >= 0 || s.ReactTech >= 0 || now < s.StunUntil || shooting;
             float gap = distance - CombatTuning.Footprint(cold) - CombatTuning.Footprint(table.Cold(t));
-            if (busy || gap <= CombatTuning.CloseInGap)
+            float stand = CombatTuning.StandGap(s.Reach, cold.Fighter?.WeaponLength ?? 0);
+            if (busy || gap <= stand)
             {
                 n.Velocity = default;
                 continue;
             }
             float speed = n.MaxSpeed > 0 ? n.MaxSpeed : Settings.ApproachSpeed;
             if (!cold.CombatRunning) speed = MathF.Min(speed, CombatTuning.FootworkSpeed);
-            float step = MathF.Min(speed * dt, gap - CombatTuning.CloseInGap);
+            float step = MathF.Min(speed * dt, gap - stand);
             float x = prev[i].Position.X + dir.X * step, z = prev[i].Position.Z + dir.Y * step;
             if (world.Walkability.IsWalkable(x, z, prev[i].Position.Y))
             {

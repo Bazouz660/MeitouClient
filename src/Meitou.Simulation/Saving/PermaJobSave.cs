@@ -17,14 +17,14 @@ public static class PermaJobSave
     const string Type = "pjob", Target = "pjobT", MeitouSite = "meitou pjob", Switch = "jobs";
 
     /// <summary>Writes the list (the old entries are cleared first) and the switch.</summary>
-    public static void Write(FcsRecord ai, CharacterCold cold, BuildingRegistry sites, IReadOnlyDictionary<string, FcsRecord> buildings)
+    public static void Write(FcsRecord ai, CharacterCold cold, BuildingRegistry sites, IReadOnlyDictionary<string, FcsRecord> buildings, Func<CharacterId, Hand>? handleOf = null)
     {
         foreach (var key in ai.Ints.Keys.Where(k => k.StartsWith(Type, StringComparison.Ordinal)).ToList()) ai.Ints.Remove(key);
         foreach (var key in ai.Strings.Keys.Where(k => k.StartsWith(MeitouSite, StringComparison.Ordinal)).ToList()) ai.Strings.Remove(key);
         for (int i = 0; i < cold.Jobs.Count; i++)
         {
             var job = cold.Jobs[i];
-            var hand = job.Saved;
+            var hand = !job.Character.IsNone && handleOf?.Invoke(job.Character) is { IsNull: false } target ? target : job.Saved;
             if (job.Site is { } id)
             {
                 hand = sites.Find(id) is { } site && buildings.TryGetValue(BuildingKey.Of(site.Zone, id), out var state) && Hand.IsComplete(state, "handle") ? Hand.Read(state, "handle") : Hand.Null;

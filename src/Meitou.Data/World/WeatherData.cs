@@ -7,6 +7,12 @@ namespace Meitou.Data.World;
 /// <summary><c>WeatherAffecting</c> (fcs_enums.def): the direct effect of a weather or effect on characters.</summary>
 public enum WeatherAffecting { None = 0, DustStorm = 1, Acid = 2, Burning = 3, Gas = 4, Rain = 5 }
 
+/// <summary>
+/// A live local effect that acts on characters (docs/formats/weather.md "Effects on characters"): an effect unit whose EFFECT has an <c>affect type</c>, at
+/// <paramref name="Position"/>, reaching characters within <paramref name="Radius"/> (<c>effect radius</c>) with <paramref name="Strength"/>.
+/// </summary>
+public readonly record struct WeatherAffectZone(Vector3 Position, float Radius, WeatherAffecting Affect, float Strength);
+
 /// <summary>The biome ambience of a region (fcs_enums.def `Ambience`; each names an `SFX_Amb_<name>.bnk`).</summary>
 public enum Ambience { Ashlands, Boneyard, Canyons, Coast, Desert, Forest, Jungle, Plains, Swamplands, Tarsands }
 
@@ -188,6 +194,10 @@ public sealed record RegionDef
     public Ambience Ambience { get; init; } = Ambience.Desert;
     /// <summary>The region's music (BIOME_GROUP `music`, default None).</summary>
     public BiomeMusic Music { get; init; } = BiomeMusic.None;
+    /// <summary>BIOME_GROUP <c>acidic ground</c> (0..1): the ground burns a bare-footed character's feet (docs/formats/weather.md "Effects on characters").</summary>
+    public float AcidicGround { get; init; }
+    /// <summary>BIOME_GROUP <c>acidic water</c> (0..1): the water burns a character swimming in it.</summary>
+    public float AcidicWater { get; init; }
 
     public override string ToString() => Name;
 }
@@ -330,6 +340,7 @@ public sealed class WeatherData
                 StrengthMultiplierMin = g.GetFloat("weather strength multiplier min", 1), StrengthMultiplierMax = g.GetFloat("weather strength multiplier max", 1),
                 Ambience = Enum.IsDefined((Ambience)g.GetInt("ambience", (int)Ambience.Desert)) ? (Ambience)g.GetInt("ambience", (int)Ambience.Desert) : Ambience.Desert,
                 Music = Enum.IsDefined((BiomeMusic)g.GetInt("music", (int)BiomeMusic.None)) ? (BiomeMusic)g.GetInt("music", (int)BiomeMusic.None) : BiomeMusic.None,
+                AcidicGround = g.GetFloat("acidic ground"), AcidicWater = g.GetFloat("acidic water"),
             });
         }
         var none = regions.FirstOrDefault(r => r.StringId == NoneRegionId) ?? regions.FirstOrDefault(r => r.Name == "NONE" && r.Index == 0) ?? MakeNone(defaultWeather, daysPerYear);

@@ -54,6 +54,16 @@ public sealed class CharacterCold
     public int Role { get; set; }
     /// <summary>Seconds left that a follower blocked on its way straight to its slot takes paths (<see cref="MovementSystem.FollowPathSeconds"/>).</summary>
     public float FollowPathTime { get; set; }
+    /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
+    public CharacterId FollowOrder { get; set; } = CharacterId.None;
+    /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
+    public bool Guarding { get; set; }
+    /// <summary>The target a manned-turret gunner was told to shoot at (Shoot At, 235; <see cref="Combat.ShootAtOrder"/>); None: the gunner chooses. Not saved; hashed only while set.</summary>
+    public CharacterId TurretTarget { get; set; } = CharacterId.None;
+    /// <summary>The caged prisoner this character walks to free (Set Free, 110; <see cref="Locks.SetFreeOrder"/>); None: none. Not saved; hashed only while set.</summary>
+    public CharacterId Freeing { get; set; } = CharacterId.None;
+    /// <summary>The free cage this character walks to get into (Get in, 107; <see cref="Locks.GetInCageOrder"/>); null: none. Not saved; hashed only while set.</summary>
+    public string? EnteringCage { get; set; }
     /// <summary>The path being followed (world positions, the next one at <c>CharacterHot.PathCursor</c>); replaced whole in a serial phase.</summary>
     public Vector3[] Path { get; set; } = [];
     /// <summary>
@@ -94,8 +104,15 @@ public sealed class CharacterCold
     public int CrossbowShots { get; set; }
     /// <summary>The numbers of the HUD's extended lines, refreshed by <see cref="BodySystem"/> every tick (display only: not hashed, not saved).</summary>
     public ExtendedStats Extended { get; set; }
-    /// <summary>The race, stats and medical state (null for animals and anything without a race record): see <see cref="BodySystem"/>.</summary>
+    /// <summary>The race, stats and medical state (null for anything without a race record): see <see cref="BodySystem"/>.</summary>
     public Meitou.Data.Gameplay.Bodies.RaceData? Race { get; set; }
+    /// <summary>
+    /// An animal's ANIMAL_CHARACTER fields (null for people), set with its body. Its age (the original's <c>CharacterAnimal+0x700</c>) is <see cref="Bodies.CharacterStats.Scale"/>;
+    /// <see cref="BodySystem"/> grows it (docs/game/animals.md "Ageing").
+    /// </summary>
+    public Meitou.Data.Gameplay.Bodies.AnimalData? Animal { get; set; }
+    /// <summary>The age an animal's drawn size was last refreshed at (the original's <c>+0x6fc</c>): the size the renderer shows is lerp(this, scale min, scale max). Follows from the age: not hashed.</summary>
+    public float ShownAge { get; set; } = 1;
     /// <summary>
     /// The bolts stuck in the character (docs/game/combat.md "Bolt visuals"): shown on their bones until first aid has nothing left to bandage. A visual: not hashed, not saved
     /// (the original keeps them in its appearance only).
@@ -113,16 +130,28 @@ public sealed class CharacterCold
     /// <summary>The water state 0..3 (<see cref="Meitou.Simulation.Bodies.Speed.WaterState"/>) <see cref="MovementSystem"/> found at the character's position, and its swim speed (<see cref="Meitou.Simulation.Bodies.Speed.Swim"/>) <see cref="BodySystem"/> keeps up to date. Derived each tick: not hashed, not saved.</summary>
     public byte WaterState { get; set; }
     public float SwimSpeed { get; set; }
+    /// <summary>
+    /// The weather acting on the character (the original's animation holder <c>+0x198</c> / <c>+0x1a0</c>, docs/formats/weather.md "Effects on characters"): its kind, the
+    /// region's strength s and the worn protection from it, set by <see cref="WeatherSystem"/> while it is exposed and not immune; None otherwise. Sight and hearing read them.
+    /// Derived each tick: not hashed, not saved.
+    /// </summary>
+    public Meitou.Data.World.WeatherAffecting Weather { get; set; }
+    public float WeatherStrength { get; set; }
+    public float WeatherProtection { get; set; }
+    /// <summary>
+    /// The status notice a player character's weather update put up this tick (the original's short status string, Character <c>+0x548</c>, cleared at the start of every weather update and set when the
+    /// effect hurt it, docs/formats/weather.md "Effects on characters") and the protection it shows. Derived each tick: not hashed, not saved.
+    /// </summary>
+    public WeatherNotice WeatherNotice { get; set; }
+    public float WeatherNoticeProtection { get; set; }
     /// <summary>Where the last blood decal of its trail was left, and the drip build-up while it bleeds being carried (<see cref="BodySystem"/>, docs/game/blood-decals.md). Display only: not hashed, not saved.</summary>
     public System.Numerics.Vector3 BloodMark { get; set; }
     public float BloodDrip { get; set; }
     /// <summary>Burst by a fatal hit in luckyren Mode (<see cref="World.Luckyren"/>): the blow's direction (X/Z); <see cref="BodySystem"/> removes it at the end of the tick. Not saved.</summary>
     public System.Numerics.Vector2? Burst { get; set; }
-    /// <summary>What it carries (null for animals and anything without a race): <see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
+    /// <summary>What it carries (null for anything without a race; an animal's grid is its <c>inventory w</c> x <c>inventory h</c>, its luggage on the backpack slot):<see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
     public Meitou.Simulation.Items.Inventory? Inventory { get; set; }
-    /// <summary>The tick from which a hungry NPC without food may be given a ration again.</summary>
-    public long NextProvisionTick { get; set; }
-    /// <summary>The tick it died at (-1: alive); the corpse is removed 12 game hours later.</summary>
+    /// <summary>The tick it died at (-1: alive); the corpse decays 12 game hours later (<see cref="BodySystem.SlowWorld"/>, which holds the clock back while it is carried or held).</summary>
     public long DiedTick { get; set; } = -1;
     /// <summary>Where the character came from in a loaded save, with the saved stats and medical state (null for a character the game made itself); see <c>Meitou.Simulation.Saving</c>.</summary>
     public Saving.SavedCharacterLink? Save { get; set; }
@@ -132,6 +161,10 @@ public sealed class CharacterCold
     public float FootprintRadius { get; set; }
     /// <summary>The character is in a fight (set by the combat system): the animation stance takes the combat clips.</summary>
     public bool InCombat { get; set; }
+    /// <summary>
+    /// The key of the turret the character mans this tick (set by the combat system's serial step, docs/simulation.md "Combat", turrets; null: none). Derived every tick; not saved, not hashed.
+    /// </summary>
+    public string? Gunning { get; set; }
     /// <summary>A fighter running at its target out of the combat stance (set by the <see cref="PursuitSystem"/>, docs/game/combat.md "Combat stance").</summary>
     public bool CombatRunning { get; set; }
     /// <summary>Seconds the fighter's target has been moving away out of a fight (the <see cref="PursuitSystem"/>'s fleeing check).</summary>
@@ -183,6 +216,11 @@ public sealed class CharacterCold
     /// (hand-made in tests). The crime rules read it (who is police, who may loot, who can be booked); not hashed, it follows from the record.
     /// </summary>
     public Meitou.Data.Gameplay.FundamentalType NpcClass { get; set; }
+    /// <summary>
+    /// CHARACTER <c>faction importance</c> (the game's <c>Character+0x41c</c>, read by <c>FUN_14062b210</c>): how much a deed against it moves its faction's relations
+    /// (<see cref="FactionDeeds.Weight"/>); 0 without a CHARACTER record. Set from the record at spawn, so not hashed.
+    /// </summary>
+    public float FactionImportance { get; set; }
     /// <summary>The character's bounties by faction (null: none ever); <see cref="Crime.CrimeSystem"/>, serial phases only. Hashed only while set.</summary>
     public Crime.BountyLedger? Bounties { get; set; }
     /// <summary>A crime nobody has booked yet (null: none); <see cref="Crime.CrimeSystem"/>, serial phases only. Hashed only while set.</summary>
@@ -234,16 +272,32 @@ public sealed class CharacterCold
     public string? PickingLock { get; set; }
     /// <summary>The door this character is bashing in (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
     public string? Bashing { get; set; }
+    /// <summary>Whether <see cref="Bashing"/> was ordered by the player (Smash, 226) rather than found by the pursuit: the basher then needs no attack target. Hashed with <see cref="Bashing"/>.</summary>
+    public bool BashOrdered { get; set; }
+    /// <summary>The fixture whose lock this character cuts or breaks by order (Use Tools 285, Use Strength 286; <see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
+    public string? ForcingLock { get; set; }
+    /// <summary>How <see cref="ForcingLock"/> is forced.</summary>
+    public Locks.LockForce Force { get; set; }
     /// <summary>Game seconds since the last swing at <see cref="Bashing"/>' door (-1: walking there).</summary>
     public float BashTime { get; set; }
     /// <summary>The shackles this character is working on (<see cref="Locks.LockSystem"/>: picking, cutting; null: none). Hashed only while set.</summary>
     public Locks.ShackleJob? Shackles { get; set; }
     /// <summary>The ground item this character walks to and picks up (<see cref="Items.GroundItems"/> id, <see cref="PlayerSystem"/>; null: none). Hashed only while set.</summary>
     public int? PickingUpItem { get; set; }
+    /// <summary>The limb an animal holds in its mouth (<see cref="Items.FeedSystem.HoldInMouth"/>; null: none), eaten later by <see cref="Items.FeedSystem"/>. Hashed only while set; not saved.</summary>
+    public Items.ItemInstance? Mouth { get; set; }
+    /// <summary>The world tick at which <see cref="Mouth"/> was taken.</summary>
+    public long MouthSinceTick { get; set; }
     /// <summary>The building site the <see cref="CharacterTask.Build"/>, <see cref="CharacterTask.Dismantle"/> or <see cref="CharacterTask.DeliverMaterials"/> task works (<see cref="Construction.BuildSite.Id"/>; null: none). Serial phases only. Hashed only while set.</summary>
     public string? BuildSite { get; set; }
     /// <summary>The material delivery bar (0 to 1, filling at 0.2 per second, <see cref="CharacterTask.DeliverMaterials"/>). Hashed with <see cref="BuildSite"/>.</summary>
     public float BuildBar { get; set; }
+    /// <summary>The player building (<see cref="Construction.BuildSite.Id"/>) a <see cref="CharacterTask.FetchMaterials"/> builder takes <see cref="FetchRecord"/> from (null: none, or a ground item). Hashed with <see cref="BuildSite"/>.</summary>
+    public string? FetchSite { get; set; }
+    /// <summary>The ground item (<see cref="Items.GroundItems"/> id) a <see cref="CharacterTask.FetchMaterials"/> builder picks up (null: none). Hashed with <see cref="BuildSite"/>.</summary>
+    public int? FetchItem { get; set; }
+    /// <summary>The material record a <see cref="CharacterTask.FetchMaterials"/> builder fetches (null: not fetching). Hashed with <see cref="BuildSite"/>.</summary>
+    public string? FetchRecord { get; set; }
     /// <summary>The building the <see cref="CharacterTask.Operate"/> task works (<see cref="Construction.BuildSite.Id"/>; null: none). Serial phases only. Hashed only while set.</summary>
     public string? OperateSite { get; set; }
     /// <summary>The progress (0 to 1) of the <see cref="CharacterTask.Prospect"/> task (null: not prospecting). Serial phases only; not saved. Hashed only while set.</summary>
@@ -266,6 +320,8 @@ public sealed class CharacterCold
     public string? OperateTool { get; set; }
     /// <summary>The operator did work this tick (it plays <see cref="OperateClip"/>); derived, not hashed.</summary>
     public bool Operating { get; set; }
+    /// <summary>The whole-body clip (an ANIMATION record name) a captor holds while it works a captive standing (<see cref="Kidnap.CaptiveSystem"/>: "chop down static", "eat", "medic"); null: none. Derived, not hashed.</summary>
+    public string? ActionClip { get; set; }
 }
 
 /// <summary>
@@ -454,7 +510,6 @@ public sealed class CharacterTable
             hasher.Add((int)k.DrawnWeapon);
             BodyHash.Add(ref hasher, k.Stats, k.Medical);
             if (k.Inventory is null) hasher.Add(-1); else k.Inventory.Hash(ref hasher);
-            hasher.Add(k.NextProvisionTick);
             hasher.Add(k.DiedTick);
             hasher.Add(k.InCombat);
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
@@ -477,6 +532,10 @@ public sealed class CharacterTable
             // The AI's decision and the trade hold add to the hash only while set, so worlds without AI packages hash as before.
             if (k.Ai is { } mind) { hasher.Add(0x41694D64); mind.Hash(ref hasher); }
             if (k.Engaged) hasher.Add(0x456E6761);
+            if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); if (k.Guarding) hasher.Add(0x47756172); }
+            if (!k.TurretTarget.IsNone) { hasher.Add(0x54725467); hasher.Add(k.TurretTarget); }
+            if (!k.Freeing.IsNone) { hasher.Add(0x46726565); hasher.Add(k.Freeing); }
+            if (k.EnteringCage is { } entering) { hasher.Add(0x456E7472); hasher.Add(Rng.StableHash(entering)); }   // only while set, so worlds without follow orders hash as before
             if (k.DialogueLocks is { Count: > 0 } locks)
             {
                 hasher.Add(0x4C6F6B73);
@@ -492,11 +551,17 @@ public sealed class CharacterTable
             if (k.Kidnapped) hasher.Add(0x4B64706E);
             if (k.SlaveState != 0) { hasher.Add(0x536C7653); hasher.Add(k.SlaveState); hasher.Add(k.SlaveOwner); }
             if (k.PickingLock is { } pick) { hasher.Add(0x5069636B); hasher.Add(Rng.StableHash(pick)); }
-            if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); }
+            if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); if (k.BashOrdered) hasher.Add(0x4F726473); }
+            if (k.ForcingLock is { } force) { hasher.Add(0x466F7263); hasher.Add(Rng.StableHash(force)); hasher.Add((int)k.Force); }
             if (k.Shackles is { } job) { hasher.Add(0x5368636B); hasher.Add(Rng.Key(job.Wearer)); hasher.Add((int)job.Work); }
             if (k.PickingUpItem is { } taking) { hasher.Add(0x54616B65); hasher.Add(taking); }
+            if (k.Mouth is { } mouth) { hasher.Add(0x4D6F7574); hasher.Add(Rng.StableHash(mouth.Record)); hasher.Add(k.MouthSinceTick); }
             // A builder's site, bar and the task it goes back to add to the hash only while it works one, so worlds without sites hash as before.
-            if (k.BuildSite is { } site) { hasher.Add(0x4275696C); hasher.Add(Rng.StableHash(site)); hasher.Add(k.BuildBar); hasher.Add((int)k.ResumeTask); }
+            if (k.BuildSite is { } site)
+            {
+                hasher.Add(0x4275696C); hasher.Add(Rng.StableHash(site)); hasher.Add(k.BuildBar); hasher.Add((int)k.ResumeTask);
+                if (k.FetchRecord is { } fetch) { hasher.Add(0x46657463); hasher.Add(Rng.StableHash(fetch)); hasher.Add(Rng.StableHash(k.FetchSite ?? "")); hasher.Add(k.FetchItem ?? 0); }
+            }
             if (k.OperateSite is { } machine) { hasher.Add(0x4F706572); hasher.Add(Rng.StableHash(machine)); }
             if (k.Prospecting is { } prospected) { hasher.Add(0x50726F73); hasher.Add(prospected); }
             if (k.HaulSite is { } haul) { hasher.Add(0x4861756C); hasher.Add(Rng.StableHash(haul)); hasher.Add(Rng.StableHash(k.HaulFetch ?? "")); }
@@ -507,7 +572,7 @@ public sealed class CharacterTable
                 hasher.Add(0x4A6F6273);
                 hasher.Add(k.JobIndex);
                 hasher.Add((int)k.ResumeTask);
-                foreach (var perma in k.Jobs) { hasher.Add((int)perma.Type); hasher.Add(Rng.StableHash(perma.Site ?? "")); }
+                foreach (var perma in k.Jobs) { hasher.Add((int)perma.Type); hasher.Add(Rng.StableHash(perma.Site ?? "")); if (!perma.Character.IsNone) hasher.Add(perma.Character); }
             }
         }
         hasher.Add(free.Count);

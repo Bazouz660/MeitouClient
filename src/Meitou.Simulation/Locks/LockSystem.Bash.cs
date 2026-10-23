@@ -35,14 +35,19 @@ public sealed partial class LockSystem
         {
             if (!next[s].Alive || table.Cold(s) is not { Bashing: { } doorId } c) continue;
             var door = world.Fixtures.Find(doorId);
-            if (door is null || door.DoorBroken || door.Lock is not { EffectivelyLocked: true } || c.Medical is { Incapacitated: true } || next[s].Task != (byte)CharacterTask.Attack
-                || world.Fixtures.DoorSpotOf(door) is not { } spot)
+            if (door is null || door.DoorBroken || door.Lock is not { EffectivelyLocked: true } || c.Medical is { Incapacitated: true } || (!c.BashOrdered && next[s].Task != (byte)CharacterTask.Attack) || world.Fixtures.DoorSpotOf(door) is not { } spot)
             {
                 StopBashing(table, s, c);
                 continue;
             }
             var stand = StandSpot(door, spot);
             float d = Vector2.Distance(Flat(next[s].Position), stand);
+            if (d > BashReach && c.BashOrdered)
+            {
+                // An ordered smash walks by its order's own goal; a new order (another task) ends it.
+                if (next[s].Task != (byte)CharacterTask.GoTo) StopBashing(table, s, c);
+                continue;
+            }
             if (d > BashReach)
             {
                 // Walk there (the pursuit leaves a basher alone); a failed path ends it.
@@ -59,10 +64,13 @@ public sealed partial class LockSystem
             if ((next[s].Flags & (ushort)MoveFlags.AnyPath) != 0) { next[s].Flags = (ushort)(next[s].Flags & ~(ushort)MoveFlags.AnyPath); next[s].PathCursor = 0; c.PathRequest = 0; }
             var face = new Vector2(spot.Centre.X, spot.Centre.Z) - Flat(next[s].Position);
             if (face.LengthSquared() > 1e-4f) next[s].Yaw = MathF.Atan2(face.X, face.Y);
+            if (c.BashOrdered && next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
             if (c.BashTime < 0) c.BashTime = 0;
             c.BashTime += world.TickSeconds;
             if (c.BashTime < BashSwingSeconds) continue;
             c.BashTime = 0;
+            // Each update of the task books Burglary against the door's owner (Task_BashDoor, locks.md); the pursuit's bashers book none yet.
+            if (c.BashOrdered && Crimes is not null && door.Owner >= 0 && door.Owner != c.Faction) Crimes.SetPending(world, s, Crime.CrimeCode.Burglary, door.Owner, CharacterId.None, Crime.CrimeSystem.MinTimer);
             if (Hit(door, c))
             {
                 world.Fixtures.Touch(door);
@@ -171,6 +179,7 @@ public sealed partial class LockSystem
     static void StopBashing(CharacterTable table, int s, CharacterCold c)
     {
         c.Bashing = null;
+        c.BashOrdered = false;
         c.BashTime = 0;
         ref var n = ref table.Next[s];
         n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);

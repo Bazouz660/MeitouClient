@@ -79,6 +79,74 @@ vtable is the RTTI class named here; the editor's enum names are matched to the 
 | 17, 26 | SIG_HANG_OUT_AT_BAR, SIG_HANG_OUT_OUTDOORS_ONLY | Package_HangAroundBar (constructor argument 0 / 1) | 33 | SIG_TIMED_CONTRACT | Contract_Timed |
 | 19 | WAR_GATHER_FORCES | Package_WarBase | 0, 2, 3, 7, 8, 9, 18, 21 | SIGNAL_NONE, SIG_AT_SAFE_TOWN, SIG_AT_HOME_TOWN, SIG_DIPLOMAT_MISSION, SIG_DEFEAT_SQUAD, SIG_HOME_OWNER_KEEP_LOCKED, SIG_RAIDING_WEAK_VILLAGES, WAR_BATTLE_MEETING | plain `AIPackage` |
 
+### Prisoner and slaver packages
+
+**Observed** (each class's vtable decompiled: slot 6 activate, 12 can start, 13 finished, 19 the class's own finder; the base `AIPackage` slot 12 is 1, slot 13 is 0).
+Meitou: [simulation, captives](../simulation.md#captives).
+
+| Class (signal) | Can start | Finished | Activate |
+| --- | --- | --- | --- |
+| `CannibalRetreatFromRaid` (1) | the platoon has a squad, the leader is not in a town of its faction (status `+0x88` town's faction), and a member carries someone (`+0x348`) | the leader is in a town of its faction | mission town = the base package's (the platoon's home town), else the nearest town of its faction (`FUN_140927bb0`) |
+| `..._nearestNest` (25) | as 1 | as 1 | always the nearest town of its faction |
+| `GoOutOnPatrol_Cannibal` (4) | not while the cages its first able member knows are all full (`FUN_1405a1ab0`); else as `GoOutOnPatrol` | as `GoOutOnPatrol` | as `GoOutOnPatrol` |
+| `Package_CannibalsAtHome` (27, a `Package_HangAroundBar` subclass) | the platoon's current town is its home town; or a town of a faction not hostile to it whose town vfunc `0x2d0(3, leader)` list is not empty (**Unknown**) | a player-owned town with town vfunc `0x298` false, else not can-start | the bar package's table pick |
+| `PrisonerGathering` (10), `_unholy` (24) | the squad is intact and slot 19 finds a prisoner: the leader's town, else the nearest town of its faction within 3062 (squared 9.375e6), not a slave camp or prison; a cage (function flag 0x100) of a faction allied to it (`FUN_1406b2630`), not player-owned, with an occupant that is not down (24: a woman or another race than the leader) | the platoon's slave list holds more than 3 x its members, or no prisoner is left | base |
+| `SlaverPrisonerShipping_Camps` (11) | the platoon's slave list is not empty | it is empty | mission town = slot 19: the nearest slave camp (type 5) of a faction not hostile to it (`FUN_140927f10`) |
+| `..._AnywhereTownsIncluded` (28) | as 11 | as 11 | a TOWN (type 2) with town flag bit 10 (`FUN_140936e60` sets the flags from the town and faction records; bit 10's meaning **Unknown**) within 0.7 x the camp's squared distance, not hostile, else the camp (`FUN_140939090`) |
+
+Slot 3 returns 4 in the base class, 1 for signals 1 and 25, 2 for `RetreatAndRefresh`, 0 for 11 and 28 (meaning **Unknown**).
+
+The goals these packages list (capture 167, carry 168, work the slaves 188, the slaves' own worker 189 / 190 and obedience 187) are in [ai-tasks, slave work, shout and capture](ai-tasks.md#slave-work-shout-and-capture).
+A slave's Slave role list runs through the Obedient Slave job (187): [role lists](#goal-loading).
+
+### Package classes
+
+**Verified** by code (the blackboard update `FUN_1402732b0` → slot walk `FUN_140272570`, activation `FUN_1402721a0`, the class vtables) unless marked.
+- Vtable: +0x30 start (called on activation after the old package's +0x38 end), +0x48 update (the running package, after the choice), +0x50 sees a character,
+  +0x60 can start, +0x68 finished, +0x90 may hand over to `Leads to` (base: yes; a finished package whose `Leads to` is refused fails its slot), +0x18 speed
+  mode (base 4, PassingByTownAssault 2, Refugee and DefendPlayerBase 1). Package fields: +0x8 `mission town`, +0x28 `mission target`, +0x48 `mission employer` (saved under these keys).
+- Blackboard current town (+0x138, `FUN_1402688d0`, before the choice): the leader's town, else the nearest town (any type but nest markers) whose radius
+  (`FUN_140926d50` × 1) holds the platoon; entering one sets the arrival hour (+0x140) and fires the leader's ENTER_TOWN (49).
+- **Package_HangAroundBar** (17/26): can start in its home town, or in a town not hostile to it that has bars (`vfunc 0x2d0` kind 3); finished in a player town
+  that is not `is public` (the squad not the player's) or when it can no longer start. So a bar package runs where the squad is.
+- **Package_WanderingTrader** (16): start draws the stay W = uniform[5, 8) h, state 0 and the next town with the chooser `FUN_14092c5e0` (faction = own, from the
+  platoon's position, excluding the current town, mask 0x6c: towns of type town, village, slave camp or military, or any player town; kept only when `is public`
+  (Town +0x380) or of its own faction, not hostile, not in its `no-go zones` (FactionWarMgr +0xa0); the 4 nearest by X/Z, one uniformly). Update: no town → start
+  again; in its town state 0 → 1 → 2, and when ready (`FUN_1402868c0`: in a player town that is not public at once, else W h after arriving and between
+  06:00 and 20:59) it drops its town (`FUN_140288bd0`) to draw another. Can start while state < 2 or when ready; finished at state 2. So templates with a slot-0 bar
+  package hop town to town, sitting in each town's bar 5-8 h. Unread: a leader flag (Character +0x648 → +0x70) that also lets it leave 0.2 h after being set (**Unknown**).
+- **Package_PassingByTownAssault** (29): can start when `attacks` (settings.cfg) is not 5, it is not spent (+0xb4), its leader's town is a player town whose faction it is
+  not allied with (`FUN_1406b2630`: same or relation ≥ 50), the platoon is intact, the faction's wait has passed (global map by faction `DAT_14212dde0` of
+  {last end, running}: free while one runs; a faction that never ended one is free; else more than the wait since the last end) and that town's faction has someone
+  within 2500 of it (and Town vfunc 0x2f0, +0x3b0 set, **Unknown**). Start: the wait for next time by `attacks` (`FUN_140286a70`, uniform, game hours **Observed**: 0 none, 1 [6, 48),
+  2 [32, 96), 3 [72, 144), 4 [130, 188)), the town as mission town and target, its faction the enemy (+0x100), start hour, and the enemy's people within 2500 as targets;
+  each one seen later is added and tagged squad memory 4. End: the faction's running count drops, at 0 the last-end hour is set. Finished: not intact (spent); else not
+  before 0.25 h, not while a target stands (alive, up, in the town; the town-compare polarity is **Observed**), then (spent) with at least 2 members up. May lead
+  (to the occupation): intact, no target standing, at least 2 up. Data (rebirth.mod): 33 bandit/raider templates have it at slot 1-3 with `hostile occupy town` above it.
+- **Package_OccupyTown** (30): never starts on its own (only by `Leads to`). Start: the leader's town as mission town, its faction the enemy (+0xb8, memory 4 on sight),
+  each member fires TAKEN_OVER_PLAYER_TOWN (73), the platoon made persistent if it was not (undone at the end). Update: the platoon joins the town's occupier set
+  (Town +0x118; its count +0x128 is "Hostile Occupiers:" in the town panel, `FUN_140922e60`). End: removed from the set, "{1} squad has been removed from {2}"
+  (faction, town). Finished: the town gone (vfunc 0x2f0 false), or no member alive and up in it (`FUN_140289180`) for more than 4 of its timer (`DAT_142133794` per
+  call, read as seconds, **Observed**). No ownership change: the town stays the player's. `campaign victory occupy town` sits only in an unread `victory AI leader`.
+- **Package_Refugee** (22, 4 templates: the Bandit Raiders roamers, Black Dragon and the two White Eyebrow camp squads; all list it beside patrol/bar/assault/occupy packages, at slot 0 or 2; goals
+  215 TRAVEL_TO_TARGET_PACKAGE to the mission, 15, 22, 127 RUN_AWAY_HOMETOWN, 36). **Verified** by decompile (vtable `Package_Refugee` 0x1416adf38; the package's +0x88 is its platoon):
+  - Can start (`FUN_140288ed0`): the home town's vfunc 0x288 (`TownBase +0xe0 → +8`, meaning **Unknown**, read as destroyed), or the platoon's leader is a slave
+    (the status object at Character +0x1a0, its first int = `slavestate` 1 slave / 2 escaped, `FUN_1405c8aa0`; [carry-loot](carry-loot.md#unknowns)) and its squad (platoon +0x1d8 → +0x58) has fewer than 3 members.
+  - Start (`FUN_140287760`): platoon +0x115 cleared (not persistent), flag `broken` (+0xb0) = the platoon is not intact (`FUN_1407ac7b0`), mission target cleared, mission town = the nearest town of the platoon's
+    faction other than its home (`FUN_140927ad0`, X/Z), and with the home destroyed the platoon is re-homed there (`FUN_1407ec8d0`).
+  - Update (`FUN_14028d190`; only for a broken one): with no target it takes the nearest other platoon of its faction in its 4608-wide grid cell (`FUN_1408f56b0`/`FUN_1408f60f0`) that is intact and
+    has more than 2 members (`FUN_1407ec0c0`: `FUN_1407ac7b0` and platoon +0xa4 > 2) as mission target (type 1 handle); the travel goal walks there; within 1000 (squared 1e6 `<`) of the target
+    every member of its squad is added to the target's squad (squad vfunc 0x10), a target running the same package id forgets its own mission target, and the platoon is removed from its faction
+    (`FUN_1406ba9d0`). A target that no longer resolves is cleared.
+  - Finished (`FUN_140288f80`): the leader's current town (`+0x1a0 → +0x88`) is the mission town (**Observed**: the second argument of the handle compare `FUN_140594440` is not in the decompile).
+  Meitou (`AiSystem.Packages.cs`, exercised by a throwaway test, not kept): as decoded for AI-run squads (a squad of a roaming platoon is not AI-run), counting living members for both counts, searching the AI-run squads of the
+  faction in the same grid cell; the merge is `SquadManagement.Merge`. Not built: the destroyed-home half (Meitou towns are never destroyed), persistence.
+- **Campaign_DefendPlayerBase** (31): start: the player town nearest its platoon (`FUN_140927f10`) as mission town; finished when its employer turned on it (+0xa8) or the
+  blackboard's contract time (+0x218) has passed; sees the town faction as allies (memory 3); its end posts "Contract with {faction} has ended." / "has been
+  terminated." when its employer is the player's. Only as a campaign's `pt2` package (the campaign drives it).
+- **Package_WarBase** (19) / **Package_WarAssault** (20, 32): finished when the platoon is out of its campaign; no update of their own (the campaign drives them,
+  [campaigns](factions-squads-towns.md#campaigns)).
+
 ### Goal loading
 
 1. A package is activated (`FUN_1402721a0`), which clears the Blackboard's role lists 0, 1, 2 and 4 (list 3 is not cleared), marks the

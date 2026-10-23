@@ -43,6 +43,8 @@ public enum RngPurpose : uint
     BloodTrail = 21,
     /// <summary>luckyren Mode: where a burst character's gear falls (<see cref="BodySystem"/>).</summary>
     Luckyren = 22,
+    /// <summary>A <c>malnourished</c> squad's hunger floor (<see cref="BodySystem"/>), keyed by the squad id.</summary>
+    Malnourished = 23,
 }
 
 /// <summary>

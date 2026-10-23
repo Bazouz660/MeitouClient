@@ -18,11 +18,33 @@ continuous/event gains, race factors, skill difference and moving/carrying gains
 is stored as0.75; continuous base0.02*dt, event base0.075. Caller clamps are not assumed.
 
 **Observed** effective-stat multiplier (`FUN_1406457e0`): H=lerp(h0,1,clamp(hunger-1,0,1)),
-L=lerp(l0,1,limb), m=H*L; optional pain factor lerp(p0,1,clamp(2.5*P,0,1)); output
-clamp(lerp(f0,1,m),0,1), then requested limb-item/bonus factors. P's origin is unknown;
-it behaves as tolerance, not accumulated stun. Limb aggregates: A best arm, Hd head, T lowest
-torso health fraction. Perception/friendly-fire add their stun factor. Table preserves each
-stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
+L=lerp(l0,1,limb), m=H*L; optional light factor lerp(p0,1,clamp(2.5*P,0,1)); output
+clamp(lerp(f0,1,m),0,1), then requested limb-item/gear factors. **Verified** (decompile): P is the
+character's light level (Character +0xd8, [perception](perception.md#sight); the multiplier also sets
++0xdc, the resample request), so crafting, science, perception and crossbows suffer in the dark and a
+light of 0.4 or more costs nothing. Limb aggregates: A best arm, Hd head, T lowest torso health
+fraction. Perception/friendly-fire add the dust storm factor ([gear factors](#gear-factors)). Table
+preserves each stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
+The general stat getter `FUN_140884ac0` asks for every term; dexterity and strength readers
+(`FUN_140883a80`, `FUN_140883ba0`, ...) for all but light and dust. Meitou: `MedicalState.Light` from
+`SightMap.Light` each tick.
+
+### Gear factors
+
+**Verified** (decompile of `FUN_140887030`, the worn-gear refresh, its call to `FUN_140884370`, and the ARMOUR
+loader `FUN_140898e90`). Over the worn armour list (Character +0x4a8/+0x4b0) it multiplies the pieces' floats
+into CharStats: +0x40 `asassination mult` (assassination row), +0x44 `dexterity mult` (dexterity row), +0x48
+`damage output mult` (katana, sabres, hackers, heavy, blunt rows; used only when not 1 and above 0), +0x50
+`ranged skill mult` (crossbows and friendly fire rows), +0x38 `dodge mult`, +0x3c stealth (the backpack's +0x248
+times each piece's `stealth mult`), +0x4c `fist injury mult`; sums `perception bonus` (+0x30), `unarmed bonus`
+(+0x2c) and the attack/defence bonuses. With no armour and no backpack (inventory section 12) dodge and
+dexterity are 1.1 and stealth 1.2 (literals at `14169bb44`, `1416852f0`). The stun row factor `FUN_1406439f0`
+is the dust storm: lerp(1, 0.5, v) while medical +0x148 = 1, v = medical +0x14c = the storm strength x (1 -
+the gear's protection), clamped 0..1 (`FUN_140648ef0`, which also posts "You are in a dust storm, it affects
+your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` (no gear stealth term; the dust value is `MedicalState.DustStatFactor`,
+[weather](../formats/weather.md#effects-on-characters)); crossbow and assassination skills take their factor in `CombatSystem.Eff`,
+dexterity and damage output stay applied by the combat formulas (`DexterityMult`, `DamageOutput`, the latter
+to the whole packet where the original scales the weapon skill: **Observed** difference, not changed).
 
 ## Hunger, blood and parts
 
@@ -30,20 +52,48 @@ stat row; fall-through matters. Limb-item product includes0.66 if either arm dis
 **Observed** tick: T=starvation-time*HungerTime (base60 hours per level). Empty stomach drains
 dt/T*rate; fed stomach converts buffer into hunger, capped3. Rate includes race, rest/KO/dead
 bed factor0.33, active encumbrance factor and situation terms. Zero hunger-rate races do not
-starve; robot flag alone does not imply zero rate. Food nutrition/auto-eat semantics remain
-partly unknown. Starvation KO threshold uses toughness10..85 and doubles with food;
+starve; robot flag alone does not imply zero rate. Eating: [Eating](#eating); NPCs' free food:
+[Free food](#free-food). Starvation KO threshold uses toughness10..85 and doubles with food;
 actual transition timing is not fully decoded.
 
 Medical parts retain flesh h, bandage b, stun s, wear w, maximum M and hit/rig/replacement state.
 Effective part health, coverage/hit choice and body aggregates are distinct. Apply blunt/cut,
 bandaging and stun to the correct quantities; do not heal untreated flesh directly.
-**Observed** part tick uses0.05*dt: untreated fraction D=clamp(((M-h-b)*100/M-20)/70,0,1),
-quarter if h+b>0. Degeneration is0.05*dt*bodypart-rate*ChanceOfDeath*degMult*D*1.2,
-degMult lerps1.7..0.03 by toughness. Non-vital robot limbs/bed rest suppress it. Treated healing
-moves min(b,0.05*dt*heal-rate*R) from b to h; self-healing converts untreated to treated at0.4
-rate while alive/conscious. Robotic factor250 location is unknown. Stun decays to0; repair
-converts wear to treated damage. Blood capacity, bleeding and robot/organic differences are
-scoped in the retained constants/expressions.
+
+### Time
+
+**Verified** (decompile): the character adds `DAT_142133794` (real seconds x game speed, [game-loop](game-loop.md#the-three-time-values))
+to Character +0xc8 every frame (`FUN_1405c7ae0`, `FUN_1405cfd90`); `FUN_1405c7d40` hands the sum to the medical update
+`FUN_140652000` and clears it. So part, blood, clot and KO-timer rates are per second of that time (a game hour is 1200/11 of them).
+Hunger instead reads the game clock's elapsed time (`FUN_14064da70` via `FUN_140791ca0`). Meitou: `MedicalState.Tick(TickSeconds)`.
+
+### Part tick (`FUN_14064f5c0`, **Verified** decompile)
+
+In order, per part: the hit multiplier falls 0.01 a second while h >= 0 (reset to 1 below). Self healing (RACE, conscious, alive,
+h - s < M - b) adds 0.05 dt `heal rate mult` R 0.4 to b and skips degeneration that tick; otherwise, while h < M and h > -3M,
+h -= 0.05 dt `bodypart degeneration rate` ChanceOfDeath degMult D 1.2 with D = clamp(((M-h-b)100/M - 20)/70, 0, 1), quartered
+when h + b > 0; degMult lerps 1.7..0.03 by toughness and is 0 for a non-vital robotic part (robot race or limb replacement)
+and in any bed. Healing: while h < M, b > 0 and the limb is not crushed (state 3), min(b, 0.05 dt `heal rate mult` R), x250
+on a robotic part, moves from b to h. R = M/100 x the organic rate (robotic for a robot race or a replacement); a stump
+(state 1) has base HP 5 and R = 2 x the organic rate without M/100. Repair (a repair bed) moves 0.05 dt `resting heal rate
+mult` x its rate from w into b. Rig is held under 50 - (h - s); s falls 0.05 dt `stun recovery rate` `heal rate mult` R.
+
+### Beds (`FUN_140652000`, **Verified** decompile)
+
+Character state 1 (in something): degeneration 0 for every part. A BF_BED (6) scales the organic rate by the Building's
++0x3c0 = `output rate` x the functionality's `production mult` x the research production multiplier (`FUN_140297b30`; base
+data: Bed 8, Camp Bed 4, Fish Bed 2, Old Bed 1); a BF_SKELETON_BED (25) the robotic rate and the repair rate by that value
+times a slot 0x368 of its slot-0x300 object (**Unknown**, taken as 1). Blood recovers x `resting heal rate mult` only in
+state 1; hunger takes `bed hunger rate` in state 1 or KO or dead. State 2 (held in a cage) doubles the organic rate; a
+third x2 (both rates) needs a character slot 0x248 that returns 0 for `Character` and `CharacterHuman` (**Unknown** which class).
+Meitou: `BodySystem.BedOf`, the bed fixture a character is held in (`BedSystem`) or an AI sleeps at.
+
+### Blood and KO
+
+**Verified** (decompile): wounds lose `bleeding clot rate` x0.1 a second (`FUN_140646140`); a hit opens one of strength
+max(cut, pierce) x `bleed rate` x0.1 x scale (`FUN_1406508d0`). Bleeding = (`extra blood loss from bodyparts` x stumps
+(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`; blood falls by it a second and, with no bleeding,
+recovers `blood recovery rate` x0.1 x race `heal rate` a second. The KO timer +0xa0 falls by dt.
 
 **Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
@@ -82,8 +132,8 @@ counts as health in the fraction, the down (h-s+rig<0) and sever tests, so a spl
   rig<cap gets rig+=lerp(1,15,t)*medic speed mult*dt, clamped to s+b and cap; so only bandaged or stunned damage can be splinted.
   The kit drains like a medkit only when rig was added; medic XP (stat 9) each update. Ends when no part qualifies.
 - No time decay and hits do not touch rig. **Observed** (`FUN_14064f5c0`): once h-s+rig>50, rig=max(0, 50-(h-s)).
-- Order 249 refuses without a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (target finder `FUN_14099e240`, may pick
-  the medic itself) is not implemented; how it hands off to task 249 is **Unknown**.
+- Order 249 refuses without a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (finder `FUN_14099e240`, may pick the medic
+  itself): [perma-jobs](ai-tasks.md#perma-jobs); Meitou runs it as a splint treatment (`FirstAidSystem.SplintSomeone`).
 - Meitou: `SplintOrder` (the Treat task with `TreatSplint`), `MedicalState.NeedsSplint` / `Splint`; dt in game seconds as for first aid.
 
 ### The stat list
@@ -145,7 +195,8 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 | Event 6 | same | the same attacker-side gains as event 2 (attack/unarmed 0.25, weapon skill 0.1) but no `defence` gain (meaning of event 6 not decoded) |
 | Strength tail of every event | same | `strength` rises by `core(0.075 * 0.55 * 2*xp rate strength * map[1])` scaled x0.4 for event 2, x0.1 for event 4, and by the weapon-weight factor below; for unarmed (kind 5) the weapon-weight factor is replaced by (1 - encumbrance factor) |
 | Toughness per damage received | `FUN_1408c68e0`, called from `FUN_140666780` | 0.075 x k x `xp rate toughness` x `map[21]`; k = 0.05 normally, 0.25 for damage kind 1, 0.5 for kind 5 (kind meanings not decoded) |
-| Toughness when knocked out | `FUN_1408c6720`, `FUN_1408c6780` | flat gains (6780 scales with damage taken) |
+| Toughness when knocked out | `FUN_1408c6720` (from the part damage `FUN_14064f300` when a hit knocks out, unless its fourth argument is set) | **Verified**: core(0.075 x `map[21]`) (`DAT_142134edc` = exp gain multiplier x 0.1, set in `FUN_1408c6980`) |
+| Toughness while down (task `FUN_14033ca10`) | `FUN_1408c6780` | **Verified**: core(f x (n + 10) x 0.075 x `map[21]`), f = 1 (+1 left arm, +2 right arm, +2 blood KO, +2 medical +0xa4 < 15), n an int of the slot-0x68 object (**Unknown**); dialogue events 0x17 to 0x19. Not in Meitou |
 | Toughness from losing a limb | `FUN_14064edc0` via `FUN_1408c7310` | generic entry with dt 1, amount 300 into stat 21 (a large one-off gain) |
 | Weapon-weight strength factor | `FUN_1408838e0` / `FUN_1408839a0` | `min strength xp mult` (0.1) + clamp((weapon weight - strength x injury multiplier) / `weight strength diff 1x` (20), 0, `weight strength diff max` (1)); stored at +0x184 |
 | Strength from carrying | `FUN_1408c60c0` (from the movement tick `FUN_1408c6660`) | (1 - encumbrance factor)^2 capped at 0.5, x2 unless in state 0xb, x `xp rate strength from walking` (0.5) |
@@ -154,8 +205,8 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 | Stealth (heard check) | `FUN_1408c7330` (from hearing `FUN_140857500`) | generic entry, dt 1, amount (2 if flag a + 2 if flag b) x20 if flag c, times the exposure factor, which then x0.7; flags **Unknown**. Not modelled |
 | Lockpicking | `FUN_1408c62e0` | stat 37 gains 1.2 x `map[37]` on success, 0.24 x on failure |
 | Engineering | `FUN_1408c6250` | stat 5 gains `0.02 * dt * 0.75 * map[5] * 0.75` |
-| Medic | `FUN_1408c6130` | `dt / T * 0.75 * map[stat]`, T seconds per point from `XP rate medic 1` (15, at skill 1) to `XP rate medic 99` (150, at 99); editor text: "seconds of usage per point". The interpolation argument is hidden in the decompile (**Unknown** exact form) |
-| Mass combat | `FUN_1408c5e80` | +0x9c rises by 0.75 x 0.05 per call |
+| Medic | `FUN_1408c6130` | **Verified**: `dt / T * 0.75 * map[patient race's heal stat]` added straight to the stat (no core curve, no cap); T = lerp(`XP rate medic 1`, `XP rate medic 99`, skill x 0.01) (the ends' order from the field names; editor text "seconds of usage per point"); nothing when T <= 0 |
+| Mass combat | `FUN_1408c5e80` | **Verified**: +0x9c rises by 0.75 x 0.05 per call, straight; one caller, the answer to a slot ask `FUN_140666a30` ([combat](combat.md#attack-slots-and-circling): the asked character's, while stumbling or fighting; nothing reads the stat; not called in Meitou) |
 | Other crafting and machine skills | callers of `FUN_1408c7250` / `FUN_1408c7310` | `FUN_1408c7250(stat)` picks a per-stat base `amount` and calls the generic entry with a global float as `dt` (`DAT_142133794`, the game-speed-scaled frame time, the third time value of [game-loop.md](game-loop.md#the-three-time-values)): 0.5 by default, thievery and lockpicking 0.1, turrets 1.0, perception 3.0, farming 0.75, crossbows 1.2 (**Observed**; the farming and crossbows values come from a switch fall-through, 0.5 x 1.5 and 0.8 x 1.5). `FUN_1408c7310(stat, amount)` is the same with dt 1 |
 
 ### Effective stats: injuries and hunger
@@ -197,6 +248,74 @@ panel `FUN_14088a8f0`, the hunger term of the stat multiplier `FUN_1406457e0` an
 | 2 or above | well fed, no problem |
 | below 2, at or above 1 | stat penalty and up to half movement speed; the panel says "Hungry" when the stomach buffer is empty and "Malnourished" ("fed and slowly recovering") when there is food in it (**Observed**; the panel also needs a value at medical +0xa4 of at least 0.7, meaning not traced) |
 | below 1 | "Starving": the character passes out below a toughness-dependent point; dies at 0 |
+
+### Eating
+
+**Verified** (decompile of `FUN_1405d29c0`, `FUN_1405d0780`, `FUN_140748d70`, `FUN_1405c7f70`, `FUN_1405c9d90`,
+`FUN_14042ee50`). The character update (`FUN_1405dc650`, vtable +0x2b0) runs the auto-eat each update; there is no
+eat task, animation or player command (a right click on food does nothing, [ui-screens](ui-screens.md)).
+- **Wants food** (slot 0x340): a character of the player's faction or a slave (status +0x1a0 = 1) always,
+  anyone else below hunger 2.1. **Hungry**: wants food, stomach (+0x64) empty, hunger < 2.5.
+- **Order**: an animal (slot 0x248) eats nothing while the squad option Feed Animals (+0x114) is off. Hungry:
+  own inventory, then the worn backpack's. Else, for a character of the player's side (`FUN_140856bc0`) with
+  an empty stomach, hunger < 2.25 and Share Food (+0x115) on: the backpack of each squad member (squad order)
+  within 200 units. Knocked-out characters eat too (the status text "You have passed out from starvation. You
+  have food though...").
+- **Choice** (`FUN_140748d70`): first `item function` 15 ("Possibly Edible": raw meat) the race eats (RACE
+  `special food` lists it, or any for an animal), then 3 (food). Score: opened (charges +0x118 below full
+  +0x114) (2 - charges/full) x 1000, else full / 100; the highest wins. Death items of a living owner skipped.
+- **Bite** (`FUN_1405d0780`): n = min(charges, 300 - hunger, 50) (a limb, function 17: 30, eaten whole); the item
+  loses n and goes at 0; stomach = n / 100; "Ate {1}" floats 15 up (white, alpha 0.9); Wwise switch
+  Consume=Eat and `Character_Consume` within 200 units of the camera. The stomach then digests (hunger tick).
+- Food records do not stack (`stackable` 1 on all 15 base food items, **Verified** by probe). `vampiric`
+  (spiders, land bats, skimmers) is read only by the loader here; it concerns eating downed bodies.
+- AI slot 25 (`FUN_140597d30`, the AI's eat desire) is 1 when hungry (hunger <= 2.4), AI +0xb0 and +0xb4 not
+  above 0 and no food in the inventory; 0.1 when +0xb4 > 0 and hunger < 1.2. Which goal reads it is **Unknown**.
+- **Mouth** (**Verified**, decompile of `FUN_14034f340`, `FUN_1405d0b50`, `FUN_1405c8240`, `FUN_1405d0d20`, `FUN_1405dc650`; the attach point is the string `mouth`,
+  `FUN_141534950`). Only a **limb** (item function 17, item `+0x124`) picked up by an animal (vfunc 0x248 non-null) goes to the mouth; any other item, and a limb picked up
+  by a person, goes into the inventory (the pickup task, below). Taking it: the limb held before is let go (`FUN_1405c8240`), the new one is flagged held (`+0xd8` = 1), attached to the
+  `mouth` point and the time is stamped (`+0x6e0`). With no `mouth` attach point on the skeleton the limb is bitten on the spot instead (the same function's other branch).
+  While the mouth is full, the character update (`FUN_1405dc650`) does nothing else about food (no auto-eat, no Feed Animals check), and t = game minutes since the stamp, f = slot 0x398
+  (the age, [animals](animals.md#ageing)): an animal with f > 0.9 of the player's faction (`FACTION +0x250`) eats when the stomach (+0x4bc) is empty and hunger (+0x4b8) below 2.6, or at t > 15;
+  any other eats when the stomach is empty and t > 45, or at t > 60 + 120 x (1 - f). Eating clears the mouth, the flag, and bites the limb (whole, 30).
+  Which orders and goals send an animal to a ground limb is **Unknown** (the data's animal goals "eating food on the ground" are typed IDLE, [animals](animals.md#ai-goals)); Meitou reaches the mouth only through the player's pickup order.
+  Meitou (`FeedSystem.HoldInMouth`, `MouthDue`; `CharacterCold.Mouth`): as above. Engine choices: every animal has the `mouth` point; a held
+  limb is neither saved nor carried across a load; it goes with the animal if the animal dies or is removed.
+- Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA
+  bools `feed`, `share`, **Verified** reader `FUN_1403ebf50`; default on, **Unknown**).
+
+### Free food
+
+**Verified** (decompile of the hunger tick `FUN_14064da70` and slot 0x348 `FUN_1405c9ca0`). Each hunger tick,
+before the drain: if the character's floor (slot 0x348) is above its hunger and its stomach is empty, the
+stomach gets min(floor - hunger, 0.04). Nobody but the player has to feed anyone; NPCs hover at their floor.
+
+| Character | Floor |
+| --- | --- |
+| animal (slot 0x248), unless the byte `142133599` (next to "Bandits loot the player", no UI binding; **Unknown**) is set | 3 |
+| slave (status 1) | 1 |
+| imprisoned (+0x2f8 = 2): held by the player's faction / free / escaped slave | -10 / 2 / 1.15 |
+| player's faction | -10 (never) |
+| anyone else | its platoon's +0x110: 3, or for a SQUAD_TEMPLATE with `malnourished` 1 + 1.2 x rand (`FUN_1407ee2d0`) |
+
+Drain and digestion (same function): stomach empty: hunger -= dt/T x race rate x situation (`FUN_1408837a0`:
+bed/KO/dead `bed hunger rate`; else in combat or moving (movement +0x24) 1 + (1 - e) `encumbrance hunger
+rate`; else using a machine 0.8; else CharStats +0x178, writer **Unknown**); with food: moved = min(stomach,
+dt/T x slot 0x390 x `fed recovery rate mult` x race rate). Hunger is capped at 3 before the update. The tick
+is skipped while `DAT_142134690` +0x2f0 is set (**Unknown** flag). Meitou: `MedicalContext.HungerFloor`
+(`BodySystem.HungerFloor`; no floor in a world without data); Meitou keeps the factor 1 + (1 - e) rate when idle.
+
+### Corpses
+
+**Verified** (decompile of `CharacterHuman::vfunc_29` `FUN_1405ccd90`, game clock `FUN_14066cc00` in hours). The
+death time is set on the first update as a corpse. A corpse neither carried (+0x3d4) nor in a bed or cage
+(+0x2f8 = 0) is destroyed ("corpse decayed") once more than 12 hours have passed; while held, the death time is
+kept at least now - 6, so it lies 6 more hours once let go. A corpse whose zone is loaded but not active is
+destroyed at once ("corpse unloaded"), carried or not: the zone is the 64 x 64 grid cell of the corpse's x/z (`FUN_140a08b20`, `FUN_140a08ae0`: ZoneMap record 0x168 bytes from `+200`
+of the zone manager) and "active" is its byte `+0xb1` (`FUN_140a090b0`; `+0xb0` is a second flag, `FUN_140a090d0`). A position outside the grid is never removed. What sets `+0xb1` was not
+traced; it is read as the zone being active round a player character (**Observed**: the callers use it for "zone is live", e.g. the squad-leader pick `FUN_140792b90`).
+Meitou: `BodySystem.SlowWorld`; "active" is `World.ActiveZones`, the population's active set (the box of +-340 round each player character, [game-loop](game-loop.md)), unknown before the
+population's first look (then nothing is removed). Engine choice: the original's active set may differ from that box.
 
 ### What a body part is
 
@@ -392,14 +511,11 @@ read and at least one consumer found through the data cross-references; base val
 
 ## Unknowns
 
-- What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for,
-  and whether `dt` is exactly game hours; the unit of the KO timer.
+- What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for.
 - The per-stat floors of `FUN_1406457e0` were re-decoded from the decompile by a second reader (two rows were
-  wrong and are fixed) but still not checked against assembly; the source of the pain value at Character +0xd8,
-  and the consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
-- The situational hunger factors (a machine/building, CharStats+0x178), slot 0x348's meaning, item nutrition
-  values and how `food quality mult` composes with them.
-- Which callers feed `FUN_1408c7250` / `FUN_1408c7310` for which activity, the exact medic XP time curve (`DAT_142133794` is the scaled frame time, [game-loop.md](game-loop.md#the-three-time-values)), and the 0.1 floor / 6x cap of the skill-difference factor
+  wrong and are fixed) but still not checked against assembly; the consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
+- The idle hunger factor CharStats+0x178; whether `food quality mult` scales raw food (function 15).
+- Which callers feed `FUN_1408c7250` / `FUN_1408c7310` for which activity (`DAT_142133794` is the scaled frame time, [game-loop.md](game-loop.md#the-three-time-values)), and the 0.1 floor / 6x cap of the skill-difference factor
   (not in `FUN_1408c5fa0`; maybe clamped by its callers). Meaning of XP event 6.
 - The defaults of the new-game option block (zero in the exe image).
 - RACE `combat move speed mult`, animal CHARACTER fields.

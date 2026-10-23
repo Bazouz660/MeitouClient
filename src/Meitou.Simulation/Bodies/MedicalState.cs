@@ -5,10 +5,10 @@ namespace Meitou.Simulation.Bodies;
 
 /// <summary>
 /// A character's medical state: body parts, blood, wounds, hunger and the KO timer (docs/game/character-stats.md "Needs", "Blood and bleeding", "Body parts and
-/// injuries", "First aid"). It belongs to one character and is stepped with <see cref="Tick"/> in game hours; the world runs characters in parallel, so
+/// injuries", "First aid"). It belongs to one character and is stepped with <see cref="Tick"/> in seconds of character time; the world runs characters in parallel, so
 /// nothing here touches shared state. Randomness comes from the world's seeded rolls through the <see cref="MedicalContext"/>, with a per-character counter kept in the state.
-/// <para>Time: <c>dt</c> is game hours (<b>Observed</b>; the <c>dt * 0.05</c> factors of the original are kept as written). One simulation tick of 1/30 s is
-/// 11/36000 game hours. The KO timer counts game minutes (an engine choice read from the starvation code multiplying hours by 60).</para>
+/// <para>Time (<b>Verified</b>, docs/game/character-stats.md "Time"): <c>dt</c> is the character time, real seconds x game speed (the <c>dt * 0.05</c> factors of the
+/// original are kept as written); hunger follows the game clock in hours. The KO timer counts the same seconds.</para>
 /// Field names follow the save keys of MEDICAL_STATE (docs/formats/save.md): <see cref="Blood"/> <c>blood</c>, <see cref="Bleeding"/> <c>bleeding</c>,
 /// <see cref="Hunger"/> <c>hung</c>, <see cref="Fed"/> <c>fed</c>, <see cref="KoTimer"/> <c>KO</c>.
 /// </summary>
@@ -81,8 +81,11 @@ public sealed partial class MedicalState
         }
     }
 
-    /// <summary>The pain value P of the stat multiplier (1 = no penalty). Its source in the original is <b>Unknown</b>, so nothing drives it yet.</summary>
-    public float Pain { get; set; } = 1;
+    /// <summary>
+    /// The character's light level P that the stat multiplier's light term reads (<c>FUN_1406457e0</c> reads Character <c>+0xd8</c>, the light level of docs/game/perception.md
+    /// "Sight", <b>Verified</b>): 1 in daylight, 0 in the dark. <see cref="BodySystem"/> copies it from <see cref="SightMap.Light"/> every tick; derived, not saved.
+    /// </summary>
+    public float Light { get; set; } = 1;
 
     /// <summary>The untreated wounds' strengths, in creation order.</summary>
     public IReadOnlyList<float> Wounds => wounds;
@@ -119,11 +122,22 @@ public sealed partial class MedicalState
     /// False for an animal: the character's slot 0x250 (the humanoid stats object) is null for a <c>CharacterAnimal</c> (<b>Observed</b>, docs/game/animals.md), so the blood
     /// capacity takes s = 1 and the hit path cannot sever limbs. Set at creation; ANDed with <see cref="MedicalContext.HasStats"/>.
     /// </summary>
-    public bool HasStatsObject { get; init; } = true;
+    public bool HasStatsObject { get; private set; } = true;
     /// <summary>The character's slot-0x390 factor k (1 for humans; an animal's size, lerp(age, scale min, scale max)): the parts' HP multiplier, the blood capacity and the hunger rate.</summary>
-    public float ScaleK { get; init; } = 1;
+    public float ScaleK { get; private set; } = 1;
     /// <summary>The character's slot-0x238 factor z (1 for humans; an animal's <c>HP mult</c>): the parts' body scale and the blood capacity.</summary>
-    public float ScaleZ { get; init; } = 1;
+    public float ScaleZ { get; private set; } = 1;
+
+    /// <summary>
+    /// Makes this an animal's body (docs/game/animals.md "Body"): no humanoid stats object, size <paramref name="size"/> (slot 0x390) as the parts' HP multiplier and
+    /// <paramref name="hpMult"/> (slot 0x238) as their body scale. A save holds neither, so a loaded animal gets them here; the ageing calls it with the new size every
+    /// tick, as the original reads slot 0x390 into the parts' multiplier every tick.
+    /// </summary>
+    public void SetAnimalBody(float size, float hpMult)
+    {
+        (HasStatsObject, ScaleK, ScaleZ) = (false, size, hpMult);
+        foreach (var p in parts) (p.HpMultiplier, p.BodyScale) = (size, hpMult);
+    }
 
     /// <summary>This character's blood capacity under <paramref name="ctx"/> (its stats object and scale factors applied).</summary>
     public float Capacity(in MedicalContext ctx) => BloodCapacity(ctx.Race, ctx.Strength, ctx.HasStats && HasStatsObject, ScaleK, ScaleZ);
@@ -183,8 +197,8 @@ public sealed partial class MedicalState
     }
 
     /// <summary>The stat multiplier in [0, 1] (<c>FUN_1406457e0</c>); see <see cref="StatMultiplier"/>.</summary>
-    public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Pain | StatUse.DamageState, StatFactors? factors = null, bool exemptFromWear = false) =>
-        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? Bodies.StatFactors.None, Aggregates(exemptFromWear), Pain);
+    public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Light | StatUse.DamageState | StatUse.Stun, StatFactors? factors = null, bool exemptFromWear = false) =>
+        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? (Bodies.StatFactors.None with { Stun = DustStatFactor }), Aggregates(exemptFromWear), Light);
 
     /// <summary>The product of the fitted arm prosthetics' multipliers for a stat (1 with none).</summary>
     public float ArmItemFactor(StatsEnumerated stat) => ItemFactor(stat, legs: false);
@@ -264,6 +278,6 @@ public sealed partial class MedicalState
         return sum;
     }
 
-    /// <summary>The KO time in game minutes: <c>knockout time base</c> (20) plus <see cref="KoTerms"/>.</summary>
+    /// <summary>The KO time in seconds of character time: <c>knockout time base</c> (20) plus <see cref="KoTerms"/>.</summary>
     public float KoTime(in MedicalContext ctx) => ctx.Constants.KnockoutTimeBase + KoTerms(ctx);
 }

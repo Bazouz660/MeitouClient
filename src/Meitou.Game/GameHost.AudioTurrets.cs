@@ -1,15 +1,16 @@
 using System.Numerics;
 using Meitou.Audio;
 using Meitou.Data;
-using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Combat;
 using Meitou.Simulation;
+using Meitou.Simulation.Combat;
 
 namespace Meitou.Game;
 
 /// <summary>
-/// The turrets' movement sounds (docs/audio.md "Other world-side events"): a town turret a character stands at the gun of (<see cref="CharacterSnapshot.Turret"/>) aims at the nearest hostile character
-/// in its gun's range and its parts turn by the exe's rule in <see cref="TurretSounds"/>, which posts <c>Turret_Mvt_Start</c> / <c>Turret_Mvt_Stop</c>. Display only: nothing here is read by the simulation, and nothing draws the turn
-/// (the renderer has no rotating parts). Driven each frame from <see cref="UpdateAudio"/>.
+/// The turrets' movement sounds (docs/audio.md "Other world-side events"): a manned turret (<see cref="CharacterSnapshot.Turret"/>) turns toward the simulation's aim point by the exe's rule in
+/// <see cref="TurretSounds"/>, which posts <c>Turret_Mvt_Start</c> / <c>Turret_Mvt_Stop</c>. Display only (frame time, its own copy of the parts): nothing here is read by the simulation; the turn that is drawn is the
+/// simulation's (<see cref="UpdateTurretPoses"/>). Driven each frame from <see cref="UpdateAudio"/>.
 /// </summary>
 sealed partial class GameHost
 {
@@ -53,11 +54,12 @@ sealed partial class GameHost
     }
 
     /// <summary>
-    /// The point the gunner aims at: the nearest living, free hostile character within the gun's range, 5 units above its place (the ranged controller aims 5 up at its target; <c>FUN_140438c70</c>).
-    /// Which target the exe chooses (<c>FUN_140437f40</c>) is not traced: the nearest is an <b>engine choice</b>. Null: none (the turret keeps its last aim).
+    /// The point the gunner aims at: the simulation's aim (<see cref="MannedTurret.Aim"/>, docs/game/combat.md "Turrets"); without one (a world without the combat system's turrets) the nearest
+    /// living, free hostile character within the gun's range, 5 units above its place (<b>engine choice</b>). Null: none (the turret keeps its last aim).
     /// </summary>
     Vector3? TargetOf(CharacterSnapshot gunner, Vector3 turret, float range, IReadOnlyList<CharacterSnapshot> characters)
     {
+        if (gunner.Turret is { Simulated: true } simulated) return simulated.Aim;
         if (popData is not { } data || !data.Relations.Contains(gunner.Faction)) return null;
         CharacterSnapshot? nearest = null;
         float best = range * range;
@@ -73,34 +75,14 @@ sealed partial class GameHost
         return nearest is null ? null : nearest.Position + new Vector3(0, 5, 0);
     }
 
-    /// <summary>The mount of a turret from its records: the building's <c>scale</c>, its rotating parts, the gun's <c>aim speed</c> and <c>range</c> (fcs.def default 1000).</summary>
+    /// <summary>
+    /// The mount of a turret from its records (<see cref="TurretGun"/>): the building's <c>scale</c>, its rotating parts, the turning speed of an unharmed powered turret (<see cref="TurretFormulas.TurnRate"/>
+    /// with efficiency 1) and the gun's <c>range</c>.
+    /// </summary>
     static (TurretMount, float)? MountOf(GameDatabase db, MannedTurret post)
     {
-        if (db.Find(post.BuildingId) is not { } building || db.Find(post.GunId) is not { } gun) return null;
-        float scale = building.GetFloat("scale", 1);
-        var parts = new List<TurretPart>();
-        CollectParts(db, building, -1, Vector3.Zero, parts, 0);
-        return (new TurretMount(post.Position, post.Yaw, scale > 0 ? scale : 1, gun.GetFloat("aim speed", 1), parts), gun.GetInt("range", 1000));
-    }
-
-    /// <summary>
-    /// The parts that turn to the target (<c>rotation function</c> ROTATION_TARGET, 5), depth first like the exe's part list: each hangs from the nearest such ancestor, with the offsets of the parts between
-    /// carried along. A part whose <c>rotation axis</c> is Y yaws; any other pitches (<c>RotatingEnt::vfunc_2</c>).
-    /// </summary>
-    static void CollectParts(GameDatabase db, GameRecord holder, int parent, Vector3 carried, List<TurretPart> parts, int depth)
-    {
-        if (depth > 8) return;
-        foreach (var reference in holder.GetReferences("parts"))
-        {
-            if (db.Find(reference.TargetStringId) is not { Type: FcsRecordType.BUILDING_PART } part) continue;
-            var offset = carried + (part.GetBool("is for position marker") ? Vector3.Zero : new Vector3(part.GetFloat("offset X"), part.GetFloat("offset Y"), part.GetFloat("offset Z")));
-            if (part.GetInt("rotation function") == 5)
-            {
-                parts.Add(new TurretPart(parent, part.GetInt("rotation axis", 2) == 1, offset));
-                CollectParts(db, part, parts.Count - 1, Vector3.Zero, parts, depth + 1);
-            }
-            else CollectParts(db, part, parent, offset, parts, depth + 1);
-        }
+        if (db.Find(post.BuildingId) is not { } building || TurretGun.From(db, building) is not { } gun) return null;
+        return (new TurretMount(post.Position, post.Yaw, gun.Scale, TurretFormulas.TurnRate(1, gun.Gun.AimSpeed, gun.Damage), gun.Parts), gun.Gun.Range);
     }
 
     /// <summary>The main menu: the turrets' objects end.</summary>

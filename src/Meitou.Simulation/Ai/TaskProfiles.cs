@@ -35,6 +35,9 @@ public static class TaskProfiles
         [TaskType.STAY_IN_HOME] = new(Random, 0.2f, 0.8f, true),
         [TaskType.SIT_AROUND] = new(Random, 0.2f, 0.8f, true),
         [TaskType.SIT_ON_THRONE] = new(Special, 0.2f, 0.8f, true),
+        // Worker: AI slot 19 (1); only the pretend row commits, 0.5 + r x 2 hours (docs/game/ai-tasks.md "Desire and commitment").
+        [TaskType.AUTO_LABOURING_MINES] = new(1),
+        [TaskType.AUTO_LABOURING_MINES_PRETEND] = new(1, 0.5f, 2, true),
         [TaskType.MAN_THE_GATE] = new(1),
         [TaskType.FOLLOW_SLAVEMASTER] = new(1),
         [TaskType.BODYGUARD] = new(Special, Crowd: 0.9f),
