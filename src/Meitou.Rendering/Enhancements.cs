@@ -56,7 +56,8 @@ public static class Enhancements
         Func<bool>? stars = null, Action<bool>? setStars = null, Func<bool>? clouds = null, Action<bool>? setClouds = null, Func<bool>? cloudShadows = null, Action<bool>? setCloudShadows = null,
         Func<bool>? cloudFog = null, Action<bool>? setCloudFog = null,
         Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null, Func<bool>? characterLod = null, Action<bool>? setCharacterLod = null,
-        Func<bool>? skin = null, Action<bool>? setSkin = null, Func<bool>? interiorLamps = null, Action<bool>? setInteriorLamps = null) =>
+        Func<bool>? skin = null, Action<bool>? setSkin = null, Func<bool>? interiorLamps = null, Action<bool>? setInteriorLamps = null,
+        Func<bool>? icons = null, Action<bool>? setIcons = null) =>
     [
         new("ao", "Ambient occlusion", "off", "SSAO",
             () => post.Ssao, v => post.Ssao = v, "the game ships SSAO but has it disabled"),
@@ -134,6 +135,9 @@ public static class Enhancements
         new("interiorlamps", "Interior lamps", "night only", "day and night",
             interiorLamps ?? (() => false), setInteriorLamps ?? (_ => { }),
             "the game lights its ceiling lamps and other light buildings only at night, indoors too, so rooms are dim by day; Meitou keeps the lamps of buildings' interior layouts lit all day, outdoor lamps stay night-only (docs/render-lights.md)"),
+        new("icons", "Item icons", "the game's", "supersampled",
+            icons ?? (() => false), setIcons ?? (_ => { }),
+            "the game draws an inventory item's icon from its mesh with one sample a pixel (jagged edges, shimmering fine detail) and shows the pictures it saved before; Meitou draws each one supersampled 4 x 4, as the enhanced portraits, and keeps its own pictures (docs/game/ui-screens.md \"Item icons\")"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

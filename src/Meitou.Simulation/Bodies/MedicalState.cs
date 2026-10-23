@@ -137,6 +137,25 @@ public sealed partial class MedicalState
 
     // ------------------------------------------------------------------ queries
 
+    /// <summary>
+    /// Whether an arm works (the medical object's arm bytes, set every tick by <c>FUN_140649320</c> through <c>FUN_140644450</c>, <b>Observed</b>; docs/game/combat.md "Arms"):
+    /// no part whose <c>collapse part</c> has the arm's bit (4 left, 2 right) is a stump or crushed, or collapses and is down (flesh - stun + rig &lt; 0). A fitted prosthetic works.
+    /// </summary>
+    public bool ArmWorks(bool left)
+    {
+        int bit = left ? 4 : 2;
+        foreach (var p in parts)
+        {
+            if ((p.Template.CollapsePart & bit) == 0) continue;
+            if (p.Limb is LimbState.Stump or LimbState.Crushed) return false;
+            if (p.Template.Collapses && p.IsDown) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Both arms work (<see cref="ArmWorks"/>): the planner's <c>hasTwoWorkingArm</c>, which a crossbow, a heavy weapon or a polearm needs.</summary>
+    public bool BothArmsWork => ArmWorks(left: true) && ArmWorks(left: false);
+
     /// <summary>The aggregates of <c>FUN_140644e60</c>; <paramref name="exemptFromWear"/> gives the arm aggregate 1.0 (characters with the slot-0x248 object).</summary>
     public BodyAggregates Aggregates(bool exemptFromWear = false)
     {

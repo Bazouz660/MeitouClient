@@ -29,9 +29,12 @@ sealed partial class PlayerInterface
     /// <summary>The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it).</summary>
     sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null);
     Confirmation? confirmation;
+    /// <summary>The game data (<see cref="ConfigureFrontend"/>; null without it).</summary>
+    GameDatabase? gameData;
     public void ConfigureFrontend(GameDatabase? database, Func<IReadOnlyList<SaveSlot>> enumerate, string creditsText)
     {
-        starts = database is null ? [] : NewGameStart.LoadAll(database);
+        gameData = database;
+        starts =database is null ? [] : NewGameStart.LoadAll(database);
         startIndex = Math.Max(0, starts.ToList().FindIndex(s => s.Name == NewGameStart.DefaultName));
         saveSlots = enumerate;
         // As the title reads data/credits.txt (FUN_14013d680, docs/game/ui-screens.md "Credits"): empty lines dropped, a "-" line a blank one, each line ended.

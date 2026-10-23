@@ -229,6 +229,17 @@ passable parts. The shooter is skipped (`FUN_1400cd0b0`). Meitou: the simulation
 from the posed muzzle) and tests the terrain and the buildings' collision (`SolidHits`; no foliage); the renderer draws a new bolt from the shooter's posed
 muzzle and closes the gap to its simulated flight over 150 units (`GameHost.LaunchBlend`).
 
+### Arms
+
+**Observed** (decompile and disassembly). The medical object (Character +0x458) holds two arm-usable bytes, right +0x5bd and left +0x5be, set every tick
+(`FUN_140649320`): an arm is out when a part whose `collapse part` has its bit (2 right, 4 left) is a stump or crushed, or is down (flesh - stun + rig < 0;
+`FUN_140644450`); an original or fitted prosthetic limb passes. Planner conditions 38 `hasOneWorkingArm` (either) and 161 `hasTwoWorkingArm` (both;
+`FUN_140998470`, `FUN_1409984d0`). Weapon categories 3 Heavy, 6 Bow (every crossbow, `FUN_140898c90`) and 8 Polearms need both arms; the rest only the right
+(`FUN_1409991d0`, weapon choice `FUN_1405c97a0`). Without both, the shooting gate (`FUN_1407f2840`) fails: attack orders stay melee (`FUN_1407f9e20`) and the
+Shooting tasks 262/263/266 (condition 161) are not planned; losing an arm puts a held two-arm weapon away (`FUN_1405cc230`). Melee (`FUN_140345c10`): right arm
+out, unarmed; only the right arm, the `hip` weapon; both, the `back` one may be drawn. Meitou: `MedicalState.ArmWorks` (also carrying and swimming); the
+crossbow needs both arms (`CombatSystem` ranged switch) and the planner conditions read them; the melee draw rule and Heavy/Polearm need are not built.
+
 ### Unknowns of the ranged path
 
 The ranged-or-melee switch; what sets the trigger flag (the time between the decision and the shot); the reload animation against the timer; a character's hit shape

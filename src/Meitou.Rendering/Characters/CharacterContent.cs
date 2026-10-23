@@ -107,6 +107,10 @@ internal sealed class PartMaterial
     public bool HasShirtColour;
     public Vector4 HairAlpha, HairMult, BeardAlpha, DiffuseChannel = new(1, 0, 0, 0), AlphaChannel = new(1, 0, 0, 0), Colour1, Colour2;
     public float AlphaThreshold;
+    /// <summary>An item's gloss multiplier (an icon's material <c>specular mult</c>, rtticons.hlsl's <c>glossMult</c>); 1 for the others.</summary>
+    public float GlossMult = 1;
+    /// <summary>An icon whose mesh has vertex colours: they multiply the albedo (the game's <c>RTTIcons_Coloured</c>).</summary>
+    public bool VertexColoured;
     /// <summary>The body's normal blend weight towards <see cref="CharacterShaders.SlotBlendNormal"/> (the original's <c>muscleBlend</c>).</summary>
     public float MuscleBlend;
 }
@@ -244,22 +248,26 @@ internal sealed class CharacterContent : IDisposable
     readonly ConcurrentDictionary<(string Path, int Bones, bool Close), Lazy<Prepared>> prepared = new();
 
     /// <summary>The preparation of a mesh, made once (any thread; the first caller's level settings stand).</summary>
-    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false) =>
-        prepared.GetOrAdd((path.ToLowerInvariant(), boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close)));
+    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false, bool icon = false) =>
+        prepared.GetOrAdd((path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close, icon)));
+
+    /// <summary>The bone count an icon's mesh is kept under (<see cref="prepared"/>, <see cref="meshes"/>): its tangents are built the icon shader's way (<see cref="Model.Build"/>).</summary>
+    const int IconBones = -2;
 
     /// <summary>Reads a mesh file and makes its levels and index buffers (no GPU work, any thread): with its skinning weights for a skeleton of <paramref name="boneCount"/>
     /// bones (null: unskinned); its generated levels start <paramref name="lodScale"/> times farther than the rule gives. A <paramref name="close"/> mesh (the character editor's
     /// close-up) keeps only its full level: generating the others is nearly all of the time a mesh takes (a hair 1 to 2 s), and the editor shows one character up close.</summary>
-    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close)
+    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close, bool icon = false)
     {
         var messages = new List<string>();
         try
         {
             var mesh = OgreMeshReader.ReadFile(path);
-            var model = Model.Build(mesh, boneCount, gameBinormals: true);
+            var model = Model.Build(mesh, boneCount, gameBinormals: !icon, tangentSign: icon);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
             if (limbs is not null) MarkLimbs(model, limbs);
-            MarkCurvature(model);
+            // Not an icon's: its colour is the mesh's own vertex colour (CharacterShaders.VertexColoured), and icons take no skin.
+            if (!icon) MarkCurvature(model);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
             var centre = mesh.Bounds is { } b ? (b.Min + b.Max) / 2 : model.Center;
             float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius, fileRadius = radius;
@@ -299,11 +307,11 @@ internal sealed class CharacterContent : IDisposable
     }
 
     /// <summary>A mesh by file, uploaded the first time: prepared here unless a worker has done it (<see cref="Fetched"/>), or after waiting for the worker preparing it.</summary>
-    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false)
+    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false, bool icon = false)
     {
-        var key = (path.ToLowerInvariant(), boneCount ?? -1, close);
+        var key = (path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close);
         if (meshes.TryGetValue(key, out var cached)) return cached;
-        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close).Value;
+        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close, icon).Value;
         prepared[key] = new Lazy<Prepared>(Uploaded);
         Messages.AddRange(messages);
         return meshes[key] = ready is null ? null : Upload(ready);
@@ -334,6 +342,34 @@ internal sealed class CharacterContent : IDisposable
         return new LoadedMesh(gpuMesh, ready.FirstMaterialName, ready.Centre, ready.Radius, ready.Morphs, ready.ShadowDistances, ready.ShadowFirst, ready.PickBoxes,
             ready.FileDistances, ready.FileFirst, ready.FileRadius);
     }
+
+    /// <summary>
+    /// Whether the mesh <see cref="BuildIcon"/> draws <paramref name="item"/> with is read (so building it only uploads): the first call starts reading it on a worker, and the
+    /// answer is false until that is done. True too when there is no mesh (<see cref="BuildIcon"/> reports it). Render thread.
+    /// </summary>
+    public bool IconMeshReady(GameRecord item)
+    {
+        // Asked again every frame while it waits: the first answer's reading is kept by item.
+        if (iconReads.TryGetValue(item, out var started)) return started is null || started.IsValueCreated;
+        string field = ItemIconStyle.MeshOf(item);
+        if (field.Length == 0 || FindMesh(field) is not { } path || meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true))) { iconReads[item] = null; return true; }
+        var lazy = Prepare(path, null, 1, false, LodPixelsPerRadian, close: true, icon: true);
+        iconReads[item] = lazy;
+        if (lazy.IsValueCreated) return true;
+        if (iconFetches.Add(path.ToLowerInvariant()))
+            BackgroundWork.RunUrgent(() =>
+            {
+                try { _ = lazy.Value; }
+                catch (Exception) { }   // a file that cannot be read: BuildIcon meets it again on the render thread and reports it
+                return true;
+            });
+        return false;
+    }
+
+    /// <summary>Icon meshes whose reading has been started on a worker (<see cref="IconMeshReady"/>).</summary>
+    readonly HashSet<string> iconFetches = [];
+    /// <summary>The reading <see cref="IconMeshReady"/> waits on, by item (null: nothing to wait for).</summary>
+    readonly Dictionary<GameRecord, Lazy<Prepared>?> iconReads = new(ReferenceEqualityComparer.Instance);
 
     readonly Dictionary<CharacterAppearance, Task> fetching = [];
     int fetchesRunning;
@@ -382,7 +418,7 @@ internal sealed class CharacterContent : IDisposable
     {
         closeUp.Clear();
         foreach (var (key, lazy) in prepared)
-            if (key.Close && !(lazy.IsValueCreated && ReferenceEquals(lazy.Value, Uploaded))) prepared.TryRemove(key, out _);
+            if (key.Close && key.Bones != IconBones && !(lazy.IsValueCreated && ReferenceEquals(lazy.Value, Uploaded))) prepared.TryRemove(key, out _);
     }
 
     /// <summary>Whether a mesh file has been prepared (for any skeleton), as a close-up or with its levels.</summary>
@@ -762,13 +798,14 @@ internal sealed class CharacterContent : IDisposable
     {
         string field = ItemIconStyle.MeshOf(item);
         if (field.Length == 0 || FindMesh(field) is not { } path) { Messages.Add($"icon mesh not found: {field}"); return null; }
-        // The level the icon is drawn at is the first: the generated ones start far out.
-        var loaded = Mesh(path, null, float.MaxValue / 4);
+        // Only the full level: an icon is drawn once, up close (generating the others is nearly all of a mesh's preparation).
+        var loaded = Mesh(path, null, close: true, icon: true);
         if (loaded is null || loaded.Gpu.Parts.Count == 0) return null;
-        var m = new PartMaterial { Shading = CharacterShaders.ShadeItem };
+        var m = new PartMaterial { Shading = CharacterShaders.ShadeItem, VertexColoured = loaded.Gpu.Parts[0].HasColours };
         if (spec is not null)
         {
             m.Description = $"icon {spec.Type} '{spec.Name}'";
+            m.GlossMult = spec.GetFloat("specular mult", 1);
             m.Tex[CharacterShaders.SlotDiffuse] = Texture(Tex(spec, "texture map"), false);
             m.Tex[CharacterShaders.SlotNormal] = Texture(Tex(spec, "normal map"), false);
             m.ClipOnNormalAlpha = Tex(spec, "normal map") is not null;
@@ -778,8 +815,9 @@ internal sealed class CharacterContent : IDisposable
                 m.Description += $", dye '{dye.Name}'";
                 m.Tex[CharacterShaders.SlotColourMap] = Texture(Tex(spec, "color map"), false);
                 m.Dyed = true;
-                m.Colour1 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 1")), spec.GetFloat("paint factor 1"));
-                m.Colour2 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 2")), spec.GetFloat("paint factor 2"));
+                // The icon's dye has no paint factor: the game's colour alpha is the COLOR_DATA's top byte, 0 in every record.
+                m.Colour1 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 1")), 0);
+                m.Colour2 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 2")), 0);
             }
         }
         else

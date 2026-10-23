@@ -37,8 +37,10 @@ public sealed class ItemIcons(GameDatabase database, Func<string, string?> resol
         if (database.Find(record) is not { } r) return default;
         if (Renders(r))
         {
-            string colour = ColourOf(database, r, MaterialOf(database, r, material))?.StringId ?? "";
-            if (cache.Find(record, material, colour) is { } saved) return new(ItemIconSource.File, saved);
+            var spec = MaterialOf(database, r, material);
+            string colour = ColourOf(database, r, spec)?.StringId ?? "";
+            // An item with no material of its own is drawn with its first; Meitou's saved pictures are named by that one.
+            if (cache.Find(record, material.Length > 0 ? material : spec?.StringId ?? "", colour) is { } saved) return new(ItemIconSource.File, saved);
             return ItemIconStyle.MeshOf(r).Length > 0 ? new(ItemIconSource.Render, Colour: colour) : default;
         }
         if (StaticIconOf(r) is { Length: > 0 } icon && resolve(icon) is { } file) return new(ItemIconSource.File, file);
@@ -136,15 +138,18 @@ public sealed class ItemIconCache
 {
     readonly Dictionary<string, List<(string Material, string Colour, string Path)>> byItem = new(StringComparer.Ordinal);
 
-    /// <summary>Indexes the PNGs of <paramref name="directory"/> (empty when it does not exist).</summary>
-    public ItemIconCache(string directory)
+    /// <summary>Indexes the PNGs of <paramref name="directories"/> (one that does not exist adds none); for the same ids the first directory's file is found.</summary>
+    public ItemIconCache(params string[] directories)
     {
-        if (!Directory.Exists(directory)) return;
-        foreach (string file in Directory.EnumerateFiles(directory, "*.png"))
+        foreach (string directory in directories)
         {
-            if (Parse(System.IO.Path.GetFileNameWithoutExtension(file)) is not var (item, material, colour)) continue;
-            if (!byItem.TryGetValue(item, out var list)) byItem[item] = list = [];
-            list.Add((material, colour, file));
+            if (!Directory.Exists(directory)) continue;
+            foreach (string file in Directory.EnumerateFiles(directory, "*.png"))
+            {
+                if (Parse(System.IO.Path.GetFileNameWithoutExtension(file)) is not var (item, material, colour)) continue;
+                if (!byItem.TryGetValue(item, out var list)) byItem[item] = list = [];
+                list.Add((material, colour, file));
+            }
         }
     }
 

@@ -546,7 +546,12 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     range checked; "No room for that item." or the container message; from a non-player owner "Got caught stealing." may follow); otherwise it is dropped on the ground only from the player's
     own windows or a window of a player-faction owner, else it goes back.
   - Back to origin (`FUN_14070d860`): its old cell if still free, else auto-added to that inventory, else that inventory is arranged and it is tried again, else it is dropped on the ground.
-  - Sounds: `Item_Drop`, `Sell_Item` in a trade; moving a bag into or out of the backpack slot opens or closes the bag window (`Inventory_Open` / `Inventory_Close`, `FUN_14070e120`).
+  - Sounds (**Verified**, decompile; all on the GUI object with `Inventory_Items` set from the item, `FUN_14070d230` / `FUN_14075e360`): a lift `Item_Lift` (`FUN_1407139a0`);
+    a placement `Item_Drop` (`FUN_140715560`; equipping included; a swap posts no lift); `Sell_Item` instead for any move between a trade pair, buying too; a right-click move `Item_Lift`
+    (`FUN_140713d20`; with Shift once), `Sell_Item` in a trade; a ground drop `Character_Drop_Ground`; nothing for giving to a character, a return to the origin, refusals, money becoming
+    cats or hovering. `gui_notrade` / `gui_noequip` are posted (out of range, can't afford) but are in no bank. A window made or removed posts `Inventory_Open` / `Inventory_Close`
+    (`FUN_1406e6820`, `FUN_1406e53d0`); OPEN BAG posts once more (`FUN_14070e120`). `Inventory_Items`: WEAPON and CROSSBOW by `material` (Weapon_Metal, Weapon_Wood), ARMOUR by
+    `material type`, ITEM / CONTAINER / NEST_ITEM / MAP_ITEM by `inventory sound` (0-19), LIMB_REPLACEMENT Robotic_Component.
   - Stack limits (`FUN_14075e090`, `FUN_1407466b0`): 1 for WEAPON, ARMOUR, CONTAINER, MAP_ITEM, CROSSBOW, LIMB_REPLACEMENT; else the record's `stackable` through the section: a limited
     section starts from 1; then max(value, section minimum) x section multiplier.
   - Auto-add (`FUN_14074c8b0`): tops up stacks, then the first free spot row by row from the top, left to right, in limit-sized stacks. ARRANGE (`FUN_14070f740`, `General_Click`): every
@@ -684,14 +689,27 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     fcs.def defaults: zoom 2.7, V -8, yaw 90, the rest 0; WEAPON and CROSSBOW zoom 1.0 and V 0; WEAPON H -4. The material is a clone of `RTTIcons_Coloured` (mesh with vertex colours), `RTTIcons_DXT5N`
     (one item kind, 0x11) or `RTTIcons_Base`, double sided for `material type` 2, textured from the instance's material record. Lighting (rtticons.hlsl, lightingFunctions.hlsl): one white punctual
     light along the view axis, no ambient: colour = albedo x pi x N.L x 0.6 + GGX specular (roughness 1 - 0.99 x gloss, F0 0.4), stored linearly in an 8-bit target; the background is transparent.
-    The reflection cube (`cloudy_noon.jpg`) is missing from the install, so the game's own pictures have none.
-  - **Meitou's order** (`ItemIcons.Choose`): a drawn kind takes the game's saved picture of exactly that item, material and colour (`ItemIcons.ColourOf`, below), else is drawn by `CharacterRenderer`
+    Gloss is the material's `specular mult` (default 1) x the diffuse alpha. The REFLECTION term is on, and its cube (`cloudy_noon.jpg`) is missing from the install, so it samples
+    black: the albedo is scaled by 1 - gloss^2. The specular view vector is -normalize of the world position, with the normal and light negated too (rtticons.hlsl): it points from the item's origin, not to the camera. A submesh 0 with
+    vertex colours takes `RTTIcons_Coloured`, which multiplies the albedo by them. A missing texture map is white; the dye's alpha is the COLOR_DATA top byte (0 in every record:
+    no `paint factor`); the binormal is cross(T, N) x tangent w, stored binormals ignored; the cut-out is the material's `alpha threshold` / 255 (default 128); mip bias -0.5
+    (rtticons.hlsl, rtticons.material, FUN_140846060, FUN_140841a50, **Verified** in the source and decompile; fitted against 22 saved pictures with a CPU model, mean error 3.4/255).
+  - **Meitou's order** (`ItemIcons.Choose`): a drawn kind takes the game's saved picture of exactly that item, material and colour (`ItemIcons.ColourOf`, below), then Meitou's own saved one
+    (`%LOCALAPPDATA%\Meitou\icons`, same names, emptied when its `version` file is not `GameHost.IconVersion`; an item without a material of its own is named by its first), else is drawn by `CharacterRenderer`
     (below); the other kinds take their static file, else `default_icon.png`; with nothing (or while the picture loads), the cell shows the item's name.
   - **Meitou's drawing** (`CharacterRenderer.Icons.cs`, `ItemIconStyle`): the item's mesh through the character shader's item mode with the lighting above (a negative `FogDistance` in the view
     constants selects it), into its own UNORM texture, drawn each frame until the textures it uses are resident, then kept (rows bottom first like every target: shown with `ImageFlipV`).
-    Against six saved pictures (test `Icons_drawn_from_the_mesh_cover_the_same_part_of_the_picture_as_the_games_saved_ones`, silhouettes agree to two decimals on all): mean colour identical on two bags
-    (142 114 91 and 131 104 81), 5 % darker on two armours (108 95 82 against 113 100 87), 10 % and 7 % darker on two swords (131 123 113 against 143 136 127; 122 119 117 against 130 128 125);
-    why the weapons and armour run dark is **Unknown** (gloss, normal-map or colour-map handling). An icon is dyed as worn clothing is, by the record's own `color` when the item's `dont colorise`
+    The mesh is read on a worker with its full level only (`CharacterContent.IconMeshReady`); up to 16 icons (4 supersampled) draw
+    and 8 upload a frame; one that gives up waiting for its textures is drawn plainly from then on. The final drawing is read back without stalling (`ReadbackBuffer`) and written as a PNG on a worker (`CharacterRenderer.IconSaveDirectory`).
+    The game writes its pictures into the install; Meitou leaves the install alone.
+    The `icons` switch (Item icons): Faithful as above; Meitou (default) draws each icon 4 x 4 supersampled into a half-float picture and averages it by coverage into the icon
+    (`CharacterRenderer.EnhancedIcons`, the portraits' `PreviewResolve` with no tone curve or grade), shows none of the game's saved pictures and saves its own in `icons\supersampled`.
+    Meitou applies the gloss multiplier (`PartMaterial.GlossMult`, the shader material's `shirtColour.w`), the black reflection, the origin view vector, the vertex colours, white for a
+    missing map, the zero dye alpha and the binormal (`Model.Build` `tangentSign` for icon meshes, kept apart from the characters' as `CharacterContent.IconBones`). Mean colour against saved pictures of vanilla meshes: identical on Small Backpack, Cap and Ninja Pants, within 2/255 on Heart Protector and
+    Rag Loincloth and Tin Can. Samurai Boots (549) is 28/255 brighter than its picture (its
+    record's mesh path is missing; which mesh the game drew is **Unknown**). Not done: generated tangents, the mip bias; Plated Drifter's Leather
+    Pants (`specular mult` 4) fits the picture better without the reflection term (**Unknown**). Many saved weapon pictures in a modded install come from mods' meshes (Iron Stick:
+    Warrior Moon's `Iron Stick Bare.mesh`), so they are not a reference for the vanilla mesh. An icon is dyed as worn clothing is, by the record's own `color` when the item's `dont colorise`
     is false and the material has a `color map` (`ItemIcons.ColourOf`; the instance's colour is not carried). **Observed**: the game saved Thieves Backpack (rebirth.mod, `color` "black lighter")
     undyed, dyed with that colour (dark grey) and dyed 1297; an armour whose record names a `color` was saved with no colour part.
     **Verified** by `Cached_starter_icons_use_the_original_files_without_rendering_replacements` against the configured install: the sandbox preview's Rag Loincloth
@@ -701,7 +719,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     the DXT5N variant decodes X from alpha and Y from green without that transparency test. Meitou's fallback enables the Base normal-alpha cut-out at 0.5,
     separately from worn clothing's 0.6 threshold. `Icons_drawn_from_the_mesh_cover_the_same_part_of_the_picture_as_the_games_saved_ones` includes the starter icons and
     requires 99% silhouette agreement for the Rag Loincloth, whose transparent tears are missed by the opaque samples.
-    Not done: the vertex-colour and DXT5N variants (the item shader is used), writing the pictures to disk (a readback inside the frame would stall it), bounding the icon textures
+    Not done: the DXT5N variant (the item shader is used), bounding the icon textures
     (one per item and material seen, at most 512 x 512, colour only).
 - **Building icons**: the build window's `BuildingImage` shows the chosen BUILDING's picture (FUN_1404e2040 calls FUN_14084af40 with 128 x 128, yaw -90, pitch 30; **Verified**, disassembly).
   - **Saved pictures**: looked up as `<string id>.png` in the `Icons` group (`data/icons/buildings` is one of its folders), drawn and saved to `data\icons\buildings\` only when missing

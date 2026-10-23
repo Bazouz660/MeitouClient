@@ -28,7 +28,9 @@ static class CharacterShaders
         // diffuse and normal map (the head's region shows the skin stand-in and a flat normal, not the body texture's transparent border).
         AlphaPending = 1 << 15, HeadPending = 1 << 16, HeadNormalPending = 1 << 17,
         // Skin that scatters light (the Meitou skin switch, docs/character-renderer.md "Skin"): a person's body, not a robot's.
-        Skin = 1 << 18;
+        Skin = 1 << 18,
+        // An icon whose mesh has vertex colours (the game's RTTIcons_Coloured): they multiply the albedo.
+        VertexColoured = 1 << 19;
     // Shading modes.
     public const uint ShadeItem = 0, ShadeBody = 1, ShadeHair = 2;
     // Texture slots (CharacterMaterialRecord.Tex).
@@ -50,7 +52,7 @@ static class CharacterShaders
             uint vestCount;
             float alphaThreshold;
             uint tex[{{TextureSlotCount}}];
-            vec4 shirtColour;
+            vec4 shirtColour;    // w: an item's gloss multiplier (an icon's material `specular mult`; 1 otherwise)
             vec4 skinTone;
             vec4 hairColour;
             vec4 hairAlpha;
@@ -97,6 +99,7 @@ static class CharacterShaders
         flat out uint vInterior;
         out float vHidden;
         //MOTION_OUT
+        out vec4 vColour;
 
         void main()
         {
@@ -119,6 +122,7 @@ static class CharacterShaders
             vNormal = n * aNormal;
             vTangent = vec4(n * aTangent.xyz, aTangent.w);
             vUv = aUv;
+            vColour = aColour;   // an icon mesh's own vertex colours (a body's carry the morph slot and limb bits: only icons read them)
             vMaterial = aInstanceData.y;
             vInterior = aInstanceData.z & 1u;
             // Hidden limbs (docs/characters.md "Hidden body parts"): the body's vertices of a limb whose bit 12 + k the instance carries; the fragments discard where it is above 0.
@@ -183,6 +187,7 @@ static class CharacterShaders
         flat in uint vMaterial;
         flat in uint vInterior;
         in float vHidden;
+        in vec4 vColour;
         layout(location = 0) out vec4 fragColour;
 
         bool flag(uint f, uint bit) { return (f & bit) != 0u; }
@@ -230,6 +235,7 @@ static class CharacterShaders
             if (flag(f, 32768u)) discard;   // its cut-out is still streaming in: a solid card would show
             vec3 n = geometric;
             if (!gl_FrontFacing) n = -n;
+            bool icon = view.fogDistance < 0.0 && view.fogDistance > -1.5;   // an inventory icon (CharacterRenderer.DrawIcon)
             vec2 uv = vUv;
             vec3 albedo = vec3(0.72);
             float gloss = 0.2;
@@ -284,7 +290,9 @@ static class CharacterShaders
             }
             else
             {
-                vec4 d = flag(f, 1u) ? tex(m.tex[0], uv) : vec4(0.72, 0.72, 0.72, 0.2);
+                // An icon's missing texture map is white (the game binds a white texture); the world's items show grey.
+                vec4 d = flag(f, 1u) ? tex(m.tex[0], uv) : icon ? vec4(1.0) : vec4(0.72, 0.72, 0.72, 0.2);
+                if (flag(f, 524288u)) d.rgb *= vColour.rgb;
                 bool clip = flag(f, 512u);
                 if (flag(f, 2u) || clip) nm = tex(m.tex[1], uv);
                 vec3 cm = flag(f, 1024u) ? tex(m.tex[2], uv).rgb : vec3(0.0);
@@ -299,7 +307,7 @@ static class CharacterShaders
                 albedo = d.rgb;
                 // A worn item's material (the Skinned template, skin.hlsl) has glossMult 0: nothing sets it, so worn clothing is matte; an attached item with
                 // its own mesh (the StaticObject template) keeps 1.
-                gloss = flag(f, 16384u) ? 0.0 : d.a;
+                gloss = flag(f, 16384u) ? 0.0 : d.a * m.shirtColour.w;
             }
             if (cut) discard;
             // The game writes character albedo darkened: 0.7 for bodies, heads and hair (character.hlsl DARKEN), 0.8 for worn items (skin.hlsl); not its icons (rtticons.hlsl,
@@ -312,8 +320,8 @@ static class CharacterShaders
             {
                 vec3 t = normalize(vTangent.xyz - n * dot(n, vTangent.xyz));
                 // cross(n, t) * w is the game's binormal (the mesh's BINORMAL times its w, Model.Build gameBinormals); worn items flip their maps' green (skin.hlsl), so
-                // their binormal is the opposite.
-                vec3 b = (flag(f, 16384u) ? cross(t, n) : cross(n, t)) * vTangent.w;
+                // their binormal is the opposite; an icon's is cross(t, n) times the tangent's own w (rtticons, Model.Build tangentSign).
+                vec3 b = (flag(f, 16384u) || icon ? cross(t, n) : cross(n, t)) * vTangent.w;
                 vec3 tn;
                 if (swizzled) { vec2 xy = vec2(nm.a, nm.g) * 2.0 - 1.0; tn = vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy)))); }
                 else tn = nm.xyz * 2.0 - 1.0;
@@ -338,9 +346,13 @@ static class CharacterShaders
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient
                 // (CalcPunctualLight: diffuse = pi * N.L * (1 - mean specular colour), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.4). The game stores that linear
                 // result as it is in an 8-bit target, so the icon target is UNORM, not sRGB (the lit values match the saved pictures: backpack mean 133 102 77 computed, 142 114 91 saved).
+                // The game's REFLECTION term samples a cube map the install lacks (black): albedo x (1 - gloss^2) is all that is left of it. rtticons.hlsl negates the
+                // normal, the light and -normalize(world position) together, so with the normal unnegated here the view vector is +normalize of the world position:
+                // from the item's origin, not to the camera.
                 const float PI = 3.14159265;
+                albedo *= 1.0 - gloss * gloss;
                 vec3 l = normalize(view.lightDir);
-                vec3 hv = normalize(v + l);
+                vec3 hv = normalize(normalize(vWorld) + l);
                 float nl = clamp(dot(n, l), 0.0, 1.0), lh = clamp(dot(l, hv), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0);
                 float rough = 1.0 - gloss * 0.99, alpha = rough * rough, alphaSqr = alpha * alpha;
                 float denom = max(1e-6, nh * nh * (alphaSqr - 1.0) + 1.0);
