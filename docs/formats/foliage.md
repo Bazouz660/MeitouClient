@@ -79,6 +79,11 @@ generated LOD, Hi-Z/fog culls and atlas residency live in the renderer reference
 - Noise: `n = x + 57 z`; `n ^= n << 13`
 - Materials: `windFactorX/Z = wind factor × 0.25`
 - TERRAIN-mode meshes: `slope = min(1, 1 − normal.y)`
+- TERRAIN-mode rock normals (**Observed**, 40 meshes of `foliage/rocks` and `newland/Assets/Rocks` read with `OgreMeshReader`): most
+  store unindexed triangles (vertices = 3 × triangles). The `newland` rocks give every copy of a position the same normal
+  (authored smooth); `formation03x`, `rockformation`, `rockformation02`, `rock_M_round`, `roborock`, `hatrock`, `rock03`,
+  `AirRock01`, `AshlandRibTEST` have hard edges (a position's copies differ by 19° to 102° on average). `Barkworm_Pillar01` has zero-length
+  normals.
 
 ## Not verifiable
 

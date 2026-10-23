@@ -1120,6 +1120,7 @@ static class WorldFrame
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
         (toggles ??= []).Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
         if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
+        if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)

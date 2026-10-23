@@ -297,6 +297,148 @@ static partial class TerrainShaders
         }
         """;
 
+    /// <summary>
+    /// <see cref="MeshVertex"/> for the tessellated TERRAIN-mode meshes (RockSmoothing, docs/render-terrain.md "Rocks"), to the control stage (no clip
+    /// position): also the geometry normal the triangles curve to, the tangent slot's xyz where its w is RockSmoothing.Tag (zero otherwise: not curved).
+    /// The colour and the shadow programs share it, so the casters curve as the surface does.
+    /// </summary>
+    public const string MeshVertexTess = """
+        #version 330 core
+        layout(location = 0) in vec3 aPosition;
+        layout(location = 1) in vec3 aNormal;
+        layout(location = 3) in vec4 aTangent;
+        layout(location = 7) in vec4 aModel0;
+        layout(location = 8) in vec4 aModel1;
+        layout(location = 9) in vec4 aModel2;
+        layout(location = 10) in vec4 aModel3;
+        layout(location = 0) out vec3 vcWorld;
+        layout(location = 1) out vec3 vcNormal;
+        layout(location = 2) out vec3 vcCurve;
+        layout(location = 3) out vec2 vcCliffBlend;
+        layout(location = 4) flat out int vcFeatureBiome;
+        layout(location = 5) flat out float vcFade;
+        void main()
+        {
+            mat4 model = mat4(vec4(aModel0.xyz, 0.0), aModel1, aModel2, aModel3);
+            vcFeatureBiome = int(aModel0.w);
+            vcFade = aModel1.w;
+            vcWorld = (model * vec4(aPosition, 1.0)).xyz;
+            mat3 normalMatrix = transpose(inverse(mat3(model)));
+            vcNormal = normalMatrix * aNormal;
+            vcCurve = aTangent.w > 1.5 ? normalize(normalMatrix * aTangent.xyz) : vec3(0.0);
+            vec3 n = normalize(vcNormal);
+            vec2 cb = max(abs(normalize(n.xz + vec2(1e-6))) - 0.2, vec2(0.0)) * 7.0;
+            cb *= cb;
+            cb /= max(cb.x + cb.y, 1e-6);
+            if (n.y > 0.9) cb = vec2(1.0, 0.0);
+            vcCliffBlend = cb;
+        }
+        """;
+
+    /// <summary>
+    /// The meshes' control stage: each edge split by how far its Phong curve leaves the straight edge (a quarter of the ends' normals' components along it,
+    /// times <c>PhongAlpha</c>) against what a pixel or so spans at its midpoint, from the edge alone, so the two triangles sharing it split it alike.
+    /// Not split where an end has no geometry normal or the edge lies flat.
+    /// </summary>
+    public const string MeshControl = """
+        #version 330 core
+        layout(vertices = 3) out;
+        layout(location = 0) in vec3 vcWorld[];
+        layout(location = 1) in vec3 vcNormal[];
+        layout(location = 2) in vec3 vcCurve[];
+        layout(location = 3) in vec2 vcCliffBlend[];
+        layout(location = 4) flat in int vcFeatureBiome[];
+        layout(location = 5) flat in float vcFade[];
+        layout(location = 0) out vec3 teWorld[];
+        layout(location = 1) out vec3 teNormal[];
+        layout(location = 2) out vec3 teCurve[];
+        layout(location = 3) out vec2 teCliffBlend[];
+        layout(location = 4) out int teFeatureBiome[];
+        layout(location = 5) out float teFade[];
+        uniform vec3 uEye;
+        // The curve's share (MeshEvaluation's), the deviation a segment may keep in radians of the view, and the most segments an edge takes.
+        const float PhongAlpha = 0.75, SmoothPixelAngle = 0.0015, SmoothMax = 16.0;
+
+        float edgeLevel(int i, int j)
+        {
+            vec3 a = vcWorld[i], b = vcWorld[j], e = b - a;
+            if (dot(vcCurve[i], vcCurve[i]) < 0.25 || dot(vcCurve[j], vcCurve[j]) < 0.25) return 1.0;
+            float bend = PhongAlpha * 0.25 * length(dot(e, vcCurve[j]) * vcCurve[j] - dot(e, vcCurve[i]) * vcCurve[i]);
+            float pixel = distance((a + b) * 0.5, uEye) * SmoothPixelAngle;
+            return clamp(sqrt(bend / max(pixel, 1e-4)), 1.0, SmoothMax);
+        }
+
+        void main()
+        {
+            teWorld[gl_InvocationID] = vcWorld[gl_InvocationID];
+            teNormal[gl_InvocationID] = vcNormal[gl_InvocationID];
+            teCurve[gl_InvocationID] = vcCurve[gl_InvocationID];
+            teCliffBlend[gl_InvocationID] = vcCliffBlend[gl_InvocationID];
+            teFeatureBiome[gl_InvocationID] = vcFeatureBiome[gl_InvocationID];
+            teFade[gl_InvocationID] = vcFade[gl_InvocationID];
+            if (gl_InvocationID == 0)
+            {
+                // Outer level i is the edge facing control point i (where its coordinate is 0).
+                float e0 = edgeLevel(1, 2), e1 = edgeLevel(2, 0), e2 = edgeLevel(0, 1);
+                gl_TessLevelOuter[0] = e0;
+                gl_TessLevelOuter[1] = e1;
+                gl_TessLevelOuter[2] = e2;
+                gl_TessLevelInner[0] = max(e0, max(e1, e2));
+            }
+        }
+        """;
+
+    /// <summary>The Phong curve (Boubekeur and Alexa): the point on the flat triangle, pulled toward its projections on the corners' tangent planes.</summary>
+    const string MeshCurve = """
+
+        layout(triangles, fractional_odd_spacing, ccw) in;
+        layout(location = 0) in vec3 teWorld[32];   // gl_MaxPatchVertices, written out: InterfaceLocations sizes every array it reads
+        layout(location = 2) in vec3 teCurve[32];
+        uniform mat4 uViewProjection;
+        invariant gl_Position;
+        const float PhongAlpha = 0.75;   // MeshControl's
+
+        vec3 curvedPoint()
+        {
+            vec3 b = gl_TessCoord;
+            vec3 p = b.x * teWorld[0] + b.y * teWorld[1] + b.z * teWorld[2];
+            vec3 q = b.x * (p - dot(p - teWorld[0], teCurve[0]) * teCurve[0])
+                + b.y * (p - dot(p - teWorld[1], teCurve[1]) * teCurve[1])
+                + b.z * (p - dot(p - teWorld[2], teCurve[2]) * teCurve[2]);
+            return mix(p, q, PhongAlpha);
+        }
+        """;
+
+    /// <summary>The meshes' evaluation stage: the curved point, and <see cref="MeshVertex"/>'s outputs interpolated as the rasteriser would.</summary>
+    public const string MeshEvaluation = "#version 330 core\n" + MeshCurve + """
+
+        layout(location = 1) in vec3 teNormal[32];
+        layout(location = 3) in vec2 teCliffBlend[32];
+        layout(location = 4) in int teFeatureBiome[32];
+        layout(location = 5) in float teFade[32];
+        out vec3 vWorld;
+        out vec3 vNormal;
+        out vec2 vCliffBlend;
+        flat out int vFeatureBiome;
+        flat out float vFade;
+        void main()
+        {
+            vec3 b = gl_TessCoord;
+            vWorld = curvedPoint();
+            vNormal = b.x * teNormal[0] + b.y * teNormal[1] + b.z * teNormal[2];
+            vCliffBlend = b.x * teCliffBlend[0] + b.y * teCliffBlend[1] + b.z * teCliffBlend[2];
+            vFeatureBiome = teFeatureBiome[0];
+            vFade = teFade[0];
+            gl_Position = uViewProjection * vec4(vWorld, 1.0);
+        }
+        """;
+
+    /// <summary>The shadow casters' evaluation stage: the same curved point (<see cref="MeshEvaluation"/>), the position alone.</summary>
+    public const string MeshEvaluationDepth = "#version 330 core\n" + MeshCurve + """
+
+        void main() { gl_Position = uViewProjection * vec4(curvedPoint(), 1.0); }
+        """;
+
     public static readonly string Fragment = "#version 330 core\n#extension GL_ARB_derivative_control : require\n" + HeightFunctions + AtmosphereShaders.Functions + """
 
         in vec3 vWorld;
@@ -886,6 +1028,11 @@ static partial class TerrainShaders
     public static string MeshFragmentNative() => Gi.GiResolveShaders.WithAlbedo(Native(InteriorMaskRenderer.WithCut(MeshFragment)));
     public static string MeshFragmentSolidNative() => Gi.GiResolveShaders.WithAlbedo(Native(MeshFragmentSolid));
     public static string MeshInstancedDepthVertexNative() => Native(MeshInstancedDepthVertex);
+    /// <summary>The rocks' smoothing (RockSmoothing): <see cref="MeshVertexTess"/>, <see cref="MeshControl"/>, <see cref="MeshEvaluation"/> and its casters' twin.</summary>
+    public static string MeshVertexTessNative() => Native(MeshVertexTess);
+    public static string MeshControlNative() => Native(MeshControl);
+    public static string MeshEvaluationNative() => Native(MeshEvaluation);
+    public static string MeshEvaluationDepthNative() => Native(MeshEvaluationDepth);
     /// <summary><see cref="ShadowShaders.DepthFragment"/> (the caster block at set 0, binding 2) with the terrain's push block, so both
     /// stages of a depth program declare the same one.</summary>
     public static string DepthFragmentNative() => Native(ShadowShaders.DepthFragment);

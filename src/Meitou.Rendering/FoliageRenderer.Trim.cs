@@ -32,6 +32,7 @@ public sealed unsafe partial class FoliageRenderer
     {
         var model = Decode(name);
         if (model is null) return model;
+        if (!leaves && mesh.MaterialType == 2 && RockSmoothing.Enabled) RockSmoothing.Apply(model);   // TERRAIN mode: the rocks' welded normals
         bool cutOut = leaves || mesh.MaterialType == 4;
         float threshold = (leaves ? mesh.LeavesAlphaThreshold : mesh.AlphaThreshold) / 255f;
         var diffuse = leaves ? mesh.LeavesTexture : mesh.Texture;

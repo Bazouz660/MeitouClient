@@ -118,6 +118,16 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
         meshSolid = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid");
         meshDepth = new TerrainProgram(gpu, sets, TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth");
+        // The rocks' smoothing (RockSmoothing): the mesh programs tessellated, the casters with the same curve.
+        if (gpu.Device.HasTessellation)
+        {
+            meshColourTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes smoothed",
+                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
+            meshSolidTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid smoothed",
+                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
+            meshDepthTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth smoothed",
+                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationDepthNative());
+        }
         // GL's stand-ins for an absent texture, in the array each sampler indexes (the bindless stand-in is the float 2D one only).
         standIn2D = gpu.Bindless.Register(BindlessKind.Texture2D, gpu.Dummy(StandInInfo(false, ScalarKind.Float)));
         standInArray = gpu.Bindless.Register(BindlessKind.Texture2DArray, gpu.Dummy(StandInInfo(true, ScalarKind.Float)));
@@ -446,7 +456,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     readonly NativeFrame nativeFrame;
     readonly Silk.NET.Vulkan.DescriptorSetLayout constantsLayout;
     readonly TerrainProgram patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
-    readonly TerrainProgram? patchColourTess, patchPrepassTess;   // null without tessellation shaders
+    readonly TerrainProgram? patchColourTess, patchPrepassTess, meshColourTess, meshSolidTess, meshDepthTess;   // null without tessellation shaders
+
+    /// <summary>A mesh program, or its tessellated twin while the rocks are smoothed (<see cref="RockSmoothing.TessellateActive"/>).</summary>
+    TerrainProgram Smoothed(TerrainProgram p, TerrainProgram? tessellated) => RockSmoothing.TessellateActive && tessellated is not null ? tessellated : p;
     readonly ulong uniformAlign;
     readonly uint standIn2D, standInArray, standInUInt;
 
@@ -477,7 +490,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < TerrainShaders.MeshInstanceLocation).DefaultIfEmpty(-1).Max() + 1;
-            if (Own > 2) throw new NotSupportedException($"{name}: more than two own vertex inputs");
+            if (Own > 4) throw new NotSupportedException($"{name}: more than four own vertex inputs");
         }
 
         public Silk.NET.Vulkan.PipelineLayout Layout => P.Layout;
@@ -852,11 +865,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             meshCut = cut;
             try { PrepareConstants(material: true, patches: false); }
             finally { meshCut = null; }
-            return DrawGroups(meshColour, Colour, "terrain meshes interior cut");
+            return DrawGroups(Smoothed(meshColour, meshColourTess), Colour, "terrain meshes interior cut");
         }
         PrepareConstants(material: true, patches: false);
         // No placement of this path fades (row 1's w is 0): the program without the discard, so the depth test runs first (EarlyDepth).
-        return EarlyDepth.Enabled ? DrawGroups(meshSolid, Solid, "terrain meshes solid") : DrawGroups(meshColour, Colour, "terrain meshes");
+        return EarlyDepth.Enabled ? DrawGroups(Smoothed(meshSolid, meshSolidTess), Solid, "terrain meshes solid")
+            : DrawGroups(Smoothed(meshColour, meshColourTess), Colour, "terrain meshes");
     }
 
     /// <summary>The interior cut of the mesh draw being prepared (<see cref="DrawMeshes"/>, <see cref="DrawMeshesIndirect"/>; docs/render-interior-cut.md), null otherwise.</summary>
@@ -899,7 +913,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         if (!depthReady || !GroupMeshes(meshes, biomes: false)) return 0;   // the frame's matrix is the cascade's once DrawDepth has run
         PrepareConstants(material: false, patches: false);
-        return DrawGroups(meshDepth, Depth, "terrain mesh depth");
+        return DrawGroups(Smoothed(meshDepth, meshDepthTess), Depth, "terrain mesh depth");
     }
 
     // ---- the TERRAIN-mode meshes, instanced ----
@@ -924,8 +938,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
         Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
 
-    /// <summary>A mesh's own vertex buffers (locations 0 and 1: position, normal), bound with one call.</summary>
-    [System.Runtime.CompilerServices.InlineArray(2)]
+    /// <summary>A mesh's own vertex buffers (locations 0 to 3: position, normal, and for the smoothed programs the tangent slot), bound with one call.</summary>
+    [System.Runtime.CompilerServices.InlineArray(4)]
     struct OwnVertices { BufferBinding first; }
 
     /// <summary>A mesh resolved for one program: the mesh it came from, its vertex layout and own vertex buffers (locations 0 up to the
@@ -934,6 +948,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     struct NativeMesh
     {
         public MeshBindings? Source;
+        /// <summary>The program the layout and buffers are for (the smoothed and the flat ones read different locations).</summary>
+        public TerrainProgram? Program;
         public VertexLayout? Layout;
         public int VertexCount;
         public OwnVertices Vertices;
@@ -1025,7 +1041,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         foreach (var g in meshGroupList)
         {
             ref var n = ref g.Native(kind);
-            if (n.Source != g.Mesh) Current(ref n, g.Mesh, p);
+            if (n.Source != g.Mesh || n.Program != p) Current(ref n, g.Mesh, p);
             var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
@@ -1161,7 +1177,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         {
             if (!depthReady) return 0;   // the frame's matrix is the cascade's once DrawDepth has run
             PrepareConstants(material: false, patches: false);
-            return DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshDepth, Depth, "terrain mesh depth");
+            return DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(meshDepth, meshDepthTess), Depth, "terrain mesh depth");
         }
         bool solidDraw = solid && EarlyDepth.Enabled;
         // cut: the interior cut on in the program with the discard (the caller's cull lays the placements over a mask out with the fading ones).
@@ -1170,8 +1186,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         finally { meshCut = null; }
         // solid: none of these placements is mid cross-fade (the caller splits them), so the program without the discard draws them (EarlyDepth).
         return solidDraw
-            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshSolid, Solid, "terrain meshes solid")
-            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshColour, Colour, "terrain meshes");
+            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(meshSolid, meshSolidTess), Solid, "terrain meshes solid")
+            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(meshColour, meshColourTess), Colour, "terrain meshes");
     }
 
     int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, Silk.NET.Vulkan.Buffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
@@ -1185,7 +1201,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             var key = (m.Mesh, m.IndexCount, m.Mirrored);
             if (!meshGroups.TryGetValue(key, out var g)) meshGroups[key] = g = new MeshGroup { Mesh = m.Mesh, IndexCount = m.IndexCount, Mirrored = m.Mirrored };
             ref var n = ref g.Native(kind);
-            if (n.Source != g.Mesh) Current(ref n, g.Mesh, p);
+            if (n.Source != g.Mesh || n.Program != p) Current(ref n, g.Mesh, p);
             var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
@@ -1210,6 +1226,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         p.Buffers(attributes, n.Vertices);
         n.Elements = va.Elements;
         n.Source = va;
+        n.Program = p;
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
@@ -1218,7 +1235,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         if (n.SegA == segment) return n.PipeA!;
         if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!; }
-        var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        var topology = p.P.Tessellated ? Silk.NET.Vulkan.PrimitiveTopology.PatchList : Silk.NET.Vulkan.PrimitiveTopology.TriangleList;
+        var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, topology, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;
@@ -1235,6 +1253,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         foreach (var p in new[] { patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth }) p.Dispose();
         patchColourTess?.Dispose();
         patchPrepassTess?.Dispose();
+        meshColourTess?.Dispose();
+        meshSolidTess?.Dispose();
+        meshDepthTess?.Dispose();
         rockBake?.Dispose();
         gpu.Bindless.Free(BindlessKind.Texture2D, standIn2D);
         gpu.Bindless.Free(BindlessKind.Texture2DArray, standInArray);

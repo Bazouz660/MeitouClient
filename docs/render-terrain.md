@@ -52,6 +52,19 @@ round in both directions (red always, green by the facing), so its integrated re
 projection's tangent frame is degenerate where the normal faces ±X (the game's `n × (−X)`), so its height matches the shading
 only for some facings. Not in the rock impostor bake (parallax 0 there).
 
+## Rocks
+
+Meitou look, not in the game (`RockSmoothing`; Tab: "Rock smoothing (tessellation)"). Many TERRAIN-mode rocks have hard
+edges ([foliage](formats/foliage.md), "Expression reference"). At decode (`FoliageRenderer.DecodeTrimmed`, not the leaves) a
+position whose copies' normals disagree gets, per corner, the area-weighted normals of the faces round it turning less than 60°
+from the corner's own; positions that agree keep theirs. Every position also gets one geometry normal (all its faces, or the
+agreed one) in the tangent slot, w = 2 (the terrain material reads no tangents; a real tangent's w is ±1, so other TERRAIN-mode
+meshes stay flat). The mesh programs then have tessellated twins (colour, solid and the casters, `meshDepthTess`, so the
+shadow map curves alike): Phong tessellation (α 0.75) to the geometry normals, each edge split by `sqrt(bend / pixel)` (bend: α/4
+of the ends' normals' components along it; pixel: 0.0015 × its midpoint's distance), at most 16, `fractional_odd_spacing`;
+both sides of an edge curve it from the same two ends, so it does not crack. Levels by the camera eye in the shadow pass too.
+The impostor bake and the GI's ray meshes stay flat.
+
 ## Interior cut
 
 Patches over a building's interior mask are cut: [render-interior-cut](render-interior-cut.md).
