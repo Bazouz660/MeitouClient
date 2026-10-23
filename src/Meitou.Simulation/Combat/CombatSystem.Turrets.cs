@@ -186,6 +186,9 @@ public sealed partial class CombatSystem
         if (loaded && target >= 0) t.Aim = AimPoint(muzzle, prev[target], gun.ShotSpeed);
         float rate = TurretFormulas.TurnRate(t.Efficiency, gun.AimSpeed, t.Gun.Damage * t.DamageMult);
         t.Worst = rate > 0 && t.Aim is { } aim && t.Gun.Parts.Count > 0 ? TurretRig.Turn(t.Gun.Parts, t.Angles, t.Position, t.Yaw, t.Gun.Scale, aim, rate * dt) : -99;
+        // The gunner faces along the barrel as it turns (after the production and AI steps, which face it the turret's place or base facing).
+        var (_, heading) = TurretRig.Barrel(t.Gun, t.Angles, t.Position, t.Yaw);
+        if (heading.X * heading.X + heading.Z * heading.Z > 1e-6f) table.Next[g].Yaw = MathF.Atan2(heading.X, heading.Z);
 
         if (target < 0 || !loaded) return;
         var at = prev[g].Position;
