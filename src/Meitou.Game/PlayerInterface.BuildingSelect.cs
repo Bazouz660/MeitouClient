@@ -151,12 +151,12 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The upgrade lines of a site of the player's (Building slot 116, docs/game/ui-screens.md "Selected building"): <c>[UPGRADE]</c> in Good when its record upgrades to a BUILDING research
     /// has unlocked, <c>[DOWNGRADE]</c> in Main while it is unfinished and some BUILDING upgrades to it. Each button's tooltip names the record it becomes; the upgrade's also lists the
-    /// materials still owed (the new record's, less what is delivered of each item) and the power output's change. Engine scope as the simulation's: no walls, no machines.
+    /// materials still owed (the new record's, less what is delivered of each item) and the power output's change. Engine scope as the simulation's: no walls.
     /// </summary>
     void AddUpgradeLines(Meitou.Simulation.Construction.BuildingSnapshot site, List<HudLine> state)
     {
         var snapshot = session.CurrentSnapshot;
-        if (site.WallParent is not null || DataOf(site.Record) is not ({ LinksTogether: false } or { IsWallGate: true }) || snapshot.Machines.Any(m => m.Site == site.Id)) return;
+        if (site.WallParent is not null || DataOf(site.Record) is not ({ LinksTogether: false } or { IsWallGate: true })) return;
         if (UpgradeOf?.Invoke(site.Record) is { } up && snapshot.UnlockedBuildings.Contains(up) && DataOf(up) is { } higher)
         {
             var had = new Dictionary<string, float>(StringComparer.Ordinal);

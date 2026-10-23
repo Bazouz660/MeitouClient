@@ -194,10 +194,10 @@ public sealed class ConstructionSystem : ITickSystem
                     }
                     break;
                 case UpgradeSite up:
-                    if (reg.Find(up.Site) is { } upgraded && CanUpgrade(world, upgraded) is { } higher) Swap(world, upgraded, higher, UpgradeProgressCap, finishCovered: false);
+                    if (reg.Find(up.Site) is { } upgraded && CanUpgrade(world, upgraded) is { } higher) Swap(world, upgraded, higher, UpgradeProgressCap, upgrade: true);
                     break;
                 case DowngradeSite down:
-                    if (reg.Find(down.Site) is { } downgraded && CanDowngrade(world, downgraded) is { } lower) Swap(world, downgraded, lower, DowngradeProgressCap, finishCovered: true);
+                    if (reg.Find(down.Site) is { } downgraded && CanDowngrade(world, downgraded) is { } lower) Swap(world, downgraded, lower, DowngradeProgressCap, upgrade: false);
                     break;
                 case SetBuildingPublic open:
                     if (reg.Find(open.Building) is { } shown && shown.Owner == world.Player.Faction && shown.Public != open.Public)
@@ -215,7 +215,8 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// The BUILDING a site of the player's can be upgraded to (docs/game/buildings-production.md "Upgrades"): its record's upgrade, unlocked by research. Engine scope: not walls (the
-    /// original's WallBuilding upgrades the whole wall line; a gate is a GatewayBuilding and upgrades alone) and not a building with a machine (its production state is kept per record).
+    /// original's WallBuilding upgrades the whole wall line; a gate is a GatewayBuilding and upgrades alone); a building with a machine gets one for the new record that keeps its stock
+    /// (<see cref="Production.ProductionSystem"/>).
     /// </summary>
     public string? CanUpgrade(World world, BuildSite site) =>
         Swappable(world, site) && BuildingUpgrades.UpgradeOf(db, site.Record) is { } target && world.Research.IsUnlocked(target) && Data(target) is not null ? target : null;
@@ -225,14 +226,15 @@ public sealed class ConstructionSystem : ITickSystem
         !site.Complete && Swappable(world, site) && BuildingUpgrades.DowngradeOf(db, site.Record) is { } lower && Data(lower) is not null ? lower : null;
 
     bool Swappable(World world, BuildSite site) =>
-        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } or { IsWallGate: true } && world.Machines.Find(site.Id) is null;
+        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } or { IsWallGate: true };
 
     /// <summary>
     /// Makes a site the BUILDING <paramref name="record"/> in place (Building slots 75 / 76, docs/game/buildings-production.md "Upgrades"): no longer complete or paused, progress capped
     /// at <paramref name="cap"/>, the new record's materials with what was delivered of each item carried over (engine reading of the re-applied state), the name the new record's.
-    /// A downgrade (<paramref name="finishCovered"/>) whose delivered materials already cover the new record is finished at once. Its doors stay while it is built (<see cref="BuildSite.Upgrading"/>).
+    /// An <paramref name="upgrade"/> then takes each material still owed from the building's own stock, one unit at a time (<see cref="PullOwn"/>); a downgrade whose delivered
+    /// materials already cover the new record is finished at once. Its doors stay while it is built (<see cref="BuildSite.Upgrading"/>).
     /// </summary>
-    void Swap(World world, BuildSite site, string record, float cap, bool finishCovered)
+    void Swap(World world, BuildSite site, string record, float cap, bool upgrade)
     {
         var data = Data(record)!;
         var had = new Dictionary<string, float>(StringComparer.Ordinal);
@@ -254,9 +256,31 @@ public sealed class ConstructionSystem : ITickSystem
         site.Paused = false;
         site.Upgrading = true;
         site.Progress = MathF.Min(site.Progress, MathF.Min(cap, site.Target));
-        if (finishCovered && site.Deliverable >= site.Target) Finish(world, site);
+        if (upgrade) PullOwn(world, site);
+        if (!upgrade && site.Deliverable >= site.Target) Finish(world, site);
         else world.Buildings.Changed();
         SyncChildren(world, site);
+    }
+
+    /// <summary>
+    /// An upgrade's materials from the building's own inventory (<b>Verified</b>, Building slot 75: for each material, int(required - delivered) times, an item of it is taken from the
+    /// building's inventory and destroyed and one unit delivered, stopping when none is left). Meitou's inventory of a building is its machine's storage, then its input and output stock.
+    /// </summary>
+    static void PullOwn(World world, BuildSite site)
+    {
+        if (world.Machines.Find(site.Id) is not { } m) return;
+        bool took = false;
+        foreach (var slot in site.Materials)
+            for (int owed = (int)(slot.Required - slot.Delivered); owed > 0; owed--)
+            {
+                if (m.Storage?.Items.Find(i => i.Record == slot.Item && i.Quantity > 0) is { } item) m.Storage.RemoveOne(item);
+                else if (Array.Find(m.Inputs, i => i.Item == slot.Item && i.Count > 0) is { } input) input.Count--;
+                else if (m.Output is { Count: > 0 } output && output.Recipe.Item == slot.Item) output.Count--;
+                else break;
+                slot.Delivered++;
+                took = true;
+            }
+        if (took) world.Machines.Touch();
     }
 
     /// <summary>

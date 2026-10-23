@@ -215,7 +215,7 @@ dispatch to slots 75 / 76 through `FUN_140313d50` / `FUN_140313d90`).
   search order over the records is **Unknown**).
 - **Upgrade** (slot 75): record := target, the name-dirty byte +0x19f set, complete and paused cleared (+0x160/+0x161),
   progress capped at 50 material units, the new record's construction state applied (`FUN_14054a450`), then each material
-  still owed is taken from the building's own inventory (**not modelled**), doors given the new record's `doors` record,
+  still owed is taken from the building's own inventory, int(required - delivered) units each, one item destroyed per unit, doors given the new record's `doors` record,
   mesh, physics and window rebuilt, an outdoor building's navmesh area rebuilt.
 - **Downgrade** (slot 76): record := the downgrade target, +0x19f set, progress capped at **80**; when the state's materials
   already cover it (+0x188 minus `FUN_140549260` <= 0, **Observed** reading) the building is completed at once (slot 0x230
@@ -227,8 +227,11 @@ dispatch to slots 75 / 76 through `FUN_140313d50` / `FUN_140313d90`).
 - Meitou (`UpgradeSite` / `DowngradeSite`, `ConstructionSystem.CanUpgrade` / `CanDowngrade`, chain lookup
   `BuildingUpgrades`): the site's record, name, rate, target and materials swapped, delivered amounts carried over per item
   (engine reading of the re-applied state), complete and paused cleared, progress capped at 50 / 80; a downgrade whose
-  delivered materials cover the lower record finishes at once. Engine scope: no walls or wall pieces (gates, `is wall gate`, do upgrade) and no building with
-  a machine (production state is per record). The doors stay registered while it is built (`BuildSite.Upgrading`, not
+  delivered materials cover the lower record finishes at once. An upgrade then pulls what is still owed from its own stock
+  (`PullOwn`: the machine's storage, then input and output stock). A machine gets a new one for the new record that keeps the
+  stock of the same items, storage items that fit, a farm's growth by plant index, a bench's queue and the power switches; the
+  rest drops at the building (engine; `ProductionSystem.Rebuild`). An unfinished site's machine is saved and read. Engine scope:
+  no walls or wall pieces (gates, `is wall gate`, do upgrade). The doors stay registered while it is built (`BuildSite.Upgrading`, not
   saved: a reloaded unfinished upgrade gets its doors when finished) and keep their state by door index; the building
   leaves the navmesh until it is complete again (engine).
 

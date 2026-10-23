@@ -102,6 +102,13 @@ public sealed partial class ProductionSystem : ITickSystem
     public Machine? Ensure(World world, BuildSite site)
     {
         if (world.Machines.Find(site.Id) is { } existing) return existing;
+        if (Create(world, site) is not { } m) return null;
+        world.Machines.Add(m);
+        return m;
+    }
+
+    Machine? Create(World world, BuildSite site)
+    {
         if (Data(site.Record) is not { } data) return null;
         var m = new Machine
         {
@@ -126,7 +133,6 @@ public sealed partial class ProductionSystem : ITickSystem
         // A rock yields its own value, at least 0.1; a player's mine what the ground or the nearest rock gives, 0 for nothing (the original's 0.5 for nothing is for buildings not the
         // player's; Observed, uses_world_resource_mining).
         else if (data.Resource != 0) m.Yield = IsNatural(site.Id) ? resources.NodeYield(data.Resource, p) : resources.Yield(data.Resource, p);
-        world.Machines.Add(m);
         return m;
     }
 
@@ -137,6 +143,11 @@ public sealed partial class ProductionSystem : ITickSystem
         foreach (var site in reg.All)
             if (site.Complete && site.Owner == world.Player.Faction && site.WallParent is null && world.Machines.Find(site.Id) is null && Data(site.Record) is not null) Ensure(world, site);
         if (world.Machines.Count == 0) return;
+        List<(Machine, BuildSite)>? swapped = null;
+        foreach (var m in world.Machines.All)
+            if (Site(world, m.Site) is { } s && s.Record != m.Data.Id && !IsNatural(s.Id)) (swapped ??= []).Add((m, s));
+        if (swapped is not null)
+            foreach (var (m, s) in swapped) Rebuild(world, m, s);
         List<Machine>? gone = null;
         foreach (var m in world.Machines.All)
             if (Site(world, m.Site) is null) (gone ??= []).Add(m);
@@ -147,6 +158,57 @@ public sealed partial class ProductionSystem : ITickSystem
             world.Machines.Remove(m.Site);
             sweep = true;
         }
+    }
+
+    /// <summary>
+    /// The machine of a building upgraded or downgraded in place (docs/game/buildings-production.md "Upgrades"; engine reading: the original keeps the one object and its inventory) is
+    /// made anew for its new record and keeps what the old one held: input and output stock of the same items, the storage's items (what no longer fits drops at the building), a
+    /// farm's growth state (plants by index; the new layout's extra plants as replanted), a bench's queue and finished items, and the power settings. The rest drops on the ground.
+    /// </summary>
+    void Rebuild(World world, Machine old, BuildSite site)
+    {
+        if (Create(world, site) is not { } m)
+        {
+            DropAll(world, old);
+            world.Machines.Remove(old.Site);
+            sweep = true;
+            return;
+        }
+        var at = old.Position;
+        void Drop(ItemInstance? item) { if (item is not null) world.GroundItems.Drop(item, at, 0); }
+        foreach (var i in old.Inputs)
+        {
+            if (i.Count <= 0) continue;
+            if (Array.Find(m.Inputs, n => n.Item == i.Item) is { } into) { into.Count += i.Count; into.Level = Math.Max(into.Level, i.Level); }
+            else Drop(items.Create(i.Item, i.Count));
+        }
+        if (old.Output is { Count: > 0 } o)
+        {
+            if (m.Output is { } no && no.Recipe.Item == o.Recipe.Item) { no.Count = o.Count; no.Progress = o.Progress; }
+            else Drop(items.Create(o.Recipe.Item, o.Count));
+        }
+        if (old.Storage is { } store)
+            foreach (var item in store.Items.ToList())
+                if (m.Storage is not { } into || !into.Add(item)) Drop(item);
+        if (old.Farm is { } of && m.Farm is { } nf)
+        {
+            for (int i = 0; i < Math.Min(of.Plants.Length, nf.Plants.Length); i++) nf.Plants[i] = of.Plants[i];
+            (nf.Growth, nf.Death, nf.Start, nf.Harvested, nf.HarvestProgress, nf.ClearProgress, nf.Status, nf.Plantings, nf.Rolls)
+                = (of.Growth, of.Death, of.Start, Math.Min(of.Harvested, nf.Plants.Length), of.HarvestProgress, of.ClearProgress, of.Status, of.Plantings, of.Rolls);
+        }
+        if (old.Craft is { } oc)
+        {
+            if (m.Craft is { } nc)
+            {
+                nc.Queue.AddRange(oc.Queue);
+                nc.Done.AddRange(oc.Done);
+                (nc.Repeat, nc.Bound, nc.Rolls) = (oc.Repeat, oc.Bound, oc.Rolls);
+            }
+            else foreach (var item in oc.Done) Drop(item);
+        }
+        (m.PowerOn, m.GetsBattery, m.Charge) = (old.PowerOn, old.GetsBattery, old.Charge);
+        world.Machines.Replace(m);
+        sweep = true;
     }
 
     /// <summary>Puts what a removed machine held on the ground at its last position (engine choice: the original's dismantle leaves items too, the details are Unknown).</summary>
