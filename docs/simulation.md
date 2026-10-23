@@ -40,7 +40,8 @@ precede host orders for their due tick. No concurrent host enqueue may alter tha
 Randomness: stateless `Rng.Hash(seed,entityKey,purpose,counter)`; changing purpose/salt changes rolls.
 Worker partitions are `threads*2`, minimum 16 slots (game 32: 128 left a 500-character battle 3 partitions); one worker means caller execution.
 Async paths, navmesh and population results enter at tick boundaries; arrival timing is not
-repeatable in play. Determinism tests use synchronous services.
+repeatable in play. Determinism tests use synchronous services. `PathService` runs 2-4 threads (a quarter of the cores) and drops a
+request its character replaced before a thread took it up; F12's sim rows show the requests waiting.
 
 `StateHash` is ordered, includes slot/generation/free-list and hashed subsystem state, normalizes
 negative zero, and is a diagnostic rather than gameplay work. Golden scenarios must agree at

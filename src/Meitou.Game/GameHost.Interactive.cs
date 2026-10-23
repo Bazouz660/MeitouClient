@@ -703,7 +703,8 @@ sealed partial class GameHost
         simMs[phases] = Math.Max(0, advanceMs - inTicks);
         for (int k = 0; k < profile.SystemMs.Length && phases + 1 + k < parts; k++) simMs[phases + 1 + k] = profile.SystemMs[k];
         for (int k = 0; k < profile.Parts.Count && parts + k < simMs.Length; k++) simMs[parts + k] = profile.Parts[k].Ms;
-        profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1, systems);
+        int paths = world.Systems.OfType<MovementSystem>().FirstOrDefault()?.Paths.Pending ?? 0;
+        profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1, systems, paths);
         profile.Clear();
     }
 

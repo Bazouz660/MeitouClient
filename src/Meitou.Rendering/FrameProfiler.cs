@@ -162,7 +162,7 @@ public sealed class FrameProfiler : IDisposable
     // cost; the rest are parts of systems, listed in order), each one's ms and the world ticks per frame, listed under sim in the legend, not plotted. simNow is the newest
     // call's, kept with the frame at EndFrame.
     string[] simNames = [];
-    int simPhases, simSystems;
+    int simPhases, simSystems, simPaths;
     float[][] simParts = [];
     readonly float[] simTicks = new float[History];
     double[] simNow = [];
@@ -172,11 +172,12 @@ public sealed class FrameProfiler : IDisposable
     /// <summary>
     /// <see cref="Outside(double)"/> with the ticks' breakdown: <paramref name="names"/> (the same array while the parts stay the same) with their <paramref name="ms"/>, the first
     /// <paramref name="phases"/> of them phases shown in order (the last the time outside the ticks), the next <paramref name="systems"/> shown by cost, the rest (parts of systems)
-    /// in order; <paramref name="ticks"/> the world ticks run.
+    /// in order; <paramref name="ticks"/> the world ticks run; <paramref name="pathsWaiting"/> the path requests not answered yet.
     /// </summary>
-    public void Outside(double simMs, int ticks, string[] names, ReadOnlySpan<double> ms, int phases, int systems)
+    public void Outside(double simMs, int ticks, string[] names, ReadOnlySpan<double> ms, int phases, int systems, int pathsWaiting = 0)
     {
         simSystems = systems;
+        simPaths = pathsWaiting;
         outsideSim = simMs;
         if (!ReferenceEquals(names, simNames))
         {
@@ -502,7 +503,7 @@ public sealed class FrameProfiler : IDisposable
             var stages = Groups[gi].Stages;
             if (stages.Length > 1) rowCount++;
             if (stages.Length == 1 || groupOpen[gi])
-                foreach (int s in stages) rowCount += 1 + (s == StageClock.UpdChars && partsOpen ? parts.Length : 0) + (s == StageClock.Sim && simOpen ? simRows.Count + 1 : 0);
+                foreach (int s in stages) rowCount += 1 + (s == StageClock.UpdChars && partsOpen ? parts.Length : 0) + (s == StageClock.Sim && simOpen ? simRows.Count + 2 : 0);
         }
         float panelH = (rowCount + 2.5f) * lh + 2 * pad;
         float x0 = margin, x1 = width - margin, y1 = height - margin, y0 = Math.Max(y1 - panelH, margin);
@@ -550,6 +551,7 @@ public sealed class FrameProfiler : IDisposable
                 double ticks = Mean(simTicks, cpuHead, cpuCount, meanFrames), inTicks = 0;
                 for (int p = 0; p < simPhases - 1; p++) inTicks += simRows[p].Ms;
                 overlay.Text(string.Create(CultureInfo.InvariantCulture, $"{indent}    {ticks:0.0} ticks, {(ticks > 0 ? inTicks / ticks : 0):0.00} ms each"), lx + swatch + 6, NextRow(-1), dim);
+                overlay.Text($"{indent}    {simPaths} paths waiting", lx + swatch + 6, NextRow(-1), dim);
                 foreach (var (name, ms) in simRows)
                 {
                     string row = indent + "    " + name;
