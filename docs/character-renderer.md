@@ -30,8 +30,10 @@ parts of people (`CharacterShaders.Skin`; not animals; stumps included) whose ra
 bare. Per race (`CharacterRenderer.SkinRaces`, settings Graphics > Skin, `meitou.user.json` `skinRaces`: only races changed from the default): every
 person race of the loaded data (RACE records no ANIMAL_CHARACTER uses, mods included) is on unless RACE `is robot`. World and Meitou
 stage (fog distance -3) and the portraits (the plain model, fog distance 0: their fixed key light is near the camera, so the glow stays on the
-shadowed cheek, jaw and neck); the game's stage and icons keep N·L. Faithful: push `skinLut` 0, unchanged.
-Limits: lamps stay Lambert; the sun shadow is not scattered, so the band past the terminator ends at the shadow edge; no back-lit
+shadowed cheek, jaw and neck); the game's stage and icons keep N·L. Lamps too: the character shader defines `LAMP_SKIN`, and
+`LampShaders.lampLight` takes each lamp's diffuse from `lampSkinDiffuse` (the same term, per-fragment inputs set in `main`); the specular keeps
+N·L. Faithful: push `skinLut` 0, unchanged.
+Limits: the sun shadow is not scattered, so the band past the terminator ends at the shadow edge; no back-lit
 translucency (ears).
 
 ## Content, LOD and memory
