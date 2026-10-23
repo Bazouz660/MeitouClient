@@ -20,37 +20,84 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 
 ## Ground relief
 
-Meitou look, not in the game (`GroundRelief`, on by default; Tab: "Ground parallax", "Ground displacement (tessellation)",
-"Ground relief depth (cm, typical ground)", default 20; "Ground displacement distance (m)", default 25; "Ground parallax distance (m)", default 60; viewer K toggles the parallax). Every layer gets a height map integrated from its normal
-map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame, below 2 cycles a tile dropped,
-scaled by 1st/99th percentile, so every layer spans the full depth), in an R8 array (≤512², one slice per pair slot; a layer
-without a readable normal map flat 255). Only the base layer has relief, weighted by how much of it shows (not grass, slope,
-dirt, road or cliff). Each layer's depth is the slider's times `LayerDepth` = `clamp(sqrt(relief / 0.0042), 0.3, 1.5)`,
-kept per slot in an R32F texture (0: flat); `relief` is the integrated height range as a fraction of the tile. **Observed**
-(76 biomes' base normal maps, decoded at 512²): relief 0.0002 (`SandRippLoop_NML`) to 0.09 (`OrganicRock_NML`), median 0.0042;
-sands 0.0014 (`Sand01bc_n`, `DesertSandLoop03_NML`), gravels about 0.02; times the tile (56 to 2500 units) the implied depths
-run 0.04 to 41 units, so the strengths are a look, not a measure, and the tile is left out. `DesertSandLoop03_NML` integrates to
-ripple bands along u, `DesertSands_NML` to fine wind-aligned grain; the game's terrain normal maps are BC1 2048².
+Meitou look, not in the game (`GroundRelief`). Tab toggles "Ground parallax", "Ground displacement (tessellation)", "Terrain outline
+refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief depth (cm, typical ground)" (default 20),
+"Ground displacement distance (m)" (100), "Ground parallax distance (m)" (60); viewer K toggles the parallax. The other values are
+tuned constants, settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm,
+cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5.
 
-**Displacement** (needs `tessellationShader`): main-view patches within the displacement distance + 10 units of the eye (horizontally; not interior-cut
-ones) draw with tessellated colour and prepass programs (patch lists of 3, culling off). Edge levels depend on the edge alone
-(length, midpoint distance, relief at ends/middle), so shared edges split alike; the evaluation stage interpolates the flat
-triangle and moves it by `depth × (height − ½) × base cover`, full to 60% of the displacement distance, none from it, where edges are unsplit and
-unmoved and meet plain patches. Centred on the ground (raising only, as first done, buried the bases of grass, objects and
-characters); the troughs below the flat shadow casters look up the sun shadow at the ground's height (`atmoShadowLift`).
-Shadow casters, reflections and the rock bake are not tessellated.
+**Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
+of the relief). The normal map's slopes (`dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame) are integrated by FFT
+(Frankot–Chellappa), below 2 cycles a tile dropped, scaled to the 1st–99th percentiles. A slope field splits into a gradient part
+(what a surface makes) and a curl part (what none makes; noise splits evenly): the frame is the shader's, turned a quarter,
+mirrored (green flipped) or both, whichever has the highest `(g − c)/(g + c)` (by at least 0.1 over the shader's); a turned
+frame's height is turned to rise where the diffuse is bright. Each half-octave band is kept by its own `(g − c)/(g + c)` (a Wiener
+gain, the noise measured from the curl) and times `(cycles / 2)^tilt`, weighing broad shapes down against the detail.
+**Observed** (the 132 pairs the biomes use, 512²): 102 in the shader's frame, 22 mirrored (`Sand01bc_n`, `canyonrock_N`,
+`Cliffs01_n`, `DesertSandLoop03_NML`), 3 turned (`Fractured_Rock_NML`, `SandRippLoop_NML`), 5 both (`Sands_NML`,
+`Sand01bc_Grey_NML`), scoring about 0 in the shader's frame and 0.7–0.99 in theirs (the game shades them in its own frame
+regardless). Grass and mulch (`GrasZ`, `Branch_Mulch`) are largely non-integrable and come out nearly flat; gravels lose their
+broad bands; cobbles and pebbles (`RoadLoop01`, `River_Pebbles`) keep all. Lit by a low sun, the heights match the normal maps'
+own lighting at a median correlation of 0.88. The game's terrain normal maps are BC1 2048².
 
-**Parallax**: the patch shader marches the base layer's coordinate along the view ray (16 steps) and toward the sun
-for a soft self-shadow (12 steps, a step's rise over the ray weighted down along it) that dims the sun only (`atmoSelfShadow`
-in `kenshiLight`); darkening the albedo, as first done, also darkened the ambient and gave black spots at 20+ cm. Fading out
-from half the parallax distance to all of it. Where the ground is displaced the view-ray march
-gives way over the displacement's fade; the sun march stays. It is also the fallback without tessellation.
-The cliff layer gets the same march on each of its two vertical projections with a weight over 0.1 (terrain cliffs and the
-TERRAIN-mode rocks, which draw with the terrain material), its depth along the axis the projection faces (sign of the normal's
-x or z), its own `LayerDepth`. The `(x, height)` projection's height is read upside down: the shading turns its normal map
-round in both directions (red always, green by the facing), so its integrated relief runs the other way. The `(z, height)`
-projection's tangent frame is degenerate where the normal faces ±X (the game's `n × (−X)`), so its height matches the shading
-only for some facings. Not in the rock impostor bake (parallax 0 there).
+**Depth.** Each layer is given the depth that makes its root-mean-square slope the target over its tile (5000 / tiling units):
+`slope × tile / (512 × steepness)`, steepness the height's RMS slope per texel over 4-texel blocks (texel noise left out), kept per
+slot as `1 / (512 × steepness)` (R32F). That depth, as a multiple of 20 cm, is raised to the scale-follow power (fine textures not
+flat, coarse ones not metres deep), capped at the max depth, times the depth slider over 20 cm; the cliff's times the cliff
+scale. **Observed** (field tour): the integrated range or normal-map strength as the depth made broad noise deep
+(`BurntWoodLike`, `SharpblockLoop`) and fine textures flat or spiky; this rule gives e.g. `WadiGravel` 13–15 cm, `Rocksurface01`
+13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm.
+
+**Composite.** Every ground layer adds relief by how much of the pixel it shows in the material's order (base, grass, slope,
+dirt, road, the cliff over all), from the blend map, overlay window and slope per pixel, not per patch, so neighbouring patches
+meet on the same heights. A biome under 10% of the pixel is not marched (fading in to 30%), a layer under 5% is left out (to 15%).
+
+**Displacement** (needs `tessellationShader`): main-view patches within the displacement distance + 10 units (interior-cut ones
+too) draw with tessellated colour and prepass programs (patch lists of 3, culling off, `fractional_odd_spacing`). The vertex
+stage tests each corner's coverage once; an edge is split only where its ends have relief, into segments of `max(0.6, 0.004 ×
+distance)` over the detail, at most 64, from the edge alone, so shared edges split alike. The evaluation stage (`reliefMove`: one
+blend lookup, one normal) moves the point by `Σ depth × (height − ½) × shown` upward for the ground and along the ground's normal for
+the cliff (its two vertical projections blended as the material blends them), in full to 60% of the distance, none from it. Each
+vertex reads the height at the mip whose texels are half a segment, leaving out what the mesh cannot carry (spikes). Centred:
+what stands on the ground sits level with the bumps; troughs below the flat shadow casters look up the sun shadow at the ground's
+height (`atmoShadowLift`). The material (layer coordinates, blend, overlay, field, normal) is read at the undisplaced point, passed
+in the patches' unused `vNormal`, so a cliff's horizontal projections do not slide up its bumps. Shadow casters, reflections and
+the rock bake are not tessellated.
+
+**Parallax** (the patch shader; the fallback without tessellation): one offset is marched through the shown layers' heights by
+weight along the view ray, moving every layer's coordinate by it, then toward the sun for a soft self-shadow that dims the sun
+only (`atmoSelfShadow` in `kenshiLight`; darkening the albedo also darkened the ambient). Centred like the displacement: the flat
+surface is the relief's middle, so objects stand in the ground (marched from the top, the ground looks dug out round them). Steps
+fall with distance from 16 view and 8 sun steps to 6 and 3 at the parallax distance, in full to half of it; the sun's march reads
+the height two levels coarser and is skipped at 0 self-shadow. Where the ground is displaced, the view ray marches only the detail
+finer than the mesh (the height less its level at the segment, 8 steps), the whole height again as the displacement fades. The
+cliff layer is marched on each of its two projections with a weight over 0.1 along the surface's normal (the ray's move across the
+face over its depth into it). Heights are read as stored on both projections: the shading turns the `(x, height)` normal map round,
+but a texel's height does not change with that (read upside down, `CliffChunky`'s cracks became ridges). The `(z, height)`
+projection's tangent frame is degenerate where the normal faces ±X (the game's `n × (−X)`), so its shading matches the height only
+for some facings. Not in the rock impostor bake (parallax 0 there).
+
+**Refinement** (needs tessellation): every main-view patch takes the tessellated programs; an edge is also split where the terrain
+leaves it (at its quarters and middle) by more than 0.5 px, level `sqrt(deviation px / 0.5)` (a split in n takes a smooth curve's
+deviation down by about n²), at most 16, and the new points are put on the terrain (`terrainHeight`); an unsplit edge keeps its
+ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined.
+
+**Cost** (**Observed**, `meitou-viewer --ab <switch>` at a save's view, RTX 4090, 1080p DLSS 0.83): the terrain stage without
+relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +1.4 ms,
+of it the sun's march about 0.7; displacement +0.9 ms at 25 m, +1.04 at 100 m, +1.16 at 150 m (segments grow with distance, each
+ring adds about the same); refinement +0.38 ms at error 16, +0.24 at 32 (crests as smooth as error 4, which costs +0.48), so error
+32 with it costs less than error 16 without. Drawing the tessellated patches' colour at once instead of prepass then late colour
+cost more (the bumps overdraw themselves).
+
+**Texture field** (the game's and the viewer's `--terrain-sandbox [cliffs] [x,z]`, `GroundRelief.FieldCentre`): the empty world
+(no population, foliage or objects) round a spot, default (38376, -8280), the flattest 2000-unit square of the heightmap found
+(plane-fit residual 1.6 units, slope 0.25%). `TerrainTextures.SetField` gives each distinct ground pair (base, slope, grass, dirt,
+road of every biome) a 200-unit tile, ordered by layer then name, its biome pinned resident (105 tiles from 58 biomes, 129 of the
+133 pairs); with `cliffs` the 36 cliff pairs on 100-unit tiles on an even 45° face at (92164, 123124) facing −Z (residual 2.7 units
+over 800, the steadiest steep face found), the camera below it. The patches' material and displacement read the tile's biome row
+and layer (`fieldTile`/`fieldMask`) instead of the blend; the relief fades to 0 over a tile's outer 8%. The tile under the camera
+is named at the top left with its tile size and depth. In the game's sandbox Esc opens the settings. The viewer's `--field-tour
+<dir> [--tour-distance u] [--tour-pitch deg]` saves a picture of every tile and an index.html (105 tiles in about 30 s).
 
 ## Rocks
 
@@ -60,10 +107,10 @@ position whose copies' normals disagree gets, per corner, the area-weighted norm
 from the corner's own; positions that agree keep theirs. Every position also gets one geometry normal (all its faces, or the
 agreed one) in the tangent slot, w = 2 (the terrain material reads no tangents; a real tangent's w is ±1, so other TERRAIN-mode
 meshes stay flat). The mesh programs then have tessellated twins (colour, solid and the casters, `meshDepthTess`, so the
-shadow map curves alike): Phong tessellation (α 0.75) to the geometry normals, each edge split by `sqrt(bend / pixel)` (bend: α/4
-of the ends' normals' components along it; pixel: 0.0015 × its midpoint's distance), at most 16, `fractional_odd_spacing`;
-both sides of an edge curve it from the same two ends, so it does not crack. Levels by the camera eye in the shadow pass too.
-The impostor bake and the GI's ray meshes stay flat.
+shadow map curves alike): Phong tessellation (α 0.75, `RockSmoothing.Roundness`) to the geometry normals, each edge split by
+`sqrt(bend / pixel)` (bend: α/4 of the ends' normals' components along it; pixel: 0.0015 × its midpoint's distance over the
+tessellation detail), at most 16, `fractional_odd_spacing`; both sides of an edge curve it from the same two ends, so it does not
+crack. Levels by the camera eye in the shadow pass too. The impostor bake and the GI's ray meshes stay flat.
 
 ## Interior cut
 

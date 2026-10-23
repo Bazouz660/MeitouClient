@@ -250,6 +250,9 @@ sealed class WorldOptions
           --bench-compare <a.json> <b.json>   print two bench results side by side and exit
           --crowd <n>              place n generated characters of the start town round the start point (the character renderer's test; stills pose them at 0.35 s)
           --orbit-step <degrees>   with --screenshot: the camera orbits this much every frame (checks the upscaler's motion vectors)
+          --terrain-sandbox [cliffs] [x,z]   the empty world round a flat spot whose ground is a field of tiles, one per terrain texture (cliffs: on a steep face)
+          --field-tour <dir>       with --terrain-sandbox: a picture of every tile and an index.html (--tour-distance <u>, --tour-pitch <deg>)
+          --relief <Name=value>    a GroundRelief or RockSmoothing setting for the run (repeatable), e.g. --relief TargetSlope=0.3
           --sway-step <seconds>    with --screenshot or a bench run: the grass sway advances this much every frame (checks the grass motion; 0.006 is about a frame at 165 fps)
           --fog <u>                distance where the haze is complete (default 250000; the far plane follows it)
           --material-distance <u>  beyond it the terrain shows the biomes' ground colour (default 30000, as the game)
@@ -1044,11 +1047,12 @@ static class WorldFrame
             sliders.Add(new Slider("Water see-through distance (Meitou, game 4000)", 1000, 100000, () => water.ClearDistance,
                 v => water.ClearDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
         }
-        sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
+        sliders.Add(new Slider("Terrain detail: error px (less = finer)", 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
-        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief, parallax and displacement, 0 off.
+        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief (parallax and displacement; 0 off) and where each ends.
         sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
-        sliders.Add(new Slider("Ground displacement distance (m)", 5, 60, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
+        if (g.Sky.Gpu.Device.HasTessellation)
+            sliders.Add(new Slider("Ground displacement distance (m)", 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
         sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10, v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
         // The game's `Shadow Range` slider goes 1000 to 9000; the viewer allows more (the cascades stretch over it), and its left end (0) turns the
         // shadows off (low-end GPUs).
@@ -1121,6 +1125,8 @@ static class WorldFrame
         (toggles ??= []).Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
         if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
         if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
+        if (g.Sky.Gpu.Device.HasTessellation)
+            toggles.Add(new Toggle("Terrain outline refinement (tessellation)", () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)

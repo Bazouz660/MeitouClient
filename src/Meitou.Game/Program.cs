@@ -83,6 +83,25 @@ static class Program
             using var flat = WorldFrame.LoadFlat(world, db);
             return new GameHost(install, flat, new AssetLocator(install), world, game, config, null) { Splash = splash }.Run();
         }
+        if (game.TerrainSandbox is { } field)
+        {
+            // The terrain sandbox (docs/render-terrain.md "Texture field"): the empty world round the spot, its ground the field of every ground texture.
+            if (game.NewGame || game.Load is not null || game.Duel || game.Battle is not null)
+            {
+                Console.Error.WriteLine("--terrain-sandbox is an empty world: drop --new-game, --load, --duel and --battle.");
+                return 2;
+            }
+            game.NoPopulation = true;
+            (world.X, world.Z, world.Town, world.Zone) = (field.X, field.Z, null, null);
+            Meitou.Rendering.GroundRelief.FieldCentre = new Vector2(field.X, field.Z);
+            Meitou.Rendering.GroundRelief.FieldCliffs = game.TerrainSandboxCliffs;
+            (world.NoFoliage, world.NoObjects) = (true, true);   // the ground alone: no grass, rocks or scattered objects over the tiles
+            world.Weather ??= "Default";
+            if (!rest.Contains("--time")) world.Hour = 10;
+            world.Distance ??= 250;
+            world.Pitch ??= game.TerrainSandboxCliffs ? 10 : 30;
+            if (game.TerrainSandboxCliffs) world.Yaw ??= 180;   // from below the face, looking up it (it faces −Z)
+        }
         if (game.Duel)
         {
             // The trailer duel (docs/simulation.md "Duel"): the world round its spot at sunset, clear, the camera low beside the pair looking into the sun.
