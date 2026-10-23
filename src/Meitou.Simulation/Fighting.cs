@@ -84,7 +84,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 
     /// <summary>
     /// Walks a fighter its target has not let close in round the target (<see cref="CombatTuning.CircleSpeedOf"/>): every <see cref="RepathSeconds"/> a path to the point
-    /// <see cref="CircleLookAhead"/> seconds of side-stepping further round, at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
+    /// at least <see cref="CircleLookAhead"/> seconds of side-stepping further round (and past the arrival radius), at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
     /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces and faces its target while it side-steps; here the walker follows the path and faces its way (engine).
     /// </summary>
     static void Circle(World world, int i, ref CharacterHot n, CharacterCold cold, CharacterCold? tc, int t, System.Numerics.Vector3 d, float gap, int around)
@@ -102,8 +102,13 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         float speed = CombatTuning.CircleSpeedOf(CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter), CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 1),
             CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 2), cold.Fighter?.EncumbranceFactor ?? 1, cold.Fighter is not { IsAnimal: true });
         var target = table.Next[t].Position;
-        float angle = MathF.Atan2(-d.Z, -d.X) + speed * CircleLookAhead / MathF.Max(radius, 1);
-        var goal = new Vector2(target.X + MathF.Cos(angle) * radius, target.Z + MathF.Sin(angle) * radius);
+        // The point lies at least beyond the walker's arrival radius and one repath interval of walking, or a slow side-step (|s| of 12) would end the path after a stride and the
+        // fighter would creep; and it is pushed out so that the straight walk to it (a chord) keeps to the ring instead of cutting in towards the target.
+        float ahead = MathF.Max(MathF.Abs(speed) * CircleLookAhead, MovementSystem.ArriveRadius + CombatTuning.FootworkSpeed * RepathSeconds + 1);
+        float arc = MathF.Min(ahead / MathF.Max(radius, 1), 2);
+        float angle = MathF.Atan2(-d.Z, -d.X) + MathF.CopySign(arc, speed);
+        float goalRadius = radius / MathF.Max(MathF.Cos(arc / 2), 0.5f);
+        var goal = new Vector2(target.X + MathF.Cos(angle) * goalRadius, target.Z + MathF.Sin(angle) * goalRadius);
         if (!world.Walkability.IsWalkable(goal.X, goal.Y, target.Y))
         {
             // Off the navmesh: it stands where it is (engine choice).
@@ -116,7 +121,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         n.TaskTime = RepathSeconds;
     }
 
-    /// <summary>Seconds of side-stepping the circling walker's path point lies ahead (engine choice: twice the path interval, so the walker never reaches it).</summary>
+    /// <summary>Seconds of side-stepping the circling walker's path point lies ahead at least (engine choice: twice the path interval; <c>Circle</c> also keeps it past the arrival radius).</summary>
     public const float CircleLookAhead = 1;
 }
 
