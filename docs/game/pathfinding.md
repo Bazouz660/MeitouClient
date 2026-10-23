@@ -75,7 +75,11 @@ DotRecast: cells2,height1,tile48 cells,agent18/climb5,ground/water/door areas. B
 cache tiles and gate population on readiness. Query A* through portal clearance (radius per wall end; tile-border, seam
 and area-change ends are open) and water/door costs. **Observed** (zone 18.39, `meitou-tools navmesh`): a Swamp Village
 shack's stair straddles the tile line x−62208 and its foot came out as 6..8-unit portals, so a 2*radius rule kept radius-4
-agents under the house; the west half's foot meets the walkboard in a near-miss T, joined as an inner seam. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
+agents under the house; the west half's foot meets the walkboard in a near-miss T, joined as an inner seam.
+A start polygon with no exit that clears the radius is left through its narrow exits (engine choice: the walker already stands
+in it). **Observed** (zone 39.16, Stoat, scratch probe from ground-level points round its 25 doors): slivers beside door steps
+(Y-House `16-` 35046..35064,−71590..−71582, 4..6 wide, one 6-unit wall-ended exit; Y-House `18-`; Old Storm House `20-`) held
+8 of 1999 starts with no path at all, so a walker stopped or pushed there stayed stuck at the door; with the rule all 1999 path. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
 reference evidence, not a runtime dependency or proof of DotRecast polygon parity.
 **Terrain** as the original: every second heightmap sample (36 units), slope 40° per triangle. **Observed** (zone 20.32, `meitou-tools navmesh`):
 at 18 units each right triangle (legs 18) near 40° was walkable or not on its own, and 2-unit cells kept every one, so cliff fringes were saw teeth

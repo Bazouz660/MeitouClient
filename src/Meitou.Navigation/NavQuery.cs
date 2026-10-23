@@ -93,6 +93,9 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         Node? last = null, nearest = first;
         float nearestDistance = float.MaxValue;
         float minFactor = Math.Min(1f, agent.WaterFactor);
+        // A start polygon none of whose exits leaves the radius clear (a sliver by a stair or a wall the walker was pushed into) is left through the narrow ones:
+        // the walker stands in it already (docs/game/pathfinding.md, "Own builder").
+        bool squeezeOut = false;
 
         while (open.Count > 0 && iterations++ < MaxIterations)
         {
@@ -115,6 +118,12 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             for (int i = 0; i < tl.Length; i += 2) Relax(node, mesh, tl[i], new NavRef(node.Ref.Zone, tl[i + 1]), factor);
             foreach (var link in World.LinksOf(node.Ref))
                 Relax(node, mesh, link.Edge, link.To, factor);
+            if (node == first && open.Count == 0 && last is null && !squeezeOut)
+            {
+                squeezeOut = true;
+                first.Closed = false;
+                open.Enqueue(first, first.F);
+            }
         }
         if (last is null && partial && nearest != first)
         {
@@ -141,7 +150,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             if (!Portal(from.Ref, edge, to, out var left, out var right, out bool leftWall, out bool rightWall)) return;
             // Only an end on a wall takes the radius off the portal (as Pull insets it); a tile-border, seam or area-change end has walkable ground beyond.
             float width = Vector2.Distance(new(left.X, left.Z), new(right.X, right.Z));
-            if (width < ((leftWall ? 1 : 0) + (rightWall ? 1 : 0)) * agent.Radius) return;
+            if (width < ((leftWall ? 1 : 0) + (rightWall ? 1 : 0)) * agent.Radius && !(squeezeOut && from == first)) return;
             var mid = BestCrossing(from.Position, left, right, goalPoint);
             float g = from.G + Vector3.Distance(from.Position, mid) * factor;
             if (area == NavArea.Door) g += OpenDoorCost;
