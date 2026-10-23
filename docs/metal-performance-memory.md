@@ -296,6 +296,20 @@ With the GPU foliage cull live, a capture contains two command buffers: the unla
 compute encoders, then `Meitou frame N` with the render encoders. If Summary says **0 Compute Encoders**, the process
 took the CPU cull (`MEITOU_METAL_CPU_CULL=1`) or is a stale build; the capture then shows only the CPU-submission path.
 
+The first live GPU-cull capture (2026-10-23, 1600x1200 native) has:
+
+- **2 command buffers:** pre-frame 2.84% (0.91 ms; its compute encoders are the cull) and `Meitou frame 2713` 97.16%.
+- **32.15 ms** for that one frame, heavier than the steady trace's 21.7 ms main command buffer. Do not use one frame
+  for an average.
+- Main scene 69.29% (22.3 ms), with terrain 35.13% (11.3 ms), objects 13.40% (4.3 ms), foliage meshes 7.40%
+  (2.4 ms), grass 3.42% (1.1 ms) and terrain interior 4.02% (1.3 ms).
+- No terrain-shadow sweep in this frame: the earlier 18.79% sweep was a rebuild frame, not steady work.
+- The cull's pre-frame is under 1 ms; it is not the bottleneck. The steady trace agrees: GPU cull ~46 fps versus CPU
+  cull ~44 fps at the same view.
+
+The main encoder is wide (occupancy/bandwidth/texture work), not a single ALU hotspot. The smaller high-ALU encoders
+are shadow/terrain preparation; inspect them separately before optimising the main terrain shader.
+
 ## Review commands
 
 ```sh

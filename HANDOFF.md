@@ -11,9 +11,10 @@ mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the C
 Vulkan is ~41-42 fps (GPU 22.3 ms, world draw CPU 6.0 ms). Vulkan's GPU time is dominated by terrain (13.75 ms);
 particles, post, cull and shadows are 1-2 ms each. At 400x300 points Metal is ~89 fps and Vulkan ~82 fps. An early
 Metal capture showed zero compute encoders: the live-enable line was missing from the committed renderer, so it was a
-CPU-cull frame. The line is now committed; a fresh capture should contain the pre-frame compute command buffer. An
-early Vulkan comparison was also invalid because `--windowed` maximized it despite `--size`; fixed. `--log-spikes`
-prints the Vulkan per-stage run summary at exit.
+CPU-cull frame. The line is now committed; the fresh capture has two command buffers and compute encoders. Its pre-frame is 0.91 ms
+(2.84%); the one captured frame is 32.15 ms, with the main scene 22.3 ms and terrain 11.3 ms. The earlier 18.79%
+terrain-shadow sweep was a rebuild frame. An early Vulkan comparison was invalid because `--windowed` maximized it
+despite `--size`; fixed. `--log-spikes` prints the Vulkan per-stage run summary at exit.
 
 ## Deterministic Metal tests
 
