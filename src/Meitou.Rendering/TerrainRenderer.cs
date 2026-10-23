@@ -627,7 +627,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 (c.DisplaceEnd, c.ParallaxEnd) = (GroundRelief.DisplaceDistance, GroundRelief.ParallaxDistance);
                 (c.OverlayRelief, c.SelfShadow, c.TargetSlope) = (GroundRelief.OverlayRelief, GroundRelief.SelfShadow, GroundRelief.TargetSlope);
                 (c.MaxDepth, c.ScaleFollow, c.CliffScale) = (GroundRelief.MaxDepth / GroundRelief.ReferenceDepth, GroundRelief.ScaleFollow, GroundRelief.CliffScale);
-                (c.Refine, c.PixelScale) = (patches && patchColourTess is not null ? GroundRelief.RefinePixels : 0, options.TerrainPixelScale);
+                (c.Refine, c.PixelScale, c.BroadCut) = (patches && patchColourTess is not null ? GroundRelief.RefinePixels : 0, options.TerrainPixelScale, GroundRelief.BroadCut);
                 c.FieldTiles = Index(set.Field, BindlessKind.UTexture2D, standInUInt);
                 if (patches && textured && t.FieldCount > 0) (c.FieldOrigin, c.FieldTile, c.FieldColumns, c.FieldCount) = (t.FieldOrigin, t.FieldTile, t.FieldColumns, t.FieldCount);
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);

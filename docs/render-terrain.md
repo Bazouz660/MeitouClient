@@ -25,7 +25,7 @@ refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground rel
 "Ground displacement distance (m)" (100), "Ground parallax distance (m)" (60); viewer K toggles the parallax. The other values are
 tuned constants, expressed at a 20 cm reference depth and settable for a run with the viewer's `--relief Name=value`: target slope
 0.2, scale follow 0.5, max depth 80 cm (160 at the default 40),
-cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5.
+cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
 
 **Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
 of the relief). The normal map's slopes (`dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame) are integrated by FFT
@@ -59,14 +59,16 @@ stage tests each corner's coverage once; an edge is split only where its ends ha
 distance)` over the detail, at most 64, from the edge alone, so shared edges split alike. The evaluation stage (`reliefMove`: one
 blend lookup, one normal) moves the point by `Σ depth × (height − ½) × shown` upward for the ground and along the ground's normal for
 the cliff (its two vertical projections blended as the material blends them), in full to 60% of the distance, none from it. Each
-vertex reads the height at the mip whose texels are half a segment, leaving out what the mesh cannot carry (spikes). Centred:
+vertex reads the height at the mip whose texels are half a segment, leaving out what the mesh cannot carry (spikes), less its
+level whose texels are half the broad cut (2 m): the characters walk on the undisplaced surface, so broad swells swallowed their
+feet; the bumps stay, and beyond the displacement the parallax keeps the broad shapes. Centred:
 what stands on the ground sits level with the bumps; troughs below the flat shadow casters look up the sun shadow at the ground's
 height (`atmoShadowLift`). The material (layer coordinates, blend, overlay, field, normal) is read at the undisplaced point, passed
 in the patches' unused `vNormal`, so a cliff's horizontal projections do not slide up its bumps. Shadow casters, reflections and
 the rock bake are not tessellated.
 
 **Parallax** (the patch shader; the fallback without tessellation): one offset is marched through the shown layers' heights by
-weight along the view ray, moving every layer's coordinate by it, then toward the sun for a soft self-shadow that dims the sun
+weight (`Relief`: one unscaled coordinate with its derivatives, and per layer its tiling, slice and weight) along the view ray, moving every layer's coordinate by it, then toward the sun for a soft self-shadow that dims the sun
 only (`atmoSelfShadow` in `kenshiLight`; darkening the albedo also darkened the ambient). Centred like the displacement: the flat
 surface is the relief's middle, so objects stand in the ground (marched from the top, the ground looks dug out round them). Steps
 fall with distance from 16 view and 8 sun steps to 6 and 3 at the parallax distance, in full to half of it; the sun's march reads
@@ -84,8 +86,10 @@ deviation down by about n²), at most 16, and the new points are put on the terr
 ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined.
 
 **Cost** (**Observed**, `meitou-viewer --ab <switch>` at a save's view, RTX 4090, 1080p DLSS 0.83): the terrain stage without
-relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +2.3 ms
-(the same at 20 or 40 cm, 25 or 100 m, with or without refinement and centring); displacement +0.9 ms at 25 m, +1.04 at 100 m, +1.16 at 150 m (segments grow with distance, each
+relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +0.88 ms
+(master's base-layer parallax: +0.25; a `Relief` holding a coordinate and derivatives per layer cost +2.3, +0.62 capped at one
+layer: its size, not the layers sampled, set the cost); displacement +0.78 ms at 100 m (+0.9 at 25 m, +1.16 at 150 m before the
+compact `Relief`) (segments grow with distance, each
 ring adds about the same); refinement +0.38 ms at error 16, +0.24 at 32 (crests as smooth as error 4, which costs +0.48), so error
 32 with it costs less than error 16 without. Drawing the tessellated patches' colour at once instead of prepass then late colour
 cost more (the bumps overdraw themselves).

@@ -170,6 +170,7 @@ static partial class TerrainShaders
         uniform float uHalfWorld;
         uniform float uDisplace;       // world units from the lowest point to the highest, centred on the ground; 0 off
         uniform float uDisplaceEnd;    // GroundRelief.DisplaceDistance: moved in full to 60% of it, none from it
+        uniform float uBroadCut;       // GroundRelief.BroadCut: the displacement leaves out shapes wider than this (world units; 0 keeps all)
         uniform float uRefine;         // GroundRelief.RefinePixels: the terrain's deviation from an edge, in pixels, past which the edge is split (0 off)
         uniform float uPixelScale;     // pixels per radian of the picture (TerrainPixelScale)
         uniform float uOverlayRelief;  // GroundRelief.OverlayRelief: the grass, slope, dirt and road layers' share of relief (0: the base layer alone)
@@ -190,8 +191,13 @@ static partial class TerrainShaders
             float depth = reliefDepth(layer, scale);
             if (depth <= 0.0) return 0.0;   // flat: no relief (no normal map)
             if (!height) return share * depth;
-            float lod = segment > 0.0 ? max(0.0, log2(2.0 * segment * 0.5 * (scale.x + scale.y) * float(textureSize(uHeight, 0).x) / 5000.0)) : 0.0;
-            return share * depth * (textureLod(uHeight, vec3(xz / 5000.0 * scale, layer), lod).r - 0.5);
+            float texelsPerUnit = 0.5 * (scale.x + scale.y) * float(textureSize(uHeight, 0).x) / 5000.0;
+            vec3 c = vec3(xz / 5000.0 * scale, layer);
+            float lod = segment > 0.0 ? max(0.0, log2(2.0 * segment * texelsPerUnit)) : 0.0;
+            // The broad shapes left out (the height less its level whose texels are half the cut): what stands on the ground (the characters walk on the
+            // undisplaced surface) is not swallowed by a swell; the bumps and grain stay.
+            float broad = uBroadCut > 0.0 ? textureLod(uHeight, c, max(0.0, log2(0.5 * uBroadCut * texelsPerUnit))).r : 0.5;
+            return share * depth * (textureLod(uHeight, c, lod).r - broad);
         }
 
         // The relief at p (one pass for both, one blend lookup and one normal): ground, how far the ground's layers lift it (upward; reliefLayer), and
@@ -666,19 +672,21 @@ static partial class TerrainShaders
         // layer stops being sampled); eps 0 is the weight unchanged. docs/render-terrain.md, "Layer weight threshold".
         float keepWeight(float x, float eps) { return eps > 0.0 ? x * smoothstep(eps, 2.0 * eps, x) : x; }
 
-        // Layers whose relief is marched together (GroundRelief): each one's coordinate with its derivatives, its array layer, its coordinate's move per
-        // unit of the march's offset, and its weight (its share of the pixel times its depth factor).
+        // Layers whose relief is marched together (GroundRelief): their common unscaled coordinate with its derivatives, and per layer its tiling (xy: the
+        // coordinate's scale, also its move per unit of the march's offset), array layer (z) and weight (w: its share of the pixel times its depth factor).
+        // Kept this small on purpose: the march carries it through every step, and a larger one (a coordinate and derivatives per layer) cost the
+        // parallax several times over in registers (docs/render-terrain.md, "Cost").
         const int ReliefMax = 5;
-        struct Relief { GradCoord c[ReliefMax]; vec2 scale[ReliefMax]; float layer[ReliefMax]; float weight[ReliefMax]; int n; float total; };
+        struct Relief { GradCoord base; vec4 layer[ReliefMax]; int n; float total; };
 
-        Relief noRelief() { Relief r; r.n = 0; r.total = 0.0; return r; }
+        Relief noRelief(GradCoord base) { Relief r; r.base = base; r.n = 0; r.total = 0.0; return r; }
 
-        void addRelief(inout Relief r, GradCoord c, vec2 scale, float layer, float share)
+        void addRelief(inout Relief r, vec2 scale, float layer, float share)
         {
             // A layer showing under 5% of the pixel is left out, fading in to 15% (continuous: no seam where it drops out); the march's cost is per layer.
             float w = share * smoothstep(0.05, 0.15, share) * reliefDepth(layer, scale);
             if (w <= 0.0 || r.n >= ReliefMax) return;
-            r.c[r.n] = c; r.scale[r.n] = scale; r.layer[r.n] = layer; r.weight[r.n] = w;
+            r.layer[r.n] = vec4(scale, layer, w);
             r.n++;
             r.total += w;
         }
@@ -702,15 +710,16 @@ static partial class TerrainShaders
             float texels = float(textureSize(uHeight, 0).x);
             for (int i = 0; i < r.n; i++)
             {
-                vec3 c = vec3(r.c[i].p + o * r.scale[i], r.layer[i]);
-                float x = textureGrad(uHeight, c, r.c[i].dx * blur, r.c[i].dy * blur).r;
+                vec4 l = r.layer[i];
+                vec3 c = vec3((r.base.p + o) * l.xy, l.z);
+                float x = textureGrad(uHeight, c, r.base.dx * l.xy * blur, r.base.dy * l.xy * blur).r;
                 if (finer && reliefSegment > 0.0 && reliefWhole < 1.0)
                 {
                     // ReliefFunctions' level for this spacing: texels half a segment apart.
-                    float lod = max(0.0, log2(2.0 * reliefSegment * 0.5 * (r.scale[i].x + r.scale[i].y) * texels / 5000.0));
+                    float lod = max(0.0, log2(2.0 * reliefSegment * 0.5 * (l.x + l.y) * texels / 5000.0));
                     x = mix(clamp(x - textureLod(uHeight, c, lod).r + 0.5, 0.0, 1.0), x, reliefWhole);
                 }
-                h += r.weight[i] * x;
+                h += l.w * x;
             }
             return h / r.total;
         }
@@ -786,6 +795,8 @@ static partial class TerrainShaders
             // cliff weights almost never are, so this skips only some of the 14 layer samples per biome (docs/render-terrain.md, "Where the terrain's 0.99 ms goes").
             GradCoord base = gradCoord(uv * sB.xy), grass = gradCoord(uv * sB.zw), slopeUv = gradCoord(uv * sA.xy), dirt = gradCoord(uv * sC.xy), road = gradCoord(uv * sC.zw);
             GradCoord cliffX = gradCoord(vec2(uv.y, vert) * sA.zw), cliffZ = gradCoord(vec2(uv.x, vert) * sA.zw);
+            // The relief march's unscaled coordinates (Relief), taken here for the same reason.
+            GradCoord groundBase = gradCoord(uv), cliffBaseX = gradCoord(vec2(uv.y, vert)), cliffBaseZ = gradCoord(vec2(uv.x, vert));
             float far = clamp(distance * fade.a - 0.3, 0.0, 1.0);
 
             // Ground parallax (GroundRelief, docs/render-terrain.md): the ground layers' relief, uParallax world units deep (times each layer's own factor and
@@ -814,14 +825,14 @@ static partial class TerrainShaders
                 // What each layer shows, in the material's order below (base, grass, slope, dirt, road, the cliff over all): the base layer, and the
                 // others at uOverlayRelief's share. One march over their heights by weight moves every layer's coordinate alike.
                 float top = 1.0 - w.y, aboveDirt = top * (1.0 - map.a), aboveSlope = aboveDirt * (1.0 - map.b);
-                Relief ground = noRelief();
-                addRelief(ground, base, sB.xy, layersA.x, aboveSlope * (1.0 - w.x) * (1.0 - map.r));
+                Relief ground = noRelief(groundBase);
+                addRelief(ground, sB.xy, layersA.x, aboveSlope * (1.0 - w.x) * (1.0 - map.r));
                 if (uOverlayRelief > 0.0)
                 {
-                    addRelief(ground, grass, sB.zw, layersA.w, uOverlayRelief * aboveSlope * (1.0 - w.x) * map.r);
-                    addRelief(ground, slopeUv, sA.xy, layersA.y, uOverlayRelief * aboveSlope * w.x);
-                    addRelief(ground, dirt, sC.xy, layersB.x, uOverlayRelief * aboveDirt * map.b);
-                    addRelief(ground, road, sC.zw, layersB.y, uOverlayRelief * top * map.a);
+                    addRelief(ground, sB.zw, layersA.w, uOverlayRelief * aboveSlope * (1.0 - w.x) * map.r);
+                    addRelief(ground, sA.xy, layersA.y, uOverlayRelief * aboveSlope * w.x);
+                    addRelief(ground, sC.xy, layersB.x, uOverlayRelief * aboveDirt * map.b);
+                    addRelief(ground, sC.zw, layersB.y, uOverlayRelief * top * map.a);
                 }
                 if (ground.n > 0)
                 {
@@ -845,15 +856,15 @@ static partial class TerrainShaders
                     vec2 o;
                     if (cb.x > 0.1)
                     {
-                        Relief r = noRelief();
-                        addRelief(r, cliffX, sA.zw, layersA.z, 1.0);
+                        Relief r = noRelief(cliffBaseX);
+                        addRelief(r, sA.zw, layersA.z, 1.0);
                         shadeX = reliefMarch(r, o, vec2(tv.z, -tv.y) / vn * depth, vec2(ts.z, -ts.y) / sn * depth, lit, strength, true);
                         cliffX.p += o * sA.zw;
                     }
                     if (cb.y > 0.1)
                     {
-                        Relief r = noRelief();
-                        addRelief(r, cliffZ, sA.zw, layersA.z, 1.0);
+                        Relief r = noRelief(cliffBaseZ);
+                        addRelief(r, sA.zw, layersA.z, 1.0);
                         shadeZ = reliefMarch(r, o, vec2(tv.x, -tv.y) / vn * depth, vec2(ts.x, -ts.y) / sn * depth, lit, strength, true);
                         cliffZ.p += o * sA.zw;
                     }
@@ -1172,6 +1183,7 @@ static partial class TerrainShaders
             float cliffScale;
             float refine;
             float pixelScale;
+            float broadCut;
         } terrain;
 
         """;
@@ -1209,7 +1221,7 @@ static partial class TerrainShaders
         ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
         ["uOverlayRelief"] = "terrain.overlayRelief", ["uSelfShadow"] = "terrain.selfShadow", ["uTessDetail"] = "terrain.tessDetail", ["uRockRound"] = "terrain.rockRound",
         ["uFieldTiles"] = "utextures2D[terrain.fieldTiles]", ["uFieldOrigin"] = "terrain.fieldOrigin", ["uFieldTile"] = "terrain.fieldTile",
-        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale",
+        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -1306,7 +1318,7 @@ static partial class TerrainShaders
 
 /// <summary>The C# side of <see cref="TerrainShaders.ConstantsBlock"/> (std140; offsets checked against the reflection by a test). GLSL bools
 /// are 32-bit (0 / 1).</summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 464)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 480)]
 struct TerrainConstants
 {
     [System.Runtime.InteropServices.FieldOffset(0)] public System.Numerics.Vector4 CoarseRect;
@@ -1375,6 +1387,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(452)] public float CliffScale;
     [System.Runtime.InteropServices.FieldOffset(456)] public float Refine;
     [System.Runtime.InteropServices.FieldOffset(460)] public float PixelScale;
+    [System.Runtime.InteropServices.FieldOffset(464)] public float BroadCut;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[8]</c>).</summary>

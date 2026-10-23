@@ -53,6 +53,10 @@ public static class GroundRelief
     /// on the undisplaced ground, so deeper relief buries their feet).</summary>
     public static float MaxDepth { get; set; } = 8;
 
+    /// <summary>The displacement leaves out shapes wider than this (world units: 20, 2 m): the characters walk on the undisplaced surface, so broad swells
+    /// swallow their feet; the parallax keeps them beyond the displacement. 0 keeps all.</summary>
+    public static float BroadCut { get; set; } = 20;
+
     /// <summary>The cliff layer's depth (and its cap) as a multiple of the ground's.</summary>
     public static float CliffScale { get; set; } = 1;
 
