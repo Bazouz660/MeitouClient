@@ -81,6 +81,10 @@ public sealed partial class DialogueSystem
                     tc.Bounties.Get(mc.Faction, data.Factions[mc.Faction].Name).Amount += effect.Value;
                     break;
                 }
+                case DialogueActions.CrimeAlarm when tc is not null && mc is not null && Arrests is { } law
+                    && world.Characters.TryResolveNext(me, out int alarmer) && world.Characters.TryResolveNext(target, out int alarmed):
+                    law.Crimes.Alarm(world, alarmer, alarmed);
+                    break;
                 case DialogueActions.PayBounty:
                     Arrests?.PayBounty(world, me, target);
                     break;

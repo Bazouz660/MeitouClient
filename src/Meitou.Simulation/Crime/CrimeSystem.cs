@@ -294,8 +294,11 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         }
     }
 
-    /// <summary>A building with residents that a character is inside: its key, the residents' faction, and whether it is public (<see cref="Ai.Blackboard.HomePublic"/>).</summary>
-    readonly record struct Premises(string Key, int Faction, bool Public)
+    /// <summary>
+    /// A building with residents that a character is inside: its key, the residents' faction, whether it is public (<see cref="Ai.Blackboard.HomePublic"/>), and whether the residents
+    /// have locked it up (<see cref="Locks.LockSystem.IsHouseLocked"/>, the original's squad flag <c>homelok</c>).
+    /// </summary>
+    readonly record struct Premises(string Key, int Faction, bool Public, bool LockedUp)
     {
         /// <summary>Open to visitors: public, from 7:00 to 22:59 (the original's hour test, <b>Observed</b>).</summary>
         public bool Open(int hour) => Public && hour is >= OpensAt and <= ClosesAfter;
@@ -306,30 +309,84 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
 
     static string? HomeKey(Squad q) => (q.Ai?.OwnHome ?? q.HomeBuilding)?.Key;
 
+    Locks.LockSystem? locks;
+    bool locksLooked;
+
+    bool LockedUp(World world, string key)
+    {
+        if (!locksLooked) { locksLooked = true; locks = world.SystemOf<Locks.LockSystem>(); }
+        return locks?.IsHouseLocked(world, key) ?? false;
+    }
+
     /// <summary>
-    /// The premises the character stands inside (<see cref="SightMap.BuildingOf"/>): a town building some squad lives in, the first such squad's (engine reading of the residents'
-    /// flag <c>+0xe8</c> the original requires, <b>Unknown</b>); null outdoors, on a roof, in a building nobody lives in, or caged.
+    /// The premises the character stands inside (<see cref="SightMap.BuildingOf"/>): a town building some squad lives in, the first such squad's (the original reads the flags of the
+    /// building's owner platoon, <c>building +0xd0</c>); null outdoors, on a roof, in a building nobody lives in, or caged.
     /// </summary>
-    static Premises? PremisesOf(World world, int slot)
+    Premises? PremisesOf(World world, int slot)
     {
         if (world.Characters.Cold(slot) is not { IsImprisoned: false } || world.Sight.BuildingOf(slot) is not { } key) return null;
         foreach (var q in world.Squads.All)
-            if (HomeKey(q) == key) return new Premises(key, q.Faction, q.Ai?.HomePublic ?? true);
+            if (HomeKey(q) == key) return new Premises(key, q.Faction, q.Ai?.HomePublic ?? true, LockedUp(world, key));
         return null;
     }
 
     /// <summary>
     /// Whether <paramref name="w"/>, seeing <paramref name="c"/> inside <paramref name="house"/>, calls it trespassing (the perception's test <c>FUN_140852350</c>, <b>Observed</b>, then
-    /// <c>FUN_140859680</c> sets the pending crime against the witness's faction): never a witness that regards the culprit as friendly (standing in for <c>FUN_14032e1e0</c>, <b>Unknown</b>).
-    /// A resident (the witness's squad lives there) when the building is not <see cref="Premises.Open"/>; a police-like witness, at any hour, when it is not public and its residents'
-    /// faction does not regard the culprit's as friendly.
+    /// <c>FUN_140859680</c> sets the pending crime against the witness's faction). Never a witness that regards the culprit as an ally (the character's <c>vfunc 126</c>: same faction or
+    /// allied) or as an enemy (<c>vfunc 125</c>, read here as <see cref="AggroSystem.IsEnemy"/>; an enemy is fought instead). A resident (the witness's squad lives there): the residents
+    /// have locked up and the building is not <see cref="Premises.Open"/>. A police-like witness in someone else's building, at any hour: it is not public, the residents' faction does
+    /// not regard the culprit's as an ally, and the culprit is a slave or the residents have locked up.
     /// </summary>
     bool Trespasses(World world, CharacterCold w, CharacterCold c, Premises house)
     {
-        if (Friendly(w.Faction, c.Faction)) return false;
-        if (w.SquadId >= 0 && world.Squads.Find(w.SquadId) is { } squad && HomeKey(squad) == house.Key) return !house.Open(world.Hour);
-        return !house.Public && IsPoliceLike(world, w) && !Friendly(house.Faction, c.Faction);
+        if (Friendly(w.Faction, c.Faction) || AggroSystem.IsEnemy(Relations, w.Faction, c.Faction)) return false;
+        if (w.SquadId >= 0 && world.Squads.Find(w.SquadId) is { } squad && HomeKey(squad) == house.Key) return house.LockedUp && !house.Open(world.Hour);
+        return !house.Public && IsPoliceLike(world, w) && !Friendly(house.Faction, c.Faction) && (c.SlaveState != 0 || house.LockedUp);
     }
+
+    /// <summary>
+    /// DA 33 CRIME_ALARM said by <paramref name="speaker"/> at <paramref name="target"/> (<c>FUN_140680560</c>, <b>Observed</b>): the speaker turns on the target (its perception marks it
+    /// hostile, <c>FUN_140858f40</c>), the target's crime timer is set to 30 and it is recently wanted (<c>FUN_140851f40</c>); with no crime pending, a target inside the speaker's own
+    /// home that is not public gets a pending Trespassing. Then the alarm of the speaker's town is raised at the target (<c>FUN_1409335e0</c>, "Alarm raised" at most every 30 s for
+    /// the player's); what answers the town alarm is <b>Unknown</b>, Meitou sends the town's police-like characters within twice their sight of the target at it (engine choice).
+    /// </summary>
+    public void Alarm(World world, int speaker, int target)
+    {
+        var table = world.Characters;
+        if (table.Cold(speaker) is not { } s || table.Cold(target) is not { } t) return;
+        var targetId = table.IdOf(target);
+        world.Defer(new Combat.AttackOrder([table.IdOf(speaker)], targetId) { Tick = world.Tick + 1 });
+        var squad = s.SquadId >= 0 ? world.Squads.Find(s.SquadId) : null;
+        int town = squad?.Town ?? -1;
+        if (t.Pending is { } p) p.Timer = AlarmTimer;
+        t.RecentlyWanted = RecentlyWantedSeconds;
+        if (town < 0) return;   // the original also needs the speaker's faction not hostile to its town's (a town squad's is its town's here)
+        if (t.Pending is null && squad!.Ai?.HomePublic == false && HomeKey(squad) is { } home && world.Sight.BuildingOf(target) == home
+            && SetPending(world, target, CrimeCode.Trespassing, s.Faction, table.IdOf(speaker), MinTimer)) t.Pending!.Timer = AlarmTimer;
+        if (t.IsPlayer && world.GameHours - lastAlarmHours >= AlarmPostSeconds / World.SecondsPerGameHour)
+        {
+            lastAlarmHours = world.GameHours;
+            world.Post(Loc.Tr("Alarm raised"));
+        }
+        var at = table.Next[target].Position;
+        var guards = new List<CharacterId>();
+        foreach (var q in world.Squads.All)
+        {
+            if (q.Town != town) continue;
+            foreach (var m in q.Members)
+            {
+                if (!table.TryResolveNext(m, out int g) || g == speaker || !table.Next[g].Alive) continue;
+                if (table.Cold(g) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, Fighter.CanAttack: true } gc || !IsPoliceLike(world, gc)) continue;
+                float r = 2 * AggroSystem.RangeOf(gc, AggroSystem.OutdoorSight);
+                if (Vector3.DistanceSquared(table.Next[g].Position, at) <= r * r) guards.Add(m);
+            }
+        }
+        if (guards.Count > 0) world.Defer(new Combat.AttackOrder(guards, targetId) { Tick = world.Tick + 1 });
+    }
+
+    /// <summary>The crime timer DA 33 sets (the literal 30.0 passed to <c>FUN_140851f40</c>), and how often "Alarm raised" may be posted (real seconds in the original; game seconds here).</summary>
+    public const float AlarmTimer = 30, AlarmPostSeconds = 30;
+    double lastAlarmHours = double.NegativeInfinity;
 
     /// <summary>The dialogue event the witness says at the culprit (<c>FUN_140854d10</c>'s switch on the crime code, docs/game/dialogue.md "Event sources").</summary>
     static int WitnessEvent(World world, CharacterCold w, PendingCrime p) => p.Code switch
