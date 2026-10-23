@@ -447,7 +447,9 @@ sealed partial class GameHost
             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
             DuelHoldClock();
-            advanceTotal += Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
+            double advanceMs = Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
+            advanceTotal += advanceMs;
+            profiler?.Outside(advanceMs);   // F12's sim row
             WorldNews();
             HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
             HandleNewGame();

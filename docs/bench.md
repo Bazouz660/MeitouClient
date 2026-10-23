@@ -51,8 +51,9 @@ the window copy; GPU `submit` measures that copy and the command tail, not the C
 Offscreen frames have no present wait. Render-thread benchmark totals exclude `driver-wait`.
 In the game the head is split too: `host` (the host's frame work before the world draw), `blood` (the host's blood marks and pools, then
 the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own work.
+`sim` (game only) is the simulation ticks run on the render thread before the frame's clock starts (`FrameProfiler.Outside`); it counts in the total.
 F12's legend groups stages (update, pre-frame, scene, present) into one summed row and line each; a click on a `+` row opens it (plotting
-its stages instead), `-` closes it. `upd-chars` opens to its render-thread parts (`StageClock.Part`; not plotted; the pass meter shows them as subs): `fill` (the host's draw list),
+its stages instead), `-` closes it. The last column is the largest frame of the side shown over the 300 kept (a closed group's largest summed frame). `upd-chars` opens to its render-thread parts (`StageClock.Part`; not plotted; the pass meter shows them as subs): `fill` (the host's draw list),
 `textures` (streaming pump), `gather` (characters in range, appearances), `pose` (the parallel posing and part placement), `materials`,
 `bolts`, `portraits`, `hover` (hover masks) and `icons` (item and building icons). The offscreen bench reports them as `upd-chars/<part>`.
 
