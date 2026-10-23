@@ -115,14 +115,9 @@ public sealed partial class CombatSystem
         Splash(world, d, dc, -new Vector2(toAttacker.X, toAttacker.Y), damage.Cut + damage.Blunt + damage.Pierce);
         if (death && world.Luckyren) dc.Burst = -new Vector2(toAttacker.X, toAttacker.Y);
         if (dc.Medical.Incapacitated) Sound(world, SoundKind.Down, d, a, prev[d].Position, fatal: death);
-        // A killing by the player's squad is a murder against the victim's faction (engine choice of the event kind, docs/simulation.md "Combat").
-        if (Crimes is { } crimes)
-        {
-            // Crimes before the relation event, which could make the victim's faction hostile (no crime against an enemy).
-            crimes.Hit(world, a, d);
-            if (death) crimes.Murder(world, a, d);
-        }
-        if (death && Relations is not null && ac.IsPlayer && !dc.IsPlayer) PlayerRelations.Event(world, Relations, dc.Faction, RelationEventKind.Murder);
+        // The police-hit rule first (the game's hit outcome runs before the damage), then the victim's faction's relation events (docs/game/factions-squads-towns.md 3.5).
+        Crimes?.Hit(world, a, d);
+        Deeds?.Blow(world, a, d, dc.Medical.Incapacitated, death);
         // A unique killed: dead in the registry, with the player flag when the killer is the player's (the body pass would mark it dead without).
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(d)) is { } unique) world.Uniques.Died(unique, ac.IsPlayer);
         Record(now, a, d, blow, outcome, part, damage, knockout, death);

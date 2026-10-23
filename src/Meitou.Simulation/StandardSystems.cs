@@ -152,11 +152,13 @@ public static class StandardSystems
         if (Has(StandardParts.Ai)) systems.Add(ai = new Meitou.Simulation.Ai.AiSystem(data, o.Ai));
         if (Has(StandardParts.Pursuit | StandardParts.Combat | StandardParts.Retaliation | StandardParts.Flee))
             combat = new CombatSystem(data.Combat.Techniques, data.Combat.Constants, data.Bodies.Constants, data.BodyOptions, o.AnimationLengths ?? new AnimationLengths(), o.Combat);
-        if (combat is not null && Has(StandardParts.Aggro)) combat.Relations = data.Relations;
+        // The relation events of deeds (blows, first aid, cagings) go with the live relations, which the aggro part brings.
+        var deeds = Has(StandardParts.Aggro) ? new FactionDeeds(data.Relations, data) : null;
+        if (combat is not null && Has(StandardParts.Aggro)) (combat.Relations, combat.Deeds) = (data.Relations, deeds);
         if (combat is not null) combat.Buildings = o.RagdollEnvironment;
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
-        if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid));
+        if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid) { Deeds = deeds });
         if (Has(StandardParts.Body)) systems.Add(new BodySystem(data.Bodies.Constants, data.BodyOptions, o.BodyTimeScale, data.Db));
         Meitou.Simulation.Carrying.CarrySystem? carry = null;
         Meitou.Simulation.Kidnap.KidnapSystem? kidnap = null;
@@ -169,7 +171,7 @@ public static class StandardSystems
             carry.Assembly = new CharacterAssembly(data);
             systems.Add(carry);
             // Raiders lifting the downed and carrying them to a cage of their faction: right after the carry system, whose lift and links it uses; it adds nothing to the hash until one runs.
-            if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap));
+            if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap) { Deeds = deeds });
         }
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
         if (Has(StandardParts.Construction)) systems.Add(construction = new Meitou.Simulation.Construction.ConstructionSystem(data, o.Construction));
@@ -204,7 +206,7 @@ public static class StandardSystems
             if (combat is not null) combat.Crimes = crime;
             if (carry is not null) carry.Crimes = crime;
             // Right after it: the police act on this tick's bookings and sightings; the lock orders (picking, getting out) report their crimes to it.
-            systems.Add(arrest = new Meitou.Simulation.Crime.ArrestSystem(crime, data.Bodies.Constants, o.Arrest) { Carry = carry });
+            systems.Add(arrest = new Meitou.Simulation.Crime.ArrestSystem(crime, data.Bodies.Constants, o.Arrest) { Carry = carry, Deeds = deeds });
             systems.Add(locks = new Meitou.Simulation.Locks.LockSystem(data.Bodies.Constants, data.BodyOptions) { Crimes = crime, DoorsCloseBehind = o.DoorsCloseBehind, Assembly = new CharacterAssembly(data), Combat = combat, CombatConstants = data.Combat.Constants });
         }
         Meitou.Simulation.Trading.TradeSystem? trade = null;

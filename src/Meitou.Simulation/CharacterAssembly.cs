@@ -125,6 +125,7 @@ sealed class CharacterAssembly(PopulationData data)
     public void AttachSaved(CharacterCold cold, RaceData race, CharacterStats stats, MedicalState medical, GameRecord? record, Inventory? inventory = null)
     {
         cold.NpcClass = NpcClassFor(cold, record);
+        cold.FactionImportance = FactionImportanceOf(record);
         cold.Race = race;
         cold.Stats = stats;
         cold.Medical = medical;
@@ -149,6 +150,13 @@ sealed class CharacterAssembly(PopulationData data)
     FundamentalType NpcClassFor(CharacterCold cold, GameRecord? record) =>
         cold.IsPlayer || (data.PlayerFaction >= 0 && cold.Faction == data.PlayerFaction) ? FundamentalType.Adventurer : NpcClassOf(record);
 
+    /// <summary>
+    /// CHARACTER <c>faction importance</c> (<b>Verified</b>: every one of the 639 merged base CHARACTER records has it, 0 to 100, most 1); 0 for any other record (the game's float map
+    /// lookup of a missing key), so an animal's faction does not mind.
+    /// </summary>
+    public static float FactionImportanceOf(GameRecord? record) =>
+        record is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } ? record.GetFloat("faction importance", 0) : 0;
+
     public static FundamentalType NpcClassOf(GameRecord? record) =>
         record is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } ? (FundamentalType)record.GetInt("NPC class", (int)FundamentalType.Military) : FundamentalType.None;
 
@@ -159,6 +167,7 @@ sealed class CharacterAssembly(PopulationData data)
     public void Attach(CharacterId id, CharacterCold cold, ref CharacterHot hot, GameRecord? record, GameRecord? race, ulong seed, float age = 1)
     {
         cold.NpcClass = NpcClassFor(cold, record);
+        cold.FactionImportance = FactionImportanceOf(record);
         if (race is null) return;
         var (raceData, stats, medical) = data.Bodies.Create(race, record, seed, Rng.Key(id), age);
         cold.Race = raceData;

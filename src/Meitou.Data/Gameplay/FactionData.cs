@@ -143,6 +143,7 @@ public sealed class FactionRelations
     readonly Dictionary<string, int> index;
     readonly float[] relation;
     readonly bool[] coexist;
+    readonly bool[] war;
     readonly int[] rank;
 
     FactionRelations(IReadOnlyList<FactionData> factions, Dictionary<string, int> index, float[] relation, bool[] coexist)
@@ -151,6 +152,7 @@ public sealed class FactionRelations
         this.index = index;
         this.relation = relation;
         this.coexist = coexist;
+        war = new bool[relation.Length];
         rank = new int[factions.Count];
     }
 
@@ -177,26 +179,26 @@ public sealed class FactionRelations
     }
 
     /// <summary>
-    /// The relation event of slot 5 (section 3.4, <b>Observed</b>): faction <paramref name="a"/>'s view of <paramref name="b"/> moves by the
-    /// kind's delta times <paramref name="x"/>, only while it is above the kind's floor (a fall) or below its ceiling (a rise), so one event
-    /// can overshoot the floor by up to the delta; then it is clamped to [-100, 100]. Nothing happens when <paramref name="a"/> is
-    /// <c>not real</c> or the kind has no row. A change asked of the player's row is applied to the other side's table, as in the game.
-    /// Returns the value before and after.
+    /// The relation event of slot 5 (<c>FUN_1406b2d20</c>, section 3.4, <b>Observed</b>): faction <paramref name="a"/>'s view of <paramref name="b"/> moves by the kind's delta times
+    /// <paramref name="x"/>, only while it is above the kind's floor (a fall) or below its ceiling (a rise), so one event can overshoot the floor by up to the delta; then it is clamped
+    /// to [-100, 100]. Nothing happens when <paramref name="a"/> is <c>not real</c>, the kind has no row, or <paramref name="a"/> is the player's faction (the player's table,
+    /// <c>PlayerFactionRelations</c>, has empty slots 2 to 5). <see cref="RelationEventKind.FirstAid"/>'s <paramref name="x"/> carries the update's seconds. Returns the value before
+    /// and after.
     /// </summary>
     public (float Before, float After) Event(int a, int b, RelationEventKind kind, float x)
     {
-        if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
+        if (!Contains(a) || !Contains(b)) return (0, 0);
         float before = Get(a, b);
-        if (a == b || Factions[a].NotReal) return (before, before);
+        if (a == b || a == PlayerFaction || Factions[a].NotReal) return (before, before);
         (float delta, float floor, float ceiling) = kind switch
         {
-            RelationEventKind.Slight => (-0.05f * x, -20f, 100f),
-            RelationEventKind.Offence => (-2.5f * x, -50f, 100f),
-            RelationEventKind.Stealing => (-10f * x, -50f, 100f),
-            RelationEventKind.Murder => (-20f * x, -100f, 100f),
-            RelationEventKind.Assault => (-20f * x, -75f, 100f),
-            RelationEventKind.Drift => (0.15f * x, -100f, 5f),
-            RelationEventKind.EscapePrison => (-10f * x, -60f, 100f),
+            RelationEventKind.Hit => (-0.05f * x, -20f, 100f),
+            RelationEventKind.KnockoutMinor => (-2.5f * x, -50f, 100f),
+            RelationEventKind.Knockout => (-10f * x, -50f, 100f),
+            RelationEventKind.KillingBlow => (-20f * x, -100f, 100f),
+            RelationEventKind.Killed => (-20f * x, -75f, 100f),
+            RelationEventKind.FirstAid => (0.15f * x, -100f, 5f),
+            RelationEventKind.Caged => (-10f * x, -60f, 100f),
             _ => (0f, 0f, 0f),
         };
         float after = before;
@@ -226,6 +228,49 @@ public sealed class FactionRelations
         }
         return (before, after);
     }
+
+    /// <summary>
+    /// Declare war (slot 8, <c>FUN_1406b3000</c>, section 3.4, <b>Observed</b>): only while <paramref name="a"/>'s relation towards <paramref name="b"/> is -30 or more (not hostile yet); then
+    /// the war flag is set and a relation of -35 or more drops to -35. <c>Started</c>: the flag was clear (the game then logs "War breaks out between {1} and {2}"). One direction only, as the
+    /// dialogue's DECLARE_WAR calls it on the speaker's table. A change asked of the player's row goes to the other side's table, as in <see cref="Add"/>.
+    /// </summary>
+    public (float Before, float After, bool Started) DeclareWar(int a, int b)
+    {
+        if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
+        if (a == b || !Contains(a) || !Contains(b)) return (0, 0, false);
+        float before = Get(a, b);
+        if (before < HostileThreshold) return (before, before, false);
+        bool started = !war[a * Count + b];
+        war[a * Count + b] = true;
+        if (before >= WarRelation) relation[a * Count + b] = WarRelation;
+        Changes++;
+        return (before, Get(a, b), started);
+    }
+
+    /// <summary>
+    /// End war (slot 7, <c>FUN_1406b2f90</c>, <b>Observed</b>): clears the war flag and lifts a relation of -25 or less to -25 (just above hostile). One direction; the player's row as in
+    /// <see cref="DeclareWar"/>.
+    /// </summary>
+    public (float Before, float After) EndWar(int a, int b)
+    {
+        if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
+        if (a == b || !Contains(a) || !Contains(b)) return (0, 0);
+        float before = Get(a, b);
+        war[a * Count + b] = false;
+        if (before <= PeaceRelation) relation[a * Count + b] = PeaceRelation;
+        Changes++;
+        return (before, Get(a, b));
+    }
+
+    /// <summary>The war flag of <paramref name="a"/> towards <paramref name="b"/> (the entry's byte +2; nothing else found reads it; whether it is saved is <b>Unknown</b>, here it is not).</summary>
+    public bool AtWar(int a, int b)
+    {
+        if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
+        return a != b && Contains(a) && Contains(b) && war[a * Count + b];
+    }
+
+    /// <summary>The relation a declaration of war sets, and the one the end of a war lifts a lower relation to (<c>FUN_1406b3000</c>, <c>FUN_1406b2f90</c>).</summary>
+    public const float WarRelation = -35, PeaceRelation = -25;
 
     /// <summary>Sets the relation of faction <paramref name="a"/> towards <paramref name="b"/> (a loaded save does this; trust and the other state live outside this table).</summary>
     public void Set(int a, int b, float value) => relation[a * Count + b] = value;
@@ -289,17 +334,23 @@ public sealed class FactionRelations
 }
 
 /// <summary>
-/// The event kinds of the relation table's slot 5 (docs/game/factions-squads-towns.md section 3.4, <b>Observed</b>). The numbers are the
-/// game's; the names of 3, 4, 5 and 12 follow the <c>CrimeEnum</c> values they line up with, which is <b>Unknown</b> (the call sites were not
-/// traced); 1 and 2 have no known meaning; 8 is the time-scaled drift capped at +5.
+/// The event kinds of the relation table's slot 5 (docs/game/factions-squads-towns.md sections 3.4 and 3.5, <b>Observed</b>). The numbers are the game's, the names say what fires
+/// each; every other number has no row and changes nothing (the bed put-in passes 9).
 /// </summary>
 public enum RelationEventKind
 {
-    Slight = 1,
-    Offence = 2,
-    Stealing = 3,
-    Murder = 4,
-    Assault = 5,
-    Drift = 8,
-    EscapePrison = 12,
+    /// <summary>A landed blow on one of the faction's people (-0.05 x, while above -20).</summary>
+    Hit = 1,
+    /// <summary>A blow that leaves the victim down, struck by a character of low threat rating (-2.5 x, while above -50).</summary>
+    KnockoutMinor = 2,
+    /// <summary>A blow that leaves the victim down (-10 x, while above -50).</summary>
+    Knockout = 3,
+    /// <summary>A blow that leaves the victim dead, on top of the knock-out kind (-20 x, while above -100).</summary>
+    KillingBlow = 4,
+    /// <summary>The death of one of the faction's people with a known killer (-20 x, while above -75).</summary>
+    Killed = 5,
+    /// <summary>First aid to an unconscious member (+0.15 x per second, while below +5).</summary>
+    FirstAid = 8,
+    /// <summary>One of the faction's people put in a cage (-10 x, while above -60).</summary>
+    Caged = 12,
 }

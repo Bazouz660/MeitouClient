@@ -194,6 +194,7 @@ public sealed partial class ArrestSystem
             Carry!.LetGo(world, s);
             if (!world.Fixtures.Imprison(world, k.Captive, cage, constants.PrisonTime)) { world.Post($"{c.Name} could not put the captive in the cage"); return false; }
             Claim(world, s, k.Captive, cage);
+            if (table.TryResolveNext(k.Captive, out int captive)) Deeds?.Caged(world, s, captive);   // after the claim, as the put-in task does
             return false;
         }
         if (!walking)
