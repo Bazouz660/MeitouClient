@@ -467,8 +467,10 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
 
 Meitou's rule, the `voices` switch (Meitou by default; `--faithful voices` mixes every sound). Each block the player works out every sound's gains first
 (`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and the `Enhancements.MeitouVoiceCap` (96) loudest
-other sounds at the listener (dry or sent). The rest are silent for the block: their voice keeps its clock without decoding (`Voice.Skip`) and, when it
-is among the loudest again, seeks to where it would be and fades in over one block; a one-shot that ran out meanwhile ends. Trimmed music clips are never
+other sounds at the listener (dry or sent); a sound mixed in the last block counts 1.5 times as loud, so one at the edge does not flip every block. The rest
+are silent: one heard last block first fades out over a block, then its voice keeps its clock without decoding (`Voice.Skip`); back among the loudest it
+moves its place within the decoded frames, or reopens and seeks (an error ends the voice, never the mix), and fades in over one block; a one-shot that ran out
+meanwhile ends. Trimmed music clips are never
 capped. The game's own Wwise limits (`STMG` max voices and volume threshold, each node's max instances, read but not modelled) are not this rule. F11
 shows how many sounds were capped. After the mix a peak limiter (both modes, `AudioOutput.Limit`: ceiling 0.89, instant attack, 0.15 s release) turns a
 loud sum down instead of hard-clipping it at the 16-bit conversion.

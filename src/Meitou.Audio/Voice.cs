@@ -40,6 +40,8 @@ sealed class Voice : IDisposable
         limit = limitFrames;
         position = startPhase;
         reader = Open();
+        try { framesPerPlay = reader.TotalSamples; } catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException) { framesPerPlay = 0; }
+        if (framesPerPlay <= 0) framesPerPlay = clip.Frames;
         decoded = new float[4096 * clip.Channels];
     }
 
@@ -48,7 +50,10 @@ sealed class Voice : IDisposable
     public bool Ended => ended;
 
     /// <summary>Whether <see cref="Skip"/> can keep this voice's place: a plain clip, not a trimmed music clip.</summary>
-    public bool CanSkip => toSkip == 0 && limit < 0 && clip.Frames > 0;
+    public bool CanSkip => toSkip == 0 && limit < 0 && framesPerPlay > 0;
+
+    // The source frames one play decodes to (the decoder's count, the WEM header's when it has none): what the silent clock counts plays in.
+    readonly long framesPerPlay;
 
     /// <summary>
     /// The voice is silent for <paramref name="frames"/> output frames (the first <paramref name="first"/> not yet started): its clock runs on without decoding,
@@ -58,28 +63,45 @@ sealed class Voice : IDisposable
     {
         if (ended) return;
         owed += (frames - first) * rate;
-        if (plays > 0 && cursor + owed >= (double)plays * clip.Frames) ended = true;
+        if (plays > 0 && cursor + owed >= (double)plays * framesPerPlay) ended = true;
     }
 
     /// <summary>Seeks past the frames skipped while silent: the play and the place in the clip from the voice's clock.</summary>
     void CatchUp()
     {
-        cursor += owed;
-        owed = 0;
-        long done = (long)(cursor / clip.Frames);
-        if (plays > 0 && done >= plays) { ended = true; return; }
-        double within = cursor - (double)done * clip.Frames;
-        reader.Dispose();
-        reader = Open();
-        reader.SeekTo((long)within);
-        playsLeft = plays == 0 ? 0 : plays - (int)done;
-        decodedFrames = 0;
-        position = within - Math.Floor(within);
-        lowPass[0] = lowPass[1] = 0;
-        // From silence: the first block ramps up to its gains.
+        // From silence (it faded out, or was never heard): the first block ramps up to its gains.
         started = true;
         lastLeft = lastRight = 0;
         Array.Clear(lastSend);
+        // A short silence still inside the decoded frames (a sound at the cap's edge): only the place moves.
+        if (position + owed + 1 < decodedFrames)
+        {
+            position += owed;
+            cursor += owed;
+            owed = 0;
+            return;
+        }
+        cursor += owed;
+        owed = 0;
+        long done = (long)(cursor / framesPerPlay);
+        if (plays > 0 && done >= plays) { ended = true; return; }
+        long within = Math.Clamp((long)(cursor - (double)done * framesPerPlay), 0, framesPerPlay - 1);
+        try
+        {
+            reader.Dispose();
+            reader = Open();
+            reader.SeekTo(within);
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException or IOException)
+        {
+            // A seek the stream does not allow ends the voice, never the mix.
+            ended = true;
+            return;
+        }
+        playsLeft = plays == 0 ? 0 : plays - (int)done;
+        decodedFrames = 0;
+        position = cursor - Math.Floor(cursor);
+        lowPass[0] = lowPass[1] = 0;
     }
 
     /// <summary>
