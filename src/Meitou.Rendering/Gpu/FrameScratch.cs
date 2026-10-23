@@ -17,7 +17,7 @@ namespace Meitou.Rendering.Gpu;
 /// </list>
 /// Render thread only.
 /// </summary>
-public sealed class FrameScratch(GpuContext ctx, string name, BufferUse use, ulong cap, ulong minimum = 1ul << 20) : IDisposable
+public sealed class FrameScratch(IGpuContext ctx, string name, BufferUse use, ulong cap, ulong minimum = 1ul << 20) : IDisposable
 {
     /// <summary>Frames over which the largest need is kept before a slot may shrink (about two seconds at 60 frames per second).</summary>
     public const int Window = 120;
@@ -35,7 +35,7 @@ public sealed class FrameScratch(GpuContext ctx, string name, BufferUse use, ulo
         public bool Grew;
     }
 
-    readonly Slot[] slots = Enumerable.Range(0, ctx.Device.Frames.Count).Select(_ => new Slot()).ToArray();
+    readonly Slot[] slots = Enumerable.Range(0, ctx.FramesInFlight).Select(_ => new Slot()).ToArray();
     readonly ulong[] recent = new ulong[Window];
     int recentIndex;
     int slot = -1;

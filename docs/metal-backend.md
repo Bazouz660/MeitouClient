@@ -608,11 +608,11 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    fragment integrate/scatter path; the compute scan is Vulkan-only. Still to do: the fog-rate target
    (`PostProcess.FogRate`), which the shafts and the volumetric fog read. Metal has no fragment-shading-rate
    attachment, so the FogRate path stays Vulkan-only unless a non-VRS fallback is added.
-3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
-   `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
-   variant (a per-frame bump allocator over shared buffers), and drive them with the indirect draws of step 1.
-   This is the performance gap only: the CPU cull and CPU grass already draw the same picture. The detailed
-   porting order and Metal indirect-draw constraints are in [metal-gpu-cull-plan](metal-gpu-cull-plan.md).
+3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): `FoliageGpuCull`
+   now works on Metal through `IGpuContext`, argument buffers and a separate pre-frame command buffer, and is live
+   for meshes and TERRAIN-mode rocks. `FoliageGrassGpu` and `HizPyramid` remain Vulkan-only; grass still uses the CPU
+   path. The detailed porting order and Metal indirect-draw constraints are in
+   [metal-gpu-cull-plan](metal-gpu-cull-plan.md).
 
 ### 3. Water (plan step 6)
 

@@ -3,6 +3,7 @@ using SharpMetal.Foundation;
 using SharpMetal.Metal;
 using SharpMetal.ObjectiveCCore;
 using SharpMetal.QuartzCore;
+using System.Runtime.InteropServices;
 
 namespace Meitou.Metal;
 
@@ -14,6 +15,9 @@ namespace Meitou.Metal;
 /// </summary>
 public sealed unsafe class MetalFrame : IGpuFrame
 {
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_retain")]
+    static extern IntPtr Retain_objc_retain(IntPtr obj);
+
     readonly MetalContext ctx;
 
     /// <summary>
@@ -38,6 +42,7 @@ public sealed unsafe class MetalFrame : IGpuFrame
         Slot = slot;
         current = NewChunk(1 << 20);
         Commands = new MetalCommandList(ctx, $"frame {slot}", default);
+        preFrame = new MetalCommandList(ctx, $"preframe {slot}", default);
         States = new ResourceStates();
         Stats = new GpuStats();
     }
@@ -47,8 +52,49 @@ public sealed unsafe class MetalFrame : IGpuFrame
     public bool Open { get; internal set; }
     public MetalCommandList Commands { get; }
     IGpuCommandList IGpuFrame.Commands => Commands;
-    /// <summary>Metal records uploads and bakes into the frame's own list, before its passes (the seam's pre-frame).</summary>
-    IGpuCommandList IGpuFrame.PreFrame => Commands;
+
+    readonly MetalCommandList preFrame;
+    MTLCommandBuffer preCommand;
+
+    /// <summary>
+    /// The commands recorded ahead of the frame's passes (the GPU cull's dispatches, the ocean's FFT, the impostor
+    /// bakes). A Metal rendering cannot record a compute encoder, and the cull is dispatched while the scene's
+    /// rendering is open, so these go into a command buffer of their own. It is committed before the frame's; the
+    /// queue runs it first.
+    /// </summary>
+    public IGpuCommandList PreFrame
+    {
+        get
+        {
+            if (preCommand.NativePtr == IntPtr.Zero)
+            {
+                preCommand = ctx.Queue.CommandBuffer();
+                Retain_objc_retain(preCommand.NativePtr);
+                preFrame.Rebind(preCommand);
+                preFrame.Invalidate();
+            }
+            return preFrame;
+        }
+    }
+
+    IGpuCommandList IGpuFrame.PreFrame => PreFrame;
+
+    /// <summary>Commits the pre-frame before the frame's own command buffer.</summary>
+    internal void CommitPreFrame(bool wait = false)
+    {
+        if (preCommand.NativePtr == IntPtr.Zero) return;
+        preFrame.Finish();
+        preCommand.Commit();
+        if (wait) preCommand.WaitUntilCompleted();
+    }
+
+    /// <summary>The slot's previous pre-frame has completed; release its wrapper.</summary>
+    internal void ReleasePreFrame()
+    {
+        if (preCommand.NativePtr != IntPtr.Zero) preCommand.Dispose();
+        preCommand = default;
+    }
+
     public ResourceStates States { get; }
     public GpuStats Stats { get; }
     public IGpuTimestamps Timestamps => ctx.Timestamps;
@@ -120,6 +166,7 @@ public sealed unsafe class MetalFrame : IGpuFrame
         // The context retains this command for its slot (the queue's autorelease would otherwise end it after
         // one frame); the slot is reused only after the three-frame ring has advanced. A failed command is the
         // first thing to look for when the present stops advancing.
+        ReleasePreFrame();
         if (Command.NativePtr != IntPtr.Zero)
         {
             if (Command.Status == MTLCommandBufferStatus.Error)
@@ -148,6 +195,7 @@ public sealed unsafe class MetalFrame : IGpuFrame
         Command.WaitUntilCompleted();
         if (Command.Status == MTLCommandBufferStatus.Error)
             Console.WriteLine($"metal     frame slot {Slot} command buffer failed: {Command.Error.LocalizedDescription}");
+        ReleasePreFrame();
     }
 
     /// <summary>The command buffer completed and the slot will be reused: drop the pointer so teardown releases do not retain
@@ -156,6 +204,7 @@ public sealed unsafe class MetalFrame : IGpuFrame
     {
         if (Command.NativePtr != IntPtr.Zero) Command.Dispose();
         Command = default;
+        ReleasePreFrame();
     }
 
     internal int ChunkCount => chunks.Count;

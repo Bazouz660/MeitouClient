@@ -714,6 +714,39 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public int SceneWidth { get; private set; }
     public int SceneHeight { get; private set; }
 
+    /// <summary>
+    /// Opens a frame without a display or drawable: the deterministic tests' counterpart of <see cref="BeginFrame"/>
+    /// (the queues, the frame ring and the command lists are the real ones; only the present is omitted).
+    /// </summary>
+    internal void BeginHeadlessFrame()
+    {
+        if (slot >= 0 && Frame.Open) throw new InvalidOperationException("a frame is already open");
+        frameNumber++;
+        slot = (slot + 1) % FrameRingDepth;
+        var command = Queue.CommandBuffer();
+        Retain_objc_retain(command.NativePtr);
+        frames[slot].Begin(frameNumber, command, default);
+        bindless.BeginFrame(slot);
+        timestamps.Begin(slot, frameNumber);
+    }
+
+    /// <summary>Closes the frame opened by <see cref="BeginHeadlessFrame"/> and waits for both command buffers.</summary>
+    internal void EndHeadlessFrame()
+    {
+        if (slot < 0 || !Frame.Open) throw new InvalidOperationException("no frame is open");
+        var frame = frames[slot];
+        bindless.EndFrame();
+        frame.End();
+        timestamps.End();
+        frame.CommitPreFrame(wait: true);
+        frame.Commands.Finish();
+        frame.Command.Commit();
+        frame.Command.WaitUntilCompleted();
+        frame.ReleasePreFrame();
+        if (frame.Command.Status != MTLCommandBufferStatus.Completed)
+            Console.WriteLine($"metal     headless frame command failed: {frame.Command.Status} {frame.Command.Error.LocalizedDescription}");
+    }
+
     /// <summary>Ends the frame: the backbuffer is copied into the drawable (flipped) and the frame's commands are committed.</summary>
     public void EndFrame()
     {
@@ -728,6 +761,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <summary>The present: the backbuffer's picture into the drawable, y flipped (a five-line MSL pass; Metal's blit can do neither the flip nor the format).</summary>
     void Present(MetalFrame frame)
     {
+        // The GPU cull's dispatches can leave a compute encoder open (there is no rendering to close it); the
+        // present encoder cannot be created beside it.
+        frame.Commands.Finish();
         var command = frame.Command;
         var drawable = frame.Drawable;
         var descriptor = new MTLRenderPassDescriptor(
@@ -747,6 +783,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         encoder.SetFragmentBytes((nint)targetSize, 8, 1);
         encoder.DrawPrimitives(MTLPrimitiveType.Triangle, 0, 3);
         encoder.EndEncoding();
+        frame.CommitPreFrame();
         command.PresentDrawable(drawable);
         command.Commit();
         foreach (var buffer in setBuffers) buffer.Dispose();

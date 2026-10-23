@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Ogre;
@@ -206,7 +207,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             guard = value;
             textures.Guard = value;
-            if (gpuCull is not null && Gpu is GpuContext vk) { gpuCull.MayGrow = value is null ? null : value.Allows; gpuCull.Scratch.MayGrow = value is null ? null : bytes => vk.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes); }
+            if (gpuCull is not null)
+            {
+                gpuCull.MayGrow = value is null ? null : value.Allows;
+                gpuCull.Scratch.MayGrow = value is null ? null
+                    : Gpu is GpuContext vk ? (Func<ulong, bool>)(bytes => vk.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes))
+                    : value.Allows;
+            }
         }
     }
     VramGuard? guard;
@@ -1259,7 +1266,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             if (gpu)
             {
-                gpuResult = DispatchGpuCull(new Vector2(eye.X, eye.Z), terrain);
+                gpuResult = DispatchGpuCull(new Vector2(eye.X, eye.Z), terrain, coverage);
                 if (gpuResult.IsEmpty) { meshDraws.Clear(); rockDraws.Clear(); }   // the scratch memory is over its cap: this view has no foliage this frame
             }
             if (meshDraws.Count > 0 || impostorDraws.Count > 0)
@@ -1808,13 +1815,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>Records this view's cull ahead of the frame: the chunks (once a frame per work list), one draw per mesh draw (its batch's
     /// chunks), then one per rock draw.</summary>
-    FoliageCullResult DispatchGpuCull(Vector2 eye, TerrainRenderer terrain)
+    FoliageCullResult DispatchGpuCull(Vector2 eye, TerrainRenderer terrain, bool coverage)
     {
         var cull = gpuCull!;
         var frame = Gpu.Frame;
         if (gpuChunkFrame != frame.Number)
         {
-            gpuChunkData = ((GpuContext)Gpu).Frame.Constants.Write<FoliageCullChunk>(gpuChunks.AsSpan(0, gpuChunkCount), 256);
+            gpuChunkData = frame.WriteConstants(MemoryMarshal.AsBytes(gpuChunks.AsSpan(0, gpuChunkCount)), 256);
             gpuChunkFrame = frame.Number;
         }
         int meshes = meshDraws.Count, rocks = meshes + rockDraws.Count, count = rocks + impostorDraws.Count;
@@ -1834,16 +1841,16 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             int b = impostorDraws[k].Batch;
             gpuDraws[rocks + k] = new FoliageCullDraw { IndexCount = 6, ChunkStart = (uint)gpuBatchStart[b], ChunkEnd = (uint)gpuBatchStart[b + 1] };
         }
-        var draws = ((GpuContext)Gpu).Frame.Constants.Write<FoliageCullDraw>(gpuDraws.AsSpan(0, count), 256);
+        var draws = frame.WriteConstants(MemoryMarshal.AsBytes(gpuDraws.AsSpan(0, count)), 256);
         // What the rocks' row 0 w carries, as the terrain's mesh path writes it: the biome row in colour (resident ones, now), 0 in depth.
         var rock = new FoliageRockView { BiomeRows = !depthPass };
         if (!depthPass && gpuRockOrder.Count > 0) terrain.FeatureResidentBiomes(rock.Resident);
-        if (FoliageGpuCull.CountTriangles) cull.TallyView = (depthPass ? 1 : Gpu.CurrentTargets().Formats.Samples > 1 ? 2 : 0, meshes, rocks);
+        if (FoliageGpuCull.CountTriangles) cull.TallyView = (depthPass ? 1 : coverage ? 2 : 0, meshes, rocks);
         // The fog cull rides in the main colour view's dispatch only (FogCull is set around that draw alone): per instance, in the cull kernel.
         Span<Vector4> fog = stackalloc Vector4[FogVolumes.CullVectors];
         bool fogOn = !depthPass && FogCull is { } fogCull && fogCull.WriteCull(fog);
         bool occlusionOn = !depthPass && !Occlusion.IsEmpty;
-        cull.TimingClass = depthPass || Gpu.CurrentTargets().Formats.Samples > 1 ? 0 : occlusionOn ? 2 : 1;
+        cull.TimingClass = depthPass || coverage ? 0 : occlusionOn ? 2 : 1;
         // The split (EarlyDepth): in the colour views each batch's dithered instances come after its fully visible ones, drawn with the other program.
         bool split = !depthPass && EarlyDepth.Enabled;
         // The interior cut (main colour view): with the split, the fully visible instances over a mask go with the fading ones, to the program with the cut.

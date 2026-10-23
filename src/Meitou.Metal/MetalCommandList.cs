@@ -655,9 +655,16 @@ public sealed class MetalCommandList : IGpuCommandList
 
     // ---- sync ----
 
-    /// <summary>Records the dependencies the engine's words describe: nothing — Apple silicon tracks the hazards itself
-    /// (docs/metal-backend.md "Barriers between passes").</summary>
-    public void Barrier(ReadOnlySpan<GpuDependency> dependencies) { }
+    /// <summary>
+    /// Records the dependencies the engine's words describe. Two dispatches in one compute encoder may overlap, and a
+    /// compute encoder's writes are not always visible to a following blit; closing the encoder at every dependency
+    /// makes the next encoder start after the previous one's work. (Apple silicon tracks the resources themselves.)
+    /// </summary>
+    public void Barrier(ReadOnlySpan<GpuDependency> dependencies)
+    {
+        EndCompute();
+        EndBlit();
+    }
 
     /// <summary>Orders everything recorded before against everything after it: ending the compute and transfer encoders (Metal
     /// orders encoders in one command buffer, and Apple silicon tracks the hazards within one) is the seam.</summary>

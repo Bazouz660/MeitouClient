@@ -1,21 +1,17 @@
 # Metal GPU foliage cull plan
 
-Status: **proposed, not implemented** (2026-10-23). This is the Metal port of the existing Vulkan GPU foliage
-cull and grass submission. It is the A2 item in [metal-performance-memory](metal-performance-memory.md), not a
-new renderer feature; the visible result must stay the same.
+Status: **mesh/rock cull implemented and live on Metal; grass still on the CPU** (2026-10-23). This is the
+Metal port of the existing Vulkan GPU foliage cull and grass submission. It is the A2 item in
+[metal-performance-memory](metal-performance-memory.md), not a new renderer feature; the visible result must stay
+the same.
 
 ## Why
 
 At the save-start view the Metal scene encoder is 6.75-7.77 ms, with **672-673 draws** and **14.7M vertices**.
-`FoliageRenderer` still takes the CPU path on Metal:
-
-```csharp
-gpuCull = gpu is GpuContext vk ? new FoliageGpuCull(vk) : null;   // Metal takes the CPU cull
-```
-
-The CPU walks the zones, culls every group/instance and emits the draws. The Vulkan path instead runs
-`FoliageGpuCull` (cull, scan, compact) and `FoliageGrassGpu` (cull, order) on the GPU, then binds a small
-indirect argument buffer. Porting that path gives Metal:
+The CPU walks the zones, culls every group/instance and emits the draws. The GPU path now runs
+`FoliageGpuCull` (cull, scan, compact) on Metal for the meshes and TERRAIN-mode rocks, then binds a small indirect
+argument buffer; `FoliageGrassGpu` (cull, order) is still Vulkan-only and grass remains on the CPU. Porting the
+mesh path gives Metal:
 
 - less CPU culling and draw submission;
 - indirect draws whose counts/placement come from the GPU;
@@ -27,33 +23,36 @@ It does **not** replace the scene/object/terrain shader ALU work; both tracks ar
 ## Existing pieces
 
 - `FoliageGpuCull`: instance arena, cull/scan/compact compute kernels, per-view scratch, indirect arguments,
-  readbacks for statistics. It currently requires `GpuContext` and push descriptors.
-- `FoliageGrassGpu`: blade arena, slot table, cull/order kernels, indirect draws. `Supported` currently requires
-  Vulkan push descriptors, `DrawIndirectCount`, `DrawIndirectFirstInstance` and `MultiDrawIndirect`.
+  readbacks for statistics. It now takes `IGpuContext`, binds through argument buffers and works on both backends;
+  `MetalFoliageCullTests` compares its rows, offsets and indirect arguments with `FoliageCull` on Metal.
+- `FoliageGrassGpu`: blade arena, slot table, cull/order kernels, indirect draws. It is still `GpuContext` only;
+  `Supported` requires Vulkan push descriptors, `DrawIndirectCount`, `DrawIndirectFirstInstance` and
+  `MultiDrawIndirect`. Metal grass therefore stays on the CPU for now.
 - `FoliageRenderer`: has both paths behind `GpuCull`/`GpuGrassActive`; the CPU path is the correctness fallback.
-- `MetalCommandList`: already has indexed indirect draws, but no multi-draw and no draw-count buffer. It records a
-  loop over slots; unused slots must contain zero index counts. This is the main Metal constraint.
+- `MetalCommandList`: has indexed indirect draws, but no multi-draw and no draw-count buffer. It records a loop over
+  slots; unused slots must contain zero index counts. This is the main Metal constraint.
+- `MetalFrame.PreFrame`: on Metal this is now a command buffer of its own, committed before the frame's own. The
+  cull is recorded while the scene rendering is already open (a Metal render encoder cannot record compute).
+- `MetalCommandList.Barrier`: closes the open compute/transfer encoders at each dependency, so a following
+  dispatch or blit starts after the previous encoder's work. The cull's cull → scan → compact chain relies on it.
 
 ## Implementation order
 
-### 1. Make the shared pieces backend-neutral
+### 1. Make the shared pieces backend-neutral — done for the mesh cull
 
-- Widen `FrameScratch` to `IGpuContext` or add a Metal-specific per-frame bump allocator with the same
-  `TryAllocate`/`Cap` contract.
-- Widen the arenas and `DeviceBuffer` helpers used by the cull/grass stores, or put a thin backend interface in
-  front of them.
+- `FrameScratch` now takes `IGpuContext`; `FoliageGpuCull` uses `IGpuReadback`, `IGpuFrame.WriteConstants`,
+  `IGpuFrame.AllocateConstants` and `IGpuContext.CreateReadback`, so the same code runs on Vulkan and Metal.
 - Keep `FoliageCullChunk`, `FoliageCullDraw`, `FoliageCullWork`, `FoliageCullResult` and `GrassResult` unchanged:
   they are the seam between the renderer and the kernels.
-- Do not make `GpuContext` public API; keep the Vulkan path compiling and behaviourally unchanged.
+- Do not make `GpuContext` public API; the Vulkan path is behaviourally unchanged.
 
-### 2. Metal compute and argument buffers
+### 2. Metal compute and argument buffers — done for the mesh cull
 
-- Remove the `PushDescriptors` requirement from the cull constructors. Bind the same compute sets through
-  Metal argument buffers (`BindSets`/`BindSetArguments`), as the native scene programs already do.
-- Verify the cull kernels' reflected storage-buffer sets against the Metal set layouts; the shaders are already
-  compute GLSL and should translate through the existing native compiler path.
-- Dispatch the cull work in `IGpuFrame.PreFrame` (or the Metal equivalent before the host pass), as Vulkan does.
-- Keep the cull's output buffers in the frame's slot; do not allocate them per draw or per shadow cascade.
+- `FoliageGpuCull` no longer requires push descriptors; the compute sets bind through argument buffers.
+- The cull shaders translate and run on Metal; `MetalFoliageCullTests` checks the cull/scan/compact chain.
+- The cull is recorded in `MetalFrame.PreFrame`, a separate command buffer committed before the frame. This is
+  required because Metal cannot record a compute encoder while a render encoder is open.
+- Cull outputs stay in `FrameScratch` for the frame's slot; no per-view allocation.
 
 ### 3. Indirect arguments
 
@@ -74,10 +73,9 @@ Verify whether Metal's indirect arguments preserve `baseInstance`. `FoliageGrass
 - keep CPU grass submission until the grass-specific indirect path is ready, while porting mesh/rock culling
   first.
 
-### 4. Meshes and terrain-mode rocks first
+### 4. Meshes and terrain-mode rocks first — done
 
-Port `FoliageGpuCull` first, because the mesh/rock draw path already has a CPU fallback and the outputs are
-standard indexed indirect arguments. Use it for:
+`FoliageGpuCull` now runs on Metal for the mesh/rock draw path. It uses:
 
 - main near-slice colour/depth;
 - shadow cascades (the work list is shared per frame when the eye/range match);
@@ -85,7 +83,7 @@ standard indexed indirect arguments. Use it for:
 
 Validate against `--no-foliage` and the CPU path; the picture and draw counts must match.
 
-### 5. Grass second
+### 5. Grass — still on the CPU
 
 Port `FoliageGrassGpu` after the mesh cull is stable. The grass cull/order kernels already handle density,
 wind, page ordering and LOD; the Metal-specific part is the indirect loop and the blade-offset handling.

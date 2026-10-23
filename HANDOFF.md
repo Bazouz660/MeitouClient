@@ -3,13 +3,14 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code commit: `c95a4535 metal: skip redundant encoder state changes`  
-Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, and encoder buffer/viewport/scissor/depth state is cached. Xcode API insights at the save-start view fell from 561 to 261. The next planned work is the Metal GPU cull port.
+Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
 
-`tests/Meitou.Tests/Metal` adds a windowless Metal test device and 15 deterministic tests. They run on macOS only
-with the normal quick suite:
+`tests/Meitou.Tests/Metal` adds a windowless Metal test device and 16 deterministic tests, including
+`MetalFoliageCullTests` (the cull/scan/compact chain against `FoliageCull`). They run on macOS only with the normal
+quick suite:
 
 ```bash
 dotnet test tests/Meitou.Tests/Meitou.Tests.csproj -c Release \
@@ -162,9 +163,11 @@ Verified clean:
 
 ## Next work
 
-1. Port the existing Vulkan GPU foliage cull/indirect submission to Metal. The complete plan, Metal
-   constraints and validation gates are in [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md).
-   Port mesh/rock culling first; grass second.
+1. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
+   `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
+   [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
+   indirect arguments. Readback copies used only for statistics still need a safer post-frame path if they prove
+   unreliable.
 2. Continue the scene shader ALU pass (objects/terrain dominate the save-start frame). The text
    optimization is the shared `kenshiLight`/`atmoApply` path; test Metal-specific specialisation and,
    later, a half-precision variant. Do not remove the terrain/foliage prepasses.

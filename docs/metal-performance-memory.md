@@ -108,18 +108,17 @@ rendering:
 
 ### A2. Port the GPU-side draw path
 
-This is the largest remaining CPU win and the main reason Vulkan still leads. The concrete port is now in
+The mesh/rock cull is now ported and live on Metal: `FoliageGpuCull` uses `IGpuContext`, `FrameScratch` is
+backend-neutral, and `MetalFrame.PreFrame` is a command buffer of its own committed before the frame. The remaining
+A2 work is grass and the other indirect draw producers; the concrete plan is in
 [metal-gpu-cull-plan](metal-gpu-cull-plan.md).
 
-- Widen `HizPyramid`, `FoliageGpuCull` and `FoliageGrassGpu` to `IGpuContext`; replace push-descriptor checks with
-  Metal argument buffers.
-- Drive the indirect draws from GPU culls and use Metal indirect draw calls for terrain, foliage, grass, objects and
-  impostors. Metal has no draw-count/multi-draw command: record the bounded slots and keep their unused arguments
-  at zero.
-- Keep the CPU cull as the correctness fallback and for stills; the live path should use the GPU outputs.
-- Give `FrameScratch` a Metal bump allocator over shared buffers.
-- Port mesh/rock culling first, then grass; verify whether Metal preserves `baseInstance` in indirect arguments before
-  making the grass path depend on it.
+- `MetalFoliageCullTests` compares the cull's compacted rows, offsets and indirect arguments with the CPU reference on
+  Metal; the live Metal run now takes the GPU mesh/rock path (grass still CPU).
+- Port `HizPyramid` and `FoliageGrassGpu` next; replace their push-descriptor checks with argument buffers.
+- Metal has no draw-count/multi-draw command: record the bounded slots and keep their unused arguments at zero.
+- Verify whether Metal preserves `baseInstance` in indirect arguments before making the grass path depend on it.
+- Keep the CPU cull as the correctness fallback and for stills.
 
 ### A3. Reduce the remaining main-thread work
 
