@@ -70,6 +70,8 @@ public sealed class BuildSite
 
     /// <summary>A site that is not complete and has built all it was given: the builder waits for more materials (<c>sum(min(delivered, required)) &lt;= progress</c>).</summary>
     public bool Stalled => !Complete && Deliverable <= Progress;
+    /// <summary>Unfinished, or complete with progress below the target (damaged: Building slot 101 <c>FUN_1400f6b70</c>, <b>Verified</b>); building work (orders 2 and 95) applies.</summary>
+    public bool NeedsWork => !Complete || Progress < Target;
 
     internal void Hash(ref StateHasher h)
     {
@@ -171,6 +173,16 @@ public sealed partial class BuildingRegistry
         get
         {
             foreach (var s in sites) if (!s.Complete) return true;
+            return false;
+        }
+    }
+
+    /// <summary>Some site is unfinished or a complete building is damaged (progress below its target, docs/game/buildings-production.md "Repair").</summary>
+    public bool AnyNeedsWork
+    {
+        get
+        {
+            foreach (var s in sites) if (s.NeedsWork) return true;
             return false;
         }
     }

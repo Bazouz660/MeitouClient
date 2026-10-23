@@ -115,8 +115,8 @@ Conditions: 50 `hasBuildingMaterials` (`FUN_14059ba50`: nothing outstanding, or 
 one of an outstanding item), 51 `buildingHasBuildingMaterials` (`FUN_1405a39c0`: site not stalled), 150
 `HAVE_SOME_BUILD_MATS` (`FUN_140597530`, **Observed**: inventory holds the target's item). `Task_Build`
 (`FUN_14034a440`) plays `medic` (sounds `Character_Build_Loop_Start/Stop`), pushes build work each update and ends
-when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, auto-job scoring and
-dismantle: [buildings-production](buildings-production.md#construction-tick).
+when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, fetching (115 -> 247),
+the Engineer job (125), repair and dismantle: [buildings-production](buildings-production.md#construction-tick).
 
 ## Prospecting
 

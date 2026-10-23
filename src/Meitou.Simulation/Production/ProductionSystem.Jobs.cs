@@ -7,8 +7,9 @@ using Meitou.Simulation.Construction;
 namespace Meitou.Simulation.Production;
 
 // Job lists (Perma-Jobs; docs/simulation.md "Production", the original's rules in docs/game/ai-tasks.md "Perma-jobs"): a player character whose task is idle or came from its list takes the
-// first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs two types: Operating machine (87, the
-// operator below) and Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul). Blocked uses one test for starting and for going on.
+// first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs three types: Operating machine (87, the
+// operator below), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul) and Engineer (125: ConstructionSystem builds the site its finder picks). Blocked
+// uses one test for starting and for going on.
 public sealed partial class ProductionSystem
 {
     /// <summary>How often (ticks) a character's job list is looked at, staggered by slot (engine choice; the original re-plans when its task ends or its commitment runs out).</summary>
@@ -60,7 +61,7 @@ public sealed partial class ProductionSystem
             var cold = table.Cold(i)!;
             var task = (CharacterTask)n.Task;
             // An order replaced the job's task.
-            if ((cold.JobIndex >= 0 || cold.Implicit is not null) && task is not (CharacterTask.Operate or CharacterTask.Haul))
+            if ((cold.JobIndex >= 0 || cold.Implicit is not null) && !JobTask(cold, task))
             {
                 cold.JobIndex = -1;
                 cold.Implicit = null;
@@ -73,7 +74,7 @@ public sealed partial class ProductionSystem
             if (!Able(cold)) continue;
             int pick = -1;
             for (int k = 0; k < cold.Jobs.Count && pick < 0; k++)
-                if (Runnable(world, cold, k)) pick = k;
+                if (Runnable(world, i, cold, k)) pick = k;
             if (pick >= 0)
             {
                 if (pick != cold.JobIndex) StartJob(world, i, pick);
@@ -189,11 +190,20 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>A job of the list that may run now: Meitou runs its type, the jobs switch is on (or the type ignores it), and it is not blocked.</summary>
-    bool Runnable(World world, CharacterCold cold, int k)
+    bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
-        return PermaJobs.Runs(job.Type) && ((cold.Orders & CharacterOrders.Jobs) != 0 || PermaJobs.IgnoresSwitch(job.Type)) && !Blocked(world, cold, job);
+        if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
+        // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle").
+        if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is not null;
+        return !Blocked(world, cold, job);
     }
+
+    /// <summary>The task the job a character is on runs: building, delivering or fetching for the engineer job, else operating or hauling.</summary>
+    static bool JobTask(CharacterCold cold, CharacterTask task) =>
+        cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count && cold.Jobs[cold.JobIndex].Type == TaskType.JOB_BUILDER
+            ? task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials
+            : task is CharacterTask.Operate or CharacterTask.Haul;
 
     /// <summary>
     /// Whether a job cannot run (the original skips such a job: an unmet start condition the planner cannot meet, or the target finder found nothing; docs/game/ai-tasks.md "Perma-jobs").
@@ -274,9 +284,18 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var job = cold.Jobs[k];
+        if (cold.JobIndex < 0) cold.ResumeTask = (CharacterTask)table.Next[slot].Task;
+        if (job.Type == TaskType.JOB_BUILDER)
+        {
+            // From operating or hauling the character goes back to what it was doing before the list took it.
+            var resume = cold.ResumeTask;
+            End(table, slot);
+            Construction!.StartBuilding(world, slot, Construction.EngineerSite(world, slot)!, resume);
+            cold.JobIndex = k;
+            return;
+        }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
-        if (cold.JobIndex < 0) cold.ResumeTask = (CharacterTask)table.Next[slot].Task;
         if (job.Type == TaskType.OPERATE_MACHINERY)
         {
             if (cold.OperateSite != site.Id) Begin(world, slot, site, m);
