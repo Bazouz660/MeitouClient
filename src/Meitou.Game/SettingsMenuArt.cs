@@ -9,18 +9,22 @@ sealed class SettingsMenuArt
 {
     public const string Prefix = "meitou:settings:";
     public static string SurfacePrefix => Prefix + "v3:";
-    RgbaImage? atlas;
+    /// <summary>The window plate's pixels per UI unit; it is drawn nine-sliced, <see cref="WindowBorder"/> pixels per edge (shadow margin + corner radius).</summary>
+    public const float WindowDensity = 2;
+    public const int WindowBorder = (int)((16 + 10) * WindowDensity);
 
     public void Ensure(UiPainter painter, bool meitou, Func<string, string?>? resolve)
     {
         if (!meitou || painter.HasTexture(SurfacePrefix + "button")) return;
         string path = resolve?.Invoke("Kenshi_UI.png") ?? throw new FileNotFoundException("Kenshi_UI.png not found.");
-        atlas = TextureLoader.LoadFile(path, allMips: false).Levels[0];
+        var atlas = TextureLoader.LoadFile(path, allMips: false).Levels[0];
         painter.SetImage(SurfacePrefix + "button", MenuArt.Plate(atlas, new(612, 766, 118, 45), 160, 40, 1, 0.7f), srgb: false);
         painter.SetImage(SurfacePrefix + "button-hover", MenuArt.Plate(atlas, new(612, 766, 118, 45), 160, 40, 1, 0.85f), srgb: false);
         painter.SetImage(SurfacePrefix + "button-selected", MenuArt.Plate(atlas, new(741, 766, 118, 45), 160, 40, 1, 0.85f), srgb: false);
         painter.SetImage(SurfacePrefix + "paper", MenuArt.Card(atlas, new(352, 457, 164, 81), 160, 40, 1, 0, 1), srgb: false);
         painter.SetImage(SurfacePrefix + "paper-hover", MenuArt.Card(atlas, new(352, 457, 164, 81), 160, 40, 1, 0, 1.1f), srgb: false);
+        // A fifth of the 1120x720 window, same aspect, so the stretched rust keeps its proportions.
+        painter.SetImage(SurfacePrefix + "window", MenuArt.WindowSurface(atlas, (int)(224 * WindowDensity), (int)(144 * WindowDensity), WindowDensity), srgb: false);
     }
 
     /// <summary>The picture under the luckyren Mode setting: <c>assets/luckyren-mode.png</c>, embedded; <c>ImageTexture</c> name.</summary>
@@ -34,14 +38,6 @@ sealed class SettingsMenuArt
         using var bytes = new MemoryStream();
         stream.CopyTo(bytes);
         painter.SetImage(LuckyrenImage, TextureLoader.LoadImage(bytes.ToArray()));
-    }
-
-    public string WindowTexture(UiPainter painter, float width, float height)
-    {
-        int w = Math.Max(1, (int)MathF.Round(width)), h = Math.Max(1, (int)MathF.Round(height));
-        string name = $"{SurfacePrefix}window:{w}x{h}";
-        if (!painter.HasTexture(name)) painter.SetImage(name, MenuArt.WindowSurface(atlas!, w * 2, h * 2, 2), srgb: false);
-        return name;
     }
 }
 

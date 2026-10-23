@@ -29,14 +29,13 @@ sealed partial class SettingsMenu
         {
             string texture = kind switch { "window" => "window", "primary" or "paper" => hover ? "paper-hover" : "paper", _ => selected ? "button-selected" : hover ? "button-hover" : "button" };
             float margin = kind == "window" ? 16 * scale : 0;
-            var properties = new Dictionary<string, string> { ["ImageTexture"] = SettingsMenuArt.SurfacePrefix + texture };
-            if (kind == "window" && player.SettingsPainter is { } painter)
-                properties["ImageTexture"] = art.WindowTexture(painter, at.Width / scale, at.Height / scale);
-            else
+            bool window = kind == "window";
+            var properties = new Dictionary<string, string>
             {
-                properties["ImageBorder"] = "12";
-                properties["ImageBorderScale"] = scale.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
+                ["ImageTexture"] = SettingsMenuArt.SurfacePrefix + texture,
+                ["ImageBorder"] = window ? SettingsMenuArt.WindowBorder.ToString(System.Globalization.CultureInfo.InvariantCulture) : "12",
+                ["ImageBorderScale"] = (window ? scale / SettingsMenuArt.WindowDensity : scale).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            };
             controls.Add(new("settings-surface", "ImageBox", new(at.X - margin, at.Y - margin, at.Width + margin * 2, at.Height + margin * 2), "", "", "", true,
                 properties, Vector4.Zero, Clip: clip, Pickable: false));
         }
