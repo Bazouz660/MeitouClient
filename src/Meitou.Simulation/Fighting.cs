@@ -13,73 +13,83 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 {
     public const float RepathDistance = 12, RepathSeconds = 0.5f;
 
+    /// <summary>Slots per job of the parallel schedule.</summary>
+    const int SlotsPerJob = 32;
+
     public void Schedule(World world)
     {
         var table = world.Characters;
-        var next = table.Next;
         float dt = world.TickSeconds;
-        for (int i = 0; i < table.HighWater; i++)
+        int count = table.HighWater;
+        // Each attacker writes only its own slot and reads its target's place and the combat state of the last tick, so the slots run in parallel in any order.
+        world.ParallelFor((count + SlotsPerJob - 1) / SlotsPerJob, job =>
         {
-            ref var n = ref next[i];
-            if (!n.Alive || n.Task != (byte)CharacterTask.Attack || table.Cold(i)?.Bashing is not null) continue;   // a basher walks to its door (Locks.LockSystem)
-            var st = combat.StateOf(new CharacterId(i, n.Generation));
-            int t = st.TargetSlot;
-            if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
-            const ushort Path = (ushort)MoveFlags.AnyPath;
-            var d = next[t].Position - n.Position;
-            var cold = table.Cold(i)!;
-            var tc = table.Cold(t);
-            float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
-            // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
-            var tv = next[t].Velocity;
-            bool away = tc is { InCombat: false } && tv.X * tv.X + tv.Z * tv.Z > CombatTuning.FleeingSpeed * CombatTuning.FleeingSpeed;
-            cold.TargetFleeingTime = away ? cold.TargetFleeingTime + dt : 0;
-            if (gap > CombatTuning.RunGap) cold.CombatRunning = true;
-            else if (gap < CombatTuning.FootworkGap) cold.CombatRunning = false;
-            bool fleeing = cold.TargetFleeingTime >= CombatTuning.FleeingSeconds;
-            if (fleeing) cold.CombatRunning = true;
-            n.TaskTime -= dt;
-            // After a fleeing target it aims ahead of it (CombatTuning.LeadBase), so a faster chaser runs past; the lead follows the target's velocity, so it swings round
-            // when the target turns. An engine rule: the lead and the run past hold only while the chaser is behind the target; once level or ahead it turns on the target
-            // and stops within reach, so the runner comes into it.
-            var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
-            bool behind = fleeing && tv.X * d.X + tv.Z * d.Z > 0 && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null;
-            if (behind)
-            {
-                float lead = (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase;
-                var ahead = goal + new Vector2(tv.X, tv.Z) * lead;
-                if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
-            }
-            // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
-            bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
-            bool holding = Orders.Has(cold, CharacterOrders.Hold);
-            // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
-            int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
-            if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
-            {
-                Circle(world, i, ref n, cold, tc, t, d, gap, around);
-                continue;
-            }
-            float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
-            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= stand || holding)
-            {
-                // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
-                if ((n.Flags & Path) != 0)
-                {
-                    n.Flags = (ushort)(n.Flags & ~Path);
-                    n.PathCursor = 0;
-                    table.Cold(i)!.PathRequest = 0;
-                }
-                continue;
-            }
-            bool asking = (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
-            bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
-            if (asking || !stale || n.TaskTime > 0) continue;
-            n.Goal = goal;
-            n.Mode = SpeedMode.Free;
-            n.Flags |= (ushort)MoveFlags.NeedPath;
-            n.TaskTime = RepathSeconds;
+            for (int i = job * SlotsPerJob, end = Math.Min(count, i + SlotsPerJob); i < end; i++) Pursue(world, table, i, dt);
+        });
+    }
+
+    void Pursue(World world, CharacterTable table, int i, float dt)
+    {
+        var next = table.Next;
+        ref var n = ref next[i];
+        if (!n.Alive || n.Task != (byte)CharacterTask.Attack || table.Cold(i)?.Bashing is not null) return;   // a basher walks to its door (Locks.LockSystem)
+        var st = combat.StateOf(new CharacterId(i, n.Generation));
+        int t = st.TargetSlot;
+        if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) return;
+        const ushort Path = (ushort)MoveFlags.AnyPath;
+        var d = next[t].Position - n.Position;
+        var cold = table.Cold(i)!;
+        var tc = table.Cold(t);
+        float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
+        // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
+        var tv = next[t].Velocity;
+        bool away = tc is { InCombat: false } && tv.X * tv.X + tv.Z * tv.Z > CombatTuning.FleeingSpeed * CombatTuning.FleeingSpeed;
+        cold.TargetFleeingTime = away ? cold.TargetFleeingTime + dt : 0;
+        if (gap > CombatTuning.RunGap) cold.CombatRunning = true;
+        else if (gap < CombatTuning.FootworkGap) cold.CombatRunning = false;
+        bool fleeing = cold.TargetFleeingTime >= CombatTuning.FleeingSeconds;
+        if (fleeing) cold.CombatRunning = true;
+        n.TaskTime -= dt;
+        // After a fleeing target it aims ahead of it (CombatTuning.LeadBase), so a faster chaser runs past; the lead follows the target's velocity, so it swings round
+        // when the target turns. An engine rule: the lead and the run past hold only while the chaser is behind the target; once level or ahead it turns on the target
+        // and stops within reach, so the runner comes into it.
+        var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
+        bool behind = fleeing && tv.X * d.X + tv.Z * d.Z > 0 && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null;
+        if (behind)
+        {
+            float lead = (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase;
+            var ahead = goal + new Vector2(tv.X, tv.Z) * lead;
+            if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
         }
+        // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
+        bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
+        bool holding = Orders.Has(cold, CharacterOrders.Hold);
+        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
+        int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
+        if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
+        {
+            Circle(world, i, ref n, cold, tc, t, d, gap, around);
+            return;
+        }
+        float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
+        if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= stand || holding)
+        {
+            // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
+            if ((n.Flags & Path) != 0)
+            {
+                n.Flags = (ushort)(n.Flags & ~Path);
+                n.PathCursor = 0;
+                table.Cold(i)!.PathRequest = 0;
+            }
+            return;
+        }
+        bool asking = (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
+        bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
+        if (asking || !stale || n.TaskTime > 0) return;
+        n.Goal = goal;
+        n.Mode = SpeedMode.Free;
+        n.Flags |= (ushort)MoveFlags.NeedPath;
+        n.TaskTime = RepathSeconds;
     }
 
     /// <summary>

@@ -4,7 +4,7 @@ namespace Meitou.Simulation;
 
 /// <summary>
 /// Wall time of the world's ticks per phase and per system, summed until the host takes it (the profiler's sim rows). Off by default: a tick then
-/// pays one null check per measured span. A system's time is every span it ran in (its serial calls, its parallel phases up to the barrier, its effects' apply).
+/// pays one null check per measured span (and a flag check per <see cref="Part"/>). A system's time is every span it ran in (its serial calls, its parallel phases up to the barrier, its effects' apply).
 /// </summary>
 public sealed class TickProfile
 {
@@ -22,18 +22,39 @@ public sealed class TickProfile
     /// <summary>Ms per system, by its index in <see cref="World.Systems"/>, since the last <see cref="Clear"/>.</summary>
     public double[] SystemMs { get; private set; } = [];
 
+    /// <summary>Ms per part a system marked inside its own span (<see cref="Part"/>), by name in the order first marked; they stay listed once seen.</summary>
+    public List<(string Name, double Ms)> Parts { get; } = [];
+
     public void Clear()
     {
         Ticks = 0;
         Array.Clear(PhaseMs);
         Array.Clear(SystemMs);
+        for (int i = 0; i < Parts.Count; i++) Parts[i] = (Parts[i].Name, 0);
     }
 
     internal void Begin(int systems)
     {
         if (SystemMs.Length != systems) SystemMs = new double[systems];
         Ticks++;
-        last = Stopwatch.GetTimestamp();
+        last = partLast = Stopwatch.GetTimestamp();
+    }
+
+    long partLast;
+
+    /// <summary>
+    /// Inside a system's span: the time since the span began or the last part ended goes to the part <paramref name="name"/> (a breakdown of the system's own time, which still
+    /// goes to the system at its lap). Serial phases only.
+    /// </summary>
+    public void Part(string name)
+    {
+        if (!Enabled) return;
+        long now = Stopwatch.GetTimestamp();
+        double ms = (now - Math.Max(partLast, last)) * 1000.0 / Stopwatch.Frequency;
+        partLast = now;
+        for (int i = 0; i < Parts.Count; i++)
+            if (ReferenceEquals(Parts[i].Name, name) || Parts[i].Name == name) { Parts[i] = (name, Parts[i].Ms + ms); return; }
+        Parts.Add((name, ms));
     }
 
     /// <summary>The time since the last lap goes to <paramref name="phase"/> and, given one, to <paramref name="system"/>.</summary>

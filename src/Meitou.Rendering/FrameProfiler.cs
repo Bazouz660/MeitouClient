@@ -158,10 +158,11 @@ public sealed class FrameProfiler : IDisposable
     /// <summary>Render-thread work before <see cref="BeginFrame"/> that belongs to the next frame: the game's simulation ticks (<see cref="StageClock.Sim"/>), the last call's ms.</summary>
     public void Outside(double simMs) => outsideSim = simMs;
 
-    // The simulation's parts (Outside with parts): the names, how many lead as phases (the last of them the time outside the world's ticks; the rest are systems, listed by
-    // cost), each part's ms and the world ticks per frame, listed under sim in the legend, not plotted. simNow is the newest call's, kept with the frame at EndFrame.
+    // The simulation's parts (Outside with parts): the names, how many lead as phases (the last of them the time outside the world's ticks), how many systems follow (listed by
+    // cost; the rest are parts of systems, listed in order), each one's ms and the world ticks per frame, listed under sim in the legend, not plotted. simNow is the newest
+    // call's, kept with the frame at EndFrame.
     string[] simNames = [];
-    int simPhases;
+    int simPhases, simSystems;
     float[][] simParts = [];
     readonly float[] simTicks = new float[History];
     double[] simNow = [];
@@ -170,10 +171,12 @@ public sealed class FrameProfiler : IDisposable
 
     /// <summary>
     /// <see cref="Outside(double)"/> with the ticks' breakdown: <paramref name="names"/> (the same array while the parts stay the same) with their <paramref name="ms"/>, the first
-    /// <paramref name="phases"/> of them phases shown in order (the last the time outside the ticks), the rest systems shown by cost; <paramref name="ticks"/> the world ticks run.
+    /// <paramref name="phases"/> of them phases shown in order (the last the time outside the ticks), the next <paramref name="systems"/> shown by cost, the rest (parts of systems)
+    /// in order; <paramref name="ticks"/> the world ticks run.
     /// </summary>
-    public void Outside(double simMs, int ticks, string[] names, ReadOnlySpan<double> ms, int phases)
+    public void Outside(double simMs, int ticks, string[] names, ReadOnlySpan<double> ms, int phases, int systems)
     {
+        simSystems = systems;
         outsideSim = simMs;
         if (!ReferenceEquals(names, simNames))
         {
@@ -624,16 +627,21 @@ public sealed class FrameProfiler : IDisposable
         return true;
     }
 
-    /// <summary>The sim rows to list: the phases in order, then the systems costing the most over the last <paramref name="frames"/> frames and the rest as one row.</summary>
+    /// <summary>
+    /// The sim rows to list: the phases in order, then the systems costing the most over the last <paramref name="frames"/> frames and the rest as one row, then the systems'
+    /// parts in order.
+    /// </summary>
     void SimRows(int frames)
     {
         const int Shown = 10;
         simRows.Clear();
+        int systemsEnd = Math.Min(simParts.Length, simPhases + simSystems);
         for (int p = 0; p < simPhases && p < simParts.Length; p++) simRows.Add((simNames[p], Mean(simParts[p], cpuHead, cpuCount, frames)));
-        var systems = Enumerable.Range(simPhases, Math.Max(0, simParts.Length - simPhases))
+        var systems = Enumerable.Range(simPhases, Math.Max(0, systemsEnd - simPhases))
             .Select(p => (Name: "  " + simNames[p], Ms: Mean(simParts[p], cpuHead, cpuCount, frames))).OrderByDescending(r => r.Ms).ToList();
         simRows.AddRange(systems.Take(Shown));
         if (systems.Count > Shown) simRows.Add(("  other systems", systems.Skip(Shown).Sum(r => r.Ms)));
+        for (int p = systemsEnd; p < simParts.Length; p++) simRows.Add(("  " + simNames[p], Mean(simParts[p], cpuHead, cpuCount, frames)));
     }
 
     public void Dispose()

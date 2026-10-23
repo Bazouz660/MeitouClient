@@ -687,18 +687,21 @@ sealed partial class GameHost
         var world = session.World;
         var profile = world.Profile;
         int phases = TickProfile.PhaseNames.Length;
-        if (simNamesFor != world || simNames.Length != phases + 1 + world.Systems.Count)
+        int systems = world.Systems.Count, parts = phases + 1 + systems;
+        if (simNamesFor != world || simNames.Length != parts + profile.Parts.Count)
         {
             simNamesFor = world;
-            simNames = [.. TickProfile.PhaseNames, "outside ticks", .. world.Systems.Select(s => s.GetType().Name is var n && n.EndsWith("System", StringComparison.Ordinal) && n.Length > 6 ? n[..^6] : n)];
+            simNames = [.. TickProfile.PhaseNames, "outside ticks", .. world.Systems.Select(s => s.GetType().Name is var n && n.EndsWith("System", StringComparison.Ordinal) && n.Length > 6 ? n[..^6] : n),
+                .. profile.Parts.Select(p => p.Name)];
             simMs = new double[simNames.Length];
         }
         Array.Clear(simMs);
         double inTicks = 0;
         for (int p = 0; p < phases; p++) inTicks += simMs[p] = profile.PhaseMs[p];
         simMs[phases] = Math.Max(0, advanceMs - inTicks);
-        for (int k = 0; k < profile.SystemMs.Length && phases + 1 + k < simMs.Length; k++) simMs[phases + 1 + k] = profile.SystemMs[k];
-        profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1);
+        for (int k = 0; k < profile.SystemMs.Length && phases + 1 + k < parts; k++) simMs[phases + 1 + k] = profile.SystemMs[k];
+        for (int k = 0; k < profile.Parts.Count && parts + k < simMs.Length; k++) simMs[parts + k] = profile.Parts[k].Ms;
+        profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1, systems);
         profile.Clear();
     }
 

@@ -212,10 +212,12 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             if (!r.Frozen) physics.Cover(r.Pose[r.Definition.Root].Position, 12 * r.Scale, env, tick);
         }
 
+        world.Profile.Part("rag setup");   // F12: the masks, the builds, the pins and the ground tiles
         // 2. The step.
         Moving = 0;
         foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None }) Moving++;
         if (Moving > 0) physics.Step(dt);
+        world.Profile.Part("rag step");
 
         // 3. Poses back, the whole body's position, freezing, publishing.
         foreach (var id in order)
@@ -245,7 +247,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             r.Published = Build(r, Placement(r, cold, hot));
         }
         order.RemoveAll(id => !ragdolls.ContainsKey(id));
+        world.Profile.Part("rag back");
         physics.Sweep(tick);
+        world.Profile.Part("rag sweep");
     }
 
     /// <summary>The character's drawn placement: position (a carried body's at <see cref="CarryPose"/> from its carrier), facing, size; the renderer's world matrix.</summary>
