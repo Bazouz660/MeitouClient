@@ -163,7 +163,7 @@ public sealed class AudioSystem : IDisposable
     {
         string music = Music.Remembered is null ? "nothing to post" : Music.Volume <= 0 ? "volume 0" : $"next in {Math.Max(0, Music.SecondsToNext):0} s";
         string biome = Ambience.Biome is { } heard ? $"{heard} {(Ambience.Night ? "night" : "day")}" : "no biome";
-        return $"{biome}{(Ambience.Raining ? ", rain" : "")}{(Ambience.Windy ? ", wind" : "")}{(paused ? ", paused" : "")}: {Player.Stats.Voices} voices, {Player.Stats.Clips} clips loaded; " +
+        return $"{biome}{(Ambience.Raining ? ", rain" : "")}{(Ambience.Windy ? ", wind" : "")}{(paused ? ", paused" : "")}: {Player.Stats.Voices} voices{(Player.Silenced > 0 ? $" ({Player.Silenced} capped)" : "")}, {Player.Stats.Clips} clips loaded; " +
             $"music {(Music.TitleScreen ? "main theme" : Music.Biome ?? "none")}, {music}, {Player.MusicVoices} voices";
     }
 

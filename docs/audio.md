@@ -463,6 +463,16 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
   Measured by rendering: decay about 3.5 s (big indoor), 0.9 s (small), 2 s (outdoor); the level is near unity.
   Unknown: which wet level is early reflections or tail, the pattern id and millisecond bytes, the outdoor pre-delay curve.
 
+### Voice cap
+
+Meitou's rule, the `voices` switch (Meitou by default; `--faithful voices` mixes every sound). Each block the player works out every sound's gains first
+(`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and the `Enhancements.MeitouVoiceCap` (96) loudest
+other sounds at the listener (dry or sent). The rest are silent for the block: their voice keeps its clock without decoding (`Voice.Skip`) and, when it
+is among the loudest again, seeks to where it would be and fades in over one block; a one-shot that ran out meanwhile ends. Trimmed music clips are never
+capped. The game's own Wwise limits (`STMG` max voices and volume threshold, each node's max instances, read but not modelled) are not this rule. F11
+shows how many sounds were capped. After the mix a peak limiter (both modes, `AudioOutput.Limit`: ceiling 0.89, instant attack, 0.15 s release) turns a
+loud sum down instead of hard-clipping it at the 16-bit conversion.
+
 ### API for event sources
 
 For a host that posts its own events (footsteps, combat, UI, voices, emitters), through `AudioSystem.Player` (a `WwisePlayer`):
@@ -478,7 +488,7 @@ Open for the next wave: which event each game action posts and on which object, 
 ### Not done
 
 The emitters of foliage and map features, corpse flies, turret shots and wall-break sounds (nothing in Meitou triggers them), the callers that post effects, the task and interface sounds whose trigger Meitou lacks (listed under [Characters](#characters-footsteps-combat-voices) and [Interface](#interface)) (the engine is ready:
-[API](#api-for-event-sources)), voice limits, obstruction and occlusion (the game uses none), the radio, serial effect slots and the cone as Wwise draws it, and unloading ambience
+[API](#api-for-event-sources)), the game's Wwise voice limits (Meitou has its own [cap](#voice-cap)), obstruction and occlusion (the game uses none), the radio, serial effect slots and the cone as Wwise draws it, and unloading ambience
 banks left behind (they stay loaded: about 5 to 14 MB of Ogg each; the music banks unload as above).
 
 ## In the viewer and the game
