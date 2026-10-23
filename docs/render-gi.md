@@ -67,7 +67,8 @@ up again one cell along its normal before falling back to the far cascade.
 points can sit in walls, the raised floor or furniture; the far cascade then painted them near black. GI replaces envDiffuse; per-fragment path also
 scales specular ambient by luminance ratio clamped0..1. Reflection probe use is a separate switch.
 
-Interior meshes, furniture inside building masks, and indoor characters take indirect light of
+Interior meshes, furniture inside building masks (layout furniture, and player-placed furniture/stations
+standing in another building's hull), and indoor characters take indirect light of
 luminance max(GI, original ambient); its hue mixes ambient to GI hue by smoothstep(0.1, 0.25, GI/ambient)
 (Hub bar, **Observed**: GI/ambient 0.15-0.3 round lamps, 0.05-0.15 elsewhere, nowhere above 0.3).
 Direct sun/lamps and the probe feedback remain unscaled. `GiProbes.InteriorGain` <= 1 disables it.

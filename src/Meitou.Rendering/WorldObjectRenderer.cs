@@ -728,6 +728,18 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// </summary>
     bool InInterior(ObjectStreamer.Instance inst) => InteriorOf(inst).Inside;
 
+    /// <summary>
+    /// Whether the instance takes the indoor GI (docs/render-gi.md): a building's interior part, its layout furniture inside a hull, or a building of its own (furniture or a
+    /// station the player placed) standing in another building's hull; a building in its own hull is its outside.
+    /// </summary>
+    bool IndoorFurniture(ObjectStreamer.Instance inst)
+    {
+        var p = inst.Placed;
+        if (p.Interior) return true;
+        if (p.ParentPlacementId is not null) return InInterior(inst);
+        return p.Kind == PlacedKind.BuildingPart && InteriorOf(inst) is { Inside: true, Building: { } holder } && holder != p.PlacementId;
+    }
+
     ObjectStreamer.InteriorAnswer InteriorOf(ObjectStreamer.Instance inst)
     {
         var at = inst.Transform.Translation;
@@ -1051,7 +1063,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (gpu.MinLevel > 0) blend = new LodBlend(Math.Max(blend.Lower, gpu.MinLevel), Math.Max(blend.Upper, gpu.MinLevel), blend.T);
         var m = inst.Transform;
         // Spare instance-matrix component: room GI gain without splitting shared furniture batches.
-        m.M34 = inst.Placed.Interior || inst.Placed.ParentPlacementId is not null && InInterior(inst) ? 1 : 0;
+        m.M34 = IndoorFurniture(inst) ? 1 : 0;
         // Another spare component, M44: 1, or for a construction site the height of its scaffold clip plane (BuildingLodShaders.ScaffoldBase + world Y).
         bool site = false;
         bool highlight = HighlightSigns && !depthPass && !inst.Stand && inst.Placed.Owner.GetBool("is sign");
