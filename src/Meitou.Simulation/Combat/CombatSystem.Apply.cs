@@ -40,6 +40,9 @@ public sealed partial class CombatSystem
         }
 
         A.LastOutcome = outcome;
+        // A blow on its target that is not a hit gives up its place among the fighters the target lets close in (FUN_14060a2f0 → FUN_1406657d0, docs/game/combat.md
+        // "Attack slots and circling"): it asks again when it next decides, after the ones circling with a lower slot.
+        if (outcome != BlowOutcome.Hit && d == A.TargetSlot) A.Engaged = false;
         switch (outcome)
         {
             case BlowOutcome.Missed:

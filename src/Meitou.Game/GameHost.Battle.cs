@@ -111,6 +111,43 @@ sealed partial class GameHost
                 var foe = standing[1 - side].MinBy(e => Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(At(e).X, At(e).Z)));
                 world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
             }
+        if (world.Tick % BattleRetargetTicks == 0) BattleRetarget(world, combat, standing);
+    }
+
+    /// <summary>How often a fighter left out of a crowded target looks for another (engine choice: a second).</summary>
+    const int BattleRetargetTicks = 30;
+
+    /// <summary>
+    /// A fighter its target left out (more than <see cref="CombatSystem.MaxEngaged"/> fighters after it, so it circles) turns on the nearest standing enemy with room
+    /// for it, if any: otherwise every fighter keeps the enemy nearest at its order and the crowd round a few targets circles them in rings while others stand free.
+    /// </summary>
+    void BattleRetarget(World world, CombatSystem combat, List<CharacterId>[] standing)
+    {
+        var table = world.Characters;
+        var at = new Dictionary<int, int>();   // the melee fighters after each slot
+        foreach (var side in standing)
+            foreach (var id in side)
+                if (combat.StateOf(id) is { TargetSlot: >= 0 and var t, Down: false, Ranged: false }) at[t] = at.GetValueOrDefault(t) + 1;
+        Vector2 Ground(CharacterId id) => new(table.Previous[id.Slot].Position.X, table.Previous[id.Slot].Position.Z);
+        for (int side = 0; side < 2; side++)
+            foreach (var id in standing[side])
+            {
+                var st = combat.StateOf(id);
+                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
+                var here = Ground(id);
+                CharacterId? best = null;
+                float bestDistance = float.MaxValue;
+                foreach (var e in standing[1 - side])
+                {
+                    if (e.Slot == st.TargetSlot || at.GetValueOrDefault(e.Slot) >= CombatSystem.MaxEngaged) continue;
+                    float distance = Vector2.DistanceSquared(here, Ground(e));
+                    if (distance < bestDistance) { bestDistance = distance; best = e; }
+                }
+                if (best is not { } foe) continue;
+                at[st.TargetSlot]--;
+                at[foe.Slot] = at.GetValueOrDefault(foe.Slot) + 1;
+                world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
+            }
     }
 
     /// <summary>Once per frame, between ticks: Backspace starts the battle again in a new world made the same way.</summary>

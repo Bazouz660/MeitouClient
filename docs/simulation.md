@@ -383,7 +383,8 @@ change: Faithful off, Meitou on);
 the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
 "Attack slots and circling" with the engine readings listed there (Advanced setting "Attackers per target", 1-5: Faithful 1, the
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
-Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle.
+Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A blow on
+the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so the circling fighters get their turn.
 
 ### Ranged
 
@@ -1304,7 +1305,8 @@ and resetting camera evaluation is required for repeatable recording.
 `--battle n unit m unit [rows] [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs, a squad each (each one CHARACTER or
 ANIMAL_CHARACTER record, its own faction's looks, the first fighter leading) 40 units apart in ranks of 25 (or `rows` ranks of n / rows, the back rank taking the rest), 6 units apart, on a plateau (default, -74028, 13428), the duel's mesa, the sandbox floor or a map spot, with no towns
 and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
-same-faction matchups fight too; the battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
+same-faction matchups fight too. Once a second a fighter left out of a target with more than 5 after it (circling) turns on the nearest standing
+enemy with room, as the original's target score counts a candidate's engaged fighters against it ([combat](game/combat.md#attack-slots-and-circling)). The battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
 
 ## The game host
 
