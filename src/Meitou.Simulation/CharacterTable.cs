@@ -54,6 +54,8 @@ public sealed class CharacterCold
     public int Role { get; set; }
     /// <summary>Seconds left that a follower blocked on its way straight to its slot takes paths (<see cref="MovementSystem.FollowPathSeconds"/>).</summary>
     public float FollowPathTime { get; set; }
+    /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
+    public CharacterId FollowOrder { get; set; } = CharacterId.None;
     /// <summary>The path being followed (world positions, the next one at <c>CharacterHot.PathCursor</c>); replaced whole in a serial phase.</summary>
     public Vector3[] Path { get; set; } = [];
     /// <summary>
@@ -477,6 +479,7 @@ public sealed class CharacterTable
             // The AI's decision and the trade hold add to the hash only while set, so worlds without AI packages hash as before.
             if (k.Ai is { } mind) { hasher.Add(0x41694D64); mind.Hash(ref hasher); }
             if (k.Engaged) hasher.Add(0x456E6761);
+            if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); }   // only while set, so worlds without follow orders hash as before
             if (k.DialogueLocks is { Count: > 0 } locks)
             {
                 hasher.Add(0x4C6F6B73);

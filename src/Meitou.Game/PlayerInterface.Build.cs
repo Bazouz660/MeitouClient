@@ -536,7 +536,11 @@ sealed partial class PlayerInterface
     /// <summary>The name of a site's building, for the menu's title.</summary>
     string SiteName(BuildingSnapshot site) => buildHost?.Menu.Catalog.FirstOrDefault(b => b.Id == site.Record)?.Name ?? site.Record;
 
-    /// <summary>The verbs the selection has for a site: Build for an unfinished one (the quick order), Dismantle, and Cancel for one nothing has been delivered to.</summary>
+    /// <summary>
+    /// The verbs the selection has for a site (the original's building branch, docs/game/ui-input.md "Context menu verbs"): Build (2) for an unfinished one (the quick order); finished, a
+    /// machine's Use (87), a storage's Auto-Haul (124, the "Hauling to" job) and Inventory (26), a furnace's Inventory, a turret's Man Turret (146); Dismantle (96); Meitou's Cancel for a
+    /// site nothing has been delivered to and the building panel's door buttons. Not built: Repair (95; Meitou buildings take no damage) and Auto-Haul (152) of automatic machines.
+    /// </summary>
     List<(string Caption, Action Give)> SiteVerbs(BuildingSnapshot site)
     {
         var verbs = new List<(string, Action)>();
@@ -544,6 +548,14 @@ sealed partial class PlayerInterface
         if (selection.Count == 0) return verbs;
         if (!site.Complete) verbs.Add(("Build", () => Say(new BuildOrder(selection, site.Id) { Tick = session.World.Tick })));
         AddMachineVerb(verbs, site, selection);
+        if (site.Complete && Machine(site.Id) is { } machine)
+        {
+            if (machine.IsStorage)
+                verbs.Add(("Auto-Haul", () => Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick })));
+            if (machine.IsStorage || machine.Function == MachineData.ItemFurnaceFunction) verbs.Add(("Inventory", () => OpenStorage(site)));
+            if (machine.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
+                verbs.Add(("Man Turret", () => Say(new Meitou.Simulation.Production.UseTurretOrder(selection, site.Id) { Tick = session.World.Tick })));
+        }
         verbs.Add(("Dismantle", () => Say(new DismantleOrder(selection, site.Id) { Tick = session.World.Tick })));
         if (!site.Complete && site.Progress <= 0 && site.Materials.All(m => m.Delivered <= 0))
             verbs.Add(("Cancel Construction", () => Say(new CancelSite(site.Id) { Tick = session.World.Tick })));
@@ -594,13 +606,7 @@ sealed partial class PlayerInterface
         else if (Machine(pending.Site.Id) is { Operable: true }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Function: Meitou.Data.World.ObjectRanges.TurretFunction })
             Say(new Meitou.Simulation.Production.UseTurretOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });   // the original's order 146 USE_TURRET
-        else if (Machine(pending.Site.Id) is { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction })
-        {
-            // A finished storage or furnace of the player's: the selection walks to it, and on arrival its window opens with the character's inventory beside it (the original's order 26,
-            // LOOT_TARGET, pointer search). A left click on a storage shows its window alone.
-            Move(pending.Site.Position, false);
-            storageOpening = (pending.Site, System.Diagnostics.Stopwatch.GetTimestamp());
-        }
+        else if (Machine(pending.Site.Id) is { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction }) OpenStorage(pending.Site);
         else if (!SiteIsObject(pending.Site) && Ray(pending.At) is { } ray && MoveHit(ray.Origin, ray.Direction) is { } hit)
         {
             // A finished plain building's quick right click is a move to the point under the cursor (the original: order 29 MOVE_CUS_ORDERED). The original's target is the building
@@ -614,6 +620,16 @@ sealed partial class PlayerInterface
             Move(hit, SlowModifier);
             PlaceMarker(hit);
         }
+    }
+
+    /// <summary>
+    /// A finished storage or furnace of the player's: the selection walks to it, and on arrival its window opens with the character's inventory beside it (the original's order 26,
+    /// LOOT_TARGET, pointer search). A left click on a storage shows its window alone.
+    /// </summary>
+    void OpenStorage(BuildingSnapshot site)
+    {
+        Move(site.Position, false);
+        storageOpening = (site, System.Diagnostics.Stopwatch.GetTimestamp());
     }
 
     /// <summary>A storage the selection was sent to open (a quick right click) and when; it opens when one of them is near enough, or is dropped when they stop short.</summary>
@@ -648,8 +664,7 @@ sealed partial class PlayerInterface
         if (sitePending is not { } pending || System.Diagnostics.Stopwatch.GetElapsedTime(pending.Since).TotalSeconds < ContextHoldSeconds) return;
         sitePending = null;
         if (session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == pending.Site.Id) is not { } site) return;
-        var verbs = SiteVerbs(site);
-        if (verbs.Count > 0) contextMenu = new(SiteName(site), pending.At, verbs);
+        contextMenu = Menu(SiteName(site), pending.At, SiteVerbs(site));
     }
 
     /// <summary>

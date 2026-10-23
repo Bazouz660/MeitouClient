@@ -6,10 +6,10 @@ using Meitou.Simulation;
 namespace Meitou.Game;
 
 /// <summary>
-/// The context menu (the original's ContextMenuGUI, <c>Kenshi_ContextMenu</c>; docs/game/ui-input.md section 7): holding the command (right) button on a character for
-/// <see cref="ContextHoldSeconds"/> opens a menu of the orders the selection can give it, titled with its name; a quicker click gives the default order at once, as before.
-/// A left click on a verb gives it; any other click, or Esc, closes the menu. The verbs are the original's names for the orders Meitou has (attack, trade, first aid, pick up,
-/// put down, loot); Talk opens a conversation (<see cref="Meitou.Simulation.Dialogue.DialogueSystem"/>); the rest of its verb list (follow, bodyguard...) waits for those systems.
+/// The context menu (the original's ContextMenuGUI, <c>Kenshi_ContextMenu</c>; docs/game/ui-input.md "Context menu verbs"): holding the command (right) button on a target for
+/// <see cref="ContextHoldSeconds"/> opens a menu of the orders the selection can give it, titled with its name; a quicker click gives the default order at once. A left click on a
+/// verb gives it; any other click, or Esc, closes the menu. The verbs carry the original's labels and are listed in the original's order-number order (<see cref="VerbOrders"/>);
+/// one method per target kind builds them: characters here, containers and doors below, sites in PlayerInterface.Build.cs, rocks in PlayerInterface.Rocks.cs.
 /// </summary>
 sealed partial class PlayerInterface
 {
@@ -18,12 +18,51 @@ sealed partial class PlayerInterface
 
     sealed record ContextMenu(string Title, Vector2 At, IReadOnlyList<(string Caption, Action Give)> Verbs);
     ContextMenu? contextMenu;
-    // A right press on a target that has verbs: when, where, and the order a quick click gives (null: none).
-    (CharacterId Target, Vector2 At, long Since, Action? Quick)? contextPending;
+    // A right press on a target that has verbs: its menu (built again when the hold ends), where, when, and the order a quick click gives (null: none).
+    (Func<Vector2, ContextMenu?> Menu, Vector2 At, long Since, Action? Quick)? contextPending;
 
     public bool ContextMenuOpen => contextMenu is not null;
 
-    /// <summary>The verbs the selection has for <paramref name="target"/>, in the original's names.</summary>
+    /// <summary>
+    /// The original's order number behind each verb caption (<c>FUN_14079b2d0</c>'s labels; where several orders share a label, the one the menu offers): the menu lists its verbs
+    /// in ascending order number, as the original's set of orders. Meitou's own verbs (not in the table) follow, in the order they were added.
+    /// </summary>
+    static readonly Dictionary<string, int> VerbOrders = new()
+    {
+        ["Build"] = 2, ["Steal"] = 3, ["Attack Target"] = 5, ["Talk To"] = 12, ["Attack All"] = 16, ["First Aid"] = 25, ["Inventory"] = 26, ["Trade"] = 26, ["Loot"] = 26,
+        ["Stand Up"] = 28, ["Follow"] = 31, ["Bodyguard"] = 45, ["Repairs"] = 60, ["Attack Unprovoked"] = 61, ["Put Down"] = 69, ["Open"] = 72, ["Close"] = 73, ["Pick Lock"] = 76,
+        ["Lock"] = 77, ["Unlock"] = 78, ["Use"] = 87, ["Repair"] = 95, ["Dismantle"] = 96, ["Training"] = 97, ["Put in Bed"] = 99, ["Get in"] = 107, ["Put in"] = 108,
+        ["Knock Out"] = 109, ["Set Free"] = 110, ["Break Out"] = 111, ["Auto-Haul"] = 124, ["Corpse Disposal"] = 136, ["Man Turret"] = 146, ["Capture"] = 166,
+        ["Use Tools"] = 185, ["Use Strength"] = 186, ["Unlock Shackles"] = 201, ["Escape"] = 207, ["Throw out of home"] = 223, ["Pick Up"] = 225, ["Smash"] = 226,
+        ["Stealth KO"] = 228, ["Stealth Kill"] = 229, ["Shoot At"] = 235, ["Kidnap"] = 246, ["Splint Injuries"] = 249, ["Escape (skill)"] = 251, ["Escape (strength)"] = 252,
+        ["Sleep"] = 258, ["Throw out of town"] = 273,
+    };
+
+    /// <summary>The only orders an animals-only selection is offered (<c>FUN_1407f23b0</c>): attack, attack unprovoked, bodyguard, follow and the smash orders.</summary>
+    static readonly HashSet<int> AnimalVerbOrders = [5, 61, 45, 31, 123, 226, 227];
+
+    /// <summary>A caption with a chance column: the menu shows <paramref name="chance"/> (0..100) beside the verb as the original's <c>Value</c> box (<c>FUN_1407f65e0</c>).</summary>
+    static string WithChance(string caption, float chance) => caption + "\t" + Math.Clamp(chance, 0, 100).ToString("0", CultureInfo.InvariantCulture);
+
+    static (string Caption, float? Chance) SplitChance(string caption) =>
+        caption.IndexOf('\t') is var tab and >= 0 && float.TryParse(caption.AsSpan(tab + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out float c) ? (caption[..tab], c) : (caption, null);
+
+    static int? OrderOf(string caption) => VerbOrders.TryGetValue(SplitChance(caption).Caption, out int order) ? order : null;
+
+    /// <summary>The menu for <paramref name="verbs"/>, as the original fills it: an animals-only selection keeps only its orders, the rest sorted by order number; null when none is left.</summary>
+    ContextMenu? Menu(string title, Vector2 at, List<(string Caption, Action Give)> verbs)
+    {
+        var selected = Selected();
+        IEnumerable<(string Caption, Action Give)> kept = verbs;
+        if (selected.Count > 0 && selected.All(IsAnimal)) kept = kept.Where(v => OrderOf(v.Caption) is { } o && AnimalVerbOrders.Contains(o));
+        var list = kept.Select((v, i) => (v, i)).OrderBy(x => OrderOf(x.v.Caption) ?? int.MaxValue).ThenBy(x => x.i).Select(x => x.v).ToList();
+        return list.Count == 0 ? null : new ContextMenu(title, at, list);
+    }
+
+    /// <summary>
+    /// The verbs the selection has for a character (<c>FUN_1407a6bc0</c>, docs/game/ui-input.md "Context menu verbs"), in the original's labels. Prisoners, carried bodies, the
+    /// player's own, hostile and other characters each get their branch's verbs; then the medic verbs and the shackle verbs.
+    /// </summary>
     List<(string Caption, Action Give)> Verbs(CharacterSnapshot target)
     {
         var verbs = new List<(string, Action)>();
@@ -32,27 +71,23 @@ sealed partial class PlayerInterface
         var id = target.Id;
         bool down = target.Body is { } b && (b.Dead || b.Unconscious);
         var carriers = Selected().Where(c => c.Carrying == id).Select(c => c.Id).ToArray();
-        if (carriers.Length > 0) verbs.Add(("Put Down", () => Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick })));
-        // Meitou stand-in for the original's cage use (docs/simulation.md "Arrest and jail"): carry the body to the nearest free cage.
-        if (carriers.Length > 0) verbs.Add(("Put in Cage", () => Say(new Meitou.Simulation.Crime.PutInCageOrder(carriers) { Tick = session.World.Tick })));
-        if (!down && !target.IsPlayer)
+        // A carried body: carried by a selected character, only Put Down (and Meitou's cage stand-in); carried by someone not of the player's, nothing.
+        if (carriers.Length > 0)
         {
-            if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
-            if (target.IsTrader) verbs.Add(("Trade", () => Say(new Meitou.Simulation.Trading.OpenTrade(selection[0], id) { Tick = session.World.Tick })));
-            verbs.Add(("Attack Target", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick })));
-            // The original's "Stealth KO" (order 228), offered while a selected character sneaks; the chance is in the caption (the original shows it at the pointer).
-            if (target.StealthKoChance is { } chance)
-                verbs.Add(($"{Loc.Tr("Stealth KO")} ({Math.Clamp(chance, 0, 100):0}%)", () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));
+            verbs.Add(("Put Down", () => Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick })));
+            // Meitou stand-in for the original's cage use (docs/simulation.md "Arrest and jail"): carry the body to the nearest free cage.
+            verbs.Add(("Put in Cage", () => Say(new Meitou.Simulation.Crime.PutInCageOrder(carriers) { Tick = session.World.Tick })));
+            return verbs;
         }
-        if (target.Body is { Dead: false, NeedsAid: true })
-            verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
-        if (target.Body is { Dead: false, NeedsSplint: true })
-            verbs.Add(("Splint Injuries", () => Say(new Meitou.Simulation.FirstAid.SplintOrder(selection, id) { Tick = session.World.Tick })));
-        // A caged character: pick its cage's lock (the prisoner its own, a mate from outside), and once it is open the prisoner may get out (an escape unless served).
-        if (target.Prison is { } prison && !down)
+        if (!target.CarriedBy.IsNone && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == target.CarriedBy) is not { IsPlayer: true }) return verbs;
+        if (target.Prison is { } prison) PrisonerVerbs(verbs, target, prison, selection, down);
+        else if (target.IsPlayer) OwnCharacterVerbs(verbs, target, selection, down);
+        else OtherCharacterVerbs(verbs, target, selection, down);
+        // The medic verbs, unless it is dead or a hostile one standing (the original: the lead's enemy test, vtable +0x3e8).
+        if (target.Body is { Dead: false } && (down || target.IsPlayer || !Hostile(target)))
         {
-            if (prison.Locked) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
-            else if (selection.Contains(id)) verbs.Add(("Get Out", () => Say(new Meitou.Simulation.Locks.GetOutOrder([id]) { Tick = session.World.Tick })));
+            if (target.Body is { NeedsAid: true }) verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
+            if (target.Body is { NeedsSplint: true }) verbs.Add(("Splint Injuries", () => Say(new Meitou.Simulation.FirstAid.SplintOrder(selection, id) { Tick = session.World.Tick })));
         }
         // Locked shackles (the original's verbs 201, 185, 186): pick the lock, saw them off with a tool, or break them by strength; the wearer's own or a mate's (another faction's: a crime).
         if (target.ShacklesLocked && target.Body is not { Dead: true })
@@ -64,24 +99,126 @@ sealed partial class PlayerInterface
             IReadOnlyList<CharacterId> Workers() => selection.Contains(id) ? [id] : selection;
         }
         // Meitou stand-in for dragging shackles onto a down or caged character's armour slot: a selected character carrying some puts them on, locked.
-        if (target.CanBeShackled && carriers.Length == 0 && Selected().Any(c => c.CarriesShackles))
+        if (target.CanBeShackled && Selected().Any(c => c.CarriesShackles))
             verbs.Add(("Put on Shackles", () => Say(new Meitou.Simulation.Locks.PutShacklesOrder(Selected().Where(c => c.CarriesShackles).Select(c => c.Id).ToArray(), id) { Tick = session.World.Tick })));
-        // Out of an unlocked cage a mate lifts the prisoner, awake or down (out of another faction's cage a crime for both, locks.md "Cages and beds").
-        if (target.Prison is { Locked: false } && !selection.Contains(id) && target.CarriedBy.IsNone && carriers.Length == 0)
-            verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
-        if (down && target.CarriedBy.IsNone && carriers.Length == 0 && target.Prison is null)
+        return verbs;
+    }
+
+    /// <summary>
+    /// A caged character. Meitou cannot point at a cage, so the cage's own verbs come here (engine stand-ins): Pick Lock its locked cage (the prisoner its own, a mate from outside), and
+    /// once it is open Escape (207, the prisoner when selected; an escape unless served) or Pick Up (225, a mate lifts it out; out of another faction's cage a crime, locks.md "Cages and beds").
+    /// </summary>
+    void PrisonerVerbs(List<(string, Action)> verbs, CharacterSnapshot target, PrisonView prison, IReadOnlyList<CharacterId> selection, bool down)
+    {
+        var id = target.Id;
+        if (!down && session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
+        if (prison.Locked)
         {
-            verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
-            verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+            if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
         }
+        else if (selection.Contains(id)) { if (!down) verbs.Add(("Escape", () => Say(new Meitou.Simulation.Locks.GetOutOrder([id]) { Tick = session.World.Tick }))); }
+        else if (target.CarriedBy.IsNone) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+    }
+
+    /// <summary>
+    /// One of the player's own characters: another one than the selection is followed (31), and down it is picked up (225) and its inventory opened beside the selection's (26, labelled
+    /// Trade for the player's own). Not built: Bodyguard (45), Trade with a standing character, Stand Up (28).
+    /// </summary>
+    void OwnCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
+    {
+        var id = target.Id;
+        if (selection.Contains(id)) return;
+        verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
+        if (!down || !target.CarriedBy.IsNone) return;
+        verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+        verbs.Add(("Trade", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+    }
+
+    /// <summary>
+    /// Another faction's character. Standing: Talk To (12), Stealth KO (228, with its chance) while a selected character sneaks, and against a hostile one Attack Target (5), against
+    /// anyone else Attack Unprovoked (61) and Follow (31); Meitou adds Trade with a trader (its quick order). Down: Loot (26) and Pick Up (225). Not built: Attack All (16), Bodyguard (45),
+    /// Kidnap (246, Meitou's Pick Up stands in), Throw out of home / town (223, 273), Shoot At (235).
+    /// </summary>
+    void OtherCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
+    {
+        var id = target.Id;
+        if (down)
+        {
+            if (!target.CarriedBy.IsNone) return;
+            verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+            verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+            return;
+        }
+        if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
+        if (target.IsTrader && !Hostile(target)) verbs.Add(("Trade", () => Say(new Meitou.Simulation.Trading.OpenTrade(selection[0], id) { Tick = session.World.Tick })));
+        if (target.StealthKoChance is { } chance)
+            verbs.Add((WithChance("Stealth KO", chance), () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));
+        if (Hostile(target))
+        {
+            // Fighting back at someone attacking the squad is defence, not an assault on its faction (as the quick order).
+            verbs.Add(("Attack Target", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Defensive = target.FightsPlayer })));
+            return;
+        }
+        verbs.Add(("Attack Unprovoked", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick })));
+        verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
+    }
+
+    /// <summary>
+    /// A container (the original's building branch for a storage with an inventory): unlocked, Inventory (the player's) or Loot (26); another faction's locked one, Pick Lock (76). The
+    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once. Not built: Use Tools / Use Strength on a
+    /// container's lock (285, 286) and Auto-Haul (124) on an interior container.
+    /// </summary>
+    List<(string Caption, Action Give)> ContainerVerbs(Meitou.Simulation.Locks.ContainerSpot container)
+    {
+        var verbs = new List<(string, Action)>();
+        if (SelectedIds().Count == 0) return verbs;
+        bool own = container.Owner == session.World.Player.Faction;
+        if (!container.Locked) verbs.Add((own ? "Inventory" : "Loot", () => OpenContainer(container.Id, true)));
+        else if (!own && container.Owner >= 0) verbs.Add(("Pick Lock", () => OpenContainer(container.Id, true)));
+        return verbs;
+    }
+
+    /// <summary>The open order for a container (Alt: another faction's locked one is picked, a shop's taken from).</summary>
+    void OpenContainer(string id, bool alt)
+    {
+        closedMachine = null;   // a container whose window was closed opens again when it is asked for (the sim may not have dropped it yet, e.g. while paused)
+        Say(new Meitou.Simulation.Items.OpenContainerOrder([], id, alt) { Tick = session.World.Tick });
+    }
+
+    /// <summary>
+    /// A door (the original's door branch): unlocked, the player's own gets Lock (77), every one Open (72) or Close (73); locked, the player's Unlock (140), another faction's Pick Lock (76).
+    /// Lock and Unlock act on all the building's doors (Meitou's lock order is per building, engine choice). Not built: Use Tools / Use Strength / Smash on a door (285, 286, 226).
+    /// </summary>
+    List<(string Caption, Action Give)> DoorVerbs((Meitou.Simulation.Locks.DoorPick Door, bool Locked) pick)
+    {
+        var verbs = new List<(string, Action)>();
+        if (SelectedIds().Count == 0) return verbs;
+        var door = pick.Door;
+        bool own = door.Owner == session.World.Player.Faction;
+        if (pick.Locked)
+        {
+            if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
+            else verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id, true) { Tick = session.World.Tick })));
+            return verbs;
+        }
+        if (own) verbs.Add(("Lock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
+        bool open = session.CurrentSnapshot.Doors.GetValueOrDefault((door.Building, door.Door)).Motion is Meitou.Simulation.Locks.DoorMotion.Open or Meitou.Simulation.Locks.DoorMotion.Opening;
+        verbs.Add((open ? "Close" : "Open", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id) { Tick = session.World.Tick })));
         return verbs;
     }
 
     /// <summary>A right press on a character with verbs starts the hold timer (true); the quick order, if any, waits for the release.</summary>
     bool ContextPress(Vector2 p, Action? quick)
     {
-        if (PickWhere(p, _ => true) is not { } id || session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } target || Verbs(target).Count == 0) return false;
-        contextPending = (id, p, System.Diagnostics.Stopwatch.GetTimestamp(), quick);
+        if (PickWhere(p, _ => true) is not { } id) return false;
+        return ContextPressOn(p, at => session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is { } target ? Menu(target.Name, at, Verbs(target)) : null, quick);
+    }
+
+    /// <summary>A right press on a target whose <paramref name="menu"/> has verbs (true): the hold timer starts and <paramref name="quick"/> waits for the release.</summary>
+    bool ContextPressOn(Vector2 p, Func<Vector2, ContextMenu?> menu, Action? quick)
+    {
+        if (menu(p) is null) return false;
+        contextPending = (menu, p, System.Diagnostics.Stopwatch.GetTimestamp(), quick);
         return true;
     }
 
@@ -90,9 +227,7 @@ sealed partial class PlayerInterface
     {
         if (contextPending is not { } pending || System.Diagnostics.Stopwatch.GetElapsedTime(pending.Since).TotalSeconds < ContextHoldSeconds) return;
         contextPending = null;
-        if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == pending.Target) is not { } target) return;
-        var verbs = Verbs(target);
-        if (verbs.Count > 0) contextMenu = new(target.Name, pending.At, verbs);
+        contextMenu = pending.Menu(pending.At);
     }
 
     /// <summary>The right button let go: a press released before the menu opened gives the quick order.</summary>
@@ -119,21 +254,35 @@ sealed partial class PlayerInterface
         return open;
     }
 
-    /// <summary>The menu as the original lays it out: a floating panel an eighth of the screen wide, the name on top, a button per verb, beside the cursor and kept on screen.</summary>
+    /// <summary>
+    /// The menu as the original lays it out: a floating panel an eighth of the screen wide, the name on top, a button per verb, beside the cursor and kept on screen. When a verb has a
+    /// chance, every button keeps the layout's width and the chance shows beside it as "N%", red at 0 to green at 100 (<c>ContextMenuGUI::show</c>); else the buttons fill the row.
+    /// </summary>
     void AddContextMenu(List<UiControl> controls)
     {
         if (contextMenu is not { } menu) return;
-        // Kenshi_ContextMenu: Root 0.125 x 0.0685 of the screen for the title and one option, the title 47.3 % of that height, an option the rest.
+        // Kenshi_ContextMenu: Root 0.125 x 0.0685 of the screen for the title and one option, the title 47.3 % of that height, an option the rest; in an option the button at
+        // x 0.0208 w 0.7917 and the Value box at x 0.8125 w 0.1875, both y 0.0513 h 0.8974.
         float w = MathF.Max(200, Width * 0.125f), full = MathF.Max(64, Height * 0.0685185f);
         float titleH = full * 0.472973f, optionH = full - titleH, h = titleH + optionH * menu.Verbs.Count + 6;
         float x = Math.Clamp(menu.At.X + 12, 0, Math.Max(0, Width - w)), y = Math.Clamp(menu.At.Y, 0, Math.Max(0, Height - h));
         var ink = new Vector4(0.86f, 0.82f, 0.71f, 1);
+        bool chances = menu.Verbs.Any(v => SplitChance(v.Caption).Chance is not null);
+        float buttonW = chances ? w * 0.791667f : w * (1 - 2 * 0.0208333f);
         controls.Add(new("context-menu", "Widget", new(x, y, w, h), "", "", "Kenshi_FloatingPanelSkin", true, new Dictionary<string, string>(), new(0.1f, 0.09f, 0.08f, 0.94f), ink, Pickable: true));
         controls.Add(new("context-title", "TextBox", new(x + 6, y + 2, w - 12, titleH), menu.Title, "", "", true,
             new Dictionary<string, string> { ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, ink));
         for (int i = 0; i < menu.Verbs.Count; i++)
-            controls.Add(new($"context-verb-{i}", "Button", new(x + w * 0.0208333f, y + titleH + i * optionH + optionH * 0.05f, w * 0.958f, optionH * 0.9f), Loc.Tr(menu.Verbs[i].Caption),
+        {
+            var (caption, chance) = SplitChance(menu.Verbs[i].Caption);
+            float rowY = y + titleH + i * optionH + optionH * 0.0512821f, rowH = optionH * 0.897436f;
+            controls.Add(new($"context-verb-{i}", "Button", new(x + w * 0.0208333f, rowY, buttonW, rowH), Loc.Tr(caption),
                 "meitou:context", "Kenshi_Button1Skin", true, new Dictionary<string, string> { ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" },
                 default, ink, Pickable: true, Argument: i.ToString(CultureInfo.InvariantCulture)));
+            if (chance is not { } c) continue;
+            float p = Math.Clamp(c * 0.01f, 0, 1);
+            controls.Add(new($"context-chance-{i}", "TextBox", new(x + w * 0.8125f, rowY, w * 0.1875f, rowH), c.ToString("0", CultureInfo.InvariantCulture) + "%", "", "", true,
+                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Center" }, default, new Vector4(1 - p, p, 0, 1)));
+        }
     }
 }

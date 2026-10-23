@@ -20,6 +20,12 @@ public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Ta
     public bool Queued { get; init; }
 }
 
+/// <summary>
+/// The context menu's Follow (order 31, <c>Task_Follow</c>; docs/game/ui-input.md "Context menu verbs"): the characters (the selection when empty) keep a formation place behind
+/// <see cref="Target"/> until another order replaces it or the target is gone (<see cref="CharacterCold.FollowOrder"/>). <b>Engine</b>: the squad follower's slot rule, not saved.
+/// </summary>
+public sealed record FollowOrder(IReadOnlyList<CharacterId> Characters, CharacterId Target) : SimCommand;
+
 /// <summary>Sandbox only: fixes a character's speed mode (null: leave) and/or its walking speed in units per second (null: leave; 0: the speed chain's again). The animation sandbox sends it, the game never does.</summary>
 public sealed record SandboxMovement(CharacterId Character, byte? Mode, float? Speed) : SimCommand;
 

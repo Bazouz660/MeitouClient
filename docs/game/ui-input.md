@@ -26,7 +26,7 @@ choose verbs based on target type/state, faction, carrying and available interac
 Meitou selection commands retain the current selection when no valid player characters are
 targeted (empty ground or an empty drag box). Selecting valid members replaces or adds to it;
 inspecting another faction keeps the selection and shows that character in the panels (see [UI screens](ui-screens.md#4-hud-mainbargui)).
-While a selected character sneaks, an NPC that is up gets the verb "Stealth KO (N%)" and a quick right click on it gives
+While a selected character sneaks, an NPC that is up gets the verb "Stealth KO" with its chance beside it ([context menu](#context-menu-verbs)) and a quick right click on it gives
 that instead of an attack ([combat](combat.md#stealth-knock-out)); the first sneaking selected character goes.
 
 Original strategy camera actions/zoom flags are in [camera](../formats/camera.md). Engine defaults:
@@ -338,6 +338,64 @@ centre where it has slid to, `DoorSpot.Slide` × open amount, `PlayerInterface.D
 walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
 and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level building with an interior is picked by its floors instead (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
 
+### Context menu verbs
+
+**Observed** (kenshi_x64 1.0.68 decompile: list builder `FUN_1407a6bc0`, `ContextMenuGUI::show` `FUN_1407a7fe0`, labels `FUN_14079b2d0`, row click
+`FUN_1407a7f10`). Order numbers are [ai-tasks](ai-tasks.md) taskTypes; "the lead" is the last selected character of the player's faction.
+
+- **Rows**: the verbs are a set of order numbers, so each shows once, **in ascending order number**; an empty label drops it. An animals-only selection
+  (PlayerInterface+0x268) keeps only 5, 31, 45, 61, 123, 226, 227 (`FUN_1407f23b0`). **Verified** (`data/gui/layout/Kenshi_ContextMenu.layout`): title
+  `NameText`; per row a `Kenshi_Button1` (x 0.0208, w 0.7917 of the row) and a `Value` box (x 0.8125, w 0.1875). The box is made only when some row has a
+  chance (`FUN_1407f65e0`): 76 (the lock's pick chance with the selection's lockpicking; a building's below `DAT_142133f28` shows 0), 201 (the shackles'
+  lock), 228 ([stealth KO](combat.md#stealth-knock-out) chance), 246 (`FUN_140885600`); text `{1,num}%` clamped 0..100, colour (1 − p, p, 0). Without
+  one the buttons span the row. The menu sits at the cursor, kept on screen.
+- **Click**: the order goes to the shared dispatch `FUN_1407fa650` with the menu's target, then the menu closes. The dispatch has **no Alt test**: the
+  quick click's "Hold down the ALT key..." rules do not apply, so Loot on another faction's shop or container takes at once. With Shift the order becomes a
+  job ([perma-jobs](ai-tasks.md#perma-jobs)); 26 with Shift on a building becomes 124 when the building has a production interface (slot 95), else
+  nothing; 45, 223 and 273 are always jobs.
+- **Empty**, every selected character down (slot 107): "Your selected character is unconscious" / "Your selected characters are unconscious".
+- **Beds and cages**: a character in a bed or cage (+0x2f8 ≠ 0, +0x308 = 0) is replaced by its bed/cage; one with `occupant selection` (+0x3a8) opens
+  the building's menu and the occupant's in a second menu beside it.
+
+Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner faction is not the player's and lacks flag +0x1d0; 5 Attack Target;
+12 Talk To; 16 Attack All; 17, 45 Bodyguard; 25 First Aid; 26 Inventory (player's building), Trade (player's character), else Loot; 28, 65 Stand Up;
+31 Follow; 60 Repairs; 61 Attack Unprovoked; 68, 213, 225 Pick Up; 69, 70 Put Down; 72 Open; 73 Close; 76 Pick Lock; 77 Lock; 78, 140 Unlock; 87 Use;
+95 Repair; 96 Dismantle; 97 Training; 98, 258 Sleep; 99 Put in Bed; 107 Get in; 108 Put in; 109 Knock Out; 110 Set Free; 111 Break Out;
+123, 226, 290 Smash; 124, 152 Auto-Haul; 136 Corpse Disposal; 146 Man Turret; 166 Capture; 185, 285 Use Tools; 186, 286 Use Strength;
+201 Unlock Shackles; 207 Escape; 223 Throw out of home; 228 Stealth KO; 229 Stealth Kill; 235 Shoot At; 246 Kidnap; 249 Splint Injuries;
+251 Escape (skill); 252 Escape (strength); 273 Throw out of town; any other none.
+
+| Target | Verbs offered (in the builder's order) |
+|---|---|
+| Item (slot 5) | shackles (slot 94): 201, 185, 186; else with an inventory (slot 44): 3, 26; a plain item has no menu |
+| Building | none when slot 102 (+0x1a1) is set and it is another faction's. Unfinished: 2. Broken (slot 97): 95. Else 95 when damaged (slot 101: +0x188 above +0x164), then: with a production interface (slot 95; StorageBuilding returns itself) 124 when its functionality (slot 118) is null (a storage), 152 when that has +0x3ac 0, else 87; otherwise by function (slot 94): 18 nothing, 8 cage (below), 6 or 25 with the lead carrying someone 99, else slot 131's order ([table](#building-picking-and-selection): 97 training dummy, 136 corpse machine, 146 turret, 258 bed, 26...). With an inventory: its lock locked: 76, 285, 286, else 26. A door (+0x1a0): unlocked: 77 when the player's, then 73 when open or broken else 72; locked: the player's 140, another's 76, 285, 286 and 226 (290 when slot 123 is set). Last 96 when slot 79 (the player's building, not +0xc0, not a "creates player town" one) |
+| Cage (function 8) | another faction's: locked 76, 285, 286; unlocked and empty: 107 when the lead carries nobody, 108 when it carries someone (whose slot 73 is null); occupied 110. The player's: 77 or 78 by the lock, then empty 108 (as above), occupied 110 |
+| Character, carried | by a player character while the lead is the carrier or the carried: only 69; by anyone not of the player's: nothing |
+| Character, imprisoned | 12 when it can talk; 26 unless it is the player's and selected; its cage the player's: 207 when it is the lead, else 110 and the pick-up verb; another faction's: the pick-up verb when the cage is unlocked, 207 when it is the player's and selected, 228 when neither it nor the cage is the player's |
+| Player's character | not selected (not slot 34, not in bed): 26, 45, 31, then 69 when a selected character carries it, else the pick-up verb; selected: 69 when a selected character carries someone, 28 when its leg state (slot 109) is 1; slot 34 or in bed, not selected: 69 / the pick-up verb, 26, 31 |
+| Other faction's, not hostile (`FUN_14079cbe0`) | standing (not down, state 0, leg state ≠ 3), the lead not on a turret (+0x260 handle empty): 228 (lead `FUN_1405c9750`, its slot 73 null), 12, 61, 45, 31, and 225 when it is friendly to the lead (slot 126) and its AI state is not 5; on a turret 235. Otherwise: 26, the pick-up verb and 223 / 273 (`FUN_140793d80`), 228, and when not down 61, 45, 12. Then 69 when a selected character carries it |
+| Hostile | standing: 12 (talk tests), not on a turret 228, 16, 5; on a turret 235. Otherwise 228, 26, the pick-up verb with 223 / 273, 5 when up in state 0. Then 69 as above |
+| Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 (robotic repair), 25 (first aid, `FUN_1407c05a0`), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
+
+The pick-up verb (`FUN_140796f80`): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose +0x1a0 → +0x88 object
+is set and not the player's: 225 when it is friendly to the lead (slot 126) and two further tests fail, else 246 Kidnap when nothing is at +0xf0 and its
+AI state is not 8 (225 while imprisoned); every other case 225. `FUN_140793d80` adds 223 when the target's home (slot 59)
+is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
+**Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` returns byte +0xd4
+unless `FUN_140436610(c, 1)` (Meitou reads it as sneaking; [ai-tasks](ai-tasks.md#perma-jobs) reads it as a slave test); where a cage opens its menu at once.
+
+Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`):
+the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO), Shift on Use giving the job.
+Containers and doors now open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
+Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's downed character: its inventory beside the
+selection's), Pick Up, First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up on a caged
+character (stand-ins for the cage's verbs: cages cannot be pointed at), Inventory / Loot / Pick Lock on containers (Loot uses the Alt path, so a shop's
+stock answers that it is the shop's: stealing it is not built), Open / Close / Lock / Unlock (all the building's doors) / Pick Lock on doors, Build,
+Use, Auto-Haul (storage, as the job), Inventory (storage, furnace), Man Turret, Dismantle. Engine additions: Trade with a trader, Put in Cage, Put on
+Shackles, Cancel Construction, the door buttons, Mine. Not built: Attack All, Bodyguard, Stand Up, Kidnap, Throw out of home / town, Shoot At, Set
+Free, Get in, Put in, Repair / Repairs, Training, Corpse Disposal, Auto-Haul 152, Use Tools / Use Strength / Smash on locks and doors, item menus
+(Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
+
 ### Edit boxes and keyboard focus
 
 **Verified** against the MyGUI 3.2.2 source (tag `MyGUI3.2.2`: `EditBox`, `InputManager`, `Button`, `TextIterator`; MIT). Kenshi's own `MyGUI.log` says "MyGUI version 3.2.3" (**Observed**; upstream has no 3.2.3 tag, so the 3.2.2 source is the nearest public one and any difference is **Unknown**).
@@ -395,4 +453,4 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 
 Evidence scopes below apply only to their named sources/checks.
 
-- Context menu verbs (FUN_14079b2d0)
+- Context menu verbs: [above](#context-menu-verbs)

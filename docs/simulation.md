@@ -276,6 +276,7 @@ Heights use the character's (or clicked) Y to pick stacked floors; long paths ha
 Squad followers (engine choice; the original's slot rules are **Unknown**): each keeps `Formation.Slot`, a block 9 apart behind the leader in its
 heading, about as wide as deep, by rank among the other members. Within `CatchUpDistance` 60 it steers straight at the slot (the leader's velocity
 plus the gap x `FollowGain` 2, a speed mode up while behind); farther off, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
+A `FollowOrder` (the context menu's Follow, order 31) makes a character follow another the same way (`CharacterCold.FollowOrder` replaces the leader, the slot by its own squad's ranks) until a move order replaces it or the target is gone (then Idle); engine choices, not saved.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
 character takes half the overlap with each separation neighbour's predicted position (last position + last velocity × dt), so a walker
 shoves a stander aside; one in a bed or cage does not give; a sitter (resting or on a used seat, no path) is
@@ -953,7 +954,7 @@ too; stacks it kept apart stay apart. Receipts are in the state hash but not sav
 
 ## Dialogue
 
-`DialogueSystem` (game facts: [dialogue](game/dialogue.md)). The context menu's Talk (only when a dry run of the line pick, dice and memo put back, finds something to say) sends `TalkOrder`: the
+`DialogueSystem` (game facts: [dialogue](game/dialogue.md)). The context menu's Talk To (only when a dry run of the line pick, dice and memo put back, finds something to say) sends `TalkOrder`: the
 talker walks up (60 units, engine choice; 60 s to arrive), the NPC is held, then event 1 fires and the NPC's dialogue set (record, squad
 template, leader role; `DialogueDatabase`) is chosen from by score, line checks and a seeded pick. The NPC line is said (text, tokens and
 word swaps, effects at once); passing replies become choices, an NPC-side child a single `[...]`. The host opens `Kenshi_ConversationPanel`

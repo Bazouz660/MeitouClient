@@ -182,10 +182,16 @@ sealed partial class PlayerInterface
         else if (e.Screen == "building" && e.Widget == "QueueButton" && shownMachine is not null) OpenCraftTab(shownMachine);
     }
 
-    /// <summary>The verb for a complete machine characters work (the original's verb names for wells, farms and benches are <b>Unknown</b>; Meitou says Operate).</summary>
+    /// <summary>
+    /// The verb for a complete machine characters work: the original's Use (order 87, <c>FUN_14079b2d0</c>); with Shift held on the click it becomes the Operating machine job, as the
+    /// original's dispatch turns a menu order into a job (<c>FUN_1407fa650</c>).
+    /// </summary>
     void AddMachineVerb(List<(string Caption, Action Give)> verbs, Meitou.Simulation.Construction.BuildingSnapshot site, IReadOnlyList<CharacterId> selection)
     {
-        if (site.Complete && Machine(site.Id) is { Operable: true }) verbs.Insert(0, ("Operate", () => Say(new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
+        if (site.Complete && Machine(site.Id) is { Operable: true })
+            verbs.Add(("Use", () => Say(SlowModifier
+                ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, site.Id) { Tick = session.World.Tick }
+                : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
     }
 
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>

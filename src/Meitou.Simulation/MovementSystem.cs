@@ -101,6 +101,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 }
                 continue;
             }
+            if (command is FollowOrder follow)
+            {
+                Follow(world, follow);
+                continue;
+            }
             if (command is not MoveOrder order) continue;
             // An empty list orders the selection (the UI sends orders for whatever is selected when the click happens).
             var who = order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray();
@@ -118,6 +123,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 ref var n = ref table.Next[slot];
                 var cold = table.Cold(slot)!;
                 var target = targets[k];
+                cold.FollowOrder = CharacterId.None;
                 bool busy = n.Task == (byte)CharacterTask.GoTo && (n.Flags & (ushort)MoveFlags.AnyPath) != 0;
                 if (order.Queued && busy)
                 {
@@ -148,6 +154,25 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     }
 
     /// <summary>Drops a character's orders and path and makes it stand (serial phases only).</summary>
+    /// <summary>
+    /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
+    /// </summary>
+    static void Follow(World world, FollowOrder order)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(order.Target, out int led)) return;
+        foreach (var id in order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray())
+        {
+            if (!table.TryResolveNext(id, out int s) || s == led || table.Cold(s) is not { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } cold) continue;
+            if (cold.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);
+            Stop(table, s);
+            cold.FollowOrder = order.Target;
+            cold.FollowPathTime = 0;
+            table.Next[s].Task = (byte)CharacterTask.Follow;
+            table.Next[s].TaskTime = 0;
+        }
+    }
+
     public static void Stop(CharacterTable table, int slot)
     {
         ref var n = ref table.Next[slot];
@@ -236,6 +261,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             bool busy = (flags & MoveFlags.AnyPath) != 0;
             if (task == CharacterTask.Follow)
             {
+                // A follow order whose target is gone ends: the character stands where it is.
+                if (!cold.FollowOrder.IsNone && !table.IsAlive(cold.FollowOrder))
+                {
+                    cold.FollowOrder = CharacterId.None;
+                    n.Task = (byte)CharacterTask.Idle;
+                    continue;
+                }
                 var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
                 var leader = Followed(squad, cold);
                 if (leader.IsNone || leader.Slot == i || !table.IsAlive(leader))
@@ -289,9 +321,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
     }
 
-    /// <summary>Whom a follower keeps its slot by: a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
+    /// <summary>Whom a follower keeps its slot by: the target of its <see cref="FollowOrder"/>, a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
     static CharacterId Followed(Squad? squad, CharacterCold cold) =>
-        cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
+        !cold.FollowOrder.IsNone ? cold.FollowOrder : cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
 
     /// <summary>A follower's slot relative to <paramref name="leader"/> facing <paramref name="yaw"/>: its rank among the squad's other members (<see cref="Formation.Slot"/>).</summary>
     static Vector2 SlotOffset(Squad? squad, CharacterId self, CharacterId leader, float yaw)
