@@ -6,8 +6,8 @@ namespace Meitou.Simulation.Ai;
 
 /// <summary>
 /// The package classes the engine builds, from the package's <c>signal func</c> (docs/game/ai.md "Signal functions and the package classes", Verified mapping).
-/// What each class does beyond the base class is <b>Unknown</b> except <see cref="Retreat"/> (docs/game/perception.md 7.3, Observed); the others are engine choices
-/// (docs/simulation.md "AI", Package classes).
+/// <see cref="Retreat"/> follows docs/game/perception.md 7.3 (Observed); the trader, the passing-by assault and the occupation follow their decoded classes
+/// (docs/game/ai.md "Package classes"); the rest are engine choices (docs/simulation.md "AI", Package classes).
 /// </summary>
 public enum PackageClass : byte
 {
@@ -25,8 +25,17 @@ public enum PackageClass : byte
     BarOutdoors = 5,
     /// <summary>The contract classes (12 to 15, 33): started only as a contract (<see cref="StartContract"/>), finished when its hours are over.</summary>
     Contract = 6,
-    /// <summary>Wars, prisoner shipping, refugees, cannibal raids, occupation, campaigns, the wandering trader: not built; never start (except as a lone slot-0 package), never finish.</summary>
+    /// <summary>
+    /// Wars and campaigns (19, 20, 32, 31: the campaign drives its squads, <see cref="PopulationSystem"/>), prisoner shipping, refugees, cannibal raids: not built; never
+    /// start (except as a lone slot-0 package), never finish.
+    /// </summary>
     Unbuilt = 7,
+    /// <summary><c>Package_WanderingTrader</c> (16): to a town the chooser draws, a stay there, then on (docs/game/ai.md "Package classes", Verified by code).</summary>
+    WanderingTrader = 8,
+    /// <summary><c>Package_PassingByTownAssault</c> (29): attacks a player town its leader walks into while the player's people are about.</summary>
+    PassingAssault = 9,
+    /// <summary><c>Package_OccupyTown</c> (30): stays in the player town it took (only by <c>Leads to</c>: it can never start of itself).</summary>
+    OccupyTown = 10,
 }
 
 public static class PackageClasses
@@ -40,6 +49,9 @@ public static class PackageClasses
         17 => PackageClass.Bar,
         26 => PackageClass.BarOutdoors,
         12 or 13 or 14 or 15 or 33 => PackageClass.Contract,
+        16 => PackageClass.WanderingTrader,
+        29 => PackageClass.PassingAssault,
+        30 => PackageClass.OccupyTown,
         _ => PackageClass.Unbuilt,
     };
 }
@@ -51,6 +63,10 @@ public interface IPackageRules
     bool Finished(Blackboard board, AiPackage package, PackageClass kind);
     /// <summary>A package of the class just started (a patrol lays out its route, a bar package moves the home).</summary>
     void Started(Blackboard board, AiPackage package, PackageClass kind);
+    /// <summary>The running package gives way to another (the original's deactivate, package vtable +0x38).</summary>
+    void Ended(Blackboard board, AiPackage package, PackageClass kind) { }
+    /// <summary>A finished package may hand over to its <c>Leads to</c> (the original's vtable +0x90; the base class always may).</summary>
+    bool MayLead(Blackboard board, AiPackage package, PackageClass kind) => true;
 }
 
 /// <summary>A guarded gate: its door leaf's centre at the leaf's foot, the unit X/Z way through it pointing away from the town, and half the leaf's width.</summary>
@@ -122,6 +138,28 @@ public sealed class Blackboard
     public double PatrolGiveUp { get; set; }
 
     /// <summary>
+    /// The town the squad is in (the original's Blackboard +0x138, docs/game/ai.md "Package classes": its leader's town, else the town whose radius holds the squad) and the
+    /// game hour it came in (+0x140); <see cref="CampaignTown.None"/> outside every town. Set on the package cadence before the choice.
+    /// </summary>
+    public CampaignTown InTown { get; set; } = CampaignTown.None;
+    public double InTownSince { get; set; }
+    /// <summary>The running package's mission town (its <c>mission town</c> hand): the trader's next town, the assaulted or occupied player town; none for other classes.</summary>
+    public CampaignTown Destination { get; set; } = CampaignTown.None;
+    /// <summary>
+    /// The trader's state (<c>Package_WanderingTrader</c> +0xe0: 0 on the way, 1 just in the town, 2 done there) and the hours it stays in a town before it may go on
+    /// (+0xd4, uniform [5, 8) at each start). Kept while other packages run, as the original's package object.
+    /// </summary>
+    public int TraderState { get; set; }
+    public float TraderWait { get; set; }
+    /// <summary>The passing-by assault (<c>Package_PassingByTownAssault</c>): the game hour it started (+0xb8), the faction it attacks (+0x100, the town's), whether it is spent (+0xb4: it never starts again) and its faction's wait after the last such assault ends (+0xb0, hours).</summary>
+    public double AssaultStart { get; set; }
+    public int AssaultEnemy { get; set; } = -1;
+    public bool AssaultDone { get; set; }
+    public float AssaultCooldown { get; set; }
+    /// <summary>The occupation's clock (<c>Package_OccupyTown</c> +0xc0): game seconds in a row with no able member in the town; past 4 it ends.</summary>
+    public float OccupyAway { get; set; }
+
+    /// <summary>
     /// One pass of the original's package choice (docs/game/ai.md "Blackboard update", Verified): a running contract first; then slots from the highest down until
     /// one reports success. In a slot the list is scanned in order: the current package stays while it is not finished, or hands over to its <c>Leads to</c> package
     /// when it is; an entry before it that can start pre-empts it; a lone slot-0 package starts even when it cannot. Without <paramref name="rules"/> every
@@ -149,7 +187,7 @@ public sealed class Blackboard
             else if (Finished(list[0], rules))
             {
                 // Finished and alone: its Leads to, else itself again once it can start (a patrol's next round).
-                if (list[0].LeadsTo is { } hop && Find(hop) is { } follow) Start(follow.Package, follow.Slot, rules);
+                if (list[0].LeadsTo is { } hop && Find(hop) is { } follow && MayLead(list[0], rules)) Start(follow.Package, follow.Slot, rules);
                 else if (CanStart(list[0], rules)) Start(list[0], 0, rules);
             }
             return true;
@@ -159,7 +197,7 @@ public sealed class Blackboard
             if (p == Current)
             {
                 if (!Finished(p, rules)) return true;
-                if (p.LeadsTo is { } next && Find(next) is { } follow)
+                if (p.LeadsTo is { } next && Find(next) is { } follow && MayLead(p, rules))
                 {
                     Start(follow.Package, follow.Slot, rules);
                     return true;
@@ -187,6 +225,8 @@ public sealed class Blackboard
         return kind != PackageClass.Plain && (rules?.Finished(this, p, kind) ?? false);
     }
 
+    bool MayLead(AiPackage p, IPackageRules? rules) => rules?.MayLead(this, p, PackageClasses.Of(p.Signal)) ?? true;
+
     SlottedPackage? Find(string id)
     {
         foreach (var (slot, list) in slots)
@@ -197,6 +237,7 @@ public sealed class Blackboard
 
     void Start(AiPackage package, int slot, IPackageRules? rules)
     {
+        if (Current is { } old && old != package) rules?.Ended(this, old, PackageClasses.Of(old.Signal));
         Current = package;
         CurrentSlot = slot;
         CurrentIndex = slot >= 0 && slots.TryGetValue(slot, out var list) ? list.IndexOf(package) : -1;
@@ -206,6 +247,7 @@ public sealed class Blackboard
         RouteIndex = 0;
         Home = OwnHome;
         BarTable = -1;
+        Destination = CampaignTown.None;
         rules?.Started(this, package, PackageClasses.Of(package.Signal));
     }
 
@@ -281,6 +323,11 @@ public sealed class Blackboard
         hasher.Add(PatrolGiveUp);
         hasher.Add(Home?.Position ?? default);
         if (BarTable >= 0) hasher.Add(BarTable);
+        // The package classes' own state, only once one has run (worlds without them hash as before).
+        if (!Destination.IsNone) { hasher.Add(Destination.Site); hasher.Add(Destination.PlayerTown); }
+        if (TraderWait > 0) { hasher.Add(TraderState); hasher.Add(TraderWait); hasher.Add(InTown.Site); hasher.Add(InTown.PlayerTown); hasher.Add(InTownSince); }
+        if (AssaultEnemy >= 0 || AssaultDone) { hasher.Add(AssaultStart); hasher.Add(AssaultEnemy); hasher.Add(AssaultDone); hasher.Add(AssaultCooldown); }
+        if (OccupyAway > 0) hasher.Add(OccupyAway);
     }
 }
 

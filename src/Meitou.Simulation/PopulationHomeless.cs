@@ -52,7 +52,9 @@ public sealed partial class PopulationSystem
                 sectorSeen.Add(id);
                 var zone = WorldLayout.ZoneOf(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
                 if (zone != site.Zone && SectorAt(zone) is var to and >= 0 && MayRefile(world, id, to, zone, slot)) refiles.Add((id, i, to));
-                if (table.Cold(slot)?.Ai is not { Behaviour: AiBehaviour.Patrol } || squad.Ai?.CurrentClass is PackageClass.Patrol or PackageClass.PatrolRunning) continue;
+                // Not under a patrol package, nor one with a mission town (a trader on its way, an assault or occupation roaming the town it took).
+                if (table.Cold(slot)?.Ai is not { Behaviour: AiBehaviour.Patrol } || squad.Ai?.CurrentClass is PackageClass.Patrol or PackageClass.PatrolRunning
+                    || squad.Ai is { Destination.IsNone: false }) continue;
                 patrolSeen.Add(id);
                 var at = new Vector2(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
                 homelessPatrols.TryGetValue(id, out var patrol);
