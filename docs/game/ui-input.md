@@ -95,8 +95,14 @@ Binding maps: general map at Controls+0x28, build-mode map at +0x50 (checked fir
 | gizmo_move / rotate / scale | H / J / K | 0x398 / 0x399 / 0x39a | event |
 
 Meitou's build map (`PlayerInterface.Build.cs`) is live only in build mode and takes its keys before anything else: the
-documented speeds, Shift as the slow modifier of the up/down move; the numpad aliases are not mapped (the numpad is the
-cinema camera's). `[` `]` tilt there, not character_next / prev. Left click queues the ghost.
+documented speeds, Shift as the slow modifier of the up/down move; the numpad aliases are not mapped. `[` `]` tilt there, not
+character_next / prev. Left click queues the ghost.
+
+Meitou's game view (`PlayerInterface.Hotkeys.cs`, `InputBindings`): every event action above except select_0..9 (fixed keys 1..9, 0) is an
+`InputAction` with the table's default, rebindable on the settings' Controls page; Medic and Rescue also keep H and J, and Meitou adds Rest (L)
+and Put Down (K). `toggle_help` (F1) has no action: Meitou has no Tutorials window (event 7, section 6). A numpad key bound to one of these
+actions is the game's, not the cinema camera's ([viewer](../viewer.md#cinematic-camera)), unless Ctrl is held or the cinema's editor is open;
+`--duel` keeps the whole numpad for the cinema. The orders hotkeys are not given from the free camera (engine choice).
 
 ### 6. Event dispatch
 
@@ -112,22 +118,26 @@ identified; pause 0x12 is only blocked by the second). While the MainBar object 
 | 1 | open the inventory window of the selected character (FUN_140724980 -> FUN_1406e6f10; target window inferred from the action name `toggle_inventory`) |
 | 2 | open or, when already open, close the per-character window for the selection (FUN_1406e5f10; stats window inferred from `toggle_stats`) |
 | 3 / 4 / 5 / 6 | request Overview tab Map / Faction / Research / Crafting (HUD field +0xd0 = 0/1/2/3) |
-| 7 | toggle the visibility of one GUI window (FUN_1406e1f20; taken to be the Tutorials window, **Unknown** which) |
-| any other id | forwarded to the orders panel handler FUN_1407226e0, which acts on 0x17..0x21 (orders buttons) and ignores the rest |
+| 7 | toggle the visibility of the window at GUI+0x30 (FUN_1406e1f20): the Tutorials window (**Observed**: the GUI constructor `FUN_1406e4f50` stores the `Kenshi_TutorialsWindow` object of constructor `140977640` there; +0x28 holds the tutorial panel, +0x20 the object of `FUN_140725740`) |
+| any other id | forwarded to the orders panel handler FUN_1407226e0 (**Observed**), which calls the panel buttons' own click handlers: 0x17 Block, 0x18 Hold, 0x19 Passive, 0x1a Jobs, 0x1b Ranged, 0x1c Sneak, 0x1d Taunt, 0x1e the right speed arrow (`FUN_140722630`, so cycle_run_speed steps up and wraps), 0x1f Medic, 0x20 Rescue, 0x21 Prospect; it ignores the rest |
 | 8 | not in the hotkey function: handled in the action switch by FUN_1406e2a20, which flips the GUI-hidden flag at GUI+0x330 ("toggle whole GUI") |
 
 Squad events (**Observed**): select_0..9 (100..109, `FUN_1407f90b0`) and select_all 0x22 (`FUN_1407f8d00`) act on the active squad's members
 ([squad tabs](ui-screens.md#4-hud-mainbargui)); change_squad 0x23 (`FUN_1407f6380`) with more than one squad makes the next one in order (wrapping) that has
-members active, and leaves the selection alone.
+members active, and leaves the selection alone. character_next / prev 0x26 / 0x27 (`FUN_1407f9130(+1 / -1)`, **Observed**): nothing unless the
+active squad has at least two members; when the focus character (`DAT_142133a50`) is a living one of the player's faction, the next (previous) member
+of its own squad, wrapping, is selected alone (`FUN_1407f9000`); otherwise the current selected character is selected alone and focused, or with no
+selection the first entry of a list at PlayerInterface+0x2c0 (**Unknown** which). Meitou (`StepCharacter`): the HUD's character (the inspected one
+first); dead counts as not living (the original's test `FUN_1406215b0` is **Unknown**).
 
 Meitou's first aid and rest bindings (2026-10-13, `PlayerInterface`, engine choices; simulation side in [simulation.md](../simulation.md#bodies)). The original's own: `medic` (NUM7, event 0x1f) and `rescue` (NUM8, 0x20) are
 orders-panel toggles forwarded to FUN_1407226e0 (the Medic and Rescue buttons of the panel, [ui-screens.md](ui-screens.md#4-hud-mainbargui)), which dispatch orders 58 and 148: one-shot, or a job with Shift ([perma-jobs](ai-tasks.md#perma-jobs), **Observed**); the targeted order is the context menu
-verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's context menu also provides it). The numpad belongs to the cinema camera (`Cinema`, docs/viewer.md), so:
+verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's context menu also provides it). Meitou binds both to the numpad as the original and keeps `H` / `J` as aliases (section 4):
 
 | Input | Effect |
 |---|---|
 | right click on one of the player's own characters with something to bandage | the selected characters treat it (`TreatOrder`); a lone selected character on itself treats itself |
-| `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
+| NUM7, `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
 | `L` | the selection rests (sits down; **no binding in the original**); any move order or `R` ends it |
 
 | Input | Effect |
@@ -140,7 +150,7 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
 | right click on an item while the inventory and another item window are open | one unit moves to the other window, where it first fits (stacks of it, then free cells), in both directions; Shift: the whole stack (**Observed**, release handler `FUN_140714a20`: the one-unit move `FUN_140713d20`, repeated while Shift is held until it fails; target order in [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)). Meitou: between the lead's inventory or bag and the shown machine (its inputs and output), storage, container, or the open loot (`PutInMachine` / `TakeFromMachine` / `TakeLootItem` / `PutLootItem` with a count, `InventoryCommands.MoveInto`) |
 | right click on an item with only the character's own windows open | a map item is read; money becomes cats; otherwise equipped, taken off, fitted on its stump or moved from the grid into the open bag (`QuickMoveItem`, [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)) |
-| `J` | Rescue for the selection (the original's NUM8): each looks for a body once; with Shift the rescue job (148) is added |
+| NUM8, `J` | Rescue for the selection: each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
 
 ### Movement marker
@@ -331,9 +341,9 @@ no interior floors (a part without collision cannot be clicked, as in the origin
 collision reach below the ground; without the limit the ray, after meeting the ground, found them and the pointer showed the hammer on bare ground beside a building). The character selection stays. The HUD panels show the building as in
 [ui-screens](ui-screens.md#selected-building) (the simulation publishes the selected building's doors, `InspectBuildingCommand`); no outline
 is drawn (as the original). Selecting or inspecting a character clears it, Shift
-included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). Not built: a house's first-door focus, the
-building windows, the Dismantle / pause / door buttons in the panel (the right-click menu has them), the For sale line, the Door and Building
-Condition bars, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
+included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). A house is not focused as its first door, but its panels list the
+first door's lines before the house's, as the door's panel does ([ui-screens](ui-screens.md#selected-building)). Not built: the building windows of
+world buildings, the For sale line, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
 centre where it has slid to, `DoorSpot.Slide` × open amount, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
 walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
 and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level building with an interior is picked by its floors instead (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
@@ -375,7 +385,7 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 - Meaning of the listener's suspended field at +0x50 and of FUN_1409134c0 (possibly splash skip).
 - What exactly the version-below-1 branch of the controls loader does with its action set.
 - Identity of the widget behind FUN_1406e1fd0 (GUI+0x20) and of PlayerInterface+0x2f0, which gate most game events.
-- Which window event 7 toggles (taken to be Tutorials); targets of events 1 and 2 inferred from the action names.
+- Targets of events 1 and 2, inferred from the action names.
 - Building selection: the meaning of slot 107 (+0x198) and `FUN_14004a0cf` in the loot branch, the lockpick tooltip text,
   whether the renderer marks the selected building, and what clears the selection when the building is destroyed.
 - Press versus release timing of the command button, and the exact rotation marker condition.
