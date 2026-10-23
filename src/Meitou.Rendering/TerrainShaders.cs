@@ -277,11 +277,11 @@ static partial class TerrainShaders
                     p -= stepUv * (below / max(above + below, 1e-5));
                 }
                 base.p = p;
-                vec3 l = normalize(uLightDir);
-                if (l.y > 0.0)
+                vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
+                if (sun.y > 0.0)
                 {
                     float hp = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, occlusion = 0.0;
-                    vec2 lightUv = l.xz / max(l.y, 0.15) * toUv / float(ShadowSteps);
+                    vec2 lightUv = sun.xz / max(sun.y, 0.15) * toUv / float(ShadowSteps);
                     for (int k = 1; k <= ShadowSteps; k++)
                     {
                         float ray = hp + float(k) / float(ShadowSteps);
