@@ -33,6 +33,12 @@ public sealed class MetalCommandList : IGpuCommandList
     PixelRect scissor;
     bool hasViewport, hasScissor;
     long epoch;
+    // Metal keeps these bound for the encoder's lifetime. Skip a bind that would write the same buffer and offset
+    // again; Xcode's API insights otherwise report dozens of redundant binds in a busy scene encoder.
+    readonly MTLBuffer[] vertexBufferState = new MTLBuffer[64];
+    readonly ulong[] vertexOffsetState = new ulong[64];
+    readonly MTLBuffer[] fragmentBufferState = new MTLBuffer[64];
+    readonly ulong[] fragmentOffsetState = new ulong[64];
 
     /// <summary>Made by the context (the frame's) or an upload batch (its own command buffer, its blit shared).</summary>
     internal MetalCommandList(MetalContext ctx, string name, MTLCommandBuffer command, MTLBlitCommandEncoder? sharedBlit = null)
@@ -47,7 +53,7 @@ public sealed class MetalCommandList : IGpuCommandList
     public long Epoch => epoch;
     public object? BoundProgram { get; set; }
 
-    /// <summary>Forgets everything the redundancy filters and callers believed was bound.</summary>
+    /// <summary>Forgets the pipeline and program state; the encoder's buffer bindings stay valid across a segment label.</summary>
     public void Invalidate()
     {
         lastPipeline = default;
@@ -97,6 +103,10 @@ public sealed class MetalCommandList : IGpuCommandList
             depth.ClearDepth = d.Depth.DepthClear;
         }
         render = command.RenderCommandEncoder(descriptor);
+        Array.Clear(vertexBufferState);
+        Array.Clear(vertexOffsetState);
+        Array.Clear(fragmentBufferState);
+        Array.Clear(fragmentOffsetState);
         depthAttachment = !d.Depth.IsNull;
         renderDesc = d;
         hasViewport = hasScissor = false;
@@ -196,8 +206,28 @@ public sealed class MetalCommandList : IGpuCommandList
         for (int i = 0; i < bindings.Length; i++)
         {
             var (buffer, offset) = ctx.Buffer(bindings[i]);
-            render.SetVertexBuffer(buffer, offset, first + (uint)i);
+            BindVertexBuffer(first + (uint)i, buffer, offset);
         }
+    }
+
+    void BindVertexBuffer(uint index, MTLBuffer buffer, ulong offset)
+    {
+        if (index >= (uint)vertexBufferState.Length)
+            throw new NotSupportedException($"vertex buffer index {index} is outside the Metal buffer table");
+        if (vertexBufferState[index].NativePtr == buffer.NativePtr && vertexOffsetState[index] == offset) return;
+        render.SetVertexBuffer(buffer, offset, index);
+        vertexBufferState[index] = buffer;
+        vertexOffsetState[index] = offset;
+    }
+
+    void BindFragmentBuffer(uint index, MTLBuffer buffer, ulong offset)
+    {
+        if (index >= (uint)fragmentBufferState.Length)
+            throw new NotSupportedException($"fragment buffer index {index} is outside the Metal buffer table");
+        if (fragmentBufferState[index].NativePtr == buffer.NativePtr && fragmentOffsetState[index] == offset) return;
+        render.SetFragmentBuffer(buffer, offset, index);
+        fragmentBufferState[index] = buffer;
+        fragmentOffsetState[index] = offset;
     }
 
     /// <summary>Binds the index buffer, held until the next indexed draw.</summary>
@@ -257,8 +287,8 @@ public sealed class MetalCommandList : IGpuCommandList
                 break;
             case GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer:
                 var (buffer, offset) = ctx.Buffer(binding.Buffer);
-                if (isVertex) render.SetVertexBuffer(buffer, offset, index);
-                else render.SetFragmentBuffer(buffer, offset, index);
+                if (isVertex) BindVertexBuffer(index, buffer, offset);
+                else BindFragmentBuffer(index, buffer, offset);
                 break;
             default:
                 throw new NotSupportedException($"the Metal backend binds no storage images yet ({binding.Kind} at set {set}, binding {binding.Slot})");
@@ -303,9 +333,9 @@ public sealed class MetalCommandList : IGpuCommandList
                 var (buffer, offset) = ctx.Buffer(binding);
                 // Metal's one binding table per stage: the slot's flattened index (MetalShaders.Flatten, the MSL's own numbers).
                 if (slot.Stages.HasFlag(GpuStage.Vertex))
-                    render.SetVertexBuffer(buffer, offset, MetalShaders.Flatten(slot.Kind, GpuStage.Vertex, index, slot.Binding));
+                    BindVertexBuffer(MetalShaders.Flatten(slot.Kind, GpuStage.Vertex, index, slot.Binding), buffer, offset);
                 if (slot.Stages.HasFlag(GpuStage.Fragment))
-                    render.SetFragmentBuffer(buffer, offset, MetalShaders.Flatten(slot.Kind, GpuStage.Fragment, index, slot.Binding));
+                    BindFragmentBuffer(MetalShaders.Flatten(slot.Kind, GpuStage.Fragment, index, slot.Binding), buffer, offset);
             }
         }
         Stats.DescriptorPushes++;
@@ -368,8 +398,8 @@ public sealed class MetalCommandList : IGpuCommandList
         var constants = ctx.NewSetBuffer(size);
         fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
         if (computePass) compute.SetBuffer(constants, 0, set);
-        else if (stage == GpuStage.Vertex) render.SetVertexBuffer(constants, 0, MetalShaders.VertexBlockBase + set);
-        else render.SetFragmentBuffer(constants, 0, set);
+        else if (stage == GpuStage.Vertex) BindVertexBuffer(MetalShaders.VertexBlockBase + set, constants, 0);
+        else BindFragmentBuffer(set, constants, 0);
     }
 
     /// <summary>Tells the current encoder a resource the argument buffer holds; the compute encoder needs it for its writes too.</summary>
@@ -402,9 +432,9 @@ public sealed class MetalCommandList : IGpuCommandList
         else
         {
             if (ctx.BindlessTable.BufferFor(backend.VertexTable, slot) is { } vertex)
-                render.SetVertexBuffer(vertex, 0, MslTranslator.TableBinding);
+                BindVertexBuffer(MslTranslator.TableBinding, vertex, 0);
             if (ctx.BindlessTable.BufferFor(backend.FragmentTable, slot) is { } fragment)
-                render.SetFragmentBuffer(fragment, 0, MslTranslator.TableBinding);
+                BindFragmentBuffer(MslTranslator.TableBinding, fragment, 0);
         }
         ctx.BindlessTable.UseResources(this);
         Stats.DescriptorPushes++;

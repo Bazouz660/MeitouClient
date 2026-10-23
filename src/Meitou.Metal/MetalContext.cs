@@ -305,10 +305,16 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         if (desc.Use.HasFlag(TextureUse.Storage)) usage |= MTLTextureUsage.ShaderWrite;
         if (desc.Use.HasFlag(TextureUse.ColourTarget) || desc.Use.HasFlag(TextureUse.DepthTarget)) usage |= MTLTextureUsage.RenderTarget;
         if (desc.Use.HasFlag(TextureUse.TransferDst)) usage |= MTLTextureUsage.ShaderWrite;
-        usage |= MTLTextureUsage.PixelFormatView;   // the engine's views (levels, layers, swizzles) are Metal texture views
+        // A plain 2D target can be attached and sampled through its base image; only sub-ranges, layers and swizzles
+        // need MTLTexture views. Omitting the flag on the plain targets lets Metal use lossless compression.
+        bool needsViews = desc.Use.HasFlag(TextureUse.Sampled) || desc.Use.HasFlag(TextureUse.Storage) ||
+            desc.Levels > 1 || desc.Layers > 1 || desc.Kind != TextureKind.Texture2D;
+        if (needsViews) usage |= MTLTextureUsage.PixelFormatView;
         d.Usage = usage;
         d.ResourceOptions = desc.Private ? MTLResourceOptions.ResourceStorageModePrivate : MTLResourceOptions.ResourceStorageModeShared;
-        var texture = new MetalTexture { Image = Device.NewTexture(d), Desc = desc };
+        var image = Device.NewTexture(d);
+        if (desc.Name.Length > 0) image.Label = (NSString)desc.Name;
+        var texture = new MetalTexture { Image = image, Desc = desc };
         textures.Add(texture);
         return new GpuTexture(this, desc, textures.Count - 1);
     }
@@ -327,15 +333,23 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         };
         var levelRange = new NSRange { location = (ulong)baseLevel, length = (ulong)levels };
         var layerRange = new NSRange { location = (ulong)baseLayer, length = (ulong)layers };
+        // A full-range identity view is the texture itself. Keeping the base image here is what lets a plain render
+        // target omit PixelFormatView and stay eligible for Metal's lossless compression; only a real sub-range or
+        // swizzled view creates a child texture.
+        int totalLayers = of.Desc.Kind == TextureKind.Cube ? 6 * Math.Max(of.Desc.Layers, 1) : of.Desc.Layers;
+        bool baseView = baseLevel == 0 && levels == of.Desc.Levels && baseLayer == 0 && layers == totalLayers &&
+            swizzle.Equals(GpuSwizzle.Identity) &&
+            viewType == (of.Desc.Kind switch { TextureKind.Cube => MTLTextureType.Cube, TextureKind.Texture2DArray => MTLTextureType.Type2DArray, _ => MTLTextureType.Type2D });
         var view = new MetalTextureView
         {
             // A swizzled view (the BC4 masks' red in all three, alpha one) is Metal's own texture swizzle: the same format, the
             // sample reads the channels the engine's GpuSwizzle names.
-            Image = swizzle.Equals(GpuSwizzle.Identity)
+            Image = baseView ? of.Image : swizzle.Equals(GpuSwizzle.Identity)
                 ? of.Image.NewTextureView(format, viewType, levelRange, layerRange)
                 : of.Image.NewTextureView(format, viewType, levelRange, layerRange, Swizzle(swizzle)),
             Of = of,
             ViewIndex = views.Count,
+            OwnsImage = !baseView,
         };
         of.Views.Add(view);
         of.ViewCache[key] = view;
@@ -366,11 +380,11 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     public void ReleaseTexture(GpuTexture texture)
     {
         var of = textures[texture.Index]!;
-        var images = new MTLTexture[of.Views.Count];
-        for (int i = 0; i < images.Length; i++)
+        var images = new List<MTLTexture>(of.Views.Count);
+        for (int i = 0; i < of.Views.Count; i++)
         {
             views[of.Views[i].ViewIndex] = null;
-            images[i] = of.Views[i].Image;
+            if (of.Views[i].OwnsImage) images.Add(of.Views[i].Image);
         }
         of.Views.Clear();
         of.ViewCache.Clear();
@@ -386,11 +400,11 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
                 Retain_objc_retain(command.NativePtr);
             else
                 command = default;   // already complete (or forgotten by Finish): no command check is needed
-            retiredTextures.Add((frameNumber, command, images, of));
+            retiredTextures.Add((frameNumber, command, images.ToArray(), of));
         }
     }
 
-    void ReleaseTextureNow(MTLTexture[] images, MetalTexture texture)
+    void ReleaseTextureNow(IReadOnlyList<MTLTexture> images, MetalTexture texture)
     {
         foreach (var image in images) image.Dispose();
         texture.Release();
@@ -792,6 +806,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     internal GpuBuffer RegisterBuffer(MTLBuffer buffer, string name)
     {
+        if (name.Length > 0) buffer.Label = (NSString)name;
         buffers.Add(new MetalBuffer { Buffer = buffer, Name = name });
         return new GpuBuffer(buffers.Count - 1, buffer.Length);
     }

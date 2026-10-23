@@ -223,6 +223,31 @@ The 2026-10-21 run met the managed/GPU plateau with 12 s endpoint settles; the 6
 - Release is the performance build; Debug was ~20 fps. The clean Release window is the current reference.
 - No GI on either backend on this Mac (`VK_KHR_ray_query` is unavailable to Vulkan); compare with `--no-gi`.
 
+## Xcode insight triage
+
+Xcode repeats a few generic API/performance insights on every capture. They are not all actionable in this
+renderer; read them with the frame's pass table and limiter counters.
+
+- **Unnecessary depth pass.** The 24,576-index draw is the terrain prepass (`64 × 64 × 6`). It is not just an
+  HSR prepass: `TerrainLateColour` uses it to draw terrain colour only where objects and foliage leave it visible,
+  and the depth is read later by SSAO, shafts and particles. Do not remove it without a controlled
+  `TerrainLateColour` A/B; it is only ~0.5% of a normal frame.
+- **Separate encoders can be combined.** Real, but only for passes with the same attachments and no dependency.
+  Shadow cascades, reflection, scene, water, post and UI do not meet that condition. Revisit after the ALU limit
+  and load/store bandwidth are measured.
+- **Texture opted out of lossless compression (`PixelFormatView`).** `MetalContext` now omits the view usage for
+  plain 2-D single-level targets and uses the base texture for full-range identity views. Sub-ranges, layers and
+  swizzles still use texture views. This is a memory/bandwidth improvement, not an ALU one.
+- **Texture unused for 37 s / never accessed.** These are usually resident caches or title/UI textures. Purgeable
+  state needs a reload policy; it is a memory-budget item, not frame time.
+- **MTLBuffer created during GPU work.** A few frame constants/argument buffers grow or are made during the frame.
+  Pool/preallocate them if CPU hitches remain; it is not the main GPU cost.
+- **Redundant buffer bindings.** `MetalCommandList` now caches the vertex and fragment buffer plus offset for the
+  encoder's lifetime and skips an identical rebind. Texture/sampler binds are separate and not covered yet.
+
+`Group by API Call` is the useful grouping for pass costs; `Group by Pipeline State` is for finding expensive
+shader pipelines.
+
 ## GPU frame capture
 
 `Ctrl+/` records one complete frame with `MTLCaptureManager` and writes it to

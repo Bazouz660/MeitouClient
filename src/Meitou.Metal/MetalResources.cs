@@ -27,6 +27,8 @@ internal sealed class MetalTextureView
     public required MetalTexture Of { get; init; }
     /// <summary>Its index in the context's view table (the <c>GpuView</c> handle).</summary>
     public required int ViewIndex { get; init; }
+    /// <summary>False for the texture's own image (the full-range, identity view), which the parent releases.</summary>
+    public bool OwnsImage { get; init; } = true;
 }
 
 internal readonly record struct MetalViewKey(int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, GpuSwizzle Swizzle);
