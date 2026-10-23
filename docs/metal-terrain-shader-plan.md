@@ -97,7 +97,10 @@ dotnet run --project src/Meitou.Game --no-build -c Release -- \
 ```
 
 Wait for the world to warm up, press `Ctrl+/`, and inspect the `terrain` debug group. Capture once; do not capture
-multiple frames.
+multiple frames. **Quit the game before opening the trace in Xcode.** On this 16 GB M1 Pro, replaying a 2.6 GB trace
+while the game was still running produced a WindowServer GPU progress timeout and a reboot on 2026-10-23; see
+[docs/metal-performance-memory.md](metal-performance-memory.md#gpu-frame-capture). Prefer the steady trace and stage
+counters when a capture is not essential.
 
 For Vulkan pass comparisons:
 

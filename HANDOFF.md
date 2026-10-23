@@ -160,7 +160,7 @@ Acceptance after the change: three full-feature spatial-0.4 auto-camera runs: 12
 ### Profiling attempts
 
 - `xcrun xctrace record --template 'Metal System Trace' ... --attach` fails before recording with `Failed starting ktrace session` / `Couriers have returned unexpectedly`, including under `sudo`. The host blocks kernel tracing; no usable `.trace` is produced.
-- In-process `MTLCaptureManager` is a manual one-frame capture behind **Ctrl+/** (`MetalGpuCapture`). It starts only after the first rendered frame and stops after the present, writing a `.gputrace` under `~/Documents/Meitou Captures`. The earlier 14 GB attempt started before the first frame and swallowed the loading uploads; the guard is deliberate. Whole-device captures can still be large, so keep the window small and check free space. **Do not automate captures**; the unattended `MEITOU_METAL_CAPTURE_AT` trigger was removed after a capture-related system restart.
+- In-process `MTLCaptureManager` is a manual one-frame capture behind **Ctrl+/** (`MetalGpuCapture`). It starts only after the first rendered frame and stops after the present, writing a `.gputrace` under `~/Documents/Meitou Captures`. The earlier 14 GB attempt started before the first frame and swallowed the loading uploads; the guard is deliberate. Whole-device captures can still be large, so keep the window small and check free space. **Do not automate captures**; the unattended `MEITOU_METAL_CAPTURE_AT` trigger was removed after a capture-related system restart. **Do not open/replay a trace in Xcode while the game is running.** On 2026-10-23 a 2.6 GB trace, the game at ~7.6 GB (`MEITOU_METAL_GPU_BUDGET_MB=7168`), Xcode's ~2 GB `MTLReplayer`, and a 16 GB M1 Pro produced a WindowServer GPU progress timeout and a reboot. Xcode/MTLReplayer GPU events at 12:58 and 16:48 predate the latest renderer commits. Prefer the steady trace and stage counters; if a capture is unavoidable, quit the game first and use a smaller budget/scene.
 - Pass labels show every pass completes recording (`scene`, `terrain`, `objects`, foliage, post, UI); the GPU error is reported at frame-slot completion, so pass labels alone cannot identify the hung draw. The remaining useful diagnostic is per-pass command buffers or completion fences.
 - Next diagnostic: encode an `MTLSharedEvent` signal after each named pass and read `SignaledValue` when a command buffer reports a hang/error. The last signaled pass is the last one that completed; the next pass is the suspect. This writes no trace and keeps a deterministic run to one output line.
 
@@ -204,10 +204,13 @@ clean.
 
 ## Commands
 
+Metal uses the native libraries already copied into the build output. **Do not set `DYLD_LIBRARY_PATH` for Metal.**
+It is a Vulkan/MoltenVK workaround and can inject Homebrew `libjpeg`/`libpng` into AppKit/ImageIO; a separate
+2026-10-23 `SIGBUS` was in CoreCursor/ImageIO while loading a cursor image. Use it only with `--renderer vulkan`.
+
 Normal Metal run:
 
 ```bash
-DYLD_LIBRARY_PATH=/opt/homebrew/lib \
 dotnet run --project src/Meitou.Game --no-build -c Release -- \
   --renderer metal --windowed --size 1512x856
 ```
@@ -215,7 +218,6 @@ dotnet run --project src/Meitou.Game --no-build -c Release -- \
 Unattended world smoke test (all features on):
 
 ```bash
-DYLD_LIBRARY_PATH=/opt/homebrew/lib \
 dotnet run --project src/Meitou.Game --no-build -c Release -- \
   --renderer metal --windowed --size 1512x856 --no-population --quit-after 15 \
   --at -16134,26409 --distance 2000 --pitch 20 --yaw 30 --time 12.93
@@ -224,7 +226,6 @@ dotnet run --project src/Meitou.Game --no-build -c Release -- \
 Still with a map-window recenter:
 
 ```bash
-DYLD_LIBRARY_PATH=/opt/homebrew/lib \
 dotnet run --project src/Meitou.Game --no-build -c Release -- \
   --renderer metal --screenshot /tmp/metal-recenter.png --size 1512x856 --windowed \
   --at -66800,-41400 --fly-to -44047,250 --distance 864 --pitch 20 --yaw 30 --time 14.38 --no-population
@@ -233,7 +234,6 @@ dotnet run --project src/Meitou.Game --no-build -c Release -- \
 Static screenshot at the former water fault:
 
 ```bash
-DYLD_LIBRARY_PATH=/opt/homebrew/lib \
 dotnet run --project src/Meitou.Game --no-build -c Release -- \
   --renderer metal --screenshot /tmp/metal-water.png --size 1512x856 --windowed \
   --at -16134,26409 --distance 2000 --pitch 20 --yaw 30 --time 12.93 --no-population

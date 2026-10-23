@@ -274,23 +274,33 @@ shader pipelines.
 ## GPU frame capture
 
 `Ctrl+/` records one complete frame with `MTLCaptureManager` and writes it to
-`~/Documents/Meitou Captures/meitou-<timestamp>.gputrace`; open that package in Xcode's Metal debugger.
-The capture starts before the frame's command buffer and stops after the present commits, so it contains one frame,
-not the three in flight. The first frame is deliberately rejected: pressing during loading would capture the world's
-resource uploads as well and can produce a multi-gigabyte trace.
+`~/Documents/Meitou Captures/meitou-<timestamp>.gputrace`; quit the game before opening that package in Xcode's Metal
+debugger. The capture starts before the frame's command buffer and stops after the present commits, so it contains one
+frame, not the three in flight. The first frame is deliberately rejected: pressing during loading would capture the
+world's resource uploads as well and can produce a multi-gigabyte trace.
+
+**Do not open or replay a capture in Xcode while the game is running.** On 2026-10-23 a 2.6 GB trace, the game at
+~6.9-7.6 GB footprint (`MEITOU_METAL_GPU_BUDGET_MB=7168`), Xcode's ~2 GB `MTLReplayer`, and a 16 GB M1 Pro caused a
+WindowServer GPU progress timeout (`restart_reason_desc: progress timeout`) and a reboot. Xcode had already produced
+`MTLReplayer` and `Xcode` GPU events at 12:58 and 16:48, before the latest renderer commits. Quit the game first;
+better, avoid Xcode capture on this machine and use the steady trace plus stage counters.
 
 Metal capture must be enabled before the process starts:
 
 ```sh
 MTL_CAPTURE_ENABLED=1 \
-DYLD_LIBRARY_PATH=/opt/homebrew/lib \
 dotnet run --project src/Meitou.Game --no-build -c Release -- \
   --renderer metal --windowed --size 800x600
 ```
 
+Do not set `DYLD_LIBRARY_PATH` for the Metal renderer; it is only a Vulkan/MoltenVK workaround and can inject Homebrew
+`libjpeg`/`libpng` into AppKit/ImageIO. A separate 2026-10-23 `SIGBUS` was in CoreCursor/ImageIO while loading a cursor
+image, not in the renderer.
+
 Wait until the world is visible and has rendered a few frames, then press `Ctrl+/`. The trace is a GPU frame, not a
 CPU profile: use `MEITOU_METAL_TRACE=1`, Instruments' Metal System Trace or `dotnet-trace` for CPU work. Do not use the
 capture frame for FPS measurements. A full frame with its resources is large; check free disk space before capturing.
+Use the default 5 GB budget or lower for capture runs; 7 GB leaves too little headroom on a 16 GB machine.
 
 With the GPU foliage cull live, a capture contains two command buffers: the unlabelled pre-frame with the cull's
 compute encoders, then `Meitou frame N` with the render encoders. If Summary says **0 Compute Encoders**, the process
@@ -348,8 +358,8 @@ a capture-related system restart; do not reintroduce it.
 Apple silicon supports GPU counter sampling only at **stage boundaries**. A mid-encoder
 `sampleCountersInBuffer` is unsupported (the render and blit encoders assert), and configuring the pass descriptor's
 sample-buffer attachments for our render passes also crashed the process in the 2026-10-23 experiment. Do not wire
-per-lap Metal timestamps yet. Use one Xcode frame for the pass breakdown plus `MEITOU_METAL_TRACE` for the steady total;
-do not capture multiple frames (one trace is already about 3 GB).
+per-lap Metal timestamps yet. Prefer `MEITOU_METAL_TRACE` and the existing A/B timings. If a capture is unavoidable,
+quit the game before opening one frame in Xcode and do not capture multiple frames (one trace is already 2.3-2.6 GB).
 
 The static terrain experiment is behind `MEITOU_METAL_PRIVATE_STATIC=1`: it gives the static terrain textures and the
 terrain patch vertex/index buffers private Metal storage (Microsoft's staging uploads stay shared). A 20-second A/B was
@@ -360,7 +370,7 @@ shared until a cleaner, longer A/B shows a win.
 
 ```sh
 # Live Release, default 0.50, Hub
-DYLD_LIBRARY_PATH=/opt/homebrew/lib dotnet run --project src/Meitou.Game -c Release -- \
+dotnet run --project src/Meitou.Game -c Release -- \
   --renderer metal --new-game --time 12 --distance 2000 --pitch 20 \
   --faithful clouds,cloudshadows --no-gi
 
@@ -372,7 +382,7 @@ MEITOU_METAL_TRACE=1 ...
 ... --render-scale native
 
 # Validation gate (not a performance run)
-DYLD_LIBRARY_PATH=/opt/homebrew/lib MTL_DEBUG_LAYER=1 dotnet run --project src/Meitou.Game -c Release -- \
+MTL_DEBUG_LAYER=1 dotnet run --project src/Meitou.Game -c Release -- \
   --renderer metal --screenshot /tmp/metal-gate.png --no-population --time 8 \
   --distance 2000 --pitch 45 --faithful clouds,cloudshadows --no-gi
 
