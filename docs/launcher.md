@@ -65,6 +65,19 @@ items); the launcher never downloads or hosts mods.
   the same buttons open the newest `launcher-v*` release page.
 - **Unknown**: the update path end to end (1.0.1 → 1.0.2 is the first real one).
 
+## Unsigned macOS packages
+
+The macOS launcher and game are **not notarized**: there is no paid Apple Developer ID in this project. The app and the
+published executable are ad-hoc signed where the build produces them, but Gatekeeper will still warn, and a `.pkg` downloaded
+through a browser may be blocked outright.
+
+- Tell users to right-click the downloaded `.pkg`/app and choose **Open**, then allow it in **System Settings → Privacy &
+  Security** if macOS still asks. Do not tell them to disable Gatekeeper globally.
+- Prefer a `.dmg`/zip with the `.app` when the `.pkg` is hard to open; test the exact path on a clean macOS account.
+- Publish SHA-256 checksums beside the release; the source is public, so the warning is at least understandable.
+- Test the launcher's self-update path while unsigned; if macOS blocks it, a manual update is the fallback.
+- If the project ever gets a Developer ID, notarize the launcher and game binaries; no code change should be needed.
+
 ## Game zips per runtime
 
 `release.yml` runs `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
@@ -101,16 +114,27 @@ Play refuses while the game it started still runs. A game that exits with a non-
 
 ### Renderer on macOS
 
-Settings has a **Renderer** choice on macOS Apple silicon: **Metal (native)** or **Vulkan (MoltenVK)**. The value is stored in
-`launcher.json` and appended to the game's arguments after **Launch arguments**, so it wins over a hand-written `--renderer`.
-Vulkan remains the default and the reference path; Metal is native and still being polished. Metal starts without the Vulkan
-loader and without Homebrew on `DYLD_LIBRARY_PATH`, so `brew install molten-vk vulkan-loader` is only needed for Vulkan. The
-launcher runs installed releases; a release without the Metal backend will report the game's error in the status line rather
-than building a local checkout.
+The first-start dialog and Settings offer **Auto**, **Metal (native)** and **Vulkan (MoltenVK)** on macOS. Auto uses Vulkan when
+its loader is installed and falls back to Metal otherwise; on Apple silicon this means a new user does not need Homebrew just to
+start. The value is stored in `launcher.json` and appended to the game's arguments after **Launch arguments**, so it wins over a
+hand-written `--renderer`.
+
+Vulkan is the reference path and stays selectable; its **Setup** button copies `brew install molten-vk vulkan-loader` and opens
+brew.sh, and **Check** re-detects the loader. Metal starts without the Vulkan loader and without Homebrew on
+`DYLD_LIBRARY_PATH`. The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not
+silently claim Metal support. The launcher runs installed GitHub releases, not local checkouts.
+
+### Kenshi data
+
+Meitou ships no Kenshi assets. The first-start dialog explains that Kenshi is required and links to
+[kenshi-on-macos](kenshi-on-macos.md), which covers copying a Windows install, CrossOver/Whisky, GOG/Wine and the advanced
+DepotDownloader route. The launcher's **Find** searches macOS Steam, CrossOver and Whisky locations, and **Browse** accepts any
+folder containing `data/gamedata.base`. DepotDownloader is not bundled or automated: it needs Steam credentials and ownership.
 
 `versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
-is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing
-the install folder there or in Settings moves the installed versions (copied, then deleted, across drives).
+is saved) an overlay asks for the install folder, the Kenshi folder and the renderer, prefilled with the current and the
+detected ones. Changing the install folder there or in Settings moves the installed versions (copied, then deleted,
+across drives).
 
 ## Graphics
 

@@ -5,8 +5,10 @@
   <Border Classes="plate" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20,16">
     <StackPanel>
       <Border Classes="header" Margin="0,0,0,10">
-        <TextBlock Text="Folders" />
+        <TextBlock Text="Set up Meitou" />
       </Border>
+      <TextBlock Classes="desc" TextWrapping="Wrap" Margin="0,0,0,10"
+                 Text="Meitou needs Kenshi: it does not include Kenshi's data. You must own Kenshi and point Meitou at its folder." />
       <Border Classes="row">
         <StackPanel Spacing="6">
           <TextBlock Classes="name" Text="Install folder" />
@@ -22,10 +24,26 @@
           <TextBlock Classes="name" Text="Kenshi folder" />
           <TextBlock x:Name="KenshiStatus" Classes="desc" />
           <DockPanel>
+            <Button DockPanel.Dock="Right" Content="How?" Click="KenshiHelp_Click" Margin="6,0,0,0"
+                    ToolTip.Tip="How to get Kenshi on this Mac" />
             <Button DockPanel.Dock="Right" Content="Find" Click="FindKenshi_Click" Margin="6,0,0,0" />
             <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseKenshi_Click" Margin="6,0,0,0" />
             <TextBox x:Name="KenshiBox" LostFocus="KenshiBox_LostFocus" />
           </DockPanel>
+        </StackPanel>
+      </Border>
+      <Border x:Name="RendererRow" Classes="row" IsVisible="False">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="name" Text="Renderer" />
+          <TextBlock Classes="desc" Text="Auto uses Vulkan when MoltenVK is installed, otherwise Metal." TextWrapping="Wrap" />
+          <DockPanel>
+            <ComboBox x:Name="RendererBox" HorizontalAlignment="Stretch">
+              <ComboBoxItem Content="Auto (recommended)" Tag="auto" />
+              <ComboBoxItem x:Name="RendererMetalItem" Content="Metal (native)" Tag="metal" />
+              <ComboBoxItem Content="Vulkan (MoltenVK)" Tag="vulkan" />
+            </ComboBox>
+          </DockPanel>
+          <TextBlock x:Name="RendererHint" Classes="desc" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
       <DockPanel Margin="0,14,0,0">
@@ -33,7 +51,7 @@
           <TextBlock Text="Continue" Foreground="{StaticResource Secondary}" />
         </Button>
         <TextBlock x:Name="Problem" Classes="warn" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0"
-                   Text="Both can be changed later in Settings." />
+                   Text="The renderer and folders can be changed later in Settings. You can install Meitou now and add Kenshi afterwards." />
       </DockPanel>
     </StackPanel>
   </Border>

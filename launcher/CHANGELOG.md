@@ -4,10 +4,16 @@ Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.
 
 ## Unreleased
 
-- macOS Apple silicon: Settings → Renderer chooses native **Metal** or **Vulkan (MoltenVK)**. Vulkan stays the default;
-  Metal needs no Homebrew Vulkan loader and is started without `DYLD_LIBRARY_PATH`.
+- macOS Apple silicon: first start and Settings → Renderer offer **Auto**, native **Metal** and **Vulkan (MoltenVK)**. Auto
+  uses Vulkan when its loader exists and Metal otherwise, so a new user does not need Homebrew; Metal starts without
+  `DYLD_LIBRARY_PATH`.
 - macOS Vulkan now gets a narrow `vulkan/` loader folder through `DYLD_LIBRARY_PATH` instead of all of Homebrew's library
-  folder, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies.
+  folder, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies. Settings has the Homebrew command and a
+  loader check.
+- First start explains that Kenshi is required and links to a macOS acquisition guide; Find now searches macOS Steam,
+  CrossOver and Whisky locations.
+- The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not claim Metal
+  support.
 
 ## v1.1.1
 

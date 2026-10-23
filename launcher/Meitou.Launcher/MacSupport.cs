@@ -1,0 +1,78 @@
+using System.Runtime.InteropServices;
+
+namespace Meitou.Launcher;
+
+/// <summary>
+/// What the launcher can give the game on macOS: native Metal on Apple silicon, and Vulkan/MoltenVK when Homebrew (or a
+/// user-supplied <c>DYLD_LIBRARY_PATH</c>) has the loader. The game itself owns the actual renderers; this only decides which
+/// one to start and keeps the Vulkan loader out of the game's broad Homebrew dyld path.
+/// </summary>
+static class MacSupport
+{
+    public static bool MetalAvailable =>
+        OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
+    /// <summary>The folder holding <c>libvulkan.1.dylib</c>, or null when Vulkan is not installed.</summary>
+    public static string? VulkanLoaderDirectory()
+    {
+        if (!OperatingSystem.IsMacOS()) return null;
+        var existing = Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH");
+        return Candidates(existing).FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libvulkan.1.dylib")));
+    }
+
+    public static bool VulkanAvailable => VulkanLoaderDirectory() is not null;
+
+    /// <summary>The renderer to pass to the game. Auto prefers Vulkan when its loader exists and falls back to Metal.</summary>
+    public static string Resolve(string requested) => requested switch
+    {
+        "metal" when MetalAvailable => "metal",
+        "vulkan" when VulkanAvailable => "vulkan",
+        "vulkan" when MetalAvailable => "metal",   // explicit Vulkan became unavailable: keep the game startable
+        _ when MetalAvailable => "metal",
+        _ => "vulkan",
+    };
+
+    /// <summary>Points the game at a narrow folder holding the loader and MoltenVK, and sets the argument-buffer switch.</summary>
+    public static bool AddVulkanEnvironment(IDictionary<string, string?> environment)
+    {
+        if (VulkanLoaderDirectory() is not { } source) return false;
+        var molten = Candidates(environment.TryGetValue("DYLD_LIBRARY_PATH", out var existing) ? existing : null)
+            .FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libMoltenVK.dylib")));
+        environment["DYLD_LIBRARY_PATH"] = LinkLibraries(source, molten) ?? source;
+        if (!environment.TryGetValue("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", out var mvk) || string.IsNullOrEmpty(mvk))
+            environment["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1";
+        return true;
+    }
+
+    /// <summary>The command a user with Homebrew needs for Vulkan; shown, never run by the launcher.</summary>
+    public const string HomebrewVulkanCommand = "brew install molten-vk vulkan-loader";
+
+    static string[] Candidates(string? existing) =>
+        (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(["/opt/homebrew/lib", "/usr/local/lib"])
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+    // The loader is looked up by name from DYLD_LIBRARY_PATH; the ICD JSON still points MoltenVK at its absolute Homebrew path.
+    static string? LinkLibraries(string source, string? molten)
+    {
+        try
+        {
+            var directory = Path.GetFullPath(Path.Combine(LauncherConfig.DataDirectory, "vulkan"));
+            if (Path.GetFullPath(source) == directory) return directory;
+            Directory.CreateDirectory(directory);
+            Link(Path.Combine(directory, "libvulkan.1.dylib"), Path.Combine(source, "libvulkan.1.dylib"));
+            if (molten is not null) Link(Path.Combine(directory, "libMoltenVK.dylib"), Path.Combine(molten, "libMoltenVK.dylib"));
+            return directory;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    static void Link(string path, string target)
+    {
+        if (Path.GetFullPath(path) == Path.GetFullPath(target)) return;
+        try { File.Delete(path); }
+        catch (FileNotFoundException) { }
+        File.CreateSymbolicLink(path, target);
+    }
+}

@@ -25,6 +25,12 @@ public sealed partial class SetupOverlay : UserControl
         InitializeComponent();
         InstallBox.Text = LauncherConfig.InstallDirectory;
         ShowKenshi(found, found?.Root ?? config.KenshiPath);
+        RendererRow.IsVisible = OperatingSystem.IsMacOS();
+        RendererMetalItem.IsVisible = MacSupport.MetalAvailable;
+        if (!MacSupport.MetalAvailable && config.Renderer == "metal") config.Renderer = "auto";
+        RendererBox.SelectedIndex = config.Renderer switch { "metal" => 1, "vulkan" => 2, _ => 0 };
+        RendererBox.SelectionChanged += Renderer_Changed;
+        ShowRendererHint();
     }
 
     void ShowKenshi(GameInstall? found, string? text)
@@ -32,7 +38,7 @@ public sealed partial class SetupOverlay : UserControl
         install = found;
         KenshiBox.Text = text ?? "";
         KenshiStatus.Text = found is not null ? "The folder with data/gamedata.base."
-            : string.IsNullOrWhiteSpace(text) ? "Not found: browse to the folder with data/gamedata.base."
+            : string.IsNullOrWhiteSpace(text) ? "Not found. Browse to your Kenshi folder (it contains data/gamedata.base)."
             : "Not a Kenshi folder: data/gamedata.base not found.";
     }
 
@@ -46,6 +52,32 @@ public sealed partial class SetupOverlay : UserControl
     {
         var found = GameInstall.Locate();
         ShowKenshi(found, found?.Root ?? KenshiBox.Text);
+    }
+
+    async void KenshiHelp_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+            await launcher.LaunchUriAsync(new Uri("https://github.com/VlcekM/MeitouClient/blob/master/docs/kenshi-on-macos.md"));
+    }
+
+    void Renderer_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "auto" or "metal" or "vulkan")
+            config.Renderer = renderer;
+        ShowRendererHint();
+    }
+
+    void ShowRendererHint()
+    {
+        if (RendererHint is null) return;
+        bool vulkan = MacSupport.VulkanAvailable;
+        string effective = MacSupport.Resolve(config.Renderer);
+        RendererHint.Text = config.Renderer switch
+        {
+            "auto" => $"Auto: {(effective == "metal" ? "Metal" : "Vulkan")}" + (vulkan ? " (Vulkan loader found)." : MacSupport.MetalAvailable ? " (no Vulkan loader)." : "."),
+            "metal" => MacSupport.MetalAvailable ? "Metal (native)." : "Metal is not available on this Mac; Auto uses Vulkan.",
+            _ => vulkan ? "Vulkan (MoltenVK loader found)." : "Vulkan loader not found; choose Auto/Metal, or install it later in Settings.",
+        };
     }
 
     async void BrowseKenshi_Click(object? sender, RoutedEventArgs e)
@@ -91,6 +123,8 @@ public sealed partial class SetupOverlay : UserControl
         }
         config.InstallFolder = Path.GetFullPath(folder) == Path.GetFullPath(LauncherConfig.DataDirectory) ? null : folder;
         if (install is not null) config.KenshiPath = install.Root;
+        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "auto" or "metal" or "vulkan")
+            config.Renderer = renderer;
         config.FoldersConfirmed = true;
         config.Save();
         Confirmed?.Invoke(install);

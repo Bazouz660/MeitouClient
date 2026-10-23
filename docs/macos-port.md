@@ -17,7 +17,8 @@ A native Metal path next to Vulkan: [metal-backend](metal-backend.md).
   the game's `DYLD_LIBRARY_PATH` at that narrow folder, not at all of `/opt/homebrew/lib` (an existing MVK value is kept):
   a Finder-started launcher has neither (#20). **Unknown**: not yet confirmed on a Mac. A `~/lib` symlink does not help
   (**Observed**, #20). The launcher's **Metal** choice starts the game with `--renderer metal` and removes
-  `DYLD_LIBRARY_PATH`; it needs neither the loader nor MoltenVK. Metal is offered on Apple silicon only in the launcher for now.
+  `DYLD_LIBRARY_PATH`; it needs neither the loader nor MoltenVK. **Auto** uses Vulkan when the loader exists and Metal otherwise,
+  so a new Apple-silicon user does not need Homebrew. Metal is offered on Apple silicon only in the launcher for now.
 - Screenshots and other `C:\Temp` defaults land in a folder literally named `C:\Temp` under the CWD.
 
 ## MoltenVK constraints and the fixes

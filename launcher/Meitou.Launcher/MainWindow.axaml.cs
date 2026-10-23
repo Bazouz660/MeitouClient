@@ -1,11 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -32,10 +32,6 @@ public sealed partial class MainWindow : Window
 
     static string LauncherVersion => typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
-    // Metal is native to macOS and does not need the MoltenVK loader. The launcher exposes it on Apple silicon only;
-    // the Intel package keeps Vulkan, which is the tested macOS path there.
-    static bool MetalAvailable => OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
-
     public MainWindow() : this(LauncherConfig.Load(), GameInstall.Locate()) { }
 
     public MainWindow(LauncherConfig config, GameInstall? found)
@@ -54,12 +50,12 @@ public sealed partial class MainWindow : Window
         ModListBox.AddHandler(PointerReleasedEvent, ModList_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         ModListBox.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
         ArgumentsBox.Text = config.LaunchArguments;
-        RendererRow.IsVisible = MetalAvailable;
-        if (MetalAvailable)
-        {
-            RendererBox.SelectedIndex = config.Renderer == "metal" ? 0 : 1;
-            RendererBox.SelectionChanged += Renderer_Changed;
-        }
+        RendererRow.IsVisible = OperatingSystem.IsMacOS();
+        RendererMetalItem.IsVisible = MacSupport.MetalAvailable;
+        if (!MacSupport.MetalAvailable && config.Renderer == "metal") config.Renderer = "auto";
+        RendererBox.SelectedIndex = config.Renderer switch { "metal" => 1, "vulkan" => 2, _ => 0 };
+        RendererBox.SelectionChanged += Renderer_Changed;
+        UpdateRendererHint();
         NightlyBox.IsChecked = config.IncludePrereleases;
         AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
         AutoUpdateBox.IsEnabled = updater.IsInstalled;
@@ -170,13 +166,53 @@ public sealed partial class MainWindow : Window
 
     void Renderer_Changed(object? sender, SelectionChangedEventArgs e)
     {
-        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "metal" or "vulkan")
+        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "auto" or "metal" or "vulkan")
         {
             config.Renderer = renderer;
             config.Save();
-            Status($"Renderer: {(renderer == "metal" ? "Metal" : "Vulkan")}; Play starts the game with it.");
+            UpdateRendererHint();
+            Status($"Renderer: {RendererLabel(MacSupport.Resolve(renderer))}; Play starts the game with it.");
         }
     }
+
+    void UpdateRendererHint()
+    {
+        bool vulkan = MacSupport.VulkanAvailable;
+        string effective = RendererLabel(MacSupport.Resolve(config.Renderer));
+        RendererHint.Text = config.Renderer switch
+        {
+            "auto" => $"Auto: {effective}" + (vulkan ? " (Vulkan loader found)." : MacSupport.MetalAvailable ? " (no Vulkan loader)." : "."),
+            "metal" => MacSupport.MetalAvailable ? "Metal (native)." : "Metal is not available on this Mac; Auto uses Vulkan.",
+            _ => vulkan ? "Vulkan (MoltenVK loader found)." : "Vulkan loader not found. Use Auto/Metal or install it with Setup.",
+        };
+    }
+
+    static string RendererLabel(string renderer) => renderer == "metal" ? "Metal" : "Vulkan";
+
+    async void VulkanSetup_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MacSupport.VulkanAvailable)
+        {
+            UpdateRendererHint();
+            Status("The Vulkan loader is already installed. Select Vulkan to use it.");
+            return;
+        }
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            await clipboard.SetValueAsync(DataFormat.Text, MacSupport.HomebrewVulkanCommand);
+        await this.Launcher.LaunchUriAsync(new Uri("https://brew.sh"));
+        Status($"Copied '{MacSupport.HomebrewVulkanCommand}' and opened brew.sh; install Homebrew, run it in Terminal, then press Check.");
+    }
+
+    void VulkanCheck_Click(object? sender, RoutedEventArgs e)
+    {
+        UpdateRendererHint();
+        Status(MacSupport.VulkanAvailable
+            ? "Vulkan loader found. Select Vulkan to use it."
+            : "Vulkan loader not found. Install Homebrew and MoltenVK, or use Auto/Metal.");
+    }
+
+    async void KenshiHelp_Click(object? sender, RoutedEventArgs e) =>
+        await this.Launcher.LaunchUriAsync(new Uri("https://github.com/VlcekM/MeitouClient/blob/master/docs/kenshi-on-macos.md"));
 
     async void Nightly_Click(object? sender, RoutedEventArgs e)
     {
@@ -871,17 +907,39 @@ public sealed partial class MainWindow : Window
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
         string? renderer = null;
+        bool metalFallback = false;
         if (OperatingSystem.IsMacOS())
         {
-            // Metal needs neither the Vulkan loader nor Homebrew on the game's dyld path.
-            renderer = MetalAvailable && config.Renderer == "metal" ? "metal" : "vulkan";
+            // A release advertises its renderers in settings-schema.json; an old release without the key is Vulkan-only.
+            bool metalSupported = PlaySchema().Schema?.Renderers.Contains("metal", StringComparer.OrdinalIgnoreCase) == true;
+            string requested = config.Renderer;
+            if (requested == "metal" && !MacSupport.MetalAvailable)
+            {
+                Status("Metal needs an Apple-silicon Mac; choose Auto or Vulkan.");
+                return;
+            }
+            if (requested == "metal" && !metalSupported)
+            {
+                Status("This Meitou version does not include Metal; choose Vulkan or install a newer version.");
+                return;
+            }
+            if (requested == "auto" && !metalSupported) requested = "vulkan";
+            renderer = MacSupport.Resolve(requested);
+            if (renderer == "metal" && !metalSupported)
+            {
+                Status("This Meitou version does not include Metal; choose Vulkan or install a newer version.");
+                return;
+            }
+            metalFallback = requested == "vulkan" && renderer == "metal";
             if (renderer == "metal")
                 start.Environment.Remove("DYLD_LIBRARY_PATH");
-            else if (!AddMacVulkanEnvironment(start.Environment))
+            else if (!MacSupport.AddVulkanEnvironment(start.Environment))
             {
-                Status(MetalAvailable
-                    ? "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, or choose Metal, then Play again."
-                    : "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
+                Status(MacSupport.MetalAvailable && !metalSupported
+                    ? "This Meitou version has no Metal renderer and no Vulkan loader; install a newer version or MoltenVK."
+                    : MacSupport.MetalAvailable
+                        ? "The Vulkan loader is not installed: use Auto/Metal, or install MoltenVK from Settings > Setup."
+                        : "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
                 return;
             }
         }
@@ -896,7 +954,8 @@ public sealed partial class MainWindow : Window
         {
             var game = Process.Start(start);
             running = game;
-            Status(renderer is null ? $"Meitou {version} started." : $"Meitou {version} started with {(renderer == "metal" ? "Metal" : "Vulkan")}.");
+            string suffix = metalFallback ? " (Vulkan loader missing)" : "";
+            Status(renderer is null ? $"Meitou {version} started." : $"Meitou {version} started with {RendererLabel(renderer)}{suffix}.");
             if (game is null) return;
             // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
             var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");
@@ -911,50 +970,6 @@ public sealed partial class MainWindow : Window
         {
             Status($"Could not start Meitou {version}: {ex.Message}");
         }
-    }
-
-    // dlopen's default path lacks Homebrew's lib dir, and a launcher started from Finder has no DYLD_LIBRARY_PATH, so the game
-    // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Instead of putting the
-    // whole Homebrew lib directory on the game's dyld path (which injects libjpeg/libpng into AppKit/ImageIO), link only the
-    // Vulkan loader into the launcher's own folder. A user-supplied path is searched too, but the game gets the narrow folder.
-    static bool AddMacVulkanEnvironment(IDictionary<string, string?> environment)
-    {
-        environment.TryGetValue("DYLD_LIBRARY_PATH", out var existing);
-        var candidates = (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries)
-            .Concat(["/opt/homebrew/lib", "/usr/local/lib"])
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        string? source = candidates.FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libvulkan.1.dylib")));
-        if (source is null) return false;
-        string? molten = candidates.FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libMoltenVK.dylib")));
-        string loaderDirectory = LinkVulkanLibraries(source, molten) ?? source;
-        environment["DYLD_LIBRARY_PATH"] = loaderDirectory;
-        if (!environment.TryGetValue("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", out var mvk) || string.IsNullOrEmpty(mvk))
-            environment["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1";
-        return true;
-    }
-
-    // The loader is looked up by name from DYLD_LIBRARY_PATH; the ICD JSON still points MoltenVK at its absolute Homebrew path.
-    static string? LinkVulkanLibraries(string source, string? molten)
-    {
-        try
-        {
-            var directory = Path.GetFullPath(Path.Combine(LauncherConfig.DataDirectory, "vulkan"));
-            if (Path.GetFullPath(source) == directory) return directory;
-            Directory.CreateDirectory(directory);
-            Link(Path.Combine(directory, "libvulkan.1.dylib"), Path.Combine(source, "libvulkan.1.dylib"));
-            if (molten is not null) Link(Path.Combine(directory, "libMoltenVK.dylib"), Path.Combine(molten, "libMoltenVK.dylib"));
-            return directory;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
-    }
-
-    static void Link(string path, string target)
-    {
-        if (Path.GetFullPath(path) == Path.GetFullPath(target)) return;
-        try { File.Delete(path); }
-        catch (FileNotFoundException) { }
-        File.CreateSymbolicLink(path, target);
     }
 
     // Space-separated, with double quotes around arguments that contain spaces.

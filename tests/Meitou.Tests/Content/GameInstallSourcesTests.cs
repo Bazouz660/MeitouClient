@@ -31,6 +31,23 @@ public sealed class GameInstallSourcesTests : IDisposable
     }
 
     [Fact]
+    public void A_wine_prefix_also_finds_a_steam_library_install()
+    {
+        var drive = Path.Combine(home, "drive_c");
+        var kenshi = MakeInstall("drive_c", "Program Files (x86)", "Steam", "steamapps", "common", "Kenshi");
+        Assert.Contains(kenshi, GameInstallSources.InPrefix(drive));
+    }
+
+    [Fact]
+    public void A_crossover_bottle_finds_kenshi_in_its_windows_steam_folder()
+    {
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "CrossOver bottles are a macOS source");
+        var kenshi = MakeInstall("Library", "Application Support", "CrossOver", "Bottles", "Steam", "drive_c",
+            "Program Files (x86)", "Steam", "steamapps", "common", "Kenshi");
+        Assert.Equal(kenshi, FirstValid(GameInstallSources.Launchers(home)));
+    }
+
+    [Fact]
     public void A_wine_prefixs_registry_names_where_gog_installed_kenshi()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "Wine prefixes map Z: to a Linux root");

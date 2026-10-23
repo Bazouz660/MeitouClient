@@ -25,6 +25,7 @@ static class LauncherSchema
         return new SettingsSchema
         {
             SettingsVersion = UserConfig.CurrentVersion,
+            Renderers = OperatingSystem.IsMacOS() ? ["vulkan", "metal"] : ["vulkan"],
             Sections =
             [
                 new SettingsSection

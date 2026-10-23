@@ -293,6 +293,8 @@
                   <TextBlock x:Name="KenshiStatus" Classes="desc" />
                 </StackPanel>
                 <DockPanel Grid.Column="1">
+                  <Button DockPanel.Dock="Right" Content="Help" Click="KenshiHelp_Click" Margin="6,0,0,0"
+                          ToolTip.Tip="How to get Kenshi on macOS" />
                   <Button DockPanel.Dock="Right" Content="Find" Click="DetectKenshi_Click" Margin="6,0,0,0" />
                   <Button DockPanel.Dock="Right" Content="Browse" Click="BrowseKenshi_Click" Margin="6,0,0,0" />
                   <TextBox x:Name="KenshiPathBox" LostFocus="KenshiPath_LostFocus" />
@@ -321,17 +323,25 @@
                 <TextBox Grid.Column="1" x:Name="ArgumentsBox" LostFocus="Arguments_LostFocus" />
               </Grid>
             </Border>
-            <!-- macOS Apple silicon only: Metal needs no MoltenVK; Vulkan keeps the Homebrew loader path. -->
+            <!-- macOS: Auto prefers Vulkan when MoltenVK exists, else native Metal. No Homebrew is needed for Metal. -->
             <Border x:Name="RendererRow" Classes="row" IsVisible="False">
               <Grid ColumnDefinitions="*,460">
                 <StackPanel VerticalAlignment="Center">
                   <TextBlock Classes="name" Text="Renderer" />
-                  <TextBlock Classes="desc" Text="Metal is native but still being polished; Vulkan is the reference. This overrides --renderer in Launch arguments." TextWrapping="Wrap" />
+                  <TextBlock Classes="desc" Text="Auto uses Vulkan when MoltenVK is installed, otherwise Metal. This overrides --renderer in Launch arguments." TextWrapping="Wrap" />
+                  <TextBlock x:Name="RendererHint" Classes="desc" TextWrapping="Wrap" Margin="0,4,0,0" />
                 </StackPanel>
-                <ComboBox Grid.Column="1" x:Name="RendererBox" HorizontalAlignment="Stretch">
-                  <ComboBoxItem Content="Metal (native)" Tag="metal" />
-                  <ComboBoxItem Content="Vulkan (MoltenVK)" Tag="vulkan" />
-                </ComboBox>
+                <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                  <Button DockPanel.Dock="Right" Content="Setup" Click="VulkanSetup_Click" Margin="6,0,0,0"
+                          ToolTip.Tip="Copy the Homebrew command for Vulkan, or open brew.sh" />
+                  <Button DockPanel.Dock="Right" Content="Check" Click="VulkanCheck_Click" Margin="6,0,0,0"
+                          ToolTip.Tip="Check again for a Vulkan loader" />
+                  <ComboBox x:Name="RendererBox" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Auto (recommended)" Tag="auto" />
+                    <ComboBoxItem x:Name="RendererMetalItem" Content="Metal (native)" Tag="metal" />
+                    <ComboBoxItem Content="Vulkan (MoltenVK)" Tag="vulkan" />
+                  </ComboBox>
+                </DockPanel>
               </Grid>
             </Border>
             <Border Classes="row">

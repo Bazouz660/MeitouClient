@@ -16,6 +16,8 @@ public sealed class SettingsSchema
     public int Format { get; set; } = CurrentFormat;
     /// <summary>The <c>meitou.user.json</c> layout this release reads and writes (its <c>version</c> key).</summary>
     public int SettingsVersion { get; set; }
+    /// <summary>The frame renderers this release contains; an older schema without the key is Vulkan-only.</summary>
+    public List<string> Renderers { get; set; } = ["vulkan"];
     public List<SettingsSection> Sections { get; set; } = [];
 
     public string ToJson() => JsonSerializer.Serialize(this, SettingsSchemaJson.Default.SettingsSchema);

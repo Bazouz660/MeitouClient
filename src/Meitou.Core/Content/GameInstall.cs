@@ -175,6 +175,12 @@ public sealed class GameInstall
             foreach (var steam in candidates.Distinct())
                 if (Directory.Exists(steam)) yield return steam;
         }
+        else if (OperatingSystem.IsMacOS())
+        {
+            // Steam's Mac client; a Windows Steam bottle is covered by GameInstallSources' Wine prefixes.
+            var steam = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Steam");
+            if (Directory.Exists(steam)) yield return steam;
+        }
     }
 
     static string? ReadLocalConfig(string file)
