@@ -148,6 +148,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                     characterTrade = null;
                     break;
                 case DialogueEvent e:
+                    if (e.Event == UnlockMyCageOrShackles && e.Dialogue is null) Freed(world, e.Npc, e.Target);
                     if (e.Dialogue is { } id) { if (dialogue.Node(id) is { IsRoot: true } root) StartBubbles(world, e.Npc, e.Target, root, e.Event); }
                     else if (Settings.AmbientEvents) Fire(world, e.Npc, e.Target, e.Event);
                     break;

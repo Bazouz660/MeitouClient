@@ -126,7 +126,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow => true,
             // The walks to its spots, and lying or sitting there, are the AI's own.
             CharacterTask.GoTo => mind.Behaviour is AiBehaviour.Post or AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.GoHome or AiBehaviour.Patrol or AiBehaviour.Turret
-                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel,
+                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel or AiBehaviour.Work,
             CharacterTask.Rest => mind.Behaviour is AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.Relax,
             _ => false,
         };
@@ -229,6 +229,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
             AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 ? 1 : 0,
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
+            // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
+            AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); without a home it sits where it is.
             AiBehaviour.Relax => board.BarTable >= 0 && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.Sit => board.Home is null || board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
@@ -256,9 +258,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
     sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
-        IReadOnlyList<TownBuilding> OutdoorTables);
+        IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces);
 
-    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], []);
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], []);
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
@@ -306,12 +308,36 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             bool IsPublic(TownBuilding b) => publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true;
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
             places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
-                [.. buildings.Where(b => b.IsOutdoorTable)]);
+                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);
         }
     }
 
     /// <summary>BuildingDesignation BD_BAR.</summary>
     const int DesignationBar = 3;
+
+    /// <summary>The BuildingFunction bits a worker looks for (mask <c>0x41a</c> of <c>FUN_1408cac60</c> / <c>FUN_1408cadb0</c>, read as bits, <b>Observed</b>): MINE, RESEARCH, REFINERY, CRAFTING.</summary>
+    const int WorkFunctions = 0x41a;
+
+    /// <summary>How near a worker's building it stands (units; engine choice: the functionality's <c>use range</c> is not read for the town's buildings).</summary>
+    const float WorkReach = 30;
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> workClips = new(StringComparer.Ordinal);
+
+    /// <summary>The clip a worker plays at a building: its functionality's <c>animation</c>, else <c>stonemine</c> (<c>Task_OperateMachine</c>, docs/game/buildings-production.md).</summary>
+    string WorkClipOf(TownBuilding b) => workClips.GetOrAdd(b.BuildingId, id =>
+        data.Db.Find(id)?.GetReferences("functionality") is [var link, ..] && data.Db.Find(link.TargetStringId)?.GetReferences("animation") is [var anim, ..]
+            && data.Db.Find(anim.TargetStringId) is { } clip ? clip.Name : "stonemine");
+
+    /// <summary>
+    /// The building a worker works at (the finders of goals 189 / 190: a random building of the town with a function in <see cref="WorkFunctions"/>, slot 2 of the building finder
+    /// <c>FUN_1409fb020</c>); the roll is the character's and its <paramref name="epoch"/> of picks (<see cref="AiMind.WorkEpoch"/>), so asking twice names the same one. Null: the town has none.
+    /// </summary>
+    TownBuilding? PickWork(World world, CharacterId self, int town, int epoch)
+    {
+        var list = Places(town).Workplaces;
+        if (list.Count == 0) return null;
+        return list[Rng.Int(Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)epoch << 20 ^ 0x57), list.Count)];
+    }
 
     static bool IsGeneralNode(HomeSpot s) => s.NodeType == NodeGeneral;
 
@@ -403,6 +429,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         mind.Version = board.Version;
         mind.WanderRadius = 0;
         mind.SitClip = null;   // set again below while it stays on its chair
+        if (mind.WorkActive && behaviour != AiBehaviour.Work)
+        {
+            // It stopped working: the next pick is a new one and the work clip goes.
+            mind.WorkActive = false;
+            mind.WorkEpoch++;
+            if (table.Cold(slot) is { } worker && mind.WorkClip is not null && worker.ActionClip == mind.WorkClip) worker.ActionClip = null;
+            mind.WorkClip = null;
+        }
         mind.FollowTarget = CharacterId.None;   // set again below for a follow goal aimed at the squad's mission
         ref var n = ref table.Next[slot];
         bool leader = mind.Squad.Leader == table.IdOf(slot);
@@ -479,6 +513,27 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
                     Become(table, slot, CharacterTask.Idle);
+                break;
+            case AiBehaviour.Work:
+                if (mind.Target is null)
+                {
+                    if (mind.WorkActive) mind.WorkEpoch++;
+                    mind.WorkActive = true;
+                    if (PickWork(world, table.IdOf(slot), board.Town, mind.WorkEpoch) is { } building)
+                    {
+                        mind.Target = new Vector3(building.Position.X, float.NaN, building.Position.Z);
+                        mind.WorkClip = WorkClipOf(building);
+                    }
+                }
+                if (mind.Target is not { } working) Become(table, slot, CharacterTask.Idle);
+                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(working), GiveUp.Target, SpeedMode.Walk, WorkReach))
+                {
+                    // At the building: facing it, at its work clip.
+                    Become(table, slot, CharacterTask.Idle);
+                    var face = working - n.Position;
+                    if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
+                    if (table.Cold(slot) is { } workerCold) workerCold.ActionClip = mind.WorkClip;
+                }
                 break;
             case AiBehaviour.Travel:
                 // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.

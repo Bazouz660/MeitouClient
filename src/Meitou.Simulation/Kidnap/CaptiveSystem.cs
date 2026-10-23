@@ -1,6 +1,7 @@
 using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Ai;
+using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation.Ai;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Combat;
@@ -29,6 +30,20 @@ public sealed record CaptiveSettings
     public float ProcessSeconds { get; init; } = 3;
     /// <summary>Watching slaves (183) looks at the cages within this distance of the watcher (<b>Observed</b>: 180, <c>FUN_1408cd630</c>).</summary>
     public float WatchRange { get; init; } = 180;
+    /// <summary>The weapon strip kneels this long (<b>Observed</b>: after 0.8 s, <c>Task_StripWeapons</c>).</summary>
+    public float StripSeconds { get; init; } = 0.8f;
+    /// <summary>
+    /// The cuffing takes this long. <b>Engine choice</b>: the original's bar grows by 0.1 x a per-update float of the character (<c>FUN_140336e60</c>, taken as the frame time) and ends at 0.99,
+    /// so about 10 s.
+    /// </summary>
+    public float CuffSeconds { get; init; } = 10;
+    /// <summary>A worker shouting at a slave stops walking after this many game seconds, or within <see cref="ShoutReach"/> of it (engine: the original walks on until the line is over).</summary>
+    public float ShoutSeconds { get; init; } = 8;
+    public float ShoutReach { get; init; } = 40;
+    /// <summary>The least time between one worker's shouts (<b>engine pacing</b>: the original scores 188 at 0.25 per slave against its other goals).</summary>
+    public float ShoutCooldownSeconds { get; init; } = 120;
+    /// <summary>Game hours a target stays on a worker's give-up list after a job on it failed (<b>engine choice</b>).</summary>
+    public double GiveUpHours { get; init; } = 1;
     /// <summary>The eater and its meal say their lines at most this often (game seconds); the original fires them every frame and its dialogue throttles them.</summary>
     public float BarkSeconds { get; init; } = 10;
     /// <summary>Keep a <see cref="CaptiveSystem.Log"/> (tests).</summary>
@@ -50,6 +65,12 @@ public enum CaptiveJobKind : byte
     Deliver,
     /// <summary>The slave goal 172 (<c>Task_UseCage</c>): a slave walks into a free cage of its owner.</summary>
     CageSelf,
+    /// <summary>Goal 167 (<c>Task_StripWeapons</c>, <c>Task_CuffTarget</c>): a downed character stripped, shackled and carried to a cage.</summary>
+    Capture,
+    /// <summary>Goal 168: a downed slave of the carrier's faction carried to a cage.</summary>
+    Carry,
+    /// <summary>Goal 188 (<c>Task_TalktoPlayer</c> with event 38): a slaver shouts at one of its slaves.</summary>
+    Shout,
 }
 
 public enum CaptivePhase : byte { Walk, Work }
@@ -81,7 +102,7 @@ public sealed class CaptiveJob
     }
 }
 
-public enum CaptiveEventKind { Started, Killed, Eaten, Enslaved, Gathered, Delivered, Caged, GaveUp }
+public enum CaptiveEventKind { Started, Killed, Eaten, Enslaved, Gathered, Delivered, Caged, GaveUp, Captured, Shouted }
 
 public readonly record struct CaptiveEvent(long Tick, CaptiveEventKind Kind, CaptiveJobKind Job, CharacterId Worker, CharacterId Captive);
 
@@ -102,6 +123,7 @@ public readonly record struct CaptiveEvent(long Tick, CaptiveEventKind Kind, Cap
 /// is no slave of its own side, <c>FUN_1408cd630</c>; both only in cages of non-player factions): the worker kneels 3 s (<c>medic</c>), then strips the captive's weapons and armour
 /// into its own inventory (locked shackles stay), dresses it in its faction's <c>slave clothing</c> where the slot is free, says event 35 INTRODUCING_NEW_SLAVE (37 RECAPTURED_A_SLAVE for
 /// one that was a slave before) and makes it its faction's slave (<c>Task_ProcessNewSlave</c>, <b>Observed</b>).</item>
+/// <item><b>Capture / Carry / Shout</b> (167, 168, 188): see <c>CaptiveSystem.Capture.cs</c>. The slaves' own work (189, 190) is not a job but the AI's <see cref="AiBehaviour.Work"/>.</item>
 /// </list>
 /// The jobs and the kill timers are not saved (the original keeps the timers in a global map it does not save, <b>Observed</b>); hashed only while any exist.
 /// </summary>
@@ -112,6 +134,9 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     // The kill timer of each town: the game hour from which a kill is wanted again (FUN_14034a810's map), by site.
     readonly SortedDictionary<int, double> killAt = [];
     readonly CharacterAssembly assembly = new(data);
+    readonly XpService xp = new(data.Bodies.Constants, data.BodyOptions);
+    /// <summary>The amount of the toughness XP a meal still awake gains per update (<b>Observed</b>: 10, <c>FUN_1404356f0</c>).</summary>
+    const float EatToughnessXp = 10;
     int timerRolls;
 
     public CaptiveSettings Settings { get; } = settings ?? new CaptiveSettings();
@@ -133,7 +158,11 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             if (Step(world, jobs[k])) k++;
             else jobs.RemoveAt(k);
         }
-        if (world.Tick % Math.Max(1, Settings.SweepEveryTicks) == 0) Sweep(world);
+        if (world.Tick % Math.Max(1, Settings.SweepEveryTicks) == 0)
+        {
+            ExpireWaits(world.GameHours);
+            Sweep(world);
+        }
     }
 
     // ------------------------------------------------------------------ the sweep
@@ -206,6 +235,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                 return ProcessTarget(world, slot, cold, site, watching: type == TaskType.SLAVE_WATCHING) is { } found
                     ? new CaptiveJob { Kind = CaptiveJobKind.Process, Worker = world.Characters.IdOf(slot), Captive = found.Occupant, Cage = found.Id, Faction = cold.Faction, Site = site }
                     : null;
+            case TaskType.CAPTURE_NEW_SLAVES:
+            case TaskType.CARRY_WOUNDED_SLAVES:
+            case TaskType.WORK_THE_SLAVES:
+                return TryStartSlaveWork(world, squad, slot, cold, type);
             default:
                 return TryStartLogistics(world, squad, board, slot, cold, type);
         }
@@ -313,12 +346,30 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             if (watching)
             {
                 if (Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z)) > Settings.WatchRange * Settings.WatchRange) continue;
-                if (c.SlaveState == 1 && (c.SlaveOwner == cold.Faction || Allied(cold.Faction, c.SlaveOwner))) continue;
+                // A slave of its side that still looks one is left alone; one that does not (its kit taken off or never put on) is processed again (FUN_1408ca3d0).
+                if (c.SlaveState == 1 && (c.SlaveOwner == cold.Faction || Allied(cold.Faction, c.SlaveOwner)) && LooksLikeSlave(c)) continue;
             }
             else if (c.SlaveState != 0 || c.Medical is { Incapacitated: true }) continue;
             return f;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Whether a slave looks like one (the state <c>TARGET_LOOKS_LIKE_A_SLAVE</c> that processing makes true; the platoon's test <c>FUN_1405a6bb0</c> over the character's worn kit, <b>Observed</b>
+    /// in outline). <b>Engine reading</b>: it wears locked shackles or any of its owner faction's <c>slave clothing</c>; the original's test also looks at the torso and leg slots one by one.
+    /// </summary>
+    bool LooksLikeSlave(CharacterCold c)
+    {
+        if (LockSystem.WornShackles(c) is not null) return true;
+        if (c.Inventory is not { } inv || data.Factions is not { } factions || (uint)c.SlaveOwner >= (uint)factions.Count || data.Db.Find(factions[c.SlaveOwner].Id) is not { } owner) return false;
+        var clothing = owner.GetReferences("slave clothing");
+        // An owner without slave clothing has none to put on: its slaves are not processed over and over (engine choice).
+        if (clothing.Count == 0) return true;
+        foreach (var link in clothing)
+            foreach (var item in inv.Items)
+                if (item.Record == link.TargetStringId && Items.InventoryCommands.IsEquipmentSection(item.Section)) return true;
+        return false;
     }
 
     bool Allied(int a, int b) => a >= 0 && b >= 0 && (a == b || data.Relations.Contains(a) && data.Relations.Contains(b) && data.Relations.IsAlly(a, b));
@@ -336,6 +387,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             return End(world, j, CaptiveEventKind.GaveUp);
         if (j.Age > Settings.GiveUpSeconds) return End(world, j, CaptiveEventKind.GaveUp);
         if (j.Kind is CaptiveJobKind.Gather or CaptiveJobKind.Deliver or CaptiveJobKind.CageSelf) return StepLogistics(world, j, w, wc);
+        if (j.Kind is CaptiveJobKind.Capture or CaptiveJobKind.Carry or CaptiveJobKind.Shout) return StepSlaveWork(world, j, w, wc);
         var cage = world.Fixtures.Find(j.Cage);
         if (cage is null || !table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { } cc || cc.InWhat != cage.Id || !cc.IsImprisoned || cc.Medical is not { Dead: false })
             return Over(world, j, table.TryResolveNext(j.Captive, out int gone) && table.Cold(gone)?.Medical is { Dead: true });
@@ -422,6 +474,9 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             CharacterKey = Rng.Key(table.IdOf(c)),
         };
         var events = new List<MedicalEvent>();
+        // A meal still awake gains toughness XP: the generic continuous entry with amount 10 (FUN_1404356f0 calls FUN_1408c6430(stats, dt, 10, 21); Observed). Engine choice: "awake" for the
+        // original's unnamed conscious test (vfunc 0x358).
+        if (cc.Stats is { } stats && !medical.Incapacitated) xp.Continuous(stats, cc.Race!, StatsEnumerated.Toughness, dt, EatToughnessXp);
         float rate = MedicalState.EatRate(cc.Stats?.Toughness ?? 0, cc.Stats?.Scale ?? 1);
         bool eaten = medical.BeingEaten(rate, dt, ctx, data.BodyOptions.Dismemberment != Dismemberment.Never, events);
         foreach (var e in events)
@@ -494,12 +549,13 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
 
     public void Hash(ref StateHasher hasher)
     {
-        if (jobs.Count == 0 && killAt.Count == 0) return;   // only once in use, so worlds without captives hash as before
+        if (jobs.Count == 0 && killAt.Count == 0 && givenUp.Count == 0 && shoutUntil.Count == 0) return;   // only once in use, so worlds without captives hash as before
         hasher.Add(0x43617074);
         hasher.Add(jobs.Count);
         foreach (var j in jobs) j.Hash(ref hasher);
         hasher.Add(killAt.Count);
         foreach (var (site, at) in killAt) { hasher.Add(site); hasher.Add(at); }
         hasher.Add(timerRolls);
+        if (givenUp.Count > 0 || shoutUntil.Count > 0) HashWaits(ref hasher);
     }
 }

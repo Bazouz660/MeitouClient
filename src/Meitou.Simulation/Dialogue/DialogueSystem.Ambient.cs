@@ -19,6 +19,8 @@ public sealed partial class DialogueSystem
 
     /// <summary>The event of a crowd trigger's lines (EV_CROWD_TRIGGERED), and of a contract's end talk (EV_CONTRACT_JOB_ENDED).</summary>
     const int CrowdTriggered = 74;
+    /// <summary>EV_UNLOCK_MY_CAGE_OR_SHACKLES: a freed prisoner's thanks, which also makes its squad remember the liberator (<see cref="Freed"/>).</summary>
+    const int UnlockMyCageOrShackles = 13;
     public const int ContractJobEnded = 30;
     /// <summary>The AI-to-AI talking range (DC 16 TARGET_IN_TALKING_RANGE, 260 units): how near another squad's NPC must be to be greeted (engine choice).</summary>
     const float TalkingRange = 260;

@@ -183,7 +183,7 @@ public static class StandardSystems
         }
         // The captives' fate and the slavers' logistics: right after the kidnapping (serial, like it); nothing in the hash until a job or a town's kill timer exists.
         Meitou.Simulation.Kidnap.CaptiveSystem? captives = null;
-        if (population is not null && Has(StandardParts.Ai)) systems.Add(captives = new Meitou.Simulation.Kidnap.CaptiveSystem(data, combat, o.Captives));
+        if (population is not null && Has(StandardParts.Ai)) systems.Add(captives = new Meitou.Simulation.Kidnap.CaptiveSystem(data, combat, o.Captives) { Kidnap = kidnap });
         Meitou.Simulation.Locks.BedSystem? beds = null;
         if (Has(StandardParts.FirstAid)) systems.Add(beds = new Meitou.Simulation.Locks.BedSystem(data) { Carry = carry });
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
@@ -231,6 +231,7 @@ public static class StandardSystems
         }
         Meitou.Simulation.Dialogue.DialogueSystem? talk = null;
         if (Has(StandardParts.Dialogue)) systems.Add(talk = new Meitou.Simulation.Dialogue.DialogueSystem(data, o.Dialogue, population));
+        if (deeds is not null && talk is not null) deeds.CagedHook = talk.Captured;   // a captive's squad remembers its captor (MY_CAPTOR)
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
         if (arrest is not null) arrest.Talk = talk;

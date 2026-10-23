@@ -138,7 +138,15 @@ public sealed class FactionDeeds(FactionRelations relations, PopulationData? dat
     /// <paramref name="captor"/> put <paramref name="captive"/> in a cage (<c>Task_PutInSomething</c> made for the cage, <c>FUN_140358670</c>, whose kind is 12; the bed put-in's 9 has no
     /// row): <see cref="RelationEventKind.Caged"/>.
     /// </summary>
-    public void Caged(World world, int captor, int captive) => Apply(world, captor, captive, RelationEventKind.Caged, Weight(world, captive));
+    public void Caged(World world, int captor, int captive)
+    {
+        // The same task makes the captive's squad remember the captor (long-term tag 5 MY_CAPTOR, FUN_140673a20 in FUN_140358670, Observed): the dialogue system's memory.
+        CagedHook?.Invoke(world, captor, captive);
+        Apply(world, captor, captive, RelationEventKind.Caged, Weight(world, captive));
+    }
+
+    /// <summary>Called with the captor's and the captive's slots at every <see cref="Caged"/>, before the relation event (the dialogue system's squad memory: <c>MY_CAPTOR</c>).</summary>
+    public Action<World, int, int>? CagedHook { get; set; }
 
     /// <summary>
     /// One first-aid update of <paramref name="seconds"/> by <paramref name="medic"/> on an unconscious <paramref name="patient"/> (<c>FUN_140649a00</c> / <c>FUN_14064d800</c>):

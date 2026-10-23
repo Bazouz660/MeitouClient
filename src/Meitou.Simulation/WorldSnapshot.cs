@@ -102,6 +102,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<string> Inventory { get; init; } = [];
     /// <summary>A selected character's bounties, one line per faction that wants it (empty for the others and for one nobody wants).</summary>
     public IReadOnlyList<Crime.BountyLine> Bounties { get; init; } = [];
+    /// <summary>Slave (state 1) or escaped slave (state 2) and its owner's name, for the status lines of the bounty panel's tooltip (docs/game/ui-screens.md section 4); null otherwise.</summary>
+    public SlaveView? Slave { get; init; }
     /// <summary>A selected character's trained stats (the host formats them); null for the others and for a character without stats.</summary>
     public SkillSummary? Skills { get; init; }
     public IReadOnlyList<float> AllSkills { get; init; } = [];
@@ -182,6 +184,9 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 public readonly record struct TaskBar(string Text, float Progress);
 
 public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
+
+/// <summary>A slave's state (1 slave, 2 escaped slave; <c>SlaveStateEnum</c>) and the name of the faction that owns it ("someone" is the caller's word for none).</summary>
+public readonly record struct SlaveView(int State, string Owner);
 
 /// <summary>
 /// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and

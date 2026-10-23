@@ -212,7 +212,7 @@ public sealed partial class DialogueSystem
         foreach (var (slot, c, _) in chosen)
         {
             if (t.Kind == CharacterTradeKind.SlaveBuying) BuyFree(world, slot, c, sc, t.Player);
-            else Sell(world, c, sc);
+            else Sell(world, c, sc, t.Player);
         }
         if (t.Kind == CharacterTradeKind.SlaveSelling) world.Player.Money += total;   // the slaver's purse is not touched
         else if (world.Player.Money >= total) world.Player.Money -= total;
@@ -249,6 +249,7 @@ public sealed partial class DialogueSystem
             MovementSystem.GoTo(table, slot, target, SpeedMode.Walk);
         }
         if (Locks.LockSystem.WornShackles(c)?.Lock is { } l) l.Locked = false;
+        Memory.Remember(world, c.SquadId, player, MemoryTag.FreedMe);   // its (new) squad remembers the buyer as the one who freed it (FUN_1406add20, Observed)
         if (Settings.AmbientEvents) Fire(world, id, player, BoughtMeFromSlavery);
         ChangeTowardPlayer(world, slaver.Faction, 1);
         ChangeTowardPlayer(world, c.Faction, 4);
@@ -297,12 +298,13 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// One character sold (<c>FUN_1406a7740</c>): it becomes the slaver faction's slave (state 1, "{1} has been enslaved" for a free player-faction character) and stays in its squad
-    /// and faction; relations toward the player's faction: the slaver's +4, the sold one's own -4. Not built: the obedient-slave order and the shackles the original puts on one
-    /// wearing no locked armour.
+    /// and faction; its squad remembers the customer as its captor (long-term tag 5 MY_CAPTOR, <b>Observed</b>); relations toward the player's faction: the slaver's +4, the sold one's
+    /// own -4. Not built: the obedient-slave order and the shackles the original puts on one wearing no locked armour.
     /// </summary>
-    void Sell(World world, CharacterCold c, CharacterCold slaver)
+    void Sell(World world, CharacterCold c, CharacterCold slaver, CharacterId customer)
     {
         Locks.FixtureRegistry.Enslave(world, c, slaver.Faction);
+        Memory.Remember(world, c.SquadId, customer, MemoryTag.Captor);
         ChangeTowardPlayer(world, slaver.Faction, 4);
         ChangeTowardPlayer(world, c.Faction, -4);
     }

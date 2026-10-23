@@ -40,6 +40,11 @@ public enum AiBehaviour : byte
     /// (WANDERING_TRADER and the travelling rows, whose plan is <c>Task_TravelToTargetTown</c> to <c>atDestinationTown</c>, docs/game/ai-tasks.md).
     /// </summary>
     Travel = 14,
+    /// <summary>
+    /// Works a building of its town: walks to a random one of the town's mines, research benches, refineries and crafting benches and stands at it at its work clip (the worker goals 189 and
+    /// 190, finders <c>FUN_1408cac60</c> / <c>FUN_1408cadb0</c>, docs/game/ai-tasks.md "Slave work, shout and capture"; the machines of NPC towns produce nothing here).
+    /// </summary>
+    Work = 15,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -75,6 +80,8 @@ public static class TaskBehaviours
         [TaskType.GO_HOME_AND_GO_TO_BED_SECURE] = (AiBehaviour.Sleep, "Going to bed"),
         [TaskType.SLEEP_ON_FLOOR] = (AiBehaviour.Sleep, "Sleeping on ground"),
         [TaskType.SIT_AROUND] = (AiBehaviour.Sit, "Sitting around"),
+        [TaskType.AUTO_LABOURING_MINES] = (AiBehaviour.Work, "Worker"),
+        [TaskType.AUTO_LABOURING_MINES_PRETEND] = (AiBehaviour.Work, "Worker"),
         [TaskType.RETREAT_HOMETOWN] = (AiBehaviour.GoHome, "Retreating"),
         [TaskType.RUN_AWAY_HOMETOWN] = (AiBehaviour.GoHome, "Retreating fast"),
         [TaskType.WANDERING_TRADER] = (AiBehaviour.Travel, "Wandering trader"),
