@@ -49,7 +49,7 @@ public sealed class Abduction
     public string? Cage { get; set; }
     /// <summary>The kidnapper was a campaign squad's when it lifted: it marches home with its squad and keeps the victim until a town of its faction (the campaign ending on the way does not drop it).</summary>
     public bool Marching { get; init; }
-    /// <summary>The town a marching carrier cages in (a site index): its campaign's home, or the home town of an AI squad that retreats with its captive; -1: any town of its faction.</summary>
+    /// <summary>The town a marching carrier gives up in when no cage there is free (a site index; it cages in any town of its faction on the way): its campaign's home, or the home town of an AI squad that retreats with its captive; -1: any town of its faction.</summary>
     public int HomeSite { get; init; } = -1;
 
     internal void Hash(ref StateHasher h)
@@ -75,7 +75,7 @@ public readonly record struct KidnapEvent(long Tick, KidnapEventKind Kind, Chara
 /// cage there; an AI squad's member starts only when a cage of its faction is in range. At the cage it lets go and imprisons the victim (<see cref="CharacterCold.Kidnapped"/>: no sentence, no bail). No
 /// free cage in the home town, or three failed walks: it drops the victim (<b>engine choice</b>; the original's give-up rule is Unknown).</item>
 /// </list>
-/// A marching carrier (a campaign's, or a squad's that lists a cannibal retreat package, which then needs no cage in range to lift) cages only in its home town (<see cref="Abduction.HomeSite"/>).
+/// A marching carrier (a campaign's, or a squad's that lists a cannibal retreat package, which then needs no cage in range to lift) cages in the first town of its faction with a free cage and gives up only in its home town (<see cref="Abduction.HomeSite"/>).
 /// What the captors then do with the captive is <see cref="CaptiveSystem"/>'s. Not built: kidnapping a sleeper out of a bed, the witnesses' kidnapping crime.
 /// </summary>
 public sealed class KidnapSystem(PopulationData data, PopulationSystem population, CarrySystem carry, KidnapSettings? settings = null) : ITickSystem, IStateHashed
@@ -251,14 +251,15 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
             case KidnapPhase.Carry:
             {
                 if (gc.Carrying != a.Victim) return End(world, a, KidnapEventKind.GaveUp);   // dropped (hit, the arm lost): the body lies there for the next one
-                // Every look the best free cage of its faction in range. A campaign squad marches home first (nothing to look for outside a town of its faction) and drops the captive when
-                // its home town has no free cage; any other carrier waits a while for one (engine choices; the original's give-up rule is Unknown).
+                // Every look the best free cage of its faction in range. A marching carrier looks only within a town of its faction (any on the way: the original's cage finder weighs
+                // the home x100 but does not require it) and drops the captive when its home town (any, without a HomeSite) has no free cage; any other carrier waits a while for one
+                // (engine choices; the original's give-up rule is Unknown).
                 if ((world.Tick + g) % Math.Max(1, Settings.LookEveryTicks) != 0) return true;
                 int town = TownOf(world, gn.Position, gc.Faction);
-                bool home = town >= 0 && (a.HomeSite < 0 || town == a.HomeSite);
-                if (a.Marching && !home) return true;
+                if (a.Marching && town < 0) return true;
                 if (CageFor(world, gn.Position, gc.Faction, a) is { } found) return ToCage(world, a, g, found);
-                return a.Marching || a.Time > Settings.PatienceSeconds ? Drop(world, a, g) : true;
+                bool giveUp = a.Marching ? a.HomeSite < 0 || town == a.HomeSite : a.Time > Settings.PatienceSeconds;
+                return giveUp ? Drop(world, a, g) : true;
             }
             case KidnapPhase.Walk:
             {
