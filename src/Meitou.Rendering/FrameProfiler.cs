@@ -456,12 +456,12 @@ public sealed class FrameProfiler : IDisposable
         overlay.Text(string.Create(CultureInfo.InvariantCulture, $"frame {frameMean:0.00} ms ({(frameMean > 0 ? 1000 / frameMean : 0):0} fps), max {Max(frameTime, cpuHead, cpuCount):0.00}"),
             x0 + pad + header.Length * cw, y0 + pad, FrameColour);
 
-        // Legend at the right: swatch, row, mean of the last frames on the CPU and the GPU, and on the CPU chart the largest frame over the whole history (a closed group's
-        // largest summed frame). A row marked + opens (a click), - closes; a closed group shows its stages' sum and is plotted as one line, an open one plots each stage.
-        float legendW = swatch + 6 + (16 + 10 + 10 + (showGpu ? 0 : 10)) * cw;
+        // Legend at the right: swatch, row, mean of the last frames on the CPU and the GPU. A row marked + opens (a click), - closes; a closed group shows its
+        // stages' sum and is plotted as one line, an open one plots each stage.
+        float legendW = swatch + 6 + (16 + 10 + 10) * cw;
         float lx = x1 - pad - legendW, ly = y0 + pad + 1.5f * lh;
         var dim = new Vector4(0.7f, 0.7f, 0.68f, 1);
-        overlay.Text($"{"",-16}{"cpu",10}{"gpu",10}{(showGpu ? "" : "cpu max"),10}", lx + swatch + 6, ly, dim);
+        overlay.Text($"{"",-16}{"cpu",10}{"gpu",10}", lx + swatch + 6, ly, dim);
         rows.Clear();
         plotted.Clear();
         string Ms(bool shown, double ms) => shown ? ms.ToString("0.00", CultureInfo.InvariantCulture) : "-";
@@ -479,13 +479,12 @@ public sealed class FrameProfiler : IDisposable
             overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[s]);
             if (Plots(s)) plotted.Add((hist[s], Colours[s], s == Total ? 2f : 1.5f, head, count));
             string label = indent + (expands ? partsOpen ? "- " : "+ " : "  ") + Label(s);
-            overlay.Text($"{label,-16}{Ms(OnCpu(s), Mean(cpu[s], cpuHead, cpuCount, meanFrames)),10}{Ms(gpuCount > 0 && OnGpu(s), Mean(gpu[s], gpuHead, gpuCount, meanFrames)),10}" +
-                (showGpu ? "" : $"{Ms(count > 0 && Plots(s), Max(hist[s], head, count)),10}"), lx + swatch + 6, top, DebugOverlay.TextColour);
+            overlay.Text($"{label,-16}{Ms(OnCpu(s), Mean(cpu[s], cpuHead, cpuCount, meanFrames)),10}{Ms(gpuCount > 0 && OnGpu(s), Mean(gpu[s], gpuHead, gpuCount, meanFrames)),10}",
+                lx + swatch + 6, top, DebugOverlay.TextColour);
             if (!expands || !partsOpen) return;
             // Its parts, render thread only (the GPU work they record is in the passes that run it); not plotted.
             for (int p = 0; p < parts.Length; p++)
-                overlay.Text($"{indent + "    " + StageClock.PartNames[p],-16}{Ms(true, Mean(parts[p], cpuHead, cpuCount, meanFrames)),10}{"",10}" +
-                    (showGpu ? "" : $"{Ms(true, Max(parts[p], cpuHead, cpuCount)),10}"), lx + swatch + 6, NextRow(-1), dim);
+                overlay.Text($"{indent + "    " + StageClock.PartNames[p],-16}{Ms(true, Mean(parts[p], cpuHead, cpuCount, meanFrames)),10}{"",10}", lx + swatch + 6, NextRow(-1), dim);
         }
         for (int gi = 0; gi < Groups.Length; gi++)
         {
@@ -509,7 +508,7 @@ public sealed class FrameProfiler : IDisposable
                 overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[stages[0]]);
                 if (shown) plotted.Add((sum, Colours[stages[0]], 1.5f, head, count));
             }
-            overlay.Text($"{(open ? "- " : "+ ") + name,-16}{Ms(anyCpu, c),10}{Ms(gpuCount > 0 && anyGpu, g),10}" + (showGpu ? "" : $"{Ms(count > 0 && shown, Max(sum, head, count)),10}"),
+            overlay.Text($"{(open ? "- " : "+ ") + name,-16}{Ms(anyCpu, c),10}{Ms(gpuCount > 0 && anyGpu, g),10}",
                 lx + swatch + 6, top, DebugOverlay.TextColour);
             if (open) foreach (int s in stages) StageRow(s, "  ");
         }
