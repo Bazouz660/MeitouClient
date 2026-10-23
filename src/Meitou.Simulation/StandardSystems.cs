@@ -167,7 +167,8 @@ public static class StandardSystems
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
         if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid) { Deeds = deeds, Relations = Has(StandardParts.Aggro) ? data.Relations : null });
-        if (Has(StandardParts.Body)) { systems.Add(new BodySystem(data.Bodies.Constants, data.BodyOptions, o.BodyTimeScale, data.Db)); systems.Add(new WeatherSystem(data.Bodies.Constants)); }
+        WeatherSystem? weather = null;
+        if (Has(StandardParts.Body)) { systems.Add(new BodySystem(data.Bodies.Constants, data.BodyOptions, o.BodyTimeScale, data.Db)); systems.Add(weather = new WeatherSystem(data.Bodies.Constants) { Db = data.Db, Buildings = o.RagdollEnvironment }); }
         Meitou.Simulation.Carrying.CarrySystem? carry = null;
         Meitou.Simulation.Kidnap.KidnapSystem? kidnap = null;
         Meitou.Simulation.Ragdolls.RagdollSystem? ragdolls = null;
@@ -233,6 +234,7 @@ public static class StandardSystems
         if (Has(StandardParts.Dialogue)) systems.Add(talk = new Meitou.Simulation.Dialogue.DialogueSystem(data, o.Dialogue, population));
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
+        if (weather is not null) weather.Talk = talk;
         if (arrest is not null) arrest.Talk = talk;
         return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Captives = captives, Crime = crime, Arrest = arrest, Locks = locks, Beds = beds, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
     }

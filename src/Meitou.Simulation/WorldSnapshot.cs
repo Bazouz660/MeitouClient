@@ -149,6 +149,9 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterId Carrying { get; init; } = CharacterId.None;
     /// <summary>The goal the AI is acting out, in the game's words (<c>Patrolling town</c>, <c>Shopkeeper</c>); null when the AI does not run the character now.</summary>
     public string? Activity { get; init; }
+    /// <summary>The weather effect that hurt this player character last tick and the protection it shows (the status notice, docs/formats/weather.md); None otherwise. Display only.</summary>
+    public WeatherNotice WeatherNotice { get; init; }
+    public float WeatherNoticeProtection { get; init; }
     /// <summary>
     /// A sneaking player character's state for its stealth tag (docs/game/perception.md "Spotting a sneaker"): <see cref="StealthExposure.Detected"/> seen,
     /// <see cref="StealthExposure.Noticed"/> almost seen, anything lower hidden; null when not a sneaking player character.
@@ -191,6 +194,8 @@ public sealed record MannedTurret(string Key, string BuildingId, Vector3 Positio
 {
     public bool Simulated { get; init; }
     public Vector3? Aim { get; init; }
+    /// <summary>The turning of its parts so far, radians, in <c>TurretGun.Parts</c> order (a simulated turret only); the renderer turns the meshes by it.</summary>
+    public float[]? Angles { get; init; }
 }
 
 /// <summary>The trained stats the HUD shows for the selection.</summary>

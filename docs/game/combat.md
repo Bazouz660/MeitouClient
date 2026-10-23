@@ -106,6 +106,33 @@ ends leaves 0.2 s.
   The CombatClass constructor also clamps the CONSTANTS value to 1..5.
 - A slot is granted by `FUN_140666a30` and kept until the swing's last blow (`FUN_14060a590` → `FUN_140665910`).
   Hitting someone removes them from your own slots.
+- **The answer to an ask** (`FUN_140666a30`, CombatClass vtable +0x28). `FUN_14060c670` calls it on the *target's* CombatClass with the asker, the
+  asker's fighting stat (`FUN_140885e40`) and its +0x14c timer; the return value is the asker's planned next state (+0x1f4): 0 attack, 1 defend,
+  5 circle. **Observed**, in order: target's fight task not running (+0x130) → 0; target attacking (state 0, or deciding with plan 0) while
+  `FUN_140665420` (its +0x140 value, read only when the asker's hand passes a test) is strictly between 0 and 1 → 1; no free slot
+  (`FUN_140666310`) → 5; target stumbling (state 8, or deciding with plan 8) or `FUN_140435570` true (its animation object's +0x228 test) →
+  **mass combat XP** to the target, take the slot again, +0x120 = 1 → 0; target without a target (+0x2a0 = 0xb) → plan 2, slot → 0 / 5;
+  target AI object (+0x298) vfunc 0x10 true (**Unknown**) with +0x144 clear: target defending → XP, slot → 0 / 5; target attacking → XP, then
+  a random contest `FUN_140665370` of the two fighting stats (each side's factor 1 + |difference| × a constant for the lower one, two uniform
+  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases make the target plan its own next state (not decoded further).
+- **Mass combat XP** (`FUN_1408c5e80`) therefore fires on the *target's* stats, once per ask answered in those three cases: being hit at while
+  stumbling or already fighting someone. It adds exp gain multiplier × 0.05 to the save-only stat (no consumer found), so it changes nothing
+  visible; Meitou does not call `XpService.MassCombat` (the stat is not read anywhere).
+- **Target selection** (`FUN_140666ee0`, called from the deciding state; **Observed**). The current target is kept while the pick timer (+0x2f0,
+  seconds) is below 1.0 (0.3 when the order object's +299 flag is set, the Hold order's id 0xc in `FUN_1405caa50`). Otherwise the candidates are
+  collected from the character's target lists (the planner's current target and the AI's sensed enemies; no candidate and no entry → state 9, no
+  target), each list is scored by `FUN_14059e300` and the best score wins; with the order object's range flag a winner more than 400 away is dropped.
+  The scorer skips candidates failing the dead/ally/relation tests (`FUN_1407d1440`, `FUN_1408569a0`, `FUN_1406b2630`; animals pass), then adds
+  with the AI settings weights (object at CombatClassAI +0x310, values **Unknown**): the stickiness weight (+0x154; ×4 when the chooser is a
+  player squad member) for the current target; minus +0x158 when the candidate's animation object has +0x228 set; minus (candidate's engaged
+  count + overflow count, less 1 when the chooser is already in it) × +0x168 (× 0.35 and +2 when the candidate's order flag +0x12a is set, which
+  is the Taunt order's id 0xe in `FUN_1405caa50`; −1 for flag +0x12c); +10 for the chooser's remembered attacker when the candidate has under 2
+  engaged; ×0.01 beyond 40 units when the chooser's +299 flag is set; then, when the post and area test `FUN_140598630` passes
+  ([perception](perception.md#the-attack-on-sight-tests)), a proximity term (1 − d / R) × (+0x15c, +0x160 in mode 2) with R = 2 × (radii
+  sum) or radii + 200 by the chooser's mode `FUN_14059a030`, ×20 for some chooser kind (vfunc 0x360), plus +0x16c unless the candidate is already
+  fighting (halved when its vfunc 0x1e8 value is 0 or less); ×0.1 for a candidate flagged +0x4f; ×3 for a turret gunner when the chooser has no
+  vehicle target; −10 for a downed candidate. Meitou keeps its own pick (the Taunt rule is in [simulation](../simulation.md#order-toggles));
+  the weights and several predicates stay **Unknown**.
 - **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
   centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
@@ -361,14 +388,22 @@ traced.
 
 ### Unknowns of the ranged path
 
-The ranged-or-melee switch; the reload animation against the timer; a character's hit shape
+**The ranged-or-melee switch** (**Observed**; no single function decides it). The Ranged order button sets a per-character flag (Character `+0x450` object `+0x129`,
+`FUN_1405caa50` id 0x11, from the panel's click `FUN_140721550` through `FUN_1407f3880`). The shooting gate `FUN_1407f2840` needs it, then both arms working, a ranged weapon in the
+hands or at the back, and `vfunc 0x368` of the character zero (the player-side test `FUN_1405caa50` also uses). Where the gate holds, the player's attack orders (5, 0x10, 0x3d) become
+the shoot orders 0x106 / 0x107 / 0x10a (`FUN_1407f9e20`), i.e. the Shooting tasks 262 / 263 / 266 ([ai-tasks](ai-tasks.md)), whose list A needs `!iAmBeingMeleeAttacked immediate`,
+`hasTwoWorkingArm` and `hasWeaponEquipped`; where it does not, attack orders stay melee. The attack-on-sight post and area test `FUN_140598630` skips its 80 / 140 unit melee
+reach limits when the gate holds, so a Ranged-on crossbowman engages from afar. Nothing was found that switches back by the target's distance: melee comes from the planner
+dropping the Shooting task when a melee attacker is on the character (the condition's writer is **Unknown**). Meitou: `CombatSystem.ChooseMode` follows that for the Ranged order
+(crossbow unless dry or a melee attacker is on it) and, with the order off, uses its distance rule (an **engine choice**; the original, with the flag off, never issues the shoot
+orders of the player's characters). The flag's default for NPCs and whether the planner's own Shooting rows read it are **Unknown**. Other unknowns: the reload animation against the timer; a character's hit shape
 (capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; how NPC crossbowmen get their bolts.
 (The trigger flag `+0x34` is set by the controller tick itself every tick, so a shot leaves in the frame of its decision: [Turrets](#turrets), **Observed**.)
 
 ## Unknowns
 
 - KO wake-up, flags `+0x162`/`+0x163`, and the roles of hunger and "fed" in recovery; (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)); where the KO point (`140643ae0`) is consumed.
-- Target selection (`FUN_140666ee0`), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
+- Target selection weights and predicates ([Attack slots](#attack-slots-and-circling)), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
   min/max gap (the defence pick `140887970` tests no skill, **Observed**). The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
 - Turrets: see [Turrets](#turrets) for its own unknowns; the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).

@@ -130,6 +130,12 @@ public sealed class CharacterCold
     public Meitou.Data.World.WeatherAffecting Weather { get; set; }
     public float WeatherStrength { get; set; }
     public float WeatherProtection { get; set; }
+    /// <summary>
+    /// The status notice a player character's weather update put up this tick (the original's short status string, Character <c>+0x548</c>, cleared at the start of every weather update and set when the
+    /// effect hurt it, docs/formats/weather.md "Effects on characters") and the protection it shows. Derived each tick: not hashed, not saved.
+    /// </summary>
+    public WeatherNotice WeatherNotice { get; set; }
+    public float WeatherNoticeProtection { get; set; }
     /// <summary>Where the last blood decal of its trail was left, and the drip build-up while it bleeds being carried (<see cref="BodySystem"/>, docs/game/blood-decals.md). Display only: not hashed, not saved.</summary>
     public System.Numerics.Vector3 BloodMark { get; set; }
     public float BloodDrip { get; set; }

@@ -69,6 +69,39 @@ sealed partial class PlayerInterface
         _ => Loc.Tr("Aimless"),
     };
 
+    /// <summary>
+    /// The weather notice of a hurt player character (the medical object's short and long status strings, <c>FUN_1406472c0</c> and its siblings, docs/formats/weather.md): the short
+    /// word for the State line and the long sentence for its tooltip. A protection <paramref name="p"/> below 0.02 is none, from 0.99 total; the percentage is rounded (<b>engine choice</b>).
+    /// </summary>
+    internal static (string Short, string Long) WeatherText(WeatherNotice notice, float p)
+    {
+        string percent = Loc.Tr("{1,num}%", MathF.Round(Math.Clamp(p, 0, 1) * 100));
+        switch (notice)
+        {
+            case WeatherNotice.AcidWater: return (Loc.Tr("Acid!"), Loc.Tr("You are currently submersed in acid, get out of there as soon as you can."));
+            case WeatherNotice.AcidFeet: return (Loc.Tr("Feet Burning!"), Loc.Tr("The ground here is acidic and burns your feet, find some footwear!"));
+        }
+        string head = notice switch
+        {
+            WeatherNotice.AcidRain => Loc.Tr("Acid Rain ({1} protection)", percent),
+            WeatherNotice.Dust => Loc.Tr("Dust Storm ({1} protection)", percent),
+            WeatherNotice.Burning => Loc.Tr("Burning ({1} protection)", percent),
+            _ => Loc.Tr("Poison Gas ({1} protection)", percent),
+        };
+        string text = notice switch
+        {
+            WeatherNotice.AcidRain => p < 0.02f ? Loc.Tr("It is currently raining acid, and you aren't wearing anything to protect your skin.  Best to find shelter soon.")
+                : p < 0.99f ? Loc.Tr("It is currently raining acid, your gear is providing you with {1} protection.", percent) : Loc.Tr("It is currently raining acid, but your gear is providing you with total protection."),
+            WeatherNotice.Dust => p < 0.02f ? Loc.Tr("You are in a dust storm, it affects your accuracy in combat.")
+                : p < 0.99f ? Loc.Tr("You are in a dust storm, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from the storm."),
+            WeatherNotice.Burning => p < 0.02f ? Loc.Tr("You are currently on fire.")
+                : p < 0.99f ? Loc.Tr("You are currently on fire, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from being horribly burnt."),
+            _ => p < 0.02f ? Loc.Tr("You are currently breathing in poison gas.")
+                : p < 0.99f ? Loc.Tr("You are currently breathing in poison gas, your gear is providing you with {1} protection.", percent) : Loc.Tr("Your gear is protecting you from breathing in any poisons."),
+        };
+        return (head, text);
+    }
+
     /// <summary>The state lines (State, Goal, Encumbrance) of the selected character.</summary>
     static HudLine[] StateLines(CharacterSnapshot lead)
     {
@@ -80,8 +113,14 @@ sealed partial class PlayerInterface
             state = PrisonText(prison);
             colour = BadColour;
         }
+        string? tooltip = null;
+        if (body is not { Dead: true } && lead.Prison is null && lead.WeatherNotice != WeatherNotice.None)
+        {
+            (state, tooltip) = WeatherText(lead.WeatherNotice, lead.WeatherNoticeProtection);
+            colour = lead.WeatherNoticeProtection > 0.9f && lead.WeatherNotice is not (WeatherNotice.AcidWater or WeatherNotice.AcidFeet) ? GoodColour : BadColour;
+        }
         int encumbrance = (int)((1 - Math.Clamp(lead.Hud?.Encumbrance ?? 1, 0, 1)) * 100);
-        return [new(Loc.Tr("State:"), state, ValueColour: colour), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
+        return [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
             new(Loc.Tr("Encumbrance:"), encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
     }
 

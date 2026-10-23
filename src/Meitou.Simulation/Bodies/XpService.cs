@@ -178,8 +178,9 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         return stats[stat] = skill + dtSeconds / secondsPerPoint * constants.ExpGainMultiplier * medicRace.StatMultiplier(patientRace.HealStat);
     }
 
-    /// <summary>Mass combat (<c>FUN_1408c5e80</c>, <b>Verified</b> decompile): +0x9c rises by the exp gain multiplier x 0.05 per call, added straight (no core curve). Its one caller is in the
-    /// combat round (<c>FUN_140666a30</c>); when it fires is not decoded, so nothing calls this yet.</summary>
+    /// <summary>Mass combat (<c>FUN_1408c5e80</c>, <b>Verified</b> decompile): +0x9c rises by the exp gain multiplier x 0.05 per call, added straight (no core curve). Its one caller is the answer to
+    /// a slot ask (<c>FUN_140666a30</c>, docs/game/combat.md "Attack slots and circling"): the asked character's, when it is stumbling or already fighting. The stat is save-only (nothing
+    /// reads it), so nothing calls this.</summary>
     public float MassCombat(CharacterStats stats) =>
         stats[StatsEnumerated.MassCombat] += constants.ExpGainMultiplier * 0.05f;
 

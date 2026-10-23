@@ -4,11 +4,11 @@ using Meitou.Data.Fcs;
 namespace Meitou.Data.Gameplay.Combat;
 
 /// <summary>
-/// A turret part that turns to the target (a BUILDING_PART with <c>rotation function</c> ROTATION_TARGET): <paramref name="Parent"/> is the index of the part it hangs from (-1: the building),
+/// A turret part that turns to the target (a BUILDING_PART with <c>rotation function</c> ROTATION_TARGET): <paramref name="Parent"/> is the index of the part it hangs from (-1: the building), <paramref name="Id"/> is the BUILDING_PART record (the renderer finds the part's mesh by it),
 /// <paramref name="Yaw"/> says whether it turns about its Y axis (<c>rotation axis</c> Y: the hinge) or pitches about X (the gun), <paramref name="Offset"/> is its place in the parent's frame
 /// (<c>offset X/Y/Z</c>, before the building's scale).
 /// </summary>
-public readonly record struct TurretPart(int Parent, bool Yaw, Vector3 Offset);
+public readonly record struct TurretPart(int Parent, bool Yaw, Vector3 Offset, string Id = "");
 
 /// <summary>
 /// A turret building's gun as the original builds it (docs/game/combat.md "Turrets"): the <c>gun turret</c> GUN_DATA (<c>TurretBuilding</c> constructor <c>FUN_14043cdb0</c>), the building's
@@ -81,7 +81,7 @@ public static class TurretRig
             var offset = carried + (part.GetBool("is for position marker") ? Vector3.Zero : new Vector3(part.GetFloat("offset X"), part.GetFloat("offset Y"), part.GetFloat("offset Z")));
             if (part.GetInt("rotation function") == 5)
             {
-                parts.Add(new TurretPart(parent, part.GetInt("rotation axis", 2) == 1, offset));
+                parts.Add(new TurretPart(parent, part.GetInt("rotation axis", 2) == 1, offset, part.StringId));
                 Collect(db, part, parts.Count - 1, Vector3.Zero, parts, depth + 1);
             }
             else Collect(db, part, parent, offset, parts, depth + 1);

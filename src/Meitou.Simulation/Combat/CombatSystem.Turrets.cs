@@ -6,8 +6,8 @@ using Meitou.Data.World;
 
 namespace Meitou.Simulation.Combat;
 
-/// <summary>A manned turret as the snapshot shows it: its BUILDING and GUN_DATA records, the point it aims at (null: none yet) and the barrel's turn.</summary>
-public readonly record struct TurretView(string BuildingId, string GunId, Vector3 Position, float Yaw, Vector3? Aim);
+/// <summary>A manned turret as the snapshot shows it: its BUILDING and GUN_DATA records, the point it aims at (null: none yet) and the turn of its parts (radians, <c>TurretGun.Parts</c> order).</summary>
+public readonly record struct TurretView(string BuildingId, string GunId, Vector3 Position, float Yaw, Vector3? Aim, float[]? Angles = null);
 
 /// <summary>
 /// The turrets (docs/game/combat.md "Turrets", docs/simulation.md "Combat", turrets). The original runs a turret through its gunner's ranged controller (<c>Task_UseTurret</c>
@@ -71,7 +71,7 @@ public sealed partial class CombatSystem
 
     /// <summary>The turret a character mans as of the last tick (its <see cref="CharacterCold.Gunning"/> key), for the snapshot; null when it mans none.</summary>
     public TurretView? TurretOf(string? key) =>
-        key is not null && turrets.TryGetValue(key, out var t) ? new TurretView(t.Gun.BuildingId, t.Gun.Gun.StringId, t.Position, t.Yaw, t.Aim) : null;
+        key is not null && turrets.TryGetValue(key, out var t) ? new TurretView(t.Gun.BuildingId, t.Gun.Gun.StringId, t.Position, t.Yaw, t.Aim, [.. t.Angles]) : null;
 
     void HashTurrets(ref StateHasher h)
     {

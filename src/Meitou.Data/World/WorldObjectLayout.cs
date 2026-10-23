@@ -33,9 +33,19 @@ public sealed record PlacedMesh(string MeshPath, Matrix4x4 Transform, GameRecord
     /// <summary>For a door's parts: the door's index in the building's <c>doors</c> list (the save's suffix, the fixture's <c>#i</c>); -1 for every other part.</summary>
     public int DoorIndex { get; init; } = -1;
 
+    /// <summary>For a turret's parts that turn to the target and those hanging from them: the joints above the part (and its own), outermost first; null for every other part.</summary>
+    public IReadOnlyList<TurnJoint>? Joints { get; init; }
+
     /// <summary>For an object of a building layout (sign, furniture): the placement id of the building it belongs to, whose interior view it follows.</summary>
     public string? ParentPlacementId { get; init; }
 }
+
+/// <summary>
+/// A joint of a turret (a BUILDING_PART with <c>rotation function</c> ROTATION_TARGET) in a laid-out building: <paramref name="PartId"/> is the part record, <paramref name="Pivot"/> its node's world place and
+/// <paramref name="Axis"/> the world direction of the axis it turns about (its node's Y for a yaw part, X for the gun's pitch), both of the building as placed (angles 0). A mesh's pose is its placement
+/// times, from its innermost joint out to the outermost, a turn about that joint's pivot and axis by the joint's angle (<c>TurretRig</c>'s angles).
+/// </summary>
+public readonly record struct TurnJoint(string PartId, Vector3 Pivot, Vector3 Axis, bool Yaw);
 
 /// <summary>A LIGHT instance of a placed building (docs/formats/lights.md); <see cref="WorldLights"/> turns it into a <see cref="WorldLight"/>.</summary>
 /// <param name="Light">The LIGHT record.</param>
@@ -189,15 +199,15 @@ public static class WorldObjectLayout
     }
 
     /// <summary>One level of the game's part creation: choose from <paramref name="holder"/>'s parts, create each, recurse, then the holder's instances.</summary>
-    static void AddParts(Assembly a, GameRecord holder, Matrix4x4 parentNode, int depth, string list = "parts")
+    static void AddParts(Assembly a, GameRecord holder, Matrix4x4 parentNode, int depth, string list = "parts", IReadOnlyList<TurnJoint>? joints = null)
     {
         if (depth > 8) return;
         foreach (var r in ChooseParts(holder.GetReferences(list), id => a.Db.Find(id) is not null, a.Random))
         {
             if (a.Db.Find(r.TargetStringId) is not { Type: FcsRecordType.BUILDING_PART } part) continue;
-            // Children hang under the part's node, or under the building's when the part has no entity.
-            var node = AddPart(a, holder, part, parentNode);
-            AddParts(a, part, node ?? a.Node, depth + 1);
+            // Children hang under the part's node, or under the building's when the part has no entity (they then keep the joints above the part).
+            var node = AddPart(a, holder, part, parentNode, joints, out var below);
+            AddParts(a, part, node ?? a.Node, depth + 1, "parts", below);
         }
         if (list == "parts") AddInstances(a, holder, parentNode);   // the building's own instances once, with its parts
     }
@@ -206,8 +216,9 @@ public static class WorldObjectLayout
     /// A part's scene node and mesh. Returns the node children attach to, or null when the part has no entity (they then attach
     /// to the building's node).
     /// </summary>
-    static Matrix4x4? AddPart(Assembly a, GameRecord holder, GameRecord part, Matrix4x4 parentNode)
+    static Matrix4x4? AddPart(Assembly a, GameRecord holder, GameRecord part, Matrix4x4 parentNode, IReadOnlyList<TurnJoint>? joints, out IReadOnlyList<TurnJoint>? below)
     {
+        below = joints;
         var mesh = part.GetPath("phs or mesh");
         bool entity = true;
         if (a.State.Destroyed)
@@ -243,7 +254,14 @@ public static class WorldObjectLayout
         local *= Matrix4x4.CreateTranslation(offset);
         var node = local * parentNode;
         if (!entity) return null;
-        a.Result.Add(new PlacedMesh(mesh, node, part, a.Building, a.Identity, PlacedKind.BuildingPart) { Material = PartMaterial(a, part), Floor = Math.Clamp(part.GetInt("building floor"), 0, 3), Interior = a.Interior, DoorIndex = a.DoorIndex });
+        // A part that turns to the target (ROTATION_TARGET) is a joint: it and everything hanging from it turn about its node (see TurnJoint).
+        if (part.GetInt("rotation function") == 5)
+        {
+            bool yaw = part.GetInt("rotation axis", 2) == 1;
+            var axis = yaw ? new Vector3(node.M21, node.M22, node.M23) : new Vector3(node.M11, node.M12, node.M13);
+            if (axis.LengthSquared() > 1e-12f) below = [.. joints ?? [], new TurnJoint(part.StringId, node.Translation, Vector3.Normalize(axis), yaw)];
+        }
+        a.Result.Add(new PlacedMesh(mesh, node, part, a.Building, a.Identity, PlacedKind.BuildingPart) { Material = PartMaterial(a, part), Floor = Math.Clamp(part.GetInt("building floor"), 0, 3), Interior = a.Interior, DoorIndex = a.DoorIndex, Joints = below });
         return node;
     }
 

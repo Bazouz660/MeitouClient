@@ -15,13 +15,42 @@ namespace Meitou.Simulation;
 /// <item>The region's weather, while exposed (outdoors or on top of a building) and not immune: its kind and strength go on the character for sight and hearing
 /// (<see cref="CharacterCold.Weather"/>); a dust storm sets the medical dust value (accuracy), acid rain burns every part. Rain, burning and gas weathers only do the first.</item>
 /// </list>
-/// Protection is the sum of the worn pieces' <c>weather protection amount</c> for the kind. Not modelled: the status-bar notices and the dialogue events (61 acid feet, 62 acid rain,
-/// 63 acid water, 65 poison gas, 69 burning), the acid-shelter test (a building with <c>is shelter</c> over the character stops acid rain), the eye-shielding overlay
-/// animation, the smoke effect on a burnt character and the global switch at <c>DAT_142134690+0x2f0</c> that skips it all (<b>Unknown</b>).
+/// Protection is the sum of the worn pieces' <c>weather protection amount</c> for the kind. A player character that is hurt gets the status notice ("Acid!", "Dust Storm (N% protection)"...,
+/// <see cref="CharacterCold.WeatherNotice"/>, cleared at the start of each update as the original clears it), and any character that is hurt fires its dialogue event (61 acid feet, 62 acid rain,
+/// 63 acid water, 65 poison gas, 69 burning) at <see cref="Talk"/>. Acid rain is stopped by a shelter (<see cref="Sheltered"/>). Not modelled: the eye-shielding overlay animation, the smoke
+/// effect on a burnt character and the global switch at <c>DAT_142134690+0x2f0</c> that skips it all (<b>Unknown</b>).
 /// </summary>
 public sealed class WeatherSystem(GameConstants constants) : ITickSystem
 {
     public GameConstants Constants { get; } = constants;
+
+    /// <summary>The dialogue system the hurt characters' events go to (null: none are fired).</summary>
+    public Dialogue.DialogueSystem? Talk { get; set; }
+
+    /// <summary>The records, to read <c>is shelter</c> of the player's buildings (null: no building shelters).</summary>
+    public Meitou.Data.GameDatabase? Db { get; set; }
+
+    /// <summary>The buildings' collision, for the shelter's roof (null: no building shelters; the combat system's, <see cref="Combat.CombatSystem.Buildings"/>).</summary>
+    public Ragdolls.IRagdollEnvironment? Buildings { get; set; }
+
+    /// <summary>
+    /// The dialogue events' pause per character and event, in seconds (<b>engine choice</b>). The original fires its weather events every tick the effect hurts and relies on the event's own
+    /// refusals (<c>FUN_140684990</c>: the owner already talking, the lines' repetition limits); here a character that was just offered an event is not offered it again for this long, so a
+    /// long storm costs one attempt per period instead of one per tick.
+    /// </summary>
+    public const float EventPause = 8;
+
+    /// <summary>The event numbers of the weather (docs/game/dialogue.md): acid feet, acid rain, acid water, poison gas, burning.</summary>
+    public const int AcidFeetEvent = 61, AcidRainEvent = 62, AcidWaterEvent = 63, GasEvent = 65, BurningEvent = 69;
+
+    /// <summary>How far a shelter's roof may be from the character (<b>engine choice</b>: the original's ray asks the building it hits, here the nearest complete shelter of the player's must be this close).</summary>
+    public const float ShelterReach = 120;
+
+    /// <summary>The roof must be more than this over the character's feet (the original's <c>+10</c>).</summary>
+    public const float RoofClearance = 10;
+
+    readonly Dictionary<(CharacterId, int), long> eventAfter = [];
+    readonly Dictionary<string, bool> shelterRecords = new(StringComparer.Ordinal);
 
     public void SlowWorld(World world)
     {
@@ -35,6 +64,7 @@ public sealed class WeatherSystem(GameConstants constants) : ITickSystem
             if (!next[i].Alive || table.Cold(i) is not { } cold) continue;
             cold.Weather = WeatherAffecting.None;
             cold.WeatherStrength = cold.WeatherProtection = 0;
+            cold.WeatherNotice = WeatherNotice.None;
             if (cold.Medical is not { Dead: false } medical || cold.Race is not { } race) continue;
             var at = next[i].Position;
             if (source.At(at.X, at.Z) is not { } here) continue;
@@ -46,9 +76,12 @@ public sealed class WeatherSystem(GameConstants constants) : ITickSystem
                 var carrier = cold.CarriedBy;
                 int water = cold.InSomething != Locks.HeldState.None ? 0
                     : table.IsAlive(carrier) && table.Cold(carrier.Slot) is { } c ? c.WaterState : cold.WaterState;
-                if (water == 3) medical.AcidWater(dt * here.AcidicWater, Constants);
-                else if (outdoors && !medical.Incapacitated && carrier.IsNone && cold.InSomething == Locks.HeldState.None && Barefoot(cold, race))
-                    medical.AcidGround(dt * here.AcidicGround, race, Constants);
+                if (water == 3)
+                {
+                    if (medical.AcidWater(dt * here.AcidicWater, Constants)) Hurt(world, i, cold, WeatherNotice.AcidWater, 0, AcidWaterEvent);
+                }
+                else if (outdoors && !medical.Incapacitated && carrier.IsNone && cold.InSomething == Locks.HeldState.None && Barefoot(cold, race)
+                    && medical.AcidGround(dt * here.AcidicGround, race, Constants)) Hurt(world, i, cold, WeatherNotice.AcidFeet, 0, AcidFeetEvent);
             }
 
             // Local effects: the last unit of each kind that reaches the character (a later one replaces an earlier one's strength).
@@ -60,8 +93,16 @@ public sealed class WeatherSystem(GameConstants constants) : ITickSystem
                     if (z.Affect is not (WeatherAffecting.Burning or WeatherAffecting.Gas) || Vector3.DistanceSquared(z.Position, at) > z.Radius * z.Radius) continue;
                     if (z.Affect == WeatherAffecting.Burning) burning = z.Strength; else gas = z.Strength;
                 }
-                if (burning > 0 && !race.ImmuneTo(WeatherAffecting.Burning)) medical.Burning(dt * burning, Protection(cold, WeatherAffecting.Burning));
-                if (gas > 0 && !race.ImmuneTo(WeatherAffecting.Gas)) medical.Gas(dt * gas, Protection(cold, WeatherAffecting.Gas), Constants);
+                if (burning > 0 && !race.ImmuneTo(WeatherAffecting.Burning))
+                {
+                    float p = Protection(cold, WeatherAffecting.Burning);
+                    if (medical.Burning(dt * burning, p)) Hurt(world, i, cold, WeatherNotice.Burning, p, BurningEvent);
+                }
+                if (gas > 0 && !race.ImmuneTo(WeatherAffecting.Gas))
+                {
+                    float p = Protection(cold, WeatherAffecting.Gas);
+                    if (medical.Gas(dt * gas, p, Constants)) Hurt(world, i, cold, WeatherNotice.Gas, p, GasEvent);
+                }
             }
 
             // The region's weather.
@@ -71,9 +112,55 @@ public sealed class WeatherSystem(GameConstants constants) : ITickSystem
             cold.Weather = kind;
             cold.WeatherStrength = here.Strength;
             cold.WeatherProtection = protection;
-            if (kind == WeatherAffecting.DustStorm) medical.DustStorm(here.Strength, protection);
-            else if (kind == WeatherAffecting.Acid) medical.AcidRain(dt, protection, Constants);
+            if (kind == WeatherAffecting.DustStorm)
+            {
+                medical.DustStorm(here.Strength, protection);
+                // The dust notice shows while the storm still reaches it through its gear: s x (1 - P) above 0 (FUN_140648ef0's caller reads the stored value).
+                if (cold.IsPlayer && here.Strength * (1 - protection) > 0) (cold.WeatherNotice, cold.WeatherNoticeProtection) = (WeatherNotice.Dust, protection);
+            }
+            else if (kind == WeatherAffecting.Acid && !Sheltered(world, i, at))
+            {
+                if (medical.AcidRain(dt, protection, Constants)) Hurt(world, i, cold, WeatherNotice.AcidRain, protection, AcidRainEvent);
+            }
         }
+    }
+
+    /// <summary>A hurt character: the status notice for a player character, and the weather's dialogue event for any (<see cref="EventPause"/> apart).</summary>
+    void Hurt(World world, int slot, CharacterCold cold, WeatherNotice notice, float protection, int ev)
+    {
+        if (cold.IsPlayer) (cold.WeatherNotice, cold.WeatherNoticeProtection) = (notice, protection);
+        if (Talk is null) return;
+        var id = world.Characters.IdOf(slot);
+        if (eventAfter.TryGetValue((id, ev), out long after) && world.Tick < after) return;
+        if (eventAfter.Count > 4096) eventAfter.Clear();
+        eventAfter[(id, ev)] = world.Tick + (long)MathF.Ceiling(EventPause / world.TickSeconds);
+        Talk.FireEvent(world, id, CharacterId.None, ev);
+    }
+
+    /// <summary>
+    /// Whether a roof of a shelter is over the character (<c>FUN_1405cf790</c>: a ray down from 1000 above hits a building more than 10 over the feet whose record has <c>is shelter</c>).
+    /// <b>Engine choice</b>: the collision query does not say which building a triangle belongs to, so a player's complete building with <c>is shelter</c> within <see cref="ShelterReach"/> of the
+    /// character is the one assumed hit, and the ray counts when it meets any building's collision more than <see cref="RoofClearance"/> over the feet. Buildings of the towns are not asked
+    /// (the base game has none with the flag; the three that have it are the player's tents of a mod).
+    /// </summary>
+    bool Sheltered(World world, int slot, Vector3 at)
+    {
+        if (Db is null || Buildings is null || world.Buildings.Count == 0) return false;
+        bool near = false;
+        float reach2 = ShelterReach * ShelterReach;
+        foreach (var site in world.Buildings.All)
+        {
+            if (!site.Complete || site.Destroyed || site.Ruined || Vector2.DistanceSquared(new Vector2(site.Position.X, site.Position.Z), new Vector2(at.X, at.Z)) > reach2) continue;
+            if (!shelterRecords.TryGetValue(site.Record, out bool shelter)) shelterRecords[site.Record] = shelter = Db.Find(site.Record)?.GetBool("is shelter") == true;
+            if (!shelter) continue;
+            near = true;
+            break;
+        }
+        if (!near) return false;
+        var from = new Vector3(at.X, at.Y + 1000, at.Z);
+        var seg = new Vector3(0, -(1000 - RoofClearance), 0);
+        Combat.SolidHits.Hit(world.Walkability, Buildings, from, seg, 50, out bool building);
+        return building;
     }
 
     /// <summary>
@@ -114,3 +201,6 @@ public sealed class WeatherSystem(GameConstants constants) : ITickSystem
         _ => 1,
     };
 }
+
+/// <summary>The status notice of a weather effect that hurt a player character this tick (docs/formats/weather.md "Effects on characters"); the HUD words it.</summary>
+public enum WeatherNotice : byte { None, AcidWater, AcidFeet, AcidRain, Dust, Burning, Gas }
