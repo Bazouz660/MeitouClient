@@ -166,6 +166,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public Matrix4x4 World, PreviousWorld;
         public bool HasWorld;
         public long Posed = -1, Seen;
+        /// <summary>The pose-rate period the character was last seen in (<see cref="PoseRangeSteps"/>).</summary>
+        public long PoseBucket = long.MinValue;
         /// <summary>What the last update drew it with, for picking (<see cref="RayHit"/>): its asset, weapon, bounding sphere, and whether it is drawn in the world.</summary>
         public CharacterAsset? Asset;
         public bool WeaponDrawn, RangedDrawn, InWorld;
@@ -176,10 +178,20 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     }
 
     readonly Dictionary<long, CharState> states = [];
-    /// <summary>Characters farther than these distances are posed every 2nd, 4th and 8th frame (a still holds the last palette); 0: every frame.</summary>
+    /// <summary>
+    /// Characters farther than these distances from <see cref="Focus"/> are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
+    /// phase of its own so the poses spread over the frames; nearer ones every frame.
+    /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
+    /// <summary>What the camera looks at (the strategy camera's pivot): the pose-rate distances are measured from it, so the characters in view keep the full rate
+    /// however far the boom is; null: from the eye.</summary>
+    public Vector3? Focus { get; set; }
+    /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
+    const double PoseRateHz = 60;
     /// <summary>The culling radius of a person (<see cref="CharacterAsset.Radius"/>): a bigger body (an animal) takes the pose-rate distances that many times farther, as it fills as much of the screen there.</summary>
     const float HumanRadius = 16;
+
+    double poseSeconds;
 
     int PoseInterval(float distance)
     {
@@ -332,6 +344,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         textureBias = Gpu.LodBias;
         textureStandIn = Gpu.StandIn2D;
         updateStamp++;
+        poseSeconds = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
         // 1. Assets and the characters in range, with their layers resolved (the rig's caches are filled here, on this thread).
         liveCount = layerCount = attachCount = 0;
@@ -379,7 +392,11 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
             // A ragdoll is posed every frame: its bones move by physics, not by a clip the distance rule could thin out.
-            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || (updateStamp + inst.Key) % PoseInterval(Vector3.Distance(eye, centre) / MathF.Max(1, l.Radius / HumanRadius)) == 0;
+            int interval = PoseInterval(Vector3.Distance(Focus ?? eye, centre) / MathF.Max(1, l.Radius / HumanRadius));
+            // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
+            long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + (ulong)inst.Key * 0x9E3779B97F4A7C15UL / 18446744073709551616.0);
+            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || bucket != state.PoseBucket;
+            state.PoseBucket = bucket;
             l.LayerStart = layerCount;
             var rig = asset.Rig;
             if (inst.Poses is { } poses)

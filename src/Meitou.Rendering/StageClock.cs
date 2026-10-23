@@ -8,12 +8,14 @@ namespace Meitou.Rendering;
 /// </summary>
 static class StageClock
 {
-    public static readonly string[] Names = ["upd-terrain", "upd-objects", "upd-foliage", "sky-prepare", "reflection", "sky-draw", "terrain", "objects", "foliage", "water", "post", "ui", "shadows", "particles", "gi", "uploads", "cull", "bake", "shafts", "fog", "characters", "upd-chars", "submit", "driver-wait"];
+    public static readonly string[] Names = ["upd-terrain", "upd-objects", "upd-foliage", "sky-prepare", "reflection", "sky-draw", "terrain", "objects", "foliage", "water", "post", "ui", "shadows", "particles", "gi", "uploads", "cull", "bake", "shafts", "fog", "characters", "upd-chars", "submit", "driver-wait", "host", "blood"];
 
     // Stages 15 to 17 exist on the GPU only: the pre-frame command buffer's uploads (what it holds besides the next two), the foliage and grass culls and the
     // impostor bakes, timed by stamps in that buffer (FrameProfiler.PreStamp). The render thread has no lap for them. 18 and 19 are the light shafts and the fog volumes, 20 and 21 the characters' colour and motion draws and their update.
     public const int Uploads = 15, Cull = 16, Bake = 17, Shafts = 18, Fog = 19, Characters = 20, UpdChars = 21, Post = 10;
     public const int Ui = 11, Submit = 22, DriverWait = 23;
+    // 24 is the game host's own work in the frame before the world draws (the viewer has none), 25 the blood on the ground: the host's marks and pools and the decal layers redrawn.
+    public const int Host = 24, Blood = 25;
     public static int LastStage { get; private set; }
     public static bool SubmissionStarted { get; private set; }
     public static bool CpuOnly(int stage) => stage == DriverWait;

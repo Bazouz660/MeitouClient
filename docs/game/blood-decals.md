@@ -69,6 +69,10 @@ count and distance (**Observed**; we take the nearest).
 
 One faithful path, no switch. Engine choices: the blood is mixed into the terrain colour shader's
 albedo before lighting (our terrain is forward-lit, no second pass); the cells are a texture array
-read by cell index. Marks more than 20 units above the ground are dropped (upper floors). Decals
+read by cell index. Marks more than 20 units above the ground are dropped (upper floors). A pool's
+decal is grown in steps of a 25th of its half size (and at the cap), not at every texel change, and in place
+in each cell's list. A cell's layer is cleared and drawn again only when decals leave the cell
+(`CellRewrite`); otherwise only the decals placed or grown since are drawn over it (`Appended`), as the
+original does (it clears only for a new cell); a log past twice the cell's decals + 64 forces a redraw. Decals
 are saved and loaded as stored (`SaveDecals`, TERRAIN_DECALS in [save.md](../formats/save.md#folder-and-state-mapping));
 the bleed tokens are not, so a pool under a still-bleeding character starts anew after a load.

@@ -1219,6 +1219,7 @@ static class WorldFrame
         if (gpu.Foliage is { } lodFoliage) lodFoliage.LodPixelsPerRadian = render.TerrainPixelScale;   // the generated mesh levels measure their deviation in rendered pixels
         gpu.Foliage?.Update(eye);
         StageClock.Lap(2);
+        if (gpu.Characters is { } paced) paced.Focus = camera.Target;   // the pose-rate distances from what the camera looks at
         gpu.Characters?.Update(eye);
         if (gpu.Characters is { } posed && gpu.Debris is { } boltMeshes)
         {
@@ -1305,10 +1306,11 @@ static class WorldFrame
             gpu.Probes?.Update(gi, eye, heights, gpu.Lamps, gpu.FogVolumes, gpu.Objects?.GiInteriorFocus(camera.Target));
             StageClock.Sub("gi blend");
         }
+        StageClock.Lap(14);
         // The blood on the ground near the eye (docs/game/blood-decals.md), before any terrain draw reads it.
         if (gpu.Decals is { } decals && gpu.DecalStore is { } decalStore) decals.Record(decalStore, eye);
         gpu.Terrain.Decals = gpu.DecalStore is null ? null : gpu.Decals;
-        StageClock.Lap(14);
+        StageClock.Lap(StageClock.Blood, "blood decals");
         // Water reflection: the mirrored scene into its own framebuffer (restores the bound one), before the main pass.
         bool reflecting = render.Water && render.Reflections && gpu.Water is not null && gpu.Reflection is { Level: > 0 };   // level 0: no pass, the water shows the sky colour
         if (gpu.Reflection is not null) { gpu.Reflection.FaithfulShadows = gpu.Shadow is { Meitou: false }; gpu.Reflection.MaxDistance = gpu.Sky.HazeDistance * gpu.Reflection.Range; gpu.Reflection.HideDistance = gpu.FogVolumes?.AtmosphereDistance; gpu.Reflection.WaterDistance = gpu.Sky.HazeCompleteDistance; gpu.Reflection.FogVolumes = gpu.Water is { Meitou: true } && gpu.FogVolumes is { UsedData: > 0 }; }

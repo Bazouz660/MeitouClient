@@ -378,7 +378,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             weather.Paused = sim.IsPaused || skyArrival is not null;
             weather.GameSpeed = (float)(sim.Speed > 0 ? sim.Speed : sim.LastNonZeroSpeed);
         }
+        Meitou.Rendering.StageClock.Lap(Meitou.Rendering.StageClock.Host);   // the profiler: the host's frame so far, then the blood marks apart from the terrain's update
         UpdateBlood();
+        Meitou.Rendering.StageClock.Lap(Meitou.Rendering.StageClock.Blood, "blood marks");
         UpdateInteriorView();
         // The frame's animation time (particles, water, wet surfaces) is game time: still while paused, faster at higher speeds.
         float gameTime = (float)(session.Clock.GameSeconds / 600 % 1e4);
