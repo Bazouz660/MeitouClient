@@ -84,6 +84,8 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     readonly List<(CharacterId Victim, double Until)> refused = [];
 
     public KidnapSettings Settings { get; } = settings ?? new KidnapSettings();
+    /// <summary>The relation event of a caging (<see cref="FactionDeeds.Caged"/>); null: none.</summary>
+    public FactionDeeds? Deeds { get; set; }
     public IReadOnlyList<Abduction> Abductions => abductions;
     public IReadOnlyList<KidnapEvent> Log => log;
 
@@ -241,6 +243,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                     MovementSystem.Stop(table, g);
                     carry.LetGo(world, g);
                     if (!world.Fixtures.Imprison(world, a.Victim, cage, 1, a.Carrier)) return Retry(world, a, g);
+                    if (table.TryResolveNext(a.Victim, out int caged)) Deeds?.Caged(world, g, caged);
                     tc.Kidnapped = true;
                     if (tc.IsPlayer) world.Post($"{tc.Name} has been kidnapped by {data.Factions[a.Faction].Name}");
                     return End(world, a, KidnapEventKind.Caged);

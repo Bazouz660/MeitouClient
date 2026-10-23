@@ -59,9 +59,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
     public Ragdolls.IRagdollEnvironment? Buildings { get; set; }
 
-    /// <summary>The live relation table the player's assaults and killings change (<c>PopulationData.Relations</c>); null: nothing changes (hand-built test worlds).</summary>
+    /// <summary>The live relation table (<c>PopulationData.Relations</c>) that says who is an enemy; null: everyone of another faction is (hand-built test worlds).</summary>
     public FactionRelations? Relations { get; set; }
-    /// <summary>The crime system the player's assaults, killings and hits on the police are reported to (null: no crimes).</summary>
+    /// <summary>The relation events of the landed blows (<see cref="FactionDeeds.Blow"/>); null: blows change no relation (hand-built test worlds).</summary>
+    public FactionDeeds? Deeds { get; set; }
+    /// <summary>The crime system the player's assaults and hits on the police are reported to (null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
     /// <summary>
     /// Picks the hit reaction clip of a hit (set by the animation system, which owns the clips): the defender, the hit part's LOCATIONAL_DAMAGE id, big stumble, the side
@@ -127,19 +129,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             {
                 case AttackOrder order:
                 {
-                    // The player's squad picking a fight with a character of another faction is an assault on that faction (engine choice of the
-                    // event kind, docs/simulation.md "Combat"): once per victim, when no player character is fighting it already.
-                    bool deed = Relations is not null && !order.Defensive && !PlayerFights(table, order.Target);
-                    bool byPlayer = false;
+                    // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer)
-                        {
-                            byPlayer = true;
-                            // An attack that is not self-defence is an assault (before the relation event below, which could make the victim's faction hostile).
-                            if (!order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot)) crimes.Assault(world, id.Slot, victimSlot);
-                        }
-                    if (deed && byPlayer && table.Cold(order.Target.Slot) is { IsPlayer: false } victim)
-                        PlayerRelations.Event(world, Relations!, victim.Faction, RelationEventKind.Assault);
+                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer
+                            && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                            crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }
                 case StopCommand stop:
@@ -147,16 +141,6 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                     break;
             }
         }
-    }
-
-    /// <summary>Whether a player character is fighting <paramref name="target"/> (the combat state as of the inputs).</summary>
-    bool PlayerFights(CharacterTable table, CharacterId target)
-    {
-        if (!table.TryResolveNext(target, out int t)) return false;
-        var next = table.Next;
-        for (int i = 0; i < table.HighWater; i++)
-            if (read[i].TargetSlot == t && read[i].TargetGeneration == target.Generation && next[i].Alive && next[i].Task == (byte)CharacterTask.Attack && table.Cold(i)!.IsPlayer) return true;
-        return false;
     }
 
     bool Engage(World world, CharacterTable table, CharacterId attacker, CharacterId target, int now)

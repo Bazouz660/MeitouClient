@@ -389,7 +389,14 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
 relations, shared targets, idle-player self-defence, pursuit leash and return to routine.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
-paths; preserve current ordering. Original threshold/sense/retreat facts:
+paths; preserve current ordering.
+Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
+every landed melee blow and bolt, the cagings of the player, the police and kidnappers, and first aid on an unconscious member, for
+any two factions, weighted by the victim's `faction importance` and the town it stands in (`PopulationData.TownAt`, its squad's
+`Town`). Engine choices: every striker rates above the 0.1 / 0.15 thresholds; a death is credited only at the killing blow (a later
+bleed-out has no killer); first-aid gratitude on every bandaging update. The attack order and looting change no relation. A
+witness that regards the culprit as friendly takes 20 off on every sweep (`CrimeSystem.BetrayalDelta`). Wars:
+`PlayerRelations.DeclareWar` / `EndWar` (one direction, the speaker's table; the war flag is not saved). Original threshold/sense/retreat facts:
 [perception.md](game/perception.md), [AI](game/ai.md), [factions](game/factions-squads-towns.md).
 
 ## Carrying, rescue and looting

@@ -118,6 +118,8 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public CrimeSystem Crimes { get; } = crimes;
     /// <summary>The carry system the guards lift and carry with; null: an arrest ends when the target is down.</summary>
     public Carrying.CarrySystem? Carry { get; set; }
+    /// <summary>The relation event of a caging (<see cref="FactionDeeds.Caged"/>: the captive's faction about the one who caged it); null: none.</summary>
+    public FactionDeeds? Deeds { get; set; }
     public IReadOnlyList<Arrest> Arrests => arrests;
     public IReadOnlyList<Spotting> Spottings => spottings;
     /// <summary>The dialogue spotting fires events 44 and 45 through; null, or its event lines off (<see cref="Dialogue.DialogueSettings.AmbientEvents"/>): the engine's fine or arrest instead.</summary>
@@ -536,6 +538,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                     MovementSystem.Stop(table, g);
                     Carry!.LetGo(world, g);
                     if (!world.Fixtures.Imprison(world, a.Target, cage, constants.PrisonTime)) return ToCage(world, a, g, t);
+                    Deeds?.Caged(world, g, t);
                     tc.Recognition = 0;
                     if (a.Enslave) FixtureRegistry.Enslave(world, tc, a.Faction);
                     else if (tc.IsPlayer) world.Post($"{tc.Name} has been imprisoned by {Crimes.Factions.NameOf(a.Faction)}");

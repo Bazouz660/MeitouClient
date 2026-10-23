@@ -34,6 +34,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     public FirstAidSettings Settings { get; } = settings ?? new FirstAidSettings();
     public GameConstants Constants { get; } = constants;
     public ItemFactory Items { get; } = items;
+    /// <summary>The relation event of bandaging an unconscious patient of another faction (<see cref="FactionDeeds.FirstAid"/>); null: none.</summary>
+    public FactionDeeds? Deeds { get; set; }
     readonly XpService xp = new(constants, options);
     readonly BodyOptions bodyOptions = options;
 
@@ -275,6 +277,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         item.Charges -= MedicalState.KitDrain(Constants, skill, dt, robot);
         if (item.Charges <= 0) owner.RemoveOne(item);   // a used-up kit is gone
         xp.Medic(stats, race, medicRace, dt);
+        // An unconscious patient's faction is grateful to the medic's (engine choice: every update that bandages; the original's update fires it only when its loop got past the wounds).
+        Deeds?.FirstAid(world, m, p, dt);
     }
 
     /// <summary>

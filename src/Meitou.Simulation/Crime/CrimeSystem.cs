@@ -23,8 +23,6 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
 {
     /// <summary>The freshness a pending crime starts with at least (the setter's minimum, <b>Observed</b>), and the timers the game gives some deeds.</summary>
     public const float MinTimer = 3, WitnessTimer = 20, PoliceHitTimer = 30, KidnapTimer = 20;
-    /// <summary>The timer of a murder: engine choice (the game's setter of code 4 was not found).</summary>
-    public const float MurderTimer = 20;
     /// <summary>The "recently wanted" marker a booking or a witnessed crime sets (<see cref="CharacterCold.RecentlyWanted"/>; the game's 250.0, counted down here as game seconds: engine choice).</summary>
     public const float RecentlyWantedSeconds = 250;
 
@@ -103,15 +101,6 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         if (table.Cold(attacker) is not { IsPlayer: true } a || table.Cold(victim) is not { IsPlayer: false } v) return;
         if (IsWantedBy(v, a.Faction) || v.NpcClass == FundamentalType.Bandit || v.Pending is not null || AggroSystem.IsEnemy(Relations, v.Faction, a.Faction)) return;
         SetPending(world, attacker, CrimeCode.Assault, v.Faction, table.IdOf(victim), MinTimer);
-    }
-
-    /// <summary>A killing blow (engine choice: the game's pending Murder has no setter among the 25 callers found): a Murder, on the same terms as an assault.</summary>
-    public void Murder(World world, int killer, int victim)
-    {
-        var table = world.Characters;
-        if (table.Cold(killer) is not { IsPlayer: true } k || table.Cold(victim) is not { IsPlayer: false } v) return;
-        if (v.NpcClass == FundamentalType.Bandit || AggroSystem.IsEnemy(Relations, v.Faction, k.Faction)) return;
-        SetPending(world, killer, CrimeCode.Murder, v.Faction, table.IdOf(victim), MurderTimer);
     }
 
     /// <summary>
@@ -247,7 +236,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     /// Every awake NPC that sees the culprit, in slot order, reacts as the game's witness function does (<c>FUN_140854d10</c>, <b>Observed</b>): not of the culprit's faction, not carried,
     /// with no pending crime of its own; nothing when its faction is hostile to the victim's, when the victim's is lawless, when it books bounties and the victim's is a bandit faction, or
     /// when it regards the culprit as friendly and the victim is of another faction. Theft and Looting need it to care about the victim (same faction or allied); Looting also that it
-    /// does not regard the culprit as friendly; Kidnapping a victim and that care; an Assault a victim that it does not regard as an enemy; a Murder nothing more. A witness then sets the
+    /// does not regard the culprit as friendly; Kidnapping a victim and that care; an Assault a victim that it does not regard as an enemy; a Murder nothing more. One that regards the culprit as friendly costs it <see cref="BetrayalDelta"/>. A witness then sets the
     /// timer to 20 and, police-like of a faction that books bounties, books the crime. With <paramref name="kidnapping"/>, a witness that cares about the carried body first sets a pending
     /// Kidnapping (timer 20) on the carrier (the carrying check that runs before the crime check); with <paramref name="premises"/>, a witness that <see cref="Trespasses"/> sets a pending
     /// Trespassing against its own faction. A sneaking culprit is seen only through a full spot meter (<see cref="spots"/>).
@@ -279,6 +268,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             if (premises is { } house && Trespasses(world, wc, c, house)) SetPending(world, culprit, CrimeCode.Trespassing, wf, table.IdOf(w), MinTimer);
             if (c.Pending is not { } p) continue;
             if (!Reacts(world, wc, c, p)) continue;
+            if (Friendly(wf, c.Faction) && Betrays(p.Code)) PlayerRelations.Add(world, Relations, wf, c.Faction, BetrayalDelta);
             p.Timer = WitnessTimer;
             c.RecentlyWanted = RecentlyWantedSeconds;
             var witness = table.IdOf(w);
@@ -330,6 +320,16 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         if (w.SquadId >= 0 && world.Squads.Find(w.SquadId) is { } squad && HomeKey(squad) == house.Key) return !house.Open(world.Hour);
         return !house.Public && IsPoliceLike(world, w) && !Friendly(house.Faction, c.Faction);
     }
+
+    /// <summary>
+    /// What a witness's faction loses towards a culprit it regards as friendly that it sees commit a crime against its own faction (the witness function's ally branch, <c>FUN_140854d10</c>:
+    /// slot 4 of its table, -20 x 1, <b>Observed</b>; skipped there when the witness's platoon object <c>+0x210</c> has <c>+0xa8</c> set, <b>Unknown</b>, not modelled). The game runs it on
+    /// every perception update while the crime is fresh, here on every sweep, so it repeats until the culprit is no longer an ally.
+    /// </summary>
+    public const float BetrayalDelta = -20;
+
+    /// <summary>The crimes whose witness path reaches the ally branch: every code but Burglary, Looting, Trespassing, Crop Theft and Uniform Theft (their cases leave the switch elsewhere).</summary>
+    static bool Betrays(CrimeCode code) => code is not (CrimeCode.Burglary or CrimeCode.Looting or CrimeCode.Trespassing or CrimeCode.CropTheft or CrimeCode.UniformTheft);
 
     /// <summary>The dialogue event the witness says at the culprit (<c>FUN_140854d10</c>'s switch on the crime code, docs/game/dialogue.md "Event sources").</summary>
     static int WitnessEvent(World world, CharacterCold w, PendingCrime p) => p.Code switch

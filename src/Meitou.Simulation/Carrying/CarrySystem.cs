@@ -34,7 +34,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public GameConstants Constants { get; } = constants;
     /// <summary>The length of the <c>shoulder lift left</c> clip in seconds (1 when the clip lengths are not known).</summary>
     public float LiftSeconds { get; } = liftSeconds > 0 ? liftSeconds : 1;
-    /// <summary>The live relation table: with it, being seen looting changes the victim faction's view of the player and an ally counts as friendly. Null: no relation effects.</summary>
+    /// <summary>The live relation table: with it an ally counts as friendly. Null: only the same faction does.</summary>
     public FactionRelations? Relations { get; set; }
     /// <summary>The crime system a player's looting is reported to (a pending Looting; null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
@@ -468,17 +468,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         End(table, i);
     }
 
-    /// <summary>What a loot of <paramref name="taken"/> items sets off: being seen by the victim's faction (true; the relations), the pending Looting crime, the <see cref="Loots"/> entry.</summary>
-    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left, bool penalise = true)
+    /// <summary>
+    /// What a loot of <paramref name="taken"/> items sets off: being seen by the victim's faction (true), the pending Looting crime, the <see cref="Loots"/> entry. No relation event: none of
+    /// the game's relation events comes from looting (docs/game/factions-squads-towns.md 3.5); the crime's witnesses do the rest.
+    /// </summary>
+    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left)
     {
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
-        bool seen = false;
-        if (taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t))
-        {
-            seen = true;
-            if (penalise && Relations is { } relations) PlayerRelations.Event(world, relations, victim.Faction, RelationEventKind.Stealing);
-        }
+        bool seen = taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t);
         if (taken > 0) Crimes?.Loot(world, i, t);
         loots.Add(new LootEntry(world.Tick, table.IdOf(i), table.IdOf(t), taken, left, seen));
         return seen;
@@ -544,12 +542,12 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         Seen(world, i, t, owner.Items.Contains(item) ? 1 : 0);
     }
 
-    /// <summary>Seen taking from one open window: one relations penalty and one message, as a take-all (engine choice).</summary>
+    /// <summary>Seen taking from one open window: one message, as a take-all (engine choice).</summary>
     void Seen(World world, int looter, int body, int left)
     {
         var table = world.Characters;
         bool first = seenLoot != world.Player.OpenLoot;
-        if (Looted(world, table, looter, body, 1, left, first))
+        if (Looted(world, table, looter, body, 1, left))
         {
             if (first && table.Cold(looter)!.IsPlayer) world.Post($"{table.Cold(looter)!.Name} was seen looting {table.Cold(body)!.Name}");
             seenLoot = world.Player.OpenLoot;

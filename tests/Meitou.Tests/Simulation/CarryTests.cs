@@ -173,7 +173,7 @@ public class CarryTests
         var (seen, loot) = LootScene(facing: true);
         Assert.True(loot.Witnessed);
         Assert.Equal(3, loot.Taken);
-        Assert.Equal(10 - 10, seen);   // relation event Stealing: -10 x 1
+        Assert.Equal(10, seen);   // looting moves no relation (the game has no such relation event)
         var (unseen, quiet) = LootScene(facing: false);
         Assert.False(quiet.Witnessed);
         Assert.Equal(10, unseen);
@@ -248,8 +248,8 @@ public class CarryTests
             hashes.Add(rig.World.StateHash());
         }
         string happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
-        // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (relation 10 to 0) and loots an emptied body.
-        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 0", happened);
+        // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (the relation stays 10) and loots an emptied body.
+        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 10", happened);
         return hashes;
     }
 }

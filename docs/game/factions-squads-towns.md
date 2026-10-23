@@ -175,26 +175,65 @@ no path re-running the initial resident placement was found (**Unknown** whether
 
 ### 3.4 Changing relations (**Observed**; the event table cross-checked with the dialogue action numbers)
 
+Vtables: `FactionRelations::vftable` 0x14171a958, `PlayerFactionRelations::vftable` 0x14171aa18 (slots 0/1 save/load, 10 the entry lookup).
+The player's table has **empty** slots 2 to 5 (`FUN_140812e40`..`e70` return at once): no event or direct add ever changes the player's own
+row; slots 6 to 9 are shared. Each slot works on the calling faction's entry about faction B; when B is the player's faction, slots 5, 7 and 8
+post the threshold message of `FUN_1406b28f0` (section 3.3) with the calling faction's name.
+
 | Slot | Function | Effect |
 | ---: | --- | --- |
 | 3 | `FUN_1406b3190` | relation -= 35 (if > -100), clamp |
-| 4 | `FUN_1406b2ea0` | relation += a x b, clamp to [-100, 100] (direct add; `DA_AFFECT_RELATIONS`, slave trading +/-4) |
-| 5 | `FUN_1406b2d20` | event of kind k and amount x, see below; does nothing when the owning faction has `not real` |
+| 4 | `FUN_1406b2ea0` | relation += a x b, clamp to [-100, 100] (direct add; `DA_AFFECT_RELATIONS`, slave trading +/-4, missions, the witness's -20 of 3.5) |
+| 5 | `FUN_1406b2d20` | event of kind k and amount x, see below; does nothing when B is null or the owning faction has `not real` |
 | 6 | `FUN_1406b2560` | a > 0: trust += a x b, else negative trust += a x b |
 | 7 | `FUN_1406b2f90` | end war: clear war flag; if relation <= -25 set it to -25 (just above hostile) |
-| 8 | `FUN_1406b3000` | declare war: only if relation >= -30 (not hostile yet): log "War breaks out between {1} and {2}" if the flag was clear, set the flag, set relation to -35 |
+| 8 | `FUN_1406b3000` | declare war: only if relation >= -30 (not hostile yet): log "War breaks out between {1} and {2}" (owner, B) if the flag was clear, set the flag, set relation to -35 when it is -35 or more |
 | 9 | `FUN_1406b2530` | global trust += a (`DA_AFFECT_REPUTATION`) |
 
-| Kind | delta | floor | ceiling |
-| ---: | --- | ---: | ---: |
-| 1 | -0.05 x | -20 | 100 |
-| 2 | -2.5 x | -50 | 100 |
-| 3 | -10 x | -50 | 100 |
-| 4 | -20 x | -100 | 100 |
-| 5 | -20 x | -75 | 100 |
-| 8 | +0.15 x x dt | -100 | +5 |
-| 12 | -10 x | -60 | 100 |
-| others | none | | |
+Kind rows (the move `FUN_1406b2730`: a fall applies only while relation > floor, a rise only while relation < ceiling, then clamp to [-100, 100]):
+
+| Kind | delta | floor | ceiling | Fired by (3.5) |
+| ---: | --- | ---: | ---: | --- |
+| 1 | -0.05 x | -20 | 100 | a landed blow |
+| 2 | -2.5 x | -50 | 100 | a downing blow by a low-rated striker |
+| 3 | -10 x | -50 | 100 | a downing blow |
+| 4 | -20 x | -100 | 100 | a killing blow (with 2 or 3) |
+| 5 | -20 x | -75 | 100 | a death with a known killer |
+| 8 | +0.15 x x dt | -100 | +5 | first aid to an unconscious member (dt = `DAT_142133794`, scaled frame time) |
+| 12 | -10 x | -60 | 100 | put in a cage |
+| others | none | | | the bed put-in passes 9 |
+
+### 3.5 What fires relation changes (**Observed**, decompile)
+
+Found by a scan of every `CALL [reg+0x28]` preceded by a constant kind, and of the vcalls through `Faction+0x78`; only these call slot 5.
+Every event is the **victim's** faction's table about the **doer's** faction, for any two factions (NPC fights included), with amount
+**x = w x victim `faction importance`** (`FUN_140796020`; `Character+0x41c`, CHARACTER float read by `FUN_14062b210`; **Verified** by probe:
+all 639 merged base CHARACTER records have it, 102 are 0, 371 are 1, uniques up to 100). w = 1 when the town the victim stands in
+(status `+0x88`) is its own one (ownership object `+0x30`), 0.6 when that town's faction is `ally()` of the victim's (same faction
+included), else 0.025 (outside every town too).
+
+| Deed | Where | Events |
+| --- | --- | --- |
+| melee blow lands | `FUN_1404394f0` (Character slot 62) via `FUN_140999f00` | kind 1 when the striker's status float `+0xac` > 0.1 (and the victim's combat byte `+0x130` clear); after the damage, if the victim is unconscious or dead (`+0x5b9`/`+0x5bc`): kind 2 if striker `+0xac` <= 0.15 else 3, plus kind 4 if dead. Every later blow on a downed body repeats it |
+| bolt lands | `FUN_140439c90` via `FUN_140999d50` | as melee, thresholds 0.1; with no shooter nothing; a bolt whose flag (param 4, read as "aimed") is clear gives no kind 1 and kind 2 |
+| death | `FUN_1407a6200` (sets `+0x5bc`, runs inside the damage, so before the blow's own events) | kind 5 against the killer recorded in the character's handle at `+0x2c0` (**Unknown** setter), and squad tag 9 |
+| caging | `Task_PutInSomething` `FUN_140358670`, after the bounty claim | kind = task `+0x7c`: 12 for the cage task, 9 (no row) for the bed (factory `FUN_14032ebd0`) against the putter's faction |
+| first aid | `FUN_140649a00`, `FUN_14064d800` | kind 8 to the medic's faction when the patient's medical `+0x161` (unconscious) or `+0x160` is set; in `FUN_140649a00` only on an update whose loop filled every wound |
+| ally witness | `FUN_140854d10` | a witness that regards the suspect as friendly (vfunc `0x3f0`) and sees it wrong its own faction: slot 4, -20 (skipped when the witness platoon's `+0x210` object has `+0xa8`); for every crime code but 2, 10, 11, 14, 16; repeats on each witness pass |
+| missions | `MissionClass` vfuncs `FUN_14039f580` / `FUN_14039f660` | trust (slot 6) and a direct add (slot 4) of the mission giver's faction about the player |
+| dialogue | `FUN_140680560` | DA 4 slot 4, DA 5 slot 9, DA 13 slot 8, DA 14 slot 7, always the **speaker's** faction about the target's ([dialogue](dialogue.md#effects)) |
+
+- No other caller of slot 7 or 8 was found: wars start and end only by dialogue (`FactionWarMgr` campaigns do not call them).
+- Kind 8 is not a drift: nothing moves relations back over time.
+- Status `+0xac` (Character slot 61 `FUN_140598b90` returns it) is summed by the perception (`FUN_140854370`) as a threat value; its setter is
+  **Unknown**. Meitou rates every striker above both thresholds (kinds 1 and 3; engine choice).
+- `FUN_140673a20(self, other, tag)` (not a witness function) sets a long-term tag (`CharacterPerceptionTags_LongTerm`, read by DC 23) in
+  `self`'s squad memory (`platoon+0x98`, `FUN_140673930`, time-stamped): 1 MY_INTRUDER (trespass), 5 MY_CAPTOR (cage), 7 / 8 (the victim's
+  squad tags the striker DEFEATED_MY_SQUAD_ONCE and the striker's tags the victim SQUAD_LOST_TO_ME_ONCE, on a downing blow when
+  `FUN_140793160` finds the victim's squad all down), 9 KILLED_MY_FRIEND (death). Meitou keeps no tags yet.
+
+Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witness), `PlayerRelations.DeclareWar` / `EndWar` / `Add`
+(the messages); [simulation](../simulation.md#hostility-and-relations).
 
 ### 4. Squad templates
 
@@ -441,8 +480,8 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 
 ## Unknowns
 
-- What sets relation event kinds 1..12 (call sites of `FactionRelations::vfunc_5`), and what the allied byte (+0) and the
-  `trust` floats feed (dialogue conditions, "trustworthy" behaviour).
+- What sets the character status threat float `+0xac` and the killer handle `+0x2c0` (3.5); whether the war flag is saved; what the
+  allied byte (+0) and the `trust` floats feed (dialogue conditions, "trustworthy" behaviour).
 - What `building designation` changes beyond the bar (it does not enter the chooser); the town node map bar squads use.
 - Nest respawn delay after "wiped out", the default of `DAT_142133588` (the Number of nests multiplier option; **Unknown**, the exe image holds zeros there), the rule that makes `TownPopulationManager::vfunc_4`
   declare a town wiped out (**Observed** gates: roaming pool cap <= 3 and <= 25 roaming members).
@@ -469,6 +508,7 @@ Evidence scopes below apply only to their named sources/checks.
 - 3.2 Initial values (**Verified**)
 - 3.3 Thresholds (**Verified**: -30 and 50 appear in the predicate functions, in the threshold-message function `FUN_1406b28f0` and in the declare-war gate `FUN_1406b3000`; re-read independently)
 - 3.4 Changing relations (**Observed**; the event table cross-checked with the dialogue action numbers)
+- 3.5 Relation event sources (**Observed**: decompile of every slot-5 call site found; `faction importance` **Verified** by probe)
 - 5.1 Counts and layout (**Observed**; two functions share the count rules, see the sentinel note)
 - 5.2 Procedural squads from a FACTION_TEMPLATE (**Observed**)
 - Campaigns: `FUN_1409cb310` (roll), `CampaignData::vfunc_0/1/2` (`1409c5e80`, `1409c5740`, `1409c4ed0`), loaders `read_chance_per_day_n9`

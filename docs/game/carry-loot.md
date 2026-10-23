@@ -32,7 +32,7 @@ Ground pickup can raise Theft inside another faction's building.
 container0.3+1.95*thievery/100*t, t=lerp(0.5,1,clamp(distance/200)), half in same building,
 sleeping/lying doubles, different floor*1.5. Unconscious/dead/carried/imprisoned watcher (or down
 thief) guarantees success, but pending crime still exists. Caught creates Theft timer30,
-reaction/relation event and XP with high-probability/imprisonment/timer exemptions.
+a reaction (no faction relation event: none of the slot-5 callers in [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile) is a theft or loot path) and XP with high-probability/imprisonment/timer exemptions.
 
 Witnesses must be eligible and care about victim for theft/fencing/looting/kidnapping;
 assault/murder have separate branches. Ordinary witness reacts; only police-like witness with

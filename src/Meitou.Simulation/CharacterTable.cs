@@ -183,6 +183,11 @@ public sealed class CharacterCold
     /// (hand-made in tests). The crime rules read it (who is police, who may loot, who can be booked); not hashed, it follows from the record.
     /// </summary>
     public Meitou.Data.Gameplay.FundamentalType NpcClass { get; set; }
+    /// <summary>
+    /// CHARACTER <c>faction importance</c> (the game's <c>Character+0x41c</c>, read by <c>FUN_14062b210</c>): how much a deed against it moves its faction's relations
+    /// (<see cref="FactionDeeds.Weight"/>); 0 without a CHARACTER record. Set from the record at spawn, so not hashed.
+    /// </summary>
+    public float FactionImportance { get; set; }
     /// <summary>The character's bounties by faction (null: none ever); <see cref="Crime.CrimeSystem"/>, serial phases only. Hashed only while set.</summary>
     public Crime.BountyLedger? Bounties { get; set; }
     /// <summary>A crime nobody has booked yet (null: none); <see cref="Crime.CrimeSystem"/>, serial phases only. Hashed only while set.</summary>

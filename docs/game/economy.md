@@ -104,7 +104,7 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
 Ledgers are per wanted faction; crimes pending at deed time and witness booking are distinct.
 CONSTANTS categories define theft/assault/murder/looting values. Expiry is0.04 hours/cat and
 permanent from10000; capture, claiming, bail and prison sentences use separate paths.
-Witness/innocence/squad-level kinds and killing-to-murder details remain partly unknown.
+Witness/innocence details remain partly unknown; a killing is no crime (11.6), only relation events.
 Slavery/prisoner/animal transactions and loot generation are not equivalent to ordinary shop
 trades. Consult [factions](factions-squads-towns.md), [carry-loot](carry-loot.md) and the retained
 unknowns before implementing unsupported branches.
@@ -225,7 +225,7 @@ Per-character hash map keyed by faction (`Character+0xf0`). Entry (`FUN_1405e7ee
 
 - **Trespassing** (perception `FUN_140859680` -> test `FUN_140852350`, **Observed**): an NPC seeing a player character inside a
   building sets a pending Trespassing (code 11) against **its own** faction (victim: itself), fires dialogue event 17 and calls
-  `FUN_140673a20(self, target, 1)` (**Unknown**). Never when the target's location is a code-0xb object, the target is "allowed" by
+  `FUN_140673a20(self, target, 1)` (its squad tags the target MY_INTRUDER, [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)). Never when the target's location is a code-0xb object, the target is "allowed" by
   `FUN_14032e1e0` (**Unknown**; Meitou: the witness regards the culprit's faction as friendly), or caged. Two cases:
   the **resident** case (the target is in the witness's own home): the home is not public (vfunc 82, `public day`) or `+0xc4 != 1`
   (**Unknown**), or the hour is outside 7..22 (game clock `DAT_1421303d0`+0, the hour int); and the witness's home object has flag
@@ -303,7 +303,17 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   pending Assault (timer 30) against the police faction, booked with it at once, whichever struck.
 - **Attack order** (`FUN_140334070`): a pending Assault against the victim's faction unless the victim has a bounty with the attacker's
   faction, its status flag `+0x114` is set, it is a BANDIT, it has a pending crime, or `FUN_140436610(victim, 1)` (undecoded) holds.
-- **Murder**: no setter caller passes code 4 (25 checked); how a killing becomes Murder is **Unknown**.
+- **Murder**: no caller of the setter `FUN_140852c80` (26 callers, plus the 7 of its wrapper `FUN_140852e10`) passes code 4, and no
+  variable-code caller can yield 4 (task finders pass 2/7, 3/10; dialogue DA 49 passes 0 to clear). A killing therefore sets **no
+  crime**: its consequences are the relation events of [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)
+  (kinds 5, 3 and 4) and an Assault pending from the attack order. Code 4 only names a ledger bit (**Observed**).
+- **Assault to code 9**: the setter turns a code 5 into 9 when its victim passes `FUN_140796240(victim, 1)` (decompiles as void; **Unknown** test).
+- **Witness timing** (`FUN_1408580d0`, the perception's per-seen-character update, **Observed**): the witness function `FUN_140854d10` runs for a
+  seen character when the update says it is newly seen (either of two flag arguments), or while it has a pending crime whose timer
+  (`+0x180`) is above 5; every run that reacts sets that timer back to 20 (`FUN_140851f40`), so a watched crime stays fresh. A witness
+  that regards the culprit as friendly and sees it wrong the witness's own faction costs the culprit's faction 20 relation each time
+  ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)).
+- `FUN_140673a20` in the trespass path is the squad-memory tag MY_INTRUDER, not a witness function (factions 3.5).
 
 ### 11.7 Arrest
 
