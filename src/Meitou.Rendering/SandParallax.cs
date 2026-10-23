@@ -14,7 +14,7 @@ public static class SandParallax
     public static bool Active { get; set; } = true;
 
     /// <summary>Depth of the full height range in world units (1 unit = 10 cm); the Tab panel's slider sets it.</summary>
-    public static float Depth { get; set; } = 0.6f;
+    public static float Depth { get; set; } = 1.2f;
 
     /// <summary>A sand layer by its normal map's name: "sand" in it, not sandstone or rock.</summary>
     public static bool IsSand(string? name)
