@@ -51,6 +51,9 @@ the window copy; GPU `submit` measures that copy and the command tail, not the C
 Offscreen frames have no present wait. Render-thread benchmark totals exclude `driver-wait`.
 In the game the head is split too: `host` (the host's frame work before the world draw), `blood` (the host's blood marks and pools, then
 the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own work.
+`upd-chars` lists its render-thread parts under it (`StageClock.Part`; the pass meter shows them as subs): `fill` (the host's draw list),
+`textures` (streaming pump), `gather` (characters in range, appearances), `pose` (the parallel posing and part placement), `materials`,
+`bolts`, `portraits`, `hover` (hover masks) and `icons` (item and building icons).
 
 ## Geometry and pass diagnostics
 

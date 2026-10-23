@@ -1232,10 +1232,14 @@ static class WorldFrame
             posed.CollectBolts(gpu.BoltPieces);
             foreach (var bolt in gpu.BoltPieces) boltMeshes.Extent(bolt.Mesh);   // loads a mesh the first time
         }
+        StageClock.Part(StageClock.PartBolts);
         gpu.Characters?.DrawPortraits();   // the squad portraits, from this update's poses
+        StageClock.Part(StageClock.PartPortraits);
         gpu.Characters?.DrawHoverMasks(gpu.HoverOutline is null ? [] : gpu.HoverKeys, width, height, camera.View, camera.FieldOfView, eye);   // before the colour pass, whose statistics stand
+        StageClock.Part(StageClock.PartHover);
         gpu.Characters?.DrawIcons();   // the item icons being made, from the same update
         gpu.Objects?.DrawBuildingIcons();   // the build window's pictures being made
+        StageClock.Part(StageClock.PartIcons);
         StageClock.Lap(StageClock.UpdChars);
         float floor = gpu.Terrain.HeightAt(eye.X, eye.Z);
         if (render.Water) floor = Math.Max(floor, WorldWater.Height);

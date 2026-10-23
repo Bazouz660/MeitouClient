@@ -49,6 +49,8 @@ public sealed class FrameProfiler : IDisposable
     readonly QuerySlot[] slotPreEnd = new QuerySlot[Slots];
 
     readonly float[][] cpu = NewHistory(), gpu = NewHistory();
+    // The render thread's ms per part of upd-chars (StageClock.PartNames), listed under it in the legend, not plotted.
+    readonly float[][] parts = StageClock.PartNames.Select(_ => new float[History]).ToArray();
     int cpuHead, cpuCount, gpuHead, gpuCount;
     readonly double[] gpuFrame = new double[Series];
 
@@ -133,6 +135,7 @@ public sealed class FrameProfiler : IDisposable
             cpu[s][cpuHead] = (float)StageClock.Ms[s];
             sum += StageClock.Ms[s];
         }
+        for (int p = 0; p < parts.Length; p++) parts[p][cpuHead] = (float)StageClock.PartMs[p];
         cpu[Other][cpuHead] = 0;
         cpu[Total][cpuHead] = (float)sum;
         if (SpikeLog.Enabled)
@@ -382,7 +385,7 @@ public sealed class FrameProfiler : IDisposable
         const int meanFrames = 30;
         float lh = overlay.LineHeight, cw = overlay.CharWidth;
 
-        float panelH = (Order.Length + 2.5f) * lh + 2 * pad;
+        float panelH = (Order.Length + parts.Length + 2.5f) * lh + 2 * pad;
         float x0 = margin, x1 = width - margin, y1 = height - margin, y0 = Math.Max(y1 - panelH, margin);
         overlay.Rect(x0, y0, x1, y1, DebugOverlay.PanelColour);
         // VRAM is read every 30 frames (a driver call), shown in the header and as the pie at the top right.
@@ -396,14 +399,21 @@ public sealed class FrameProfiler : IDisposable
         float lx = x1 - pad - legendW, ly = y0 + pad + 1.5f * lh;
         var dim = new Vector4(0.7f, 0.7f, 0.68f, 1);
         overlay.Text($"{"",-12}{"cpu",10}{"gpu",10}", lx + swatch + 6, ly, dim);
-        for (int i = 0; i < Order.Length; i++)
+        int row = 0;
+        foreach (int s in Order)
         {
-            int s = Order[i];
-            float top = ly + (i + 1) * lh;
+            float top = ly + ++row * lh;
             overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[s]);
             string c = s == Other || StageClock.GpuOnly(s) ? "-" : Mean(cpu[s], cpuHead, cpuCount, meanFrames).ToString("0.00", CultureInfo.InvariantCulture);
             string g = gpuCount == 0 || StageClock.CpuOnly(s) ? "-" : Mean(gpu[s], gpuHead, gpuCount, meanFrames).ToString("0.00", CultureInfo.InvariantCulture);
             overlay.Text($"{Label(s),-12}{c,10}{g,10}", lx + swatch + 6, top, DebugOverlay.TextColour);
+            if (s != StageClock.UpdChars) continue;
+            // Its parts, indented, render thread only (the GPU work they record is in the passes that run it).
+            for (int p = 0; p < parts.Length; p++)
+            {
+                string pc = Mean(parts[p], cpuHead, cpuCount, meanFrames).ToString("0.00", CultureInfo.InvariantCulture);
+                overlay.Text($"{"  " + StageClock.PartNames[p],-12}{pc,10}{"",10}", lx + swatch + 6, ly + ++row * lh, dim);
+            }
         }
 
         // The plot: y from 0 to a round number above the largest value shown, with labelled grid lines.

@@ -23,7 +23,26 @@ static class StageClock
     public static readonly double[] Ms = new double[Names.Length];
     public static bool Active;
     public static FrameProfiler? Profiler;
-    static long last;
+    static long last, partLast;
+
+    /// <summary>
+    /// The parts of the characters' update (<see cref="UpdChars"/>) the profiler lists under it (render thread only): the draw list from the host, the texture
+    /// uploads, the gather of the characters in range, their posing, the materials, the stuck bolts, the portraits, the hover masks and the icons.
+    /// </summary>
+    public static readonly string[] PartNames = ["fill", "textures", "gather", "pose", "materials", "bolts", "portraits", "hover", "icons"];
+    public const int PartFill = 0, PartTextures = 1, PartGather = 2, PartPose = 3, PartMaterials = 4, PartBolts = 5, PartPortraits = 6, PartHover = 7, PartIcons = 8;
+    /// <summary>This frame's render-thread ms per part (<see cref="Part"/>).</summary>
+    public static readonly double[] PartMs = new double[PartNames.Length];
+
+    /// <summary>Ends <paramref name="part"/> of the stage running: the time since the last lap or part goes to it (and the pass meter gets it as a part, <see cref="Sub"/>).</summary>
+    public static void Part(int part)
+    {
+        if (!Active) return;
+        long now = Stopwatch.GetTimestamp();
+        PartMs[part] += (now - partLast) * 1000.0 / Stopwatch.Frequency;
+        partLast = now;
+        OnClose?.Invoke(PartNames[part], true);
+    }
 
     /// <summary>
     /// The pass meter's hook (<c>MEITOU_PASS_STATS=1</c>, the viewer's PassMeter; docs/engine.md "Frame cost breakdown"): called with the label of
@@ -45,7 +64,7 @@ static class StageClock
         if (Active && (uint)stage < (uint)JobMs.Length) JobMs[stage] += ticks * 1000.0 / Stopwatch.Frequency;
     }
 
-    public static void Start() { Active = true; SubmissionStarted = false; LastStage = -1; Array.Clear(Ms); Array.Clear(JobMs); last = Stopwatch.GetTimestamp(); OnStart?.Invoke(); }
+    public static void Start() { Active = true; SubmissionStarted = false; LastStage = -1; Array.Clear(Ms); Array.Clear(JobMs); Array.Clear(PartMs); last = partLast = Stopwatch.GetTimestamp(); OnStart?.Invoke(); }
 
     // Called before the window copy, or before submission for an offscreen frame.
     public static void BeginSubmission()
@@ -68,7 +87,7 @@ static class StageClock
         if (!Active) return;
         long now = Stopwatch.GetTimestamp();
         Ms[stage] += (now - last) * 1000.0 / Stopwatch.Frequency;
-        last = now;
+        last = partLast = now;
         LastStage = stage;
         if (gpuTimestamp) Profiler?.Stamp(stage);
         OnClose?.Invoke(label ?? Names[stage], false);

@@ -342,8 +342,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         var watch = Stopwatch.StartNew();
         Draws.Clear();
         Source?.Invoke(Draws);
+        StageClock.Part(StageClock.PartFill);
         GatherPortraitKeys();
         content.Textures.Pump(wait: LoadBudget == 0, max: 8, budgetMs: 1.0);
+        StageClock.Part(StageClock.PartTextures);
         textureBias = Gpu.LodBias;
         textureStandIn = Gpu.StandIn2D;
         updateStamp++;
@@ -417,6 +419,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (attach.Length < attachCount) attach = new Matrix4x4[Math.Max(attachCount, attach.Length * 2)];
 
         // 2. The bone palettes, posed in parallel straight into the frame's memory.
+        StageClock.Part(StageClock.PartGather);
         double gatherMs = watch.Elapsed.TotalMilliseconds;
         var poseWatch = Stopwatch.StartNew();
         bones = Gpu.Frame.Constants.Allocate((ulong)Math.Max(boneTotal, 1) * 64, 256);
@@ -464,6 +467,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         (partStamp, partOrigin, partMotion) = (updateStamp, eye, motion);
         LastPoseMs = poseWatch.Elapsed.TotalMilliseconds;
         PoseIcons();
+        StageClock.Part(StageClock.PartPose);
 
         // 3. The materials of the parts in range.
         slotParts.Clear();
@@ -499,6 +503,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             Write(slotParts[s].Material, ref record);
             *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = record;
         }
+        StageClock.Part(StageClock.PartMaterials);
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;
         updateCount++;
         updateCpu.Add(LastUpdateMs);
