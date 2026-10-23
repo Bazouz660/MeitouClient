@@ -574,6 +574,40 @@ Rules: [economy 11.5, 11.7](economy.md#115-bail-and-sentence). **Observed** (eva
 | goal 276 Liberating prisoners | finder `FUN_1408cf140` (`BuildingFinder_CagesToLiberate`): a cage of a faction that fails the relation test `FUN_1406b2630` (read as allied) holding an occupant that is not an enemy |
 | 133 / 207, 256 `Task_GetOutOfCage` | constructor flag "escape" 0 for 133, 1 for 207 and 256 ([locks](locks.md#cages-and-beds)) |
 
+## Prisoner fate and slave rows
+
+**Observed** (TaskData registrations in `FUN_140319a60`: desire at `+0x108`, finder at `+0x160`; the desire thunks resolve to `AI` vtable slots; task classes from their vtables).
+Meitou: [simulation, captives](../simulation.md#captives).
+
+| Goal | Desire | Finder / rule |
+| --- | --- | --- |
+| 135 Kill random prisoner, 282 Dinner time | AI slot 20 `FUN_14032e9b0`: 1 when the character's town's kill timer has passed, or every cage it knows is held by a live character (`FUN_1405a1ab0`, the CAGES_ARE_ALL_FULL test; false with no cage); else 0. A town not yet in the timer map gets now + uniform[1, 15) h (`FUN_14034a810`, `FUN_1409b1c80(1, 15)`), a global map keyed by the town | `FUN_1408d0d90` (also 139): keeps a remembered occupied cage, else the cage finder `FUN_1408d0770(ai, occupied, 8)`: function-8 buildings, weight clamp(1 - d^2/4608^2, 1e-5, 1), x100 same faction (another faction's only when a town test `FUN_140621230` passes, **Unknown**), x100 in the character's home, x1e-5 for the police case; the best weight wins. No target when the occupant's RACE `robot` (`+0x7c`) is set; else the occupant fires event 10 MARKED_FOR_DEATH at the chooser |
+| 139 Eat random prisoner | slot 19 (1) | as 135 |
+| 183 Watching slaves | slot 61 `FUN_140597b20`: with a target, slot 59; else 1 while not carrying and character vfunc `0x368` is 0 | `FUN_1408cd630`: none while itself held; sensed characters (masks 0x60 / 0x110) in slave state that need processing; else `BuildingFinder_SlavesToProcess` over its home town: occupied function-8 cages of non-player factions passing the `BuildingFinder_Cages` tests, occupant not of its own squad, within 180 (squared 32400) and needing processing |
+| 260 Watching for new slaves | slot 61 | `FUN_1408cc110`: the same building finder; the first occupant that is not down (vfunc 6) and in slave state 0 |
+| 167 Capturing slave | slot 61 | `FUN_1408cdd00`: sensed (0x4008 / 0x11) down or dead or legs-down characters, uncarried, free, not animals, not in the give-up list, status `+0xdc` not 1, 3 or 5, slave state not 1, `FUN_140644170` false; the nearest |
+| 168 Carrying slaves | `FUN_140599480` (the rescue desire) | `FUN_1408cdf50`: sensed (0x20 / 0x210) down characters in slave state, owned by its faction (status `+0xe0`), uncarried, free; the nearest |
+| 173 Gathering slaves, 245 Gathering unholy slaves | slot 63 `FUN_14059b940`: 1 while the platoon's slave list holds at most 3 characters up and free (vfunc 6 false, `+0x2f8` 0) | 173 `FUN_1408cc4b0`: the nearest occupied processable cage of its faction in the squad's current town; 245 `FUN_1408d1410`: own-faction cages, the first occupant that is a woman (appearance `sex female`, `FUN_140295a50`) or of another race than the gatherer |
+| 217 Gathering slaves for shipping | slot 64 `FUN_140597b80`: in a TOWN or OUTPOST (town `+0xd8` 2 or 1); for a player town (or faction byte `+8`) only an allied one | `FUN_1408cc600`: cages of any faction in the town, not player-owned, with a live awake occupant (vfunc `0x360` false) not twice in the give-up list; the nearest |
+| 174 Ordering slaves (`Task_GetSlave`) | slot 19 | its start posts message type 5 (target, self) to the global queue `DAT_1421346d8` and ends; what the queue does with type 5 is **Unknown** (effect: 116 TARGET_IS_MY_SLAVE) |
+| 182 Processing slave (`Task_ProcessNewSlave`) | slot 19 | 3 s of `medic`; then items of the weapon and armour sections not locked shackles (armour `+0x244` 6 kept) go to the processor's storage or inventory; the faction's `slave clothing` is made and put on where the slot is free (`FUN_1403560e0`); event 35 INTRODUCING_NEW_SLAVE (37 RECAPTURED_A_SLAVE when vfunc `0x3e0`) to it; slave state 1 (`FUN_1405a4940`), owner set when it had none, its jobs cleared and job 187 Obedient Slave added toward the owner; every platoon of the processor's faction and every sensed ally lists it (`FUN_14067aca0`) |
+| 188 Working the slaves | slot 65 `FUN_14059a0a0`: 0.25 x the platoon's slave list size | `FUN_1408cd940`: a random live, uncarried, free slave of the platoon's list not in the give-up list; B list isDialogDelivered (event 38 SHOUT_AT_SLAVE_WORKER, **Inferred**) |
+| 192 Delivering slaves | slot 65 | none; B: !26, atDestinationTown |
+| 194 / 218 Selling slaves | 65; 218 slot 66 `FUN_140597c70`: only in a prison or slave camp (town type 7, 5) | `FUN_1408ca950`: a random allied building of designation flag 0x80000 in the town whose owner is a character or squad (`+0xd8` 1 / 0x22): its leader; B isDialogDelivered (event 39 SLAVE_DELIVERY) |
+| 172 Getting in my cage | slot 19 | `FUN_1408caaf0`: for a slave whose owner handle is a character or squad: the nearest free cage of the owner's faction |
+| 189 / 190 Worker | slot 19 | `FUN_1408cac60` / `FUN_1408cadb0`: a building of special function 0x41a of the town for a slave owned by the town's side (a player-owned town only takes a slave of state 1) |
+
+- **Kill** (`Task_KillPrisoner`, 134 and 196): faces the target (a character, or a cage's occupant) and plays `chop down static`; each time the clip passes 0.55 the
+  character's weapon attack (`FUN_1408868b0`, the race multipliers included) lands through the target's take-hit virtual and the target says event 11 SCREAMING_TORTURE. When the
+  target is dead the character's town gets a new kill time, now + uniform[1, 15) h. 134 needs a drawn weapon.
+- **Eat** (`Task_EatPrisoner`, 220): walks to within 20 of the target (XZ); a robot target ends it. Then each update: faces it, plays `eat`, says event 52 EATING_SOMETHING_SOUNDS,
+  and calls the target's being-eaten virtual with 1.0 (`FUN_1404356f0`): unless dead, the target says event 11 and gains toughness XP (`FUN_1408c6430(stats, dt, 10, 21)`), then the
+  medical update `FUN_140650370`: rate = 1 x lerp(2, 0.4, toughness x stat scale x 0.01) per second (x5 instead when medical `+0x164`, **Unknown**); parts from the last down:
+  the first with h - 1.1 s > -M loses rate x dt from flesh and from the treated pool and the update ends; a limb with nothing left is severed when the global `DAT_142133504`
+  is set; with nothing left, a counter `+0x15c` rises, and past 5 the character dies ("eaten"; "{1} has been eaten alive." for the player's). A robot is never eaten. The end
+  of the task resets the town's kill time as Kill's does. A target not imprisoned and with `+0x278` set is bitten once and the eater re-ordered (order 0x23, **Unknown**).
+- Whether the kill timer map is saved is **Unknown** (Meitou keeps it in the running game only).
+
 ## Desire and commitment
 
 **Observed** (TaskData constructor `FUN_14061d350`, registrations in `FUN_140319a60` parsed for all 253 rows, scorer `FUN_14050df10`, `AITaskSytem`

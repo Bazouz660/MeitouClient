@@ -72,6 +72,8 @@ public static class TaskBehaviours
         [TaskType.SIT_AROUND] = (AiBehaviour.Sit, "Sitting around"),
         [TaskType.RETREAT_HOMETOWN] = (AiBehaviour.GoHome, "Retreating"),
         [TaskType.RUN_AWAY_HOMETOWN] = (AiBehaviour.GoHome, "Retreating fast"),
+        // Under the retreat packages that list it (signals 1 and 25) the target town is the squad's home town (AiSystem.Captives.cs): engine reading.
+        [TaskType.TRAVEL_TO_TARGET_TOWN_FAST] = (AiBehaviour.GoHome, "Travelling quickly"),
     };
 
     /// <summary>

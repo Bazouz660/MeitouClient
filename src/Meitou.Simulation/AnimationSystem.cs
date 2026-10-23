@@ -144,6 +144,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         CharacterTask.Dismantle => DismantlingClip,
         // An operator at work plays its functionality's clip (Observed, Task_OperateMachine; stonemine without one).
         CharacterTask.Operate => cold.Operating ? cold.OperateClip is { } clip && SitClipOf(clip) is >= 0 and var used ? used : DismantlingClip : -1,
+        // A captor killing, eating or processing a captive (Task_KillPrisoner, Task_EatPrisoner, Task_ProcessNewSlave, Observed).
+        CharacterTask.Idle when cold.ActionClip is { } act && SitClipOf(act) is >= 0 and var acting => acting,
         _ => -1,
     };
     // The combat system asks this system for its hit reaction clips (it owns the stun, this system the clips).

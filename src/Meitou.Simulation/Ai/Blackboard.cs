@@ -27,6 +27,14 @@ public enum PackageClass : byte
     Contract = 6,
     /// <summary>Wars, prisoner shipping, refugees, cannibal raids, occupation, campaigns, the wandering trader: not built; never start (except as a lone slot-0 package), never finish.</summary>
     Unbuilt = 7,
+    /// <summary><c>CannibalRetreatFromRaid</c> (1) and <c>CannibalRetreatFromRaid_nearestNest</c> (25): back to the mission town while someone carries (AiSystem.Captives.cs).</summary>
+    CannibalRetreat = 8,
+    /// <summary><c>Package_CannibalsAtHome</c> (27): while the squad is in its home town.</summary>
+    CannibalsAtHome = 9,
+    /// <summary><c>PrisonerGathering</c> (10) and <c>PrisonerGathering_unholy</c> (24): while a town near the leader holds prisoners to gather.</summary>
+    PrisonerGathering = 10,
+    /// <summary><c>SlaverPrisonerShipping_Camps</c> (11) and <c>_AnywhereTownsIncluded</c> (28): while the squad has slaves, to its mission town.</summary>
+    SlaverShipping = 11,
 }
 
 public static class PackageClasses
@@ -40,6 +48,10 @@ public static class PackageClasses
         17 => PackageClass.Bar,
         26 => PackageClass.BarOutdoors,
         12 or 13 or 14 or 15 or 33 => PackageClass.Contract,
+        1 or 25 => PackageClass.CannibalRetreat,
+        27 => PackageClass.CannibalsAtHome,
+        10 or 24 => PackageClass.PrisonerGathering,
+        11 or 28 => PackageClass.SlaverShipping,
         _ => PackageClass.Unbuilt,
     };
 }
@@ -120,6 +132,8 @@ public sealed class Blackboard
     /// <summary>The game hours from which the next patrol may start, and when the running one gives up.</summary>
     public double NextPatrol { get; set; }
     public double PatrolGiveUp { get; set; }
+    /// <summary>The town (site index) a retreat or slave shipping package goes to, set when it starts; -1: none.</summary>
+    public int MissionTown { get; set; } = -1;
 
     /// <summary>
     /// One pass of the original's package choice (docs/game/ai.md "Blackboard update", Verified): a running contract first; then slots from the highest down until
@@ -206,6 +220,7 @@ public sealed class Blackboard
         RouteIndex = 0;
         Home = OwnHome;
         BarTable = -1;
+        MissionTown = -1;
         rules?.Started(this, package, PackageClasses.Of(package.Signal));
     }
 
@@ -281,6 +296,7 @@ public sealed class Blackboard
         hasher.Add(PatrolGiveUp);
         hasher.Add(Home?.Position ?? default);
         if (BarTable >= 0) hasher.Add(BarTable);
+        if (MissionTown >= 0) hasher.Add(MissionTown + 0x4D69);
     }
 }
 

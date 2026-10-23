@@ -399,8 +399,9 @@ or population); a failed start retries each run, up to 100 times; a gone target 
     victim, then 154 put the carried one in a cage) needs a free squad member to lift a downed one and a cage of its faction. The target is the nearest
     down, uncarried, uncaged, non-animal character of the sensed classes (and, unlike rescue, a sleeper in a bed); the class bits are **Unknown**
     ([finder](carry-loot.md#32-goals-and-their-target-finders)). Not every raid kidnaps: the Dust Bandit "Invasion with demands" and the Hive, Ninja and Crab
-    raids retreat with other packages (**Verified**, same query). Meitou builds the lift, the carry home and the cage, not the sleepers, eating or slaves:
-    [kidnapping](../simulation.md#kidnapping).
+    raids retreat with other packages (**Verified**, same query). The retreat package's mission town is the platoon's home town, else the nearest town of its
+    faction ([ai, prisoner packages](ai.md#prisoner-and-slaver-packages)); what the captors then do: [ai-tasks](ai-tasks.md#prisoner-fate-and-slave-rows). Meitou:
+    [kidnapping](../simulation.md#kidnapping), [captives](../simulation.md#captives).
   - Enemies: the base package, in a hostile campaign's phase 1, tags each seen target-faction character with squad memory 4 (TEMP_ENEMY,
     as DA 21); WarAssault tags every seen character except those of another town, with an engine flag (slot 0x248), or of factions with
     +0x1d0 or +0x34 == 8 set (meanings **Unknown**).

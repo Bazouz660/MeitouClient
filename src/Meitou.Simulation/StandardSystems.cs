@@ -70,6 +70,7 @@ public sealed class StandardSystemOptions
     /// <summary>Meitou (on; Faithful off): doors walkers opened close behind them (<see cref="Meitou.Simulation.Locks.LockSystem.DoorsCloseBehind"/>).</summary>
     public bool DoorsCloseBehind { get; init; } = true;
     public Meitou.Simulation.Kidnap.KidnapSettings? Kidnap { get; init; }
+    public Meitou.Simulation.Kidnap.CaptiveSettings? Captives { get; init; }
     public Meitou.Simulation.Trading.TradeSettings? Trade { get; init; }
     public Meitou.Simulation.Ai.AiSettings? Ai { get; init; }
     public Meitou.Simulation.Construction.ConstructionSettings? Construction { get; init; }
@@ -93,6 +94,8 @@ public sealed class StandardSystemSet
     public Meitou.Simulation.Crime.CrimeSystem? Crime { get; init; }
     public Meitou.Simulation.Crime.ArrestSystem? Arrest { get; init; }
     public Meitou.Simulation.Kidnap.KidnapSystem? Kidnap { get; init; }
+    /// <summary>What captors do with their captives (kill, eat, enslave, gather, deliver); with the population.</summary>
+    public Meitou.Simulation.Kidnap.CaptiveSystem? Captives { get; init; }
     public Meitou.Simulation.Locks.LockSystem? Locks { get; init; }
     public Meitou.Simulation.Trading.TradeSystem? Trade { get; init; }
     public Meitou.Simulation.Ai.AiSystem? Ai { get; init; }
@@ -171,6 +174,9 @@ public static class StandardSystems
             // Raiders lifting the downed and carrying them to a cage of their faction: right after the carry system, whose lift and links it uses; it adds nothing to the hash until one runs.
             if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap));
         }
+        // The captives' fate and the slavers' logistics: right after the kidnapping (serial, like it); nothing in the hash until a job or a town's kill timer exists.
+        Meitou.Simulation.Kidnap.CaptiveSystem? captives = null;
+        if (population is not null && Has(StandardParts.Ai)) systems.Add(captives = new Meitou.Simulation.Kidnap.CaptiveSystem(data, combat, o.Captives));
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
         if (Has(StandardParts.Construction)) systems.Add(construction = new Meitou.Simulation.Construction.ConstructionSystem(data, o.Construction));
         Meitou.Simulation.Production.ProductionSystem? production = null;
@@ -187,6 +193,7 @@ public static class StandardSystems
             animation.Ragdolls = ragdolls;
             // The stealth knock-out swing lasts the length of the knockout record's clip.
             if (carry is not null && library.IndexOf(Meitou.Simulation.Carrying.CarrySystem.KnockoutClip) is >= 0 and var ko) carry.KnockoutSeconds = lengths.Of(library.Definitions[ko].Clip);
+            if (captives is not null && library.IndexOf(Meitou.Simulation.Kidnap.CaptiveSystem.ChopClip) is >= 0 and var chop) captives.ChopSeconds = lengths.Of(library.Definitions[chop].Clip);
         }
         if (Has(StandardParts.Feed)) systems.Add(new FeedSystem(data.Items, o.Feed));
         if (Has(StandardParts.Retaliation)) systems.Add(new RetaliationSystem(combat!));
@@ -218,6 +225,6 @@ public static class StandardSystems
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
         if (arrest is not null) arrest.Talk = talk;
-        return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Crime = crime, Arrest = arrest, Locks = locks, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
+        return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Captives = captives, Crime = crime, Arrest = arrest, Locks = locks, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
     }
 }
