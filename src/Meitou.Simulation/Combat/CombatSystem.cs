@@ -204,6 +204,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Array.Copy(read, write, world.Characters.HighWater);
         FlyProjectiles(world);
         TickTurrets(world);
+        index.Build(read, world.Characters, world.Grid);
     }
 
     public void Move(World world, Partition part)

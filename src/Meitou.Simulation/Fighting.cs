@@ -21,6 +21,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var table = world.Characters;
         float dt = world.TickSeconds;
         int count = table.HighWater;
+        combat.IndexAttackers(world);   // for FightersAt: this schedule runs before combat's
         // Each attacker writes only its own slot and reads its target's place and the combat state of the last tick, so the slots run in parallel in any order.
         world.ParallelFor((count + SlotsPerJob - 1) / SlotsPerJob, job =>
         {
@@ -149,12 +150,23 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     public const int CheckEveryTicks = 15;
     public const float JoinRange = 250;
 
+    readonly List<int> guards = [], players = [];
+
     public void SlowWorld(World world)
     {
         if (world.Tick % CheckEveryTicks != 0) return;
         var table = world.Characters;
         var next = table.Next;
         ResumeGuards(world, table);
+        // The bodyguards and the player's characters, in slot order, for Guards and HelpAllies (each looked through the whole table per attacker before).
+        guards.Clear();
+        players.Clear();
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { } c) continue;
+            if (c.Guarding) guards.Add(s);
+            if (c.IsPlayer) players.Add(s);
+        }
         var taken = new HashSet<int>();
         for (int a = 0; a < table.HighWater; a++)
         {
@@ -173,7 +185,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                 JoinMates(world, table, t, defenders, taken, CanFight);
             }
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
-            Guards(world, table, t, a, defenders, taken);
+            Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.
             HelpAllies(world, table, t, a, defenders, taken);
             // The Hold order answers only an attacker within reach (Orders.HoldReach).
@@ -189,11 +201,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     /// Bodyguard (order 45, <b>engine</b> reading): the free characters following <paramref name="slot"/> as bodyguards (<see cref="CharacterCold.Guarding"/>) within <see cref="JoinRange"/> of it
     /// defend it against <paramref name="attacker"/>, in slot order; never against a character of their own faction.
     /// </summary>
-    static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken, List<int> guards)
     {
         var next = table.Next;
         var target = new CharacterId(slot, next[slot].Generation);
-        for (int s = 0; s < table.HighWater; s++)
+        foreach (int s in guards)
         {
             if (!next[s].Alive || s == attacker || table.Cold(s) is not { Guarding: true } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
             var d = next[s].Position - next[slot].Position;
@@ -247,7 +259,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         if (table.Cold(attacker) is not { IsPlayer: false } foe || foe.Faction == world.Player.Faction) return;   // never against its own side
         var next = table.Next;
         var at = next[slot].Position;
-        for (int s = 0; s < table.HighWater; s++)
+        foreach (int s in players)
         {
             if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
             var d = next[s].Position - at;
