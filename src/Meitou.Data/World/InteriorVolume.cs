@@ -218,12 +218,23 @@ public sealed partial class FloorSurfaces
             var part = p.Source;
             if (p.Owner != building || part.GetBool("passable") || !seen.Add(part.StringId)) continue;
             if (collision.Mesh(part.GetPath("xml collision")) is not { } mesh) continue;
-            var corners = new Vector3[mesh.Indices.Length];
-            for (int i = 0; i < corners.Length; i++) corners[i] = Vector3.Transform(mesh.Vertices[mesh.Indices[i]], node);
+            // A solid's flat underside (outward and facing down: a slab's or steps' bottom) is no floor; a wall hit dropped onto it put the goal under the building.
+            bool roof = part.GetBool("is unwalkable roof");
+            var kept = new List<Vector3>(mesh.Indices.Length);
+            for (int t = 0; t + 2 < mesh.Indices.Length; t += 3)
+            {
+                var a = Vector3.Transform(mesh.Vertices[mesh.Indices[t]], node);
+                var b = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 1]], node);
+                var c = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 2]], node);
+                var normal = Vector3.Cross(b - a, c - a);
+                if (!roof && mesh.Outward[t / 3] && normal.Y < 0 && -normal.Y >= normal.Length() * MathF.Cos(40 * MathF.PI / 180)) continue;
+                kept.Add(a); kept.Add(b); kept.Add(c);
+            }
+            var corners = kept.ToArray();
             if (corners.Length == 0) continue;
             var min = new Vector2(corners.Min(c => c.X), corners.Min(c => c.Z));
             var max = new Vector2(corners.Max(c => c.X), corners.Max(c => c.Z));
-            (part.GetBool("is unwalkable roof") ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
+            (roof ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
                 corners.Min(c => c.Y), corners.Max(c => c.Y), min, max));
         }
         return result;
@@ -267,8 +278,11 @@ public sealed partial class FloorSurfaces
     }
 }
 
-/// <summary>A collision file's shapes triangulated in Kenshi's Y-up building space: vertices and three indices per triangle.</summary>
-public sealed record CollisionMesh(Vector3[] Vertices, int[] Indices);
+/// <summary>
+/// A collision file's shapes triangulated in Kenshi's Y-up building space: vertices and three indices per triangle. <paramref name="Outward"/> per triangle: wound
+/// outward (a box, capsule or convex hull, <see cref="CollisionTriangulator"/>); a triangle mesh's keeps the file's winding and is false.
+/// </summary>
+public sealed record CollisionMesh(Vector3[] Vertices, int[] Indices, bool[] Outward);
 
 /// <summary>The collision files that building parts name (the <c>interior mask</c> hulls, the floor parts), read and triangulated once each; safe from several threads.</summary>
 public sealed class InteriorCollisions(GameInstall install)
@@ -290,15 +304,17 @@ public sealed class InteriorCollisions(GameInstall install)
         catch (Exception e) when (e is InvalidDataException or IOException or System.Xml.XmlException or FormatException) { return null; }
         var vertices = new List<Vector3>();
         var indices = new List<int>();
+        var outward = new List<bool>();
         foreach (var s in file.Shapes)
         {
             var v = new List<Vector3>();
             var i = new List<int>();
-            CollisionTriangulator.Triangulate(s, v, i);
+            int added = CollisionTriangulator.Triangulate(s, v, i);
             int offset = vertices.Count;
             vertices.AddRange(v.Select(CollisionTriangulator.ToWorldAxes));
             indices.AddRange(i.Select(x => x + offset));
+            outward.AddRange(Enumerable.Repeat(s.Kind != CollisionShapeKind.TriangleMesh, added));
         }
-        return vertices.Count == 0 ? null : new CollisionMesh([.. vertices], [.. indices]);
+        return vertices.Count == 0 ? null : new CollisionMesh([.. vertices], [.. indices], [.. outward]);
     }
 }

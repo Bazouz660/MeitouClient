@@ -157,7 +157,9 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 
 **Observed** (owner's base-game example): right-clicking a building targets its floor rather than terrain behind it.
 Meitou movement picks loaded buildings' floor/stair collision up to the viewed floor before terrain; wall hits drop to the floor below
-(up to 4 units across wall thickness). Clicks, queued moves and held-button steering share this destination and marker.
+(up to 4 units across wall thickness). The flat downward faces of box/capsule/convex shapes (wound outward) are no floor: **Verified** (scratch ray probe,
+Stationhouse `Storm_House_08_BASE_COL.xml` / `_Exterior_COL_Steps.xml`) rays clipping the foundation's or steps' sloped side dropped onto their undersides
+(Y −60 / −74, floor top 15.5); triangle-mesh faces keep the file's winding (unknown, 82 of 435 building collision files), so either side counts there. Clicks, queued moves and held-button steering share this destination and marker.
 Buildings without a readable interior mask/floor collision still use terrain; the original's pick filters: [building picking](#building-picking-and-selection).
 Outside the rooms, the ray's first descent onto a kept navmesh surface more than 5 units above the terrain (a wall top, ramp, deck) wins
 over the terrain, and its height is the goal's floor (engine choice). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
