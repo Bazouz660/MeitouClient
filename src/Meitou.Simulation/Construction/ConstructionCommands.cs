@@ -19,3 +19,12 @@ public sealed record CancelSite(string Site) : SimCommand;
 
 /// <summary>The site's <c>pause</c> flag: auto-jobs skip a paused site.</summary>
 public sealed record PauseSite(string Site, bool Paused) : SimCommand;
+
+/// <summary>The panel's [UPGRADE]: the site becomes its record's <c>upgrades to</c> BUILDING in place and is built up to it (<see cref="BuildingUpgrades"/>).</summary>
+public sealed record UpgradeSite(string Site) : SimCommand;
+
+/// <summary>The panel's [DOWNGRADE] on an unfinished upgrade: the site goes back to the BUILDING that upgrades to it (<see cref="BuildingUpgrades"/>).</summary>
+public sealed record DowngradeSite(string Site) : SimCommand;
+
+/// <summary>The panel's Open to public toggle on a building of the player's: a site's <see cref="BuildSite.Public"/>, else an owned town building's flag in the fixtures.</summary>
+public sealed record SetBuildingPublic(string Building, bool Public) : SimCommand;

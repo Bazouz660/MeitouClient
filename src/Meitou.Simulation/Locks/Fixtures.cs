@@ -100,7 +100,7 @@ public sealed class Fixture
     public bool DoorBroken { get; set; }
     public int GateCode { get; set; } = -1;
     public bool WantsLock { get; set; }
-    /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>).</summary>
+    /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>; a player building's bed has it too, so an upgrade is noticed).</summary>
     public DoorLeaf Leaf { get; init; }
     public string HostRecordId { get; init; } = "";
     /// <summary>Doors: where the leaf is in the world, once the door gate has told it (<see cref="FixtureRegistry.DoorSpotOf"/>); derived from the data, not hashed or saved.</summary>
@@ -140,8 +140,11 @@ public sealed class Fixture
 /// </summary>
 public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock, bool Broken = false, Vector3 Position = default, string Record = "");
 
-/// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say.</summary>
-public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors);
+/// <summary>
+/// The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say; whether a fixture of it is the player's
+/// (<paramref name="Owned"/>: a town building the player owns gets the panel's buttons) and its Open to public flag as the player set it (null: never set).
+/// </summary>
+public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors, bool Owned = false, bool? Public = null);
 
 /// <summary>
 /// One door for the panel: open (open or opening: where it is heading), effectively locked, whether it wants its lock, its lock's level (0..100), whether the door is broken, and its

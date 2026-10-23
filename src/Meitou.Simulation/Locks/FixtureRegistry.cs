@@ -36,6 +36,8 @@ public sealed class FixtureRegistry
     readonly List<string> buildings = [];
     readonly HashSet<int> sites = [];
     readonly HashSet<string> initialApplied = new(StringComparer.Ordinal);
+    // The Open to public flag of the player's town buildings (the original's Building+0xc8, saved as `is public day`): set by the panel or read from a save.
+    readonly Dictionary<string, bool> publicFlags = new(StringComparer.Ordinal);
     readonly Dictionary<string, GameRecord?> functions = new(StringComparer.Ordinal);
     // (cage id, faction) -> the game hour until which a walk there is known to fail (engine: the "no path" memo of FindCage). Sorted, so it hashes in a fixed order.
     readonly SortedDictionary<(string Cage, int Faction), double> unreachable = new(Comparer<(string Cage, int Faction)>.Create((a, b) =>
@@ -145,7 +147,11 @@ public sealed class FixtureRegistry
         containerSpots = null;
         doorPicks = null;
         bedSpots = null; cageList = null;
-        if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(StateKeys.Of(state), b.Key, list, level: false);
+        if (Saved?.GetValueOrDefault(b.Key) is { } state)
+        {
+            Restore(StateKeys.Of(state), b.Key, list, level: false);
+            if (owner >= 0 && owner == world.Player.Faction && state.Bools.TryGetValue("is public day", out bool open)) publicFlags[b.Key] = open;
+        }
         else if (b.LevelState is { } levelState) Restore(StateKeys.Of(levelState), b.Key, list, level: true);
         SyncDoors(b.Key);
     }
@@ -186,7 +192,7 @@ public sealed class FixtureRegistry
             list.Add(new Fixture
             {
                 Id = site.Id + "@bed0", Building = site.Id, Kind = FixtureKind.Bed, Site = -1, Owner = site.Owner, Position = site.Position, Yaw = yaw,
-                UseRange = 15, RecordId = record.StringId, Bed = b,
+                UseRange = 15, RecordId = record.StringId, HostRecordId = record.StringId, Bed = b,
             });
         byBuilding[site.Id] = list;
         buildings.Add(site.Id);
@@ -842,6 +848,7 @@ public sealed class FixtureRegistry
     public bool WriteBuilding(string buildingInstance, FcsRecord state)
     {
         if (!byBuilding.TryGetValue(buildingInstance, out var list)) return false;
+        if (publicFlags.TryGetValue(buildingInstance, out bool open)) state.Bools["is public day"] = open;
         foreach (var f in list)
         {
             if (f.Contents is { } grid && ContainerSave.KeyOf(f, buildingInstance) is { } contentsKey)
@@ -904,13 +911,40 @@ public sealed class FixtureRegistry
     }
 
     /// <summary>The panel's view of a building's doors (null for no building, or one without fixtures).</summary>
-    internal BuildingDetail? DetailOf(string? instance)
+    internal BuildingDetail? DetailOf(string? instance, int faction)
     {
         if (instance is null || !byBuilding.TryGetValue(instance, out var list)) return null;
         var doorList = list.Where(f => f.Kind == FixtureKind.Door).OrderBy(f => f.DoorIndex)
             .Select(f => new DoorDetail(f.Motion is DoorMotion.Open or DoorMotion.Opening, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId, f.WantsLock)).ToArray();
-        return new BuildingDetail(instance, doorList);
+        return new BuildingDetail(instance, doorList, faction >= 0 && list.Exists(f => f.Owner == faction), PublicOf(instance));
     }
+
+    /// <summary>
+    /// Gives a re-registered building's doors the state its old doors had, by door index (an upgraded or downgraded building: the original keeps its door objects and only swaps their
+    /// records). The new lock keeps its own level and hardness; whether it is locked carries over.
+    /// </summary>
+    public void CarryDoors(string building, IReadOnlyList<Fixture> old)
+    {
+        if (!byBuilding.TryGetValue(building, out var list)) return;
+        foreach (var d in list)
+        {
+            if (d.Kind != FixtureKind.Door || old.FirstOrDefault(o => o.Kind == FixtureKind.Door && o.DoorIndex == d.DoorIndex) is not { } was) continue;
+            d.Motion = was.Motion;
+            d.OpenAmount = was.OpenAmount;
+            d.DoorBroken = was.DoorBroken;
+            d.WantsLock = was.WantsLock;
+            d.GateCode = was.GateCode;
+            if (d.Lock is { } l && was.Lock is { } wl) l.Locked = wl.Locked;
+        }
+        doorPicks = null;
+        SyncDoors(building);
+    }
+
+    /// <summary>A town building's Open to public flag as the player set it (or a save read it), null when never set.</summary>
+    public bool? PublicOf(string building) => publicFlags.TryGetValue(building, out bool open) ? open : null;
+
+    /// <summary>Sets a registered building's Open to public flag (the panel's toggle on a town building the player owns).</summary>
+    public void SetPublic(string building, bool open) => publicFlags[building] = open;
 
     /// <summary>The registered buildings, in registration order.</summary>
     public IReadOnlyList<string> Buildings => buildings;
@@ -921,6 +955,8 @@ public sealed class FixtureRegistry
         h.Add(all.Count);
         foreach (var f in all) f.Hash(ref h);
         h.Add(initialApplied.Count);
+        if (publicFlags.Count > 0)
+            foreach (var (b, open) in publicFlags.OrderBy(p => p.Key, StringComparer.Ordinal)) { h.Add(Rng.StableHash(b)); h.Add(open); }
         if (unreachable.Count == 0) return;   // only once a walk failed, so worlds without one hash as before
         h.Add(unreachable.Count);
         foreach (var ((cage, faction), until) in unreachable) { h.Add(Rng.StableHash(cage)); h.Add(faction); h.Add(until); }

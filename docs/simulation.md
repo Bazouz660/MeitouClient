@@ -751,10 +751,12 @@ that damages a complete building. Production, power and research: [Production](#
   docs, `NotAvailable` is the engine's "That building is not available yet.").
 - `Meitou.Simulation/Construction/ConstructionCommands.cs`: `PlannedBuilding(Record, Position, Rotation, Floor, Parent)`;
   `PlaceBuildings(Plans)` (Confirm), `BuildOrder(Characters, Site, Repair)` (orders 2/95), `DismantleOrder(Characters, Site)`
-  (96), `CancelSite(Site)` (engine: only a site with nothing delivered), `PauseSite(Site, Paused)`. Sites are named by instance id.
+  (96), `CancelSite(Site)` (engine: only a site with nothing delivered), `PauseSite(Site, Paused)`, `UpgradeSite(Site)` / `DowngradeSite(Site)`
+  ([upgrades](game/buildings-production.md#upgrades)), `SetBuildingPublic(Building, Public)` (a site's `Public`, else an owned town building's
+  flag in `World.Fixtures`). Sites are named by instance id.
 - `.../ConstructionSnapshot.cs` + `WorldSnapshot`: `Buildings` (`BuildingSnapshot`: `Id`, `Record`, `Position` absolute,
   `Rotation`, `Floor`, `Parent`, `Owner` faction index, `Progress`/`Target` in material units, `Materials` (item,
-  required, delivered), `Complete`, `Paused`, `Dismantling`), `BuildingsRevision`, `UnlockedBuildings`.
+  required, delivered), `Complete`, `Paused`, `Dismantling`, `Public`, `TownName`), `BuildingsRevision`, `UnlockedBuildings`.
 
 **Simulation state.** `World.Buildings` (`Construction.BuildingRegistry`, sites as `BuildSite`): player-built sites in
 creation order, by id, holding the snapshot's fields plus rate, builder counter and the destroyed flags. Base-game

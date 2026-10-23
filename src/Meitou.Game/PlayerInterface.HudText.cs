@@ -30,9 +30,10 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A line of a text panel: label and value, each with its colour (null: the text default). With <paramref name="Action"/> the value is a <c>Kenshi_Button2</c> button (the
-    /// DataPanel's button lines): over the right half of the row, or across the whole row when there is no label.
+    /// DataPanel's button lines): over the right <paramref name="ButtonWidth"/> of the row (the original's width argument), or across the whole row when there is no label.
     /// </summary>
-    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null, string? Action = null);
+    internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null, string? Action = null,
+        float ButtonWidth = 0.5f);
 
     /// <summary>A medical panel row: its name, the green, yellow and red layers' fractions, the number, the arrows, the robot layer and the row's tooltip (the <c>LifeBarNTooltip</c> widget).</summary>
     internal readonly record struct MedicalRow(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot, string? Tooltip = null);
@@ -180,7 +181,8 @@ sealed partial class PlayerInterface
             if (lines[i].Action is { } action)
             {
                 // The button holds the value; the row's label (if any) stays text on its left.
-                var button = lines[i].Label.Length == 0 ? row : row with { X = row.X + row.Width * 0.5f, Width = row.Width * 0.5f };
+                float width = Math.Clamp(lines[i].ButtonWidth, 0.1f, 1);
+                var button = lines[i].Label.Length == 0 ? row : row with { X = row.X + row.Width * (1 - width), Width = row.Width * width };
                 var buttonProperties = new Dictionary<string, string>(valueProperties) { ["TextAlign"] = "Center", ["TextColour"] = lines[i].ValueColour ?? MyGuiColours.InkText };
                 if (lines[i].Tooltip is { Length: > 0 } buttonTip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(buttonTip), "fixed")) buttonProperties[pair.Key] = pair.Value;
                 // Kenshi_Button2 is a template (kenshi_templates.xml) whose root widget has the Kenshi_Button1Skin skin.
@@ -196,9 +198,9 @@ sealed partial class PlayerInterface
                     // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
                     if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
                     // A value beside a label keeps out of the label's column: a long one (a French weather notice) is cut short instead of running over the label.
-                    // A label beside a button keeps to the left half: added after the button, a full-row label with a tooltip would take its clicks.
+                    // A label beside a button keeps to its left: added after the button, a full-row label with a tooltip would take its clicks.
                     var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f }
-                        : lines[i].Action is not null ? row with { Width = row.Width * 0.5f } : row;
+                        : lines[i].Action is not null ? row with { Width = row.Width * (1 - Math.Clamp(lines[i].ButtonWidth, 0.1f, 1)) } : row;
                     controls.Add(new($"{panel}-{part}-{i}", "TextBox", box, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
                         textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
                 }

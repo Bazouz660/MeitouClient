@@ -193,8 +193,70 @@ public sealed class ConstructionSystem : ITickSystem
                         reg.Touch();
                     }
                     break;
+                case UpgradeSite up:
+                    if (reg.Find(up.Site) is { } upgraded && CanUpgrade(world, upgraded) is { } higher) Swap(world, upgraded, higher, UpgradeProgressCap, finishCovered: false);
+                    break;
+                case DowngradeSite down:
+                    if (reg.Find(down.Site) is { } downgraded && CanDowngrade(world, downgraded) is { } lower) Swap(world, downgraded, lower, DowngradeProgressCap, finishCovered: true);
+                    break;
+                case SetBuildingPublic open:
+                    if (reg.Find(open.Building) is { } shown && shown.Owner == world.Player.Faction && shown.Public != open.Public)
+                    {
+                        shown.Public = open.Public;
+                        reg.Touch();
+                    }
+                    break;
             }
         }
+    }
+
+    /// <summary>The progress an upgrade keeps at most, and a downgrade (material units; <b>Verified</b>, Building slots 75 / 76 cap +0x164 at 50 / 80).</summary>
+    public const float UpgradeProgressCap = 50, DowngradeProgressCap = 80;
+
+    /// <summary>
+    /// The BUILDING a site of the player's can be upgraded to (docs/game/buildings-production.md "Upgrades"): its record's upgrade, unlocked by research. Engine scope: not walls (the
+    /// original's WallBuilding upgrades the whole wall line) and not a building with a machine (its production state is kept per record).
+    /// </summary>
+    public string? CanUpgrade(World world, BuildSite site) =>
+        Swappable(world, site) && BuildingUpgrades.UpgradeOf(db, site.Record) is { } target && world.Research.IsUnlocked(target) && Data(target) is not null ? target : null;
+
+    /// <summary>The BUILDING an unfinished site of the player's goes back to (the one that upgrades to it), shown while it is not complete; same scope as <see cref="CanUpgrade"/>.</summary>
+    public string? CanDowngrade(World world, BuildSite site) =>
+        !site.Complete && Swappable(world, site) && BuildingUpgrades.DowngradeOf(db, site.Record) is { } lower && Data(lower) is not null ? lower : null;
+
+    bool Swappable(World world, BuildSite site) =>
+        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } && world.Machines.Find(site.Id) is null;
+
+    /// <summary>
+    /// Makes a site the BUILDING <paramref name="record"/> in place (Building slots 75 / 76, docs/game/buildings-production.md "Upgrades"): no longer complete or paused, progress capped
+    /// at <paramref name="cap"/>, the new record's materials with what was delivered of each item carried over (engine reading of the re-applied state), the name the new record's.
+    /// A downgrade (<paramref name="finishCovered"/>) whose delivered materials already cover the new record is finished at once. Its doors stay while it is built (<see cref="BuildSite.Upgrading"/>).
+    /// </summary>
+    void Swap(World world, BuildSite site, string record, float cap, bool finishCovered)
+    {
+        var data = Data(record)!;
+        var had = new Dictionary<string, float>(StringComparer.Ordinal);
+        foreach (var m in site.Materials) had[m.Item] = had.GetValueOrDefault(m.Item) + m.Delivered;
+        var materials = new MaterialSlot[data.Materials.Count];
+        for (int i = 0; i < materials.Length; i++)
+        {
+            var cost = data.Materials[i];
+            float delivered = MathF.Min(had.GetValueOrDefault(cost.Item), cost.Required);
+            had[cost.Item] = had.GetValueOrDefault(cost.Item) - delivered;
+            materials[i] = new MaterialSlot(cost.Item, cost.Required) { Delivered = delivered };
+        }
+        site.Record = data.Id;
+        site.Name = data.Name;
+        site.Materials = materials;
+        site.Target = data.Target;
+        site.Rate = data.Rate;
+        site.Complete = false;
+        site.Paused = false;
+        site.Upgrading = true;
+        site.Progress = MathF.Min(site.Progress, MathF.Min(cap, site.Target));
+        if (finishCovered && site.Deliverable >= site.Target) Finish(world, site);
+        else world.Buildings.Changed();
+        SyncChildren(world, site);
     }
 
     /// <summary>
@@ -680,6 +742,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Progress = site.Target;
         site.Complete = true;
         site.Destroyed = false;
+        site.Upgrading = false;
         site.Ruined = false;
         world.Buildings.Changed();
         SyncChildren(world, site);

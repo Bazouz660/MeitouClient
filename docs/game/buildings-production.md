@@ -204,6 +204,34 @@ shows the first failing message in this order (**Verified** unless marked):
   area (`FUN_1404d2c80` -> `FUN_1403a66c0`, **Observed**). That a new building starts at progress 0 with nothing
   delivered is **Observed** (the factory's complete flag is false).
 
+### Upgrades
+
+A building is upgraded or downgraded in place: same object, its record swapped (**Verified** unless marked: Building slots
+75-78, `FUN_140027eda`/`StorageBuilding::vfunc_75`, `vfunc_76`, `FarmBuilding::vfunc_77`/`78`; the panel's buttons
+dispatch to slots 75 / 76 through `FUN_140313d50` / `FUN_140313d90`).
+- **Upgrade target** (slot 77): the record's first `upgrades to` reference, only when the building has a construction state
+  and an owner, and the target is in the research manager's set at +0x130 (`FUN_14082ea60`; taken to be the unlocked
+  buildings, **Observed**). **Downgrade target** (slot 78): the first BUILDING whose `upgrades to` names this record (the
+  search order over the records is **Unknown**).
+- **Upgrade** (slot 75): record := target, the name-dirty byte +0x19f set, complete and paused cleared (+0x160/+0x161),
+  progress capped at 50 material units, the new record's construction state applied (`FUN_14054a450`), then each material
+  still owed is taken from the building's own inventory (**not modelled**), doors given the new record's `doors` record,
+  mesh, physics and window rebuilt, an outdoor building's navmesh area rebuilt.
+- **Downgrade** (slot 76): record := the downgrade target, +0x19f set, progress capped at **80**; when the state's materials
+  already cover it (+0x188 minus `FUN_140549260` <= 0, **Observed** reading) the building is completed at once (slot 0x230
+  with FLT_MAX). Otherwise as the upgrade.
+- Data (**Verified**, game data with mods): chains on production buildings (Stone Mine I-VII, Iron Refinery I-IV, Research
+  Bench II-VI ...), farms (S-XL), turrets, training dummies, walls (Makeshift Wall -> Defensive Wall II ...) and gates
+  (Makeshift Gate -> Defensive Gate II, III -> IV -> V); the targets are mostly also `enable buildings` of a research, so a
+  higher tier can be placed directly too. Walls have their own slot 75/77 (`WallBuilding`, `wall master`: the whole line).
+- Meitou (`UpgradeSite` / `DowngradeSite`, `ConstructionSystem.CanUpgrade` / `CanDowngrade`, chain lookup
+  `BuildingUpgrades`): the site's record, name, rate, target and materials swapped, delivered amounts carried over per item
+  (engine reading of the re-applied state), complete and paused cleared, progress capped at 50 / 80; a downgrade whose
+  delivered materials cover the lower record finishes at once. Engine scope: no walls or wall pieces and no building with
+  a machine (production state is per record). The doors stay registered while it is built (`BuildSite.Upgrading`, not
+  saved: a reloaded unfinished upgrade gets its doors when finished) and keep their state by door index; the building
+  leaves the navmesh until it is complete again (engine).
+
 ### Walls
 
 Ghost class `PreviewBuilding_Wall` for `links together` buildings; **Verified** unless marked (slots 9/10/12/17/20/21/24/

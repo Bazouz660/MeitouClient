@@ -392,8 +392,13 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   asks the object's slot 40 for its section (`FUN_1406fa7f0`). Building slot 40 (`FUN_140301840`) answers:
   - 5: slot 113 (`FUN_1402fdea0`): the building's name left; right the owner faction's name, the player's faction always, another
     faction only when the building is in a town that passes slot 0x340 and town+0x111 is clear, else empty.
-  - 3: `Type:` the record's name when it differs from the building's name, `Town:` the town's name, then the upgrade lines (slot 116:
-    Upgrade / Upgrades To: / Downgrade To:, power) and the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
+  - 3: `Type:` the record's name when it differs from the building's name, `Town:` the town's name, then the upgrade lines (slot 116, generic
+    `FUN_140303030`, **Verified**): with an upgrade target ([upgrades](buildings-production.md#upgrades)) a full-row button `[UPGRADE]` (Good:
+    colour tag + "[" + the uppercased translation of "Upgrade" + "]"), whose tooltip is a list of pairs `Upgrades To:` target name, a row per
+    material still owed (the target's required less the current state's delivered, > 0: six spaces + item name, `+` amount) and, for a building
+    with power, `Power` with the `power output` change (Good, Bad when negative); without a target the line is removed (`FUN_1406fd460`). With a
+    downgrade target while the construction state is not complete, `[DOWNGRADE]` (Main) with the tooltip `Downgrade To:` name. WallBuilding's
+    slot 116 (`FUN_1402ff760`) has only the upgrade, keyed `Upgradeable to:`. Then the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
     true: the owner is the player's faction and the building's +0xc0 byte is clear, with an exception for `creates player town` buildings not read in
     full): a full-row button `Dismantle` (caption BadBright) and, while the construction state is not complete, `PAUSE CONSTRUCTION` (Main), captioned
     `[PAUSED]` (#777777) while paused. Dismantle is slot 84 (`FUN_14054db30`, `General_Click`): "You cannot delete this building while it has mounted
@@ -402,8 +407,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
     "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
-  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building with
-    +0x1f0 set (taken to be its interior) a `Kenshi_Button2` toggle (Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
+  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building in a
+    town (+0x1f0, the town pointer the For sale rule reads) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
     82, `General_Click`). `For sale:` with a button `c.{1,num}` (both Good) when slot 88 (`FUN_14029c500`) is true: a building of class 0xb with no
     parent whose town (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
     allied, and its state's bool `sell home` set (true without a state). Price (`FUN_1407ad300`): int(f × target × the owner FACTION's float
@@ -433,7 +438,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   the sum of its BUILDING record's materials; the player's own site gets Dismantle (after "Are you sure?" the selection dismantles it, `DismantleOrder`,
   engine choice for the unknown callback) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
-  buildings only; its toggle and the For sale line are not built: the simulation has no public flag on a player building (and its consumers in the town AI are **Unknown**) and no purchase of a town building.
+  buildings. A building of the player's (its site, or a town building whose fixtures the player's faction owns, `BuildingDetail.Owned`) gets the
+  buttons: the door lines as full-row buttons, `[UPGRADE]` / `[DOWNGRADE]` on a site (`UpgradeSite` / `DowngradeSite`, same scope as the
+  simulation's), and in a town the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
+  both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). Not built: For sale (no purchase
+  of a town building), Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
@@ -441,8 +450,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   lines are `Kenshi_Button2` buttons: Open/Close runs `FUN_140546fb0`, Security `FUN_140547060` ([locks](locks.md#doors); **Verified**: the
   delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. `Kenshi_Button2` is a template, not a skin: its root
   widget has `Kenshi_Button1Skin` (**Verified**, `data/gui/templates/kenshi_templates.xml`). Meitou: the same lines, the buttons on the player's own
-  finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), drawn over the right half of the row (engine choice; the original's button width
-  argument, 1.0 here, 0.3 for the public toggle and 0.4 for For sale, is **Unknown** in meaning). Meitou engine choices: a moving door reads by where
+  finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), over the whole row with no label. The original's button width argument
+  (1.0 here, 0.3 for the public toggle, 0.4 for For sale) is the button's share of the row, at its right; at 1.0 the key is not shown
+  (**Observed**: the owner's screenshots of a Defensive Gate III and a bought town house, `HudLine.ButtonWidth` in Meitou). Meitou engine choices: a moving door reads by where
   it heads (opening: open, closing: closed), and an open door that wants its lock reads `Locked` with "The door will lock when it closes.".
 - **Beds, cages, containers, lamps** (Useable / Storage / Light slot 40 `FUN_140304e90`): 3 `Town:`, `Training:` (function 7), `Cost to use:`
   `Private` or `Pay c.{1,num}` (beds), `Lock state:` Locked / Unlocked, `Lock complexity:` `Level {1,num}`, `Empty`; 6 `Healing bonus:`

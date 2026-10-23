@@ -275,7 +275,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// trade (<see cref="SquadTemplate.HasShop"/>; the original's shopping looks for BF_SHOP furniture inside, which Meitou does not read: engine choice).
     /// Residents are the squads living there, else the level data's <c>residents template</c>; the layout flags <c>is bar</c> / <c>is shop</c> count too.
     /// A building is public as its residents' template's <c>public day</c> (the original writes it over the home's flag), else as its level state's
-    /// <c>is public day</c>, else public (engine choice: the original's default is Unknown).
+    /// <c>is public day</c>, else public (engine choice: the original's default is Unknown); a town building the player owns as its Open to public toggle once set
+    /// (the stats panel, <see cref="Locks.FixtureRegistry.PublicOf"/>).
     /// </summary>
     void RefreshPlaces(World world)
     {
@@ -305,7 +306,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             var buildings = data.Sites[site].Buildings;
             foreach (var b in buildings)
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
-            bool IsPublic(TownBuilding b) => publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true;
+            bool IsPublic(TownBuilding b) => world.Fixtures.PublicOf(b.Key) ?? (publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true);
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
             places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
                 [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);

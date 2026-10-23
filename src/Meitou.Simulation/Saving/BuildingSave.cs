@@ -84,6 +84,7 @@ public static class BuildingSave
                     Progress = complete ? target : MathF.Min(state.Floats.GetValueOrDefault("construction progress"), target),
                     Complete = complete,
                     Paused = state.Bools.GetValueOrDefault("pause"),
+                    Public = state.Bools.GetValueOrDefault("is public day", true),
                     Destroyed = state.Bools.GetValueOrDefault("destroyed"),
                 });
                 made++;
@@ -230,7 +231,7 @@ public static class BuildingSave
         Hand.Null.Write(state, "residents");
         state.Bools["foliage"] = false;
         state.Bools["pause"] = site.Paused;
-        state.Bools["is public day"] = true;
+        state.Bools["is public day"] = site.Public;
         state.Bools["is complete"] = site.Complete;
         state.Bools["is inside building"] = site.Parent is not null;
         state.Bools["destroyed"] = site.Destroyed;

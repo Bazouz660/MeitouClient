@@ -234,6 +234,11 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
         player.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
             ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
+        // The upgrade chain of a BUILDING (the panel's [UPGRADE] / [DOWNGRADE]) and its build data (their tooltips' materials).
+        player.UpgradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.UpgradeOf(d.Db, record) : null;
+        player.DowngradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.DowngradeOf(d.Db, record) : null;
+        player.BuildingData = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r) : null;
+        player.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
         player.SquadLimits = () => popData?.Bodies.Constants;
         player.Rocks = () => popData?.ResourceNodes;
         player.AlliedFaction = faction => popData is { } d && session.World.Player.Faction is (>= 0 and var mine) && d.Relations.Contains(faction) && d.Relations.IsAlly(mine, faction);

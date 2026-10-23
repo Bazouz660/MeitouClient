@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Text;
 using System.Numerics;
 using Meitou.Rendering;
 using Meitou.Simulation;
@@ -88,9 +89,13 @@ sealed partial class PlayerInterface
         bool bad = false;
         bool own = focus.SiteId is not null;
         bool player = focus.SiteId is { } siteId && !Meitou.Simulation.Production.ProductionSystem.IsNatural(siteId);
-        if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
-        if (focus.Town is { Length: > 0 } town) state.Add(new("Town:", town));
         var site = focus.SiteId is { } id ? session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) : null;
+        // A town building the player owns (bought, or the player's in the save) gets the buttons of a building of the player's (the original's slot 79: the owner is the player's faction).
+        var detail = session.CurrentSnapshot.InspectedBuilding is { } d && d.Instance == focus.Instance ? d : null;
+        bool mine = player || detail is { Owned: true };
+        if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
+        if ((focus.Town ?? site?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
+        if (player && site is not null) AddUpgradeLines(site, state);
         // The construction buttons (Building slot 117, FUN_1402fea10): Dismantle in BadBright, and while unfinished PAUSE CONSTRUCTION, captioned [PAUSED] in #777777 while paused.
         if (player && site is not null)
         {
@@ -107,18 +112,25 @@ sealed partial class PlayerInterface
         {
             if (FirstDoor(focus) is { } door)
             {
-                // DoorStuff slot 40 (FUN_140304120): the value in the exe's green #a8b774, BadBright for a broken door, a closed locked one and Locked; buttons on the player's own door.
+                // DoorStuff slot 40 (FUN_140304120): the value in the exe's green #a8b774, BadBright for a broken door, a closed locked one and Locked; on the player's own door
+                // full-row buttons (width 1.0: the key is not shown, as the owner's screenshots show).
                 if (door.Broken) { status = "Broken"; bad = true; }
-                stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour,
+                stats.Add(new(mine ? "" : "Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour,
                     door.Broken || !door.Open && door.Locked ? BadBrightColour : GoodColour, door.Broken ? "It will no longer close and needs to be repaired." : null,
-                    player ? "meitou:building-doors" : null));
+                    mine ? "meitou:building-doors" : null));
                 // Meitou: an open door that wants its lock (the lock button's setting; it locks when it closes) reads Locked, else the button changed nothing visible.
                 bool locked = door.Locked || door.WantsLock && door.Open;
-                stats.Add(new("Security:", $"{Loc.Tr(locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, locked ? BadBrightColour : GoodColour,
-                    door.Locked ? "The door is locked and will keep out intruders." : locked ? "The door will lock when it closes." : "The door is unlocked.", player ? "meitou:building-locks" : null));
+                stats.Add(new(mine ? "" : "Security:", $"{Loc.Tr(locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, locked ? BadBrightColour : GoodColour,
+                    door.Locked ? "The door is locked and will keep out intruders." : locked ? "The door will lock when it closes." : "The door is unlocked.", mine ? "meitou:building-locks" : null));
             }
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
-            if (!own && (focus.PublicDay || focus.PublicNight))
+            if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 })
+            {
+                // The player's building in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
+                bool open = PublicOf(focus, site, detail);
+                stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadBrightColour, Action: "meitou:building-public", ButtonWidth: 0.3f));
+            }
+            else if (!mine && (focus.PublicDay || focus.PublicNight))
             {
                 bool open = session.Clock.IsDaytime ? focus.PublicDay : focus.PublicNight;
                 stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadColour));
@@ -126,6 +138,47 @@ sealed partial class PlayerInterface
         }
         return (new(focus.Name, focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
     }
+
+    /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>
+    public Func<string, string?>? UpgradeOf { get; set; }
+    public Func<string, string?>? DowngradeOf { get; set; }
+    public Func<string, Meitou.Data.Gameplay.Construction.BuildingBuildData?>? BuildingData { get; set; }
+    readonly Dictionary<string, Meitou.Data.Gameplay.Construction.BuildingBuildData?> buildingData = new(StringComparer.Ordinal);
+
+    Meitou.Data.Gameplay.Construction.BuildingBuildData? DataOf(string record) =>
+        buildingData.TryGetValue(record, out var data) ? data : buildingData[record] = BuildingData?.Invoke(record);
+
+    /// <summary>
+    /// The upgrade lines of a site of the player's (Building slot 116, docs/game/ui-screens.md "Selected building"): <c>[UPGRADE]</c> in Good when its record upgrades to a BUILDING research
+    /// has unlocked, <c>[DOWNGRADE]</c> in Main while it is unfinished and some BUILDING upgrades to it. Each button's tooltip names the record it becomes; the upgrade's also lists the
+    /// materials still owed (the new record's, less what is delivered of each item) and the power output's change. Engine scope as the simulation's: no walls, no machines.
+    /// </summary>
+    void AddUpgradeLines(Meitou.Simulation.Construction.BuildingSnapshot site, List<HudLine> state)
+    {
+        var snapshot = session.CurrentSnapshot;
+        if (site.WallParent is not null || DataOf(site.Record) is not { LinksTogether: false } || snapshot.Machines.Any(m => m.Site == site.Id)) return;
+        if (UpgradeOf?.Invoke(site.Record) is { } up && snapshot.UnlockedBuildings.Contains(up) && DataOf(up) is { } higher)
+        {
+            var had = new Dictionary<string, float>(StringComparer.Ordinal);
+            foreach (var m in site.Materials) had[m.Item] = had.GetValueOrDefault(m.Item) + m.Delivered;
+            var tip = new StringBuilder($"{Loc.Tr("Upgrades To:")} {higher.Name}");
+            foreach (var cost in higher.Materials)
+            {
+                float delivered = Math.Min(had.GetValueOrDefault(cost.Item), cost.Required);
+                had[cost.Item] = had.GetValueOrDefault(cost.Item) - delivered;
+                if (cost.Required - delivered > 0)
+                    tip.Append(CultureInfo.InvariantCulture, $"\n      {buildHost?.ItemName(cost.Item) ?? cost.Item} +{(cost.Required - delivered).ToString("0.##", CultureInfo.InvariantCulture)}");
+            }
+            if (PowerOutput?.Invoke(up) - PowerOutput?.Invoke(site.Record) is { } power and not 0) tip.Append(CultureInfo.InvariantCulture, $"\n{Loc.Tr("Power")} {power}");
+            state.Add(new("", $"[{Loc.Tr("Upgrade").ToUpper(CultureInfo.CurrentCulture)}]", ValueColour: GoodColour, Tooltip: tip.ToString(), Action: "meitou:building-upgrade"));
+        }
+        if (!site.Complete && DowngradeOf?.Invoke(site.Record) is { } down && DataOf(down) is { } lower)
+            state.Add(new("", $"[{Loc.Tr("Downgrade").ToUpper(CultureInfo.CurrentCulture)}]", ValueColour: MainColour, Tooltip: $"{Loc.Tr("Downgrade To:")} {lower.Name}",
+                Action: "meitou:building-downgrade"));
+    }
+
+    /// <summary>A BUILDING record's <c>power output</c> (the upgrade tooltip's Power change); the host sets it.</summary>
+    public Func<string, int?>? PowerOutput { get; set; }
 
     /// <summary>The selected building's first door as the simulation publishes it, or null.</summary>
     Meitou.Simulation.Locks.DoorDetail? FirstDoor(SelectedBuilding focus) =>
@@ -166,11 +219,38 @@ sealed partial class PlayerInterface
         static MedicalRow Bar(string name, float fraction, string value, string tooltip) => new(name, 0, fraction, 0, value, "", false, Loc.Tr(tooltip));
     }
 
-    /// <summary>The panel's own buttons on a selected building of the player's: Dismantle (after the original's "Are you sure?"), pause, the doors and their locks.</summary>
+    /// <summary>
+    /// Whether a building of the player's is open to the public: a site's flag; a town building's as the player set it, else as its state reads (<c>is public day</c>, Building+0xc8).
+    /// </summary>
+    static bool PublicOf(SelectedBuilding focus, Meitou.Simulation.Construction.BuildingSnapshot? site, Meitou.Simulation.Locks.BuildingDetail? detail) =>
+        site?.Public ?? detail?.Public ?? focus.PublicDay;
+
+    /// <summary>The panel's own buttons on a selected building of the player's: Dismantle (after the original's "Are you sure?"), pause, upgrade, downgrade, the doors, their locks and Open to public.</summary>
     void BuildingAction(string action)
     {
-        if (BuildingFocus() is not { SiteId: { } id } || Meitou.Simulation.Production.ProductionSystem.IsNatural(id)) return;
+        if (BuildingFocus() is not { } focus) return;
+        var detail = session.CurrentSnapshot.InspectedBuilding is { } d && d.Instance == focus.Instance ? d : null;
+        if (focus.SiteId is null && detail is { Owned: true })
+        {
+            // A town building the player owns: its doors and the public toggle.
+            if (action == "building-doors") Say(new Meitou.Simulation.Locks.ToggleDoorsOrder(focus.Instance) { Tick = session.World.Tick });
+            else if (action == "building-locks") Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(focus.Instance) { Tick = session.World.Tick });
+            else if (action == "building-public")
+            {
+                Sound("General_Click");
+                Say(new Meitou.Simulation.Construction.SetBuildingPublic(focus.Instance, !PublicOf(focus, null, detail)) { Tick = session.World.Tick });
+            }
+            return;
+        }
+        if (focus.SiteId is not { } id || Meitou.Simulation.Production.ProductionSystem.IsNatural(id)) return;
         var site = session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id);
+        if (action == "building-upgrade") Say(new Meitou.Simulation.Construction.UpgradeSite(id) { Tick = session.World.Tick });
+        else if (action == "building-downgrade") Say(new Meitou.Simulation.Construction.DowngradeSite(id) { Tick = session.World.Tick });
+        else if (action == "building-public" && site is not null)
+        {
+            Sound("General_Click");
+            Say(new Meitou.Simulation.Construction.SetBuildingPublic(id, !site.Public) { Tick = session.World.Tick });
+        }
         if (action == "building-dismantle")
         {
             var selection = SelectedIds();

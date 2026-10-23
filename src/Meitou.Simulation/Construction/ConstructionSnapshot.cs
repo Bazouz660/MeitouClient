@@ -16,4 +16,7 @@ public sealed record BuildingSnapshot(string Id, string Record, Vector3 Position
     public bool Dismantling { get; init; }
     /// <summary>The wall this short piece, connector or wedge is attached to (<see cref="BuildSite.WallParent"/>): its orders and materials are that wall's.</summary>
     public string? WallParent { get; init; }
+    /// <summary>Open to the public (<see cref="BuildSite.Public"/>), and the name of the player town it belongs to (null: none).</summary>
+    public bool Public { get; init; } = true;
+    public string? TownName { get; init; }
 }
