@@ -831,24 +831,41 @@ public sealed unsafe class WaterRenderer : IDisposable
     static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MeitouBody;
 
     /// <summary>
-    /// The Metal body: the two RGBA32F parameter maps become one two-layer array, and refraction is omitted. The
-    /// removed specular declaration leaves a hole at sampler 1, so the highest active sampler must stay at 15.
+    /// The Metal body: the two RGBA32F parameter maps become one two-layer array.
     /// </summary>
     static readonly string MetalMeitouBody = MeitouBody
         .Replace("uniform sampler2D uParamsA;", "uniform sampler2DArray uParams;")
         .Replace("uniform sampler2D uParamsB;", "")
         .Replace("texture(uParamsA, map)", "texture(uParams, vec3(map, 0.0))")
-        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))")
-        .Replace("uniform sampler2D uRefraction;", "")
-        .Replace("under = texture(uRefraction, gl_FragCoord.xy * uScreen + bend).rgb;", "under = vec3(0.0);");
+        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))");
 
     /// <summary>
     /// Metal's Meitou fragment: the atmosphere's METAL_WATER sections keep the declarations and functions the water
     /// actually reads (irradiance, ambient map, clouds, haze and the reflection), dropping GI, lamps, dust and the
-    /// material lighting used only by other shaders. The packed parameter array leaves 15 active samplers; the
-    /// highest is 15 because the removed specular sampler leaves binding 1 empty.
+    /// material lighting used only by other shaders. Every sampler gets an explicit binding, so the removed specular
+    /// sampler cannot leave a hole that pushes the last one past Metal's 0..15 range.
     /// </summary>
-    static readonly string MetalMeitouFragment = "#version 330 core\n#define METAL_WATER 1\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody;
+    static readonly string MetalMeitouFragment = BindMetalSamplers("#version 450 core\n#define METAL_WATER 1\n" +
+        TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody);
+
+    /// <summary>The Metal fragment's 16 samplers, placed in 0..15 (glslang's auto-binder otherwise leaves holes).</summary>
+    static string BindMetalSamplers(string source) => source
+        .Replace("uniform sampler2D uHeightCoarse;", "layout(binding = 0) uniform sampler2D uHeightCoarse;")
+        .Replace("uniform sampler2D uHeightFine;", "layout(binding = 1) uniform sampler2D uHeightFine;")
+        .Replace("uniform samplerCube uAtmoIrradiance;", "layout(binding = 2) uniform samplerCube uAtmoIrradiance;")
+        .Replace("uniform sampler2D uAtmoAmbientMap;", "layout(binding = 3) uniform sampler2D uAtmoAmbientMap;")
+        .Replace("uniform sampler2D uAtmoClouds;", "layout(binding = 4) uniform sampler2D uAtmoClouds;")
+        .Replace("uniform sampler2DArray uOceanMaps;", "layout(binding = 5) uniform sampler2DArray uOceanMaps;")
+        .Replace("uniform sampler2D uShoreField;", "layout(binding = 6) uniform sampler2D uShoreField;")
+        .Replace("uniform sampler2D uRiverMap;", "layout(binding = 7) uniform sampler2D uRiverMap;")
+        .Replace("uniform sampler2D uColourMap;", "layout(binding = 8) uniform sampler2D uColourMap;")
+        .Replace("uniform sampler2D uFlowMap;", "layout(binding = 9) uniform sampler2D uFlowMap;")
+        .Replace("uniform sampler2D uFoamMap;", "layout(binding = 10) uniform sampler2D uFoamMap;")
+        .Replace("uniform sampler2D uNormalMap;", "layout(binding = 11) uniform sampler2D uNormalMap;")
+        .Replace("uniform sampler2D uRainMap;", "layout(binding = 12) uniform sampler2D uRainMap;")
+        .Replace("uniform sampler2DArray uParams;", "layout(binding = 13) uniform sampler2DArray uParams;")
+        .Replace("uniform sampler2D uReflection;", "layout(binding = 14) uniform sampler2D uReflection;")
+        .Replace("uniform sampler2D uRefraction;", "layout(binding = 15) uniform sampler2D uRefraction;");
 
     /// <summary>The native GPU API (phase 8 stage 2: the water makes no GL call; docs/renderer-native.md 8.6).</summary>
     public IGpuContext Gpu { get; }
