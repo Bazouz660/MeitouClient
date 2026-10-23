@@ -49,6 +49,8 @@ submission), and `driver-wait` (present call, including queue-lock waits; CPU on
 elapsed time, not CPU utilisation; submission may also block inside the driver. GPU `ui` ends before
 the window copy; GPU `submit` measures that copy and the command tail, not the CPU submission call.
 Offscreen frames have no present wait. Render-thread benchmark totals exclude `driver-wait`.
+In the game the head is split too: `host` (the host's frame work before the world draw), `blood` (the host's blood marks and pools, then
+the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own work.
 
 ## Geometry and pass diagnostics
 

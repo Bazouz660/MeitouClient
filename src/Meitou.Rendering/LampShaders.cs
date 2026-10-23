@@ -6,7 +6,8 @@ namespace Meitou.Rendering;
 /// <c>uLightCells</c> (RG32F per cell: first entry, count), <c>uLightIndex</c> (R32F entries: lamp numbers, <see cref="WorldLamps.IndexWidth"/>
 /// per row) and <c>uLightData</c> (RGBA32F, a row per lamp: position and radius; radiance and type; spot direction and cos of the outer half
 /// angle; cos of the inner half angle, falloff and room edge count; room heights and inward footprint planes).
-/// <c>LAMP_DIFFUSE_ONLY</c> leaves the specular out; <c>LAMP_VISIBILITY</c> supplies the trace's shadow query for interior sources.
+/// <c>LAMP_DIFFUSE_ONLY</c> leaves the specular out; <c>LAMP_VISIBILITY</c> supplies the trace's shadow query for interior sources; <c>LAMP_SKIN</c>
+/// (the characters) takes the diffuse term from <c>vec3 lampSkinDiffuse(vec3 n, vec3 l)</c>, which the including shader defines.
 /// </summary>
 static class LampShaders
 {
@@ -22,6 +23,9 @@ static class LampShaders
             if (x < 0.8) return 0.242 - 3.0 * (x - 0.6) * (x - 0.6);
             return 3.0 * (x - 1.0) * (x - 1.0);
         }
+        #ifdef LAMP_SKIN
+        vec3 lampSkinDiffuse(vec3 n, vec3 l);
+        #endif
         // The lamps around a surface point, added like the sun (diffuse to be multiplied by the albedo, and the specular), unshadowed as in the game.
         void lampLight(vec3 world, vec3 n, vec3 v, float a, float a2, inout vec3 diffuse, inout vec3 specular)
         {
@@ -57,7 +61,15 @@ static class LampShaders
                 #endif
                 vec3 l = toLamp / max(d, 1e-4);
                 float nl = dot(n, l);
+                #ifdef LAMP_SKIN
+                // The characters' Meitou skin (CharacterShaders.lampSkinDiffuse): the lamp's diffuse term wraps past the terminator as the sun's does.
+                vec3 diffuseNl = lampSkinDiffuse(n, l);
+                if (max(diffuseNl.r, max(diffuseNl.g, diffuseNl.b)) <= 0.0) continue;
+                nl = max(nl, 0.0);
+                #else
                 if (nl <= 0.0) continue;
+                vec3 diffuseNl = vec3(nl);
+                #endif
                 vec4 c = texelFetch(uLightData, ivec2(1, lamp), 0);
                 vec3 radiance = c.rgb * lampAttenuation(d, p.w);
                 if (c.w > 0.5)
@@ -68,7 +80,7 @@ static class LampShaders
                     radiance *= s2.x - s.w < 1e-5 ? 1.0 : clamp(pow(clamp((cosAngle - s.w) / (s2.x - s.w), 0.0, 1.0), s2.y), 0.0, 1.0);
                 }
                 radiance *= LAMP_VISIBILITY(world, n, toLamp, edges, uint(s2.w));
-                diffuse += 3.14159265358979 * nl * radiance * LAMP_DIFFUSE;
+                diffuse += 3.14159265358979 * diffuseNl * radiance * LAMP_DIFFUSE;
                 #ifndef LAMP_DIFFUSE_ONLY
                 vec3 h = normalize(v + l);
                 float nh = clamp(dot(n, h), 0.0, 1.0), lh = clamp(dot(l, h), 0.0, 1.0);

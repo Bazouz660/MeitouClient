@@ -20,7 +20,9 @@ public sealed class TerrainDecalStore
 
     readonly (int Width, int Height)[][] sizes;
     readonly Dictionary<uint, List<TerrainDecal>> cells = [];
-    readonly Dictionary<uint, int> versions = [];
+    readonly Dictionary<uint, int> versions = [], rewrites = [];
+    // Per cell, the decals placed or grown since its last rewrite, in that order.
+    readonly Dictionary<uint, List<TerrainDecal>> appended = [];
     readonly Dictionary<long, BleedToken> bleeds = [];
     readonly List<uint> touched = [];
     readonly List<uint> emptied = [];
@@ -47,11 +49,22 @@ public sealed class TerrainDecalStore
     /// <summary>A number that changes whenever <paramref name="key"/>'s decals change (0 for a cell that never had any).</summary>
     public int CellVersion(uint key) => versions.GetValueOrDefault(key);
 
+    /// <summary>
+    /// A number that changes when decals leave <paramref name="key"/> (ageing, a new world): a texture of the cell must be drawn again from <see cref="In"/>. While it
+    /// stays, the cell's changes are only additions: <see cref="Appended"/>, in order, drawn over what the texture holds (the original likely draws a cell's new decals onto
+    /// its texture too: it clears it only for a new cell, docs/game/blood-decals.md).
+    /// </summary>
+    public int CellRewrite(uint key) => rewrites.GetValueOrDefault(key);
+
+    /// <summary>The decals placed in <paramref name="key"/> or grown there since its last rewrite (<see cref="CellRewrite"/>), oldest first.</summary>
+    public ReadOnlySpan<TerrainDecal> Appended(uint key) => appended.TryGetValue(key, out var log) ? CollectionsMarshal.AsSpan(log) : default;
+
     /// <summary>Every decal and pool gone (a new world).</summary>
     public void Clear()
     {
-        foreach (var key in cells.Keys) Touch(key);
+        foreach (var key in cells.Keys) Rewrite(key);
         cells.Clear();
+        appended.Clear();
         bleeds.Clear();
         Count = 0;
     }
@@ -68,7 +81,7 @@ public sealed class TerrainDecalStore
             if (!cells.TryGetValue(d.Key, out var list)) cells[d.Key] = list = [];
             list.Add(d);
             Count++;
-            Touch(d.Key);
+            Append(d.Key, d);
         }
     }
 
@@ -107,9 +120,11 @@ public sealed class TerrainDecalStore
                 var d = list[i];
                 if (d.Type != TerrainDecalType.Pool || d.LocalX != lx || d.LocalZ != lz) continue;
                 var (w, h) = Texels(d);
-                if ((short)(int)(w * token.Size * 10) == d.HalfWidth && (short)(int)(h * token.Size * 10) == d.HalfHeight) return;
-                RemoveEverywhere(d, token.At);
-                Place(d, token.At, token.Size);
+                int half = (short)(int)(w * token.Size * 10);
+                if (half == d.HalfWidth && (short)(int)(h * token.Size * 10) == d.HalfHeight) return;
+                // Meitou: grown in steps of a 25th of its size (and at the cap), not at every texel, so a battle's pools do not redraw their cells every tick.
+                if (token.Size < PoolMax && Math.Abs(half - d.HalfWidth) * 25 < d.HalfWidth) return;
+                Regrow(d, token.At, token.Size);
                 return;
             }
         Add(TerrainDecalType.Pool, new Vector3(token.At.X, at.Y, token.At.Y), new Vector2(random.NextSingle() - 0.5f, random.NextSingle() - 0.5f), token.Size, abgr, NewLife, random);
@@ -144,8 +159,8 @@ public sealed class TerrainDecalStore
             }
             if (list.Count == 0) emptied.Add(key);
         }
-        foreach (var key in emptied) cells.Remove(key);
-        foreach (var key in touched) Touch(key);
+        foreach (var key in emptied) { cells.Remove(key); appended.Remove(key); }
+        foreach (var key in touched) Rewrite(key);
         touched.Clear();
     }
 
@@ -191,38 +206,39 @@ public sealed class TerrainDecalStore
             keys[n++] = key;
             var (lx, lz) = Local(key, at);
             if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
-            list.Add(d with { Key = key, LocalX = lx, LocalZ = lz });
+            var copy = d with { Key = key, LocalX = lx, LocalZ = lz };
+            list.Add(copy);
             Count++;
-            Touch(key);
+            Append(key, copy);
         }
     }
 
-    /// <summary>Removes <paramref name="d"/> (a cell's copy of a decal centred on <paramref name="at"/>) from every cell its corners fall in.</summary>
-    void RemoveEverywhere(in TerrainDecal d, Vector2 at)
+    /// <summary>
+    /// A pool <paramref name="d"/> (a cell's copy, centred on <paramref name="at"/>) grown to <paramref name="size"/>: each cell's copy is replaced where it lies in
+    /// the list, and the cells its larger corners now reach get one. A pool only grows, so no cell loses it, and the grown copy is drawn over the old one (<see cref="Appended"/>).
+    /// </summary>
+    void Regrow(TerrainDecal d, Vector2 at, float size)
     {
-        var (w, _) = Texels(d);
-        float size = w > 0 ? d.HalfWidth / (w * 10f) : 0;
+        var (w, h) = Texels(d);
+        var old = d;
+        d.HalfWidth = (short)(int)(w * size * 10);
+        d.HalfHeight = (short)(int)(h * size * 10);
         Span<Vector2> corners = stackalloc Vector2[4];
         Corners(d, at, size, corners);
-        Span<uint> keys = stackalloc uint[5];
-        keys[0] = d.Key;
-        int n = 1;
+        Span<uint> keys = stackalloc uint[4];
+        int n = 0;
         foreach (var corner in corners)
         {
             uint key = TerrainDecalCells.Key(corner.X, corner.Y);
-            if (!keys[..n].Contains(key)) keys[n++] = key;
-        }
-        var gone = d;
-        foreach (uint key in keys[..n])
-        {
-            if (!cells.TryGetValue(key, out var list)) continue;
+            if (keys[..n].Contains(key)) continue;
+            keys[n++] = key;
             var (lx, lz) = Local(key, at);
-            int removed = list.RemoveAll(x => x.Type == gone.Type && x.Variant == gone.Variant && x.Rotation == gone.Rotation && x.LocalX == lx && x.LocalZ == lz
-                && x.HalfWidth == gone.HalfWidth && x.HalfHeight == gone.HalfHeight);
-            if (removed == 0) continue;
-            Count -= removed;
-            if (list.Count == 0) cells.Remove(key);
-            Touch(key);
+            if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
+            var copy = d with { Key = key, LocalX = lx, LocalZ = lz };
+            int at0 = list.FindIndex(x => x.Type == old.Type && x.Variant == old.Variant && x.Rotation == old.Rotation && x.LocalX == lx && x.LocalZ == lz);
+            if (at0 >= 0) list[at0] = copy = copy with { Life = list[at0].Life };
+            else { list.Add(copy); Count++; }
+            Append(key, copy);
         }
     }
 
@@ -230,5 +246,22 @@ public sealed class TerrainDecalStore
     {
         versions[key] = ++nextVersion;
         Version = nextVersion;
+    }
+
+    /// <summary>A decal added to (or grown in) <paramref name="key"/>'s list: drawn over what the cell's texture holds. A log much longer than the cell's list is dropped for a redraw.</summary>
+    void Append(uint key, in TerrainDecal d)
+    {
+        if (!appended.TryGetValue(key, out var log)) appended[key] = log = [];
+        log.Add(d);
+        if (log.Count > 2 * (cells.TryGetValue(key, out var list) ? list.Count : 0) + 64) Rewrite(key);
+        else Touch(key);
+    }
+
+    /// <summary>Decals left <paramref name="key"/> (or its log grew too long): its texture is drawn again from the list.</summary>
+    void Rewrite(uint key)
+    {
+        rewrites[key] = ++nextVersion;
+        if (appended.TryGetValue(key, out var log)) log.Clear();
+        Touch(key);
     }
 }

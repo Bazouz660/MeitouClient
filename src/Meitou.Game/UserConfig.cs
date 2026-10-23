@@ -45,6 +45,8 @@ sealed class UserConfig
     public SpeedUnit SpeedUnit { get; set; } = SpeedUnit.Mph;
     /// <summary>The damage floaters (Interface settings): the original's <c>floaters</c> option, Simple by default; Meitou also floats a green "+N" over a player character that heals.</summary>
     public FloaterMode Floaters { get; set; } = FloaterMode.Simple;
+    /// <summary>The original's splash at startup in the Faithful UI (Advanced settings: the switch's Faithful side), off by default; off, the menu shows as soon as the game has loaded.</summary>
+    public bool SplashScreens { get; set; }
     public bool MainMenuTransitions { get; set; } = true;
     public bool InGameTransitions { get; set; } = true;
     public float MainMenuTransitionSpeed { get; set; } = 1.5f;
@@ -59,8 +61,8 @@ sealed class UserConfig
     /// <summary>Borderless full screen (the Tab panel, Alt+Enter); <c>--windowed</c> starts in a window for one run.</summary>
     public bool FullScreen { get; set; } = true;
     public int TickRate { get; set; } = 30;
-    /// <summary>How many enemies may melee one target at once (Advanced settings, 1-5): Faithful 1 (the game's CONSTANTS), Meitou 3.</summary>
-    public int AttackSlots { get; set; } = MeitouAttackSlots;
+    /// <summary>How many enemies may swing at one target at once (Advanced settings, 1-5; plus the race's extra slots): Faithful 1 (the game's CONSTANTS, the default), Meitou 3.</summary>
+    public int AttackSlots { get; set; } = FaithfulAttackSlots;
     public const int FaithfulAttackSlots = 1, MeitouAttackSlots = 3;
     /// <summary>A late but successfully rolled dodge or block still counts (Advanced settings; Faithful off, Meitou on): a balance change for fights against several enemies.</summary>
     public bool LateDefences { get; set; } = true;
@@ -82,6 +84,8 @@ sealed class UserConfig
     public bool FixDoorBreak { get; set; } = true;
     public bool FixAmbienceSuffix { get; set; } = true;
     public bool FixWindStop { get; set; } = true;
+    /// <summary>The Faithful load window's Load button waits for a readable save (Fixes settings; off: always live, as in the game).</summary>
+    public bool FixLoadButton { get; set; } = true;
     /// <summary>The strategy camera's turn and tilt rate in degrees per second per unit of input (Controls settings): the original's
     /// <c>mouse speed pan</c> / <c>mouse speed tilt</c> (slider 2 … 50, default 6), one value for both here.</summary>
     public float CameraRotateSpeed { get; set; } = Meitou.Data.World.KenshiCamera.DefaultRotateSpeed;
@@ -92,7 +96,7 @@ sealed class UserConfig
     public bool HoverOutline { get; set; } = true;
     /// <summary>The green ring under each selected character (Advanced settings; default on).</summary>
     public bool SelectionRings { get; set; } = true;
-    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; Meitou only, off by default; docs/game/luckyren.md).</summary>
+    /// <summary>A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying (Advanced settings; an easter egg, off by default, not part of the all Faithful / all Meitou switches; docs/game/luckyren.md).</summary>
     public bool LuckyrenMode { get; set; }
     /// <summary>How many items dropped in play stay on the ground before the oldest goes (Advanced settings; <see cref="Meitou.Simulation.Items.GroundItems.Limit"/>).</summary>
     public int GroundItemLimit { get; set; } = Meitou.Simulation.Items.GroundItems.DefaultLimit;
@@ -102,6 +106,8 @@ sealed class UserConfig
     public int? SimThreads { get; set; }
     public Dictionary<string, float> Graphics { get; set; } = [];
     public Dictionary<string, string> Bindings { get; set; } = [];
+    /// <summary>The Meitou skin per race, where chosen against the default (RACE string id to on or off; Graphics > Skin): <c>CharacterRenderer.SkinRaces</c>.</summary>
+    public Dictionary<string, bool> SkinRaces { get; set; } = [];
 
     [JsonIgnore]
     public string Path { get; private set; } = FileName;

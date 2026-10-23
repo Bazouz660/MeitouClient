@@ -153,9 +153,11 @@ public sealed class NavmeshWalkability : IWalkability
         {
             float s = Snap(w, x, z, h);
             // Where the mesh is too far off for its surface to be found (a ramp the polygon cuts under), the surface at the walker's own height, when that
-            // is nearer the mesh than what was found (Observed: the terrain 30 below, inside the ramp, at the Great Fortress).
+            // is nearer the mesh than what was found (Observed: the terrain 30 below, inside the ramp, at the Great Fortress) or within the terrain snap's reach
+            // of it: a polygon spanning a flat top and its slope sags up to ~25 under the top and lies nearer a face inside the rock (Observed: the rock by the
+            // Hub's gate, where the original's polygon is flat on the top).
             if (near && MathF.Abs(s - nearY) > StandRise && w.TrySurfaceNear(x, z, nearY, StandRise, out float own)
-                && MathF.Abs(own - h) < MathF.Abs(s - h)) s = own;
+                && MathF.Abs(own - h) < MathF.Max(MathF.Abs(s - h), TerrainSnapRange)) s = own;
             lowest = MathF.Min(lowest, s);
             float reach = MathF.Min(h, s);
             if (reach > nearY + StandRise || reach <= layer || near && MathF.Max(h, s) < nearY - StandDrop) continue;

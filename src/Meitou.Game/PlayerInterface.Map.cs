@@ -253,7 +253,8 @@ sealed partial class PlayerInterface
     /// <summary>
     /// A right click on an item of the shown inventory (the original's release handler <c>FUN_140714a20</c>, <b>Observed</b> by decompile): while a trade is open it moves one unit to the other
     /// side, buying a stock item or selling the customer's own; with Shift all the units (the original repeats the move until one fails, here the sim's affordable and fits clamp ends it).
-    /// Without a trade a map item is read (<see cref="ReadMapItem"/>).
+    /// With another window open it moves to it (<see cref="WindowRightClick"/>). With only the character's own windows open a map item is read (<see cref="ReadMapItem"/>); anything else is
+    /// equipped, taken off, fitted or moved between the grid and the open bag, money turned into cats (<see cref="QuickMoveItem"/>).
     /// </summary>
     bool InventoryRightClick(Vector2 p, bool shift)
     {
@@ -277,15 +278,15 @@ sealed partial class PlayerInterface
             Sell(trade, token, shift ? item.Quantity : 1, null, 0);
             return true;
         }
-        if (MapItemTowns?.Invoke(item.Record) is null) return false;
-        Say(new ReadMapItem(lead.Id, token) { Tick = session.World.Tick });
+        if (MapItemTowns?.Invoke(item.Record) is not null) Say(new ReadMapItem(lead.Id, token) { Tick = session.World.Tick });
+        else Say(new QuickMoveItem(lead.Id, token, shift, faithfulScreens.IsOpen("bag")) { Tick = session.World.Tick });
         return true;
     }
 
     /// <summary>
     /// A right click on an item while the character's inventory and another item window are open (the original's release handler <c>FUN_140714a20</c>, move <c>FUN_140713d20</c>):
-    /// one unit goes to the other window, where it first fits, with Shift the whole stack (the original repeats the one-unit move until it fails). Between the lead's inventory or bag and the
-    /// shown machine, storage or container window, or the open loot (true: taken).
+    /// one unit goes to the other window, with Shift the whole stack (the original repeats the one-unit move until it fails); into a character, its open bag window first, then its slots, then
+    /// its grid (<see cref="InventoryCommands.MoveInto"/>). Between the lead's inventory or bag and the shown machine, storage or container window, or the open loot (true: taken).
     /// </summary>
     bool WindowRightClick(string screen, UiControl control, bool shift)
     {
@@ -296,7 +297,7 @@ sealed partial class PlayerInterface
         if (machine is not null && control.Properties.TryGetValue("MachineItem", out var raw))
         {
             int code = int.Parse(raw, CultureInfo.InvariantCulture);
-            Say(new TakeFromMachine(lead.Id, machine.Site, code >= 1000 ? -1 : code - 10, Math.Max(0, code - 1000), Count: count) { Tick = session.World.Tick });
+            Say(new TakeFromMachine(lead.Id, machine.Site, code >= 1000 ? -1 : code - 10, Math.Max(0, code - 1000), Count: count) { Tick = session.World.Tick, BagFirst = faithfulScreens.IsOpen("bag") });
             return true;
         }
         if (!control.Properties.TryGetValue("InventoryItem", out var index)) return false;
@@ -304,13 +305,13 @@ sealed partial class PlayerInterface
         if (IsLootScreen(screen))
         {
             if (!loot || LootBody()?.ItemGrid?.Items.FirstOrDefault(i => i.Index == at) is not { } looted) return false;
-            Say(new TakeLootItem(Token(looted)) { Tick = session.World.Tick, Count = count });
+            Say(new TakeLootItem(Token(looted)) { Tick = session.World.Tick, Count = count, BagFirst = faithfulScreens.IsOpen("bag") });
             return true;
         }
         if (screen is not ("inventory" or "bag") || grid.Items.FirstOrDefault(i => i.Index == at) is not { } item || !InventoryCommands.IsMovableSection(item.Section)) return false;
         if (loot)
         {
-            Say(new PutLootItem(lead.Id, Token(item), 0, 0) { Tick = session.World.Tick, FirstFit = true, Count = count });
+            Say(new PutLootItem(lead.Id, Token(item)) { Tick = session.World.Tick, Count = count, BagFirst = faithfulScreens.IsOpen("loot-bag") });
             return true;
         }
         if (machine is null) return false;

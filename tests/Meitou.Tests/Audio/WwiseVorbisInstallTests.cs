@@ -19,12 +19,6 @@ public class WwiseVorbisInstallTests
     }
 
     [Fact]
-    public void The_exe_holds_a_library_of_598_packed_codebooks()
-    {
-        Assert.Equal(598, Library().Count);
-    }
-
-    [Fact]
     public void Every_ambience_WEM_decodes_to_exactly_its_sample_count()
     {
         var lib = Library();

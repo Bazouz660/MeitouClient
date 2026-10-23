@@ -31,6 +31,8 @@ public interface IDialogueSource
 {
     ConversationView? PublishConversation();
     DialogueRequest? PublishRequest();
+    /// <summary>The open character trading window (DA 41 / 42; null: none).</summary>
+    CharacterTradeView? PublishCharacterTrade() => null;
     /// <summary>The character answers the player's Talk (it has event-1 dialogue, and with <paramref name="talker"/> given, a line of it passes now).</summary>
     bool CanTalk(World world, int slot, CharacterId? talker = null);
     /// <summary>The lines on show over characters' heads (speech bubbles).</summary>
@@ -63,8 +65,8 @@ public sealed class DialogueSettings
 /// <list type="bullet">
 /// <item><b>Engine choices</b>: a childless NPC line is shown with a single <c>[Leave]</c> (the original ends at once and how it shows such a line is <b>Unknown</b>); a reply whose best
 /// next line is another reply shows that reply as the only choice; conditions whose inputs Meitou lacks compute "no" (<see cref="Condition"/>).</item>
-/// <item><b>State</b> (hashed): last use per line (global, as the original's), permanent chance rolls and event counters per character, the speaker squads' memory of whom they talked
-/// to, pending interrupts, the open conversation. The characters' dialogue locks are on <see cref="CharacterCold.DialogueLocks"/>.</item>
+/// <item><b>State</b> (hashed): last use per line (global, as the original's), permanent chance rolls and event counters per character, the squads' memories (<see cref="Memory"/>), pending
+/// interrupts, the open conversation. The characters' dialogue locks are on <see cref="CharacterCold.DialogueLocks"/>.</item>
 /// </list>
 /// </summary>
 public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogueSource
@@ -76,8 +78,6 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         a.Item1 != b.Item1 ? CompareIds(a.Item1, b.Item1) : string.CompareOrdinal(a.Item2, b.Item2)));
     readonly SortedDictionary<(CharacterId, int), (int Count, double Last)> counters = new(Comparer<(CharacterId, int)>.Create((a, b) =>
         a.Item1 != b.Item1 ? CompareIds(a.Item1, b.Item1) : a.Item2.CompareTo(b.Item2)));
-    readonly SortedDictionary<(int Squad, CharacterId Target), double> met = new(Comparer<(int, CharacterId)>.Create((a, b) =>
-        a.Item1 != b.Item1 ? a.Item1.CompareTo(b.Item1) : CompareIds(a.Item2, b.Item2)));
     readonly SortedDictionary<CharacterId, string> interrupts = new(Comparer<CharacterId>.Create(CompareIds));
     ulong rolls;
     long requestId;
@@ -100,6 +100,9 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     }
 
     public DialogueSettings Settings { get; }
+
+    /// <summary>The squads' memories of characters (docs/game/dialogue.md "Squad memory"): written by dialogue effects and player conversations, read by the conditions.</summary>
+    public SquadMemory Memory { get; } = new();
 
     static int CompareIds(CharacterId a, CharacterId b) => a.Slot != b.Slot ? a.Slot.CompareTo(b.Slot) : a.Generation.CompareTo(b.Generation);
 
@@ -138,7 +141,14 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                     End(world);
                     CancelApproach(world);
                     break;
+                case ConfirmCharacterTrade confirm:
+                    ConfirmTrade(world, confirm.Selected);
+                    break;
+                case CloseCharacterTrade:
+                    characterTrade = null;
+                    break;
                 case DialogueEvent e:
+                    if (e.Event == UnlockMyCageOrShackles && e.Dialogue is null) Freed(world, e.Npc, e.Target);
                     if (e.Dialogue is { } id) { if (dialogue.Node(id) is { IsRoot: true } root) StartBubbles(world, e.Npc, e.Target, root, e.Event); }
                     else if (Settings.AmbientEvents) Fire(world, e.Npc, e.Target, e.Event);
                     break;
@@ -152,9 +162,11 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     public void SlowWorld(World world)
     {
         ExpireSpeech(world);
+        KeepCharacterTrade(world);
         if (bubbles.Count > 0) StepBubbles(world);
         if (Settings.AmbientEvents && world.Tick % Settings.AmbientEveryTicks == 0) { SeeOthers(world); SeeGettingUp(world); }
         if (approaches.Count > 0) StepApproaches(world);
+        StepFollowers(world);
         if (!talker.IsNone && open is null)
         {
             var table = world.Characters;
@@ -339,10 +351,13 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
-        if (world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
+        // A player conversation (event 1) leaves the speaker's squad remembering the partner (FUN_140674830; other events do not).
+        if (c.Event == DialogueEvents.PlayerTalkToMe && world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc)
+            Memory.Remember(world, nc.SquadId, c.Player, MemoryTag.None);
         // An arrest the conversation started (DA 29, 30) keeps the guard held.
         if (Arrests?.Arrests.Any(a => a.Guard == c.Npc) != true) Release(world, c.Npc);
         OpenBail(world);
+        OpenCharacterTrade(world);
     }
 
     void MarkUsed(World world, Conversation c, DialogueNode line)
@@ -360,6 +375,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     internal void RefreshView(World world)
     {
+        RefreshCharacterTrade(world);
         if (open is not { } c) { view = null; return; }
         view = new ConversationView(c.Npc, c.Player, c.Speaker, NameOf(world, c.Speaker.IsNone ? c.Npc : c.Speaker), NameOf(world, c.Player), c.Text,
             [.. c.Choices.Select(x => x.Text)], [.. c.Log], world.Player.Money);
@@ -370,13 +386,14 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     public void Hash(ref StateHasher hasher)
     {
-        if (lastUse.Count == 0 && permanent.Count == 0 && counters.Count == 0 && met.Count == 0 && interrupts.Count == 0 && bubbles.Count == 0 && ambientAt.Count == 0 && approaches.Count == 0 && down.Count == 0 && open is null && talker.IsNone) return;
+        if (lastUse.Count == 0 && permanent.Count == 0 && counters.Count == 0 && Memory.IsEmpty && interrupts.Count == 0 && bubbles.Count == 0 && ambientAt.Count == 0 && approaches.Count == 0 && down.Count == 0 && followers.Count == 0 && open is null && talker.IsNone) return;
         hasher.Add(0x44696167);
         hasher.Add(rolls);
         foreach (var (line, hours) in lastUse) { hasher.Add(Rng.StableHash(line)); hasher.Add(hours); }
         foreach (var ((who, line), passed) in permanent) { hasher.Add(who); hasher.Add(Rng.StableHash(line)); hasher.Add(passed); }
         foreach (var ((who, ev), (count, last)) in counters) { hasher.Add(who); hasher.Add(ev); hasher.Add(count); hasher.Add(last); }
-        foreach (var ((squad, whom), hours) in met) { hasher.Add(squad); hasher.Add(whom); hasher.Add(hours); }
+        Memory.Hash(ref hasher);
+        HashActs(ref hasher);
         foreach (var (who, line) in interrupts) { hasher.Add(who); hasher.Add(Rng.StableHash(line)); }
         foreach (var b in bubbles) { hasher.Add(b.C.Npc); hasher.Add(Rng.StableHash(b.Line.StringId)); hasher.Add(b.DueTick); }
         foreach (var ((squad, whom), hours) in ambientAt) { hasher.Add(squad); hasher.Add(whom); hasher.Add(hours); }

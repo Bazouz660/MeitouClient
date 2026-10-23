@@ -507,11 +507,14 @@ public sealed unsafe partial class SkyRenderer : IDisposable
     /// <summary>A multiple of the sky's ambient light (the environment factor every lit surface, the probes and the GI resolve read); 1 is the game's.</summary>
     public float AmbientStrength { get; set; } = 1;
 
-    /// <summary>A further multiple of the ambient by night, faded in like the exposure's night floor (<see cref="KenshiLighting.MinLuminance"/>: full from the horizon down, none from sunY 0.2); 1 is the game's.</summary>
+    /// <summary>The night ambient's multiple of the game's at <see cref="NightAmbientStrength"/> 1.</summary>
+    public const float NightAmbientBase = 1.2f;
+
+    /// <summary>A further multiple of the ambient by night (of <see cref="NightAmbientBase"/> times the game's), faded in like the exposure's night floor (<see cref="KenshiLighting.MinLuminance"/>: full from the horizon down, none from sunY 0.2).</summary>
     public float NightAmbientStrength { get; set; } = 1;
 
-    /// <summary>The ambient's multiple for a sun height: <see cref="AmbientStrength"/>, times <see cref="NightAmbientStrength"/> by night.</summary>
-    float AmbientFor(float sunY) => MathF.Max(AmbientStrength, 0) * (1 + (MathF.Max(NightAmbientStrength, 0) - 1) * (1 - Math.Clamp(sunY * 5, 0, 1)));
+    /// <summary>The ambient's multiple for a sun height: <see cref="AmbientStrength"/>, times <see cref="NightAmbientBase"/> and <see cref="NightAmbientStrength"/> by night.</summary>
+    float AmbientFor(float sunY) => MathF.Max(AmbientStrength, 0) * (1 + (NightAmbientBase * MathF.Max(NightAmbientStrength, 0) - 1) * (1 - Math.Clamp(sunY * 5, 0, 1)));
 
     /// <summary>The planet's mean colour (<see cref="Meitou.Data.World.Planetshine.MeanAlbedo(Meitou.Data.Textures.DdsFile)"/>), read when the texture loads.</summary>
     public Vector3 PlanetAlbedo { get; private set; } = new(Meitou.Data.World.Planetshine.FallbackAlbedo);

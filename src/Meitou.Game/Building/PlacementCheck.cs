@@ -68,8 +68,8 @@ public static class PlacementCheck
         foreach (var other in q.Services.StaticAround(at, 20))
             if (Contains(other.Hull, at)) return PlacementFailure.NotOwnedBuilding;
 
-        // Meitou's ghost stands on the terrain, never inside a building: what needs a room cannot be put down, what must be outdoors can.
-        if (b.IsInteriorFurniture || b.IsNode) return PlacementFailure.MustBeInside;
+        // Meitou's ghost stands on the terrain, never inside a building: interior furniture is refused unless it may also stand outside (exterior furniture or a node).
+        if (b.IsInteriorFurniture && !b.IsExteriorFurniture && !b.IsNode) return PlacementFailure.MustBeInside;
 
         if (hull is not null)
         {

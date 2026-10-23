@@ -71,6 +71,30 @@ public sealed unsafe class AudioOutput : IDisposable
         }
     }
 
+    /// <summary>The limiter's ceiling (about −1 dB) and its release time (seconds).</summary>
+    const float LimitCeiling = 0.89f, LimitRelease = 0.15f;
+    float limitEnvelope;
+
+    /// <summary>
+    /// A peak limiter on the finished block (Meitou's, in both modes; docs/audio.md "Voice cap"): the louder of the two sides is
+    /// followed with an instant attack and a <see cref="LimitRelease"/> release, and the gain keeps it at <see cref="LimitCeiling"/>, so a big fight's sum is
+    /// turned down smoothly instead of clipped hard by the 16-bit conversion. Below the ceiling it changes nothing.
+    /// </summary>
+    void Limit(float[] mix)
+    {
+        float release = MathF.Exp(-1f / (LimitRelease * SampleRate)), envelope = limitEnvelope;
+        for (int i = 0; i + 1 < mix.Length; i += 2)
+        {
+            float peak = MathF.Max(MathF.Abs(mix[i]), MathF.Abs(mix[i + 1]));
+            envelope = peak > envelope ? peak : envelope * release + peak * (1 - release);
+            if (envelope <= LimitCeiling) continue;
+            float gain = LimitCeiling / envelope;
+            mix[i] *= gain;
+            mix[i + 1] *= gain;
+        }
+        limitEnvelope = float.IsFinite(envelope) ? envelope : 0;
+    }
+
     void Run()
     {
         var mix = new float[BlockFrames * 2];
@@ -89,6 +113,7 @@ public sealed unsafe class AudioOutput : IDisposable
                     Console.Error.WriteLine($"audio     stopped: {e.GetType().Name}: {e.Message}");
                 }
             }
+            Limit(mix);
             for (int i = 0; i < mix.Length; i++) pcm[i] = (short)Math.Clamp(mix[i] * 32767f, -32768f, 32767f);
             fixed (short* p = pcm) al.BufferData(buffer, BufferFormat.Stereo16, p, pcm.Length * sizeof(short), SampleRate);
             al.SourceQueueBuffers(source, 1, &buffer);

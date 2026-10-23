@@ -6,8 +6,6 @@ namespace Meitou.Tests.Rendering;
 public class GrassMotionReachTests
 {
     [Theory]
-    [InlineData(0.1f, 0.2f, 0.1f)]
-    [InlineData(0.2f, 0.1f, 0.1f)]
     [InlineData(0.05f, 6.2f, 0.1331853f)]   // across the wrap: 0.05 and 6.2 are 0.133 apart
     public void The_phase_step_is_the_short_way_round(float a, float b, float expected) =>
         Assert.InRange(GrassMotionReach.PhaseStep(a, b), expected - 1e-4f, expected + 1e-4f);

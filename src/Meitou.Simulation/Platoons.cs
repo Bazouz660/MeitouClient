@@ -95,6 +95,8 @@ public sealed class StoredSquad
     public string? Package { get; set; }
     /// <summary>Its contract and <c>change AI</c> (<see cref="Saving.AiSave"/>; null: none).</summary>
     public Saving.AiSave? Ai { get; set; }
+    /// <summary>What the squad remembered of characters when it left the world (the original keeps it on the platoon; <see cref="Dialogue.SquadMemory.Take"/>); null: nothing.</summary>
+    public Dialogue.SquadMemoryData? Memory { get; set; }
     /// <summary>The platoon position the members' places belong to (a stand-in that travelled since takes them along), and the tick they were stored at.</summary>
     public Vector2 Anchor { get; set; }
     public long StoredTick { get; set; }

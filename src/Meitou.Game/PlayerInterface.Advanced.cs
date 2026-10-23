@@ -9,7 +9,9 @@ sealed partial class PlayerInterface
 {
     internal NewGameSettings NewGameOptions { get; private set; } = new();
     bool advancedOpen;
-    NewGameHelpCatalog advancedHelp = new();
+    /// <summary>The option whose help the panel shows: the last one under the pointer, kept while the panel is open (so the pointer can reach the help's scroll bar); -1: none.</summary>
+    int advancedHelp = -1;
+    NewGameHelpCatalog advancedHelpCatalog = new();
 
     // Both panels belong to the same modal screen, so the lower panel cannot block Begin, Cancel or the toggle above it.
     static MyGuiLayout WithAdvancedPanel(MyGuiLayout start, MyGuiLayout advanced)
@@ -19,14 +21,19 @@ sealed partial class PlayerInterface
         return start with { Roots = [.. start.Roots, panel] };
     }
 
-    void BindNewGamePanels(UiBindings b)
+    void BindNewGamePanels(UiBindings b) => BindAdvancedPanels("new-game", b);
+
+    /// <summary>
+    /// The start window (and the import window) with the advanced options under it: the layout's size, its top left at 0.5 and 0.05 of the screen on the title
+    /// (FUN_140918ef0, FUN_140481130), at 0.6 and 0.05 from the in-game menu (FUN_1409180e0); the options panel at its bottom left (FUN_14047ab70).
+    /// </summary>
+    void BindAdvancedPanels(string id, UiBindings b)
     {
-        // The start panel keeps the layout's size, centred; expanding raises it by half the options panel.
-        var root = faithfulScreens.Layout("new-game").Roots[0];
+        var root = faithfulScreens.Layout(id).Roots[0];
         var size = root.Position.RelativeTo(new(0, 0, Width, Height), root.RealPosition);
         float scale = Height / 1080f, width = Math.Min(size.Width, Width - 24), mainHeight = Math.Min(size.Height, Height - 24);
         float extra = advancedOpen ? Math.Max(0, Math.Min(Height * .43f, Height - 24 - mainHeight)) : 0;
-        float x = (Width - width) / 2, y = (Height - mainHeight - extra) / 2;
+        float x = Math.Min(Width * (TitleOpen || id == "import" ? 0.5f : 0.6f), Width - width), y = Math.Min(Height * 0.05f, Math.Max(0, Height - mainHeight - extra));
         b.Positions["Root"] = new(x, y, width, mainHeight);
         b.Positions["advanced-Root"] = new(x, y + mainHeight, width, extra);
         if (!advancedOpen) b.Hidden.Add("advanced-Root");
@@ -51,7 +58,7 @@ sealed partial class PlayerInterface
         return true;
     }
 
-    void AddAdvancedContent(List<UiControl> controls)
+    void AddAdvancedContent(List<UiControl> controls, string screen = "new-game")
     {
         if (!advancedOpen || controls.FirstOrDefault(c => c.Name == "advanced-Datapanel") is not { } panel) return;
         float s = Height / 1080f;
@@ -62,12 +69,12 @@ sealed partial class PlayerInterface
             ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = align,
         };
         float row = area.Height / 7, labelWidth = area.Width * .46f, arrow = 24 * s, valueWidth = 48 * s;
-        string help = "";
         for (int i = 0; i < NewGameSettings.Options.Length; i++)
         {
             var option = NewGameSettings.Options[i];
             float y = area.Y + i * row;
-            if (new UiRect(area.X, y, area.Width, row).Contains(mouse.X, mouse.Y)) help = advancedHelp.TextAt(option.HelpLine);
+            // The option's name shows its help (only the name column, so the pointer can go down the right side to the help's scroll bar).
+            if (new UiRect(area.X, y, labelWidth, row).Contains(mouse.X, mouse.Y) && advancedHelp != i) { advancedHelp = i; inventoryScroll.Remove(screen); }
             var label = Text();
             controls.Add(new($"advanced-label-{i}", "TextBox", new(area.X, y + 4 * s, labelWidth - 6 * s, row - 8 * s), Loc.Tr(option.Label), "", "Kenshi_GenericTextBoxFlatSkin", true, label, Vector4.Zero, Pickable: false));
             float left = area.X + labelWidth, right = area.X + area.Width - valueWidth - arrow;
@@ -81,10 +88,23 @@ sealed partial class PlayerInterface
         }
         if (controls.FirstOrDefault(c => c.Name == "advanced-TooltipPanel") is { } footer)
         {
-            var text = Text("Left Top"); text["WordWrap"] = "true";
-            controls.Add(new("advanced-help", "TextBox", new(footer.Bounds.X + 8 * s, footer.Bounds.Y + 8 * s,
-                footer.Bounds.Width - 16 * s, footer.Bounds.Height - 16 * s), help, "", "", true, text, Vector4.Zero,
-                Pickable: false, Clip: footer.Bounds));
+            string help = advancedHelp >= 0 && advancedHelp < NewGameSettings.Options.Length ? advancedHelpCatalog.TextAt(NewGameSettings.Options[advancedHelp].HelpLine) : "";
+            var view = new UiRect(footer.Bounds.X + 8 * s, footer.Bounds.Y + 8 * s, footer.Bounds.Width - 16 * s, footer.Bounds.Height - 16 * s);
+            var text = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = "Left Top", ["WordWrap"] = "true" };
+            var shown = new UiControl("advanced-help", "TextBox", view, help, "", "", true, text, Vector4.Zero, Pickable: false, Clip: view.Intersect(footer.Bounds));
+            // A help text taller than the panel scrolls, with a vertical bar shown only then (the original's description box does so).
+            float bar = 17 * s, content = uiPainter?.TextHeight(shown with { Bounds = view with { Width = view.Width - bar } }, Height, StandardPixels) ?? 0;
+            float maximum = content > view.Height + 0.5f ? content - view.Height : 0;
+            if (maximum > 0)
+            {
+                float scroll = Math.Clamp(inventoryScroll.GetValueOrDefault(screen), 0, maximum);
+                inventoryScroll[screen] = scroll;
+                inventoryViews[screen] = (view, maximum);
+                shown = shown with { Bounds = view with { Width = view.Width - bar }, Properties = new Dictionary<string, string>(text) { ["TextScroll"] = scroll.ToString(CultureInfo.InvariantCulture) } };
+                controls.Add(shown);
+                AddScrollBar(screen, controls, new(view.X + view.Width - bar, view.Y, bar, view.Height), view.Height, content, scroll, maximum, footer.Clip);
+            }
+            else { inventoryViews.Remove(screen); inventoryTracks.Remove(screen); controls.Add(shown); }
         }
     }
 }

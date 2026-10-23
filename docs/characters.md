@@ -125,6 +125,21 @@ an unnamed root-chain bone (pelvis) is no limb (the original's fallback part ind
 Boots (slot 9, not `is locked`) on a character with exactly one fitted leg prosthetic lose that leg's half (`AppearanceBase_SetupItemMaterial`,
 **Observed**): left leg replaced collapses the x >= 0 half, right the x < 0 half. Meitou: `CharacterPart.HideSide`, instance flag bits 16-17.
 
+### Crossbows
+
+**Observed** (decompile: `FUN_1405dbd80`, `FUN_1405dbf80`, `FUN_140535d50`, `FUN_14043d120`, `FUN_140436080`, `FUN_1405cc820`):
+carried, the whole `mesh` hangs at its section's point (`back`, `back2` past the first, or `hip`), pushed out along the point's z by
+the CROSSBOW's `equip offset` (fcs.def default 1.2). Drawn to shoot (task 264 "Equipping crossbow"), the same item moves to `hands`
+(`Bip01 Prop2`) with no offset; the melee weapon in hand goes back to its own section first (one item in the hands), and the empty
+`sheath` leaves the back bare. `extra mesh loaded` / `extra mesh unloaded` and one `live ammo` bolt per shot sit in child nodes of the
+crossbow (at all points): loaded shows with shots > 0, unloaded with 0, bolt i with i < shots; bolts at (`barrel pos Y`, `barrel pos Z`,
+0) turned X -90°, Z -90° (bolt +z along the crossbow's +y). Firing hides the loaded string and bolt[shots - 1]; the end of a reload shows them
+(`FUN_14043a730`, `FUN_140436fb0`). Meitou: carried and in-hand crossbow with the loaded or unloaded string and its bolts by the combat slot's loaded
+bolts (`CharacterCold.CrossbowShots`; 0 until the first reload, the original's starting count is **Unknown**); the snapshot's
+`RangedDrawn` selects them (#36: a staff was shown firing while the crossbow stayed on the back). A generated character's crossbow takes row 0 of `back`
+(10 x 2); a two-row crossbow fills it, so a rolled back weapon goes to `hip` when free, else is left out, and the inventory never puts two weapons
+on the same cells (taken cells: `hip`, then the pockets). The original's placement for this case is **Unknown** (Meitou engine choice).
+
 ### LOD of character meshes
 
 Bodies, hair and armour use their meshes' own generated LOD levels (no separate LOD meshes); each entity picks
@@ -151,7 +166,8 @@ a frame against 0.75M, +0.9 ms GPU in the picture and +0.9 ms in the shadows. Wh
 from the look's sex's list (appearance `sex female`): `data/namesM.txt` (men) or `data/namesF.txt` (women), with `data/namesMF.txt` appended to
 both. Lines are trimmed, blank ones skipped; each file is optional. An empty list gives a fixed fallback string (**Unknown**; Meitou: the record
 name). 135 of 639 merged CHARACTERs are `named`, among them most start-squad members (Wanderer, Nobody, start slave; not Citizen, Exile).
-Meitou: `NamePool`, rolled at spawn (`PopulationSystem.SpawnName`, `RngPurpose.Name`); files read from the install, not mods.
+Meitou: `NamePool`, rolled at spawn (`PopulationSystem.SpawnName`, `RngPurpose.Name`) from the world seed, which a new game from the menu rolls afresh
+(`--seed` keeps one), so the start squad's names differ from game to game as the original's; files read from the install, not mods.
 
 ## Character editor
 
@@ -164,10 +180,20 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
 - **Races**: RACE_GROUP name on RACE, RACE name on SUBRACE; a race is listed if not an animal, in a group, has its editor limits XML, `playable`
   (mode 0) and, with a `force race` list, in it (none left: "Game start has no valid races", the list is unrestricted). Base data: Human
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
-  (Meitou: data order). Gender blank for single-gender races. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
+  (Meitou: data order). Gender "-" when the race's gender list has fewer than two entries (**Verified**, `FUN_1405ee0c0`; Meitou: `single gender`); the
+  subrace box always shows the RACE name. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
   "Hit Points:" and the character's first medical part's maximum as an integer (Meitou, while the draft shows another race: that race's new medical state's), "No bleeding" below `bleed rate` 0.1, then the stat multipliers
   above 1, then those below 1, each as the stat's name (no colon) and (m-1)x100 %. Within each group the order is the race stat map's iteration order
   ([boost-unordered](formats/boost-unordered.md); `RaceData.StatMapOrder`), which gives vanilla's Greenlander Farming, Cooking, Science (**Observed**).
+  **Verified** (decompile): the lines go into a DatapanelGUI (`FUN_1406fe9f0`), whose ScrollView grows its canvas and shows its vertical bar when a line
+  passes the bottom (`FUN_1406fd4e0`); labels `#afa68b`, values above 1 `#a8b774` with "+", below 1 `#bf4834` (BadBright). The names are the editor's own
+  table (`FUN_140888440`), not the stats window's: 1 Strength, 2 Attack, 3 Labouring, 4 Science, 5 Engineering, 6 Robotics, 7 Weapon Smithing, 8 Armour
+  Smithing, 9 First Aid, 10 Thievery, 11 Turrets, 12 Farming, 13 Cooking, 14-15 Vet, 16 Stealth, 17 Athletics, 18 Dexterity, 19 Defence, 20 Weaponry,
+  21 Toughness, 22 Assassination, 23 Swimming, 24 Perception, 25 Katanas, 26 Sabres, 27 Hackers, 28 Heavy weapons, 29 Blunt, 30 Martial arts, 32 Dodging,
+  35 Crossbows, 36 Precision Shooting, 37 Lockpicking, 38 Crossbow Smithing, others empty. Row pitch 25.55 px at 1440 lines (**Observed**, a Hive Prince's
+  twelve lines; Meitou: 19.2 at 1080, text top-aligned). The rows are 355 px wide at 1440 lines with or without the bar; with it (20 px) they start at the
+  panel's left, without it 13 px right and 13 px down (**Observed**, a Hive Prince's and a skeleton's panels; Meitou: a canvas the bar's width narrower than the
+  panel, inset 13 px when it fits, text 6 px above the panel's top).
 - **Captions** (`FUN_1405f1a40`, **Observed**): the code sets every button and header from the catalog, upper case: Randomise, Reset (not the
   layout's RESET ALL), Randomise All, Body, Face, Hair, Import, Export, Clothes, Confirm, Race, Subrace, Gender, Change Character, Race
   Description, Race Stats. With one character CHANGE CHARACTER, its arrows and "1/1" stay on screen (vanilla screenshot), arrows inactive.
@@ -265,7 +291,9 @@ a line gated only by money or `DC_IS_RECRUITABLE`.
   "Body shape sliders", "Hidden body parts" above). Left: which body region each part-map colour marks, and the
   stats/nutrition fields listed in animation.md's open questions.
 - Random appearance details: the untraced part of the morph-face name, the faction flag that re-rolls the skin tone
-  (and a body file's gender); crossbow placement; extra hip copies; `RaceLimiter` rules.
+  (and a body file's gender); extra hip copies; `RaceLimiter` rules.
+- Where the original puts a rolled weapon whose footprint doesn't fit its pool's slot (hip 7x1, back 10x2). Meitou (engine choice,
+  `CharacterGenerator`): the slot it fits, hip pool preferring the hip and back pool the back; fitting neither, it is left out.
 
 ## Expression reference
 

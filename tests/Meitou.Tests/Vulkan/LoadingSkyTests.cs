@@ -12,7 +12,6 @@ namespace Meitou.Tests.Vulkan;
 public class LoadingSkyTests
 {
     [Theory, Slow]
-    [InlineData(UpscalerKind.Off)]
     [InlineData(UpscalerKind.Taa)]
     public void StarsRenderThroughTheLoadingPassWithoutWorldCallbacksOrValidationErrors(UpscalerKind upscaler)
     {

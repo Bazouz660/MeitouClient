@@ -52,6 +52,13 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         stats.Gain(stat, ContinuousRate * dtSeconds * constants.ExpGainMultiplier * amount * race.StatMultiplier(stat));
 
     /// <summary>
+    /// The continuous entry with a cap (<c>FUN_1408c64f0</c>, <b>Verified</b> by decompile; the training dummy's): nothing once the stat is at the cap, else the same gain with the core curve
+    /// ((cap - stat) / cap)^2, so the stat only creeps towards the cap and never reaches it.
+    /// </summary>
+    public float Capped(CharacterStats stats, RaceData race, StatsEnumerated stat, float dtSeconds, float amount, float cap) =>
+        stats[stat] < cap ? stats.Gain(stat, ContinuousRate * dtSeconds * constants.ExpGainMultiplier * amount * race.StatMultiplier(stat), cap) : stats[stat];
+
+    /// <summary>
     /// A per-event gain: the core gain of <c>0.075 x factor x race[stat]</c> (<paramref name="factor"/> carries the event's coefficient and the
     /// skill-difference factor).
     /// </summary>
@@ -164,20 +171,30 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         Continuous(stats, race, StatsEnumerated.Engineering, dtSeconds, 0.75f);
 
     /// <summary>
-    /// Medic (<c>FUN_1408c6130</c>): <c>dt / T x exp gain multiplier x race[stat]</c>, T seconds per point from <c>XP rate medic 1</c> (at skill 1) to
-    /// <c>XP rate medic 99</c> (at skill 99). The interpolation argument is hidden in the decompile (<b>Unknown</b>); here t = (skill - 1) / 98. The
-    /// stat trained is the patient's race's <c>heal stat</c>.
+    /// Medic (<c>FUN_1408c6130</c>, <b>Verified</b> decompile): <c>dt / T x exp gain multiplier x race[stat]</c> added straight to the stat (no core curve, no cap), T seconds per point =
+    /// lerp(<c>XP rate medic 1</c>, <c>XP rate medic 99</c>, skill / 100) and nothing when T is not above 0 (the order of the lerp's ends is read from the editor's field names). The
+    /// race factor is the medic race's entry for the patient race's <c>heal stat</c>.
     /// </summary>
     public float Medic(CharacterStats stats, RaceData patientRace, RaceData medicRace, float dtSeconds, StatsEnumerated? healStat = null)
     {
         var stat = healStat ?? patientRace.HealStat;
         float skill = stats[stat];
-        float t = Math.Clamp((skill - 1) / 98, 0, 1);
+        float t = skill * 0.01f;
         float secondsPerPoint = constants.XpRateMedic1 + (constants.XpRateMedic99 - constants.XpRateMedic1) * t;
-        return stats.Gain(stat, dtSeconds / secondsPerPoint * constants.ExpGainMultiplier * medicRace.StatMultiplier(stat));
+        if (!(secondsPerPoint > 0)) return skill;
+        return stats[stat] = skill + dtSeconds / secondsPerPoint * constants.ExpGainMultiplier * medicRace.StatMultiplier(patientRace.HealStat);
     }
 
-    /// <summary>Mass combat (<c>FUN_1408c5e80</c>): rises by 0.75 x 0.05 per call (the exp gain multiplier x 0.05).</summary>
+    /// <summary>Mass combat (<c>FUN_1408c5e80</c>, <b>Verified</b> decompile): +0x9c rises by the exp gain multiplier x 0.05 per call, added straight (no core curve). Its one caller is the answer to
+    /// a slot ask (<c>FUN_140666a30</c>, docs/game/combat.md "Attack slots and circling"): the asked character's, when it is stumbling or already fighting. The stat is save-only (nothing
+    /// reads it), so nothing calls this.</summary>
     public float MassCombat(CharacterStats stats) =>
-        stats.Gain(StatsEnumerated.MassCombat, constants.ExpGainMultiplier * 0.05f);
+        stats[StatsEnumerated.MassCombat] += constants.ExpGainMultiplier * 0.05f;
+
+    /// <summary>
+    /// Toughness when a hit knocks the character out (<c>FUN_1408c6720</c>, from the part damage <c>FUN_14064f300</c>, <b>Verified</b> decompile): the core gain of
+    /// 0.075 (exp gain multiplier x 0.1) x race[toughness].
+    /// </summary>
+    public float ToughnessFromKnockOut(CharacterStats stats, RaceData race) =>
+        stats.Gain(StatsEnumerated.Toughness, EventUnit * race.StatMultiplier(StatsEnumerated.Toughness));
 }

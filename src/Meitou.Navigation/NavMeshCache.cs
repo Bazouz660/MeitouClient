@@ -13,8 +13,8 @@ namespace Meitou.Navigation;
 public sealed class NavMeshCache
 {
     /// <summary>Bump when the builder's output changes for the same input (a new rule in the gatherer or the pruner).</summary>
-    public const int BuilderVersion = 17;
-    const int FormatVersion = 4;
+    public const int BuilderVersion = 26;
+    const int FormatVersion = 5;
     static readonly byte[] Magic = "MNAV"u8.ToArray();
 
     public string Directory { get; }
@@ -105,8 +105,22 @@ public sealed class NavMeshCache
             }
             var corners = new Vector3[r.ReadInt32() * 3];
             for (int i = 0; i < corners.Length; i++) corners[i] = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+            HeightGrid?[]? heights = null;
+            if (r.ReadBoolean())
+            {
+                heights = new HeightGrid?[count];
+                for (int p = 0; p < count; p++)
+                {
+                    if (!r.ReadBoolean()) continue;
+                    float x0 = r.ReadSingle(), z0 = r.ReadSingle(), step = r.ReadSingle();
+                    int columns = r.ReadUInt16(), rows = r.ReadUInt16();
+                    var values = new float[columns * rows];
+                    for (int i = 0; i < values.Length; i++) values[i] = r.ReadSingle();
+                    heights[p] = columns == 0 ? HeightGrid.OnTerrain : new HeightGrid(x0, z0, step, columns, rows, values);
+                }
+            }
             if (r.ReadInt32() != count) return null; // trailer: truncated writes fail here
-            return new ZoneNavMesh { ZoneX = zoneX, ZoneZ = zoneZ, Vertices = vertices, Polygons = polygons, Neighbours = neighbours, Areas = areas, Links = links, Kept = kept, BoundsMin = boundsMin, BoundsMax = boundsMax, DoorIds = doorIds.Length > 0 ? doorIds : null, DoorOf = doorOf, Surfaces = corners.Length > 0 ? new NavSurfaces(corners) : null };
+            return new ZoneNavMesh { ZoneX = zoneX, ZoneZ = zoneZ, Vertices = vertices, Polygons = polygons, Neighbours = neighbours, Areas = areas, Links = links, Kept = kept, BoundsMin = boundsMin, BoundsMax = boundsMax, DoorIds = doorIds.Length > 0 ? doorIds : null, DoorOf = doorOf, Surfaces = corners.Length > 0 ? new NavSurfaces(corners) : null, Heights = heights };
         }
         catch (Exception e) when (e is IOException or EndOfStreamException or InvalidDataException or OverflowException or OutOfMemoryException)
         {
@@ -146,6 +160,16 @@ public sealed class NavMeshCache
             var corners = m.Surfaces?.Corners ?? [];
             w.Write(corners.Length / 3);
             foreach (var c in corners) { w.Write(c.X); w.Write(c.Y); w.Write(c.Z); }
+            w.Write(m.Heights is not null);
+            if (m.Heights is { } heights)
+                foreach (var grid in heights)
+                {
+                    w.Write(grid is not null);
+                    if (grid is null) continue;
+                    w.Write(grid.X0); w.Write(grid.Z0); w.Write(grid.Step);
+                    w.Write((ushort)grid.Columns); w.Write((ushort)grid.Rows);
+                    foreach (float v in grid.Values) w.Write(v);
+                }
             w.Write(m.PolygonCount);
         }
         File.Move(temp, path, overwrite: true);

@@ -55,6 +55,50 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// </summary>
     public bool GeneratedLod { get; set; } = true;
 
+    /// <summary>
+    /// Pre-integrated skin scattering on people's bare skin (the <c>skin</c> switch's Meitou side, docs/character-renderer.md "Skin"); off: the plain N.L of the game.
+    /// A change redraws the portraits.
+    /// </summary>
+    public bool SkinShading
+    {
+        get => skinShading;
+        set
+        {
+            if (skinShading == value) return;
+            skinShading = value;
+            portraitShown.Clear();
+        }
+    }
+    bool skinShading = true;
+    readonly SkinScattering skinScattering;
+
+    /// <summary>
+    /// The skin per race, chosen against its default (RACE string id to on or off; the settings' Skin page): a race not in it takes <see cref="SkinByDefault"/>.
+    /// Read as the materials are written each frame, so a change shows at once; setting it (also the same, changed, dictionary) redraws the portraits.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? SkinRaces
+    {
+        get => skinRaces;
+        set { skinRaces = value; portraitShown.Clear(); }
+    }
+    IReadOnlyDictionary<string, bool>? skinRaces;
+
+    /// <summary>Whether a race's bodies scatter light unless chosen otherwise: every person race but a robot one (RACE <c>is robot</c>: skeletons, metal).</summary>
+    public static bool SkinByDefault(GameRecord race) => !race.GetBool("is robot");
+
+    bool SkinFor(PartMaterial m) => m.Race is not null && skinRaces is not null && skinRaces.TryGetValue(m.Race, out bool chosen) ? chosen : m.SkinDefault;
+
+    /// <summary>
+    /// The person races of the loaded data (base game and mods) for the Skin page: every RACE record no ANIMAL_CHARACTER uses, by name, with its default.
+    /// </summary>
+    public static IReadOnlyList<(string Id, string Name, bool Default)> PersonRaces(GameDatabase db)
+    {
+        var animal = db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER)
+            .SelectMany(r => r.GetReferences("race").Select(x => x.TargetStringId)).ToHashSet();
+        return [.. db.Records.Values.Where(r => r.Type == Meitou.Data.Fcs.FcsRecordType.RACE && !animal.Contains(r.StringId))
+            .OrderBy(r => r.Name.Trim(), StringComparer.OrdinalIgnoreCase).Select(r => (r.StringId, r.Name.Trim(), SkinByDefault(r)))];
+    }
+
     // Statistics of the last Update / Draw.
     public int Posed { get; private set; }
     public int DrawnCharacters { get; private set; }
@@ -92,7 +136,11 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// <summary>Starts preparing a look urgently as a close-up (the character editor's): its meshes without generated levels, which take nearly all of a mesh's preparation. Render thread.</summary>
     public void PrefetchCloseUp(CharacterAppearance appearance) => content.Prefetch(appearance, close: true);
     /// <summary>The character editor has closed: drops the close-up preparations it warmed and never showed. Render thread.</summary>
-    public void ReleaseCloseUps() => content.ReleaseCloseUps();
+    public void ReleaseCloseUps()
+    {
+        content.ReleaseCloseUps();
+        ReleaseStage();
+    }
     public List<string> Messages => content.Messages;
 
     /// <summary>One character in range this frame.</summary>
@@ -104,7 +152,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public float Radius;
         public int BoneBase, AttachBase, LayerStart, LayerCount;
         public CharState State;
-        public bool Repose, WeaponDrawn;
+        public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
+        public int Shots;
+        public IReadOnlyList<StuckBoltMesh> Bolts;
         /// <summary>The ragdoll's bones over the animation (null: none).</summary>
         public BonePose? Bones;
         public long Key;
@@ -121,18 +171,35 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public Matrix4x4 World, PreviousWorld;
         public bool HasWorld;
         public long Posed = -1, Seen;
+        /// <summary>The pose-rate period the character was last seen in (<see cref="PoseRangeSteps"/>).</summary>
+        public long PoseBucket = long.MinValue;
         /// <summary>What the last update drew it with, for picking (<see cref="RayHit"/>): its asset, weapon, bounding sphere, and whether it is drawn in the world.</summary>
         public CharacterAsset? Asset;
-        public bool WeaponDrawn, InWorld;
+        public bool WeaponDrawn, RangedDrawn, BackDrawn, InWorld;
+        /// <summary>Each stuck bolt's transform in its bone's frame, fixed the first time it was drawn (by bolt id).</summary>
+        public readonly Dictionary<int, Matrix4x4> BoltLocal = [];
         public Vector3 Centre;
         public float Radius;
     }
 
     readonly Dictionary<long, CharState> states = [];
-    /// <summary>Characters farther than these distances are posed every 2nd, 4th and 8th frame (a still holds the last palette); 0: every frame.</summary>
+    /// <summary>
+    /// Characters farther than these distances from <see cref="Focus"/> (or the eye, whichever is nearer) are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
+    /// phase of its own so the poses spread over the frames; nearer ones every frame.
+    /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
+    /// <summary>What the camera looks at (the strategy camera's pivot): the pose-rate distances are measured from it, so the characters in view keep the full rate
+    /// however far the boom is; null: from the eye.</summary>
+    public Vector3? Focus { get; set; }
+    /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
+    const double PoseRateHz = 60;
+    /// <summary>The seconds the pose rates count in (the game's animation clock, which a recorded flight steps by its frame time, so a take poses the same however slowly
+    /// it is drawn); null: the real time.</summary>
+    public Func<double>? PoseClock { get; set; }
     /// <summary>The culling radius of a person (<see cref="CharacterAsset.Radius"/>): a bigger body (an animal) takes the pose-rate distances that many times farther, as it fills as much of the screen there.</summary>
     const float HumanRadius = 16;
+
+    double poseSeconds;
 
     int PoseInterval(float distance)
     {
@@ -175,6 +242,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         depthProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.DepthVertex(), CharacterShaders.DepthFragment(), "characters depth", CharacterShaders.InstanceLocation);
         motionProg = new ReflectedProgram(gpu, nativeFrame, CharacterShaders.MotionVertex(), CharacterShaders.MotionFragment(), "characters motion", CharacterShaders.InstanceLocation);
         content = new CharacterContent(gpu, install, db, assetLocator, rigs);
+        skinScattering = new SkinScattering(gpu);
         colourTimer = new PassTimer(gpu);
         depthTimer = new PassTimer(gpu);
     }
@@ -188,6 +256,63 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public static CharacterRigs CreateRigs(GameDatabase db, AssetLocator assets) => CharacterContent.CreateRigs(db, assets);
 
     // ------------------------------------------------------------------ per frame
+
+    /// <summary>How far back along its flight a stuck bolt sits from its bone's origin (engine choice: the original takes 0.6 times a random vertex of the body near the bone).</summary>
+    const float BoltDepth = 2;
+
+    /// <summary>
+    /// The bolts stuck in this update's posed characters (docs/game/combat.md "Bolt visuals"), as loose meshes into <paramref name="into"/> (cleared first), after <see cref="Update"/>:
+    /// each fixed to its bone the first time it is seen, its +z along the flight and pulled back from the bone's origin by <see cref="BoltDepth"/>, then carried by the bone
+    /// (a ragdoll's included), as the original attaches it to the bone keeping its world orientation (<c>FUN_14052bfa0</c>).
+    /// </summary>
+    public void CollectBolts(List<DebrisPiece> into)
+    {
+        into.Clear();
+        for (int i = 0; i < liveCount; i++)
+        {
+            ref var l = ref live[i];
+            var state = l.State;
+            if (l.Bolts is not { Count: > 0 } bolts || l.PortraitOnly || l.Asset.IsIcon)
+            {
+                if (l.Bolts is not { Count: > 0 }) state?.BoltLocal.Clear();
+                continue;
+            }
+            var rig = l.Asset.Rig;
+            if (state.Bones.Length != rig.BoneCount) continue;
+            if (state.BoltLocal.Count > bolts.Count)
+                foreach (int id in state.BoltLocal.Keys.ToArray())
+                    if (!bolts.Any(b => b.Id == id)) state.BoltLocal.Remove(id);
+            int root = rig.Skeleton.Bones.FirstOrDefault(b => b.Parent is null)?.Handle ?? 0;
+            foreach (var bolt in bolts)
+            {
+                int h = rig.Handle(bolt.Bone) ?? root;
+                if ((uint)h >= (uint)state.Bones.Length) continue;
+                // The bone's posed frame: its binding transform times its skin matrix (which is relative to the binding), placed in the world.
+                var bind = Matrix4x4.CreateScale(rig.BindScale[h]) * Matrix4x4.CreateFromQuaternion(Quaternion.Conjugate(rig.BindRotationInverse[h]))
+                    * Matrix4x4.CreateTranslation(rig.BindPosition[h]);
+                var bone = bind * state.Bones[h] * l.World;
+                if (!state.BoltLocal.TryGetValue(bolt.Id, out var local))
+                {
+                    var flight = Vector3.TransformNormal(bolt.Direction, l.World);
+                    if (flight.LengthSquared() < 1e-8f || !Matrix4x4.Invert(bone, out var inverse)) continue;
+                    flight = Vector3.Normalize(flight);
+                    var placed = Matrix4x4.CreateFromQuaternion(TurnZ(flight)) * Matrix4x4.CreateTranslation(bone.Translation - flight * BoltDepth);
+                    state.BoltLocal[bolt.Id] = local = placed * inverse;
+                }
+                if (!Matrix4x4.Decompose(local * bone, out _, out var rotation, out var position)) continue;
+                into.Add(new DebrisPiece(bolt.Mesh, 1, rotation, position));
+            }
+        }
+    }
+
+    /// <summary>The rotation that turns +z onto <paramref name="to"/> (unit length).</summary>
+    static Quaternion TurnZ(Vector3 to)
+    {
+        var axis = Vector3.Cross(Vector3.UnitZ, to);
+        float s = axis.Length();
+        if (s < 1e-5f) return to.Z > 0 ? Quaternion.Identity : Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI);
+        return Quaternion.CreateFromAxisAngle(axis / s, MathF.Atan2(s, to.Z));
+    }
 
     /// <summary>Adds the carried lights of this update's posed characters to <paramref name="into"/>, at their world positions (after <see cref="Update"/>).</summary>
     public void CollectLamps(List<Meitou.Data.World.WorldLight> into)
@@ -227,6 +352,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         textureBias = Gpu.LodBias;
         textureStandIn = Gpu.StandIn2D;
         updateStamp++;
+        poseSeconds = PoseClock?.Invoke() ?? Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
         // 1. Assets and the characters in range, with their layers resolved (the rig's caches are filled here, on this thread).
         liveCount = layerCount = attachCount = 0;
@@ -258,7 +384,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             // Lowered by the body shape's lift, so a short body's feet stay on the ground (CharacterAsset.GroundOffset); an animal scaled by its size (its node's scale).
             l.World = Matrix4x4.CreateRotationY(inst.Yaw) * Matrix4x4.CreateTranslation(inst.Position - new Vector3(0, asset.GroundOffset, 0));
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
-            l.WeaponDrawn = inst.WeaponDrawn;
+            (l.WeaponDrawn, l.RangedDrawn, l.BackDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, inst.Shots, inst.Bolts);
             l.Centre = centre;
             l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
@@ -269,12 +395,18 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
-            (state.Asset, state.WeaponDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, !far, centre, l.Radius);
+            (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.BackDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, !far, centre, l.Radius);
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
             // A ragdoll is posed every frame: its bones move by physics, not by a clip the distance rule could thin out.
-            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || (updateStamp + inst.Key) % PoseInterval(Vector3.Distance(eye, centre) / MathF.Max(1, l.Radius / HumanRadius)) == 0;
+            // The nearer of the eye and the look-at point: the fight in view keeps the full rate however far the boom, and a stale focus (free camera) throttles no more than the eye would.
+            float paceDistance = Focus is { } focus ? MathF.Min(Vector3.Distance(focus, centre), Vector3.Distance(eye, centre)) : Vector3.Distance(eye, centre);
+            int interval = PoseInterval(paceDistance / MathF.Max(1, l.Radius / HumanRadius));
+            // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
+            long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + unchecked((ulong)inst.Key * 0x9E3779B97F4A7C15UL) / 18446744073709551616.0);
+            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || bucket != state.PoseBucket;
+            state.PoseBucket = bucket;
             l.LayerStart = layerCount;
             var rig = asset.Rig;
             if (inst.Poses is { } poses)
@@ -342,7 +474,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             float distance = Vector3.Distance(eye, live[i].Centre);
             foreach (var part in live[i].Asset.Parts)
             {
-                if (!part.ShowsWith(live[i].WeaponDrawn)) continue;
+                if (!part.ShowsWith(live[i].WeaponDrawn, live[i].RangedDrawn, live[i].Shots, live[i].BackDrawn)) continue;
                 if (part.MaterialFrame != updateStamp)
                 {
                     part.MaterialFrame = updateStamp;
@@ -456,6 +588,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.ClipOnNormalAlpha && has[CharacterShaders.SlotNormal]) flags |= CharacterShaders.ClipNormalAlpha;
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
         if (m.Worn) flags |= CharacterShaders.Worn;
+        if (m.Skin && SkinFor(m)) flags |= CharacterShaders.Skin;
+        if (m.VertexColoured) flags |= CharacterShaders.VertexColoured;
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
@@ -473,7 +607,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         r.Flags = flags;
         r.VestCount = vests;
         r.AlphaThreshold = m.AlphaThreshold;
-        r.ShirtColour = new Vector4(m.ShirtColour, 1);
+        r.ShirtColour = new Vector4(m.ShirtColour, m.GlossMult);
         r.SkinTone = new Vector4(m.SkinTone, has[CharacterShaders.SlotBlendNormal] ? m.MuscleBlend : 0);
         r.HairColour = new Vector4(m.HairColour, 1);
         r.HairAlpha = m.HairAlpha; r.HairMult = m.HairMult; r.BeardAlpha = m.BeardAlpha;
@@ -512,6 +646,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         motionProg.Dispose();
         nativeFrame.Dispose();
         content.Dispose();
+        skinScattering.Dispose();
         DisposePortraits();
         DisposeStage();
         DisposeHover();

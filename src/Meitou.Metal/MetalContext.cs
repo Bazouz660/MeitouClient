@@ -889,6 +889,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     /// <inheritdoc/>
     public bool HasRayQuery => false;
+    public bool HasTessellation => false;
 
     /// <inheritdoc/>
     public bool ConstantVertexAttributes => false;

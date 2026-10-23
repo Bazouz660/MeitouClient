@@ -41,22 +41,30 @@ sealed partial class PlayerInterface
         uiResolve = resolve;
         var template = PotTemplate.Read(resolve("locale/en_GB/LC_MESSAGES/main.pot")
             ?? (Meitou.Content.GameInstall.Locate() is { } install ? Path.Combine(install.Root, "locale/en_GB/LC_MESSAGES/main.pot") : null));
-        advancedHelp = NewGameHelpCatalog.From(template);
+        advancedHelpCatalog = NewGameHelpCatalog.From(template);
         statHelp = StatHelpCatalog.From(template);
         MyGuiColours.LoadPalette(resolve("kenshi_colours.xml"));
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
         faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
+        relationsLineLayout = resolve("Kenshi_FactionRelationsLine.layout") is { } relationsLine ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(relationsLine), uiResources) : null;
         squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
         messageLayout = resolve("Kenshi_MessagePanel.layout") is { } messages ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(messages), uiResources) : null;
+        taskBarLayout = resolve("Kenshi_ProgressBarPanel.layout") is { } taskBar ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(taskBar), uiResources) : null;
         messageClient = messageLayout?.Widgets.FirstOrDefault(w => w.Properties.GetValueOrDefault("CaptionOwner") == "MessageTextBox")?.Name;
         faithfulScreens = new(uiResources) { ClipboardReader = () => ClipboardRead?.Invoke(), ClipboardWriter = text => ClipboardWrite?.Invoke(text) };
         foreach (var (id, file, modal) in FaithfulScreenFiles)
         {
             var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
-            if (id == "new-game") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            if (id is "new-game" or "import") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            if (id == "load") layout = WithSaveFilter(layout);
             if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
-            faithfulScreens.Register(id, layout, modal, centreRoot: id is "save" or "load" or "file");
+            if (id == "inventory") characterInventoryLayout = layout;
+            faithfulScreens.Register(id, layout, modal, centreRoot: id is "file");
         }
+        animalInventoryLayout = resolve("Kenshi_InventoryAnimalWindow.layout") is { } animalWindow ? MyGuiReader.ReadLayout(animalWindow) : null;
+        characterRowLayout = resolve("Kenshi_CharacterSelectionBox.layout") is { } characterRow ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(characterRow), uiResources) : null;
+        // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
+        faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
         faithfulScreens.Follow("loot-bag", "loot");
         faithfulScreens.Activated += FaithfulAction;
@@ -71,11 +79,12 @@ sealed partial class PlayerInterface
         ("overview", "Kenshi_OverviewWindow", false), ("menu", "Kenshi_MainMenuPopupPanel", true),
         ("title", "Kenshi_MainMenu", true), ("new-game", "Kenshi_NewGamePanel", true),
         ("save", "Kenshi_SaveGamePanel", true),
-        ("load", "Kenshi_LoadGamePanel", true), ("message", "Kenshi_MessageBox", true),
+        ("load", "Kenshi_LoadGamePanel", true), ("import", "Kenshi_ImportGamePanel", true), ("message", "Kenshi_MessageBox", true),
         ("bag", "Kenshi_InventoryGenericWindow", false), ("loot", "Kenshi_InventoryCharacterWindow", false), ("loot-bag", "Kenshi_InventoryGenericWindow", false), ("limbs", "Kenshi_LimbReplacementWindow", false), ("trader", "Kenshi_InventoryTraderWindow", false),
         ("building", "Kenshi_GenericBuildingWindow", false), ("bench", "Kenshi_InventoryResearchWindow", false), ("storage", "Kenshi_InventoryGenericWindow", false),
         ("build", "Kenshi_BuildWindow", false), ("editor", "Kenshi_CharacterEditor", true), ("dialogue", "Kenshi_ConversationPanel", true),
         ("file", "Kenshi_OpenSaveFileDialog", true), ("prospect", "Kenshi_ProspectingWindow", false),
+        (CharacterTradeScreen, "Kenshi_CharacterSelectionWindow", false),
     ];
 
     /// <summary>The expanded layout and the current bindings of the HUD (<c>"hud"</c>) or of a faithful screen, for the layout audit test.</summary>
@@ -131,7 +140,8 @@ sealed partial class PlayerInterface
         b.Text["ExtendedStatsText"] = "";
         // The exe sets the money label without the layout's colon (docs/game/ui-screens.md section 4).
         b.Text["MoneyLabelText"] = "Money";
-        b.Text["BountyText"] = lead is null || lead.Bounties.Count == 0 ? "" : $"Bounty c.{lead.Bounties.Sum(v => v.Amount)}";
+        // The bounty panel draws its own Bounty: line over the widget (PlayerInterface.HudText.cs).
+        b.Properties["BountyText"] = new Dictionary<string, string> { ["SkipCaption"] = "true" };
         for (int i = 0; i < ButtonSpeeds.Length; i++) b.Actions[$"TimeSpeedButton{i + 1}"] = $"meitou:speed.{i}";
         b.Actions["ShortcutInventoryButton"] = "meitou:inventory";
         b.Actions["ShortcutStatsButton"] = "meitou:stats";
@@ -150,7 +160,7 @@ sealed partial class PlayerInterface
         b.Actions["FloorArrowDown"] = "meitou:floor-down";
         b.Actions["BuildButton"] = "meitou:build";
         if (buildMode) foreach (string name in BuildHiddenHud) b.Hidden.Add(name);
-        if (lead is null || lead.Bounties.Count == 0) b.Hidden.Add("BountyPanel");
+        if (lead is null || lead.Bounties.Count == 0 && lead.Slave is null) b.Hidden.Add("BountyPanel");   // a bounty or a status line (Slave, Escaped slave) shows it
         // The information panel starts collapsed (as the original's, docs/game/ui-screens.md section 4): the extending part (name, state lines, extended stats) slid down
         // until its bottom is the panel's, behind the stats panel, so only the name and the state lines show; the ^ button between them toggles it.
         if (!infoExpanded && faithfulHud.Find("InformationPanel") is { } info && faithfulHud.Find("ExtendingPanel") is { } extending)
@@ -163,8 +173,8 @@ sealed partial class PlayerInterface
         if (session.Simulation.Speed != 0) b.Hidden.Add("PausedPanel");
         var buildingNow = BuildingFocus();
         bool buildingFocus = buildingNow is not null;
-        BindMedicalBars(b, buildingFocus ? null : lead);
-        // A selected building shows only the status word in the medical header (its condition bars are not modelled: Meitou has no building health).
+        BindMedicalBars(b, lead, buildingNow is { } shownBuilding ? BuildingRows(shownBuilding) : null);
+        // A selected building shows its status word in the medical header and its condition rows below it.
         if (buildingNow is not null)
         {
             var (_, _, _, buildingStatus, bad) = BuildingLines(buildingNow);
@@ -189,7 +199,10 @@ sealed partial class PlayerInterface
         SyncTradeScreens();
         SyncMachineScreens();
         SyncLootScreen();
+        SyncInventoryLayouts();
+        SyncLimbsScreen();
         SyncDialogueScreen();
+        SyncCharacterTradeScreen();
         ValidateInventoryDrag();
         var b = BindUi();
         faithfulScreens.FocusRing = UiMode == UiMode.Meitou;
@@ -228,6 +241,7 @@ sealed partial class PlayerInterface
         var nameTags = new List<UiControl>();   // the tags are on the original's Back layer: under every panel
         AddItemLabels(nameTags);
         AddNameTags(nameTags);
+        AddTaskBars(nameTags);
         controls.InsertRange(0, nameTags);
         AddSpeech(controls);
         AddContextMenu(controls);
@@ -288,6 +302,7 @@ sealed partial class PlayerInterface
         else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
         else if (action == "rescue") Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
         else if (action == "prospect") ProspectAction();
+        else if (action.StartsWith("building-", StringComparison.Ordinal)) BuildingAction(action);
         else if (action == "job-remove") RemoveJob(argument);
         else if (action.StartsWith("order.", StringComparison.Ordinal) && Enum.TryParse(action[6..], out CharacterOrders order))
             Say(new OrdersCommand(SelectedIds(), order) { Tick = session.World.Tick });
@@ -295,7 +310,6 @@ sealed partial class PlayerInterface
         {
             int step = int.Parse(action[9..], CultureInfo.InvariantCulture);
             Say(new RunSpeedCommand(SelectedIds(), step) { Tick = session.World.Tick });
-            if (Selected().FirstOrDefault() is { } lead) Notice("Move speed: " + RunSpeedName((byte)((((lead.RunSpeed + step) % SpeedMode.Count) + SpeedMode.Count) % SpeedMode.Count)));
         }
     }
 
@@ -307,7 +321,7 @@ sealed partial class PlayerInterface
         IReadOnlyList<UiControl> controls = ArrangeUi();
         if (UiMode == UiMode.Faithful && LoadBar is { Visible: true } bar) controls = [.. controls, .. bar.Controls(uiResources, width, height)];
         uiPainter?.Draw(controls, width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
-            minimumTextPixels: TitleOpen ? 0 : StandardTextPixels * height / 1080f);
+            minimumTextPixels: TitleOpen ? 0 : StandardPixels);
     }
 
     /// <summary>For screenshot reviews: open the same panel through its registered button action.</summary>
@@ -324,16 +338,35 @@ sealed partial class PlayerInterface
         faithfulScreens.CloseAll();
         UpdateMenuPause();
         if (panel is null) return;
-        if (panel is "overview" or "menu" or "new-game" or "save" or "load" or "title")
+        // The title with one of its buttons pressed (its window or the credits, placed as from the title).
+        if (panel.StartsWith("title-", StringComparison.Ordinal))
+        {
+            ShowTitle();
+            string button = panel[6..] switch { "load" => "LoadGameButton", "import" => "ImportGameButton", "new-game" => "NewGameButton", "exit" => "ExitButton", _ => "CreditsButton" };
+            HandleFrontendAction(new("title", button, button));
+            UpdateMenuPause(); return;
+        }
+        if (panel is "overview" or "overview-faction" or "menu" or "new-game" or "save" or "load" or "title")
         {
             if (panel == "title") ShowTitle();
             else if (panel is "save" or "load") OpenSlots(panel);
+            else if (panel == "overview-faction") { faithfulScreens.Open("overview"); faithfulScreens.SetTab("overview", "TabsMain", FactionTab); }
             else { faithfulScreens.Open(panel); if (panel == "overview") faithfulScreens.SetTab(panel, "TabsMain", 0); }
             UpdateMenuPause(); return;
         }
+        // The first building found on a grid of picks over the view (its HUD panels); any other panel drops it.
+        if (panel != "building" && selectedBuilding is not null) SetBuilding(null);
+        if (panel == "building")
+        {
+            for (int y = Height / 8; selectedBuilding is null && y < Height * 2 / 3; y += 24)
+                for (int x = Width / 8; selectedBuilding is null && x < Width * 7 / 8; x += 24)
+                    if (PickBuilding(new(x, y)) is { Record: not null } found) SetBuilding(found);
+            return;
+        }
         if (panel == "build") { if (buildMode) faithfulScreens.Open("build"); else SetBuildMode(true); return; }
-        if (panel is not ("inventory" or "stats")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
-        var control = ArrangeUi().First(c => c.Action == $"meitou:{panel}");
+        if (panel is not ("inventory" or "stats" or "limbs")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
+        var control = ArrangeUi().First(c => c.Action == $"meitou:{(panel == "limbs" ? "inventory" : panel)}");
         uiHost.Dispatch(control);
+        if (panel == "limbs") { limbsOwner = InventoryOwner()?.Id ?? CharacterId.None; faithfulScreens.Open("limbs"); PlaceLimbsWindow(); }
     }
 }

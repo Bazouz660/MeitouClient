@@ -70,33 +70,7 @@ public class NativeUiTests
     }
 
     [Fact]
-    public void FailedRegistrationRollsBackAndCanBeRetried()
-    {
-        var host = new UiHost();
-        Assert.Throws<InvalidOperationException>(() => host.Register(new Extension("sample", r =>
-        {
-            r.RegisterStyle("temporary", new());
-            r.RegisterAction("temporary", _ => { });
-            throw new InvalidOperationException("load failed");
-        })));
-        Assert.Throws<KeyNotFoundException>(() => host.Style("sample:temporary"));
-        using var retry = host.Register(new Extension("sample", r => r.RegisterStyle("temporary", new())));
-        Assert.Throws<InvalidOperationException>(() => host.Register(new Extension("sample", _ => { })));
-    }
-
-    [Fact]
-    public void StyleOverridesRestoreThePreviousStyleWhenUnloaded()
-    {
-        var host = new UiHost();
-        using var game = host.Register(new Extension("game", r => r.RegisterStyle("button", new() { Background = Vector4.One })));
-        var skin = host.Register(new Extension("skin", r => r.OverrideStyle("game:button", new() { Background = Vector4.Zero })));
-        Assert.Equal(Vector4.Zero, host.Style("game:button").Background);
-        skin.Dispose();
-        Assert.Equal(Vector4.One, host.Style("game:button").Background);
-    }
-
-    [Fact]
-    public void AModCanExtendABuiltInControlAndUnloadingRestoresTheOriginal()
+    public void AModCanExtendABuiltInControlAndUnloadingRestoresTheOriginalControlAndStyle()
     {
         var host = new UiHost();
         using var game = host.Register(new Extension("game", r =>
@@ -113,6 +87,14 @@ public class NativeUiTests
         Assert.Equal(2, host.Arrange(UiMode.Meitou, 800, 600, new(), Slots()).Count);
         mod.Dispose();
         Assert.Equal("original", Assert.Single(host.Arrange(UiMode.Meitou, 800, 600, new(), Slots())).Name);
+
+        // A style override restores the previous style when unloaded.
+        var styled = new UiHost();
+        using var baseStyles = styled.Register(new Extension("game", r => r.RegisterStyle("button", new() { Background = Vector4.One })));
+        var skin = styled.Register(new Extension("skin", r => r.OverrideStyle("game:button", new() { Background = Vector4.Zero })));
+        Assert.Equal(Vector4.Zero, styled.Style("game:button").Background);
+        skin.Dispose();
+        Assert.Equal(Vector4.One, styled.Style("game:button").Background);
     }
 
     sealed class IncompatibleExtension : IUiExtension
@@ -131,6 +113,18 @@ public class NativeUiTests
         var module = host.Register(new Extension("test", r => registration = r));
         module.Dispose();
         Assert.Throws<ObjectDisposedException>(() => registration!.RegisterStyle("late", new()));
+
+        // A registration that fails rolls back and can be retried.
+        var failing = new UiHost();
+        Assert.Throws<InvalidOperationException>(() => failing.Register(new Extension("sample", r =>
+        {
+            r.RegisterStyle("temporary", new());
+            r.RegisterAction("temporary", _ => { });
+            throw new InvalidOperationException("load failed");
+        })));
+        Assert.Throws<KeyNotFoundException>(() => failing.Style("sample:temporary"));
+        using var retry = failing.Register(new Extension("sample", r => r.RegisterStyle("temporary", new())));
+        Assert.Throws<InvalidOperationException>(() => failing.Register(new Extension("sample", _ => { })));
     }
 
     [Fact]
@@ -195,15 +189,13 @@ public class NativeUiTests
         Assert.Equal(0, clicks);
     }
 
-    [Theory]
-    [InlineData(UiFlow.Row, 10, 0)]
-    [InlineData(UiFlow.Column, 0, 10)]
-    public void FlowSkipsHiddenChildrenAndClipsDrawingAndPickingTogether(UiFlow flow, float x, float y)
+    [Fact]
+    public void FlowSkipsHiddenChildrenAndClipsDrawingAndPickingTogether()
     {
         var host = new UiHost();
         using var module = host.Register(new Extension("sample", r => r.Contribute(UiSlots.Overlay, _ =>
         {
-            var root = new UiNode("row") { Flow = flow, Gap = 2, Placement = new(16, 16) };
+            var root = new UiNode("row") { Flow = UiFlow.Row, Gap = 2, Placement = new(16, 16) };
             root.Children.Add(new("first") { Placement = new(8, 8) });
             root.Children.Add(new("hidden") { Visible = false, Placement = new(100, 100) });
             root.Children.Add(new("second") { Placement = new(12, 12) });
@@ -211,10 +203,10 @@ public class NativeUiTests
         })));
         var frame = host.Arrange(UiMode.Meitou, 800, 600, new(), Slots());
         var second = Assert.Single(frame, c => c.Name == "second");
-        Assert.Equal(x, second.Bounds.X);
-        Assert.Equal(y, second.Bounds.Y);
-        Assert.Equal(flow == UiFlow.Row ? 6 : 12, second.Bounds.Width);
-        Assert.Equal(flow == UiFlow.Column ? 6 : 12, second.Bounds.Height);
+        Assert.Equal(10, second.Bounds.X);
+        Assert.Equal(0, second.Bounds.Y);
+        Assert.Equal(6, second.Bounds.Width);
+        Assert.Equal(12, second.Bounds.Height);
         Assert.Null(MyGuiPresentation.HitTest(frame, 17, 17));
     }
 }

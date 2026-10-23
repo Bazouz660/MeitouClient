@@ -23,7 +23,7 @@ settings and current key list belong in viewer. Quicksave F5/loadF9; cinematic F
 
 ## Host and loading
 
-GameHost partials own boot/interactive/offscreen, characters, saving, transitions and duel;
+GameHost partials own boot/interactive/offscreen, characters, saving, transitions, duel and battle;
 PlayerInterface owns picking/HUD/panels/commands. StandardSystems supplies order. NavAdapter
 bridges Navigation; never let UI/rendering duplicate simulation state.
 GUI executable attaches a caller's console; folder prompt creates its own when necessary.
@@ -34,6 +34,7 @@ assets and used textures (including deferred loads), then <40ms frames for0.5s (
 After 5s of continuous `VramGuard` pressure, content it holds back is no longer waited for (it cannot load until the use falls).
 Population builds are queued/applied at frame boundaries without advancing game time, AI or movement;
 navmesh-gated spawns are retried while loading. Warm-up and the flight hold the simulation paused.
+The Faithful title does not wait: its picture is opaque, so the start ends with the splash ([ui-screens](game/ui-screens.md#splash)) and the boot.
 The Meitou title waits for terrain, scenery, character assets and used textures (including deferred loads), then
 one full second of <40ms frames (max5s of ready content for frame pacing, so slow GPUs reach the menu). Its menu artwork/fonts/pipelines warm under the opaque cover too;
 streaming uploads retire and a compacting GC completes before that final smooth run.

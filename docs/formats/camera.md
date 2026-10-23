@@ -77,7 +77,9 @@ not the game speed, so the camera works while the game is paused. Several inputs
   **raised by the shortfall until the eye is `min(0.2 · boom, 20) + 10` above the ground under it**: the pivot rises, the view
   direction is not touched. The pivot then closes on its goal: a gap of 0.1 or less at once, else at **10 × the gap per second**, the
   speed taken when the goal changes (a moving goal is followed with a lag of about 0.1 s). A pivot or eye starting inside geometry
-  leaves the height alone (**Observed**). Placing the camera finds the goal at once.
+  leaves the height alone (**Observed**). Placing the camera finds the goal at once. Engine: only the buildings in the interior view
+  (a player character inside) are ground, their floor and stairs surfaces up to the viewed floor (no roofs), so panning off a
+  followed character indoors keeps the pivot on its floor.
 - **Default keys** (`controls.cfg`): `camera_forward` W, Up; `camera_back` S, Down; `camera_left` A, Left; `camera_right` D, Right;
   `camera_rotate_left` Q; `camera_rotate_right` E; `camera_tilt+` `,`; `camera_tilt-` `.`; `camera_zoom_in` Home; `camera_zoom_out`
   End; `mouse_rotate` Left Control or Mouse3; `toggle_fps_camera` `;`; `focus_char` F (held flags and events:

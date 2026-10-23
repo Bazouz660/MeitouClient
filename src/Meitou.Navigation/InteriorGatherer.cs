@@ -112,9 +112,12 @@ internal sealed partial class ZoneGeometryGatherer
 
         uint mask = site.Destroyed ? DestroyedInteriorGroupMask : InteriorGroupMask;
         AddBuilding(g, site.Record, site.Placement.Key, site.Position, site.Placement.Rotation, site.Destroyed, new InteriorContext(site.Placement.Key, site.Destroyed, mask, Own: true));
-        // Its layouts' furniture: walkable pieces give floor, the rest cut.
+        // Its layouts' furniture: walkable pieces give floor, the rest cut. The first shopkeeper or general node is the seed when no door's is (SeedPruner).
         foreach (var (item, at, rotation) in LayoutObjects(site.Placement, site.Record, site.Position, site.Destroyed))
+        {
+            if (g.NodeSeeds.Count == 0 && item.Building.GetBool("is node") && item.Building.GetInt("node type") is 0 or 1) g.NodeSeeds.Add(at);
             AddBuilding(g, item.Building, $"{site.Placement.Key}/{item.InstanceId}", at, rotation, destroyed: false, new InteriorContext(site.Placement.Key, false, mask, Own: false), item.Floor);
+        }
 
         // Other buildings standing inside the hull (furniture placed in the zone file): walkable ones give floor, the rest cut.
         var (ox, oz) = WorldLayout.ZoneOrigin(site.Placement.Zone);
@@ -208,9 +211,10 @@ internal sealed partial class ZoneGeometryGatherer
     }
 
     /// <summary>
-    /// A vertical ray against the walkable triangles in [first, last): the highest hit, or the lowest one above <paramref name="minY"/>.
+    /// A vertical ray against the walkable triangles in [first, last): the highest hit, or the lowest one above <paramref name="minY"/>; hits above
+    /// <paramref name="maxY"/> do not count.
     /// </summary>
-    public static bool RayDown(ZoneGeometry g, float x, float z, bool highest, float minY, int first, int last, out float y, bool anyArea = false)
+    public static bool RayDown(ZoneGeometry g, float x, float z, bool highest, float minY, int first, int last, out float y, bool anyArea = false, float maxY = float.PositiveInfinity)
     {
         y = highest ? float.MinValue : float.MaxValue;
         bool hit = false;
@@ -222,7 +226,7 @@ internal sealed partial class ZoneGeometryGatherer
             if (!NavGeometry.Barycentric(x, z, new Vector3(v[ia], v[ia + 1], v[ia + 2]), new Vector3(v[ib], v[ib + 1], v[ib + 2]), new Vector3(v[ic], v[ic + 1], v[ic + 2]), out float l1, out float l2, out float l3)) continue;
             if (l1 < -1e-4f || l2 < -1e-4f || l3 < -1e-4f) continue;
             float h = l1 * v[ia + 1] + l2 * v[ib + 1] + l3 * v[ic + 1];
-            if (h < minY) continue;
+            if (h < minY || h > maxY) continue;
             if (highest ? h > y : h < y) y = h;
             hit = true;
         }

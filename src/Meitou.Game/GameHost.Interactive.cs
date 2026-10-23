@@ -34,7 +34,7 @@ sealed partial class GameHost
         using var display = new VulkanDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
-            Title = "Meitou",
+            Title = "MeitouClient",
             // Hidden while the device is made (a second or two in which nothing can be drawn), shown maximised with the first loading frame.
             IsVisible = false,
             FramesPerSecond = 0,
@@ -50,6 +50,8 @@ sealed partial class GameHost
         if (fullScreen) BorderlessFullScreen.Toggle(window);
         else if (!o.SizeGiven) window.WindowState = WindowState.Maximized;
         BeginLoadingScreen(display);   // its textures and fonts are made before the window shows
+        // The Faithful start shows the original's splash, as the game does before its title, instead of the loading screen (unless the Interface setting turns it off).
+        if (loading is { Faithful: true } && config.SplashScreens && OpensOnTitle(interactive: true)) loading.StartSplash();
         // The first loading frame is in the swapchain when the window shows, and on screen before the splash closes. Not on Wayland: a window gets its
         // shell role when it shows, and a buffer attached to the surface before that makes the compositor drop the client ("attached a buffer before
         // configure event"), so there the window shows first and takes the compositor's configure before anything is drawn.
@@ -83,8 +85,8 @@ sealed partial class GameHost
             EndLoadingScreen();
             return 0;
         }
-        var overlay = DebugOverlay.TryCreate(display.Context);
-        if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(player); }
+        var overlay = DebugOverlay.TryCreate(display.Context, assets.Find);
+        if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
         // The debug overlays (docs/engine.md): F10 the debug menu (GameHost.DebugMenu.cs), F11 the frame statistics, F12 the profiler chart.
         var profiler = overlay is null ? null : new FrameProfiler(display.Context, () => display.Context.GpuFrameMs);
@@ -115,6 +117,8 @@ sealed partial class GameHost
                 LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
                 DoorsCloseChanged = on => { foreach (var locks in session.World.Systems.OfType<Meitou.Simulation.Locks.LockSystem>()) locks.DoorsCloseBehind = on; },
                 AudioChanged = AudioSettingsChanged,
+                SkinRaceList = scene.Database is { } raceDb ? CharacterRenderer.PersonRaces(raceDb) : [],
+                SkinRacesChanged = () => { if (gpu.Characters is { } chars) chars.SkinRaces = config.SkinRaces; },
                 CameraRotateSpeedChanged = ApplyCameraRotateSpeed,
                 OffscreenChanged = () =>
                 {
@@ -198,10 +202,9 @@ sealed partial class GameHost
                 if (Covered)
                 {
                     if (k is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
+                    loading?.SkipSplash();
                     return;
                 }
-                // F7 hides the game's interface; F6 and the numpad are the cinema's (Space, Delete and the lens keys too while its editor is open).
-                if (k == SilkKey.F7) { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
                 player.UiVisible = PanelLive() && !g.NoPopulation;
                 if (panel?.Visible == true)
                 {
@@ -219,6 +222,10 @@ sealed partial class GameHost
                     if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } menuKey) DebugMenuKey(menuKey);
                     return;
                 }
+                // toggle_bar (F7, rebindable) hides the game's interface; F6 is the cinema's, and so is the numpad except the keys bound to the game's hotkeys
+                // (Space, Delete and the lens keys too while its editor is open).
+                if (KeyMap.Map(k) is { } hideKey && !player.UiEditing && session.Bindings.Get(InputAction.ToggleInterface).Contains(Binding.Of(hideKey)))
+                { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
                 // Ctrl+C copies the free camera's position as a viewer camera code, Ctrl+V flies the free camera to the code in the clipboard.
                 // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning, and so do they in a focused edit box.
                 if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && !player.UiEditing && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
@@ -265,7 +272,9 @@ sealed partial class GameHost
                     }
                     return;
                 }
-                if (Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
+                // A numpad key bound to a game hotkey (the orders, NUM0..NUM8 by default) is the game's, except with Ctrl (saving a shot) or the cinema's editor open (F6).
+                bool hotkey = !IsDuel && !ctrl && !cinema.EditorVisible && KeyMap.Map(k) is { } gameKey && player.IsHotkey(gameKey);
+                if (!hotkey && Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
                 // F9 is the game's quickload; the fps counter is on Ctrl+F9 (a modifier, so the key never reaches the input bindings).
                 if (k == SilkKey.F9 && ctrl) { fpsVisible = !fpsVisible; return; }
                 if (KeyMap.Map(k) is { } key)
@@ -277,6 +286,7 @@ sealed partial class GameHost
                     player.Key(key, shiftDown);
                     SandboxKey(key);
                     if (IsDuel && key == EngineKey.Backspace) duelRestartRequested = true;
+                    if (IsBattle && key == EngineKey.Backspace) battleRestartRequested = true;
                 }
             };
             kb.KeyUp += (_, k, _) =>
@@ -296,7 +306,7 @@ sealed partial class GameHost
         {
             mouse.MouseDown += (m, b) =>
             {
-                if (Covered) return;
+                if (Covered) { loading?.SkipSplash(); return; }
                 player.UiVisible = PanelLive() && !g.NoPopulation;
                 var at = Pixels(m.Position);
                 if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
@@ -327,7 +337,7 @@ sealed partial class GameHost
                 if (PanelLive() && panel?.MouseMove(Pixels(p)) == true || panelDrag) { lastMouse = p; return; }
                 if (cinema.MouseMove(Pixels(p))) { lastMouse = p; return; }
                 player.MouseMove(Pixels(p));
-                if (player.UiCapturesPointer) { lastMouse = p; return; }
+                if (player.UiCapturesPointer || player.ModalOpen) { lastMouse = p; return; }
                 if (lastMouse is { } last) session.Input.AddMouseDelta(p.X - last.X, p.Y - last.Y);
                 lastMouse = p;
             };
@@ -341,13 +351,14 @@ sealed partial class GameHost
         Console.WriteLine($"display   vsync {(vsync ? "on" : "off")}, frame limit {(vsync || fpsLimit <= 0 ? "none" : fpsLimit + " fps")}, control tick {session.Ticks.TickRate:0} Hz, world tick {SimulationClock.TickRate:0} per game second; settings in {config.Path}");
 
         var frame = Stopwatch.StartNew();
-        double last = 0, titleTimer = 0, cpuSum = 0;
-        int frames = 0, totalFrames = 0;
+        double last = 0;
+        int totalFrames = 0;
         bool quit = false;
         player.ScreenAction += e =>
         {
             if (e.Action == "save") saveRequestedFolder = Meitou.Data.Save.SaveCatalog.Folder(Meitou.Simulation.Saving.QuickSave.DefaultRoot, e.Text);
             else if (e.Action == "load") loadRequestedFolder = e.Text;
+            else if (e.Action == "import") importRequested = (e.Text, player.ImportFlags);
             else if (e.Action == "new-game") newGameRequested = e.Text;
             else if (e.Action == "main-menu") mainMenuRequested = true;
             else if (e.Widget == "OptionsButton" && panel is not null) panel.Visible = true;
@@ -388,7 +399,6 @@ sealed partial class GameHost
                     strategy: actions.Pressed(InputAction.ToggleFreeCamera));
             }
         };
-        long windowRan = 0, windowDropped = 0;
         double drawTotal = 0, gpuSum = 0, statsTimer = 0;
         int gpuSamples = 0, statsFrames = 0;
         long statsTicks = 0;
@@ -422,6 +432,7 @@ sealed partial class GameHost
             double frameDt = cinema.Recording ? cinema.FrameTime(dt) : dt;
             // The duel starts a lap when a flight starts (played or recorded), so every take begins with the fight's first frame, and when its lap is over.
             DuelFrame(cinema.Playing && !cinemaWasPlaying || cinema.Recording && !cinemaWasRecording);
+            BattleFrame();
             (cinemaWasPlaying, cinemaWasRecording) = (cinema.Playing, cinema.Recording);
             long a0 = Stopwatch.GetTimestamp();
             if (panel?.Visible == true)
@@ -489,7 +500,7 @@ sealed partial class GameHost
             if (gpu.Objects is { } signObjects) signObjects.HighlightSigns = highlighting;
             player.HighlightFocus = highlighting && !screenshotRequested && takeFile is null ? camera.Target : null;
             bool pointerWorld = pointerMouse is not null && !Covered && !g.NoPopulation && !(PanelLive() && panel?.Visible == true) && !cinema.Contains(pointerAt);
-            bool freeLook = pointerWorld && session.Camera.IsFree;
+            bool freeLook = pointerWorld && session.Camera.IsFree && !player.ModalOpen;
             // Hover outline (Advanced, Meitou only): not in the free camera, with the interface hidden, or in saved pictures.
             bool outlining = config.HoverOutline && !session.Camera.IsFree && !interfaceHidden && !cinema.Clean && !screenshotRequested && takeFile is null;
             if (outlining && highlighting)
@@ -514,7 +525,6 @@ sealed partial class GameHost
                 if (sceneLoading && skyArrival is { AtStars: true })
                     WorldFrame.DrawLoadingSky(gpu, scene, camera, size.X, size.Y, presentationHour ?? 0, (float)animSeconds, o.FogDistance);
                 else if (!sceneLoading || skyArrival is not null) DrawWorld(size.X, size.Y);
-                cpuSum += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 drawTotal += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 bool shot = screenshotRequested, take = takeFile is not null;
                 // The game's interface (markers, HUD, panels, debug overlays): hidden by F7, the cinema's clean picture and in recorded frames.
@@ -575,9 +585,7 @@ sealed partial class GameHost
                 statsFrames++;
                 if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
                 else if (shot) SaveScreenshot(display.Context, backbuffer, size.X, size.Y);
-                frames++;
             }
-            titleTimer += dt;
             statsTimer += dt;
             if (statsTimer >= 1)
             {
@@ -594,20 +602,6 @@ sealed partial class GameHost
                 if (audio is not null) stats.Add($"char audio  {CharacterAudioStats()}, {UiAudioStats()}");
                 statsTimer = gpuSum = 0;
                 statsFrames = gpuSamples = 0;
-            }
-            if (titleTimer >= 0.5)
-            {
-                var s = session.Camera.Current;
-                // The achieved speed over this window: the asked speed scaled by the share of the owed ticks that ran.
-                long ran = session.Simulation.TotalTicks - windowRan, dropped = session.Simulation.DroppedTicks - windowDropped;
-                windowRan = session.Simulation.TotalTicks;
-                windowDropped = session.Simulation.DroppedTicks;
-                double achieved = SimulationClock.AchievedSpeedOver(session.TimeScale, ran, dropped);
-                string speedText = session.Simulation.IsPaused ? "paused" + (session.Simulation.RequestedPause ? "" : $" (x{session.Simulation.LastNonZeroSpeed:0})") : $"x{session.TimeScale:0}" + (achieved < session.TimeScale - 0.05 ? $" (running x{achieved:0.0})" : "");
-                window.Title = $"Meitou | {frames / titleTimer:0} fps, cpu {cpuSum / Math.Max(frames, 1):0.00} ms | {(session.Camera.IsFree ? "free camera" : $"boom {s.Distance:0}")} | " +
-                    $"{session.Clock.TimeText} {session.Clock.DayText} {speedText} | {s.Target.X:0}, {s.Target.Z:0}{(gpu.Post is { Temporal: true } p ? $" | {p.ActiveUpscaler}" : "")}";
-                titleTimer = cpuSum = 0;
-                frames = 0;
             }
             totalFrames++;
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) { Console.WriteLine($"profile   {session.CurrentSnapshot.Characters.Count} characters in the snapshot, {session.CurrentSnapshot.Characters.Count(c => c.Appearance is not null)} drawable; per frame: simulation advance {advanceTotal / Math.Max(totalFrames, 1):0.000} ms ({session.Simulation.TotalTicks} ticks, {advanceTotal / Math.Max(session.Simulation.TotalTicks, 1):0.000} ms per tick), host draw-list fill {fillTotal / Math.Max(fillCalls, 1):0.000} ms, world draw cpu {drawTotal / Math.Max(totalFrames, 1):0.00} ms, {(gpu.Characters is { } chars ? chars.Statistics() : "no characters")}");

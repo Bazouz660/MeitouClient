@@ -349,6 +349,8 @@ internal sealed unsafe class VulkanProgram : IDisposable
         PushConstantStages = pushConstantStages;
         if (info.VertexCode is not null) VertexModule = CreateModule(info.VertexCode);
         if (info.FragmentCode is not null) FragmentModule = CreateModule(info.FragmentCode);
+        if (info.TessControlCode is not null) TessControlModule = CreateModule(info.TessControlCode);
+        if (info.TessEvaluationCode is not null) TessEvaluationModule = CreateModule(info.TessEvaluationCode);
         if (info.ComputeCode is not null) ComputeModule = CreateModule(info.ComputeCode);
     }
 
@@ -362,6 +364,12 @@ internal sealed unsafe class VulkanProgram : IDisposable
     public ShaderModule VertexModule { get; }
     public ShaderModule FragmentModule { get; }
     public ShaderModule ComputeModule { get; }
+    /// <summary>The tessellation stages of a native program made by <see cref="ShaderLibrary.NativeTessellated"/> (0 otherwise): its pipelines
+    /// draw patch lists of three control points.</summary>
+    public ShaderModule TessControlModule { get; }
+    public ShaderModule TessEvaluationModule { get; }
+    public bool Tessellated => TessEvaluationModule.Handle != 0;
+    /// <summary>The legacy compile result (reflection of both stages, default blocks), null for other models.</summary>
     public CompiledProgram? Compiled => Info.Compiled;
     public ShaderReflection? VertexReflection => Info.VertexReflection;
     public ShaderReflection? FragmentReflection => Info.FragmentReflection;
@@ -393,8 +401,11 @@ internal sealed unsafe class VulkanProgram : IDisposable
     {
         var (vk, dev) = (device.Vk, device.Device);
         var (vm, fm, cm, layout, sets) = (VertexModule, FragmentModule, ComputeModule, Layout, ownedSetLayouts);
+        var (tcm, tem) = (TessControlModule, TessEvaluationModule);
         device.Frames.DeferDelete(() =>
         {
+            if (tcm.Handle != 0) vk.DestroyShaderModule(dev, tcm, null);
+            if (tem.Handle != 0) vk.DestroyShaderModule(dev, tem, null);
             if (vm.Handle != 0) vk.DestroyShaderModule(dev, vm, null);
             if (fm.Handle != 0) vk.DestroyShaderModule(dev, fm, null);
             if (cm.Handle != 0) vk.DestroyShaderModule(dev, cm, null);
@@ -614,8 +625,46 @@ public sealed unsafe class ShaderLibrary : IGpuShaders
         if (stages.HasFlag(GpuStage.Vertex)) f |= ShaderStageFlags.VertexBit;
         if (stages.HasFlag(GpuStage.Fragment)) f |= ShaderStageFlags.FragmentBit;
         if (stages.HasFlag(GpuStage.Compute)) f |= ShaderStageFlags.ComputeBit;
+        if (stages.HasFlag(GpuStage.TessControl)) f |= ShaderStageFlags.TessellationControlBit;
+        if (stages.HasFlag(GpuStage.TessEvaluation)) f |= ShaderStageFlags.TessellationEvaluationBit;
         return f;
     }
+
+    /// <summary>
+    /// A native-model program with tessellation (the device's <see cref="VulkanDevice.HasTessellation"/>): the vertex stage feeds the control stage
+    /// and the control stage the evaluation stage by explicit locations; the evaluation stage's outputs reach the fragment stage by name as in
+    /// <see cref="Native"/>. The push-constant range is visible to all four stages (a push must name them all: <see cref="ShaderProgram.PushConstantStages"/>).
+    /// </summary>
+    public GpuProgram NativeTessellated(string vertexGlsl, string controlGlsl, string evaluationGlsl, string fragmentGlsl, string name,
+        GpuSetLayout[] setLayouts, uint pushConstantBytes)
+    {
+        if (!device.HasTessellation) throw new NotSupportedException($"{name}: the device has no tessellation shaders");
+        if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");
+        var (es, fs) = InterfaceLocations.Apply(evaluationGlsl, fragmentGlsl);
+        var v = Compiler.CompileNative(vertexGlsl, fragment: false);
+        var tc = Compiler.CompileNativeTessellation(controlGlsl, evaluation: false);
+        var te = Compiler.CompileNativeTessellation(es, evaluation: true);
+        var f = Compiler.CompileNative(fs, fragment: true);
+        var stages = ShaderStageFlags.VertexBit | ShaderStageFlags.TessellationControlBit | ShaderStageFlags.TessellationEvaluationBit | ShaderStageFlags.FragmentBit;
+        var layouts = setLayouts.Select(VkLayout).ToArray();
+        var layout = CreateLayout(layouts, pushConstantBytes, stages);
+        var info = new ProgramInfo
+        {
+            Index = programs.Count, Name = name, Model = ShaderModel.Native, VertexCode = v, FragmentCode = f,
+            TessControlCode = tc, TessEvaluationCode = te,
+            VertexReflection = SpirvReflection.Parse(v), FragmentReflection = SpirvReflection.Parse(f),
+            PushConstantBytes = pushConstantBytes, NeutralSets = setLayouts,
+        };
+        var program = new VulkanProgram(device, info, layouts, [], layout, false, pushConstantBytes > 0 ? stages : 0);
+        programs.Add(program);
+        program.FragmentSource = fs;
+        return new GpuProgram(info.Index, info);
+    }
+
+    /// <summary>The stages the native model's shared descriptor sets are visible to: vertex and fragment, and the tessellation stages where the
+    /// device has them (so a tessellated program can share the sets of the plain ones).</summary>
+    public ShaderStageFlags GraphicsStages => ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit |
+        (device.HasTessellation ? ShaderStageFlags.TessellationControlBit | ShaderStageFlags.TessellationEvaluationBit : 0);
 
     /// <summary>The bindless table's set layout (set by <see cref="GpuContext"/>), so <see cref="Native"/> can check a program's
     /// declarations of it.</summary>

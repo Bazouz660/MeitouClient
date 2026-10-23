@@ -33,7 +33,8 @@ static class BodyHash
         h.Add(medical.Unconscious);
         h.Add(medical.Dead);
         h.Add((int)medical.Cause);
-        h.Add(medical.Pain);
+        h.Add(medical.Light);
+        h.Add(medical.LegKoPoint);
         h.Add(medical.Wounds.Count);
         foreach (float w in medical.Wounds) h.Add(w);
     }

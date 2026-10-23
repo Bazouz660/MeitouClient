@@ -322,6 +322,10 @@ public sealed class MetalShaders : IGpuShaders
     /// stages' bindings flatten onto Metal's one table per stage before the translation, so the runtime binds at the same
     /// indices (<see cref="Flatten"/>, <see cref="MetalCommandList.BindSets"/>).
     /// </summary>
+    public GpuProgram NativeTessellated(string vertexGlsl, string controlGlsl, string evaluationGlsl, string fragmentGlsl, string name,
+        GpuSetLayout[] setLayouts, uint pushConstantBytes) =>
+        throw new NotSupportedException($"{name}: Metal has no tessellation shader stages");
+
     public GpuProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes)
     {
         if (pushConstantBytes > 128) throw new ArgumentOutOfRangeException(nameof(pushConstantBytes), "push constants are limited to 128 bytes (the guaranteed minimum)");

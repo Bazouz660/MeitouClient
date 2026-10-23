@@ -14,6 +14,9 @@ sealed class Voice : IDisposable
     int decodedFrames;
     double position;
     int playsLeft;
+    readonly int plays;
+    // Source frames played since the start, across the loops (what a silent voice keeps counting); owed: those skipped while silent, sought on the next mix.
+    double cursor, owed;
     long toSkip, limit;
     bool ended, final;
     float lastLeft, lastRight;
@@ -32,17 +35,74 @@ sealed class Voice : IDisposable
     public Voice(MediaClip clip, int plays, long skipFrames = 0, long limitFrames = -1, double startPhase = 0)
     {
         this.clip = clip;
-        playsLeft = plays;
+        playsLeft = this.plays = plays;
         toSkip = skipFrames;
         limit = limitFrames;
         position = startPhase;
         reader = Open();
+        try { framesPerPlay = reader.TotalSamples; } catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException) { framesPerPlay = 0; }
+        if (framesPerPlay <= 0) framesPerPlay = clip.Frames;
         decoded = new float[4096 * clip.Channels];
     }
 
     NVorbis.VorbisReader Open() => new(new MemoryStream(clip.Ogg, writable: false), closeOnDispose: true);
 
     public bool Ended => ended;
+
+    /// <summary>Whether <see cref="Skip"/> can keep this voice's place: a plain clip, not a trimmed music clip.</summary>
+    public bool CanSkip => toSkip == 0 && limit < 0 && framesPerPlay > 0;
+
+    // The source frames one play decodes to (the decoder's count, the WEM header's when it has none): what the silent clock counts plays in.
+    readonly long framesPerPlay;
+
+    /// <summary>
+    /// The voice is silent for <paramref name="frames"/> output frames (the first <paramref name="first"/> not yet started): its clock runs on without decoding,
+    /// and the next <see cref="Mix"/> seeks to where it would be, fading in from silence; a voice that ran out meanwhile ends.
+    /// </summary>
+    public void Skip(int frames, double rate, int first = 0)
+    {
+        if (ended) return;
+        owed += (frames - first) * rate;
+        if (plays > 0 && cursor + owed >= (double)plays * framesPerPlay) ended = true;
+    }
+
+    /// <summary>Seeks past the frames skipped while silent: the play and the place in the clip from the voice's clock.</summary>
+    void CatchUp()
+    {
+        // From silence (it faded out, or was never heard): the first block ramps up to its gains.
+        started = true;
+        lastLeft = lastRight = 0;
+        Array.Clear(lastSend);
+        // A short silence still inside the decoded frames (a sound at the cap's edge): only the place moves.
+        if (position + owed + 1 < decodedFrames)
+        {
+            position += owed;
+            cursor += owed;
+            owed = 0;
+            return;
+        }
+        cursor += owed;
+        owed = 0;
+        long done = (long)(cursor / framesPerPlay);
+        if (plays > 0 && done >= plays) { ended = true; return; }
+        long within = Math.Clamp((long)(cursor - (double)done * framesPerPlay), 0, framesPerPlay - 1);
+        try
+        {
+            reader.Dispose();
+            reader = Open();
+            reader.SeekTo(within);
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException or IOException)
+        {
+            // A seek the stream does not allow ends the voice, never the mix.
+            ended = true;
+            return;
+        }
+        playsLeft = plays == 0 ? 0 : plays - (int)done;
+        decodedFrames = 0;
+        position = cursor - Math.Floor(cursor);
+        lowPass[0] = lowPass[1] = 0;
+    }
 
     /// <summary>
     /// Adds <paramref name="frames"/> frames to <paramref name="mix"/> (stereo), the first <paramref name="first"/> of them left silent (a
@@ -51,6 +111,8 @@ sealed class Voice : IDisposable
     /// </summary>
     public void Mix(float[] mix, int frames, double rate, float left, float right, float lowPass, int first = 0, ReadOnlySpan<VoiceSend> sends = default)
     {
+        if (ended) return;
+        if (owed > 0) CatchUp();
         if (ended) return;
         if (!started)
         {
@@ -93,6 +155,7 @@ sealed class Voice : IDisposable
                 sends[s].Buffer[2 * f + 1] += r * (lastSend[2 * s + 1] + (sends[s].Right - lastSend[2 * s + 1]) * k);
             }
             position += rate;
+            cursor += rate;
         }
         lastLeft = left;
         lastRight = right;

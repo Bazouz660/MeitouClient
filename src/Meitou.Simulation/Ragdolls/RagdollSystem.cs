@@ -143,8 +143,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         // A human's collapsed limbs, not a robotic one (animals have none).
         if (cold.Fighter is { IsAnimal: true } || cold.Medical is not { } medical || cold.Race is not { } race) return RagdollPart.None;
         var parts = RagdollPart.None;
+        // A leg goes by the crawl's own test (the tick keeps its bits on while the character crawls), an arm by h - s + rig < 0.
         foreach (var p in medical.PartSpan)
-            if (p.Template.Collapses && p.IsDown && !p.IsRobotic(race)) parts |= (RagdollPart)p.Template.CollapsePart & RagdollPart.Limbs;
+            if (p.Template.Collapses && (p.IsLeg ? p.LegDown(medical.LegKoPoint) : p.IsDown) && !p.IsRobotic(race)) parts |= (RagdollPart)p.Template.CollapsePart & RagdollPart.Limbs;
         return parts;
     }
 

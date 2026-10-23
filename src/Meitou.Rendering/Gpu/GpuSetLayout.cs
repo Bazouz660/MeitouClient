@@ -8,7 +8,11 @@ public enum GpuStage
     Vertex = 1,
     Fragment = 2,
     Compute = 4,
-    All = Vertex | Fragment | Compute,
+    TessControl = 8,
+    TessEvaluation = 16,
+    /// <summary>The stages of a graphics program, including tessellation where the program uses it.</summary>
+    Graphics = Vertex | Fragment | TessControl | TessEvaluation,
+    All = Vertex | Fragment | Compute | TessControl | TessEvaluation,
 }
 
 /// <summary>What a program's slot holds (the engine's words; the backend maps it to its own).</summary>

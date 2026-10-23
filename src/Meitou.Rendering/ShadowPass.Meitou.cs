@@ -37,7 +37,7 @@ public sealed unsafe partial class ShadowPass
     /// <summary>The sun's angular diameter the penumbrae are made for (radians): a little more than the real sun's 0.53°.</summary>
     public float SunAngle { get; set; } = 0.7f * MathF.PI / 180;
     /// <summary>Filter radius without a blocker search, and the least with one, in texels of the cascade.</summary>
-    public float FilterTexels { get; set; } = 1.0f;
+    public float FilterTexels { get; set; } = 1.5f;
     /// <summary>The widest penumbra radius in world units (a tall caster far above the ground); never less than <see cref="FilterTexels"/>.</summary>
     public float MaxPenumbra { get; set; } = 3;
     /// <summary>A sudden turn of the sun larger than this (radians) redraws every cascade at once.</summary>
@@ -55,27 +55,29 @@ public sealed unsafe partial class ShadowPass
     readonly Vector3[] storedSunDir = new Vector3[ShadowSettings.MaxCascades];
 
     /// <summary>
-    /// Where the cascades' texel grids are anchored (<see cref="MeitouShadowFit.Fit"/>): near the eye, so a turning sun slides a grid only by the
-    /// distance from here times the angle. It moves to the eye only while the sun turns and the eye is more than <see cref="AnchorReach"/> away
-    /// (a move shifts the grids by a fraction of a texel, once); with the sun still the grids do not slide at all, so it stays.
+    /// Where the cascades' texel grids are anchored (<see cref="MeitouShadowFit.Fit"/>): at the point the camera looks at (the eye without a focus), so
+    /// a turning sun slides the first cascade's grid under what is watched only by the distance from here times the angle (anchored at the eye, 300
+    /// to 1000 units back, every shadow edge round the squad crawled by a fifth of a texel a frame while time ran). It moves only while the sun turns
+    /// and the point is more than <see cref="AnchorReach"/> away (a move shifts the grids by a fraction of a texel, once); with the sun still the
+    /// grids do not slide at all, so it stays.
     /// </summary>
     (double X, double Y, double Z)? anchor;
     Vector3 lastFrameSun;
-    /// <summary>The eye's distance from the anchor before a turning sun moves it: a first-cascade grid then slides at most about (this + its radius) × the turn per frame.</summary>
-    public const double AnchorReach = 1000;
+    /// <summary>The watched point's distance from the anchor before a turning sun moves it: a first-cascade grid then slides at most about (this + its radius) × the turn per frame.</summary>
+    public const double AnchorReach = 200;
     /// <summary>How often the grid anchor moved (Meitou), for the log.</summary>
     public int AnchorMoves { get; private set; }
 
-    (double X, double Y, double Z) Anchor(Vector3 eye, Vector3 toSun)
+    (double X, double Y, double Z) Anchor(Vector3 point, Vector3 toSun)
     {
         bool turning = toSun != lastFrameSun;
         lastFrameSun = toSun;
         if (anchor is not { } a)
-            return (anchor = (Math.Round(eye.X), Math.Round(eye.Y), Math.Round(eye.Z))).Value;
-        double dx = eye.X - a.X, dy = eye.Y - a.Y, dz = eye.Z - a.Z;
+            return (anchor = (Math.Round(point.X), Math.Round(point.Y), Math.Round(point.Z))).Value;
+        double dx = point.X - a.X, dy = point.Y - a.Y, dz = point.Z - a.Z;
         if (turning && dx * dx + dy * dy + dz * dz > AnchorReach * AnchorReach)
         {
-            anchor = (Math.Round(eye.X), Math.Round(eye.Y), Math.Round(eye.Z));
+            anchor = (Math.Round(point.X), Math.Round(point.Y), Math.Round(point.Z));
             AnchorMoves++;
         }
         return anchor.Value;
@@ -230,7 +232,7 @@ public sealed unsafe partial class ShadowPass
         bool sunJumped = Vector3.Dot(toSun, storedSun) < MathF.Cos(SunJump);
         bool all = !meitouValid || splitsChanged || storedMapSize != Settings.MapSize || sunJumped;
         if (meitouValid && all) { if (splitsChanged) AllReasons[0]++; if (sunJumped) AllReasons[1]++; }
-        var gridAnchor = Anchor(view.Eye, toSun);
+        var gridAnchor = Anchor(view.Focus > 0 ? view.Eye + Vector3.Normalize(view.Forward) * view.Focus : view.Eye, toSun);
         int frame = meitouFrame++;
         MeitouFrames++;
         Span<bool> drawNow = stackalloc bool[ShadowSettings.MaxCascades], want = stackalloc bool[ShadowSettings.MaxCascades], mustDraw = stackalloc bool[ShadowSettings.MaxCascades];
@@ -262,7 +264,7 @@ public sealed unsafe partial class ShadowPass
             var c = MeitouShadowFit.Fit(view, toSun, Effective, splits, i, gridAnchor);
             var host = BeginHost("shadow cascade", clear: true, layer: i);
             SetTile(0, 0, atlasSize);
-            SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
+            SetCasterBias(new Vector4(c.FixedBias, MeitouShadowFit.Slope, c.MaxSlopeBias, DepthScale));
             draw(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
             EndHost(host);
             stored[i] = c;

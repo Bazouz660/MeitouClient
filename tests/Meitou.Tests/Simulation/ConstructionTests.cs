@@ -120,8 +120,8 @@ public class ConstructionTests
     // ------------------------------------------------------------------ determinism (the golden hash)
 
     /// <summary>
-    /// A hut and a shed are placed; one builder carries the hut's materials, another the shed's. The first finishes the hut, then (its auto-job) helps with the shed, the
-    /// shed is paused for a while, and the hut is taken apart. Hashes at eight checkpoints.
+    /// A hut and a shed are placed; one builder carries the hut's materials, another the shed's. The first finishes the hut, the shed is paused for a while, and the hut is
+    /// taken apart (its refund falls on the ground). Hashes at eight checkpoints.
     /// </summary>
     internal static List<ulong> Scripted(int threads)
     {
@@ -179,7 +179,7 @@ public class ConstructionTests
         Assert.True(rig.World.Snapshot.Buildings[0].Complete);
         Assert.True(rig.Cold(builder).Stats![StatsEnumerated.Engineering] > Unit);   // building trains engineering
 
-        // Taking it apart: from target - 1 down at dt x lerp(0.05, 4, e) x 4 x rate = 0.123 per second (976 ticks), then the site is gone and the refund is in the dismantler's inventory.
+        // Taking it apart: from target - 1 down at dt x lerp(0.05, 4, e) x 4 x rate = 0.123 per second (976 ticks), then the site is gone and the refund lies around it, one ground item per unit.
         rig.Say(new DismantleOrder([builder], site.Id) { Tick = rig.World.Tick });
         started = rig.World.Tick;
         for (int t = 0; t < 3000 && rig.World.Buildings.Count > 0; t++) rig.World.RunTick();
@@ -187,9 +187,12 @@ public class ConstructionTests
         Assert.InRange(rig.World.Tick - started, 960, 1000);
         foreach (var (item, delivered) in new[] { (Plank, 3), (Iron, 2) })
         {
-            int back = rig.Carried(builder, item);
-            Assert.InRange(back, Math.Max(1, (int)(0.6f * delivered)), delivered);
+            var back = rig.World.GroundItems.All.Where(g => g.Item.Record == item).ToList();
+            Assert.InRange(back.Count, Math.Max(1, (int)(0.6f * delivered)), delivered);
+            Assert.All(back, g => Assert.Equal(1, g.Item.Quantity));
+            Assert.All(back, g => Assert.InRange(MathF.Max(MathF.Abs(g.Position.X - HutAt.X), MathF.Abs(g.Position.Z - HutAt.Z)), 0, 20));
         }
+        Assert.Equal(0, rig.Carried(builder, Plank) + rig.Carried(builder, Iron));
         Assert.DoesNotContain(rig.World.Snapshot.Buildings, b => b.Id == site.Id);
     }
 

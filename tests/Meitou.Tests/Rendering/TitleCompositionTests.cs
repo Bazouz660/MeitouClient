@@ -22,19 +22,4 @@ public class TitleCompositionTests
         Assert.InRange(MathF.Acos(Vector3.Dot(ahead, flat)) * 180 / MathF.PI, 20, 32);
         Assert.True(Vector3.Dot(flat, Vector3.Cross(ahead, Vector3.UnitY)) > 0, "the sun is right of the view");
     }
-
-    [Fact]
-    public void WordmarkIsEmbeddedWithInkOnATranslucentBand()
-    {
-        var logo = TitleLogo.Load();
-        Assert.NotNull(logo);
-        Assert.Equal((1470, 690), (logo!.Width, logo.Height));
-        byte Alpha(int x, int y) => logo.Pixels[(y * logo.Width + x) * 4 + 3];
-        Assert.Equal(0, Alpha(5, 5));   // clear round the mark
-        Assert.InRange(Alpha(60, 390), 100, 160);   // the band, left of the lettering, half see-through
-        int ink = 0;
-        for (int i = 0; i < logo.Pixels.Length; i += 4)
-            if (logo.Pixels[i + 3] > 240 && logo.Pixels[i] < 40) ink++;
-        Assert.InRange(ink, 40000, 300000);
-    }
 }

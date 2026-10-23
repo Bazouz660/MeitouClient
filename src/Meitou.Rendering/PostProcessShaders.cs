@@ -84,7 +84,14 @@ static class PostProcessShaders
 
             float radius = max(uRadius, 0.03 * z); // world radius, at least a few percent of the distance so far objects still get contact shading
             vec2 radiusUv = 0.5 * radius / (uTan * z);
-            radiusUv = min(radiusUv, vec2(0.06)); // bound the cost of close-ups
+            // Close-ups: at most 6 % of the screen (the cost), and the world radius shrunk with it, so the falloff and the weights below are of
+            // the area actually sampled (clamping only the taps packed them closer and strengthened every one).
+            float shrink = min(1.0, 0.06 / max(radiusUv.x, radiusUv.y));
+            radiusUv *= shrink;
+            radius *= shrink;
+            // An occluder must rise above the tangent plane by a share of the radius (so the look is the same at every distance) and two
+            // pixels' size (the rebuilt normal's error).
+            float bias = 0.5 * radius + 4.0 * uTan.y * z / uSize.y;
             float spin = ign(gl_FragCoord.xy) * 6.2831853;
             float sum = 0.0;
             const int N = 12;
@@ -95,7 +102,7 @@ static class PostProcessShaders
                 vec2 uv = vUv + vec2(cos(a), sin(a)) * radiusUv * t;
                 vec3 v = viewPos(uv) - p;
                 float len = length(v);
-                float vn = dot(v, n) - 0.02 * z;
+                float vn = dot(v, n) - bias;
                 float range = 1.0 - smoothstep(radius, 2.0 * radius, len);
                 float occluder = uCharacterOccluder < 1.0 ? mix(1.0, uCharacterOccluder, textureLod(uMask, uv, 0.0).a) : 1.0;
                 sum += max(vn, 0.0) / (len * len + 0.05 * radius * radius) * radius * range * occluder;
@@ -466,50 +473,50 @@ static class PostProcessShaders
         """;
 
     /// <summary>
-    /// The low-resolution particles' depth (Meitou): each texel is the farthest of the <c>uDiv</c> x <c>uDiv</c> block of the scene's depth it covers, written as the
-    /// depth of a depth-only rendering, so the hardware test of the particle draws still rejects the sprite area hidden behind the scene (early-Z) and a
-    /// sprite is visible at a texel when it is in front of any pixel of its block (the upsample then picks, per pixel, the texel that fits its own depth).
+    /// The low-resolution particles' depth (Meitou): each texel is the nearest (texels with x + y even) or the farthest (odd) of the <c>uDiv</c> x <c>uDiv</c>
+    /// block of the scene's depth it covers, written as the depth of a depth-only rendering, so the hardware test of the particle draws still rejects the
+    /// sprite area hidden behind the scene (early-Z). Every 2 x 2 footprint of the upsample holds two of each, so a pixel on a thin near object (a character's
+    /// limb) finds texels tested against it and a pixel of the background behind it finds texels tested against the background.
     /// </summary>
     public const string ParticleDepth = """
         #version 330 core
         in vec2 vUv;
         out vec4 fragColour;
         uniform sampler2D uDepth;
-        uniform sampler2D uMask;            // the scene colour at the render size, whose alpha is 1 on characters (unbound with uCharacterOccluder 1)
-        uniform float uCharacterOccluder;   // how much a character counts as an occluder of what is round it (1: as anything else)
         uniform vec2 uFullSize;
         uniform float uDiv;
         void main()
         {
             vec2 base = floor(gl_FragCoord.xy) * uDiv;
-            float d = 0.0;
+            float near = 1.0, far = 0.0;
             for (int y = 0; y < 4; y++)
                 for (int x = 0; x < 4; x++)
                     if (float(x) < uDiv && float(y) < uDiv)
-                        d = max(d, texelFetch(uDepth, ivec2(min(base + vec2(x, y), uFullSize - 1.0)), 0).r);
-            gl_FragDepth = d;
+                    {
+                        float d = texelFetch(uDepth, ivec2(min(base + vec2(x, y), uFullSize - 1.0)), 0).r;
+                        near = min(near, d);
+                        far = max(far, d);
+                    }
+            ivec2 t = ivec2(gl_FragCoord.xy);
+            gl_FragDepth = ((t.x + t.y) & 1) == 0 ? near : far;
             fragColour = vec4(0.0);
         }
         """;
 
     /// <summary>
-    /// The low-resolution particles' accumulation (rgb = colour added, a = opacity; <see cref="ParticleRenderer"/>) over the scene, as <c>scene * (1 - a) + rgb</c>
-    /// (blend one, one minus source alpha; red, green and blue only). Upsampled from the four nearest texels with their bilinear weights divided by how far
-    /// each one's depth is from this pixel's (relative, in linear depth), so a sprite behind a near edge does not bleed over it. Pixels whose four texels are empty
-    /// skip the depth reads.
+    /// The depth-aware upsample of the low-resolution particles' accumulation, shared by <see cref="ParticleComposite"/> and <see cref="ParticleCoverage"/>:
+    /// the four nearest texels with their bilinear weights (plus a floor) divided by the square of how far each one's depth is from this pixel's (relative, in
+    /// linear depth), so the texels tested against this pixel's own surface (<see cref="ParticleDepth"/>) win and a sprite behind a near edge does not bleed
+    /// over it. Pixels whose four texels are empty skip the depth reads.
     /// </summary>
-    public const string ParticleComposite = """
-        #version 330 core
-        in vec2 vUv;
-        out vec4 fragColour;
+    const string ParticleUpsample = """
         uniform sampler2D uAccum, uLowDepth, uDepth;
         uniform vec2 uLowSize;
         uniform vec2 uNearPlanes;   // near, far of the depth slice the particles were tested against
         uniform float uDiv;
         float linearZ(float d) { float zd = 2.0 * d - 1.0; return uNearPlanes.x * uNearPlanes.y / (uNearPlanes.y - zd * (uNearPlanes.y - uNearPlanes.x)); }
-        void main()
+        vec4 particlesAt(vec2 fc)
         {
-            vec2 fc = gl_FragCoord.xy;
             vec2 lp = fc / uDiv - 0.5;
             vec2 f = lp - floor(lp);
             ivec2 i0 = ivec2(floor(lp));
@@ -523,32 +530,48 @@ static class PostProcessShaders
                 a[i] = texelFetch(uAccum, q[i], 0);
                 total += a[i].a + a[i].r + a[i].g + a[i].b;
             }
-            if (total <= 0.0) { fragColour = vec4(0.0); return; }
+            if (total <= 0.0) return vec4(0.0);
             float z0 = linearZ(texelFetch(uDepth, ivec2(fc), 0).r);
             vec4 sum = vec4(0.0);
             float weights = 0.0;
             for (int i = 0; i < 4; i++)
             {
                 float bw = ((i & 1) == 0 ? 1.0 - f.x : f.x) * ((i >> 1) == 0 ? 1.0 - f.y : f.y);
-                float zl = linearZ(texelFetch(uLowDepth, q[i], 0).r);
-                float w = (bw + 1e-4) / (0.01 + abs(zl - z0) / z0);
+                float e = 0.02 + abs(linearZ(texelFetch(uLowDepth, q[i], 0).r) - z0) / z0;
+                float w = (bw + 0.05) / (e * e);
                 sum += a[i] * w;
                 weights += w;
             }
-            fragColour = sum / weights;
+            return sum / weights;
         }
         """;
 
-    /// <summary>The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel, 30 times, saturating (as <see cref="ParticleRenderer"/>'s own coverage fragment does per particle).</summary>
+    /// <summary>
+    /// The low-resolution particles' accumulation (rgb = colour added, a = opacity; <see cref="ParticleRenderer"/>) over the scene, as <c>scene * (1 - a) + rgb</c>
+    /// (blend one, one minus source alpha; red, green and blue only), upsampled by depth (<see cref="ParticleUpsample"/>).
+    /// </summary>
+    public const string ParticleComposite = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        """ + "\n" + ParticleUpsample + "\n" + """
+        void main() { fragColour = particlesAt(gl_FragCoord.xy); }
+        """;
+
+    /// <summary>
+    /// The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel, 30 times, saturating (as
+    /// <see cref="ParticleRenderer"/>'s own coverage fragment does per particle), upsampled by depth as the composite is so it does not mark a near edge reactive.
+    /// </summary>
     public const string ParticleCoverage = """
         #version 330 core
         in vec2 vUv;
         out vec4 fragColour;
-        uniform sampler2D uAccum;
+        uniform vec2 uFullSize;   // the render size (the target may differ)
         uniform float uLimit;
+        """ + "\n" + ParticleUpsample + "\n" + """
         void main()
         {
-            vec4 a = texture(uAccum, vUv);
+            vec4 a = particlesAt(floor(vUv * uFullSize) + 0.5);
             fragColour = vec4(clamp(max(a.a, max(a.r, max(a.g, a.b))) * 30.0, 0.0, uLimit));
         }
         """;
@@ -648,6 +671,7 @@ static class PostProcessShaders
         uniform vec3 uBalance;     // a white balance on the scene before the tone map (PostOptions.Balance; 1, 1, 1 in play)
         uniform float uNight;      // Meitou night grading strength (the `nightgrade` switch): 0 off; needs the auto exposure's mean (uAuto)
         uniform vec2 uSceneSize;   // the scene's size when it is smaller than the picture (render scale without an upscaler), else 0: sampled with Catmull-Rom then
+        uniform float uSharpen;    // after TAA or DLSS (neither sharpens): the upscaler sharpness, 0 off
         const float EXPOSURE_KEY = 0.55;   // hdr.material's EXPOSURE_KEY
 
         // Catmull-Rom through five bilinear taps (the corners of the 4 x 4 footprint are left out): a sharper plain upscale than bilinear.
@@ -691,12 +715,25 @@ static class PostProcessShaders
             return mix(c, grey * NIGHT_TINT, w);
         }
 
+        // The temporal resolve's softness taken back: the pixel pushed away from the mean of its four neighbours by the strength, then kept within
+        // their and its own range, so edges gain no halo and flat areas no noise beyond what is there (an unsharp mask limited like CAS).
+        vec3 sharpened(vec2 uv)
+        {
+            // Neighbours clamped to the picture: a fetch outside it is undefined (the border pixels repeat their own).
+            ivec2 size = textureSize(uScene, 0), last = size - 1, p = clamp(ivec2(uv * vec2(size)), ivec2(0), last);
+            vec3 c = texelFetch(uScene, p, 0).rgb;
+            vec3 n = texelFetch(uScene, ivec2(p.x, max(p.y - 1, 0)), 0).rgb, s = texelFetch(uScene, ivec2(p.x, min(p.y + 1, last.y)), 0).rgb;
+            vec3 w = texelFetch(uScene, ivec2(max(p.x - 1, 0), p.y), 0).rgb, e = texelFetch(uScene, ivec2(min(p.x + 1, last.x), p.y), 0).rgb;
+            vec3 lo = min(c, min(min(n, s), min(w, e))), hi = max(c, max(max(n, s), max(w, e)));
+            return clamp(c + uSharpen * (c - 0.25 * (n + s + w + e)), lo, hi);
+        }
+
         void main()
         {
             float exposure = uExposure;
             vec2 adapted = uAuto != 0 ? texture(uAdapted, vec2(0.5)).rg : vec2(1.0);   // the clamped adapted luminance, the smoothed mean
             if (uAuto != 0) exposure *= max(EXPOSURE_KEY / adapted.r, 0.001);   // Kenshi's exposure: key over the adapted luminance
-            vec3 raw = max(sceneAt(vUv), 0.0);
+            vec3 raw = max(uSharpen > 0.0 && uSceneSize.x <= 0.0 ? sharpened(vUv) : sceneAt(vUv), 0.0);
             vec3 c = raw * exposure * uBalance;
             float ao = texture(uAo, vUv).r;
             if (uUseAo != 0) c *= ao;

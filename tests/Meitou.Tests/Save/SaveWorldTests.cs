@@ -42,58 +42,6 @@ public class SaveWorldTests
     static string Dir(string name) => Temp(name);
 
     [Fact]
-    public void A_new_games_world_is_captured_into_a_save_and_loaded_into_another_world()
-    {
-        using var g = NewGame();
-        var clock = new SaveClock(2, 14, 30);
-        g.World.Player.Selection.Add(g.Squad.Leader);
-        var save = SaveCapture.Capture(g.World, g.Data, clock);
-
-        Assert.Equal((2, 14, 30), (save.Camera.Day, save.Camera.Hour, save.Camera.Minute));
-        Assert.Equal(500, save.Camera.PlayerMoney);
-        Assert.Equal((1, 4), (save.Camera.Squads, save.Camera.Members));
-        Assert.Equal(g.Data.Factions.Count, save.Factions.Count);
-        var platoon = Assert.Single(save.Platoons);
-        Assert.Equal("Nameless_0", platoon.Name);
-        Assert.Equal(4, platoon.Characters.Count);
-        Assert.Equal(1, save.PlayerFaction!.PlatoonCounter);
-        // The leader is first in the selection; its handle is the CAMERA's.
-        var leader = platoon.Characters.Single(c => c.IsLeader);
-        Assert.Equal(leader.Handle, save.Camera.SelectedCharacter);
-
-        string folder = Path.Combine(Dir("newgame"), "slot");
-        try
-        {
-            save.Write(folder);
-            using var world2 = EmptyWorld();
-            var loaded = SaveLoader.Load(world2, SaveGame.Load(folder), g.Data);
-            Assert.Equal(clock, loaded.Clock);
-            Assert.Equal(500, world2.Player.Money);
-            Assert.Equal(g.Data.PlayerFaction, world2.Player.Faction);
-            var squad = world2.Squads.Find(world2.Player.Squad)!;
-            Assert.Equal(4, squad.Members.Count);
-            Assert.Equal(g.Squad.Members.Select(m => g.World.Characters.Cold(m.Slot)!.Name), squad.Members.Select(m => world2.Characters.Cold(m.Slot)!.Name));
-            for (int i = 0; i < 4; i++)
-            {
-                var a = g.World.Characters.Previous[g.Squad.Members[i].Slot];
-                var b = world2.Characters.Previous[squad.Members[i].Slot];
-                Assert.Equal(a.Position, b.Position);
-                Assert.Equal(a.Yaw, b.Yaw, 4);
-            }
-            Assert.Equal(g.Squad.Leader.Slot, g.Squad.Members.First(m => m == g.Squad.Leader).Slot);
-            Assert.Equal(world2.Characters.Cold(squad.Leader.Slot)!.Name, g.World.Characters.Cold(g.Squad.Leader.Slot)!.Name);
-            Assert.Equal([squad.Leader], world2.Player.Selection);
-            Assert.All(squad.Members, m => Assert.True(world2.Characters.Cold(m.Slot)!.IsPlayer));
-            Assert.All(squad.Members, m => Assert.NotNull(world2.Characters.Cold(m.Slot)!.Save));
-            // Relations: the table the new save holds is the data's own.
-            foreach (var f in loaded.Factions.Where(f => !f.IsPlayer))
-                foreach (var r in f.Relations.Values)
-                    Assert.Equal(g.Data.Relations.Get(g.Data.Factions.ToList().FindIndex(x => x.Id == f.Id), g.Data.Relations.IndexOf(r.FactionId)), r.Relation);
-        }
-        finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
-    }
-
-    [Fact]
     public void An_inventory_changed_in_play_is_saved_and_loaded()
     {
         using var g = NewGame(items: true);

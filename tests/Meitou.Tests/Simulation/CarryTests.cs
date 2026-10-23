@@ -173,7 +173,7 @@ public class CarryTests
         var (seen, loot) = LootScene(facing: true);
         Assert.True(loot.Witnessed);
         Assert.Equal(3, loot.Taken);
-        Assert.Equal(10 - 10, seen);   // relation event Stealing: -10 x 1
+        Assert.Equal(10, seen);   // looting moves no relation (the game has no such relation event)
         var (unseen, quiet) = LootScene(facing: false);
         Assert.False(quiet.Witnessed);
         Assert.Equal(10, unseen);
@@ -205,12 +205,9 @@ public class CarryTests
 
     /// <summary>
     /// A scripted game: player characters pick up, carry, put down and loot; one has the rescue job; an NPC squad rescues its leader; a carrier is knocked out mid-carry.
-    /// Cut into one-slot partitions.
+    /// Cut into one-slot partitions; pinned in <see cref="GoldenHashTests"/>.
     /// </summary>
-    internal static List<ulong> Scripted(int threads) => Scripted(threads, out _);
-
-    /// <summary>The scripted scenario; <paramref name="happened"/> lists what the script did (to show it does something).</summary>
-    internal static List<ulong> Scripted(int threads, out string happened)
+    internal static List<ulong> Scripted(int threads)
     {
         var relations = TwoFactions();
         using var rig = new Rig(threads, minPartition: 1, relations: relations, seed: 21);
@@ -222,7 +219,7 @@ public class CarryTests
         var down3 = rig.Add(900, 2200, squad: 3, faction: 1);
         var leader = rig.Add(1600, 2000, player: false, squad: 4, faction: 0, leader: true);
         rig.Add(1650, 2000, player: false, squad: 4, faction: 0, task: CharacterTask.Wander);
-        rig.Add(1700, 2050, player: false, squad: 4, faction: 0, task: CharacterTask.Follow, yaw: -MathF.PI / 2);
+        rig.Add(1700, 2050, player: false, squad: 4, faction: 0, task: CharacterTask.Idle, yaw: -MathF.PI / 2);   // the witness, facing the looting
         foreach (var r in new[] { "a", "b", "c", "d" }) rig.Cold(down1).Inventory!.Add(Item(r, 2, 2));
         rig.Body(down1).KnockOut(10000);
         rig.Body(down2).KnockOut(3);
@@ -250,18 +247,9 @@ public class CarryTests
             }
             hashes.Add(rig.World.StateHash());
         }
-        happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
+        string happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
+        // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (the relation stays 10) and loots an emptied body.
+        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 10", happened);
         return hashes;
-    }
-
-    [Fact]
-    public void A_scripted_game_of_carrying_rescue_and_looting_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var happened);
-        // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (relation 10 to 0) and loots an emptied body.
-        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 0", happened);
-        Assert.Equal(one, Scripted(4));
-        Assert.Equal(one, Scripted(16));
-        Assert.Equal(one, Scripted(1));
     }
 }

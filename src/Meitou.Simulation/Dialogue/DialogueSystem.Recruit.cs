@@ -56,7 +56,6 @@ public sealed partial class DialogueSystem
         mc.RoadPreference = data.RoadPreferenceOf(mc.Faction);
         mc.SquadId = squad.Id;
         mc.Role = (int)SquadRole.Squad1;
-        mc.FormationOffset = Vector2.Zero;
         mc.IsPlayer = true;
         mc.NpcClass = FundamentalType.Adventurer;   // every player-faction character's class
         mc.Orders = Orders.PlayerDefaults;

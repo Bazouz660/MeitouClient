@@ -26,7 +26,7 @@ choose verbs based on target type/state, faction, carrying and available interac
 Meitou selection commands retain the current selection when no valid player characters are
 targeted (empty ground or an empty drag box). Selecting valid members replaces or adds to it;
 inspecting another faction keeps the selection and shows that character in the panels (see [UI screens](ui-screens.md#4-hud-mainbargui)).
-While a selected character sneaks, an NPC that is up gets the verb "Stealth KO (N%)" and a quick right click on it gives
+While a selected character sneaks, an NPC that is up gets the verb "Stealth KO" with its chance beside it ([context menu](#context-menu-verbs)) and a quick right click on it gives
 that instead of an attack ([combat](combat.md#stealth-knock-out)); the first sneaking selected character goes.
 
 Original strategy camera actions/zoom flags are in [camera](../formats/camera.md). Engine defaults:
@@ -95,8 +95,14 @@ Binding maps: general map at Controls+0x28, build-mode map at +0x50 (checked fir
 | gizmo_move / rotate / scale | H / J / K | 0x398 / 0x399 / 0x39a | event |
 
 Meitou's build map (`PlayerInterface.Build.cs`) is live only in build mode and takes its keys before anything else: the
-documented speeds, Shift as the slow modifier of the up/down move; the numpad aliases are not mapped (the numpad is the
-cinema camera's). `[` `]` tilt there, not character_next / prev. Left click queues the ghost.
+documented speeds, Shift as the slow modifier of the up/down move; the numpad aliases are not mapped. `[` `]` tilt there, not
+character_next / prev. Left click queues the ghost.
+
+Meitou's game view (`PlayerInterface.Hotkeys.cs`, `InputBindings`): every event action above except select_0..9 (fixed keys 1..9, 0) is an
+`InputAction` with the table's default, rebindable on the settings' Controls page; Medic and Rescue also keep H and J, and Meitou adds Rest (L)
+and Put Down (K). `toggle_help` (F1) has no action: Meitou has no Tutorials window (event 7, section 6). A numpad key bound to one of these
+actions is the game's, not the cinema camera's ([viewer](../viewer.md#cinematic-camera)), unless Ctrl is held or the cinema's editor is open;
+`--duel` keeps the whole numpad for the cinema. The orders hotkeys are not given from the free camera (engine choice).
 
 ### 6. Event dispatch
 
@@ -112,22 +118,26 @@ identified; pause 0x12 is only blocked by the second). While the MainBar object 
 | 1 | open the inventory window of the selected character (FUN_140724980 -> FUN_1406e6f10; target window inferred from the action name `toggle_inventory`) |
 | 2 | open or, when already open, close the per-character window for the selection (FUN_1406e5f10; stats window inferred from `toggle_stats`) |
 | 3 / 4 / 5 / 6 | request Overview tab Map / Faction / Research / Crafting (HUD field +0xd0 = 0/1/2/3) |
-| 7 | toggle the visibility of one GUI window (FUN_1406e1f20; taken to be the Tutorials window, **Unknown** which) |
-| any other id | forwarded to the orders panel handler FUN_1407226e0, which acts on 0x17..0x21 (orders buttons) and ignores the rest |
+| 7 | toggle the visibility of the window at GUI+0x30 (FUN_1406e1f20): the Tutorials window (**Observed**: the GUI constructor `FUN_1406e4f50` stores the `Kenshi_TutorialsWindow` object of constructor `140977640` there; +0x28 holds the tutorial panel, +0x20 the object of `FUN_140725740`) |
+| any other id | forwarded to the orders panel handler FUN_1407226e0 (**Observed**), which calls the panel buttons' own click handlers: 0x17 Block, 0x18 Hold, 0x19 Passive, 0x1a Jobs, 0x1b Ranged, 0x1c Sneak, 0x1d Taunt, 0x1e the right speed arrow (`FUN_140722630`, so cycle_run_speed steps up and wraps), 0x1f Medic, 0x20 Rescue, 0x21 Prospect; it ignores the rest |
 | 8 | not in the hotkey function: handled in the action switch by FUN_1406e2a20, which flips the GUI-hidden flag at GUI+0x330 ("toggle whole GUI") |
 
 Squad events (**Observed**): select_0..9 (100..109, `FUN_1407f90b0`) and select_all 0x22 (`FUN_1407f8d00`) act on the active squad's members
 ([squad tabs](ui-screens.md#4-hud-mainbargui)); change_squad 0x23 (`FUN_1407f6380`) with more than one squad makes the next one in order (wrapping) that has
-members active, and leaves the selection alone.
+members active, and leaves the selection alone. character_next / prev 0x26 / 0x27 (`FUN_1407f9130(+1 / -1)`, **Observed**): nothing unless the
+active squad has at least two members; when the focus character (`DAT_142133a50`) is a living one of the player's faction, the next (previous) member
+of its own squad, wrapping, is selected alone (`FUN_1407f9000`); otherwise the current selected character is selected alone and focused, or with no
+selection the first entry of a list at PlayerInterface+0x2c0 (**Unknown** which). Meitou (`StepCharacter`): the HUD's character (the inspected one
+first); dead counts as not living (the original's test `FUN_1406215b0` is **Unknown**).
 
 Meitou's first aid and rest bindings (2026-10-13, `PlayerInterface`, engine choices; simulation side in [simulation.md](../simulation.md#bodies)). The original's own: `medic` (NUM7, event 0x1f) and `rescue` (NUM8, 0x20) are
 orders-panel toggles forwarded to FUN_1407226e0 (the Medic and Rescue buttons of the panel, [ui-screens.md](ui-screens.md#4-hud-mainbargui)), which dispatch orders 58 and 148: one-shot, or a job with Shift ([perma-jobs](ai-tasks.md#perma-jobs), **Observed**); the targeted order is the context menu
-verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's context menu also provides it). The numpad belongs to the cinema camera (`Cinema`, docs/viewer.md), so:
+verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's context menu also provides it). Meitou binds both to the numpad as the original and keeps `H` / `J` as aliases (section 4):
 
 | Input | Effect |
 |---|---|
 | right click on one of the player's own characters with something to bandage | the selected characters treat it (`TreatOrder`); a lone selected character on itself treats itself |
-| `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
+| NUM7, `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
 | `L` | the selection rests (sits down; **no binding in the original**); any move order or `R` ends it |
 
 | Input | Effect |
@@ -135,11 +145,12 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 | Ctrl + right click on a knocked-out or dead character | the nearest selected character picks it up (`PickUpOrder`); on a body a selected character carries, puts it down (`PutDownOrder`) |
 | right click on one of the player's own downed characters with nothing to bandage | picks it up (as the original's quick right click; with something to bandage it is first aid, as above) |
 | Alt + right click on a knocked-out or dead character | the nearest selected character takes all that fits from its inventory and backpack (`LootOrder`; no window) |
-| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its whole inventory opens in a second character window beside the inventory (worn gear in the equipment slots, its bag in a bag window): items are dragged out of it or into it, onto equipment slots too (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
-| an item dragged out of the inventory window and let go over the world | dropped on the ground 3 units ahead of the character (`DropInventoryItem`; worn gear too, not locked-on items or fitted limbs; engine choice, the original's drop rule is **Unknown**) |
+| right click on anyone else's knocked-out or dead character | the nearest selected walks over and its whole inventory opens in a second character window beside the inventory (worn gear in the equipment slots, its bag in a bag window): items are held with the mouse out of it or into it, onto equipment slots too (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
+| left press on an item in an item window | lifts it onto the mouse (one unit of a stack; Shift or Ctrl: the whole stack); let go after a drag, or pressed again, it is placed, merged, swapped, given to the character under the pointer or dropped on the ground ([holding an item](ui-screens.md#6-inventory-trade-dialogue-build)); right click or Escape puts it back |
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
-| right click on an item while the inventory and another item window are open | one unit moves to the other window, where it first fits (stacks of it, then free cells), in both directions; Shift: the whole stack (**Observed**, release handler `FUN_140714a20`: the one-unit move `FUN_140713d20`, repeated while Shift is held until it fails). Meitou: between the lead's inventory or bag and the shown machine (its inputs and output), storage, container, or the open loot (`PutInMachine` / `TakeFromMachine` / `TakeLootItem` / `PutLootItem` with a count, `InventoryCommands.MoveUnits`) |
-| `J` | Rescue for the selection (the original's NUM8): each looks for a body once; with Shift the rescue job (148) is added |
+| right click on an item while the inventory and another item window are open | one unit moves to the other window, where it first fits (stacks of it, then free cells), in both directions; Shift: the whole stack (**Observed**, release handler `FUN_140714a20`: the one-unit move `FUN_140713d20`, repeated while Shift is held until it fails; target order in [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)). Meitou: between the lead's inventory or bag and the shown machine (its inputs and output), storage, container, or the open loot (`PutInMachine` / `TakeFromMachine` / `TakeLootItem` / `PutLootItem` with a count, `InventoryCommands.MoveInto`) |
+| right click on an item with only the character's own windows open | a map item is read; money becomes cats; otherwise equipped, taken off, fitted on its stump or moved from the grid into the open bag (`QuickMoveItem`, [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)) |
+| NUM8, `J` | Rescue for the selection: each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
 
 ### Movement marker
@@ -181,7 +192,7 @@ hit with no walkable point sets `invalidmove` (`FUN_140800250`). Which other hov
 
 Meitou (`PlayerInterface.Pointer.cs`, engine choices): the window's own cursor is hidden and the pointer drawn last in the frame (not in
 screenshots or cinema takes). It follows the quick right-click order, so it never disagrees with the click: with a selection, over a
-non-hostile trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (also without a selection, red outline; any other non-hostile one: no quick order, `arrow`, white outline, a right click moves), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
+non-hostile trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (also without a selection, red outline; any other non-hostile one: no quick order, `arrow`, white outline, a right click moves; hostile means a faction hostile to the player's or an NPC fighting one of the player's characters, e.g. escaped slaves robbing them after a dialogue line, whose quick attack is then defence, not an assault; the original's enemy test is **Unknown**), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
 `lift`, Alt `search`; otherwise, over the interface, the settings panel or the loading screen, `arrow`. The free camera hides it (as mode 0's
 `invisible`). Interface → Hardware mouse (`HardwareMouse` in meitou.user.json, default off as the game's `hardware_mouse`; settings.cfg is
 not read) shows the Windows cursor instead, applied at once.
@@ -226,7 +237,7 @@ labels are stacked above the nearer one. No quantity, grade or stealing colours 
 Meitou only (Advanced → Hover outline, `HoverOutline`, default on; the game has none). The character under the cursor is drawn alone into a
 mask (colour pass, live pose, picture levels, own depth planes round it) right after the portraits, then after the tone map an outline
 (about 2.5 px at 1080p, 60 % strength fading outward) is blended round the silhouette, through walls, and its visible part tinted at 11 %, visible meaning its
-linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (only for a faction hostile to the player's; a neutral one is white although a right click attacks it), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Holding the Highlight key (Alt, which also lights up signs) outlines the same way every character (the squad's too, people and animals) within 500 units of the camera's focus, each in the colour hovering it would give (own hurt green, downed or carried blue, trader or someone to talk to gold, hostile red, else white; all white with no selection); one mask per colour, overlapping outline rectangles joined. Off in the free camera, with the interface hidden and in
+linear depth within 1 % + 1 unit of the near slice's scene depth (jittered, render size). Outline and tint take the pointer's order's colour: attack red (a hostile character as the pointer counts it above), treat green, talk gold, carry/loot blue, else white (no selection or no order). No name or goal label is shown over a character (**Observed** by the owner in play, not traced in the exe: the original shows none for ordinary NPCs, only the outline; Meitou had a plain name and goal label until 2026-10-17). Holding the Highlight key (Alt, which also lights up signs) outlines the same way every character (the squad's too, people and animals) within 500 units of the camera's focus, each in the colour hovering it would give (own hurt green, downed or carried blue, trader or someone to talk to gold, hostile red, else white; all white with no selection); one mask per colour, overlapping outline rectangles joined. Off in the free camera, with the interface hidden and in
 screenshots and cinema takes. Not in the Shift+F1 switch list (a game setting, like Attackers per target).
 
 ### Selection rings
@@ -303,6 +314,7 @@ in order (task numbers are [ai-tasks](ai-tasks.md) taskTypes):
   108 (slot 131). In another faction's cage holding one of yours, Alt + right click gives 76 PICK_LOCK when its lock is locked or
   207 GET_OUT_OF_CAGE_ESCAPE when not; without Alt the bar shows "Hold down the ALT key to pick the lock." / "...to escape the cage.".
 - Another faction's non-cage building with a locked lock: Alt gives 76; without Alt the pick-lock message and a move to it.
+- A bed's held menu: 99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (`FUN_1407a6bc0`, [locks](locks.md#beds)).
 - No order while every selected character is unconscious ("Your selected character is unconscious", `FUN_1407f6f50`).
 - Holding the command button 0.2 s on the same target opens the context menu instead (`FUN_1407a6bc0`). It opens on the press, without the
   hold, for a building whose function is 8 (BF_CAGE), or 22 (BF_DOOR) whose (first) door is locked and not the player's faction's, unless
@@ -330,12 +342,77 @@ no interior floors (a part without collision cannot be clicked, as in the origin
 collision reach below the ground; without the limit the ray, after meeting the ground, found them and the pointer showed the hammer on bare ground beside a building). The character selection stays. The HUD panels show the building as in
 [ui-screens](ui-screens.md#selected-building) (the simulation publishes the selected building's doors, `InspectBuildingCommand`); no outline
 is drawn (as the original). Selecting or inspecting a character clears it, Shift
-included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). Not built: a house's first-door focus, the
-building windows, the Dismantle / pause / door buttons in the panel (the right-click menu has them), the For sale line, the Door and Building
-Condition bars, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
-centre, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
+included (the original keeps the slot); a site that disappears clears it. Selecting plays the building's select sound ([audio](../audio.md#interface)). A house is not focused as its first door, but its panels list the
+first door's lines before the house's, as the door's panel does ([ui-screens](ui-screens.md#selected-building)). Not built: the building windows of
+world buildings, the For sale line, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
+centre where it has slid to, `DoorSpot.Slide` × open amount, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
 walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
 and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level building with an interior is picked by its floors instead (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
+
+### Context menu verbs
+
+**Observed** (kenshi_x64 1.0.68 decompile: list builder `FUN_1407a6bc0`, `ContextMenuGUI::show` `FUN_1407a7fe0`, labels `FUN_14079b2d0`, row click
+`FUN_1407a7f10`). Order numbers are [ai-tasks](ai-tasks.md) taskTypes; "the lead" is the last selected character of the player's faction.
+
+- **Rows**: the verbs are a set of order numbers, so each shows once, **in ascending order number**; an empty label drops it. An animals-only selection
+  (PlayerInterface+0x268) keeps only 5, 31, 45, 61, 123, 226, 227 (`FUN_1407f23b0`). **Verified** (`data/gui/layout/Kenshi_ContextMenu.layout`): title
+  `NameText`; per row a `Kenshi_Button1` (x 0.0208, w 0.7917 of the row) and a `Value` box (x 0.8125, w 0.1875). The box is made only when some row has a
+  chance (`FUN_1407f65e0`): 76 (the lock's pick chance with the selection's lockpicking; a building's below `DAT_142133f28` shows 0), 201 (the shackles'
+  lock), 228 ([stealth KO](combat.md#stealth-knock-out) chance), 246 (`FUN_140885600`); text `{1,num}%` clamped 0..100, colour (1 − p, p, 0). Without
+  one the buttons span the row. The menu sits at the cursor, kept on screen.
+- **Click**: the order goes to the shared dispatch `FUN_1407fa650` with the menu's target, then the menu closes. The dispatch has **no Alt test**: the
+  quick click's "Hold down the ALT key..." rules do not apply, so Loot on another faction's shop or container takes at once. With Shift the order becomes a
+  job ([perma-jobs](ai-tasks.md#perma-jobs)); 26 with Shift on a building becomes 124 when the building has a production interface (slot 95), else
+  nothing; 45, 223 and 273 are always jobs.
+- **Empty**, every selected character down (slot 107): "Your selected character is unconscious" / "Your selected characters are unconscious".
+- **Beds and cages**: a character in a bed or cage (+0x2f8 ≠ 0, +0x308 = 0) is replaced by its bed/cage; one with `occupant selection` (+0x3a8) opens
+  the building's menu and the occupant's in a second menu beside it.
+
+Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner faction is not the player's and lacks flag +0x1d0; 5 Attack Target;
+12 Talk To; 16 Attack All; 17, 45 Bodyguard; 25 First Aid; 26 Inventory (player's building), Trade (player's character), else Loot; 28, 65 Stand Up;
+31 Follow; 60 Repairs; 61 Attack Unprovoked; 68, 213, 225 Pick Up; 69, 70 Put Down; 72 Open; 73 Close; 76 Pick Lock; 77 Lock; 78, 140 Unlock; 87 Use;
+95 Repair; 96 Dismantle; 97 Training; 98, 258 Sleep; 99 Put in Bed; 107 Get in; 108 Put in; 109 Knock Out; 110 Set Free; 111 Break Out;
+123, 226, 290 Smash; 124, 152 Auto-Haul; 136 Corpse Disposal; 146 Man Turret; 166 Capture; 185, 285 Use Tools; 186, 286 Use Strength;
+201 Unlock Shackles; 207 Escape; 223 Throw out of home; 228 Stealth KO; 229 Stealth Kill; 235 Shoot At; 246 Kidnap; 249 Splint Injuries;
+251 Escape (skill); 252 Escape (strength); 273 Throw out of town; any other none.
+
+| Target | Verbs offered (in the builder's order) |
+|---|---|
+| Item (slot 5) | shackles (slot 94): 201, 185, 186; else with an inventory (slot 44): 3, 26; a plain item has no menu |
+| Building | none when slot 102 (+0x1a1) is set and it is another faction's. Unfinished: 2. Broken (slot 97): 95. Else 95 when damaged (slot 101: +0x188 above +0x164), then: with a production interface (slot 95; StorageBuilding returns itself) 124 when its functionality (slot 118) is null (a storage), 152 when that has +0x3ac 0, else 87; otherwise by function (slot 94): 18 nothing, 8 cage (below), 6 or 25 with the lead carrying someone 99, else slot 131's order ([table](#building-picking-and-selection): 97 training dummy, 136 corpse machine, 146 turret, 258 bed, 26...). With an inventory: its lock locked: 76, 285, 286, else 26. A door (+0x1a0): unlocked: 77 when the player's, then 73 when open or broken else 72; locked: the player's 140, another's 76, 285, 286 and 226 (290 when slot 123 is set). Last 96 when slot 79 (the player's building, not +0xc0, not a "creates player town" one) |
+| Cage (function 8) | another faction's: locked 76, 285, 286; unlocked and empty: 107 when the lead carries nobody, 108 when it carries someone (whose slot 73 is null); occupied 110. The player's: 77 or 78 by the lock, then empty 108 (as above), occupied 110 |
+| Character, carried | by a player character while the lead is the carrier or the carried: only 69; by anyone not of the player's: nothing |
+| Character, imprisoned | 12 when it can talk; 26 unless it is the player's and selected; its cage the player's: 207 when it is the lead, else 110 and the pick-up verb; another faction's: the pick-up verb when the cage is unlocked, 207 when it is the player's and selected, 228 when neither it nor the cage is the player's |
+| Player's character | not selected (not slot 34, not in bed): 26, 45, 31, then 69 when a selected character carries it, else the pick-up verb; selected: 69 when a selected character carries someone, 28 when its leg state (slot 109) is 1; slot 34 or in bed, not selected: 69 / the pick-up verb, 26, 31 |
+| Other faction's, not hostile (`FUN_14079cbe0`) | standing (not down, state 0, leg state ≠ 3), the lead not on a turret (+0x260 handle empty): 228 (lead `FUN_1405c9750`, its slot 73 null), 12, 61, 45, 31, and 225 when it is friendly to the lead (slot 126) and its AI state is not 5; on a turret 235. Otherwise: 26, the pick-up verb and 223 / 273 (`FUN_140793d80`), 228, and when not down 61, 45, 12. Then 69 when a selected character carries it |
+| Hostile | standing: 12 (talk tests), not on a turret 228, 16, 5; on a turret 235. Otherwise 228, 26, the pick-up verb with 223 / 273, 5 when up in state 0. Then 69 as above |
+| Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 (robotic repair), 25 (first aid, `FUN_1407c05a0`), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
+
+The pick-up verb (`FUN_140796f80`, **Verified** by re-reading the decompile 2026-10-23): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose
++0x1a0 → +0x88 object is set and whose faction has +0x250 clear: 225 when it is friendly to the lead (slot 126, vfunc +0x3f0) and not a trader (`FUN_1405cff70`) and `FUN_140796240` is false;
+else, when the count at +0xf0 (`FUN_140854080(+0xf0, 0)`) is below 1 and its AI state (+0x1a0 → +0xdc) is not 8: 246 Kidnap, or 225 while imprisoned (+0x2f8 = 2); every other case 225.
+Kidnap's chance column (`FUN_140885600`) is 100 for a downed target whose byte +0x278 is clear (**Observed**), else a clamp of stat products (not decoded). `FUN_140793d80` adds 223 when the target's
+home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
+**Dispatch** (`FUN_1407fa650` → `FUN_1407f9e20`, **Observed**): 45, 0x111 and 0xdf go through the job giver `FUN_1407f5a90` (sound `Permanent_Job`), every other order through
+`FUN_1407f9e20`, which per selected character swaps 5 / 16 / 0x3d for 0x107 / 0x106 / 0x10a when `FUN_1407f2840(character)` is true (**Unknown** which characters: Meitou reads it as a
+ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
+**Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` returns byte +0xd4
+unless `FUN_140436610(c, 1)` (Meitou reads it as sneaking; [ai-tasks](ai-tasks.md#perma-jobs) reads it as a slave test); where a cage opens its menu at once; the posture 1 (voluntary crawl)
+that 28 Stand Up answers to ([ragdolls](ragdolls.md#forced-crawl): the legs' forced crawl is 2).
+
+Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
+the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job.
+Containers and doors open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
+Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's downed character: its inventory beside the
+selection's), Pick Up and Kidnap (the same pick-up order; Kidnap when the target is not an ally or is a trader, shown with 100%; the kidnapping is a crime only when witnessed,
+[carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
+character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
+Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Use, Auto-Haul (storage, as the job),
+Inventory (storage, furnace), Man Turret, Dismantle. **Bodyguard** (45, `FollowOrder.Guard`): follows like 31 and fights whoever attacks the target (engine reading; with Shift the perma-job, [jobs](ai-tasks.md#perma-jobs)). **Attack All** (16, **engine reading**): every standing hostile within 800 of the clicked one is a target and each selected character attacks the nearest. **Shoot At** (235): replaces the
+attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
+(`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied.
+Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Not built: Stand Up, Throw out of home / town (the jobs 223 / 273 run), Repair / Repairs,
+Corpse Disposal (the jobs 137 / 138 run), Auto-Haul 152, Lock / Unlock of a cage (Pick Lock stands in), item menus (Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 
@@ -374,7 +451,7 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 - Meaning of the listener's suspended field at +0x50 and of FUN_1409134c0 (possibly splash skip).
 - What exactly the version-below-1 branch of the controls loader does with its action set.
 - Identity of the widget behind FUN_1406e1fd0 (GUI+0x20) and of PlayerInterface+0x2f0, which gate most game events.
-- Which window event 7 toggles (taken to be Tutorials); targets of events 1 and 2 inferred from the action names.
+- Targets of events 1 and 2, inferred from the action names.
 - Building selection: the meaning of slot 107 (+0x198) and `FUN_14004a0cf` in the loot branch, the lockpick tooltip text,
   whether the renderer marks the selected building, and what clears the selection when the building is destroyed.
 - Press versus release timing of the command button, and the exact rotation marker condition.
@@ -394,4 +471,4 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 
 Evidence scopes below apply only to their named sources/checks.
 
-- Context menu verbs (FUN_14079b2d0)
+- Context menu verbs: [above](#context-menu-verbs)

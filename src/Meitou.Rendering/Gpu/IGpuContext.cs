@@ -79,6 +79,9 @@ public interface IGpuContext
     /// <summary>The device traces ray queries (an optional buffer use, never required).</summary>
     bool HasRayQuery { get; }
 
+    /// <summary>The device has tessellation shaders (the ground relief and the smoothed rocks use them where they do).</summary>
+    bool HasTessellation { get; }
+
     /// <summary>A frame is open for recording (the upload paths write into it; Metal's batches need nothing).</summary>
     void EnsureFrame();
 

@@ -25,16 +25,15 @@ public class TradeUiTests
 
     static void Drag(PlayerInterface ui, Vector2 from, Vector2 to)
     {
-        ui.MouseDown(MouseButton.Left, from, false);
+        ui.MouseDown(MouseButton.Left, from, true);   // Shift: the whole stack (without it one unit is lifted)
         ui.MouseMove(to);
         ui.MouseUp(MouseButton.Left, to, false);
     }
 
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
-    public void Scrolled_stock_keeps_its_cells_and_buys_the_visible_item(UiMode mode)
+    [Fact, Slow]
+    public void Scrolled_stock_keeps_its_cells_and_buys_the_visible_item()
     {
+        const UiMode mode = UiMode.Faithful;
         var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "No Kenshi install configured");
         var stock = new StockSource();
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem(), stock]);
@@ -60,8 +59,9 @@ public class TradeUiTests
             ui.MouseMove(Centre(bottom));
             Assert.True(ui.UiFrame.Single(c => c.Name == "trade-item-1").Properties.ContainsKey("tooltip_item"));
             Drag(ui, Centre(bottom), Centre(ui.UiFrame.Single(c => c.Name == "main")));
-            var buy = Assert.Single(session.World.Commands.TakeDue(long.MaxValue).OfType<Meitou.Simulation.Trading.BuyItem>());
-            Assert.Equal("bottom", buy.Item.Record);
+            var sent = session.World.Commands.TakeDue(long.MaxValue);
+            Assert.Equal("bottom", Assert.Single(sent.OfType<LiftItem>()).Item.Record);
+            Assert.Equal(ItemHolder.Character, Assert.Single(sent.OfType<PlaceHeld>()).Into.Holder);
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "trade-item-1" && c.Caption.Contains("c.", StringComparison.Ordinal));
         }
         finally { ui.DisposeUi(); }

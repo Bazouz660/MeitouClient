@@ -12,8 +12,15 @@ public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string 
 public sealed record AddJob(IReadOnlyList<CharacterId> Characters, Meitou.Data.Gameplay.Ai.TaskType Type, string Site) : SimCommand;
 
 /// <summary>
-/// The original's order 146 USE_TURRET on a complete turret of the player's (function 12): the nearest of the characters (the selection when empty) that can act walks to its gunner spot
-/// (<see cref="Ai.AiSystem.TurretSpot"/>). Turrets do not fire yet (docs/simulation.md "Production").
+/// Gives characters (the selection when empty) the job an order of <paramref name="Ordered"/> on a character becomes, untargeted, at the end of their job lists (Shift with First Aid,
+/// Splint Injuries, an attack or a loot; <see cref="PermaJobs.Add"/>): 25 → 58 Medic (60 → 57 Robotics, which a first aid on a robot <paramref name="Target"/> is), 249 → 250 Splint
+/// Rigging, 4 / 5 / 61 → 16 Attacking enemies, 26 → 238 Foraging animals.
+/// </summary>
+public sealed record AddOrderJob(IReadOnlyList<CharacterId> Characters, Meitou.Data.Gameplay.Ai.TaskType Ordered, CharacterId Target) : SimCommand;
+
+/// <summary>
+/// The original's order 146 USE_TURRET on a complete turret of the player's (function 12): the nearest of the characters (the selection when empty) that can act operates it, standing at
+/// its gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>); the combat system fires it (docs/simulation.md "Production", "Combat").
 /// </summary>
 public sealed record UseTurretOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
 
@@ -31,10 +38,14 @@ public sealed record MoveJob(CharacterId Character, int From, int To) : SimComma
 public sealed record PutInMachine(CharacterId Character, InventoryItemToken Item, string Site, int Slot, int X = 0, int Y = 0, int Count = 0) : SimCommand;
 
 /// <summary>
-/// A character takes from a machine: <paramref name="Slot"/> -2 the output's items, k the items of input k, -1 the storage item at <paramref name="Index"/>; into its own <c>main</c> grid
-/// (or <paramref name="Section"/> "backpack_content") at the first free cells. <paramref name="Count"/> above 0 takes at most that many units, 0 all.
+/// A character takes from a machine: <paramref name="Slot"/> -2 the output's items, k the items of input k, -1 the storage item at <paramref name="Index"/>; into its inventory where they first
+/// fit (a storage item as the right click's move, <see cref="InventoryCommands.MoveInto"/>: its open bag first with <see cref="BagFirst"/>). <paramref name="Count"/> above 0 takes at most that
+/// many units, 0 all. Dragging goes through the held item (<see cref="LiftItem"/>).
 /// </summary>
-public sealed record TakeFromMachine(CharacterId Character, string Site, int Slot, int Index = 0, string Section = "main", int Count = 0) : SimCommand;
+public sealed record TakeFromMachine(CharacterId Character, string Site, int Slot, int Index = 0, int Count = 0) : SimCommand
+{
+    public bool BagFirst { get; init; }
+}
 
 /// <summary>Queues a research (paying its cost from the research benches when it was never paid).</summary>
 public sealed record QueueResearch(string Research) : SimCommand;

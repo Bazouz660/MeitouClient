@@ -279,28 +279,43 @@ public static class CharacterGenerator
         if (crossbow is not null) loadout.Crossbow = new LoadoutWeapon(crossbow) { Section = "back" };
 
         // Weapons: entries with val0 (quantity) > 0 split by val1 into a hip pool (0) and a back pool (anything else);
-        // val2 is an absolute chance, 0 counting as 100. One weapon per pool.
+        // val2 is an absolute chance, 0 counting as 100. One weapon per pool. Engine choice: a weapon goes where its footprint fits (hip 7x1,
+        // back 10x2 by rows), so a large hip-pool weapon hangs on the back and a back-pool one falls back to the hip; one that fits neither is left out.
         var weapons = character.GetReferences("weapons").Where(r => r.Values.Value0 > 0).ToList();
+        // The back weapon goes below the crossbow: a crossbow two rows tall fills the back section (10 x 2), so the weapon then takes the hip or is left out.
+        int backRow = crossbow is null ? 0 : Math.Clamp(crossbow.GetInt("inventory footprint height", 1), 1, 2);
+        bool hipFree = true;
         foreach (var back in new[] { false, true })
         {
             var pick = PickAbsolute(rng, weapons.Where(r => (r.Values.Value1 != 0) == back)
                 .Select(r => ((GameReference?)r, r.Values.Value2 == 0 ? 100f : r.Values.Value2)));
             if (pick is not { } wr || db.Find(wr.TargetStringId) is not { } weapon) continue;
-            if (loadout.Crossbow is not null && weapon.GetInt("inventory footprint height", 1) >= 2)
+            int width = Math.Max(weapon.GetInt("inventory footprint width", 1), 1), height = Math.Max(weapon.GetInt("inventory footprint height", 1), 1);
+            bool fitsHip = hipFree && width <= 7 && height <= 1, fitsBack = width <= 10 && backRow + height <= 2;
+            string? section = !back && fitsHip ? "hip" : fitsBack ? "back" : fitsHip ? "hip" : null;
+            if (section is null)
             {
-                loadout.Notes.Add($"{weapon.Name}: too long to carry with a crossbow");
+                loadout.Notes.Add($"{weapon.Name}: no free weapon slot it fits");
                 continue;
             }
             var made = MakeWeapon(db, character, weapon, rng, loadout);
             if (made is null) continue;
-            int row = back && loadout.Crossbow is not null ? 1 : 0;
-            loadout.Weapons.Add(made with { Section = back ? "back" : "hip", Row = row });
+            int row = section == "back" ? backRow : 0;
+            loadout.Weapons.Add(made with { Section = section, Row = row });
+            if (section == "back") backRow += height;
+            else hipFree = false;
             if (wr.Values.Value0 > 1)
             {
-                if (back && row == 0) loadout.Weapons.Add(made with { Section = "back", Row = 1 });
+                if (back && section == "back" && backRow + height <= 2)
+                {
+                    loadout.Weapons.Add(made with { Section = "back", Row = backRow });
+                    backRow += height;
+                }
                 else loadout.Notes.Add($"{weapon.Name} × {wr.Values.Value0}: extra copies not shown");
             }
         }
+        if (loadout.Weapons.Count > 1 && loadout.Weapons[0].Section == "back" && loadout.Weapons[^1].Section == "hip")
+            loadout.Weapons.Reverse();   // equip order: hip first, then back
     }
 
     /// <summary>Manufacturer from CHARACTER "weapon level" (val0 relative, 0 = 100; none listed: "Ancient"), model from its "weapon models" (val1).</summary>

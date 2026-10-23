@@ -93,9 +93,24 @@ public class QuickSaveTests
         var (clock, folder, save) = Quicksave(a, "quick");
         try
         {
+            // What the file holds: the CAMERA, the player's platoon and its counter.
+            Assert.Equal((3, 7, 45), (save.Camera.Day, save.Camera.Hour, save.Camera.Minute));
+            Assert.Equal(1234, save.Camera.PlayerMoney);
+            Assert.Equal((1, a.Squad.Members.Count), (save.Camera.Squads, save.Camera.Members));
+            Assert.Equal(data.Factions.Count, save.Factions.Count);
+            var platoon = save.Platoons.Single(p => p.FactionId == save.PlayerFaction!.Id);
+            Assert.Equal("Nameless_0", platoon.Name);
+            Assert.Equal(a.Squad.Members.Count, platoon.Characters.Count);
+            Assert.Equal(1, save.PlayerFaction!.PlatoonCounter);
+            Assert.Equal(platoon.Characters[1].Handle, save.Camera.SelectedCharacter);   // the one selected member
+
             using var b = new Game(NewWorld(data, 1), data, null!);
             var loaded = SaveLoader.Load(b.World, save, data);
             var squadB = b.World.Squads.Find(b.World.Player.Squad)!;
+            // Relations: the table the save holds is the data's own.
+            foreach (var f in loaded.Factions.Where(f => !f.IsPlayer))
+                foreach (var r in f.Relations.Values)
+                    Assert.Equal(data.Relations.Get(data.Factions.ToList().FindIndex(x => x.Id == f.Id), data.Relations.IndexOf(r.FactionId)), r.Relation);
 
             Assert.Equal(clock, loaded.Clock);
             Assert.Equal(1234, b.World.Player.Money);
@@ -178,101 +193,30 @@ public class QuickSaveTests
 
     // ------------------------------------------------------------------ with the install's data
 
-    [Fact, Slow]
-    public void A_new_games_squad_keeps_its_faces_stats_and_inventory_through_a_quicksave_and_load()
-    {
-        var install = GameInstall.Locate();
-        Assert.SkipWhen(install is null, "Kenshi install not found");
-        var db = InstallData.BaseGame!;
-        var levels = InstallData.Levels!;
-        var data = PopulationData.Create(db, levels.Towns(), new GeneratedAppearances(db, install!.Root));
-        var start = NewGameStart.Find(NewGameStart.LoadAll(db), NewGameStart.DefaultName)!;
-        var walk = new OpenGroundWalkability((_, _) => 300);
-        SimWorld Make(ulong seed)
-        {
-            var systems = StandardSystems.Build(data, walk, new StandardSystemOptions { SynchronousPaths = true, Population = new PopulationSettings { CheckEveryTicks = 1 } });
-            return new SimWorld(new WorldSettings { Seed = seed, Threads = 2, PublishSnapshots = false }, walk, systems.Systems);
-        }
-        using var a = Make(5);
-        var squadA = a.Systems.OfType<PopulationSystem>().Single().StartPlayer(a, start);
-        a.RunTicks(60);
-        string root = Temp("real");
-        try
-        {
-            var save = SaveCapture.Capture(a, data, new SaveClock(1, 13, 39), null, new SaveCaptureOptions { Placements = levels.Towns().ToList() });
-            string folder = QuickSave.Folder(root);
-            save.Write(folder);
-
-            using var b = Make(5);
-            var loaded = SaveLoader.Load(b, SaveGame.Load(folder), data, new SaveLoadOptions { Appearances = data.Appearances });
-            var squadB = b.Squads.Find(b.Player.Squad)!;
-            Assert.Equal(squadA.Members.Count, squadB.Members.Count);
-            for (int i = 0; i < squadA.Members.Count; i++)
-            {
-                var ca = a.Characters.Cold(squadA.Members[i].Slot)!;
-                var cb = b.Characters.Cold(squadB.Members[i].Slot)!;
-                Assert.Equal(ca.Name, cb.Name);
-                Assert.NotNull(ca.Appearance);
-                Assert.Equal(ca.Appearance!.Loadout!.Seed, save.Platoons.Single(p => p.FactionId == save.PlayerFaction!.Id).Characters[i].Handle.S);   // the look's seed is the saved handle serial
-                Assert.NotNull(cb.Appearance);
-                // The same look: the roll's seed, hence the same body, head, hair and clothes; and so the same inventory.
-                Assert.Equal(ca.Appearance!.Loadout!.Seed, cb.Appearance!.Loadout!.Seed);
-                Assert.Equal(ca.Appearance.BodyMesh, cb.Appearance.BodyMesh);
-                Assert.Equal(ca.Appearance.Female, cb.Appearance.Female);
-                Assert.Equal(ca.Appearance.Parts.Select(p => p.Mesh), cb.Appearance.Parts.Select(p => p.Mesh));
-                Assert.Equal(ca.Inventory!.Items.Select(x => x.Record), cb.Inventory!.Items.Select(x => x.Record));
-                Assert.Equal(ca.Stats!.ToArray(), cb.Stats!.ToArray());
-                SameSavedMedicalState(ca.Medical!, cb.Medical!);
-            }
-            b.RunTicks(120);   // the loaded world runs (body, movement, population) without trouble
-            foreach (var s in b.Systems) (s as IDisposable)?.Dispose();
-            foreach (var s in a.Systems) (s as IDisposable)?.Dispose();
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
-
     /// <summary>The player's squads after a load: name, member count and the names of the members, in squad order.</summary>
     static List<(string Name, string[] Members)> SquadsOf(SimWorld world) =>
         [.. SquadManagement.PlayerSquads(world).Select(s => (s.Name, s.Members.Select(m => world.Characters.Cold(m.Slot)!.Name).ToArray()))];
 
     [Fact]
-    public void A_new_empty_squad_and_its_name_survive_a_quicksave_and_load()
+    public void A_member_moved_to_another_squad_and_an_empty_renamed_squad_are_saved_through_two_saves()
     {
         var data = SyntheticTown.Data(SyntheticTown.Database(anatomy: true));
         using var a = Start(data);
         a.World.Commands.Enqueue(new NewSquadCommand(SyntheticTown.Centre) { Tick = 0 });
-        a.World.RunTicks(2);
-        var fresh = SquadManagement.PlayerSquads(a.World)[1];
-        a.World.Commands.Enqueue(new RenameSquadCommand(fresh.Id, "Raiders") { Tick = a.World.Tick });
-        a.World.RunTicks(1);
-
-        var (_, folder, save) = Quicksave(a, "squad-empty");
-        try
-        {
-            using var b = new Game(NewWorld(data, 1), data, null!);
-            SaveLoader.Load(b.World, save, data);
-            var squads = SquadsOf(b.World);
-            Assert.Equal(2, squads.Count);
-            Assert.Equal(a.Squad.Members.Count, squads[0].Members.Length);
-            Assert.Equal("Raiders", squads[1].Name);
-            Assert.Empty(squads[1].Members);
-        }
-        finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
-    }
-
-    [Fact]
-    public void A_member_moved_to_another_squad_is_saved_in_that_squads_platoon_through_two_saves()
-    {
-        var data = SyntheticTown.Data(SyntheticTown.Database(anatomy: true));
-        using var a = Start(data);
         a.World.Commands.Enqueue(new NewSquadCommand(SyntheticTown.Centre) { Tick = 0 });
         a.World.RunTicks(2);
+        // The first new squad stays empty and is renamed; the second takes the moved member.
+        var empty = SquadManagement.PlayerSquads(a.World)[1];
+        a.World.Commands.Enqueue(new RenameSquadCommand(empty.Id, "Raiders") { Tick = a.World.Tick });
         var moved = a.Squad.Members[0];   // the leader: the platoon must not follow its first member
         string movedName = a.World.Characters.Cold(moved.Slot)!.Name;
-        a.World.Commands.Enqueue(new MoveToSquadCommand(moved, SquadManagement.PlayerSquads(a.World)[1].Id) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new MoveToSquadCommand(moved, SquadManagement.PlayerSquads(a.World)[2].Id) { Tick = a.World.Tick });
         a.World.RunTicks(1);
         var expected = SquadsOf(a.World);
-        Assert.Equal([movedName], expected[1].Members);
+        Assert.Equal(3, expected.Count);
+        Assert.Equal("Raiders", expected[1].Name);
+        Assert.Empty(expected[1].Members);
+        Assert.Equal([movedName], expected[2].Members);
 
         var (_, folder, save) = Quicksave(a, "squad-move");
         string again = Path.Combine(Temp("squad-move-2"), QuickSave.Name);
@@ -343,6 +287,26 @@ public class QuickSaveTests
             using var b = Make();
             var loaded = SaveLoader.Load(b, SaveGame.Load(folder), data, new SaveLoadOptions { Appearances = data.Appearances });
             b.Player.Faction = data.PlayerFaction;
+            // The new game's squad keeps its faces, stats and inventory.
+            var squadB = b.Squads.Find(b.Player.Squad)!;
+            Assert.Equal(squad.Members.Count, squadB.Members.Count);
+            for (int i = 0; i < squad.Members.Count; i++)
+            {
+                var ca = a.Characters.Cold(squad.Members[i].Slot)!;
+                var cb = b.Characters.Cold(squadB.Members[i].Slot)!;
+                Assert.Equal(ca.Name, cb.Name);
+                Assert.NotNull(ca.Appearance);
+                Assert.Equal(ca.Appearance!.Loadout!.Seed, save.Platoons.Single(p => p.FactionId == save.PlayerFaction!.Id).Characters[i].Handle.S);   // the look's seed is the saved handle serial
+                Assert.NotNull(cb.Appearance);
+                // The same look: the roll's seed, hence the same body, head, hair and clothes; and so the same inventory.
+                Assert.Equal(ca.Appearance.Loadout.Seed, cb.Appearance!.Loadout!.Seed);
+                Assert.Equal(ca.Appearance.BodyMesh, cb.Appearance.BodyMesh);
+                Assert.Equal(ca.Appearance.Female, cb.Appearance.Female);
+                Assert.Equal(ca.Appearance.Parts.Select(p => p.Mesh), cb.Appearance.Parts.Select(p => p.Mesh));
+                Assert.Equal(ca.Inventory!.Items.Select(x => x.Record), cb.Inventory!.Items.Select(x => x.Record));
+                Assert.Equal(ca.Stats!.ToArray(), cb.Stats!.ToArray());
+                SameSavedMedicalState(ca.Medical!, cb.Medical!);
+            }
             b.RunTicks(300);   // the shop's town loads and makes its saved platoons
             var again = Ragdolls(b).SaveState(b.Squads.Find(b.Player.Squad)!.Members[0]);
             Assert.NotNull(again);

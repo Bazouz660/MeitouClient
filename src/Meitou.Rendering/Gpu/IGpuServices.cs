@@ -13,6 +13,10 @@ public interface IGpuShaders
     /// <summary>Compiles (or takes from the caches) the GLSL pair as a native-model program (docs/renderer-native.md 3.2).</summary>
     GpuProgram Native(string vertexGlsl, string fragmentGlsl, string name, GpuSetLayout[] setLayouts, uint pushConstantBytes);
 
+    /// <summary>A native program with tessellation stages (patch lists of three control points), where the backend supports them.</summary>
+    GpuProgram NativeTessellated(string vertexGlsl, string controlGlsl, string evaluationGlsl, string fragmentGlsl, string name,
+        GpuSetLayout[] setLayouts, uint pushConstantBytes);
+
     /// <summary>A compute program: set 0 from the shader's reflection, the other sets from <paramref name="extraSets"/>.</summary>
     GpuProgram Compute(string glsl, string name, params GpuSetLayout[] extraSets);
 

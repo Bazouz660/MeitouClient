@@ -200,13 +200,35 @@ public static class SquadManagement
         if (source != target) Relead(table, target);
     }
 
-    /// <summary>Makes a character a member of <paramref name="squad"/>: its squad, no formation place and no stop order left from the old one.</summary>
+    /// <summary>Makes a character a member of <paramref name="squad"/>: its squad and no stop order left from the old one.</summary>
     static void Join(CharacterTable table, CharacterId id, Squad squad)
     {
         if (!table.TryResolveNext(id, out int slot)) return;
         var cold = table.Cold(slot)!;
         cold.SquadId = squad.Id;
-        cold.FormationOffset = Vector2.Zero;
+    }
+
+    /// <summary>
+    /// Folds <paramref name="from"/> into <paramref name="into"/> and removes it (the refugee package's merge, docs/game/ai.md "Package classes": the original hands each member to the
+    /// target squad, then removes the platoon from its faction): the members join <paramref name="into"/> in the squad role (a leader is a plain member again; slaves stay slaves),
+    /// their AI minds are made again for it, and the emptied squad leaves the registry. Serial phases only, and not while the registry is being walked.
+    /// </summary>
+    internal static void Merge(World world, Squad from, Squad into)
+    {
+        var table = world.Characters;
+        foreach (var id in from.Members.ToArray())
+        {
+            if (!table.TryResolveNext(id, out int slot)) continue;
+            var cold = table.Cold(slot)!;
+            cold.SquadId = into.Id;
+            if (cold.Role == (int)SquadRole.Leader) cold.Role = (int)SquadRole.Squad1;
+            cold.Ai = null;
+            into.Members.Add(id);
+        }
+        from.Members.Clear();
+        from.Leader = CharacterId.None;
+        if (into.Leader.IsNone && into.Members.Count > 0) into.Leader = into.Members[0];
+        world.Squads.Remove(from.Id);
     }
 
     /// <summary>The first member leads (role 2), the one that led before goes back to role 0 (<c>FUN_140796620</c> / <c>FUN_140792e60</c>: index 0 is made the leader).</summary>
@@ -259,7 +281,6 @@ public static class SquadManagement
         cold.RoadPreference = data.RoadPreferenceOf(faction);
         cold.SquadId = squad.Id;
         cold.Role = (int)SquadRole.Leader;
-        cold.FormationOffset = Vector2.Zero;
         cold.IsPlayer = false;
         cold.Orders = CharacterOrders.None;
         cold.Ai = null;

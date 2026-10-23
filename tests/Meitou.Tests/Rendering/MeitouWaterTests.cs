@@ -7,17 +7,6 @@ namespace Meitou.Tests.Rendering;
 public class MeitouWaterTests
 {
     [Fact]
-    public void Reflection_fog_shader_compiles_for_plain_and_multisampled_depth()
-    {
-        var compiler = new Meitou.Rendering.Gpu.Shaders.GlslProgramCompiler(new Meitou.Rendering.Gpu.Shaders.ShaderCompileOptions { UseDiskCache = false, UseMemoryCache = false, RemapClipDepth = true });
-        foreach (bool ms in new[] { false, true })
-        {
-            var p = compiler.Compile(PostProcessShaders.Vertex, ReflectionPass.FogFragment(ms));
-            Assert.NotEmpty(p.FragmentSpirv);
-        }
-    }
-
-    [Fact]
     public void Polar_grid_covers_the_disc_with_valid_triangles()
     {
         foreach (int segments in new[] { 128, 256 })

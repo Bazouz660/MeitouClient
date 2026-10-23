@@ -9,7 +9,7 @@ public class TerrainBiomeTests
 {
     [Fact]
     [Slow]
-    public void Base_game_slot_masks_describe_the_blend_map()
+    public void Base_game_slot_masks_and_channels_describe_the_blend_map()
     {
         var install = GameInstall.Locate();
         Assert.SkipWhen(install is null, $"No Kenshi install configured ({GameInstall.EnvironmentVariable}).");
@@ -49,24 +49,11 @@ public class TerrainBiomeTests
                         Assert.True((leaf & own) == own && (leaf & ~near) == 0, $"cell {cx},{cz} leaf {lx},{lz}: mask {leaf:X2}, weights {own:X2}, around {near:X2}");
                     }
             }
-    }
-
-    static uint Rgb(byte[] p, int i) => (uint)(p[i] << 16 | p[i + 1] << 8 | p[i + 2]);
-
-    [Fact]
-    [Slow]
-    public void Base_game_blend_map_channels_weight_the_cell_slots()
-    {
-        var install = GameInstall.Locate();
-        Assert.SkipWhen(install is null, $"No Kenshi install configured ({GameInstall.EnvironmentVariable}).");
-        var info = BlendInfoFile.Open(install!);
-        Assert.Equal(32, info.Cells);
-        var blend = TextureLoader.LoadImage(File.ReadAllBytes(Path.Combine(install!.DataDirectory, TerrainMaps.BlendMap)));
-        var biome = TextureLoader.LoadImage(File.ReadAllBytes(Path.Combine(install.DataDirectory, TerrainMaps.BiomeMap)));
-        Assert.Equal((1024, 1024), (blend.Width, biome.Width));
 
         // R, G, B, A weight slots 0..3 and the remainder (255 minus their sum) weights slot 4; the strongest names the slot
         // whose colour biomemap.png shows (row = +Z, like the heightmap). Where the channels are all 0, slot 4 alone applies.
+        var biome = TextureLoader.LoadImage(File.ReadAllBytes(Path.Combine(install.DataDirectory, TerrainMaps.BiomeMap)));
+        Assert.Equal((1024, 1024), (blend.Width, biome.Width));
         int agree = 0, remainderOnly = 0, partial = 0;
         for (int y = 0; y < 1024; y++)
             for (int x = 0; x < 1024; x++)
@@ -96,4 +83,6 @@ public class TerrainBiomeTests
         Assert.All(sample.Tiling, t => Assert.True(t.X > 0 && t.Y > 0));
         Assert.True(sample.SlopeMax.X <= 1.5f, "slope values are scaled by 0.01");
     }
+
+    static uint Rgb(byte[] p, int i) => (uint)(p[i] << 16 | p[i + 1] << 8 | p[i + 2]);
 }

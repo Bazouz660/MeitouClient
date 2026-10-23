@@ -55,6 +55,8 @@ sealed partial class GameHost
         if (decalStore is null && !config.LuckyrenMode && pieces.Count == 0)
         {
             world.BloodMarks = null;
+            gpu.DebrisPieces.Clear();
+            AddBolts();   // the bolts are drawn whatever the Blood setting
             return;
         }
         if (!ReferenceEquals(bloodFor, world)) BloodForNewWorld(null);

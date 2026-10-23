@@ -12,7 +12,7 @@ namespace Meitou.Game;
 sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, InputBindings bindings, Action save, Slider frameLimit, UserConfig config)
 {
     static readonly string[] Pages = ["Display", "Graphics", "Interface", "Controls", "Advanced", "Audio", "Fixes"];
-    static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects"];
+    static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects", "Skin"];
     /// <summary>The Metal-only preset row (Native / MetalFX quality, balanced, performance / TAA), edited by the Metal settings panel.</summary>
     internal const string MetalPresetSlider = "Metal upscaling";
     readonly float[] defaults = values.Sliders.Select(s => s.Get()).ToArray();
@@ -90,6 +90,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<bool>? DoorsCloseChanged { get; init; }
     /// <summary>Applies a new camera rotation speed (<see cref="UserConfig.CameraRotateSpeed"/>) to the camera.</summary>
     public Action<float>? CameraRotateSpeedChanged { get; init; }
+    /// <summary>The person races of the loaded data with their skin default (<c>CharacterRenderer.PersonRaces</c>), listed on Graphics > Skin.</summary>
+    public IReadOnlyList<(string Id, string Name, bool Default)> SkinRaceList { get; init; } = [];
+    /// <summary>A race's skin was turned on or off (the config's <see cref="UserConfig.SkinRaces"/> holds it); the game hands it to the character renderer.</summary>
+    public Action? SkinRacesChanged { get; init; }
     /// <summary>Called when an audio slider changes (the config holds the new values); the game applies them to the running sound.</summary>
     public Action? AudioChanged { get; init; }
     public bool Visible
@@ -125,6 +129,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
         "Water" => "Water",
         "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
+        "Skin" => "Skin",
         _ when toggle.Label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };
@@ -160,6 +165,15 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (page == 1)
             result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle) == section)
                 .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)).Prepend(LookEntry).Prepend(PresetEntry));
+        // Graphics > Skin: after the switch, one row per person race of the loaded data (mods too), on or off against its default.
+        if (page == 1 && section == "Skin")
+            foreach (var (id, name, byDefault) in SkinRaceList)
+                result.Add(new(name, byDefault ? "Skin scatters light on this race (the default)." : "A robot race: no skin scattering unless turned on.",
+                    Toggle: new(name, () => config.SkinRaces.TryGetValue(id, out bool on) ? on : byDefault, v =>
+                    {
+                        if (v == byDefault) config.SkinRaces.Remove(id); else config.SkinRaces[id] = v;
+                        SkinRacesChanged?.Invoke();
+                    }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
         if (page == 2)
             result.Add(new("UI style", "Choose original Kenshi skins or Meitou materials.", Choice: new(() => ["Faithful", "Meitou"],
@@ -207,10 +221,13 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Toggle: new("Ambience after loading", () => config.FixAmbienceSuffix, v => config.FixAmbienceSuffix = v, Remaster: true, OnOff: true)));
             result.Add(new("Wind stops", "The wind's sound ends when the wind dies down. The game asks for a stop sound that does not exist, so once the wind has blown it never goes quiet.",
                 Toggle: new("Wind stops", () => config.FixWindStop, v => config.FixWindStop = v, Remaster: true, OnOff: true)));
+            result.Add(new("Load button", "The load window's Load button works only once a save that can be read is selected. "
+                + "The game keeps it live: with nothing selected a click does nothing, and an unreadable save fails to load.",
+                Toggle: new("Load button", () => config.FixLoadButton, v => player.FixLoadButton = config.FixLoadButton = v, Remaster: true, OnOff: true)));
         }
         if (page == 4)
         {
-            result.Add(new(AttackSlotsSlider.Label, "How many enemies may fight one character in melee at once (the game: 1).", Slider: AttackSlotsSlider));
+            result.Add(new(AttackSlotsSlider.Label, "How many enemies may swing at one character at once (the game: 1, plus its race's extra slots); the others wait at reach or circle.", Slider: AttackSlotsSlider));
             result.Add(new("Late dodges and blocks", "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, "
                 + "instead of failing as in the game. Makes skilled fighters much harder to wear down when several enemies attack at once.",
                 Toggle: new("Late dodges and blocks", () => config.LateDefences, v => { config.LateDefences = v; LateDefencesChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
@@ -234,10 +251,12 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Selection rings", "Draw the green ring on the ground under each selected character.",
                 Toggle: new("Selection rings", () => config.SelectionRings, v => config.SelectionRings = v, Remaster: true, OnOff: true)));
             result.Add(new("luckyren Mode", "A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying everywhere. Its gear falls to the ground around the spot.",
-                Toggle: new("luckyren Mode", () => config.LuckyrenMode, v => config.LuckyrenMode = v, Remaster: true, OnOff: true),
+                Toggle: new("luckyren Mode", () => config.LuckyrenMode, v => config.LuckyrenMode = v),
                 Picture: SettingsMenuArt.LuckyrenImage));
             result.Add(new(GroundItemsSlider.Label, "How many items dropped during play (severed limbs, luckyren Mode's gear) stay on the ground; past it the oldest disappears. "
                 + "Items that were on the ground in the save always stay.", Slider: GroundItemsSlider));
+            result.Add(new("Splash screens", "Faithful shows the game's logos at startup (Faithful UI); a key or a click skips each one. Meitou shows the menu as soon as the game has loaded.",
+                Toggle: new("Splash screens", () => !config.SplashScreens, v => config.SplashScreens = !v, Remaster: true)));
             result.Add(new("Main menu scene transitions", "Sky flight to/from the main menu (Meitou UI).",
                 Toggle: new("Main menu scene transitions", () => config.MainMenuTransitions, v => config.MainMenuTransitions = v)));
             result.Add(new(mainMenuTransitionSpeed.Label, "Higher values make the camera ascend and descend faster.", Slider: mainMenuTransitionSpeed));
@@ -256,7 +275,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 }));
         }
         if (page == 4)
-            result.Insert(0, PageSidesEntry(result, "All gameplay changes", "Every change on this page as the game plays, or every Meitou change (luckyren Mode stays as it is).", "gameplay change"));
+            result.Insert(0, PageSidesEntry(result, "All gameplay changes", "Every change on this page as the game plays, or every Meitou change.", "gameplay change"));
         if (page == 6)
             result.Insert(0, PageSidesEntry(result, "All fixes", "Every bug on this page as the game ships it, or every fix.", "fix"));
         return result;
@@ -434,7 +453,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     void SetBinding(InputAction action, Binding binding)
     {
         if (binding.IsMouse && binding.Button is MouseButton.Left or MouseButton.Right ||
-            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.F7 or Key.I or Key.C or Key.M or Key.T or Key.Y or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
+            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
         {
             notice = "That key is reserved. Choose another key, or Esc to cancel.";
             return;
@@ -457,6 +476,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         for (int i = 0; i < values.Toggles.Count; i++)
             if (values.Toggles[i].Get() != toggleDefaults[i]) values.Toggles[i].Set(toggleDefaults[i]);
         frameLimit.Set(240);
+        config.SplashScreens = false;
         config.MainMenuTransitions = true;
         config.InGameTransitions = true;
         config.MainMenuTransitionSpeed = 1.5f;
@@ -464,13 +484,14 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.CharacterFlights = false;
         config.KeepTexturesAtCharacters = true;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
-        AttackSlotsSlider.Set(UserConfig.MeitouAttackSlots);
+        AttackSlotsSlider.Set(UserConfig.FaithfulAttackSlots);
         config.LateDefences = true;
         LateDefencesChanged?.Invoke(true);
         config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = true;
         config.DoorsCloseBehind = true;
         DoorsCloseChanged?.Invoke(true);
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
+        player.FixLoadButton = config.FixLoadButton = true;
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();

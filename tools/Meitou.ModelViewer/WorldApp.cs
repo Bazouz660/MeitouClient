@@ -215,7 +215,7 @@ static partial class WorldApp
         if (gpu.Probes is { } probeInfo) Console.WriteLine($"gi probes  {probeInfo.Describe()}");
         if (gpu.Post is { } occlusionPost && gpu.Foliage is { } occlusionFoliage) Console.WriteLine($"occlusion  {(occlusionPost.OcclusionCull ? $"depth pyramid {occlusionPost.Hiz?.Describe ?? "none"}: {occlusionFoliage.OccludedInstances} foliage instances left out of the main view" : "off")}");
         if (gpu.Post is { } shaftsPost) Console.WriteLine($"shafts     {shaftsPost.ShaftsDescribe}");
-        if (o.ShowKeys && DebugOverlay.TryCreate(context) is { } keysOverlay)
+        if (o.ShowKeys && DebugOverlay.TryCreate(context, assets.Find) is { } keysOverlay)
         {
             keysOverlay.Target = target;
             keysOverlay.Visible = true;
@@ -278,8 +278,8 @@ static partial class WorldApp
         {
             gpu = CreateGpu(display.Context, install, scene, assets, o, interactive: true);
             if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = VendorUpscalers.Factory(display.Context, streamline);
-            overlay = DebugOverlay.TryCreate(display.Context);
-            if (overlay is null) Console.WriteLine("keys      no monospace system font found: the F10 key list and F11 statistics are unavailable");
+            overlay = DebugOverlay.TryCreate(display.Context, assets.Find);
+            if (overlay is null) Console.WriteLine("keys      no monospace system font or game font found:the F10 key list and F11 statistics are unavailable");
             if (overlay is not null) overlay.Visible = o.ShowKeys;
             (camera, render) = Setup(scene, o);
             if (overlay is not null) panel = CreateSettingsPanel(overlay, gpu, render, () => hour, v => hour = v, () => display.VSync, v => display.VSync = v, switches,
@@ -381,6 +381,7 @@ static partial class WorldApp
                 case Key.Equal: o.Post.Exposure = MathF.Min(o.Post.Exposure * 1.1f, 20f); PostStatus(); break;
                 case Key.T: render.Textures = !render.Textures; break;
                 case Key.N: render.NormalMaps = !render.NormalMaps; break;
+                case Key.K: GroundRelief.ParallaxActive = !GroundRelief.ParallaxActive; Console.WriteLine(GroundRelief.ParallaxActive ? "ground parallax on" : "ground parallax off"); break;
                 case Key.O: render.Objects = !render.Objects; break;
                 case Key.F when gpu?.Foliage is { } foliage: foliage.Enabled = !foliage.Enabled; Console.WriteLine(foliage.Enabled ? "foliage   on" : "foliage   off"); break;
                 case Key.X: render.Wireframe = (render.Wireframe + 1) % 3; break;
@@ -527,7 +528,7 @@ static partial class WorldApp
             string? takeFile = cinema.TakeFrame();
             if (gpu.Weather is { } clockWeather) clockWeather.Day = day;   // game speed 1, never paused: the viewer's time is the day and the hour set here
             Draw(gpu, scene, camera, render, size.X, size.Y, hour, (float)animSeconds / 600f, o.FogDistance);
-            if (audio is not null) UpdateAudio(audio, gpu, scene, camera, hour, frameDt);
+            if (audio is not null) { audio.Player.VoiceCap = o.MeitouVoices ? Enhancements.MeitouVoiceCap : 0; UpdateAudio(audio, gpu, scene, camera, hour, frameDt); }
             cpuMs += frameWatch.Elapsed.TotalMilliseconds;
             if (timing)
             {

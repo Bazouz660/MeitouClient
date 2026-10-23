@@ -83,22 +83,6 @@ public class WwisePlayerInstallTests
     }
 
     [Fact]
-    public async Task Entering_the_desert_by_day_plays_its_bed_and_one_shots_and_leaving_fades_them_out()
-    {
-        using var player = Player();
-        await player.LoadBank("SFX_Amb_Desert").WaitAsync(TestContext.Current.CancellationToken);
-        player.SetParameter("Camera_Zoom", 5);
-        player.Post("Enter_Desert_Day");
-        double playing = Run(player, 4);
-        Assert.Equal(2, player.Stats.Voices); // the looping bed and one of the random container's one-shots
-        Assert.True(playing > 1e-5, $"rms {playing}");
-
-        player.Post("Leave_Desert");
-        Run(player, 11); // the stop fades over 10 s
-        Assert.Equal(0, player.Stats.Voices);
-    }
-
-    [Fact]
     public async Task The_ambience_slider_curve_silences_the_ambience_at_zero()
     {
         using var player = Player();
@@ -119,10 +103,12 @@ public class WwisePlayerInstallTests
         director.Update(input);
         // The bank loads on a worker (the director asked for it; the same task comes back) and the event waits for it.
         await player.LoadBank("SFX_Amb_Desert").WaitAsync(TestContext.Current.CancellationToken);
-        Run(player, 3);
+        player.SetParameter("Camera_Zoom", 5);
+        double playing = Run(player, 4);
         Assert.Equal(Ambience.Desert, director.Biome);
         Assert.False(director.Night);
-        Assert.True(player.Stats.Voices >= 1);
+        Assert.Equal(2, player.Stats.Voices); // the looping bed and one of the random container's one-shots
+        Assert.True(playing > 1e-5, $"rms {playing}");
 
         director.Update(input with { Hour = 23 }); // night from sunset on (day is strictly between sunrise and sunset)
         Assert.True(director.Night);

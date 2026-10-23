@@ -14,8 +14,8 @@ namespace Meitou.Game;
 /// <item>The trader's stock is the original's trader inventory window (<c>Kenshi_InventoryTraderWindow</c>, loaded by <c>FUN_140155ee0</c>) beside the character's inventory window, both at the
 /// top left of the screen (<c>FUN_1406e4960</c>). The window is the layout's grown by what the stock grid needs beyond the layout's grid, as a square (<c>FUN_140150570</c>); the grid scrolls
 /// in the layout's scroll view.</item>
-/// <item>Items are dragged between the grids: stock dropped on the pocket or bag grid is bought into that cell, the character's items dropped on the stock are sold. Closing the trader
-/// window ends the trade. Prices are in the item tooltips (Value, Sell value); a stolen item dragged over the stock shows the fencing prompt.</item>
+/// <item>Items are held with the mouse between the grids (PlayerInterface.Inventory.cs): stock placed in the customer's windows is bought there, the customer's items placed on the stock are
+/// sold. Closing the trader window ends the trade. Prices are in the item tooltips (Value, Sell value); a stolen item held over the stock shows the fencing prompt.</item>
 /// </list>
 /// </summary>
 sealed partial class PlayerInterface
@@ -31,7 +31,6 @@ sealed partial class PlayerInterface
         var trade = session.CurrentSnapshot.Trade;
         if (trade is null)
         {
-            tradeDrag = null;
             if (!shownTrader.IsNone && faithfulScreens.IsOpen("trader")) faithfulScreens.Close("trader");
             shownTrader = CharacterId.None;
             tradeCloseSent = false;
@@ -39,7 +38,6 @@ sealed partial class PlayerInterface
         }
         if (trade.Trader != shownTrader)
         {
-            tradeDrag = null;
             shownTrader = trade.Trader;
             tradeCloseSent = false;
             faithfulScreens.ResetScroll("trader");
@@ -181,7 +179,7 @@ sealed partial class PlayerInterface
         var area = slot.Bounds;
         foreach (var item in trade.Stock)
         {
-            if (tradeDrag?.Item.Index == item.Index) continue;
+            if (Lifted(ItemOwner.Stock, item.Index)) continue;
             AddItemCell(controls, $"trade-item-{item.Index}",
                 new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows),
                 item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "TradeItem", item.Index, slot.Clip, charge: item.Charge);
@@ -196,13 +194,13 @@ sealed partial class PlayerInterface
         session.CurrentSnapshot.Trade is { } trade && trade.Customer == owner ? trade.Goods.FirstOrDefault(g => g.Index == index) : null;
 
     /// <summary>
-    /// The fencing prompt beside a stolen item dragged over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile): stolen from the trader's own faction, "Fencing chance:" and the
-    /// chance in the Bad colour; stolen from anyone else and the trader buys stolen goods, "Stolen goods?" and "No problem!" in the Good colour; otherwise nothing.
+    /// The fencing prompt beside a stolen item of the customer's held over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile): stolen from the trader's own faction, "Fencing chance:"
+    /// and the chance in the Bad colour; stolen from anyone else and the trader buys stolen goods, "Stolen goods?" and "No problem!" in the Good colour; otherwise nothing.
     /// </summary>
     void AddFencePrompt(List<UiControl> controls)
     {
-        if (inventoryDrag is not { } drag || session.CurrentSnapshot.Trade is not { } trade || trade.Customer != drag.Character
-            || faithfulScreens.HitTest(mouse) is not { Screen: "trader" } || trade.Goods.FirstOrDefault(g => g.Index == drag.Item.Index) is not { Stolen: true } goods) return;
+        if (held is not { } item || session.CurrentSnapshot.Trade is not { } trade || item.From != ItemOwner.Of(trade.Customer)
+            || faithfulScreens.HitTest(mouse) is not { Screen: "trader" } || trade.Held is not { Stolen: true } goods) return;
         (string Label, string Value, string Colour)? prompt = goods.FenceChance is { } chance ? ("Fencing chance:", $"{(int)(chance * 100)}%", BadColour)
             : trade.BuysStolen ? ("Stolen goods?", "No problem!", GoodColour) : null;
         if (prompt is not { } p) return;

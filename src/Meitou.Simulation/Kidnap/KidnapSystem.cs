@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.World;
+using Meitou.Simulation.Ai;
 using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Locks;
 
@@ -48,10 +49,12 @@ public sealed class Abduction
     public string? Cage { get; set; }
     /// <summary>The kidnapper was a campaign squad's when it lifted: it marches home with its squad and keeps the victim until a town of its faction (the campaign ending on the way does not drop it).</summary>
     public bool Marching { get; init; }
+    /// <summary>The town a marching carrier gives up in when no cage there is free (a site index; it cages in any town of its faction on the way): its campaign's home, or the home town of an AI squad that retreats with its captive; -1: any town of its faction.</summary>
+    public int HomeSite { get; init; } = -1;
 
     internal void Hash(ref StateHasher h)
     {
-        h.Add(Carrier); h.Add(Victim); h.Add(Faction); h.Add((int)Phase); h.Add(Time); h.Add(Tries); h.Add(Marching); h.Add(Cage is { } c ? Rng.StableHash(c) : 0UL);
+        h.Add(Carrier); h.Add(Victim); h.Add(Faction); h.Add((int)Phase); h.Add(Time); h.Add(Tries); h.Add(Marching); h.Add(HomeSite); h.Add(Cage is { } c ? Rng.StableHash(c) : 0UL);
     }
 }
 
@@ -72,7 +75,8 @@ public readonly record struct KidnapEvent(long Tick, KidnapEventKind Kind, Chara
 /// cage there; an AI squad's member starts only when a cage of its faction is in range. At the cage it lets go and imprisons the victim (<see cref="CharacterCold.Kidnapped"/>: no sentence, no bail). No
 /// free cage in the home town, or three failed walks: it drops the victim (<b>engine choice</b>; the original's give-up rule is Unknown).</item>
 /// </list>
-/// Not built: the cannibals' other uses of a captive (eating, killing, slaves), kidnapping a sleeper out of a bed, the witnesses' kidnapping crime.
+/// A marching carrier (a campaign's, or a squad's that lists a cannibal retreat package, which then needs no cage in range to lift) cages in the first town of its faction with a free cage and gives up only in its home town (<see cref="Abduction.HomeSite"/>).
+/// What the captors then do with the captive is <see cref="CaptiveSystem"/>'s. Not built: kidnapping a sleeper out of a bed, the witnesses' kidnapping crime.
 /// </summary>
 public sealed class KidnapSystem(PopulationData data, PopulationSystem population, CarrySystem carry, KidnapSettings? settings = null) : ITickSystem, IStateHashed
 {
@@ -84,6 +88,8 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     readonly List<(CharacterId Victim, double Until)> refused = [];
 
     public KidnapSettings Settings { get; } = settings ?? new KidnapSettings();
+    /// <summary>The relation event of a caging (<see cref="FactionDeeds.Caged"/>); null: none.</summary>
+    public FactionDeeds? Deeds { get; set; }
     public IReadOnlyList<Abduction> Abductions => abductions;
     public IReadOnlyList<KidnapEvent> Log => log;
 
@@ -108,6 +114,25 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         var table = world.Characters;
         if (!table.Next[slot].Alive || table.Next[slot].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.GoTo)) return false;
         return table.Cold(slot) is { IsPlayer: false, Fleeing: false, Engaged: false } c && c.Fighter is not { IsAnimal: true } && CarrySystem.CanCarry(c);
+    }
+
+    /// <summary>
+    /// Has the member in <paramref name="slot"/> lift <paramref name="victim"/> and carry it to a cage of its faction in range (the carrying and caging of goals 167 and 168, which the
+    /// <see cref="CaptiveSystem"/> starts once it has cuffed or found the captive; the original's goal 112 puts the carried one in a cage). False when the member cannot carry, the victim
+    /// is someone's pick already, or no free cage is in range.
+    /// </summary>
+    public bool Carry(World world, int slot, CharacterId victim)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(victim, out int v) || !FreeKidnapper(world, slot) || Busy(table.IdOf(slot))) return false;
+        foreach (var a in abductions) if (a.Victim == victim) return false;
+        var cold = table.Cold(slot)!;
+        if (CageFor(world, table.Next[v].Position, cold.Faction, null) is null) return false;
+        var task = (CharacterTask)table.Next[slot].Task;
+        if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle)) return false;
+        cold.Engaged = true;
+        abductions.Add(new Abduction { Carrier = table.IdOf(slot), Victim = victim, Faction = cold.Faction });
+        return true;
     }
 
     // ------------------------------------------------------------------ the tick
@@ -152,13 +177,18 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 if (victim < 0) continue;
                 var victimId = table.IdOf(victim);
                 // An AI squad has no march home: it starts only with a free cage of its faction in range (the original's "all cages full" state stops the goal).
-                bool campaign = squad.PlatoonId >= 0 && world.Platoons.Find(squad.PlatoonId)?.Campaign is not null;
-                if (!campaign && CageFor(world, table.Next[victim].Position, cold.Faction, null) is null) continue;
+                var inst = squad.PlatoonId >= 0 ? world.Platoons.Find(squad.PlatoonId)?.Campaign : null;
+                bool campaign = inst is not null;
+                // A squad with a cannibal retreat package (signals 1, 25) carries its captive home: the package starts once a member carries someone outside a town of its faction.
+                bool retreats = !campaign && squad.Ai is { } board && board.Packages.Any(p => PackageClasses.Of(p.Package.Signal) == PackageClass.CannibalRetreat);
+                if (!campaign && !retreats && CageFor(world, table.Next[victim].Position, cold.Faction, null) is null) continue;
+                int homeSite = campaign ? (inst!.Home.Site is >= 0 and var h && h < data.SiteFactions.Count && data.SiteFactions[h] == cold.Faction ? h : -1)
+                    : retreats ? squad.Ai!.Town : -1;
                 var task = (CharacterTask)table.Next[slot].Task;
                 if (!carry.BeginPickUp(world, slot, victimId, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle)) continue;
                 cold.Engaged = true;
                 reserved.Add(victimId);
-                abductions.Add(new Abduction { Carrier = member, Victim = victimId, Faction = cold.Faction, Marching = campaign });
+                abductions.Add(new Abduction { Carrier = member, Victim = victimId, Faction = cold.Faction, Marching = campaign || retreats, HomeSite = homeSite });
             }
         }
     }
@@ -221,13 +251,15 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
             case KidnapPhase.Carry:
             {
                 if (gc.Carrying != a.Victim) return End(world, a, KidnapEventKind.GaveUp);   // dropped (hit, the arm lost): the body lies there for the next one
-                // Every look the best free cage of its faction in range. A campaign squad marches home first (nothing to look for outside a town of its faction) and drops the captive when
-                // its home town has no free cage; any other carrier waits a while for one (engine choices; the original's give-up rule is Unknown).
+                // Every look the best free cage of its faction in range. A marching carrier looks only within a town of its faction (any on the way: the original's cage finder weighs
+                // the home x100 but does not require it) and drops the captive when its home town (any, without a HomeSite) has no free cage; any other carrier waits a while for one
+                // (engine choices; the original's give-up rule is Unknown).
                 if ((world.Tick + g) % Math.Max(1, Settings.LookEveryTicks) != 0) return true;
-                bool home = TownOf(world, gn.Position, gc.Faction) >= 0;
-                if (a.Marching && !home) return true;
+                int town = TownOf(world, gn.Position, gc.Faction);
+                if (a.Marching && town < 0) return true;
                 if (CageFor(world, gn.Position, gc.Faction, a) is { } found) return ToCage(world, a, g, found);
-                return a.Marching || a.Time > Settings.PatienceSeconds ? Drop(world, a, g) : true;
+                bool giveUp = a.Marching ? a.HomeSite < 0 || town == a.HomeSite : a.Time > Settings.PatienceSeconds;
+                return giveUp ? Drop(world, a, g) : true;
             }
             case KidnapPhase.Walk:
             {
@@ -241,6 +273,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                     MovementSystem.Stop(table, g);
                     carry.LetGo(world, g);
                     if (!world.Fixtures.Imprison(world, a.Victim, cage, 1, a.Carrier)) return Retry(world, a, g);
+                    if (table.TryResolveNext(a.Victim, out int caged)) Deeds?.Caged(world, g, caged);
                     tc.Kidnapped = true;
                     if (tc.IsPlayer) world.Post($"{tc.Name} has been kidnapped by {data.Factions[a.Faction].Name}");
                     return End(world, a, KidnapEventKind.Caged);

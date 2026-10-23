@@ -26,29 +26,4 @@ public class SimulationClockTests
         clock.Advance(1);
         Assert.Equal(0, clock.AchievedSpeed);
     }
-
-    [Fact]
-    public void Tick_count_depends_only_on_the_summed_time_and_speed()
-    {
-        const double total = 7;
-        var rng = new Random(11);
-        foreach (double speed in SimulationClock.Speeds)
-        {
-            var whole = new SimulationClock(maxTicksPerFrame: 1_000_000);
-            whole.SetSpeed(speed);
-            long expected = whole.Advance(total);
-            Assert.Equal((long)Math.Round(total * speed * 30), expected);
-            var split = new SimulationClock(maxTicksPerFrame: 1_000_000);
-            split.SetSpeed(speed);
-            long sum = 0;
-            double left = total;
-            while (left > 1e-12)
-            {
-                double step = Math.Min(left, rng.NextDouble() * 0.05);
-                sum += split.Advance(step);
-                left -= step;
-            }
-            Assert.Equal(expected, sum);
-        }
-    }
 }

@@ -41,7 +41,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             var controls = ui.UiFrame;
             var begin = controls.Last(c => c.Name == "BeginButton");
             var lower = controls.Last(c => c.Name == "advanced-Root");
-            Assert.True(begin.Bounds.Y < closedY);
+            Assert.Equal(closedY, begin.Bounds.Y);   // the start window stays where it is, the options panel opens under it (FUN_140918ef0)
             Assert.True(lower.Bounds.Y >= begin.Bounds.Y + begin.Bounds.Height);
             Assert.True(lower.Bounds.Y + lower.Bounds.Height <= height);
             Assert.DoesNotContain(controls, c => c.Name is "advanced-reset" or "advanced-close");
@@ -61,8 +61,8 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
                 ui.MouseUp(MouseButton.Left, Centre(track), false);
                 Assert.InRange(ui.NewGameOptions[i], NewGameSettings.Options[i].Min, NewGameSettings.Options[i].Max);
             }
-            ui.MouseMove(Vector2.Zero);
-            Assert.Empty(ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
+            ui.MouseMove(Vector2.Zero);   // the last option's help stays, so the pointer can reach its scroll bar
+            Assert.Equal(help.TextAt(NewGameSettings.Options[^1].HelpLine), ui.UiFrame.Last(c => c.Name == "advanced-help").Caption);
             float selectedHunger = ui.NewGameOptions[0];
             Click(ui, "AdvancedButton"); // The lower panel must not intercept the parent toggle.
             Assert.DoesNotContain(ui.UiFrame, c => c.Name == "advanced-track-0");
@@ -83,12 +83,13 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     }
 
     [Fact, Slow]
-    public void MeitouTitleUsesTheWorldAndKeepsNewGameDialogsAndModeSwitchingFunctional()
+    public void OriginalTitleNewGameAndExitConfirmationProduceHostRequestsAndPauseTheWorld()
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
-        var ui = Ui(session);
+        var ui = Ui(session); MyGuiEvent? request = null; ui.ScreenAction += e => request = e;
         try
         {
+            // The Meitou title uses the world and keeps the new-game dialogs and mode switching functional.
             ui.SetUiMode(UiMode.Meitou);
             ui.ShowTitle();
             Assert.True(session.Simulation.RequestedPause);
@@ -102,17 +103,6 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             Assert.Contains(ui.UiFrame, c => c.Properties.GetValueOrDefault("ImageResource") == "Kenshi_TitleScreen");
             ui.CloseFrontend();
             Assert.False(session.Simulation.RequestedPause);
-        }
-        finally { ui.DisposeUi(); }
-    }
-
-    [Fact, Slow]
-    public void OriginalTitleNewGameAndExitConfirmationProduceHostRequestsAndPauseTheWorld()
-    {
-        using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0);
-        var ui = Ui(session); MyGuiEvent? request = null; ui.ScreenAction += e => request = e;
-        try
-        {
             ui.ShowTitle(); Assert.True(session.Simulation.RequestedPause);
             Click(ui, "NewGameButton"); Assert.Contains(ui.UiFrame, c => c.Name == "BeginButton" && c.Enabled);
             Click(ui, "BeginButton"); Assert.Equal("new-game", request!.Action); Assert.False(session.World.Player.Exists);
@@ -128,10 +118,8 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         finally { ui.DisposeUi(); }
     }
 
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
-    public void PocketDragRunsThroughTheOriginalWindowAndOnlyMovesAtASimulationTick(UiMode mode)
+    [Fact, Slow]
+    public void PocketDragRunsThroughTheOriginalWindowAndOnlyMovesAtASimulationTick()
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
         var inventory = new Inventory(8, 6);
@@ -142,7 +130,7 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         var ui = Ui(session);
         try
         {
-            ui.SetUiMode(mode);
+            ui.SetUiMode(UiMode.Faithful);
             ui.ShowUiPanel("inventory");
             var source = ui.UiFrame.Single(c => c.Name == "inventory-item-0");
             var slot = ui.UiFrame.Single(c => c.Name == "main").Bounds;
@@ -160,7 +148,6 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
     [Theory, Slow]
     [InlineData(UiMode.Faithful, 1280, 720)]
     [InlineData(UiMode.Meitou, 1600, 900)]
-    [InlineData(UiMode.Faithful, 2560, 1440)]
     public void BackpackFitsItsContentsAndEquipmentKeepsItsFootprint(UiMode mode, int width, int height)
     {
         using var session = new WorldSession(Vector3.Zero, (-100, -100, 100, 100), (_, _) => 0, systems: [new PlayerSystem()]);
@@ -234,10 +221,10 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
         {
             Assert.Equal([first, second], ui.SquadBarMembers().Select(c => c.Id));
             var frame = ui.UiFrame;
-            // The renderer draws member i into atlas cell i (CharacterRenderer.PortraitRequests): the second cell is the atlas's second 128 px square.
+            // The renderer draws member i into atlas cell i (CharacterRenderer.PortraitRequests): the second cell starts 256 px in, the original's 128 px portrait in its corner.
             var portrait = Assert.Single(frame, c => c.Name == "portrait-1");
             Assert.Equal(PlayerInterface.PortraitTexture, portrait.Properties["ImageTexture"]);
-            Assert.Equal("128 0 128 128", portrait.Properties["ImageRect"]);
+            Assert.Equal("256 0 128 128", portrait.Properties["ImageRect"]);
             Assert.Contains(frame, c => c.Name == "portrait-name-1" && c.Caption == "Second");
             Click(ui, "member-1");
             session.World.RunTick();

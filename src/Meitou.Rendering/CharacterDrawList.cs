@@ -15,6 +15,14 @@ public readonly record struct CharacterInstance(long Key, CharacterAppearance Ap
 {
     /// <summary>Show the weapon in hand (the parts tagged <see cref="WeaponShown.Drawn"/>) instead of sheathed.</summary>
     public bool WeaponDrawn { get; init; }
+    /// <summary>The weapon in hand is the crossbow: its in-hand parts (<see cref="WeaponShown.RangedDrawn"/>) show, the melee weapon's sheathed ones.</summary>
+    public bool RangedDrawn { get; init; }
+    /// <summary>The melee weapon in hand is the back one: its drawn parts (<see cref="WeaponShown.BackDrawn"/>) show, the hip one's sheathed.</summary>
+    public bool BackDrawn { get; init; }
+    /// <summary>The bolts loaded in the crossbow: which of its loaded / unloaded strings and bolts show (<see cref="CharacterPart.ShownShots"/>).</summary>
+    public int Shots { get; init; }
+    /// <summary>The bolts stuck in the character (<see cref="Characters.CharacterRenderer.CollectBolts"/>).</summary>
+    public IReadOnlyList<StuckBoltMesh> Bolts { get; init; } = [];
     /// <summary>Uniform size the body is drawn at (an animal's age-dependent size; 1 for people).</summary>
     public float Scale { get; init; } = 1;
     /// <summary>Not drawn in the world (still posed for its portrait): on a floor of a building that the interior view hides (docs/formats/zones.md "Interior view").</summary>
@@ -41,3 +49,6 @@ public sealed class CharacterDrawList
     public void Clear() => Items.Clear();
     public void Add(in CharacterInstance instance) => Items.Add(instance);
 }
+
+/// <summary>A bolt stuck in a character: its mesh, the bone it is on and its flight direction in the character's frame (its yaw taken off) when it struck.</summary>
+public readonly record struct StuckBoltMesh(int Id, string Mesh, string Bone, Vector3 Direction);

@@ -35,25 +35,28 @@ public class LuckyrenTests
         return (world, victim, at, marks);
     }
 
-    [Fact]
-    public void A_burst_removes_the_body_that_tick_drops_its_gear_round_it_and_queues_one_explosion_the_same_at_1_and_4_threads()
+    /// <summary>The state after the burst's tick, pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
-        var (one, victim, at, marks) = Burst(1);
-        using (one)
+        var (world, _, _, _) = Burst(threads);
+        using (world) return [world.StateHash()];
+    }
+
+    [Fact]
+    public void A_burst_removes_the_body_that_tick_drops_its_gear_round_it_and_queues_one_explosion()
+    {
+        var (world, victim, at, marks) = Burst(1);
+        using var _ = world;
+        Assert.False(world.Characters.IsAlive(victim));
+        Assert.Equal(["carried", "worn"], world.GroundItems.All.Select(g => g.Item.Record).Order());
+        Assert.All(world.GroundItems.All, g =>
         {
-            Assert.False(one.Characters.IsAlive(victim));
-            Assert.Equal(["carried", "worn"], one.GroundItems.All.Select(g => g.Item.Record).Order());
-            Assert.All(one.GroundItems.All, g =>
-            {
-                Assert.Equal("main", g.Item.Section);
-                Assert.InRange(Vector2.Distance(new(g.Position.X, g.Position.Z), new(at.X, at.Z)), 0, BodySystem.BurstSpread);
-            });
-            var mark = Assert.Single(marks);
-            Assert.Equal(BloodMarkKind.Explosion, mark.Kind);
-            Assert.Equal(victim, mark.Who);
-            Assert.NotNull(mark.Race);
-            var (four, _, _, _) = Burst(4);
-            using (four) Assert.Equal(one.StateHash(), four.StateHash());
-        }
+            Assert.Equal("main", g.Item.Section);
+            Assert.InRange(Vector2.Distance(new(g.Position.X, g.Position.Z), new(at.X, at.Z)), 0, BodySystem.BurstSpread);
+        });
+        var mark = Assert.Single(marks);
+        Assert.Equal(BloodMarkKind.Explosion, mark.Kind);
+        Assert.Equal(victim, mark.Who);
+        Assert.NotNull(mark.Race);
     }
 }

@@ -26,7 +26,40 @@ defence/dodge skill includes injuries/equipment. **Observed** outcome: block5 if
 past50% animation; dodge0 within progress0.1..0.98; otherwise hit2. Skill roll r1*A<r2*B,
 A=1+0.05*max(0,s2-s1), B=1+0.05*max(0,s1-s2). Derived chance with k=B/A is1-1/(2k) ifk>=1,
 elsek/2. General skill blend0.01*(0.6*stat+0.4*dexterity*m) feeds dodge/reload, with stat/gear
-and injury variants. Technique power/max-encumbrance and some length/selection details unknown.
+and injury variants.
+
+**Verified** (loader `FUN_140888ca0`, record reader `FUN_1406684c0`): techniques not `disabled` go to an attack
+list unless `is block` or `is dodge` (then the defence list), in data order. Each keeps a per-category table:
+`katanas` 0, `sabre` 1, `blunt` 2, `heavy weapons` 3, `hackers` 4, `unarmed` 5, `bow` 6, `polearm` 8; with
+`animal` > 8 only that category. `1 handed` is not read here (only by `FUN_1405ba280`). `power N` is stored ×0.01.
+
+### Attack technique choice
+
+**Observed** (`FUN_1402b4570` → `FUN_140888030` → `FUN_1408876d0`, limbs `FUN_140886030`):
+
+- Gap = |aim − attacker| − 1.5·r·k − lerp(k, 0.45, 1)·r_t, at least 0. r, r_t: `pathfind footprint radius`; k: slot
+  0x390 (1 for people). Aim: target + velocity × 1.2 s when its movement is plain mode 0, else its position.
+- Pass: category = weapon's (5 for fists), skill = stored category level. If empty and not an animal: category 5 at
+  `FUN_140884e00` = lerp(e, 0.2, 1) × (martial arts + CharStats +0x2c bonus − injury term) × slot 0x398. If still
+  empty: that again, accepting hurt limbs. e = encumbrance factor (CharStats +0x190, 1 unburdened).
+- Filter: category table; `min skill` ≤ skill ≤ `max skill`; (1 − e)·100 ≤ `max encumbrance`; `is prone` = posture ≠ 0;
+  limb factor f > 0, and f ≥ 1 except in the last pass.
+- f = product over blows. `limb` 4 (weapon) 1; 0 left arm, 1 right arm: 0.001 if not working (+0x5be / +0x5bd).
+  Legs 2/3: prone → technique out; flag +0x5b8 or a leg part down → ×0.25. A limb part kind 1
+  (`FUN_140643b30`, **Unknown** meaning) → 0.001. No blow above 0.01 → 0.
+- Reach R = `attack distance` + L/2, L = weapon `length` (CharStats +0x200). Fists never armed: L = 0. The max R of
+  filtered techniques, at least 1, is CharStats +0x150. A technique needs gap ≤ R.
+- Weight: c = min(a, b)/max(a, b), a = gap + 3, b = k·(`attack distance` + L/4) + 3. Multiply by f, by 0.02 under
+  `attack distance min vs static`, by 0.2 for the previous technique unless the target is in state 8, and by `chance`.
+  Pick by cumulative weight (`FUN_1408a8c80`, `FUN_1409b1c80`).
+
+Consequences (base data): "Cut left static" (−999) is never an attack. A never-armed person cannot use
+"ma badpunch" (−4) and has no attack below martial arts 5. An armed fighter beyond every weapon reach may kick
+or punch.
+
+Meitou: `TechniqueChooser.ChooseAttack`. Engine readings: CharStats +0x2c is the gear's unarmed bonus; the injury
+term, +0x5b8 and part kind 1 are not modelled. Leg down means a leg part's flesh − stun + rig < 0. Plain mode means
+a target that is not fighting. Fists keep L = 0 (the original keeps the last weapon's length). The gap is 3D.
 
 ## Hit reactions
 
@@ -45,10 +78,10 @@ A blocked blow neither staggers nor pushes (`FUN_140665540`). **Observed**: a sh
 **Verified**: after an attack (clip ≥98% done) the fighter waits 0.6 s after a hit, 0.3 s blocked, 0.2 s dodged
 (`FUN_14060a2f0`, `FUN_14060d6a0`; flat, no stats). Before swinging, an attacker in reach asks its target
 (`FUN_14060c670` → `FUN_140666a30`): target swinging at it → the attacker blocks; target stumbling or blocking →
-attack; otherwise an initiative roll on both attack skills (`FUN_140665370`, the skill roll above): the winner swings
-and the loser blocks (or circles 1.5–4.5 s at ±25 when the target does not face it, **Observed**). No free attack
-slot (`max num attack slots` + race extra, `FUN_140666310`) → circling. `max simultaneous hits` caps the targets of
-one swing; `power N` multiplies hit N's packet; `limb N` picks the punch/kick sound.
+attack; otherwise an initiative roll on both attack skills (`FUN_140665370`, the skill roll above). If the asker wins,
+the target blocks. If the target wins, the asker is refused; with no free slot it is refused too, and waits
+(see [Attack slots and circling](#attack-slots-and-circling)). `max simultaneous hits` caps one swing's targets;
+`power N` multiplies hit N's packet; `limb N` picks the punch/kick sound.
 
 **Observed** (decompiled, not measured in game), with several attackers: a target answering a request is asked by
 anyone, not only its own target, and the winner of the roll turns to attack the asker (`FUN_140666a30`). Deciding
@@ -59,16 +92,89 @@ frame (`FUN_14060a590`). The defence covers the most advanced incoming blow from
 no defence for 1.2 s (+0x14c). A dodge plays its whole clip at its own speed, then decides at once; a block that
 ends leaves 0.2 s.
 
+### Attack slots and circling
+
+**Observed** (decompiled). CombatClass state +0x1f0: 0 attacking, 1 defending, 3 deciding, 4 re-decide, 5 and 6 below,
+8 stumbling, 9 no target, 10/11 chase. The planned next state is +0x1f4.
+
+- **Engaged list** (+0x1f8, `FUN_140666e20`): an asker joins its target's list while the list holds at most 4,
+  so 5 fighters at most. A refused asker adds to a two-frame overflow counter (+0x210/+0x214, swapped by
+  `FUN_14060cc50`). `FUN_14060c670` joins before it checks reach. An entry is removed when its blow on that
+  target is not a hit (`FUN_14060a2f0` → `FUN_1406657d0`). The list is cleared when the fight ends.
+- **Slots** (+0x8, `FUN_140666310`): count = clamp(`max num attack slots` + RACE `extra attack slots`, 1, 5),
+  `FUN_1406661d0`. It is 1 while the target is attacking (state 0) or when an **Unknown** test (+0x448 → +0x228) fails.
+  The CombatClass constructor also clamps the CONSTANTS value to 1..5.
+- A slot is granted by `FUN_140666a30` and kept until the swing's last blow (`FUN_14060a590` → `FUN_140665910`).
+  Hitting someone removes them from your own slots.
+- **The answer to an ask** (`FUN_140666a30`, CombatClass vtable +0x28). `FUN_14060c670` calls it on the *target's* CombatClass with the asker, the
+  asker's fighting stat (`FUN_140885e40`) and its +0x14c timer; the return value is the asker's planned next state (+0x1f4): 0 attack, 1 defend,
+  5 circle. **Observed**, in order: target's fight task not running (+0x130) → 0; target attacking (state 0, or deciding with plan 0) while
+  `FUN_140665420` (its +0x140 value, read only when the asker's hand passes a test) is strictly between 0 and 1 → 1; no free slot
+  (`FUN_140666310`) → 5; target stumbling (state 8, or deciding with plan 8) or `FUN_140435570` true (its animation object's +0x228 test) →
+  **mass combat XP** to the target, take the slot again, +0x120 = 1 → 0; target without a target (+0x2a0 = 0xb) → plan 2, slot → 0 / 5;
+  target AI object (+0x298) vfunc 0x10 true (**Unknown**) with +0x144 clear: target defending → XP, slot → 0 / 5; target attacking → XP, then
+  a random contest `FUN_140665370` of the two fighting stats (each side's factor 1 + |difference| × a constant for the lower one, two uniform
+  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases make the target plan its own next state (not decoded further).
+- **Mass combat XP** (`FUN_1408c5e80`) therefore fires on the *target's* stats, once per ask answered in those three cases: being hit at while
+  stumbling or already fighting someone. It adds exp gain multiplier × 0.05 to the save-only stat (no consumer found), so it changes nothing
+  visible; Meitou does not call `XpService.MassCombat` (the stat is not read anywhere).
+- **Target selection** (`FUN_140666ee0`, called from the deciding state; **Observed**). The current target is kept while the pick timer (+0x2f0,
+  seconds) is below 1.0 (0.3 when the order object's +299 flag is set, the Hold order's id 0xc in `FUN_1405caa50`). Otherwise the candidates are
+  collected from the character's target lists (the planner's current target and the AI's sensed enemies; no candidate and no entry → state 9, no
+  target), each list is scored by `FUN_14059e300` and the best score wins; with the order object's range flag a winner more than 400 away is dropped.
+  The scorer skips candidates failing the dead/ally/relation tests (`FUN_1407d1440`, `FUN_1408569a0`, `FUN_1406b2630`; animals pass), then adds
+  with the AI settings weights (object at CombatClassAI +0x310, values **Unknown**): the stickiness weight (+0x154; ×4 when the chooser is a
+  player squad member) for the current target; minus +0x158 when the candidate's animation object has +0x228 set; minus (candidate's engaged
+  count + overflow count, less 1 when the chooser is already in it) × +0x168 (× 0.35 and +2 when the candidate's order flag +0x12a is set, which
+  is the Taunt order's id 0xe in `FUN_1405caa50`; −1 for flag +0x12c); +10 for the chooser's remembered attacker when the candidate has under 2
+  engaged; ×0.01 beyond 40 units when the chooser's +299 flag is set; then, when the post and area test `FUN_140598630` passes
+  ([perception](perception.md#the-attack-on-sight-tests)), a proximity term (1 − d / R) × (+0x15c, +0x160 in mode 2) with R = 2 × (radii
+  sum) or radii + 200 by the chooser's mode `FUN_14059a030`, ×20 for some chooser kind (vfunc 0x360), plus +0x16c unless the candidate is already
+  fighting (halved when its vfunc 0x1e8 value is 0 or less); ×0.1 for a candidate flagged +0x4f; ×3 for a turret gunner when the chooser has no
+  vehicle target; −10 for a downed candidate. Meitou keeps its own pick (the Taunt rule is in [simulation](../simulation.md#order-toggles));
+  the weights and several predicates stay **Unknown**.
+- **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
+  centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
+  If the ask fails: being attacked → defend; engaged → state 5; else state 6.
+- **State 5** (`CircleStateAI`, update `FUN_1402b3180`): walk to the target until the body gap reaches max'
+  (`FUN_14060cd20` = +0x150 + 1.5rk − L/4, +12 while running, minus 1.5rk; at least 6). Face the target and ask each
+  tick. Then grab a slot and re-decide. A crowd within 1.2 × (r + 2.5) makes it retarget (`FUN_140666ee0`).
+  The attack start uses the same walk while no technique is in reach.
+- **State 6** (`WaitingStateAI`, `FUN_1402b3760` / `FUN_1402b3800`): not engaged. Keep the body gap in
+  [n/4 + 15, 3n + 25], each end minus 1.5rk. n = engaged count + last frame's refusals. Side-step at speed s
+  (steering +0x114). Try to join each tick; re-decide once engaged or attacked.
+- **Side-step speed**: drawn on entry as s = 50u − 25. If |s| is below the steering's least speed c (+0x108,
+  `FUN_1402ae6d0`), s becomes ±12. c = 30 + 3b + 12u′ with b = 3 + 3u″. For a humanoid, c′ = 3(1 − e)c + 1 and
+  b′ = 2(1 − e)b + 1. b′ is kept in 0..20; c′ is at most 90 and at least b′ + 10. So c′ = 11 for an unburdened
+  person, 39 or more for an animal.
+- Both states also start a 1.5–4.5 s timer. State 6 does not use it; state 5 uses it only in a hold stance
+  (CharStats +0x128, standing), clearing its own slots each time it runs out.
+
+Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
+
+- **Slots**: the holders are the fighters whose swing at the target has a blow to come. On the same tick, fighters
+  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units.
+- **Engaged list**: removal after a blocked or dodged blow is not modelled.
+- **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
+- **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of
+  side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
+  straight walk keeps to the ring, and face their path; the original faces the target.
+- The crowd test, the hold-stance timer and the +12 while running are not modelled.
+
 
 ## Combat stance
 
 **Observed** (static reading; the animation's combat flag is `AnimationClass +0x244`, the value a clip's `is combat mode` is compared with, [animation](../animation.md#choosing-candidates--14051d660)). One setter, `FUN_14051cc30`, writes it. Set on: every tick of the fight's attack update (`CombatClass::vfunc_11`), and by the combat footwork (`FUN_1402ae1b0`, from a movement flag, not from the target). Cleared by: any new movement goal (`CharMovement::vfunc_18`), the end of the fight task (`CombatClass::vfunc_2`, mode 2), and the chase branch of `CombatClassAI::vfunc_9` (fight states 10 and 11, which also put the movement back to its plain mode 0; every other state sets movement mode 1). When a movement stops (`CharMovement::vfunc_19`) the flag is set to whether the fight task is active (`FUN_140436610`, `CombatClass +0x130`, set at task start). So the stance follows the fight's own steering and is off while the character walks a path to a goal, including a chase of its target along a path (states 10/11). `CombatClassAI::vfunc_9` sets `+0x58` each tick when the navmesh line query between the two (`FUN_1403a56e0`, 1 clear, 0 blocked, −1 failed) returns 0; that, or the two being in different places (a vtable `0x60` id of each differs), or the 2 s chase timer `+0x14c` still running, picks the chase; otherwise the AI picks its target and approach (`FUN_14060c8b0`, state 3) and steers with mode 1.
 
-**Observed** (static reading, the fight steering `FUN_1402af1e0`; its constants are literals in the decompile): the footwork flag `FUN_1402ae1b0` reads is a "running" flag. With gap = distance − (own radius + target's radius), it is set when gap > 90 (> 160 in a steering mode 6, not decoded) and cleared when gap < 70; then forced on while the target is fleeing (`FUN_1402ae0e0`: target's movement in plain mode 0, speed > 9, for 1.5 s on end; the chaser then aims at a lead point). The anim combat flag is `!running`. Speed: up to `min(cap, own max speed)` (the AI's cap is 200, so the max speed), ramping 15 units/s per second; not running it is capped at 18 (16 backing off). So a fighter runs normally from afar and drops into the shuffle within 70 units of its target, distance-driven, whether or not it walks a path.
+**Observed** (static reading, the fight steering `FUN_1402af1e0`; its constants are literals in the decompile): the footwork flag `FUN_1402ae1b0` reads is a "running" flag. With gap = distance − (own radius + target's radius), it is set when gap > 90 (> 160 in a steering mode 6, not decoded) and cleared when gap < 70; then forced on while the target is fleeing (`FUN_1402ae0e0`: target's movement in plain mode 0, speed > 9, for 1.5 s on end; the chaser then aims at a lead point, below). The anim combat flag is `!running`. Speed: up to `min(cap, own max speed)` (the AI's cap is 200, so the max speed), ramping 15 units/s per second; not running it is capped at 18 (16 backing off). So a fighter runs normally from afar and drops into the shuffle within 70 units of its target, distance-driven, whether or not it walks a path.
+
+**Observed** (static reading, `FUN_1402af1e0` → `FUN_1404354d0`; the stat from `FUN_1408866b0` → `FUN_140883a80`): the lead point is the target's position + its velocity (Character vfuncs 9 speed × 10 heading, movement +0xb8 and +0xd0) × `(1 − r) × 2 + 1.2` seconds, recomputed every tick, with r the chaser's CharStats +0x188: its attack play rate (lerp(0.01 (0.6 dex + 0.4 attack), 0.8, 1.2) × G, capped at 1.2, the rate attack clips play at; × 0.8 when `FUN_1405c7fd0(character) == 3`, condition not decoded). So 0.8 s ahead at r = 1.2, 1.6 s at 0.8, more for a slowed attacker; a faster chaser aims past the runner, and since the lead follows the velocity it swings to the new side when the runner turns, and drops as soon as the runner slows under 9 or leaves plain movement (the 1.5 s timer restarts). The steering faces its movement while leading. A second override (`CharMovement::vfunc_28` sets movement +0x168 and a point at +0x16c, the steering's +0x50/+0x54): the chaser heads for that point instead at most 55 u/s, the lead is off, and it clears within 10 units; `CombatClassAI::vfunc_9` skips its chase while it is set. Its caller is **Unknown**.
+
+Meitou (`PursuitSystem`, engine rules): the lead is a path goal, re-pathed when it moves over 12 units (at most every 0.5 s, so a turn can overshoot by ~12 units at a run), and used only while the chaser is behind the target (target velocity · (target − chaser) > 0); level or ahead it goes for the target and stops within reach, so the runner comes into it. A lead off the navmesh falls back to the target. The +0x168 override is not modelled.
 
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
-**Unknown**: the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
+**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
 ## Armour and medical hit
 
@@ -80,6 +186,8 @@ KO/coma/death thresholds use [character-stats](character-stats.md). Never tick m
 
 ## Ranged and turrets
 
+**Shoot At** (context-menu order 235, offered when the lead mans a turret; [ui-input](ui-input.md#context-menu-verbs)): Meitou's `ShootAtOrder` sets `CharacterCold.TurretTarget` on each selected gunner; the turret's target choice then returns that character while it lives and is free (not dead, caged or carried), instead of scoring candidates, and waits while it is out of range or blocked. The order ends when the gunner stops manning. Engine reading (**Unknown** how the original's 235 binds the target to the gunner's controller).
+
 Controller phases reload → steady aim → fire; target motion/range, skill/injury, equipment and
 line of sight determine timing/spread. Bolts retain launch/direction/velocity/impact/friendly-hit
 state and consume ammo charges; do not model hitscan. Turret objects and mounted ammo/reload
@@ -87,9 +195,50 @@ branches differ from carried crossbows. Player/NPC targeting and friendly-fire t
 separate eligibility. The retained field/constant tables and expression list specify decoded
 values; trajectory, aim timing and obstruction uncertainties remain labelled.
 
-Turret aim (**Verified**, `TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`): the turning parts are the BUILDING_PART records with `rotation function` 5; each turns toward the aim point by its angular error
-(yaw about Y, or pitch) limited to ±GUN_DATA `aim speed` × efficiency × frame time, one after the other down the part chain. Movement and its sound counter: [audio.md](../audio.md#other-world-side-events).
-**Unknown:** which target a manned turret picks (`FUN_140437f40`), its idle behaviour, and the wall bonus to the turning speed. Meitou turns turrets only for sound (display only, nearest hostile in `range`; no firing or damage model).
+## Turrets
+
+**Observed** (decompile of `kenshi_x64.exe`; functions cited) unless marked. A turret is fired through its gunner's ranged controller (`Character +0x2f0`), the same one a crossbow uses.
+
+- **Building and gun.** `TurretBuilding` constructor `FUN_14043cdb0` builds a `GunClassTurret` from the BUILDING's `gun turret` GUN_DATA ("Error: turret … has no gun data"
+  without one). The shared loader `FUN_14043baa0` reads `range`, `accuracy perfect skill`, `accuracy deviation at 0 skill`, `aim speed`, `shot speed` (≤ 0 → 1), `num shots`,
+  `reload time min/max`, `barrel pos Y/Z`, `live ammo`, `reload anim`; loaded shots start at 0 (saved as `current shots`, slots 20/21). GUN_DATA has no damage and no `ammo`
+  field (fcs.def `[CROSSBOW,GUN_DATA]` vs `[CROSSBOW]`), so a turret never runs dry.
+- **Damage D** = the building's output value `+0x1a4` (**Verified**: loader `FUN_14029e460` = BUILDING `output rate` × functionality `production mult`, ÷ `max operators`
+  when > 1; tooltip `FUN_14030d620` "Default damage:" shows Building slot 120 `FUN_140297b30` = `+0x1a4` × the research multiplier of a player-owned building (`FUN_14082ec70`,
+  owner test `FUN_140546dd0`)). Base data: harpoon turrets 75, auto/multi 50 (`output rate`, **Verified** probe); walls 10–30.
+- **Gun slots of `GunClassTurret`** (vtable `1416d5258`): 6 target weight `FUN_1404348e0`: 1 when dot(turret facing `+0x458`, target − turret) > 0, else 0.1 for a target outdoors,
+  0 / 0.1 for one inside a building (by a handle and level test, **Unknown** detail); 12 aim direction = the barrel node's +Z (`FUN_140434f40`); 13 aim error = building `+0x448`;
+  18 mount factor M = 1 + 0.01 × the output value of the building in `+0x478` (the `mounted` handle: a wall's turret bonus) (`FUN_1404353b0`); 19 power factor P = 0.8 e + 0.2 (`FUN_140435380`),
+  e = building slot 109 `FUN_140296e00` = 0 when not operational, else hp ratio × power grant; 22/23 pierce ends trunc(0.75 D), trunc(1.25 D).
+- **Manning** (`Task_UseTurret`, update `FUN_1403474f0`): the building of the order's target or the character's `+0x258`; it must be a turret (slot 107 = 8) with a free
+  operator place (slot 159); the gunner faces it and holds clip `combatstance`; unless broken (`+0x3b6`) the controller gets the building and stat 11 Turrets
+  (`FUN_140434570`, also sets it active), the controller ticks, and slot 150 `FUN_140434d20` registers the operator and sets the turning speed `+0x464` = e × `aim speed` × (1 + 0.01 D).
+  Start/end (slots 1/3) set the building's in-use flag; the end clears the controller (`FUN_140437470`). Crossbows use the same controller with stat 35 (`Task_RangedAttack` `FUN_14033bfb0`).
+- **Controller tick** (`FUN_140438c70`): sets the trigger flag `+0x34` every tick (so the fire gate `FUN_14043aee0`, run from the character update `FUN_1405cf130`, works every
+  frame); chooses the target; none → state 3. Empty gun → state 2. In range (`FUN_140436860`: squared distance gunner→target < h × range², h the height factor from the gunner):
+  XP perception and the stat (`FUN_1408c7250`: turrets 1.0, perception 3.0 per second), then the fire decision. With a turret it never walks to the target (blocked or out of range: wait).
+- **Fire decision** (`FUN_140437ad0`): aim error ≤ 1°; the steady timer (0.4 s, reset after a shot or reload) counts down only then; a ray from the muzzle along the barrel
+  (`FUN_140435b40`, mask `0x87f9e07`): a non-hostile character → hold; something nearer than the target → blocked; else fire.
+- **Fire gate** each frame: the reload `FUN_140437ce0` (an empty gun reloads clamp(lerp(s, max, min)), s = 0.01 (0.6 skill + 0.4 dex); XP stat and dexterity while it runs;
+  ammo only used when the gun has an ammo record); while loaded the aim point (target `Bip01 Spine2` + lead, `FUN_140436d10`) goes to the building (slot 5 → `+0x4a8`); with the fire flag, the shot.
+- **Turning** (`TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`, **Verified**): `+0x448` = −99, then while `+0x464` > 0 and someone operates, each `rotation function` 5
+  part turns toward `+0x4a8` by its error (yaw about Y or pitch) limited to ± `+0x464` × frame time, down the part chain; `+0x448` = the largest error (degrees,
+  `FUN_1404cc0d0`). So an unpowered turret does not turn and its error −99 passes the 1° test: it fires where it points. Sounds: [audio.md](../audio.md#other-world-side-events).
+- **Shot** (`FUN_14043a730`): muzzle = barrel node + orientation × (0, `barrel pos Y`, `barrel pos Z`); direction = barrel +Z tilted by `randomDeviant(rand × max(0, lerp(0.005 (skill +
+  perception), deviation, 0)))`; harpoon damage = U[min, max] × P × hM, range = P × range × hM, speed = shot speed × (0.8 P hM + 0.2), h = height factor from the muzzle; friendly
+  avoidance min(1, 0.015 FF); `Attack` on the building's object; the target is told it is attacked (`FUN_140999d50`). The harpoon is a bolt of the gunner (hit `FUN_140439c90`, [Bolt visuals](#bolt-visuals)).
+- **Target choice** (`FUN_140437f40`, `FUN_1404374d0`, score `FUN_140435d70`): the preferred/current target is kept if it still scores and equals the order's; else every
+  sensed character (list category 4, mask 0x210) scores s = (f·g)² with g = 1 − d/(k × range) (k 1), f 1 (0.1 for slot 0x360, ×0.1 for slot 0x368; slot 0x368 > 0 is 0 for a gunner not of
+  the player's faction); dead, `+0x2f8` ≠ 0 or `+0x3d4` (carried) → 0; out of range → 0.001; then × weight (slot 6), × 1.5 when `FUN_1405ca6f0`, + 0.1 when it is the
+  current target; × 0.1 when its sense entry is not seen, × 1.5 for the current; best above 1e-6. None: with the player's **Shoot first** option (`DAT_142134690 +0x11a`) a player gunner takes
+  sensed characters of fundamental type 0 or 8 or a default-hostile faction (k 0.6); an NPC gunner takes default-hostile ones it is aware of (`FUN_14099b820`) and those fighting a member
+  of its own group. An unseen chosen target is looked at (slot 0x3b0).
+- **NPC turret goals** 149/222/234 have list A `isNoEnemiesInVicinity` (with the `*` flag): done, so not chosen, while no enemy is near ([ai-tasks](ai-tasks.md#perma-jobs)).
+- **Unknown:** the meaning of target slots 0x360/0x368 and `FUN_1405ca6f0`; the facing `+0x458`'s writer; how far "vicinity" is; whether `+0x464` resets when the gunner leaves.
+
+- **Save** (**Observed**): a turret saves its building and machine keys and the `mounted` handle only; the aim error, rotation and reload state are not saved ([save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)).
+
+Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `TurretGun`, `TurretFormulas`.
 
 ## Stealth knock-out
 
@@ -155,7 +304,7 @@ below is what the engine uses.
 | attack chance factor | 0.05 | hit roll skew |
 | base block chance | 70 | |
 | block chance increase / reduction per 10 levels | 12 / 15 | stored ×0.1, i.e. 1.2 and 1.5 per level |
-| max num attack slots | 1 | enemies that may melee one target (+ RACE `extra attack slots`) |
+| max num attack slots | 1 | clamped to 1..5 (CombatClass constructor `FUN_14060a9e0`); enemies that may swing at one target (+ RACE `extra attack slots`, [slots](#attack-slots-and-circling)) |
 | damage resistance min / max | -0.65 / 0.65 | toughness resistance range |
 | damage resistance randomised | False | present in the file only: the loader never reads it (no such string in the executable) |
 | knockout mult 1 / 99 | 3 / 0.75 | KO time scale by toughness |
@@ -198,21 +347,73 @@ below is what the engine uses.
 | Oldworld Bow MkII | 35/45 | 45/60 | 800/1200 | 4/2.2 | 8/6.5 | 4/2.2 | 80 | 500/600 | Bolts [Regulars] (30) |
 | Spring Bat | 30/50 | 40/80 | 400/550 | 4.5/3.5 | 6/8 | 8/4 | 70 | 500/600 | Bolts [Heavies] (20) |
 
+### Bolt visuals
+
+**Observed** (decompile; `Harpoon` +0x70 state 0 recycle, 1 flying, 2 hit a character, 3 landed): each bolt is one hardware-instanced entity of the
+CROSSBOW `live ammo` mesh (one `HarpoonManager_<mesh>` per mesh) with the gun's material, its local +z along the flight (`setDirection(dir, TS_WORLD,
+UNIT_Z)`), scaled (1, 1, max(1, speed x 0.005)) in flight as a fake motion blur and 1 once it hits; no trail. A bolt past its range pitches down 8°
+a second about world x and is recycled at range -5000. Landed (`FUN_14043acf0`): exactly at the hit point, flight orientation kept, a world node;
+terrain hits under |dot(normal, dir)| 0.1 vanish; objects and buildings land with the "Stone" impact switch; above `harpoonLimit` (60) the landed bolt
+with the longest flight time goes. In a character (`FUN_1406508d0` -> wound record -> `FUN_14052bfa0`): every hitting bolt sticks, attached to the
+struck part's `bone name` (or `bone name 2` half the time, `FUN_140649fd0`; the root without the bone) at 0.6 x a random vertex of the body on the
+bolt's side (back when it flew the way the character faces), keeping its world orientation in the bone's frame; no timer, cap or `harpoonLimit`;
+all go at once when first aid leaves no wound (`FUN_14064d800` -> `FUN_14052bc10`) or the appearance reloads; not recoverable. Meitou: the debris
+renderer draws them (in flight interpolated between ticks); a stuck bolt sits 2 units back along its flight from its bone's origin (engine choice for
+the random vertex), not saved.
+
+### Shot origin and flight collision
+
+**Observed** (decompile and disassembly). Origin: the fire gate (`FUN_14043aee0`) refreshes the gun (slot 2 `FUN_1404351f0`) from the crossbow's scene
+node in the shooter's `hands` (`Bip01 Prop2` with the attach offset; without built meshes the character's position + (0, 10, 0)); the muzzle (slot 9
+`FUN_140434fc0`) is that node's world position + its orientation x (`barrel pos Y`, `barrel pos Z`, 0), the place of loaded bolt 0 (base game: (-1, 5.9, 0),
+Spring Bat (-1, 1.75, 0)). The direction is normalise(aim point - muzzle) (slot 12), the aim point the target's `Bip01 Spine2` (`Spine1` for some targets)
+plus a velocity lead whose form is **Unknown**, tilted by `randomDeviant(random x deviation)`. Flight: each frame a ray from the bolt along its z on the physics
+thread (raycastClosestShape, group mask `0x087fde47`, read one frame late); a hit counts within 2 x the step. Groups tested: 0 and 1 (characters among them),
+2 terrain, 6 and 14 foliage, 9-12 building floors, 15-18 stairs, 19-22 furniture, 27 unwalkable roofs; not ragdolls, items, doors, interior hulls or
+passable parts. The shooter is skipped (`FUN_1400cd0b0`). Meitou: the simulation fires from a fixed point 15 up and 8 ahead (`RangedTuning.Barrel*`, measured
+from the posed muzzle) and tests the terrain and the buildings' collision (`SolidHits`; no foliage); the renderer draws a new bolt from the shooter's posed
+muzzle and closes the gap to its simulated flight over 150 units (`GameHost.LaunchBlend`).
+
+### Arms
+
+**Observed** (decompile and disassembly). The medical object (Character +0x458) holds two arm-usable bytes, right +0x5bd and left +0x5be, set every tick
+(`FUN_140649320`): an arm is out when a part whose `collapse part` has its bit (2 right, 4 left) is a stump or crushed, or is down (flesh - stun + rig < 0;
+`FUN_140644450`); an original or fitted prosthetic limb passes. Planner conditions 38 `hasOneWorkingArm` (either) and 161 `hasTwoWorkingArm` (both;
+`FUN_140998470`, `FUN_1409984d0`). Weapon categories 3 Heavy, 6 Bow (every crossbow, `FUN_140898c90`) and 8 Polearms need both arms; the rest only the right
+(`FUN_1409991d0`, weapon choice `FUN_1405c97a0`). Without both, the shooting gate (`FUN_1407f2840`) fails: attack orders stay melee (`FUN_1407f9e20`) and the
+Shooting tasks 262/263/266 (condition 161) are not planned; an arm's change puts the held weapon away (`FUN_1405cc230`): a two-arm one on either arm, another
+when an arm it needs is out. The melee weapon drawn (`FUN_140345c10`; hip and back are the first item of the `hip` and `back` sections, `FUN_140747c30`,
+`FUN_140747e00`): right arm out, none (fists); right only, the hip one; both, the back one unless it is a crossbow, else the hip one. The hip one replaces a drawn
+back one only when it rates higher by Item vtable +0x378, which returns 0 for every WEAPON and CROSSBOW (`FUN_1408a52d0`), so never. **Observed**, not built:
+with both arms, `FUN_140334250` keeps the weapon held instead of drawing the back one; it is true when the character's location resolves to a building whose
++0xc2 byte is 0 (indoors?). Meitou: `MedicalState.ArmWorks` (also carrying and swimming); `Fighter.Weapon` takes back or hip by the arms each tick
+(`Fighter.SetArms` in the combat Act, a change redraws), the appearance gives the first hip and back weapons both mesh sets (`WeaponShown.Back*`, snapshot
+`BackDrawn`); the crossbow needs both arms (`CombatSystem` ranged switch) and the planner conditions read them. A two-arm category at the hip with one arm is not
+traced.
+
 ### Unknowns of the ranged path
 
-The ranged-or-melee switch; what sets the trigger flag (the time between the decision and the shot); the reload animation against the timer; a character's hit shape
-(capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; turret
-target choice and states; how NPC crossbowmen get their bolts.
+**The ranged-or-melee switch** (**Observed**; no single function decides it). The Ranged order button sets a per-character flag (Character `+0x450` object `+0x129`,
+`FUN_1405caa50` id 0x11, from the panel's click `FUN_140721550` through `FUN_1407f3880`). The shooting gate `FUN_1407f2840` needs it, then both arms working, a ranged weapon in the
+hands or at the back, and `vfunc 0x368` of the character zero (the player-side test `FUN_1405caa50` also uses). Where the gate holds, the player's attack orders (5, 0x10, 0x3d) become
+the shoot orders 0x106 / 0x107 / 0x10a (`FUN_1407f9e20`), i.e. the Shooting tasks 262 / 263 / 266 ([ai-tasks](ai-tasks.md)), whose list A needs `!iAmBeingMeleeAttacked immediate`,
+`hasTwoWorkingArm` and `hasWeaponEquipped`; where it does not, attack orders stay melee. The attack-on-sight post and area test `FUN_140598630` skips its 80 / 140 unit melee
+reach limits when the gate holds, so a Ranged-on crossbowman engages from afar. Nothing was found that switches back by the target's distance: melee comes from the planner
+dropping the Shooting task when a melee attacker is on the character (the condition's writer is **Unknown**). Meitou: `CombatSystem.ChooseMode` follows that for the Ranged order
+(crossbow unless dry or a melee attacker is on it) and, with the order off, uses its distance rule (an **engine choice**; the original, with the flag off, never issues the shoot
+orders of the player's characters). The flag's default for NPCs and whether the planner's own Shooting rows read it are **Unknown**. Other unknowns: the reload animation against the timer; a character's hit shape
+(capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; how NPC crossbowmen get their bolts.
+(The trigger flag `+0x34` is set by the controller tick itself every tick, so a shot leaves in the frame of its decision: [Turrets](#turrets), **Observed**.)
 
 ## Unknowns
 
 - KO wake-up, flags `+0x162`/`+0x163`, and the roles of hunger and "fed" in recovery; (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)); where the KO point (`140643ae0`) is consumed.
-- Attacker-side technique choice (which technique an attacker starts, using min/max skill, encumbrance, distance); whether `140887970` tests min/max skill. Attack-slot AI (`14060a9e0` and neighbours), aggression,
-  stance and target selection. The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
+- Target selection weights and predicates ([Attack slots](#attack-slots-and-circling)), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
+  min/max gap (the defence pick `140887970` tests no skill, **Observed**). The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
-- Turrets (target choice and states; see [Ranged and turrets](#ranged-and-turrets) for what is known and its own unknowns); the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
+- Turrets: see [Turrets](#turrets) for its own unknowns; the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
 - Whether the +20 guarding state of the block chance is the state the HUD's Block stance sets ([ui-screens.md](ui-screens.md#4-hud-mainbargui)).
-- What `anim hesitate point` (stored as a frame fraction, no reader found) and `max encumbrance` do; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
+- What `anim hesitate point` (stored as a frame fraction, no reader found) does; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.
 
 ## Expression reference
@@ -223,5 +424,5 @@ target choice and states; how NPC crossbowmen get their bolts.
 
 Evidence scopes below apply only to their named sources/checks.
 
-- Turrets (secondary; **Observed** from `GunClassTurret` and the tooltip `FUN_14030d620`)
+- Turrets (**Observed** from `GunClassTurret`, `TurretBuilding`, `Task_UseTurret` and the ranged controller; damage loader **Verified**; GUN_DATA and turret BUILDING fields **Verified** by a probe of the install)
 - AI (**Observed**)

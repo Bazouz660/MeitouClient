@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -26,7 +26,11 @@ static class CharacterShaders
         Worn = 1 << 14,
         // Textures a part has but that are not resident yet (they stream in): the one giving its cut-out (the part is not drawn until it is), the head's
         // diffuse and normal map (the head's region shows the skin stand-in and a flat normal, not the body texture's transparent border).
-        AlphaPending = 1 << 15, HeadPending = 1 << 16, HeadNormalPending = 1 << 17;
+        AlphaPending = 1 << 15, HeadPending = 1 << 16, HeadNormalPending = 1 << 17,
+        // Skin that scatters light (the Meitou skin switch, docs/character-renderer.md "Skin"): a person's body, not a robot's.
+        Skin = 1 << 18,
+        // An icon whose mesh has vertex colours (the game's RTTIcons_Coloured): they multiply the albedo.
+        VertexColoured = 1 << 19;
     // Shading modes.
     public const uint ShadeItem = 0, ShadeBody = 1, ShadeHair = 2;
     // Texture slots (CharacterMaterialRecord.Tex).
@@ -37,6 +41,7 @@ static class CharacterShaders
             vec3 flatColour;
             uint depthIndex;
             vec4 fill;          // rgb; a unused
+            uint skinLut;       // the skin scattering table's bindless index (SkinScattering), 0: the switch is off
         """;
 
     static readonly string Structs = $$"""
@@ -47,7 +52,7 @@ static class CharacterShaders
             uint vestCount;
             float alphaThreshold;
             uint tex[{{TextureSlotCount}}];
-            vec4 shirtColour;
+            vec4 shirtColour;    // w: an item's gloss multiplier (an icon's material `specular mult`; 1 otherwise)
             vec4 skinTone;
             vec4 hairColour;
             vec4 hairAlpha;
@@ -72,7 +77,7 @@ static class CharacterShaders
         layout(location = 1) in vec3 aNormal;
         layout(location = 2) in vec2 aUv;
         layout(location = 3) in vec4 aTangent;
-        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's limb bits (bit k: limb slot k)
+        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's limb bits (bit k: limb slot k), z: curvature (1 / radius)
         layout(location = 5) in uvec4 aBones;
         layout(location = 6) in vec4 aWeights;
         layout(location = 7) in vec4 aInstance0;
@@ -86,6 +91,7 @@ static class CharacterShaders
         //MOTION_BUF
 
         out vec3 vWorld;
+        out float vCurvature;   // the skin's curvature, baked per vertex (CharacterContent.MarkCurvature)
         out vec3 vNormal;
         out vec4 vTangent;
         out vec2 vUv;
@@ -93,6 +99,7 @@ static class CharacterShaders
         flat out uint vInterior;
         out float vHidden;
         //MOTION_OUT
+        out vec4 vColour;
 
         void main()
         {
@@ -109,11 +116,13 @@ static class CharacterShaders
             uint slot = floatBitsToUint(aColour.x);
             if (aInstanceData.w != 0u && slot != 0u && slot < 0x1000000u) local += morphs.deltas[aInstanceData.w + slot].xyz;
             vec4 p = world * vec4(local, 1.0);
+            vCurvature = aColour.z;
             vWorld = p.xyz + view.eye;   // the instances are relative to the eye (CharacterRenderer.DrawView)
             mat3 n = mat3(world);
             vNormal = n * aNormal;
             vTangent = vec4(n * aTangent.xyz, aTangent.w);
             vUv = aUv;
+            vColour = aColour;   // an icon mesh's own vertex colours (a body's carry the morph slot and limb bits: only icons read them)
             vMaterial = aInstanceData.y;
             vInterior = aInstanceData.z & 1u;
             // Hidden limbs (docs/characters.md "Hidden body parts"): the body's vertices of a limb whose bit 12 + k the instance carries; the fragments discard where it is above 0.
@@ -155,20 +164,36 @@ static class CharacterShaders
         vec4 tex(uint i, vec2 uv) { return texture(textures2D[nonuniformEXT(i)], uv); }
         """;
 
-    public static string Fragment() => "#version 450\n" + NativeShaders.Prelude(PushMembers) + NativeShaders.AtmosphereFunctions + Structs + Lookup + """
+    /// <summary>
+    /// How many times more curved the skin is taken to be than it is (a look, not physics): at true size the profile's millimetres barely touch a face's
+    /// 5 to 8 cm radius (the terminator's red at N.L 0 goes from 0.016 to 0.019); 30 puts a face near r = 2 mm, red about 0.16 there, a tail past N.L -0.2.
+    /// </summary>
+    public const float SkinScatterScale = 30;
+
+    /// <summary>
+    /// The skin's curvature (1 / radius in world units) to the table's axis (<see cref="SkinScattering.MaxInverseRadiusMm"/> at 1): 1 unit = 100 mm
+    /// (docs/formats/terrain.md, Observed: decimetres fit the bodies' sizes), times <see cref="SkinScatterScale"/>.
+    /// </summary>
+    const float SkinCurvatureScale = SkinScatterScale / (100f * SkinScattering.MaxInverseRadiusMm);
+
+    static string F(float v) => v.ToString("0.0########", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static string Fragment() => "#version 450\n" + NativeShaders.Prelude(PushMembers) + "#define LAMP_SKIN\n" + NativeShaders.AtmosphereFunctions + Structs + Lookup + $$"""
         in vec3 vWorld;
+        in float vCurvature;
         in vec3 vNormal;
         in vec4 vTangent;
         in vec2 vUv;
         flat in uint vMaterial;
         flat in uint vInterior;
         in float vHidden;
+        in vec4 vColour;
         layout(location = 0) out vec4 fragColour;
 
         bool flag(uint f, uint bit) { return (f & bit) != 0u; }
 
-        // A clothing "vest" layer drawn on the body (docs/characters.md): the coverage is the vest normal map's alpha.
-        void vest(uint d, uint nm, uint c, bool coloured, vec3 shirt, vec2 uv, inout vec3 albedo, inout vec4 normalMap, inout float gloss)
+        // A clothing "vest" layer drawn on the body (docs/characters.md): the coverage is the vest normal map's alpha (skin: what it leaves bare).
+        void vest(uint d, uint nm, uint c, bool coloured, vec3 shirt, vec2 uv, inout vec3 albedo, inout vec4 normalMap, inout float gloss, inout float skin)
         {
             vec4 v = tex(d, uv);
             vec4 vn = tex(nm, uv);
@@ -176,23 +201,53 @@ static class CharacterShaders
             albedo = mix(albedo, v.rgb, vn.a);
             normalMap.wy = mix(normalMap.wy, vn.xy, vn.a);
             gloss = mix(gloss, v.a, vn.a);
+            skin *= 1.0 - vn.a;
         }
+
+        // The Meitou skin's sun term in place of the clamped N.L (docs/character-renderer.md "Skin"; SkinScattering): the pre-integrated table at the surface's
+        // curvature, read per channel with its own normal, red nearest the smooth geometric one (light that travels farther under the skin sees less of the bumps).
+        // curvature: 1 / radius in world units; share: how much of the fragment is bare skin. The light the table adds over the plain term takes the skin's own hue,
+        // saturated (albedo over its brightest channel, squared): red-orange on human skin as the table has it, amber or green on hive chitin, any modded race its own.
+        vec3 skinDiffuse(vec3 n, vec3 geometric, vec3 l, float curvature, float share, vec3 albedo)
+        {
+            float lambert = clamp(dot(n, l), 0.0, 1.0);
+            if (share <= 0.0) return vec3(lambert);
+            vec3 nl = vec3(dot(normalize(mix(n, geometric, 0.6)), l), dot(normalize(mix(n, geometric, 0.3)), l), dot(n, l));
+            vec3 u = (nl * 0.5 + 0.5) * {{F((SkinScattering.Width - 1f) / SkinScattering.Width)}} + {{F(0.5f / SkinScattering.Width)}};
+            float v = sqrt(clamp(curvature * {{F(SkinCurvatureScale)}}, 0.0, 1.0)) * {{F((SkinScattering.Height - 1f) / SkinScattering.Height)}} + {{F(0.5f / SkinScattering.Height)}};
+            uint t = pc.skinLut;
+            vec3 s = vec3(textureLod(textures2D[t], vec2(u.r, v), 0.0).r, textureLod(textures2D[t], vec2(u.g, v), 0.0).g, textureLod(textures2D[t], vec2(u.b, v), 0.0).b);
+            // Only what it adds over the plain term: the table also takes red from the lit side (energy it moves into the shadow), which turned sunlit skin cyan-grey;
+            // only the warm band past the terminator is wanted.
+            float extra = max(max(s.r, max(s.g, s.b)) - lambert, 0.0);
+            vec3 hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
+            return vec3(lambert) + extra * hue * hue * share;
+        }
+
+        // The lamps' diffuse term (LampShaders, LAMP_SKIN): the same skin as the sun's, from what main sets before lighting (no skin: plain N.L).
+        vec3 skinGeometric = vec3(0.0, 1.0, 0.0), skinAlbedo = vec3(1.0);
+        float skinCurvature = 0.0, skinShare = 0.0;
+        vec3 lampSkinDiffuse(vec3 n, vec3 l) { return skinDiffuse(n, skinGeometric, l, skinCurvature, skinShare, skinAlbedo); }
 
         void main()
         {
+            vec3 geometric = normalize(vNormal);
+            float curvature = vCurvature;
             if (vHidden > 0.0) discard;
             if (pc.depthIndex != 0u) { fragColour = vec4(pc.flatColour, 1.0); return; }
             CharMaterial m = materials.items[vMaterial];
             uint f = m.flags;
             if (flag(f, 32768u)) discard;   // its cut-out is still streaming in: a solid card would show
-            vec3 n = normalize(vNormal);
+            vec3 n = geometric;
             if (!gl_FrontFacing) n = -n;
+            bool icon = view.fogDistance < 0.0 && view.fogDistance > -1.5;   // an inventory icon (CharacterRenderer.DrawIcon)
             vec2 uv = vUv;
             vec3 albedo = vec3(0.72);
             float gloss = 0.2;
             vec4 nm = vec4(0.5, 0.5, 1.0, 0.5);
             bool swizzled = flag(f, 4u);
             bool cut = false;
+            float skin = 0.0;                         // how much of the fragment is bare skin (the Meitou skin switch)
 
             if (m.shading == 2u)
             {
@@ -205,6 +260,7 @@ static class CharacterShaders
             else if (m.shading == 1u)
             {
                 vec4 body = flag(f, 1u) ? tex(m.tex[0], uv) : vec4(0.7, 0.6, 0.5, 0.2);
+                skin = flag(f, 262144u) && pc.skinLut != 0u ? 1.0 : 0.0;
                 if (flag(f, 2u)) nm = tex(m.tex[1], uv);
                 // The original's muscleBlend: towards the strong or the skinny body normal map (skinTone.w, 0 while that map is not resident).
                 if (flag(f, 2u) && m.skinTone.w > 0.0) nm = mix(nm, tex(m.tex[18], uv), m.skinTone.w);
@@ -219,24 +275,29 @@ static class CharacterShaders
                 if (flag(f, 128u))
                 {
                     vec4 h = tex(m.tex[7], huv);
-                    body.rgb = mix(body.rgb, m.hairColour.rgb * clamp(dot(h, m.hairMult), 0.0, 1.0), clamp(dot(h, m.hairAlpha), 0.0, 1.0));
+                    float cover = clamp(dot(h, m.hairAlpha), 0.0, 1.0);
+                    body.rgb = mix(body.rgb, m.hairColour.rgb * clamp(dot(h, m.hairMult), 0.0, 1.0), cover);
+                    skin *= 1.0 - cover;
                 }
                 if (flag(f, 256u))
                 {
                     float b = clamp(dot(tex(m.tex[8], huv), m.beardAlpha), 0.0, 1.0);
                     body.rgb = mix(body.rgb, m.hairColour.rgb * b, b);
+                    skin *= 1.0 - b;
                 }
                 albedo = body.rgb;
                 gloss = body.a;
                 // vestCount: a bit per worn layer whose textures are resident (one still streaming in is left out, not drawn black).
-                if ((m.vestCount & 1u) != 0u) vest(m.tex[9], m.tex[10], m.tex[11], flag(f, 2048u), m.shirtColour.rgb, uv, albedo, nm, gloss);
-                if ((m.vestCount & 2u) != 0u) vest(m.tex[12], m.tex[13], m.tex[14], flag(f, 4096u), m.shirtColour.rgb, uv, albedo, nm, gloss);
-                if ((m.vestCount & 4u) != 0u) vest(m.tex[15], m.tex[16], m.tex[17], flag(f, 8192u), m.shirtColour.rgb, uv, albedo, nm, gloss);
+                if ((m.vestCount & 1u) != 0u) vest(m.tex[9], m.tex[10], m.tex[11], flag(f, 2048u), m.shirtColour.rgb, uv, albedo, nm, gloss, skin);
+                if ((m.vestCount & 2u) != 0u) vest(m.tex[12], m.tex[13], m.tex[14], flag(f, 4096u), m.shirtColour.rgb, uv, albedo, nm, gloss, skin);
+                if ((m.vestCount & 4u) != 0u) vest(m.tex[15], m.tex[16], m.tex[17], flag(f, 8192u), m.shirtColour.rgb, uv, albedo, nm, gloss, skin);
                 swizzled = true;                          // character normals: X in alpha, Y in green
             }
             else
             {
-                vec4 d = flag(f, 1u) ? tex(m.tex[0], uv) : vec4(0.72, 0.72, 0.72, 0.2);
+                // An icon's missing texture map is white (the game binds a white texture); the world's items show grey.
+                vec4 d = flag(f, 1u) ? tex(m.tex[0], uv) : icon ? vec4(1.0) : vec4(0.72, 0.72, 0.72, 0.2);
+                if (flag(f, 524288u)) d.rgb *= vColour.rgb;
                 bool clip = flag(f, 512u);
                 if (flag(f, 2u) || clip) nm = tex(m.tex[1], uv);
                 vec3 cm = flag(f, 1024u) ? tex(m.tex[2], uv).rgb : vec3(0.0);
@@ -251,7 +312,7 @@ static class CharacterShaders
                 albedo = d.rgb;
                 // A worn item's material (the Skinned template, skin.hlsl) has glossMult 0: nothing sets it, so worn clothing is matte; an attached item with
                 // its own mesh (the StaticObject template) keeps 1.
-                gloss = flag(f, 16384u) ? 0.0 : d.a;
+                gloss = flag(f, 16384u) ? 0.0 : d.a * m.shirtColour.w;
             }
             if (cut) discard;
             // The game writes character albedo darkened: 0.7 for bodies, heads and hair (character.hlsl DARKEN), 0.8 for worn items (skin.hlsl); not its icons (rtticons.hlsl,
@@ -259,12 +320,13 @@ static class CharacterShaders
             // An item attached with its own mesh (StaticObject, not Worn) is not darkened.
             if (view.fogDistance > -0.5 || view.fogDistance < -1.5) albedo *= m.shading != 0u ? 0.7 : flag(f, 16384u) ? 0.8 : 1.0;
 
+            vec3 smoothNormal = n;
             if (flag(f, 2u) && m.shading != 2u && dot(vTangent.xyz, vTangent.xyz) > 1e-8)
             {
                 vec3 t = normalize(vTangent.xyz - n * dot(n, vTangent.xyz));
                 // cross(n, t) * w is the game's binormal (the mesh's BINORMAL times its w, Model.Build gameBinormals); worn items flip their maps' green (skin.hlsl), so
-                // their binormal is the opposite.
-                vec3 b = (flag(f, 16384u) ? cross(t, n) : cross(n, t)) * vTangent.w;
+                // their binormal is the opposite; an icon's is cross(t, n) times the tangent's own w (rtticons, Model.Build tangentSign).
+                vec3 b = (flag(f, 16384u) || icon ? cross(t, n) : cross(n, t)) * vTangent.w;
                 vec3 tn;
                 if (swizzled) { vec2 xy = vec2(nm.a, nm.g) * 2.0 - 1.0; tn = vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy)))); }
                 else tn = nm.xyz * 2.0 - 1.0;
@@ -276,17 +338,28 @@ static class CharacterShaders
             gloss = clamp(gloss, 0.0, 1.0);
             vec3 colour;
             giInterior = vInterior != 0u;
-            if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld);
-            // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight).
-            else if (view.fogDistance < -1.5) colour = stageLight(albedo, n, v, normalize(view.lightDir), gloss);
+            skinGeometric = smoothNormal; skinCurvature = curvature; skinShare = skin; skinAlbedo = albedo;
+            if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld, skinDiffuse(n, smoothNormal, uAtmoLight.xyz, curvature, skin, albedo));
+            // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight); -3 the same unclamped (Meitou's stage and
+            // portraits, which also take the Meitou skin; the game's stage keeps its plain N.L).
+            else if (view.fogDistance < -1.5)
+            {
+                vec3 l = normalize(view.lightDir);
+                colour = stageLight(albedo, n, v, l, gloss, view.fogDistance < -2.5, skinDiffuse(n, smoothNormal, l, curvature, view.fogDistance < -2.5 ? skin : 0.0, albedo));
+            }
             else if (view.fogDistance < 0.0)
             {
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient
                 // (CalcPunctualLight: diffuse = pi * N.L * (1 - mean specular colour), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.4). The game stores that linear
                 // result as it is in an 8-bit target, so the icon target is UNORM, not sRGB (the lit values match the saved pictures: backpack mean 133 102 77 computed, 142 114 91 saved).
+                // The game's REFLECTION term lerps the albedo towards its cube (the reflectionMap alias) by gloss^2; which cube the game binds is unknown, and a constant mid
+                // grey fits its saved pictures (docs/game/ui-screens.md "Item icons"). rtticons.hlsl negates the
+                // normal, the light and -normalize(world position) together, so with the normal unnegated here the view vector is +normalize of the world position:
+                // from the item's origin, not to the camera.
                 const float PI = 3.14159265;
+                albedo = mix(albedo, vec3(0.5), gloss * gloss);
                 vec3 l = normalize(view.lightDir);
-                vec3 hv = normalize(v + l);
+                vec3 hv = normalize(normalize(vWorld) + l);
                 float nl = clamp(dot(n, l), 0.0, 1.0), lh = clamp(dot(l, hv), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0);
                 float rough = 1.0 - gloss * 0.99, alpha = rough * rough, alphaSqr = alpha * alpha;
                 float denom = max(1e-6, nh * nh * (alphaSqr - 1.0) + 1.0);
@@ -301,11 +374,13 @@ static class CharacterShaders
             {
                 vec3 l = normalize(view.lightDir);
                 float diff = max(dot(n, l), 0.0);
+                // The portraits' plain model takes the Meitou skin too (the switch, per race).
+                vec3 diffSkin = skinDiffuse(n, smoothNormal, l, curvature, skin, albedo);
                 vec3 ambient = mix(vec3(0.22, 0.20, 0.18), vec3(0.42, 0.45, 0.50), 0.5 + 0.5 * n.y);
                 vec3 h = normalize(l + v);
                 float spec = pow(max(dot(n, h), 0.0), 8.0 + 56.0 * gloss) * gloss * 0.5;
                 vec3 sunLight = vec3(1.0, 0.97, 0.92);
-                colour = albedo * (ambient + diff * sunLight) + spec * diff * sunLight;
+                colour = albedo * (ambient + diffSkin * sunLight) + spec * diff * sunLight;
             }
             // A presentation fill (CharacterRenderer.Fill, 0 in play): ambient light, stronger towards the silhouette as a back light rims it.
             if (view.fogDistance > 0.0) colour += albedo * pc.fill.rgb * (1.0 + 2.0 * pow(1.0 - max(dot(n, v), 0.0), 3.0));
@@ -389,7 +464,7 @@ struct CharacterMaterialRecord
 [InlineArray(CharacterShaders.TextureSlotCount)]
 struct TextureSlots { uint first; }
 
-/// <summary>The C# side of the push block (<c>flatColour</c>, <c>depthIndex</c>, <c>fill</c>): 32 bytes. <c>DepthIndex</c> is the near depth texture's bindless index in the motion pass and 0 otherwise.</summary>
+/// <summary>The C# side of the push block (<c>flatColour</c>, <c>depthIndex</c>, <c>fill</c>, <c>skinLut</c>): 36 bytes. <c>DepthIndex</c> is the near depth texture's bindless index in the motion pass and 0 otherwise.</summary>
 [StructLayout(LayoutKind.Sequential)]
 struct CharacterPush
 {
@@ -397,6 +472,8 @@ struct CharacterPush
     public uint DepthIndex;
     /// <summary>The colour pass's fill light (<see cref="CharacterRenderer.Fill"/>; w unused).</summary>
     public Vector4 Fill;
+    /// <summary>The skin scattering table's bindless index (<see cref="SkinScattering"/>), 0 while the <c>skin</c> switch is Faithful.</summary>
+    public uint SkinLut;
 }
 
 /// <summary>One instance (144 bytes): the model matrix whose rows the vertex program reads, the palette's first bone, the material's index, the morph base and last frame's matrix.</summary>

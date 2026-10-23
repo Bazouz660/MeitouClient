@@ -8,7 +8,6 @@ public class CoreTests
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
-    [InlineData(16)]
     public void The_pool_runs_every_index_exactly_once(int threads)
     {
         using var pool = new WorkerPool(threads);

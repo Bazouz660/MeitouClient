@@ -74,24 +74,12 @@ public static class Speed
     /// <summary>The swim speed (<b>Verified</b>, <c>FUN_140885eb0</c>): swim speed mult x swimming x 0.02 clamped to [6, 25], x the leg, hunger, limb-item (all four limbs) and encumbrance factors, x 0.6 per unusable arm; at least 4, and 1 with no usable arm.</summary>
     public static float Swim(RaceData race, CharacterStats stats, MedicalState medical, float encumbranceFactor)
     {
-        bool left = ArmUsable(medical, 4), right = ArmUsable(medical, 2);
+        bool left = medical.ArmWorks(left: true), right = medical.ArmWorks(left: false);
         if (!left && !right) return 1;
         float legs = LegFactor(medical) * (left ? 1 : 0.6f) * (right ? 1 : 0.6f);
         float items = medical.LegItemFactor(StatsEnumerated.Swimming) * medical.ArmItemFactor(StatsEnumerated.Swimming);
         float s = Math.Clamp(race.SwimSpeedMult * stats[StatsEnumerated.Swimming] * 0.02f, 6, 25) * HungerFactor(medical.Hunger) * items * legs * encumbranceFactor;
         return MathF.Max(s, 4);
-    }
-
-    /// <summary>An arm (<paramref name="bit"/>: <c>collapse part</c> 4 left, 2 right) is usable unless a part with that bit is collapsed or the arm is a stump (<b>Verified</b> for the left arm, docs/game/carry-loot.md; the right one is the mirror byte).</summary>
-    static bool ArmUsable(MedicalState medical, int bit)
-    {
-        foreach (var p in medical.PartSpan)
-        {
-            if ((p.Template.CollapsePart & bit) == 0) continue;
-            if (p.Template.Collapses && p.IsDown) return false;
-            if (p.Template.LimbSlot == (bit == 4 ? 0 : 1) && p.Limb == LimbState.Stump) return false;
-        }
-        return true;
     }
 
     /// <summary>

@@ -39,7 +39,7 @@ sealed partial class PlayerInterface
             soundScreens.Remove(id);
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
+                case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
                 case "stats": Sound("Stats_Close"); break;
                 case "overview": if (soundOverviewTab == 0) Sound("Map_Close"); else if (soundOverviewTab == 2) Sound("Tech_Close"); soundOverviewTab = -1; break;
                 case "menu": Sound("General_Click"); break;
@@ -50,7 +50,7 @@ sealed partial class PlayerInterface
             if (!soundScreens.Add(id)) continue;
             switch (id)
             {
-                case "inventory" or "bag" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
+                case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
                 case "stats": Sound("Stats_Open"); break;
                 case "build": Sound("Building_Button"); break;
                 case "menu": Sound("General_Click"); break;
@@ -171,7 +171,7 @@ sealed partial class PlayerInterface
     static readonly HashSet<string> OrderCommands = new(StringComparer.Ordinal)
     {
         "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "OpenLootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
-        "OperateOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder",
+        "OperateOrder", "PutInBedOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder", "UseBedOrder",
     };
 
     /// <summary>A command the player is about to send: orders sound as the exe's order dispatcher (1407f9e20), item moves and trades as the inventory handlers.</summary>
@@ -180,12 +180,18 @@ sealed partial class PlayerInterface
         if (UiSound is null) return;
         switch (command)
         {
-            case Meitou.Simulation.Items.MoveInventoryItem move: Sound("Item_Drop", item: move.Item.Record); return;
-            case Meitou.Simulation.Items.DropInventoryItem drop: Sound("Item_Drop", item: drop.Item.Record); return;
             case Meitou.Simulation.Trading.BuyItem buy: Sound("Sell_Item", item: buy.Item.Record); return;
             case Meitou.Simulation.Trading.SellItem sell: Sound("Sell_Item", item: sell.Item.Record); return;
+            // A right-click move (FUN_140713d20) sounds as a lift, not a drop; money turned into cats in the player's own window is silent.
+            case Meitou.Simulation.Items.QuickMoveItem quick:
+                if (gameData?.Find(quick.Item.Record)?.GetInt("item function") != PlayerSystem.MoneyFunction) Sound("Item_Lift", item: quick.Item.Record);
+                return;
+            case Meitou.Simulation.Carrying.TakeLootItem take: Sound("Item_Lift", item: take.Item.Record); return;
+            case Meitou.Simulation.Carrying.PutLootItem put: Sound("Item_Lift", item: put.Item.Record); return;
+            case Meitou.Simulation.Production.PutInMachine machine: Sound("Item_Lift", item: machine.Item.Record); return;
+            case Meitou.Simulation.Production.TakeFromMachine: Sound("Item_Lift"); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).
-            case Meitou.Simulation.Production.AddJob: Sound("Permanent_Job"); return;
+            case Meitou.Simulation.Production.AddJob or Meitou.Simulation.Production.AddOrderJob: Sound("Permanent_Job"); return;
             case Meitou.Simulation.FirstAid.MedicJobCommand { Job: true } or Meitou.Simulation.Carrying.RescueJobCommand { Job: true }: Sound("Permanent_Job"); return;
         }
         string name = command.GetType().Name;

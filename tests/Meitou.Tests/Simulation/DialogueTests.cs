@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Dialogue;
 using Meitou.Data.World;
 using Meitou.Simulation;
@@ -282,6 +283,76 @@ public class DialogueTests
         Assert.Equal((boss, "What do you want?"), (talk.Npc, talk.Text));
     }
 
+    /// <summary>
+    /// A slaver of the jail town's faction whose reply carries DA 42 (CHOOSE_SLAVES_BUYING) lists its caged slave at the formula price, trunc(20 + 15 + 10.4) x 100 (docs/game/economy.md
+    /// 12); buying it takes the money and frees it from cage and slavery, without joining the hero's squad.
+    /// </summary>
+    [Fact]
+    public void Buying_a_caged_slave_lists_it_at_its_value_and_paying_frees_it()
+    {
+        var data = ArrestTests.Town([
+            Rec("slaver-c", FcsRecordType.CHARACTER, r => { r.Name = "Slaver"; r.References["dialogue"] = [Ref("trade-d")]; }),
+            Rec("buy-da", FcsRecordType.DIALOG_ACTION, r => r.Ints["action name"] = 42),
+            Rec("trade-d", FcsRecordType.DIALOGUE, r => r.References["lines"] = [Ref("trade-l")]),
+            Rec("trade-l", FcsRecordType.DIALOGUE_LINE, r => { r.Strings["text0"] = "Looking to trade?"; r.References["lines"] = [Ref("buy-l")]; }),
+            Rec("buy-l", FcsRecordType.DIALOGUE_LINE, r => { r.Ints["speaker"] = (int)Talker.Target; r.Strings["text0"] = "I'm looking to buy some slaves"; r.References["effects"] = [Ref("buy-da")]; }),
+        ]);
+        var dialogue = new DialogueSystem(data);
+        var ground = new OpenGroundWalkability((_, _) => 150);
+        using var world = new SimWorld(new WorldSettings { Seed = 5, PublishSnapshots = false }, ground, [new MovementSystem(new PathService(ground, true)), dialogue]);
+        world.Fixtures.RegisterSite(world, data, 0);
+        world.Player.Faction = data.PlayerFaction;
+        int city = data.FactionIndex("50-a");
+        var centre = new Vector3(2000, 150, 2000);
+        CharacterId Spawn(string name, Vector3 at, Squad squad, Action<CharacterCold> tweak)
+        {
+            var cold = new Meitou.Tests.Combat.Combatant { Name = name }.MakeCold();
+            (cold.Inventory, cold.SquadId) = (new Inventory(), squad.Id);
+            tweak(cold);
+            var id = world.Characters.Spawn(new CharacterHot { Position = at, Health = 100, MaxSpeed = 60, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
+            squad.Members.Add(id);
+            if (squad.Leader.IsNone) squad.Leader = id;
+            return id;
+        }
+        Squad NewSquad(int faction, int town = -1)
+        {
+            var s = new Squad { Id = world.Squads.NextId(), TemplateId = "t", Faction = faction, Town = town, HomeCentre = new Vector2(centre.X, centre.Z), HomeRadius = 500 };
+            world.Squads.Add(s);
+            return s;
+        }
+        var players = NewSquad(data.PlayerFaction);
+        var slavers = NewSquad(city, town: 0);
+        var hero = Spawn("hero", centre + new Vector3(100, 0, 20), players, c => (c.Faction, c.IsPlayer) = (data.PlayerFaction, true));
+        var slaver = Spawn("Slaver", centre + new Vector3(100, 0, 0), slavers, c => (c.Faction, c.RecordId) = (city, "slaver-c"));
+        var slave = Spawn("Slave", centre, NewSquad(city), c =>
+        {
+            c.Faction = city;
+            (c.Stats![StatsEnumerated.Strength], c.Stats[StatsEnumerated.MeleeAttack], c.Stats[StatsEnumerated.Dexterity]) = (20, 15, 10.4f);
+        });
+        var sc = world.Characters.Cold(slave.Slot)!;
+        Meitou.Simulation.Locks.FixtureRegistry.Enslave(world, sc, city);
+        var cage = world.Fixtures.Find("0.0:cageA")!;
+        Assert.True(world.Fixtures.Imprison(world, slave, cage));
+        world.Player.Money = 10000;
+
+        world.Commands.Enqueue(new TalkOrder(hero, slaver) { Tick = world.Tick });
+        world.RunTicks(2);
+        Assert.Equal("Looking to trade?", dialogue.PublishConversation()!.Text);
+        world.Commands.Enqueue(new DialogueChoice(0) { Tick = world.Tick });
+        world.RunTicks(2);
+        var window = dialogue.PublishCharacterTrade()!;
+        Assert.Equal("Buying Slaves", window.Title);
+        Assert.Equal([(slave, 4500L)], window.Rows.Select(r => (r.Character, r.Price)));
+
+        world.Commands.Enqueue(new ConfirmCharacterTrade([slave]) { Tick = world.Tick });
+        world.RunTicks(2);
+        Assert.Null(dialogue.PublishCharacterTrade());
+        Assert.Equal(5500, world.Player.Money);
+        Assert.Equal((0, false, false), (sc.SlaveState, sc.IsImprisoned, sc.IsPlayer));
+        Assert.False(cage.Lock!.Locked);
+        Assert.DoesNotContain(slave, players.Members);
+    }
+
     /// <summary>The hero walks 300 up to the villager and talks twice (rich, buying; then plain), pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Scripted(int threads)
     {
@@ -303,12 +374,12 @@ public class DialogueTests
     }
 }
 
-/// <summary>Talking to the Hub's barman over the installed game's data. Skipped without the game.</summary>
+/// <summary>Talking to the Hub's barman, and the residents' speech bubbles, over the installed game's data. Skipped without the game.</summary>
 [Slow]
 public class DialogueInstallTests
 {
     [Fact]
-    public void The_hub_barman_talks_and_offers_two_replies()
+    public void The_hub_barman_talks_and_offers_two_replies_and_a_resident_says_a_speech_bubble()
     {
         Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
         var install = InstallData.Install!;
@@ -318,7 +389,7 @@ public class DialogueInstallTests
         var buildings = TownBuildings.Build(db, levels, new BuildingLayouts(db, levels.Interiors), (x, z) => map.HeightAt((float)x, (float)z));
         var data = PopulationData.Create(db, levels.Towns(), buildings: buildings);
         var hub = data.Sites.Single(s => s.Town.Name == "The Hub");
-        var dialogue = new DialogueSystem(data);
+        var dialogue = new DialogueSystem(data, new DialogueSettings { AmbientEvents = true });
         var walk = new OpenGroundWalkability((_, _) => 300);
         using var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, walk,
             [new PopulationSystem(data, new PopulationSettings { CheckEveryTicks = 1 }), new MovementSystem(new PathService(walk, true)), dialogue]);
@@ -348,40 +419,8 @@ public class DialogueInstallTests
         Assert.Equal("Barman", talk.SpeakerName);
         Assert.NotEmpty(talk.Text);
         Assert.Equal(2, talk.Choices.Count);   // trade or decline; their texts are picked at random
-    }
 
-    [Fact]
-    public void A_hub_resident_next_to_a_player_character_says_a_speech_bubble_within_a_few_game_hours()
-    {
-        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
-        var install = InstallData.Install!;
-        var db = InstallData.BaseGame!;
-        var levels = WorldLevelData.Load(install, includeInteriors: true);
-        using var map = TerrainHeightmap.Open(install);
-        var buildings = TownBuildings.Build(db, levels, new BuildingLayouts(db, levels.Interiors), (x, z) => map.HeightAt((float)x, (float)z));
-        var data = PopulationData.Create(db, levels.Towns(), buildings: buildings);
-        var hub = data.Sites.Single(s => s.Town.Name == "The Hub");
-        var dialogue = new DialogueSystem(data, new DialogueSettings { AmbientEvents = true });
-        var walk = new OpenGroundWalkability((_, _) => 300);
-        using var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, walk,
-            [new PopulationSystem(data, new PopulationSettings { CheckEveryTicks = 1 }), new MovementSystem(new PathService(walk, true)), dialogue]);
-        world.Player.Faction = data.PlayerFaction;
-        world.Commands.Enqueue(new FocusCommand(hub.Position) { Tick = 0 });
-        world.RunTicks(5);
-
-        var table = world.Characters;
-        int barman = Enumerable.Range(0, table.HighWater).First(i => table.Next[i].Alive && table.Cold(i) is { Name: "Barman" });
-        var squad = new Squad { Id = world.Squads.NextId(), TemplateId = "p", Faction = data.PlayerFaction };
-        world.Squads.Add(squad);
-        var cold = new Meitou.Tests.Combat.Combatant { Name = "hero" }.MakeCold();
-        cold.Faction = data.PlayerFaction;
-        cold.IsPlayer = true;
-        cold.Inventory = new Inventory();
-        cold.SquadId = squad.Id;
-        var hero = table.Spawn(new CharacterHot { Position = table.Next[barman].Position + new Vector3(20, 0, 0), Health = 100, MaxSpeed = 60, WalkSpeed = 15 }, cold, 0);
-        squad.Members.Add(hero);
-        squad.Leader = hero;
-
+        // A resident next to the player character says a speech bubble within a few game hours.
         // The Hub is allied with the player: its residents have event 67 lines (most event 3 lines are disabled or conditional in the data); each is said at a chance of 30 % once per squad per half game hour, so the loop spans a few of those.
         for (int i = 0; i < table.HighWater; i++)
             if (table.Next[i].Alive && table.Cold(i) is { IsPlayer: false } resident) data.Relations.Set(resident.Faction, data.PlayerFaction, 100);

@@ -27,7 +27,8 @@ of definitions and gives each a weight; zero-weight ones are dropped:
 
 - `category` must equal the character's current category (CharacterAnimCategory: 0 ANIM_NORMAL,
   1 IMPRISONED, 2 SLEEPING, 3 CARRIED, 4 SWIMMING, 5 GROUNDED, 6 COMBAT, 7 ATTACKS, 8 RANGED, enum names
-  from the FCS editor). Meitou plays category 4 in deep water ([water states](game/pathfinding.md#water-states)): `swim` (clip `swim2`), `swim carry`, `swim carry left`, `swim idle`.
+  from the FCS editor). Meitou plays category 4 in deep water ([water states](game/pathfinding.md#water-states)): `swim` (clip `swim2`), `swim carry`, `swim carry left`, `swim idle`;
+  and category 5 while crawling ([forced crawl](game/ragdolls.md#forced-crawl)).
 - `is combat mode` and `stealth mode`: EITHER (2) or equal to the character's combat / stealth state (when the combat flag is set: [combat](game/combat.md#combat-stance)).
 - Arms (`@ 14051d240`): an upper or overlay animation must fit what the hands hold (`has weapon L/R`
   against the character's state); details not decoded.

@@ -38,6 +38,10 @@ light at hits, enabling bounce lighting.
 Two toroidal cascades,32x32 columns of8 probes: horizontal/vertical spacing128/96 and512/384,
 ray lengths4000/16000. With the camera target in/beside a viewed interior, the near grid uses32/24
 spacing around it (1024 across) and follows its height in96-unit steps; the far grid stays unchanged.
+Only under the building's cover (`InteriorVolume.Covered`: a floor, stairs or unwalkable-roof triangle
+straight above, from 5 units up) and never on a construction site (ruins being rebuilt included): the
+hull's height range holds walkable roofs (Hub bar terrace at +71, **Verified** by a probe: contained,
+not covered; the bar room covered). The GI traces no construction-site instances (drawn clipped).
 The near grid fades to the far cascade above its top layer, rather than extending that layer's light upwards.
 Ground bases use five height samples, updated incrementally on scroll and resampled on density/height
 changes. Invalidate relocated tiles before sampling; reset history for changed positions.

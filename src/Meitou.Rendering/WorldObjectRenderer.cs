@@ -314,18 +314,26 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         return key == 0 ? 0 : textureCache.Index(key, Gpu.LodBias, 0);
     }
 
+    /// <summary>
+    /// The instances the GI traces: those drawn within <paramref name="range"/>, without the construction sites, whose parts are drawn clipped at the scaffold (the
+    /// rays would meet the whole building, the roof of a half-built or ruined one included, and light the open site as a closed room).
+    /// </summary>
     internal IEnumerable<ObjectStreamer.Instance> RayInstances(Vector3 eye, float range)
     {
         foreach (var zone in streamer.AllZones)
         {
             if (ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, eye) > range) continue;
             foreach (var inst in zone.Real)
-                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed)) yield return inst;
+                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed) && !UnderConstruction(inst))
+                    yield return inst;
         }
         if (streamer.LandmarkZone is { } landmarks)
             foreach (var inst in landmarks.Real)
                 if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed)) yield return inst;
     }
+
+    bool UnderConstruction(ObjectStreamer.Instance inst) =>
+        construction is { Count: > 0 } sites && !inst.Stand && sites.ContainsKey(inst.Placed.ParentPlacementId ?? inst.Placed.PlacementId);
 
     /// <summary>Requested work: zone layouts, meshes and textures, including used textures deferred by memory pressure.</summary>
     public int Pending => streamer.Pending + meshes.Pending + uploads.Count + textureCache.PendingCount + textureCache.UnresidentUsedCount + unresolvedInRange + (landmarkTask is not null ? 1 : 0);
@@ -611,6 +619,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         inst.Gpu = gpu;
         inst.Centre = centre;
         inst.DoorOpen = -1;   // a door part is posed again from its placement (PoseDoor)
+        inst.TurretStamp = -1;   // a turret part is posed again (PoseTurret)
         inst.Radius = radius;
         inst.Limit = inst.Placed.Kind == PlacedKind.BuildingPart
             ? ObjectRanges.PartRenderingDistance(gpu.Radius, inst.Placed.Owner.GetInt("function"), ObjectRanges.ObjectsViewRange)
@@ -793,16 +802,20 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     internal string? FindRecordFile(string recordPath) =>
         Meitou.Data.Physics.CollisionPaths.Resolve(objects.Install, recordPath) ?? assets.Find(Path.GetFileName(recordPath.Replace('\\', '/')));
 
-    /// <summary>Use room-scale probes only while the camera target is in or beside a viewed building.</summary>
+    /// <summary>
+    /// Use room-scale probes only while the camera target is in or beside a viewed building and under its cover (<see cref="InteriorVolume.Covered"/>): on a walkable
+    /// roof, the hull's top storey, the room grid stood its probes under the roof slab and darkened the roof as a closed room. A construction site (a ruin being
+    /// rebuilt included) is open above its clip, so it never takes the room grid.
+    /// </summary>
     internal Vector3? GiInteriorFocus(Vector3 target)
     {
         if (InteriorView.Count == 0) return null;
         foreach (var zone in streamer.AllZones)
             foreach (var room in zone.Interiors)
             {
-                if (!InteriorView.ContainsKey(room.PlacementId)) continue;
+                if (!InteriorView.ContainsKey(room.PlacementId) || construction is { } sites && sites.ContainsKey(room.PlacementId)) continue;
                 var p = new Vector3(target.X, Math.Clamp(target.Y, room.YMin, room.YMax), target.Z);
-                if (room.Contains(p, 64)) return p;
+                if (room.Contains(p, 64) && room.Covered(p)) return p;
             }
         return null;
     }
@@ -937,6 +950,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (!ReferenceEquals(inst.Mesh.Gpu, gpu)) { Unresolve(zone, inst); return; }
         if (InteriorHidden(inst.Placed)) return;
         if (inst.Placed.DoorIndex >= 0) PoseDoor(inst, gpu);
+        if (inst.Placed.Joints is not null) PoseTurret(inst, gpu);
         float value = Vector3.Distance(inst.Centre, eye) - inst.Radius;
         float limit = Math.Min(range, inst.Limit);
         if (value >= limit || !SphereVisible(frustum, inst.Centre, inst.Radius) || MirrorCull?.Invoke(inst.Centre, inst.Radius) == false || FogCull?.Hidden(inst.Centre, inst.Radius, FogVolumes.CullKind.Objects) == true)

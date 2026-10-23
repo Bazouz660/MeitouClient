@@ -47,8 +47,15 @@ public sealed class RaceData
     public float PathfindFootprintRadius { get; init; } = 4;
     public float PathfindAcceleration { get; init; } = 20;
     public int ExtraAttackSlots { get; init; }
+    /// <summary>
+    /// <c>buy value</c> (fcs.def default 100, "percentage of normal value when bought or sold as a slave"): the factor of a slave's price (docs/game/economy.md section 12).
+    /// </summary>
+    public float BuyValue { get; init; } = 100;
 
     public bool IsRobot { get; init; }
+    /// <summary><c>weather immunity0</c>, <c>1</c>...: the <see cref="World.WeatherAffecting"/> kinds that do nothing to the race (docs/formats/weather.md "Effects on characters").</summary>
+    public IReadOnlyList<World.WeatherAffecting> WeatherImmunity { get; init; } = [];
+    public bool ImmuneTo(World.WeatherAffecting kind) => WeatherImmunity.Contains(kind);
     public bool Swims { get; init; }
     public bool Carriable { get; init; }
     public bool SingleGender { get; init; }
@@ -73,6 +80,11 @@ public sealed class RaceData
 
     public IReadOnlyList<SlotReference> SeveredLimbs { get; init; } = [];
     public IReadOnlyList<SlotReference> LimbReplacements { get; init; } = [];
+    /// <summary>
+    /// <c>special food</c>: the ITEM records (string ids) of <c>item function</c> 15 ("Possibly Edible", raw meat) this race eats (<c>FUN_14042ee50</c>, docs/game/character-stats.md
+    /// "Eating"); ordinary food (function 3) every race eats.
+    /// </summary>
+    public IReadOnlySet<string> SpecialFood { get; init; } = new HashSet<string>();
 
     public float StatMultiplier(StatsEnumerated stat) => (uint)stat < StatsInfo.Count ? StatMultipliers[(int)stat] : 1;
 
@@ -144,7 +156,9 @@ public sealed class RaceData
             PathfindFootprintRadius = RecordReading.Float(r, "pathfind footprint radius", 4),
             PathfindAcceleration = RecordReading.Float(r, "pathfind acceleration", 20),
             ExtraAttackSlots = RecordReading.Int(r, "extra attack slots", 0),
+            BuyValue = RecordReading.Float(r, "buy value", 100),
             IsRobot = RecordReading.Bool(r, "is robot", false),
+            WeatherImmunity = Combat.ArmourData.NumberedKinds(r, "weather immunity"),
             Swims = RecordReading.Bool(r, "swims", false),
             Carriable = RecordReading.Bool(r, "carriable", false),
             SingleGender = RecordReading.Bool(r, "single gender", false),
@@ -160,6 +174,7 @@ public sealed class RaceData
             Anatomy = anatomy,
             SeveredLimbs = [.. r.GetReferences("severed limbs").Select(x => new SlotReference(x.Values.Value0, x.TargetStringId))],
             LimbReplacements = [.. r.GetReferences("limb replacement").Select(x => new SlotReference(x.Values.Value0, x.TargetStringId))],
+            SpecialFood = r.GetReferences("special food").Select(x => x.TargetStringId).ToHashSet(StringComparer.Ordinal),
         };
     }
 }

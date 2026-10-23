@@ -7,7 +7,10 @@ public sealed partial class MedicalState
 {
     // ------------------------------------------------------------------ food
 
-    /// <summary>Puts food into the stomach buffer (hunger points; the nutrition of items is <b>Unknown</b>). The buffer digests into the hunger level in <see cref="Tick"/>.</summary>
+    /// <summary>
+    /// Puts food into the stomach buffer, in hunger levels (a bite of n nutrition is n / 100, <see cref="Items.FeedSystem"/>). The buffer digests into the hunger level in
+    /// <see cref="Tick"/>. The original sets the buffer (it eats only with an empty stomach); adding is the same there.
+    /// </summary>
     public void Feed(float amount) => Fed += MathF.Max(0, amount);
 
     // ------------------------------------------------------------------ first aid
@@ -109,10 +112,14 @@ public sealed partial class MedicalState
 
     // ------------------------------------------------------------------ the tick
 
+    /// <summary>Game hours in one second of character time (the Verified 1200/11 s per game hour, <c>GameClock</c>).</summary>
+    public const float GameHoursPerSecond = 11f / 1200;
+
     /// <summary>
-    /// Steps the character by <paramref name="dt"/> game hours (<c>FUN_140652000</c> and what it calls): every part degenerates, heals, recovers from stun and wear; wounds clot and
-    /// blood runs out or recovers; hunger falls or is refilled from the stomach; the KO timer counts down; blood loss, starvation and destroyed vital parts kill. Events go to
-    /// <paramref name="events"/> if given. A dead character is not stepped.
+    /// Steps the character by <paramref name="dt"/> seconds of character time (real seconds x game speed, <c>FUN_140652000</c> and what it calls; docs/game/character-stats.md
+    /// "Time"): every part degenerates or heals itself, heals, is repaired and recovers from stun; wounds clot and blood runs out or recovers; hunger falls or is refilled from
+    /// the stomach (by the game clock, in hours); the KO timer counts down; blood loss, starvation and destroyed vital parts kill. Events go to <paramref name="events"/> if given.
+    /// A dead character is not stepped.
     /// </summary>
     public void Tick(float dt, in MedicalContext ctx, List<MedicalEvent>? events = null)
     {
@@ -120,11 +127,13 @@ public sealed partial class MedicalState
         var c = ctx.Constants;
         var race = ctx.Race;
         float chance = ctx.Options.ChanceOfDeath;
+        float hours = dt * GameHoursPerSecond;
+        LegKoPoint = KoPoint(c, ctx.Toughness);
 
-        // Part healing rates. Bed-like objects (kinds 6 and 0x19) force degeneration to 0 and scale the organic or the robotic rate.
+        // Part healing rates. In a bed (kinds 6 and 0x19) degeneration is 0 and the bed scales the organic or the robotic rate; state 2 doubles the organic rate (HealMult).
         float degMult = ctx.Bed != BedKind.None ? 0 : DegenerationMult(c, ctx.Toughness);
         float organic = race.HealRate * (ctx.Bed == BedKind.Bed ? ctx.BedFactor : 1) * ctx.HealMult;
-        float robotic = race.HealRate * (ctx.Bed == BedKind.RepairBed ? ctx.BedFactor : 1) * ctx.HealMult;
+        float robotic = race.HealRate * (ctx.Bed == BedKind.RepairBed ? ctx.BedFactor : 1);
         bool conscious = !Unconscious;
         float dtb = dt * ctx.BodyTimeScale;
 
@@ -134,55 +143,54 @@ public sealed partial class MedicalState
             float m = p.MaxHp;
             if (m <= 0.01f) m = 0.01f;
             bool isRobotic = p.IsRobotic(race);
-            float rate = isRobotic ? robotic : organic;
-            if (p.Limb == LimbState.Stump && !isRobotic) rate *= 2;       // a stump heals at twice the rate
-            float r = m / 100 * rate;
-            float d = UntreatedDamage(m, p.Flesh, p.Bandage);
+            // R: M / 100 x the organic or robotic rate; a stump's is twice the organic rate, without M / 100.
+            float r = p.Limb == LimbState.Stump ? organic * 2 : m / 100 * (isRobotic ? robotic : organic);
 
+            // The hit-focus multiplier decays towards 1 while the flesh is not negative, and is reset once it is.
+            if (p.Flesh < 0) p.HitMult = 1;
+            else if (p.HitMult > 1) p.HitMult = MathF.Max(1, p.HitMult - 0.01f * dtb);
+            // Self healing (the race's): untreated damage becomes treated at 0.4 of the heal speed, in place of degenerating.
+            if (p.SelfHealing && conscious && p.Flesh - p.Stun < m - p.Bandage)
+                p.Bandage += dtb * 0.05f * c.HealRateMult * r * 0.4f;
             // Degeneration of untreated damage; none for non-vital robotic parts.
-            if (p.Flesh > -3 * m)
+            else if (p.Flesh < m && p.Flesh > -3 * m)
             {
                 float dm = isRobotic && !p.IsVital ? 0 : degMult;
-                p.Flesh -= dtb * 0.05f * c.BodypartDegenerationRate * chance * dm * d * 1.2f;
+                p.Flesh -= dtb * 0.05f * c.BodypartDegenerationRate * chance * dm * UntreatedDamage(m, p.Flesh, p.Bandage) * 1.2f;
             }
-            // Healing of treated damage.
-            if (p.Bandage > 0 && p.Flesh < m)
+            // Healing of treated damage, 250 times faster on robotic parts; a crushed limb does not heal.
+            if (p.Bandage > 0 && p.Flesh < m && p.Limb != LimbState.Crushed)
             {
-                float heal = MathF.Min(p.Bandage, dtb * 0.05f * c.HealRateMult * r);
+                float heal = MathF.Min(p.Bandage, dtb * 0.05f * c.HealRateMult * r * (isRobotic ? 250 : 1));
                 p.Bandage -= heal;
                 p.Flesh = MathF.Min(p.Flesh + heal, m);
                 Healed += heal;
             }
-            // Self healing: untreated damage becomes treated at 0.4 of the heal speed.
-            if (p.SelfHealing && conscious && p.Flesh - p.Stun < m - p.Bandage)
-                p.Bandage = MathF.Min(p.Bandage + dtb * 0.05f * c.HealRateMult * r * 0.4f, MathF.Max(m - p.Flesh, 0));
-            // Stun recovers; the extra buffer is held under 50 - (h - s).
-            if (p.Stun > 0) p.Stun = MathF.Max(0, p.Stun - dtb * 0.05f * c.StunRecoveryRate * c.HealRateMult * r);
-            if (p.Rig > 0) p.Rig = MathF.Max(0, MathF.Min(p.Rig, 50 - (p.Flesh - p.Stun)));
-            // Wear repair at a repair object: wear moves into the bandaged pool.
+            // Wear repair in a repair bed: wear moves into the treated pool, which stays within the part's HP.
             if (p.Wear > 0 && ctx.RepairRate > 0)
             {
-                float amount = MathF.Min(p.Wear, dtb * 0.05f * c.RestingHealRateMult * ctx.RepairRate);
-                p.Wear -= amount;
-                p.Bandage += amount;
+                float amount = dtb * 0.05f * c.RestingHealRateMult * ctx.RepairRate;
+                float full = p.MaxHp + p.Wear;
+                p.Wear = MathF.Max(0, p.Wear - amount);
+                p.Bandage = MathF.Min(p.Bandage + amount, MathF.Max(full - p.Wear - p.Flesh, 0));
             }
-            // The hit-focus multiplier decays towards 1 while the flesh is not negative, and is reset once it is.
-            if (p.Flesh < 0) p.HitMult = 1;
-            else if (p.HitMult > 1) p.HitMult = MathF.Max(1, p.HitMult - 0.01f * dtb);
+            // The extra buffer is held under 50 - (h - s); stun recovers.
+            if (p.Rig > 0) p.Rig = MathF.Max(0, MathF.Min(p.Rig, 50 - (p.Flesh - p.Stun)));
+            if (p.Stun > 0) p.Stun = MathF.Max(0, p.Stun - dtb * 0.05f * c.StunRecoveryRate * c.HealRateMult * r);
 
             CheckPart(i, ctx, events, inHitPath: false);
         }
         if (Dead) return;
 
         TickBlood(dtb, ctx);
-        TickHunger(dt, ctx);
+        TickHunger(hours, ctx);
         CheckBlood(ctx, events);
         if (Dead) return;
 
         if (Hunger <= 0) { Die(DeathCause.Starvation, events); return; }
 
-        // Starvation passes the character out below a toughness-dependent point; after waking, a grace period keeps it from happening at once.
-        starveGrace = MathF.Max(0, starveGrace - dt);
+        // Starvation passes the character out below a toughness-dependent point; after waking, a grace period (game hours) keeps it from happening at once.
+        starveGrace = MathF.Max(0, starveGrace - hours);
         if (!Unconscious && starveGrace <= 0 && Hunger < StarvationKoThreshold(c, ctx.Toughness, Fed > 0))
         {
             starvationKo = true;
@@ -191,7 +199,7 @@ public sealed partial class MedicalState
 
         if (Unconscious)
         {
-            KoTimer -= dt * 60;
+            KoTimer -= dt;
             if (KoTimer <= 0 && VitalPartsUp() && !BloodKo)
             {
                 Unconscious = false;
@@ -215,12 +223,14 @@ public sealed partial class MedicalState
     {
         if (Dead || hours <= 0) return;
         var c = ctx.Constants;
+        float seconds = hours / GameHoursPerSecond;
         foreach (var p in parts)
         {
             float m = MathF.Max(p.MaxHp, 0.01f);
             p.Bandage = MathF.Max(p.Bandage, MathF.Max(m - p.Flesh, 0));
-            float rate = ctx.Race.HealRate * ctx.HealMult * (p.Limb == LimbState.Stump && !p.IsRobotic(ctx.Race) ? 2 : 1);
-            float heal = MathF.Min(p.Bandage, hours * 0.05f * c.HealRateMult * m / 100 * rate);
+            bool robotic = p.IsRobotic(ctx.Race);
+            float r = p.Limb == LimbState.Stump ? ctx.Race.HealRate * 2 : m / 100 * ctx.Race.HealRate;
+            float heal = MathF.Min(p.Bandage, seconds * 0.05f * c.HealRateMult * r * (robotic ? 250 : 1));
             p.Bandage -= heal;
             p.Flesh = MathF.Min(p.Flesh + heal, m);
             Healed += heal;
@@ -230,7 +240,7 @@ public sealed partial class MedicalState
         }
         wounds.Clear();
         Bleeding = 0;
-        Blood = MathF.Min(Capacity(ctx), Blood + c.BloodRecoveryRate * hours * ctx.Race.HealRate * c.RestingHealRateMult);
+        Blood = MathF.Min(Capacity(ctx), Blood + c.BloodRecoveryRate * seconds * ctx.Race.HealRate * c.RestingHealRateMult);
         if (Blood > 25) BloodKo = false;
         if (Unconscious && VitalPartsUp() && !BloodKo)
         {
@@ -244,7 +254,7 @@ public sealed partial class MedicalState
     {
         var c = ctx.Constants;
         var race = ctx.Race;
-        // Wounds clot: their strength falls by `bleeding clot rate` (already x0.1) per hour and they close at 0.
+        // Wounds clot: their strength falls by `bleeding clot rate` (already x0.1) per second and they close at 0.
         float decay = c.BleedingClotRate * dt;
         float woundSum = 0;
         int keep = 0;
@@ -264,27 +274,32 @@ public sealed partial class MedicalState
         Blood -= Bleeding * dt;
         float cap = Capacity(ctx);
         if (Bleeding <= 0 && Blood < cap)
-            Blood = MathF.Min(cap, Blood + c.BloodRecoveryRate * dt * race.HealRate * (ctx.Resting || Unconscious ? c.RestingHealRateMult : 1));
+            Blood = MathF.Min(cap, Blood + c.BloodRecoveryRate * dt * race.HealRate * (ctx.Resting ? c.RestingHealRateMult : 1));
     }
 
-    void TickHunger(float dt, in MedicalContext ctx)
+    /// <summary>
+    /// Hunger by the game clock: <paramref name="hours"/> game hours (<c>FUN_14064da70</c> reads the clock's elapsed time, not the character time). First the free food: below the
+    /// <see cref="MedicalContext.HungerFloor"/> with an empty stomach, the stomach gets min(floor - hunger, 0.04). Then with an empty stomach hunger falls by hours / T x race
+    /// <c>hunger rate</c> x the situation factor; with food it rises by what the stomach gives, at most hours / T x <c>fed recovery rate mult</c> x race rate x the slot-0x390 factor.
+    /// </summary>
+    void TickHunger(float hours, in MedicalContext ctx)
     {
         var c = ctx.Constants;
+        if (ctx.HungerFloor > Hunger && Fed <= 0) Fed = Math.Clamp(ctx.HungerFloor - Hunger, 0, 0.04f);
+        if (Hunger > MaxHunger) Hunger = MaxHunger;
         float t = c.StarvationTime * ctx.Options.HungerTime;
         if (t <= 0) return;
-        float hungerRate = ctx.Race.HungerRate * ScaleK;
         if (Fed <= 0)
         {
             float situation = HungerSituationFactor(c, ctx.Resting || Unconscious, ctx.UsingMachine, ctx.EncumbranceFactor);
-            Hunger -= dt / t * hungerRate * situation;
+            Hunger -= hours / t * ctx.Race.HungerRate * situation;
         }
         else
         {
-            float moved = MathF.Min(Fed, dt / t * c.FedRecoveryRateMult * hungerRate);
+            float moved = MathF.Min(Fed, hours / t * c.FedRecoveryRateMult * ctx.Race.HungerRate * ScaleK);
             Fed -= moved;
             Hunger += moved;
         }
-        Hunger = Math.Min(Hunger, MaxHunger);
     }
 
 }

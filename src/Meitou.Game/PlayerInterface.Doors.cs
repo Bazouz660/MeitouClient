@@ -26,12 +26,13 @@ sealed partial class PlayerInterface
         float bestDistance = DoorPickPixels;
         foreach (var door in snapshot.DoorPicks)
         {
-            if (Project(door.Position) is not { } at) continue;
+            // A door missing from the published table is closed and unlocked. The leaf is where it has slid to (linear in the open amount: exact at closed and open).
+            var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
+            var leaf = door.Position + door.Slide * state.Open;
+            if (Project(leaf) is not { } at) continue;
             float d = Vector2.Distance(at, pixel);
             if (d >= bestDistance) continue;
-            // A door missing from the published table is closed and unlocked.
-            var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
-            float t = Vector3.Distance(ray.Origin, door.Position);
+            float t = Vector3.Distance(ray.Origin, leaf);
             if (state.Broken || Hidden(ray, t - DoorPickSlack)) continue;
             (best, bestDistance) = (((door, state.Locked), t), d);
         }
@@ -41,11 +42,15 @@ sealed partial class PlayerInterface
     /// <summary>The pointer over a door: <c>lock</c> for the player's own locked one, <c>lockpick</c> for another faction's, else <c>door</c>.</summary>
     string DoorPointer((DoorPick Door, bool Locked) pick) => !pick.Locked ? "door" : pick.Door.Owner == session.World.Player.Faction ? "lock" : "lockpick";
 
-    /// <summary>A right click on a door: the door order (true), with a selection; Alt picks another faction's locked lock.</summary>
+    /// <summary>
+    /// A right press on a door (true, with a selection): released quickly, the door order, where Alt picks another faction's locked lock; held, its context menu (<see cref="DoorVerbs"/>,
+    /// titled "Door": the door's own name is not published, engine choice).
+    /// </summary>
     bool DoorClick(Vector2 p, bool alt)
     {
         if (SelectedIds().Count == 0 || PickDoor(p) is not { } pick) return false;
-        Say(new DoorOrder([], pick.Door.Id, alt) { Tick = session.World.Tick });
+        void Quick() => Say(new DoorOrder([], pick.Door.Id, alt) { Tick = session.World.Tick });
+        if (!ContextPressOn(p, at => Menu(Loc.Tr("Door"), at, DoorVerbs(pick)), Quick)) Quick();
         return true;
     }
 }

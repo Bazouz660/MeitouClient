@@ -32,7 +32,7 @@ public static class NightGrade
     public const float RatioFrom = 1.25f, RatioTo = 3.2f;
 
     /// <summary>The strength the Meitou switch sets (the Tab slider takes 0 to 1); the weight never exceeds it.</summary>
-    public const float MeitouStrength = 0.7f;
+    public const float MeitouStrength = 0.5f;
 
     public static (float R, float G, float B) Tint
     {

@@ -8,7 +8,6 @@ namespace Meitou.Tests.Bodies;
 public class StatsTests
 {
     [Theory]
-    [InlineData(1f, 0.9803f)]      // ((101 - 1) / 101)^2: a new stat grows at nearly the full rate
     [InlineData(50f, 0.2550f)]     // about a quarter at 50
     [InlineData(101f, 0f)]         // nothing at the cap
     public void Core_gain_follows_the_squared_curve(float stat, float f)

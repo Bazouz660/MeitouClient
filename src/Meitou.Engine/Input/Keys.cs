@@ -14,6 +14,8 @@ public enum Key
     LeftBracket, RightBracket, Apostrophe,
     /// <summary>Print Screen (SYSRQ in Kenshi's key names).</summary>
     PrintScreen,
+    /// <summary>The numeric keypad's digits (NUM0..NUM9 in Kenshi's key names: the orders hotkeys, docs/game/ui-input.md section 4).</summary>
+    Keypad0, Keypad1, Keypad2, Keypad3, Keypad4, Keypad5, Keypad6, Keypad7, Keypad8, Keypad9,
 }
 
 /// <summary>Mouse buttons.</summary>

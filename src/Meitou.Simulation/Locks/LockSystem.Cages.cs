@@ -1,0 +1,112 @@
+using System.Numerics;
+using Meitou.Simulation.Crime;
+
+namespace Meitou.Simulation.Locks;
+
+/// <summary>
+/// Set Free (110, Task_ReleasePrisoner): the nearest of the characters (the selection when empty) who may walks to <see cref="Prisoner"/>'s cage and lets it out; refused while the cage is
+/// locked. Out of another faction's cage it is a crime like lifting the prisoner out.
+/// </summary>
+public sealed record SetFreeOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : SimCommand;
+
+/// <summary>Get in (107, Task_UseCage): the nearest of the characters (the selection when empty) who may walks into the free, unlocked <see cref="Cage"/> and is imprisoned there.</summary>
+public sealed record GetInCageOrder(IReadOnlyList<CharacterId> Characters, string Cage) : SimCommand;
+
+/// <summary>
+/// The cage verbs of a clicked cage (docs/game/ui-input.md "Context menu verbs", cage rows): Set Free and Get in. Put in is <see cref="Crime.PutInCageOrder.Cage"/>, Pick Lock of an empty
+/// cage <see cref="PickLockOrder.Cage"/>, Use Tools and Use Strength <see cref="ForceLockOrder"/>.
+/// </summary>
+public sealed partial class LockSystem
+{
+    void SetFreeInput(World world, SetFreeOrder order)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(order.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } || world.Fixtures.Find(where) is not { } cage) return;
+        int best = NearestWorker(world, order.Characters, cage);
+        if (best < 0) return;
+        var walker = table.Cold(best)!;
+        ClearWork(walker);
+        walker.Freeing = order.Prisoner;
+        MovementSystem.GoTo(table, best, Flat(cage.Position), walker.RunSpeed);
+    }
+
+    void GetInInput(World world, GetInCageOrder order)
+    {
+        var table = world.Characters;
+        if (world.Fixtures.Find(order.Cage) is not { Kind: FixtureKind.Cage } cage || !FixtureRegistry.IsFree(table, cage)) return;
+        int best = NearestWorker(world, order.Characters, cage);
+        if (best < 0) return;
+        var walker = table.Cold(best)!;
+        if (!walker.Carrying.IsNone) return;
+        ClearWork(walker);
+        walker.EnteringCage = cage.Id;
+        MovementSystem.GoTo(table, best, Flat(cage.Position), walker.RunSpeed);
+    }
+
+    /// <summary>The slot of the player's free, awake, uncarried character nearest <paramref name="where"/> among <paramref name="who"/> (the selection when empty); -1 when none.</summary>
+    int NearestWorker(World world, IReadOnlyList<CharacterId> who, Fixture where)
+    {
+        var table = world.Characters;
+        int best = -1;
+        float bestDistance = float.MaxValue;
+        foreach (var id in Who(world, who))
+        {
+            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+            float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(where.Position));
+            if (d < bestDistance) (best, bestDistance) = (s, d);
+        }
+        return best;
+    }
+
+    static void ClearWork(CharacterCold c)
+    {
+        c.PickingLock = null;
+        c.Shackles = null;
+        c.ForcingLock = null;
+        c.Freeing = CharacterId.None;
+        c.EnteringCage = null;
+    }
+
+    /// <summary>Each tick: a character in reach of the cage it was sent to lets its prisoner out or gets in; one given another order, downed or gone gives up.</summary>
+    void CageWorkers(World world)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { } c || c.Freeing.IsNone && c.EnteringCage is null) continue;
+            Fixture? cage = null;
+            if (!c.Freeing.IsNone)
+                cage = table.TryResolveNext(c.Freeing, out int p) && table.Cold(p) is { IsImprisoned: true, InWhat: { } where } ? world.Fixtures.Find(where) : null;
+            else if (world.Fixtures.Find(c.EnteringCage!) is { Kind: FixtureKind.Cage } entering && FixtureRegistry.IsFree(table, entering)) cage = entering;
+            if (cage is null || c.Medical is { Incapacitated: true } || !c.CarriedBy.IsNone || c.IsImprisoned || !c.Carrying.IsNone && c.EnteringCage is not null)
+            {
+                c.Freeing = CharacterId.None;
+                c.EnteringCage = null;
+                continue;
+            }
+            float reach = cage.UseRange + Reach;
+            var at = Flat(cage.Position);
+            if (Vector2.Distance(Flat(next[s].Position), at) > reach)
+            {
+                // Still walking; another order (a new goal) or a failed path ends it.
+                if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, at) > 1) { c.Freeing = CharacterId.None; c.EnteringCage = null; }
+                continue;
+            }
+            if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+            if (c.Freeing.IsNone)
+            {
+                c.EnteringCage = null;
+                if (cage.Lock is { EffectivelyLocked: true }) { if (c.IsPlayer) world.Post($"{c.Name}: It's locked."); continue; }
+                world.Fixtures.Imprison(world, table.IdOf(s), cage, constants.PrisonTime);
+                continue;
+            }
+            var prisoner = c.Freeing;
+            c.Freeing = CharacterId.None;
+            if (cage.Lock is { EffectivelyLocked: true }) { if (c.IsPlayer) world.Post($"{c.Name}: It's locked."); continue; }
+            // Letting a prisoner out of another faction's cage is the crime of lifting it out (FixtureRegistry.LiftOut): a pending code 7 against the cage's owner.
+            if (cage.Owner >= 0 && cage.Owner != c.Faction) Crimes?.SetPending(world, s, CrimeCode.Terrorism, cage.Owner, prisoner, CrimeSystem.MinTimer);
+            if (world.Fixtures.Release(world, prisoner, c.Faction, Crimes)) world.EmitSound(SoundKind.Unlocked, s, next[s].Position);
+        }
+    }
+}

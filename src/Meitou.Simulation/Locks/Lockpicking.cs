@@ -134,6 +134,24 @@ public sealed class Lockpicking(GameConstants constants, BodyOptions options)
         return true;
     }
 
+    /// <summary>
+    /// One update of cutting a fixture's lock (Task_CutLock 285, the shackle task's update, <b>Observed</b>): hardness falls by <c>clamp(0.01 x strength, 0.05, 0.2) x dt x 2</c>; at 0 the best
+    /// tool is used up and the lock is broken, so it no longer holds (true). Books the picking crime. The needed tool is checked by the caller.
+    /// </summary>
+    public bool CutLock(World world, int cutter, Fixture target, float dt, CrimeSystem? crimes = null)
+    {
+        var c = world.Characters.Cold(cutter);
+        if (c is null || target.Lock is not { Broken: false } l) return false;
+        Crime(world, cutter, c, target, crimes);
+        l.Hardness -= Math.Clamp(0.01f * Strength(c), 0.05f, 0.2f) * dt * 2;
+        if (l.Hardness > 0) return false;
+        l.Hardness = 0;
+        if (BestTool(c) is { } tool) c.Inventory!.RemoveOne(tool);
+        l.Broken = true;
+        world.Fixtures.Touch(target);
+        return true;
+    }
+
     /// <summary>Breaks shackles by force (Task_BruteForceShackles 186, <b>Observed</b>): at once when strength &gt; 3 x hardness (true, "*Crunck*"), else "I'm not strong enough to do that".</summary>
     public bool BreakShackles(World world, int breaker, CharacterId wearer, Items.ItemInstance item, CrimeSystem? crimes = null)
     {

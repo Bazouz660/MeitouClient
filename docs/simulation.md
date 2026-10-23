@@ -12,12 +12,12 @@ accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; exc
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
 clocks, input and camera, and disposes systems/services.
 
-At player speed 0 (without a modal/loading pause), queued selection, inventory move/arrange
+At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
 and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
 commands stay queued; neither world ticks, game time nor simulation phases advance.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
-`BodySystem.HoursPerTick=11/36000`; medical dt units remain **Unknown**. Navmesh unload uses
+`BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
 real time (30 s); population unload grace uses game time (towns 60 s, roaming 10 s).
 `RequestedPause` is independent of remembered nonzero speed. Render previous/current states
 with simulation alpha; camera uses control alpha. Positions are float world coordinates;
@@ -107,7 +107,7 @@ original's table (CHARACTER → claimed, live character, state 1/0/2, player fla
   save already has them).
 - **Save**: CAMERA `usedUniques*` as the original (claimed entries; prisoners derived again). Handles are the written character's for player
   squads, else the loaded save's, else null (NPC handles are not tracked back from the writer).
-- **Not built**: FACTION `special squads` (the original never spawns them), the import rules, `UniquePlatoon` missions.
+- **Not built**: FACTION `special squads` (the original never spawns them), `UniquePlatoon` missions. Import is built ([save.md](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)).
 
 ### Off-screen tier
 
@@ -192,14 +192,14 @@ Implemented (`PopulationRoaming.cs`):
 
 Implemented (`PopulationCampaigns.cs`; [original rules](game/factions-squads-towns.md#campaigns),
 [save](formats/save.md#war_savestate-type-9-faction-campaigns)). Almost all campaigns aim at player towns (outposts), so nothing rolls until
-the player has one; requests (victory/loss chains, ally help) can follow.
+the player has one and stands in it; requests (victory/loss chains, ally help) can follow.
 
 - **Data** (`Meitou.Data`, `CampaignData` from FACTION_CAMPAIGN, cached per inheritance mode): ranges × 10, `repeat limit` × 24, weighted
   trigger lists, phase packages. Fourth switch, **Raids as written** (`CampaignAncestorsOnce`): Meitou applies each ancestor's list entries
   once; Faithful twice, as the original (doubled weights and trigger chances).
 - **War manager** (serial, in faction order at the population look; every rule reads the game clock, so the cadence does not matter): the
-  6 h roll, the chance with the linear falloff and `raidFrequencyMult`, targets among `World.Buildings.Towns` (biome groups, no-go zones;
-  slot 70 and Town +0x128 taken as passing, tech level as 0: engine choices), requests with due times, redirects and retries, the
+  6 h roll, the chance with the linear falloff and `raidFrequencyMult`, targets among `World.Buildings.Towns` (biome groups, no-go zones; only a player town
+  with a player character within 1250, slot 70; none with occupiers for a non-hostile campaign; the town level from its finished buildings), requests with due times, redirects (a running campaign too: `Redirect`) and retries, the
   `trigger player ally` help, and DIALOGUE_LINE `trigger campaign` (`TriggerFromDialogue`, keyed off the speaker and tick). Rolls
   are keyed off the world seed, faction and roll hour, so a run repeats. The state hash includes the managers only once one has started or
   queued something, so worlds without a campaign hash as before.
@@ -253,13 +253,13 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
 systems. Explicit player commands and automatic retaliation have different eligibility;
 Idle players self-defend unless Passive, and Hold prevents pursuit beyond attack reach.
-New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic job runs regardless, as the original); direct orders still run. Saved toggles override
+New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic, robotics, splint and attacking-enemies jobs run regardless, as the original); direct orders still run. The saved `chase mode` is this switch. Saved toggles override
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
 spot meter fills ([perception](game/perception.md#spotting-a-sneaker)); the exposure feeds stealth XP.
 Ranged (tooltip, **Verified** in `main.pot`, mainbar.cpp:1279: "prioritise ranged attacks, melee will be a last resort"): a
 crossbow carrier takes the crossbow at any distance and melees only when dry or a melee attacker is on it; off, the distance
-rule of `ChooseMode` applies. Taunt (mainbar.cpp:1273: "draw more of the enemy to attack him"): a hostile looker picking a
+rule of `ChooseMode` applies (an engine choice; the original's Ranged flag gates the shooting orders, [combat](game/combat.md#unknowns-of-the-ranged-path)). Taunt (mainbar.cpp:1273: "draw more of the enemy to attack him"): a hostile looker picking a
 new fight prefers a visible taunter over any non-taunter (nearest first); its squad joins as usual. Fights already under way
 are not retargeted; a sneaking taunter does not count. Both rules are engine choices; the original's are **Unknown**.
 New games select the squad's first member. The game host also selects the first member after
@@ -273,9 +273,14 @@ New move orders preserve reusable paths; attack pursuit reschedules target paths
 hold translation while facing changes. Original speeds/encumbrance and research are in
 [pathfinding.md](game/pathfinding.md); footprint clearance/water costs come from nav queries.
 Heights use the character's (or clicked) Y to pick stacked floors; long paths have a provisional tail.
+Squad followers (engine choice; the original's slot rules are **Unknown**): each keeps `Formation.Slot`, a block 9 apart behind the leader in its
+heading, about as wide as deep, by rank among the other members. Within `CatchUpDistance` 60 it steers straight at the slot (the leader's velocity
+plus the gap x `FollowGain` 2, a speed mode up while behind); farther off, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
+A `FollowOrder` (the context menu's Follow, order 31) makes a character follow another the same way (`CharacterCold.FollowOrder` replaces the leader, the slot by its own squad's ranks) until a move order replaces it or the target is gone (then Idle); engine choices, not saved.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
 character takes half the overlap with each separation neighbour's predicted position (last position + last velocity × dt), so a walker
-shoves a stander aside; one in a bed or cage does not give, lying and carried bodies are not in the way, a character closing on its spot
+shoves a stander aside; one in a bed or cage does not give; a sitter (resting or on a used seat, no path) is
+never moved, by contact or separation (**Observed**: the original pushes no sitter), and is not solid (walkers steer past), lying and carried bodies are not in the way, a character closing on its spot
 is not stopped, and an unwalkable result falls back to its own step.
 
 ## Navmesh
@@ -312,8 +317,8 @@ is explicit and uncertain; [character-stats.md](game/character-stats.md) owns or
 Limbs: `HealthPart.Limb` / `Replacement` / `ReplacementItem` per slot; saves round-trip them ([save.md](formats/save.md#limbs-medical_state-limbs)).
 A severed limb queues (character, limb) on `CharacterTable.LimbsChanged`; between ticks the population system rebuilds the look
 (`Loadout.Limbs`: stump or prosthetic mesh, natural limb hidden) and drops the race's severed-limb item (Ground items). Prosthetics are
-fitted and removed by dragging them onto or off the limbs window's slots (`MoveInventoryItem` into or out of a `*_replace` section,
-`PlayerSystem.MoveLimb`, rules in [character-stats.md](game/character-stats.md)).
+fitted and removed by holding them onto or off the limbs window's slots (a `*_replace` section takes a LIMB_REPLACEMENT of its side on a stump; lifting a fitted one leaves a
+stump; [held item](#items-and-eating), rules in [character-stats.md](game/character-stats.md)) or by a right click (`QuickMoveItem`).
 
 Ground items: `World.GroundItems`, loose items: the save's (zone `1-itemlist`, read and written by `Saving/GroundItemSave`,
 [save.md](formats/save.md#zone-files)) and the severed limbs combat drops; at most `GroundItems.Limit` dropped in play (default 1024, up to 4096 by the Advanced setting "Dropped items kept"; the oldest of those goes; read ones
@@ -328,22 +333,33 @@ inventory"). Another order or a stop ends the walk. A picked-up read item keeps 
 ## Items and eating
 
 `Inventory`, `ItemFactory`, `FeedSystem`: grids, stack limits, backpacks, quantities/charges,
-load and food provision. ITEM `stackable` is an integer, not boolean; gear stacks cap at one.
-Transfer/split/top-up through inventory APIs. Food/auto-eat uncertainty and container bonuses:
-[character-stats.md](game/character-stats.md), [economy.md](game/economy.md).
+load and eating. ITEM `stackable` is an integer, not boolean; gear stacks cap at one.
+Transfer/split/top-up through inventory APIs. Eating follows the original's auto-eat (own items, backpack,
+squad mates' backpacks; bites of 50) and NPCs are fed by their hunger floor, not rations:
+[character-stats.md](game/character-stats.md#eating). Container bonuses: [economy.md](game/economy.md).
 
 Inventory moves validate snapshot identity, bounds, occupancy, stack limits and equipment
 type/armour slot. Weapon sections are 10×2 (back) and 7×1 (hip); other equipment slots hold
 one compatible item (the belt: an ITEM with `slot` 14, the lanterns, [lights](formats/lights.md#carried-lanterns)). These are engine constraints, not a complete original-game rule set.
-Backpacks move intact between pockets and their attachment slot; containers cannot be put
-inside a backpack. Equipment moves refresh worn appearance and combat gear; pocket armour
-does not grant worn bonuses. Race restrictions, swaps and prosthetic changes remain absent.
+Backpacks move intact between pockets and their attachment slot; a bag goes inside a bag only empty. Equipment moves refresh worn appearance and combat gear; pocket armour
+does not grant worn bonuses. Race restrictions remain absent. `InventoryCommands.Arrange` and `Inventory.AddTo` follow the original's ARRANGE and auto-add; a limited storage's
+stacks start from 1 (`Inventory.Limited`). Rules: [holding an item](game/ui-screens.md#6-inventory-trade-dialogue-build).
+
+Held item (`Items/HeldItems.cs`, part of `PlayerSystem`): `PlayerState.Held` is the item on the mouse with its origin (window `ItemOwner`: a character, the open trade's stock
+or a site; its root inventory, section and cell) and the character holding it. `LiftItem` takes it out (the whole stack or one unit; a fitted prosthetic comes off; a machine slot's
+units are made into an item), `PlaceHeld` places, merges or swaps it (the swapped item becomes the held one), `GiveHeld` adds it to a character in range, `DropHeld` puts it on the
+ground (own windows only), `ReturnHeld` puts it back (old cell, else `Inventory.Add`, else after arranging, else the ground). Stock goes only to the customer and is bought when placed
+(`TradeSystem.AffordHeld` / `PayHeld`, a stolen sale's `CaughtSelling`); out of the open loot it is marked stolen as a loot is and may butcher the body (`CarrySystem.TookHeld`); out of
+another faction's container it is marked stolen. It goes back each tick when its window closed or its holder is down or gone (`KeepHeld`) and before a save (`World.ReturnHeldItem`,
+`SaveCapture.Capture`). Hashed (record and quantity), not saved; the snapshot publishes `Held` and the serial of the last held command applied (`HeldSerial`).
 
 ## Combat
 
 `CombatSystem`, `CombatDatabase`, `Fighter`: attack scheduling, equipment/techniques, stance,
 block/dodge, armour and per-part damage, stun/KO/death, combat XP. Read previous combat state;
 ordered effects apply hits. `TickMedical=false` with BodySystem, `SelfApproach=false` with pursuit.
+A fighter faces its target only while it has no pursuit path; on one, movement steers (facing the target each tick
+undid the turn to a waypoint over 90° off the line to it, and the walker froze).
 Original formulas, constants and unresolved technique terms: [combat.md](game/combat.md).
 Hits, pauses and initiative follow combat.md "Hit reactions" / "Pacing"; the combat system picks the stumble
 clip (through the animation system's chooser) and holds the fighter for its length. Engine choices: a miss waits
@@ -352,19 +368,37 @@ sides agree, and the loser holds off for 1 s; a target that would not swing back
 Passive order) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
 joins its clip partway so the passed roll counts when "Late dodges and blocks" is on (Advanced setting, a balance
 change: Faithful off, Meitou on);
-attack slots go to the nearest fighters at the target (Advanced setting "Attackers per target", 1-5: Faithful 1,
-the CONSTANTS value; Meitou 3), the rest wait instead of circling; the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
+the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
+"Attack slots and circling" with the engine readings listed there (Advanced setting "Attackers per target", 1-5: Faithful 1, the
+CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
+Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle.
 
 ### Ranged
 
 Crossbow reload/steady aim, skill spread, bolt flight, ammo, obstruction and friendly hits are
-simulation state; `Schedule` advances bolts. Targets without medical bodies do not stop bolts.
+simulation state; `Schedule` advances bolts. Targets without medical bodies do not stop bolts. Bolts and the line of fire stop at the
+terrain heightmap and the buildings' collision triangles (the ragdolls' environment, `SolidHits`), not the walkable surfaces (a roof over
+the shooter counted as ground). A building is there once its zone's collision has been read on a worker; until then bolts pass it, which
+breaks determinism for those first shots.
 Ranged state is hashed when used. Weapon/turret research: [combat.md](game/combat.md).
+
+Turrets (`CombatSystem.Turrets.cs`, facts: [combat.md](game/combat.md#turrets)): one serial step after the bolts fly finds the gunners and runs each manned turret in key
+order: target choice, reload, aim point while loaded, turning the parts (`TurretRig`), and the fire decision (in range from the gunner, aimed within 1°, steady 0.4 s, line
+along the barrel clear); harpoons are the gunner's bolts (hits, XP, crimes). A gunner is a player character operating its turret (`CharacterTask.Operate`, below) or an NPC
+standing at the turret its squad claimed (AI turret goals); one per turret (lowest slot). `CharacterCold.Gunning` names it (derived); the aggro system starts no fight with a
+turret guard and retaliation skips a gunner shot at. Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; not saved (a loaded game
+starts empty, the exe saves `current shots`). Engine choices: NPC turrets have efficiency 1 (no NPC power grid); a player turret's efficiency is its machine's power grant
+(0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
+gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
+part's; the turret's own collision is not left out of the line or the flight; the shot sound is a pooled object at the muzzle. The snapshot carries the part angles
+(`MannedTurret.Angles`) and the renderer turns the meshes by them ([render-objects](render-objects.md#turrets)).
 
 ### Animals
 
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
-animals use faction hostility and carrying/damage rules where eligible. Unarmed humans use
+animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
+bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
+([animals](game/animals.md#ageing)). Not built: the player animals' feeding goals (player characters have no AI). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations
@@ -372,7 +406,14 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
 relations, shared targets, idle-player self-defence, pursuit leash and return to routine.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
-paths; preserve current ordering. Original threshold/sense/retreat facts:
+paths; preserve current ordering.
+Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
+every landed melee blow and bolt, the cagings of the player, the police and kidnappers, and first aid on an unconscious member, for
+any two factions, weighted by the victim's `faction importance` and the town it stands in (`PopulationData.TownAt`, its squad's
+`Town`). Engine choices: every striker rates above the 0.1 / 0.15 thresholds; a death is credited only at the killing blow (a later
+bleed-out has no killer); first-aid gratitude on every bandaging update. The attack order and looting change no relation. A
+witness that regards the culprit as friendly takes 20 off on every sweep (`CrimeSystem.BetrayalDelta`). Wars:
+`PlayerRelations.DeclareWar` / `EndWar` (one direction, the speaker's table; the war flag is not saved). Original threshold/sense/retreat facts:
 [perception.md](game/perception.md), [AI](game/ai.md), [factions](game/factions-squads-towns.md).
 
 ## Carrying, rescue and looting
@@ -381,10 +422,10 @@ paths; preserve current ordering. Original threshold/sense/retreat facts:
 looting. Carried bodies follow the carrier and affect load. Loot can raise witnessed theft and
 stolen ownership marks. [carry-loot.md](game/carry-loot.md). Loot window (engine choice):
 `OpenLootOrder` walks the looter over, then `PlayerState.OpenLoot` publishes the body's whole inventory
-(`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); `TakeLootItem` / `PutLootItem`
-move single items to a given slot or cell (`InventoryCommands.Transfer`, the move rules; taking counts as a
-loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
-body comes round or is lifted. It also runs the stealth knock-out
+(`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); items are held across with the mouse ([held item](#items-and-eating)),
+or right-clicked over (`TakeLootItem` / `PutLootItem`, `InventoryCommands.MoveInto`; taking counts as a loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
+body comes round or is lifted. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
+main grid, weight and burden only, grid size from its `inventory w` / `inventory h`; **Observed** in the original). It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
 
 ## Ragdolls
@@ -426,16 +467,33 @@ Carry/combat report deeds; serial sweep observes current positions. Bounty expir
 `0.04 hours/cat`, permanent at >=10000. Original categories, witness rules, imprisonment and
 remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while imprisoned. The police's response:
 [Arrest and jail](#arrest-and-jail).
+Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
+sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
+meters kept by `CrimeSystem`, not saved).
+Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside
+(`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it and
+regards its faction as neither ally nor enemy sets the pending crime when it lives there, its squad has locked up
+(`LockSystem.IsHouseLocked`, the lock-up round's flag; the original also sets it when a resident closes a lockable door) and the
+building is not open (template `public day`, kept as `Blackboard.HomePublic`; open 7:00-22:59); or when it is police-like, the
+building is not public, its residents' faction is not an ally, and the culprit is a slave or the residents have locked up. The
+witness rules above then fire event 17 and a police-like witness books 100. The MY_INTRUDER memory tag is not kept (nothing reads
+it). DA 33 CRIME_ALARM (`CrimeSystem.Alarm`): the speaker attacks the target, the target's crime timer is 30 and it is recently
+wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, posts "Alarm raised"
+(at most every 30 game seconds) and, engine choice (the original's town-alarm readers are not traced), sends the town's
+police-like characters within twice their sight of the target at it.
 
 ## Cages, beds and locks
 
 `Locks/`: `World.Fixtures` (`FixtureRegistry`) holds every door, `has lock` container, cage (function 8, pole/peeler
 `Restrains`) and bed of a town (a destroyed building: no doors or own lock, `TownBuilding.Destroyed`), registered once when the population first spawns the town (`RegisterSite`), kept on
 unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5/11.7](game/economy.md#115-bail-and-sentence).
+- **Player orders on locks and cages** (`LockSystem.Force.cs`, `LockSystem.Cages.cs`; [locks](game/locks.md#player-orders-on-locks)): `ForceLockOrder` (Use Tools / Use Strength / Smash), `SetFreeOrder`, `GetInCageOrder`, `PutInCageOrder.Cage`,
+  `PickLockOrder.Cage`; cages are published as `WorldSnapshot.Cages` and a prisoner's `PrisonView` names its cage and owner. Per-character state `ForcingLock`, `BashOrdered`, `Freeing`, `EnteringCage` is hashed only while set.
 - **Ids** (engine): a building's own lock = its instance id; door i `<inst>#i`; interior item `<inst>/<layout index>`
   (`TownBuildings` collects them as `TownFixture`s); bed k `<inst>@bed<k>`. Owner: the placement's `owner faction ID`, else
   the town's faction. Lock levels roll from `Rng.Hash(seed, StableHash(id), Lock, 0)`: load order never changes them.
-- **Doors**: `AiSystem` applies the template's `initial door state` when it assigns a home (first squad, not to restored
+- **Doors**: a building no save has starts from its level-data GAMESTATE_BUILDING (`TownBuilding.LevelState`: lock levels and door
+  state; only doors with a `state` key count as restored). `AiSystem` applies the template's `initial door state` when it assigns a home (first squad, not to restored
   doors). `IDoorGate` (the game's `NavAdapter` -> `NavDoors`, reset on `ReplaceWorld`) closes a building for every path while
   all its doors are effectively locked and none broken (engine: one nav door state per building; closed-unlocked doors stay passable).
   Motion (`LockSystem.Doors.cs`, serial `SlowWorld`): `StepDoors` moves opening/closing leaves by `door move speed` per second and
@@ -465,13 +523,25 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   locked, sentence; optional carrier; every caging is in `CagingsOf(tick)` and the `Caged` event, the bounty-claim hook),
   `LiftOut` (a `PickUpOrder` on the occupant of an unlocked cage, awake or down, engine; out of another faction's cage
   the lifter gets a pending code 7 and the freed one Escaping Prison + `Escaped`), `Release` (unlock, clear, erase the releaser's and jail's bounty entries for a booking releaser),
-  `GetOut` (refused while locked; Escaping Prison unless served), `EnterBed`/`LeaveBed` (a move order gets a sleeper up).
+  `GetOut` (refused while locked; Escaping Prison unless served), `EnterBed`/`LeaveBed`.
+- **Beds** (`Locks/BedSystem`, serial; facts in [locks](game/locks.md#beds)): bed fixtures are the town interiors' beds and, registered with the player's
+  buildings (`<site>@bed0`, site -1), the beds the player built; each keeps its `BedData` (function, clip, construction materials). `UseBedOrder` (258: a quick
+  right click on a bed, or its held menu's "Sleep") sends the nearest awake, non-carrying selected character; `PutInBedOrder` (99: "Put in Bed" on the bed's menu,
+  or, engine stand-in, on a carried body's menu with the bed search; a quick click while carrying, engine) sends carriers, the cheaper rent paid, the body let go
+  and laid in. In reach (`use range` + 15, on the bed's floor within 20, or a walk ended within 60) it pays the rent (`Cost`/`Pay`, player only; the 24 h memo
+  is engine state, not saved) and enters; 3 short walks give the bed up (`MarkUnreachable`). In a bed the task is `CharacterTask.Sleep` (held still, the
+  bed's clip, `Sleeping` on the HUD); any other task gets it up (`GetUp`; a knock-out or death in bed keeps it there). The player's bed search `FindBed`
+  follows the original's weights over beds within `BedSearchRange` 3953 (engine, for the town). Job 106 (in the list with the rescue job): an idle carrier of
+  a non-hostile body lays it in the searched bed. Lifting a sleeper takes it out. Engine differences: no power test; the rescue job (148) still runs without a free bed.
+  Saves: `HeldSave` (a player-built bed also writes the original's `in what` = its building's handle; read back through `Bind`); a loaded sleeper's task is Sleep.
   `CharacterCold.InSomething`/`InWhat` name the fixture; an imprisoned character is skipped by AI, movement (held still),
   aggro, answering, `CombatSystem.Engage` as attacker (it can still be attacked) and carrying. Sentence: `SentenceStart`
   (`World.GameHours`) + `SentenceLength`; served when start + length <= now; no bounty with the cage owner: none (served).
 - **Lockpicking** (`Lockpicking`, serial; the player's order is in [Arrest and jail](#arrest-and-jail)): `Step` per task update (pending crime,
   timer on the lock, seeded roll by the lock's roll counter, XP), `Allowed` (min chance; engine: conscious, an arm, not
   carried, not on a pole), `Break` (strength > 3 x hardness). Not built: cutting locks other than shackles.
+  A player character picking a lock or shackles at the lock gets the floating bar (`CharacterSnapshot.Bar`, drawn in the
+  `Kenshi_ProgressBarPanel` layout just above the name tag; anchor engine choice). No bar for cutting.
 - **Bashing doors** (`LockSystem.Bash`; blow rule in [locks](game/locks.md)): engine stand-in for the planner. Every 30 ticks an
   NPC attacking (armed or an animal) whose target is inside a building another faction's locked doors shut (`IsShut`; inside:
   nearer the door fixture's origin than its farthest door spot) while it is outside takes the nearest door (`CharacterCold.Bashing`);
@@ -553,14 +623,14 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   as squads of the template's faction (else the owner's) and each member is imprisoned in a random free cage of the home building. Engine choices: members beyond the free cages
   are not made; they are held without a sentence (`Kidnapped`: no release round, no bail, getting out is no escape). Observed: Cat (`Dust King Prisoner`) caged in the Dust King
   Tower's watchtower; Tengu's Vault and the Tower of Abuse have no cages in their homes, so none are made. A caged prisoner is no aggro target (engine choice).
-- **Putting shackles on** (`PutShacklesOrder`, verb "Put on Shackles"; engine stand-in for dragging them onto the target's armour slot, an inventory window Meitou lacks): a
+- **Putting shackles on** (`PutShacklesOrder`, verb "Put on Shackles"; engine stand-in for dragging them onto the target's armour slot, which the held item does not do yet): a
   selected character carrying unworn, unbroken shackles walks to a live NPC that is down or caged and wears none, and within `ShackleReach` puts them on, locked again
   (re-locking is an engine choice); what the target wears in that slot goes into its inventory. No crime is booked (**Unknown**). Prisoner Shackles take the boots slot.
 - **Slave state** (`CharacterCold.SlaveState` 0/1/2, `SlaveOwner`; facts: [carry-loot](game/carry-loot.md#unknowns) item 3): `DA_ENSLAVE_TARGETS_CARRIED_PERSON` (40) is the bounty
   desk's hand-over (`ArrestSystem.TakeOver(enslave: true)`), and the captive becomes the guard faction's slave once caged ("{1} has been enslaved" for the player's). A slave's
   sentence is never served; getting out of the cage makes it an escaped slave (2, recently wanted 250); a release or bail frees it (0); an owned slave caged in another owner's cage
-  changes owner. Dialogue conditions 59, 61, 62 and 64 read it. Saved as `slavestate` and `meitou slave owner` (`SlaveSave`). Engine: the slavers' processing (task 182) is folded
-  into the caging. CHARACTER `slave` ("sets initial slave state"; **Verified**: fcs.def and the editor's `SlaveStateEnum` NOT_SLAVE 0, IS_SLAVE 1, ESCAPING_SLAVE 2, EX_SLAVE 3) is
+  changes owner. Dialogue conditions 59, 61, 62 and 64 read it. Saved as `slavestate` and `meitou slave owner` (`SlaveSave`). An arrest with `Enslave` makes the slave at the
+  caging; the slavers' own processing (182) of caged captives is [Captives](#captives). CHARACTER `slave` ("sets initial slave state"; **Verified**: fcs.def and the editor's `SlaveStateEnum` NOT_SLAVE 0, IS_SLAVE 1, ESCAPING_SLAVE 2, EX_SLAVE 3) is
   applied to a new game's characters (`StartPlayer`; The Slaves' "start slave" is 1, in locked Prisoner Shackles), owned by the start town's faction (engine; the original's owner is
   **Unknown**); 3 is free.
 - **Slave squads** (`PopulationSystem.MakeSlaves`): a squad's planned `slaves` squads (the factory's role 4) are made at its spot as squads of their template's faction (else the
@@ -574,8 +644,14 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   `Enslave` (fight down, lift, cage; event 36 ESCAPING_SLAVE_SPOTTED as a bubble), and the caging makes it a slave (1) again. A town here is `InOwnTown`'s extent, else no farther
   from its centre than its gate nearest the point plus 100 (Rebirth's gates stand about 1500 out, its radius is 184); without gates, the extent only. **Observed** (probe): a start
   slave walking out of Rebirth is tagged just past the south gate, and once down is carried back and caged as a slave.
-- Not built: Slave AI Goals (obedience, work, following a master), beatings of idle slaves, slave trading windows (DA 41/42), the status panel's Slave / Escaped slave lines,
-  kidnapped captives made slaves ([Kidnapping](#kidnapping)).
+- **Slave trading** (DA 41 / 42, `DialogueSystem.CharacterTrade`; facts: [economy 12](game/economy.md#12-slaves-prisoners-animals)): the line ends the conversation and the window
+  opens as it closes (a speech-bubble line opens it at once; only for a player-character target). Rows, prices and the confirm's effects as in the original, with these **engine**
+  choices: the buying list is every character in slave state 1 whose `SlaveOwner` is the slaver's faction, not dead (the original's per-owner set is not modelled); the selling
+  buyer's money is the slaver's squad purse (`Squad.Money`, a trader's shop money); the confirm re-checks the window's gate (a row ticked, total within the buyer's money) and
+  does nothing otherwise; a slave bought free out of a squad of others leads a new "Wandering Squad" (`SquadManagement.DismissTemplate`, as a dismissed character) of its faction, or a new player squad for
+  one of the player's; event 51 fires after it is out of its cage; the window closes when the slaver or the customer is no longer awake. It is neither saved nor hashed.
+- Not built: task 133 as such (Meitou walks a bought caged
+  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**), the obedient-slave order (187) and the shackles put on a sold character; DA 48 (animals).
 
 
 ## Kidnapping
@@ -596,19 +672,71 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   lock work, or a lift out of an unlocked cage ([Cages](#cages-beds-and-locks)). Messages for player victims ("is carrying X away", "has been kidnapped by F").
 - **Save**: the cage state is the existing `in something` / `in what` (Meitou keys for interior cages), and `meitou kidnapped` ([save](formats/save.md)). Carry links are not saved: a save mid-journey
   leaves the victim down where it was and the raiders (retreating campaign squads) lift it again. The kidnap records themselves are not saved. Hashed only while one runs.
-- **Not built**: eating, killing or enslaving a captive (goals 139, 135, 220, slaves), lifting sleepers from beds, kidnapping as a crime for witnesses, a carrier's platoon unloading with an NPC victim
-  (the carry is dropped when the platoon is stored). A campaign carrier cages in the first town of its faction it reaches, not necessarily the campaign's home; the leader keeps marching to the home.
+- **Marching home**: a campaign carrier cages in the first own town on the way with a free cage and drops the victim only in its campaign's home town without one (`Abduction.HomeSite`; engine reading of the original's cage finder, which weighs the home x100 but does not require it, [ai-tasks](game/ai-tasks.md)); a member of an AI squad that lists a cannibal retreat package (signals 1, 25) lifts
+  without a cage in range and cages the same way, its home its squad's home town, which the retreat package walks the squad to (130 TRAVEL_TO_TARGET_TOWN_FAST as going home at a run, [Captives](#captives)).
+- What happens to the captive next: [Captives](#captives).
+- **Not built**: lifting sleepers from beds, kidnapping as a crime for witnesses, a carrier's platoon unloading with an NPC victim (the carry is dropped when the platoon is stored).
 - **Observed** (headless, real data, `raidFrequencyMult` 1000): the Skin Bandits' "skin bandit standard raid small" against an outpost with four weak player characters: all four are lifted once down (the
-  cannibal rule sends phase 2 at the third carrier), three are caged at the faction's Skinhouse HQ (it has three cages), the fourth, on the leader, is carried towards the campaign's far home and put down
-  at the first own town without a free cage. A save and load keeps the three caged and `Kidnapped`; a second capture writes the same keys. Cannibal AI squads at home lift and cage a downed player character in about two seconds.
+  cannibal rule sends phase 2 at the third carrier), three are caged at the faction's Skinhouse HQ (it has three cages), the fourth, on the leader, is carried on towards the campaign's far home.
+  A save and load keeps the three caged and `Kidnapped`; a second capture writes the same keys. Cannibal AI squads at home lift and cage a downed player character in about two seconds.
+
+## Captives
+
+`Kidnap/CaptiveSystem` (serial `SlowWorld`, right after Kidnap; with the population and the AI). Facts: [ai-tasks, prisoner fate and slave rows](game/ai-tasks.md#prisoner-fate-and-slave-rows),
+[ai, prisoner and slaver packages](game/ai.md#prisoner-and-slaver-packages). Each goal runs as a job of one worker: every 30 ticks a sweep gives a job to a member of an AI squad
+whose current role list holds the goal in its hours and that is free (the AI's, awake, not fighting, in no job; at most 8 new and 32 running jobs, engine); the worker is `Engaged`
+while it works. Cages are those of the squad's town (`Fixture.Site`) unless said otherwise. A walk to a cage ends within `use range` + 15, or a walk that ended within 200; three
+failed walks mark the cage unreachable for the faction; its own faction's shut doors are unlocked first. A job gives up after 600 game s (engine).
+- **Kill** (135; needs a weapon): when the town's kill timer has run out or all the faction's cages there are held; the best occupied cage of the worker's faction by the cage weights
+  (x100 home building), not a robot. At the cage it holds `chop down static` (`CharacterCold.ActionClip`, which the animation system plays for an idle character) and strikes once per
+  clip length at 0.55 of it (`CombatSystem.Execute`: the weapon packet landed through armour, no defence, no crime) until the captive dies. Events 10 (on picking) and 11 (each blow).
+- **Eat** (139 always; 282 "Dinner time" at the kill rate): same target, weapon sheathed, `eat` held, `MedicalState.BeingEaten` each tick at lerp(2, 0.4, toughness/100) a second
+  (limbs severed unless dismemberment is Never; `DeathCause.Eaten` and "{1} has been eaten alive." when nothing is left). Events 52 and 11 every 10 s (engine throttle).
+- A captive's death by either resets the town's timer to now + uniform[1, 15) h; the first ask sets it. Timers and jobs are not saved (engine); hashed once any exists.
+  **Observed** (headless probe, real data): a cannibal village kills a caged player character within 16 s of work once its timer is due; a fishman lab eats one in about 160 s.
+- **Process** (260: an awake non-slave occupant anywhere in the town; 183: an occupant within 180 that is no slave of the worker's side): cages of the worker's faction or an ally,
+  not the player's. 3 s of `medic`, then the captive's worn weapons and armour (not locked shackles) go to the worker's inventory (else the ground; engine for the original's
+  storage), its faction's `slave clothing` is put on where free, event 35 (37 for a former slave), and it becomes the worker's faction's slave. Kidnapped player characters are
+  processed too. **Observed** (probe): a player character caged next to the Slave Farm's Cage Wardens is enslaved about 7 s later.
+- **Gather** (173, 245: while the squad has at most 3 of its own slaves up and uncaged; 217: in a town or outpost): the nearest occupied cage of the town the gatherer stands in (173,
+  245: its faction's; 217: any but the player's; 245: a woman or another race). The cage is opened and the captive joins the gatherer's squad as a slave member (state 1, owner its
+  faction; its AI mind is made anew, so its Slave AI Goals, mostly 171 Follow slavemaster, run). Engine reading of `Task_GetSlave`'s queued message (**Unknown**); NPCs only.
+  **Observed** (probe): the Slave Farm's workmasters take the caged slaves out by day; at night their slaves' 172 puts them back.
+- **Deliver** (192, the squad leader under a shipping package): walks to `Blackboard.MissionTown`; there, with 194 (or 218 in a prison or slave camp) in its hours, it says event 39
+  to the nearest NPC of the town's faction or an ally, and each of its slaves leaves for a "Wandering Squad" of its own, owned by the town's faction, caged in the nearest free cage of
+  that faction or an ally (engine: the original's handover is a dialogue for event 39, **Unknown**).
+- **Get in the cage** (172, a Slave AI Goal): a slave not held walks to the nearest free cage of its owner's faction in its town and gets in.
+- **Packages** (`PackageClass` 8 to 11, rules in `AiSystem.Captives.cs` as the facts): cannibal retreat (1, 25), cannibals at home (27), prisoner gathering (10, 24), slave shipping (11,
+  28; Meitou always takes the nearest slave camp not hostile to the squad, the other town rule's flag being **Unknown**); the cannibal patrol (4) does not start while the town's cages
+  are full. A squad's slaves are its live slave members in slave state 1 (engine reading of the platoon's slave list).
+- **Capture** (167, `CaptiveSystem.Capture.cs`; facts: [slave work, shout and capture](game/ai-tasks.md#slave-work-shout-and-capture)): the nearest downed, uncarried, uncaged character in sight that is
+  not of the capturer's side (engine reading of the sensed-class masks), no slave (state 1), not law enforcement, trader or diplomat and not shackled. The capturer walks to it, strips the `hip` and
+  `back` items into its inventory (0.8 s of `medic`), cuffs it (10 s, engine choice; locked stock `SHACKLES` put on, what it wore in that slot goes to its inventory; event 37) and has `KidnapSystem.Carry` lift
+  it to a cage of its faction in range (goal 112 in the original), where it is held as kidnapped and then enslaved by the processing jobs. **Carry** (168): the same for a downed slave of the
+  carrier's faction, without strip or cuff. A target a job gave up on is left alone for an hour (engine give-up list). **Observed** (probe, Rebirth, real data): a downed character of the player's faction
+  beside the garrison leader is stripped, shackled, carried to a cage and enslaved by the Cage Wardens in about 1250 ticks; its squad then remembers the capturer as captor.
+- **Shout** (188): a worker with slaves of its squad up and uncaged says event 38 at a random one and walks towards it for up to 8 s (or within 40); the same worker again after 0.5 to 1.5 x 120 game
+  seconds (engine pacing).
+- **Work** (189, 190; `AiBehaviour.Work` in the AI, not a job: it competes by score like any goal): a worker of a town with a mine, research bench, refinery or crafting bench (BuildingFunction 1, 3, 4,
+  10) walks to a random one (a pick of the character and `AiMind.WorkEpoch`, kept while it works there) to within 30 units, faces it and plays its functionality's clip (`stonemine` by default) as
+  `ActionClip`. NPC towns run no machines here, so nothing is produced. **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day. The
+  Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run.
+- **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of its side that does not look like one (no locked shackles and none of
+  its owner's slave clothing; an owner without slave clothing never does).
+- **Status lines**: a slave or escaped slave selected shows the bounty panel with its status rows ("Slave" / "Escaped slave" and the owner's text, the player-character hints) in its tooltip, ahead of the
+  bounty rows (`CharacterSnapshot.Slave`, `PlayerInterface.SlaveRows`; [ui-screens, information panel](game/ui-screens.md#4-hud-mainbargui)). Ex-slave (state 3), "Looks like a slave", "Situation" and "Time remaining" rows are not built.
+- **Squad memory**: a caged captive's squad remembers the captor (5, through `FactionDeeds.CagedHook`), a freed prisoner's squad the liberator (3 and TEMP ALLY, event 13), a sold slave's squad the customer
+  (5), a bought one's the buyer (3).
+- Not built: the off-screen side of shipping (a platoon unloaded on the way keeps its usual roaming), goal 112 as such (captives are carried by the kidnapping system), the real operation of machines by
+  workers, short-term tag 6 of the strip.
 
 ## Buildings
 
 Player construction contract (Faithful UI). Facts: [construction](game/buildings-production.md#construction),
 [placement](game/buildings-production.md#placement), [build menu](game/buildings-production.md#build-menu),
-[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Out of scope: the
-outpost behaviour beyond the record (residents, raids, renaming, the map marker), the door x3 rule,
-power, fetching from storage (task 247); production and research: [Production](#production).
+[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Not built: outpost
+residents, renaming and the map marker (raids on outposts: [campaigns](#off-screen-tier)), the door x3 rule, anything
+that damages a complete building. Production, power and research: [Production](#production).
 
 **Shared types** (stubs f4cb78c, filled by the simulation track):
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
@@ -635,7 +763,7 @@ are not reserved by the simulation (**engine gap**, the host may call `World.Bui
 placement is the host's to avoid. `World.Research` (`Construction.ResearchState`): completed RESEARCH ids and the
 `Unlocked` set (replaced, never changed in place). A new game completes the default start research
 (`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
-(`PopulationSystem.StartPlayer`); a load takes the save's. Static this milestone, not hashed.
+(`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
 **Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`; never removed) and
 `BuildSite.Town` (a number, 0 none). `PlaceBuildings` gives each new site its town by the
@@ -648,11 +776,12 @@ of their mean, else a new outpost there; a level town of another faction leaves 
 
 **ConstructionSystem** (`StandardParts.Construction`, in `All`; `StandardSystemSet.Construction`) runs after Carry, before
 Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option, 1), `Reach` 20, `SettleReach` 150,
-`Footprint` (record -> radius, optional), `AutoEveryTicks` 15.
+`Footprint` (record -> radius, optional).
 - `Inputs`: `PlaceBuildings` re-checks only the data half (a BUILDING, unlocked, `TownBlock`); a failing plan is dropped
   with `World.Post(Message)`. A total of 0 completes at once, so a free building is complete from the first snapshot.
-  `BuildOrder` (player characters, awake, not carried or caged; a complete site is ignored, repair needs building health
-  and does nothing) and `DismantleOrder` set the `CharacterTask`s `Build` / `Dismantle` and `CharacterCold.BuildSite`
+  `BuildOrder` (player characters, awake, not carried or caged; Build and Repair alike work a site that `NeedsWork`:
+  unfinished, or complete with progress below its target, the original's damage) and `DismantleOrder` set the
+  `CharacterTask`s `Build` / `Dismantle` and `CharacterCold.BuildSite`
   (the selection when the list is empty). Dismantling is refused with the original's texts while a site stands in the
   site ("I have to dismantle the furniture first." for interior furniture and nodes, else "I have to unmount the
   buildings first."). `CancelSite` removes an incomplete site with nothing delivered, else posts "Dismantle it to get the
@@ -661,31 +790,40 @@ Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option
 - `Schedule`: a worker walks to the site like a medic to a patient (goal = site XZ, free speed, asked again after a wait
   when the path failed). It has arrived within `Reach` + footprint of the site, or once its path has ended within
   `SettleReach` more (**Unknown**: the original's work distance; a site that is a navmesh obstacle cannot be walked
-  into). Work ends when the site is gone, complete (building), the character is down, fighting, carried, carrying or caged,
-  or another order replaced the task.
+  into). A fetcher walks to its source instead (a building as a site; a ground item within `PlayerSystem.PickUpReach`, or
+  twice that once its path has ended; a source that is gone sends it back to building). Work ends when the site is gone,
+  no longer `NeedsWork` (building), the character is down, fighting, carried, carrying or caged, or another order replaced
+  the task.
 - `SlowWorld`: arrived workers in slot order. *Build*: a stalled site (`sum(min(delivered, required)) <= progress`) turns
-  into *DeliverMaterials* if the builder carries a missing item, else the work ends (fetching, task 247, is not built);
+  into *DeliverMaterials* if the builder carries a missing item, else into *FetchMaterials* when `Source` finds one, else
+  the work ends;
   otherwise progress += rate x `lerp(0.3, 2, e/100)` x dt x `BuildingSpeed` x CONSTANTS `build speed` x 0.75^k, e the
   engineering stat times its injury multiplier (engine choice), dt = `TickSeconds`, k the builders that already worked
   the site this tick (the 0.75 counter resets each tick: the engine reading of the **Unknown** reset; capped at 15, above
   100 it restarts), engineering XP (`XpService.Engineering`); a rate of 0 or less completes at once; at
   `progress >= target` the site completes (`Complete`, message "Building '<name>' construction complete." for the player's
-  faction). *DeliverMaterials*: the bar fills at 0.2 per second (`CharacterCold.BuildBar`); full, it hands over one unit
-  of each missing type (inventory first, then backpack) and the task returns to *Build* (whether the original repeats
-  deliveries before building is **Unknown**; fetching aside, the two alternate). *Dismantle*: a complete site first
+  faction); a repair (complete, never stalled, no materials) stops at the target. *DeliverMaterials*: the bar fills at
+  0.2 per second (`CharacterCold.BuildBar`); full, it hands over one unit of each missing type (inventory first, then
+  backpack) and the task returns to *Build* (whether the original repeats deliveries before building is **Unknown**).
+  *FetchMaterials* (`CharacterCold.FetchSite` / `FetchItem` / `FetchRecord`, hashed with the site): `Source` follows the
+  [original's finder](game/buildings-production.md#material-delivery) for each owed material in list order: a loose item
+  of it within 1200 of the builder (engine: the nearest), else the nearest player storage holding it, else the nearest
+  player machine whose output holds it, both within squared distance 4.246733e7 (the AI's default range mode; engine:
+  no town filter, no remembered source, exact record). At a building it takes up to 2 units while it has room, a loose
+  item whole (the rest stays); with something taken it walks back as *Build*, else the work ends. *Dismantle*: a complete site first
   becomes incomplete with progress at most target - 1; then progress -= dt x `lerp(0.05, 4, e/100)` x 4 x rate (no option
   or constant), XP as building; at 0 the delivered materials come back and the site is removed. The `medic` clip plays
   for building and delivering, `stonemine` for dismantling (`AnimationSystem.HeldClip`).
-- Refund: entry i with something delivered gives `max(1, trunc(U x delivered))`, U = m + (1 - m) x
+- Refund: entry i with something delivered gives `max(1, trunc(U x delivered))` units, U = m + (1 - m) x
   `Rng.Float(Rng.Hash(seed, StableHash(id), RngPurpose.Build, i))`, m = CONSTANTS `min dismantle materials percentage` /
-  100. Engine (no ground items yet): the items go to the dismantler's inventory, then backpack; what does not fit is lost
-  with a message. A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
+  100; each unit is its own ground item (`GroundItems.Drop`, yaw 0) at x, z = position + (2u - 1) r, u from streams
+  `2000 + (i << 16) + 2k` and `+1`, r = the footprint radius, at least `Reach` (engine: the original's bounding box is
+  not in the sim). A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
   (**Verified** rule: progress 0.4 x target, delivered floor(delivered x U[0.3, 0.5) + 0.5)).
-- Auto-job (not in `AiSystem`: player characters have no AI mind): every `AutoEveryTicks` an idle, wandering or following
-  player character with the Jobs order, a race and stats takes the site with the best score `max(2 (1 - d^2/9000^2),
-  0.0001) / (n + 1)` (n workers on it); not complete, paused, destroyed or being dismantled, and not stalled unless the
-  character carries a missing item (the original's planner cost is **Unknown**; this avoids a walk to a site it cannot
-  work). It goes back to its wander or follow task afterwards.
+- Engineer job (125, run by the [job lists](#production)): `EngineerSite` scores the faction's sites that `NeedsWork`,
+  not paused, destroyed, attached or being dismantled, `max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)` (d 3D, n others
+  working it), skipping a stalled site the character carries nothing for and `Source` cannot feed; `StartBuilding` sends
+  it there. Without the job nobody builds unordered (the original has no other auto-build).
 - `BuildingsRevision` bumps on add, complete, a complete building becoming a site (dismantling started), destroyed and
   remove. `Version` (progress, delivery, pause) only rebuilds the published list.
 
@@ -840,27 +978,57 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
   to the next; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
-  character to the following or wandering it took it from. Meitou runs two types; the others are kept,
-  listed and saved:
+  character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork` or a job follows a character. The production pick runs the
+  jobs below; first aid, carry and aggro passes run others (further below):
+  - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous
+    XP entry (`XpService.Capped`, rate 2, cap = `output rate`; [facts](game/ai-tasks.md#perma-jobs)). Blocked while the dummy has no free place or the character has no working arm.
+  - 45 Bodyguard / 31 Staying close (`PermaJob.Character`; the "Follow" and "Bodyguard" verbs with Shift, `AddOrderJob` with the target): the character follows the job's character with a follow order
+    (`MovementSystem.Follow`); blocked when it is gone, for 31 also while it is down; saved with the target's handle and found again from it after a load. Bodyguard's defending is the AI's own (engine
+    choice: no extra rule). The jobs run with the switch off (`IgnoresSwitch`).
+  - 137 / 138 corpse disposal and 223 / 273 intruders (`ProductionSystem.Errands.cs`, every `ErrandEveryTicks` 15): a free character with 138 and 137 lifts the nearest dead body (a caged one first)
+    when a free corpse-disposal machine (function 11) exists and walks it there; in the machine's reach it lets go and the body is removed (items with it). With 223 and 224 (or 273 and 274) it lifts
+    a knocked-out, alive character of another faction in the player's building (with doors) it stands in and puts it down just outside the door (273: past the town's farthest building). Engine
+    choices: the building test (a footprint round the origin), the friendly exclusion, the reach, 4 walks that end short before the body is given up, and 223's "home" (the building the carrier is in).
+  - 234 Turret guard (Shift + quick right click on a turret: 146 becomes 234): mans the turret as an operator; blocked while someone else mans it.
   - 87 Operating machine: blocked while others hold every operator place or the machine has no work (no power; no queued research or craft; a
     farm with nothing ripe or dead; an empty input the operator cannot fill from its pack or a storage; a full output no storage takes).
   - 124 Hauling to (`CharacterTask.Haul`): the nearest player machine within `HaulRange` of the storage whose output the storage takes is
     emptied into the hauler's pack and carried there; items the hauler already carries that some machine makes go first. Blocked with neither.
+  - 125 Engineer (ordered as 2 Build or 95 Repair; Shift + quick right click on an unfinished site): builds `ConstructionSystem.EngineerSite`'s
+    pick, whatever the job's target ([buildings](#buildings)); its tasks are *Build*, *DeliverMaterials* and *FetchMaterials*. Blocked with no site.
   - Implicit jobs (`ImplicitPick`): with no list job to run, the switch on and not a slave, the squad AI options (`PlayerState.SquadAi`, the
-    overview's AI tab, all on by default) start, in this order: Ditch items (242: carried items some player machine makes go to the nearest
+    overview's AI tab, on by default) start, in this order: Ditch items (242: carried items some player machine makes go to the nearest
     storage within `HaulRange` that takes them, as a Haul trip; only with no queued orders), Sleep when injured (153: a body part below full
-    health lies in the nearest free player bed within `HaulRange`, resting, until healed), Sit when idle (275: the nearest free player chair or
+    health lies in the bed the bed search finds, a `BedSystem` trip (task Sleep, the bed id in `OperateSite`), until healed; job lists are then looked at
+    even with no machine), Sit when idle (275: the nearest free player chair or
     throne within `SeatRange` 600). The one running is kept while it holds; any list job preempts it. Distances are from the character, or its
-    squad leader while it follows, so it gets up when the leader walks off. Sitters and sleepers are put on the seat's origin facing its way;
+    squad leader while it follows, so it gets up when the leader walks off. Sitters are put on the seat's origin facing its way;
     the medic job counts them as idle.
   - The list is reordered by dragging a row (`MoveJob`).
-  - 58 Medic and 148 Find and rescue (+ companion 106): the Medic and Rescue buttons (H, J) start one look for a patient or body; with Shift they add
-    the job. The first aid and carry passes run them for a character that is idle, on an implicit job or on a list job below them.
+  - Jobs on characters: the Medic and Rescue buttons (H, J) start one look for a patient or body, with Shift they add 58 / 148 (+ 106); Shift with
+    the First Aid, Splint Injuries, attack or Loot verb (context menu or quick order) adds the job the order becomes (`AddOrderJob`: 58, or 57 on a
+    robot, 250, 16, 238). Each runs for a character free for it (`PermaJobs.FreeFor`: idle, wandering, following, on an implicit job or on a list
+    job below it; switch on unless the type ignores it), the first in list order that finds a target:
+    - 58 Medic / 57 Robotics (`FirstAidSystem.HealSomeone`) and 250 Splint Rigging (`SplintSomeone`): the original's finders
+      ([medic jobs](game/ai-tasks.md#medic-jobs)) over characters within sight (stand-in for the sensed list): score = need (untreated HP for
+      the kits it has) × relation factor × nearness (1 - d²/1843²); the medic itself scores its need. 58 skips robot races. Splinting takes
+      only its own faction, at skill min(medic, kit quality). Engine: no same-building floor, the splint weight is 1, no give-up list.
+    - 148 rescue: the carry pass (its own faction; with Rescue Allies also allied factions, `CarrySystem.Rescues`).
+    - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
+      (engine choice), is looted (take-all and butchering).
+    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); no leash; after the
+      fight it goes back to following or stands idle.
   - Engine choices: the check period; kind-2 (turret)
-    jobs are not run; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
+    jobs do not run before urgent tasks; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
   - Saves: GAMESTATE_AI `pjob<i>` / `pjobT<i>` / `jobs` as the original, plus `meitou pjob<i>` (the site id) for a building the handle cannot
-    name; the older `meitou jobs enabled` is read, not written. The squad AI options are the CAMERA bools `ditch`, `sleep`, `sit`. A job's
-    trip is not saved.
+    name; the older `meitou jobs enabled` is read, not written; `chase mode` is written and read as the switch. The squad AI options are the
+    CAMERA bools ([squad AI options](game/ai-tasks.md#squad-ai-options)). A job's trip is not saved.
+- **Squad AI options** (`PlayerState.SquadAi`, the overview's AI tab, defaults as the owner's saves): Ditch, Sleep, Sit above; Heal Allies
+  (the medic jobs take allied factions' patients scoring ≥ 0.1), Help Allies (`RetaliationSystem.HelpAllies`: free idle player characters
+  within `JoinRange` 250 of an attacked character of an allied faction defend it, unless the attacker is the player's; engine: no distance
+  weight), Rescue Allies (above), Share Food (`FeedSystem`: a player character with no food takes it from a squad mate's backpack within 200,
+  only with the option), Feed Animals (off: the player's animals do not eat), Shoot first (`SquadAiRules.ShootsFirstAt`: with no enemy in its
+  sights a player turret gunner also takes dangerous neutrals at weight 0.6).
 - **Saves** (`Saving/MachineSave`, `ResearchSave`). Each building's production and farm keys go into its
   GAMESTATE_BUILDING. Items go into an INVENTORY_STATE `<site>-inventory`, listed first by the building, with sections
   `in<k>`, `out` and `main`.
@@ -868,10 +1036,10 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - The original's reading of these inventories is unverified: no sample holds a working player building.
 - **UI** (Faithful, `PlayerInterface.Production.cs`).
   - Selecting a machine opens its window beside the inventory: `Kenshi_GenericBuildingWindow`, or for a bench
-    `Kenshi_InventoryResearchWindow`. Items drag in and out.
+    `Kenshi_InventoryResearchWindow`. Items are held in and out with the mouse (an input takes its record up to its capacity; `out` takes nothing).
   - The site menu gains Operate (also the quick right click); Shift + quick right click adds a job instead ([job lists](#production)).
   - The HUD shows the farm's growth, ripeness and fertility, the output, workers and tech level.
-  - A crafting bench's window shows the current craft and QUEUE... (opens the Craft tab); finished items drag out of `out`.
+  - A crafting bench's window shows the current craft and QUEUE... (opens the Craft tab); finished items are lifted out of `out`.
   - The overview's Craft tab lists stations, their crafts (click to queue; red: locked), the queue (click to cancel),
     Repeat Queue and the hovered craft's time and inputs.
   - The overview's research tab lists categories, blueprints (click to queue), the queue (click to cancel) and a
@@ -879,9 +1047,10 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - The original's verb names, row widgets and colours are **Unknown**.
 - **Engine gaps:**
   - No rain filling farm water.
-  - Furnaces do not burn and turrets do not fire. A quick right click on the player's furnace walks the selection there and opens its window
-    (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character walks to its gunner spot (146 USE_TURRET,
-    `UseTurretOrder`; the spot as for town turrets below; one gunner, engine choice).
+  - Furnaces do not burn. A quick right click on the player's furnace walks the selection there and opens its window
+    (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character operates it (146 USE_TURRET, `UseTurretOrder`): it
+    walks to its gunner spot (as for town turrets below), stands there facing it holding `combatstance`, counts as its operator (so it draws power) and the
+    combat system fires it ([Ranged](#ranged)); one gunner, engine choice; someone else at it: "is already in use".
   - Plants are not drawn.
 
 ### Prospecting
@@ -903,13 +1072,23 @@ A squad shop holds one 18 x 18 stock grid (the building storage size and the van
 prisoners or slaves and whose home has stock containers gets a building shop instead ([building shops](game/economy.md#building-shops-observed-decompile)): one merged stock
 (`Shop.ForBuilding`, `Shop.Building`), its own purse rule, the containers' locks opened at each fill. Stock cells stack 50 x an item's `stackable`. A housed squad with vendors that is no
 trader has its home's containers filled instead (`FillHome`). Only members that trade (`DialogueSystem.Trades`, [who trades](game/economy.md#who-trades)) publish `IsTrader`, the
-Trade verb and pointer. Shop state is hashed; open UI trade is not world state. A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
+Trade verb and pointer. Shop state is hashed; the open trade is not, except its buyback receipts (below). A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
-Transfers and money changes must succeed together.
+Transfers and money changes must succeed together. Not built: smuggling (economy 8.5, undecoded) and stealing other than
+looting a downed character ([crimes](#crimes-and-bounties)), i.e. from a conscious owner or a shop container.
+
+Bags (engine choice; how the original trades bags and their contents is **Unknown**): a bag trades whole, the same instance with its contents grid, and only empty ("That bag
+isn't empty."), since its contents would otherwise go unpriced and unchecked for theft; a bag's contents are not shown as stock. A right click puts a bought bag into a free
+backpack slot, else the main grid; a drag puts it where it is dropped, the backpack slot included, never into another bag. Other items: a right click tries `TryEquip`, then the grids.
+
+Buyback (the original's: [economy](game/economy.md#buyback-during-an-open-trade)): a purchase or sale leaves a receipt on the moved units (`TradeReceipt`, the coins paid per
+unit, kept through stack splits); moving them back in the same open trade costs or refunds exactly those coins and clears it. Units of the same trade and direction share a stack
+(their coins join); they top up plain stacks only when no free cell is left, losing the receipt for those units. Closing or replacing the trade voids every receipt, moved items'
+too; stacks it kept apart stay apart. Receipts are in the state hash but not saved, so a save made mid-trade reloads without them, with a different hash.
 
 ## Dialogue
 
-`DialogueSystem` (game facts: [dialogue](game/dialogue.md)). The context menu's Talk (only when a dry run of the line pick, dice and memo put back, finds something to say) sends `TalkOrder`: the
+`DialogueSystem` (game facts: [dialogue](game/dialogue.md)). The context menu's Talk To (only when a dry run of the line pick, dice and memo put back, finds something to say) sends `TalkOrder`: the
 talker walks up (60 units, engine choice; 60 s to arrive), the NPC is held, then event 1 fires and the NPC's dialogue set (record, squad
 template, leader role; `DialogueDatabase`) is chosen from by score, line checks and a seeded pick. The NPC line is said (text, tokens and
 word swaps, effects at once); passing replies become choices, an NPC-side child a single `[...]`. The host opens `Kenshi_ConversationPanel`
@@ -921,7 +1100,7 @@ to the next tick. A hostile target is attacked instead.
   [campaigns](game/factions-squads-towns.md#campaigns); `world state` conditions read the live states), recruiting (DA 3 / 18, `DialogueSystem.Recruit`), crowd
   triggers, `give item`, `change AI` and `AI contract` (`Ai.ChangeAi`, `Ai.StartContract` with the target: `Blackboard.MissionTarget`, followed by goals aimed at the
   squad mission through `AiMind.FollowTarget`; on its end the leader's `contract end talk passive`), DA 25 / 53 (`FixtureRegistry.TagEscaped` / `FreeSlave`) and DA 29
-  (`ArrestSystem.ArrestFromDialogue`), DA 43 (the bail list, [Arrest and jail](#arrest-and-jail)); the rest is listed in [dialogue](game/dialogue.md#meitou-design).
+  (`ArrestSystem.ArrestFromDialogue`), DA 43 (the bail list, [Arrest and jail](#arrest-and-jail)), DA 7, 13, 14, 16, 19-21, 23, 28, 33, 34, 52, 54, 56 (`DialogueSystem.Acts`); the rest is listed in [dialogue](game/dialogue.md#meitou-design).
 - **Events from other systems**: `DialogueEvent` (deferred to the next tick) fires an event at an NPC as bubbles, or a given DIALOGUE (the contract end talk);
   first aid, shackles and the release rounds send them. The police's spotting fires 44 / 45 at once (`FireEvent`, which says whether a line was said).
 - **Recruiting** ([facts](game/dialogue.md#recruiting)): at the `max faction size` cap the line "It looks like your squad is a little full." is
@@ -932,13 +1111,15 @@ to the next tick. A hostile target is attacked instead.
   Its dialogue becomes the player set (`DialogueDatabase.SetFor`). DA 3 ends the conversation and opens the editor in recruit mode
   (`EditKind.Recruit`: free, race and gender kept). Not modelled: the original's extra empty platoon at the `max squads` cap, and the
   uniform clear (Meitou has no uniforms).
-- **Conditions**: most DCs are computed (slavery: 59, 61, 62, 64); those needing state Meitou lacks (squad memory flags beyond "met", building locks, walls,
-  missions, the personality functions, tech level) compute "no". `met` and "last seen" come from finished conversations (per squad). IN_MY_BUILDING uses the squad's home building and the lock rounds' extent.
+- **Conditions**: most DCs are computed (slavery: 59, 61, 62, 64; faction trust 3; tech level 12; town levels 73, 74); those needing state Meitou lacks (AI flags, strength, perception counters, walls,
+  illegal items, training equipment) compute "no". IN_MY_BUILDING uses the squad's home building and the lock rounds' extent; IS_INDOORS the sight map's building.
+- **Squad memory** (`SquadMemory`, `DialogueSystem.Memory`; [facts](game/dialogue.md#squad-memory)): per squad and character a time and long / short tags, the player faction
+  sharing one long-term entry; DC 18, 20, 23 and 52-55 and the aggro scan (TEMP ENEMY / ALLY) read it, the effects and event-1 ends write it; it stays with a squad's platoon while the squad is out of the world and is saved on the platoon (`MemorySave`) ([engine choices](game/dialogue.md#meitou-design)).
 - **Speech bubbles**: `WorldSnapshot.Speech` lists the lines on show (`SpeechBubble`: speaker, text, large font); `PlayerInterface.AddSpeech` draws them over the head. Sources and engine choices: [dialogue](game/dialogue.md#meitou-design).
 - **Personality**: the save's `personality` when above 0, else an engine roll from the record's PERSONALITY tags (`Personality`).
 - **Engine choices**: a childless NPC line shows `[Leave]`; a reply leading to another reply offers it alone; number keys pick choices.
-- **State**: last use per line, permanent chance rolls, event counters, met memory, interrupts and the open conversation are hashed, not
-  saved (as the original). Locks are on `CharacterCold.DialogueLocks`, hashed while set, saved as `lok*` (`DialogueSave`).
+- **State**: last use per line, permanent chance rolls, event counters, squad memory, interrupts and the open conversation are hashed, not
+  saved (as the original, except the squad memory, which it saves on the platoon; the faction global trust and war flags it saves under `meitou` keys, [save](formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)). Locks are on `CharacterCold.DialogueLocks`, hashed while set, saved as `lok*` (`DialogueSave`).
 
 ## AI
 
@@ -946,6 +1127,24 @@ to the next tick. A hostile target is attacked instead.
 patrol/bar/shop/sleep/retreat/contracts, combat stances and off-screen roaming jobs. Data and
 TaskData semantics: [ai.md](game/ai.md), [ai-tasks.md](game/ai-tasks.md). Wars and prisoners are incomplete; residents
 off screen only come back where their schedule puts them ([off-screen tier](#off-screen-tier)). Hash blackboards/minds/jobs when present.
+
+### Package classes
+
+`PackageClasses.Of` maps the `signal func` ([ai.md](game/ai.md#package-classes)); `Blackboard` runs the original's slot walk with the class rules of `AiSystem`
+(`IPackageRules`: start, finished, started, ended, may lead). Built: plain, retreat, patrol (route an engine choice), bar, contracts, and
+(`AiSystem.Packages.cs`) the wandering trader (16), passing-by assault (29), occupation (30) and refugee (22: a slave-led squad of fewer than 3 flees to the nearest other town of its faction, a broken one joins a healthy squad there, `SquadManagement.Merge`) as decoded. Not built (never start but as a lone slot-0
+package): the war classes (19, 20, 32) and 31, which run only in campaigns; the campaign drives its platoons itself.
+- **Current town** (`Blackboard.InTown`, on the package cadence before the choice): nearest town by X/Z, placed towns by `TownData.Radius`, player towns by the
+  template's (1250); entering one fires the leader's ENTER_TOWN; the town a squad starts in counts as entered (engine choice: no line for every squad a town makes).
+- **Trader**: as the original (stay, chooser, states, leave rule); the leader's WANDERING_TRADER goal walks to the town (`AiBehaviour.Travel`, also
+  TRAVEL_TO_TARGET_TOWN and its fast form; `atDestinationTown` is the package's town while it has one), members follow. Engine choices: a town's own squad never
+  starts it (Meitou unloads a town's squads with it); a bar package of a squad that is not a town's own takes the bar of the placed town it is in, none in a player
+  town. **Observed** (headless, Hub area, 150 000 ticks): a slaver squad reaches the Hub, waits 7.5 h until 06:00 and leaves for Skinne.
+- **Assault and occupation**: the squad fights the town's faction (`Squad.War`) and roams the town (its wander centre; RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE acts as
+  patrolling); engine choice: the members' posts move into the town, so idle, node and bed goals stay there. The faction clocks (`AiSystem`, hashed once set) are
+  not saved, as the original's. The occupation's persistence is not built (a wild squad is kept only with `KeepWild`); campaigns read the occupiers
+  (`AiSystem.Occupied`). **Observed** (headless, Stack area, a starving-bandit mob put into an outpost with 3 player characters): the assault starts, the
+  occupation follows 0.1 h after the players are knocked out. No fight started in that run (the aggro's sight of sandbox characters there was not looked into).
 
 ### Planner
 
@@ -971,17 +1170,24 @@ the other PROTECT goals still join any fighting enemy (engine).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):
-wandering and patrolling in town walk to a general node of a town building, shopping to a node of a
+wandering and patrolling in town walk to a general node of a public town building in the walker's zone
+(public: the residents' template's `public day`, else the level state's `is public day`, else public; drawn
+among those with a general node, engine choice), shopping to a node of a
 shop, relaxing under a bar package and sitting around (275, in the home) sit on a seat claimed per
-member on the package cadence, and the wanderer walks to the nearest town. A home node goal takes a
+member on the package cadence, and the wanderer walks to the nearest town. A bar package (both kinds) reserves
+one table per squad as the original (`AiSystem.PickTable`: public bars tried from a random one, first table no
+other bar squad holds; no bar, or the outdoors kind: a free table placed outdoors in the town; none free: the
+squad keeps its home and does not relax); its members take the free seats nearest that table (engine choice),
+at an outdoor table they stand at it. A home node goal takes a
 node of its kind, a guard post a general node next (as the original), then any node but a shopkeeper's
 (engine; only the shopkeeper goal falls back onto the counter). Gates have no nodes: the gate guard
 (180, the home gate, else the town's gate nearest the squad) stands 15 out from the gate's first door
 leaf, on the side away from the town centre (the side is an engine choice), facing out; a member whose
 guard or general node goal finds nothing in its home gate flanks the opening on that side, beyond the
 leaf's edges (half width + 6, steps of 7), alternately left and right in two rows 8 apart (engine).
-Headless (no door gate, no leaf) they keep their posts, the gate building's origin, which on Defensive
-Gates is about 110 along the wall from the opening. Seats are the home's
+A gate's residents are made at the gate guard's spot (engine choice), not the gate building's origin, which on
+Defensive Gates is inside the wall about 110 along it from the opening; headless (no door gate, no leaf) they
+are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
 in that building this pass; relaxing falls back to a bar node, then a general node, sitting around
 has none and is not wanted without a chair (without a home it sits where it is). A seated character
@@ -994,11 +1200,16 @@ it, not `ArriveRadius` (10), without separation over the last 10 (engine choice:
 the ground below shows through them (Observed: the Storm House at the Hub, counter, tables, stools, 22..28
 below), so a spot whose floor is not under it is walked to (and residents spawned) at the nearest floor
 point within 12 (`IWalkability.FloorNear`), and no step goes down into such a hole (`StandDrop`,
-[pathfinding](game/pathfinding.md)). The Storm House's upper storey (+66) is on the navmesh except under its beds, whose
+[pathfinding](game/pathfinding.md)). A home with no node makes its squads at its origin; for a building with an
+interior (not a gate, whose guards stay on the ground under its walkway) they go on its lowest floor more than 12 above the terrain within 40 of the
+origin, else the ground there (raised Swamp Houses and Cannibal Shacks: floor 25..55 above the origin, the ground under it within 10). A node with no
+floor near it puts them on the nearest meshed storey below (`PopulationSystem.HomeFloor`, engine choices). **Observed** (headless probe of every
+town, 600 ticks): characters on the ground under a building floor went from 278 to 128 of 9060; ~80 of those are gate guards, the rest mostly
+homeless squads placed under unmeshed platforms. The Storm House's upper storey (+66) is on the navmesh except under its beds, whose
 spots therefore stand on the floor below (Observed, 2026-10-18 probe). Engine choices: patrolling town acts as
 wandering (its task class is undecoded); a committed goal chosen again after its commitment ran out
 starts over with a new target; training and throne furniture of 275's mask are not used; shops stand customers at a general
-node, else a guard post, else any node; the first bar of a town is the package's; a home or seat given up
+node, else a guard post, else any node; a home or seat given up
 after three failed walks is tried again when a new goal is taken up, and a member that gave its seat up
 leaves it to the next; a member keeps its seat while it still relaxes or sits (every squad's kept seats are reserved before any claims), so a
 patron coming or going does not move every later sitter to another chair. Headless Hub, Squin and Stack bars (2026-10-21): each patron sits once
@@ -1008,9 +1219,10 @@ Turret goals (149, 222, 234, 146) man a turret of the squad's town: a placed BUI
 `BUILDING_FUNCTIONALITY` function 12 (`TownBuilding.Turret`: its `use range` and `gun turret`
 GUN_DATA). In member order each slot claims the nearest free turret and walks to a spot behind its
 gun, facing its way; the home-building goal (222) takes only a turret mounted on its home (the
-state's `mounted` handle). Claim order and gunner spot are engine choices (the game's turret state
-is undecoded); turrets do not fire yet (no power, aiming or damage model,
-[combat.md](game/combat.md) "Ranged and turrets").
+state's `mounted` handle). Claim order and gunner spot are engine choices. The goals are done while
+no enemy is near (list A `isNoEnemiesInVicinity`, [combat.md](game/combat.md#turrets)): the planner holds it false while an enemy
+(the relations) is within `AiSystem.EnemyVicinity` 1000 (engine choice: the original's radius is Unknown), so guards man the turrets only
+while enemies come. A guard at its turret fires it ([Ranged](#ranged)).
 
 ## New-game difficulty
 
@@ -1063,12 +1275,21 @@ them again), the unreachable-cage memo (relearned by a failed walk), lock pickin
 Headless simulation/debug harnesses use selected StandardParts and synchronous services for
 repeatability. Sandbox omits Aggro when its scripted foe must remain idle; benchmarks must
 separate simulation work, startup and rendering.
+`--sandbox-races` adds one character of every person race (the first CHARACTER record whose `race` list holds only that race; base game and
+mods alike) in rings round the pair, for looking at races side by side.
 
 ## Duel
 
 The deterministic duel harness locates a scripted knockout, runs the pre-lap fight headless,
 then replays the last 40 seconds and 4 after KO with cinematic keys. Replacing the world/clock
 and resetting camera evaluation is required for repeatable recording.
+
+## Battle
+
+`--battle n unit m unit [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs (each one CHARACTER or
+ANIMAL_CHARACTER record, its own faction's looks) 40 units apart, on a plateau (default, -74460, 14623), the duel's mesa, the sandbox floor or a map spot, with no towns
+and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
+same-faction matchups fight too; the battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
 
 ## The game host
 
@@ -1080,14 +1301,18 @@ order. Renderer state lives in Rendering; snapshots are the simulation-to-host b
 
 Original-game unknowns are maintained in each linked subsystem reference; do not infer parity from our determinism tests.
 
-**Engine gaps:** remaining AI is listed in [AI](#ai); persistent town/world state, power, hauling, crafting, outposts, full UI fidelity and physics remain incomplete (walls: see [Buildings](#buildings)). Save and combat limitations are listed in their subsystem sections.
+**Engine gaps** are listed where they apply, not here: [unique characters](#unique-characters) and [campaigns](#off-screen-tier),
+[items](#items-and-eating) (race restrictions), [ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
+[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces, rain,
+plants), [prospecting](#prospecting), [dialogue](#dialogue) (conditions on state Meitou lacks), [AI](#ai) (wars, prisoners, planner finders).
+Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-parity.md).
 
 **Behaviour and hash constraints.**
 - No end-of-tick hook: the combat system swaps its arrays at the end of its `SlowWorld`, so the result depends on the system order
   ([Systems and their order](#systems-and-their-order)). Moving the swap would change what retaliation reads.
 - The two `MedicalContext` builders (`BodySystem` and `CombatSystem.MakeContext`) agree on toughness, strength, encumbrance (the body system writes it to
-  `Fighter.EncumbranceFactor`, 2026-10-13) and seed, and differ in `BodyTimeScale` (combat's is 1) and `Resting` (combat's is false). So they are equivalent only at time scale 1 and for a
-  character that is not resting; with the game's `TickMedical = false` the combat one only serves hits, where neither matters.
+  `Fighter.EncumbranceFactor`) and seed, and differ in `BodyTimeScale` (combat's is 1) and the bed fields (`Bed`, `BedFactor`, `Resting`, `HealMult`; combat's are unset). So they
+  are equivalent only at time scale 1 and outside beds and cages; with the game's `TickMedical = false` the combat one only serves hits, where neither matters.
 - Combat ticks are `int` (`CombatSlot.ReadyTick`, `StunUntil`) while the world's tick is `long`.
 - `ItemInstance.StolenFrom` is not included in the inventory hash. Adding it requires updating the affected carry/crime pins; pins are platform-specific.
 - `BodyHash` does not cover the private `starveGrace` and `starvationKo` of `MedicalState` (nor every flag such as `BloodKo`), so a divergence

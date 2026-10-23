@@ -118,6 +118,8 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public CrimeSystem Crimes { get; } = crimes;
     /// <summary>The carry system the guards lift and carry with; null: an arrest ends when the target is down.</summary>
     public Carrying.CarrySystem? Carry { get; set; }
+    /// <summary>The relation event of a caging (<see cref="FactionDeeds.Caged"/>: the captive's faction about the one who caged it); null: none.</summary>
+    public FactionDeeds? Deeds { get; set; }
     public IReadOnlyList<Arrest> Arrests => arrests;
     public IReadOnlyList<Spotting> Spottings => spottings;
     /// <summary>The dialogue spotting fires events 44 and 45 through; null, or its event lines off (<see cref="Dialogue.DialogueSettings.AmbientEvents"/>): the engine's fine or arrest instead.</summary>
@@ -238,8 +240,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 bool escapee = c.Escaped && Crimes.IsPoliceLike(world, wc) && InOwnTown(world, w);
                 bool hunts = HuntsFor(wc, c);
                 if (!spots && !escapee && !hunts) continue;
-                float v = sneaking ? AggroSystem.SneakVisibility(next[w].Position, next[w].Yaw, at, Settings.SpotRange, stealth)
-                    : AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, Settings.SpotRange);
+                float v = world.Sight.Sees(w, s, next[w].Position, next[w].Yaw, at, Settings.SpotRange, sneaking ? stealth : -1);
                 if (v <= 0) continue;
                 if (escapee && FreeGuard(world, w) && d2 < escapeD2) (escapeGuard, escapeD2) = (w, d2);
                 if (hunts)
@@ -294,7 +295,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             if (table.Cold(w) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true, SlaveState: 0 } wc || wc.Faction != c.SlaveOwner) continue;
             float d2 = Vector3.DistanceSquared(next[w].Position, at), range = AggroSystem.RangeOf(wc, AggroSystem.OutdoorSight);
             if (d2 > range * range || !InTownOf(world, w, next[w].Position)) continue;
-            float v = sneaking ? AggroSystem.SneakVisibility(next[w].Position, next[w].Yaw, at, range, stealth) : AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, range);
+            float v = world.Sight.Sees(w, s, next[w].Position, next[w].Yaw, at, range, sneaking ? stealth : -1);
             if (v <= 0) continue;
             if (c.SlaveState == 1 && (LockSystem.WornShackles(c) is null || !InTownOf(world, w, at))) FixtureRegistry.TagEscaped(world, c);
             if (c.SlaveState == 2 && d2 < catcherD2 && (Crimes.IsPoliceLike(world, wc) || wc.NpcClass == FundamentalType.Slaver) && FreeGuard(world, w)) (catcher, catcherD2) = (w, d2);
@@ -537,6 +538,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                     MovementSystem.Stop(table, g);
                     Carry!.LetGo(world, g);
                     if (!world.Fixtures.Imprison(world, a.Target, cage, constants.PrisonTime)) return ToCage(world, a, g, t);
+                    Deeds?.Caged(world, g, t);
                     tc.Recognition = 0;
                     if (a.Enslave) FixtureRegistry.Enslave(world, tc, a.Faction);
                     else if (tc.IsPlayer) world.Post($"{tc.Name} has been imprisoned by {Crimes.Factions.NameOf(a.Faction)}");

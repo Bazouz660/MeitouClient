@@ -66,6 +66,7 @@ public class AggroTests
                 var cold = new Combatant { Name = $"f{faction}-{squad.Members.Count}" }.MakeCold();
                 cold.Faction = faction;
                 cold.SquadId = squad.Id;
+                cold.FactionImportance = 1;   // the most common CHARACTER value: blows on them move their faction's relations
                 bool leader = squad.Members.Count == 0;
                 var id = World.Characters.Spawn(new CharacterHot
                 {
@@ -89,16 +90,17 @@ public class AggroTests
         public bool Fighting(CharacterId id) => World.Characters.Cold(id.Slot)!.InCombat;
     }
 
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, int minPartition = 1)
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
         {
             Relations = relations,
+            Deeds = new FactionDeeds(relations),
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = minPartition }, walk,
+        var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro]);
         return new Arena(world, combat, aggro, relations);
     }
@@ -107,9 +109,9 @@ public class AggroTests
     /// Raiders between villagers (hostile), nomads (coexisting), hermits (coexisting from their side) and friends (allied), each a squad 150 units off.
     /// Returns the squads in that order.
     /// </summary>
-    static (Arena Arena, Squad Raiders, Squad Villagers, Squad Nomads, Squad Hermits, Squad Friends) Crossroads(ulong seed, int threads, int minPartition = 1)
+    static (Arena Arena, Squad Raiders, Squad Villagers, Squad Nomads, Squad Hermits, Squad Friends) Crossroads(ulong seed, int threads)
     {
-        var a = Make(seed, threads, minPartition: minPartition);
+        var a = Make(seed, threads);
         var o = new Vector2(2000, 2000);
         var raiders = a.Squad(Raiders, o, o, o + new Vector2(0, 12));
         var villagers = a.Squad(Villagers, o + new Vector2(150, 0), o + new Vector2(150, 0), o + new Vector2(160, 10));
@@ -141,7 +143,7 @@ public class AggroTests
     }
 
     [Fact]
-    public void The_players_assaults_turn_a_faction_hostile_with_the_games_message_and_its_people_then_attack()
+    public void A_war_on_the_player_turns_a_faction_hostile_with_the_games_messages_and_its_people_then_attack()
     {
         using var a = Make(7, 1);
         var o = new Vector2(2000, 2000);
@@ -150,29 +152,24 @@ public class AggroTests
         var me = a.PlayerCharacter(o + new Vector2(60, 60));
         a.World.RunTicks(20);
         Assert.Empty(a.Aggro.Log);   // neutral: 10
+        // The order itself changes no relation (the game's relation events come from the blows that land).
         a.World.Commands.Enqueue(new AttackOrder([me], town.Members[0]) { Tick = a.World.Tick });
         a.World.RunTick();
-        Assert.Equal(-10, a.Relations.Get(Townsfolk, Player));
-        // Ordering the same attack again is the same assault.
-        a.World.Commands.Enqueue(new AttackOrder([me], town.Members[0]) { Tick = a.World.Tick });
-        a.World.RunTick();
-        Assert.Equal(-10, a.Relations.Get(Townsfolk, Player));
+        Assert.Equal(10, a.Relations.Get(Townsfolk, Player));
         Assert.Empty(a.World.TakeMessages());
-        // A second victim: -30, hostile, and the game's message.
-        a.World.Commands.Enqueue(new AttackOrder([me], town.Members[1]) { Tick = a.World.Tick });
-        a.World.RunTick();
-        Assert.Equal(-30, a.Relations.Get(Townsfolk, Player));
-        Assert.Equal(["townsfolk are now hostile towards you"], a.World.TakeMessages());
+        // The townsfolk declare war on the player: -35, hostile, and the game's messages.
+        PlayerRelations.DeclareWar(a.World, a.Relations, Townsfolk, Player);
+        Assert.Equal(-35, a.Relations.Get(Townsfolk, Player));
+        Assert.Equal(["War breaks out between townsfolk and Nameless", "townsfolk are now hostile towards you"], a.World.TakeMessages());
         // Now another squad of theirs, which nobody attacked (the victims' mates join them anyway), picks the fight with the player by itself.
         a.World.RunTicks(30);
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);
     }
 
-    internal static List<ulong> Hashes(int threads, int minPartition = 1) => Hashes(threads, out _, minPartition);
-
-    internal static List<ulong> Hashes(int threads, out (long RelationChanges, long Started, int Blows) seen, int minPartition = 1)
+    /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Hashes(int threads)
     {
-        var (a, _, _, _, _, _) = Crossroads(11, threads, minPartition);
+        var (a, _, _, _, _, _) = Crossroads(11, threads);
         using var _a = a;
         // A player character close to the raiders, who hate the player: it is attacked and defends itself; at tick 120 it is ordered onto a villager, an assault on the villagers.
         var me = a.PlayerCharacter(new Vector2(2000, 2080));
@@ -183,37 +180,10 @@ public class AggroTests
             if (target == 120) a.World.Commands.Enqueue(new AttackOrder([me], a.World.Squads.All.First(s => s.Faction == Villagers).Members[0]) { Tick = a.World.Tick });
             hashes.Add(a.World.StateHash());
         }
-        seen = (a.Relations.Changes, a.Aggro.Started, a.Combat.Log.Count);
-        return hashes;
-    }
-
-    [Fact]
-    public void The_aggro_scenario_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Hashes(1, out var seen);
-        // The scenario covers what it is for: fights started by hostility, blows, and a relation changed by the player's assault (so the table is hashed).
+        var seen = (RelationChanges: a.Relations.Changes, a.Aggro.Started, Blows: a.Combat.Log.Count);
+        // The scenario covers what it is for: fights started by hostility, blows, and relations changed by the blows (so the table is hashed).
         Assert.True(seen.RelationChanges > 0 && seen.Started > 0 && seen.Blows > 0, $"{seen}");
-        Assert.Equal(one, Hashes(4));
-        Assert.Equal(one, Hashes(16));
-        Assert.NotEqual(one[^1], one[^2]);
-    }
-
-    // ------------------------------------------------------------------ the AI's stances (docs/simulation.md "AI", Combat goals)
-
-    static void Stance(Arena a, Squad squad, Meitou.Simulation.Ai.AiStance stance)
-    {
-        foreach (var m in squad.Members) a.World.Characters.Cold(m.Slot)!.Ai = new Meitou.Simulation.Ai.AiMind { Squad = squad, Stance = stance };
-    }
-
-    [Fact]
-    public void A_territorial_stance_fights_enemies_inside_its_home()
-    {
-        var (a, raiders, _, _, _, _) = Crossroads(3, 1);
-        using var _ = a;
-        Stance(a, raiders, Meitou.Simulation.Ai.AiStance.Territorial);
-        raiders.HomeRadius = 400;
-        a.World.RunTicks(90);
-        Assert.NotEmpty(a.Aggro.Log);
-        Assert.All(a.Aggro.Log, e => Assert.Equal(Villagers, e.TargetFaction));
+        Assert.NotEqual(hashes[^1], hashes[^2]);
+        return hashes;
     }
 }

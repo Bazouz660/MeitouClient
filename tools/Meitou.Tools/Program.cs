@@ -40,8 +40,9 @@ static int Usage()
         meitou-tools fcs-records N show the fields of the first records of type N in the base game
         meitou-tools navmesh [--zone x,z | --town name] [--around n] [--geometry] [--obj f.obj] [--png f.png] [--scale u] [--box x0,z0,x1,z1]
                            [--path x0,z0,x1,z1 [--from-y y] [--to-y y] [--closed]] [--near x,z,radius] [--no-interiors]
-                           [--repeat n] [--fingerprint] [--verbose]
-                           gather and build a zone's navmesh, write debug files; --fingerprint prints SHA-256 of the cache files of The Hub (or --zone) and the Hub path points
+                           [--repeat n] [--fingerprint] [--compare x,z ...] [--verbose]
+                           gather and build a zone's navmesh, write debug files; --fingerprint prints SHA-256 of the cache files of The Hub (or --zone) and the Hub path points;
+                           --compare samples each zone against the original's navmesh tiles
         meitou-tools particles [effects]  read every ParticleUniverse script and particle material and count what they use; "effects" lists the EFFECT records with their systems
         meitou-tools particles warmup [weather...]  what changing to a weather costs: the schedule, the simulation of the warm-up on one thread and in parallel, and a frame
         meitou-tools world         read the heightmap, zone/level files and features.dat and cross-check them

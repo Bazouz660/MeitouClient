@@ -1,11 +1,11 @@
+using Meitou.Data.Fcs;
+
 namespace Meitou.Simulation.Items;
 
 /// <summary>Snapshot identity prevents a drag started before eating/looting from moving a different item.</summary>
 public sealed record InventoryItemToken(int Index, string Record, string Section, int X, int Y, int Quantity, float Quality);
-public sealed record MoveInventoryItem(CharacterId Character, InventoryItemToken Item, string Section, int X, int Y) : SimCommand;
+/// <summary>The inventory window's ARRANGE (<c>FUN_14070f740</c>): <see cref="InventoryCommands.Arrange"/> on the character's grids.</summary>
 public sealed record ArrangeInventory(CharacterId Character) : SimCommand;
-/// <summary>Drops the character's item on the ground at its feet (an item dragged out of the inventory window onto the world); a locked-on item or a fitted limb stays.</summary>
-public sealed record DropInventoryItem(CharacterId Character, InventoryItemToken Item) : SimCommand;
 
 public static class InventoryCommands
 {
@@ -27,7 +27,7 @@ public static class InventoryCommands
     /// <summary>
     /// Puts one unit into the equipment slot that takes it when that is free (the trade window's right click, <c>FUN_140713d20</c>: sections that accept the item's slot type are tried before
     /// the general grids): weapons the first free cell of <c>back</c>, then <c>hip</c>; armour its <see cref="ItemInstance.EquipmentSection"/> when nothing is worn there. The order of two
-    /// matching sections is <b>Unknown</b>; a bag is not equipped this way (its contents are not copied into a purchase). False: no slot, the caller places it in a grid.
+    /// matching sections is <b>Unknown</b>. Bags are not equipped here: the trade moves them whole, into a free <c>backpack_attach</c> first (engine choice, docs/simulation.md). False: no slot, the caller places it in a grid.
     /// </summary>
     public static bool TryEquip(Inventory root, ItemInstance item)
     {
@@ -60,8 +60,8 @@ public static class InventoryCommands
 
     /// <summary>
     /// Moves at most <paramref name="count"/> units (0: all) of <paramref name="item"/>, held directly by <paramref name="owner"/>, into <paramref name="into"/> where they first fit
-    /// (<see cref="Inventory.Add"/>: stacks of it, then free cells); what does not fit stays where it was. Returns the units moved. A right click between two open windows moves one unit this
-    /// way, with Shift the stack (docs/game/ui-input.md, the input tables).
+    /// (<see cref="Inventory.Add"/>: stacks of it, then free cells); what does not fit stays where it was. Returns the units moved. A right click into a storage or container moves one unit this
+    /// way, with Shift the stack (docs/game/ui-input.md, the input tables); into a character it is <see cref="MoveInto"/>.
     /// </summary>
     public static int MoveUnits(Inventory owner, ItemInstance item, int count, Inventory into)
     {
@@ -79,10 +79,9 @@ public static class InventoryCommands
         }
         var unit = item.WithQuantity(count);
         unit.Death = false;
-        item.Quantity -= count;
-        if (into.Add(unit)) return count;
-        item.Quantity += unit.Quantity;
-        return count - unit.Quantity;
+        int moved = into.Add(unit) ? count : count - unit.Quantity;
+        item.Quantity -= moved;
+        return moved;
     }
 
     /// <summary>
@@ -123,23 +122,126 @@ public static class InventoryCommands
         if (into != from) item.Death = false;
         item.Section = section; item.X = x; item.Y = y; return true;
     }
+    /// <summary>
+    /// ARRANGE (<c>FUN_14070f740</c>, <b>Observed</b>): every grid section (the main grid and the worn bag's) is emptied and its items added again through the auto-add
+    /// (<see cref="Inventory.AddTo"/>: partial stacks merge) in a sorted order: first by the longer side of the footprint, then by its area, then by its width, largest first (a stable sort);
+    /// the first order in which everything fits is kept, otherwise every item goes back where it was (false).
+    /// </summary>
     public static bool Arrange(Inventory root)
     {
-        var saved = root.All().Select(i => (Item: i, i.X, i.Y)).ToArray();
+        var grids = new List<(Inventory Grid, string Section, ItemInstance[] Items)>();
         foreach (var (grid, section) in new[] { (root, "main"), (root.Backpack?.Contents, "backpack_content") })
+            if (grid is not null) grids.Add((grid, section, [.. grid.Items]));
+        var saved = grids.SelectMany(g => g.Items).Select(i => (Item: i, i.X, i.Y, i.Quantity, i.Charges)).ToArray();
+        void Restore()
         {
-            if (grid is null) continue;
-            var items = grid.Items.Where(i => i.Section == section).OrderByDescending(i => i.Width * (long)i.Height).ToArray();
-            foreach (var item in items) { item.X = -item.Width; item.Y = -item.Height; }
-            foreach (var item in items)
-            {
-                if (item.Width <= 0 || item.Height <= 0 || !grid.FindCell(section, item.Width, item.Height, out int x, out int y))
-                {
-                    foreach (var old in saved) { old.Item.X = old.X; old.Item.Y = old.Y; } return false;
-                }
-                item.X = x; item.Y = y;
-            }
+            foreach (var g in grids) { g.Grid.Items.Clear(); g.Grid.Items.AddRange(g.Items); }
+            foreach (var old in saved) (old.Item.X, old.Item.Y, old.Item.Quantity, old.Item.Charges) = (old.X, old.Y, old.Quantity, old.Charges);
         }
-        return true;
+        Func<ItemInstance, long>[] orders = [i => Math.Max(i.Width, i.Height), i => i.Width * (long)i.Height, i => i.Width];
+        foreach (var order in orders)
+        {
+            bool fits = true;
+            foreach (var (grid, section, all) in grids)
+            {
+                var items = all.Where(i => i.Section == section).OrderByDescending(order).ToArray();
+                grid.Items.RemoveAll(i => i.Section == section);
+                foreach (var item in items)
+                    if (item.Width <= 0 || item.Height <= 0 || !grid.AddTo(section, item)) { fits = false; break; }
+                if (!fits) break;
+            }
+            if (fits) return true;
+            Restore();
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The types that never stack (<c>FUN_14075e090</c>): WEAPON, ARMOUR, CONTAINER, MAP_ITEM, CROSSBOW, LIMB_REPLACEMENT; the others stack up to their record's <c>stackable</c>.
+    /// </summary>
+    public static bool NeverStacks(FcsRecordType type) =>
+        type is FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.MAP_ITEM or FcsRecordType.CROSSBOW or FcsRecordType.LIMB_REPLACEMENT;
+
+    /// <summary>
+    /// Whether a held item joins the stack it is dropped on (<c>FUN_140715560</c>): same record (so type), material and quality, of a type that stacks; Meitou also keeps stolen and death
+    /// items apart, as <see cref="Inventory.Add"/> does.
+    /// </summary>
+    public static bool Stackable(ItemInstance a, ItemInstance b) => !NeverStacks(a.Type) && a.Record == b.Record && a.MaterialId == b.MaterialId && a.Quality == b.Quality
+        && a.StolenFrom == b.StolenFrom && a.Death == b.Death && a.Contents is null && b.Contents is null;
+
+    /// <summary>
+    /// Moves <paramref name="units"/> of <paramref name="from"/> onto the stack <paramref name="into"/>. Partial charges combine: a stack is full units and one partly used one (its
+    /// <see cref="ItemInstance.Charges"/>), so when the last of <paramref name="from"/> moves, its part joins <paramref name="into"/>'s; two parts that fit in one unit make one.
+    /// </summary>
+    public static void Merge(ItemInstance into, ItemInstance from, int units)
+    {
+        if (units <= 0) return;
+        bool last = units >= from.Quantity;
+        into.Quantity += units;
+        from.Quantity -= units;
+        if (!last || into.MaxCharges <= 0) return;
+        float combined = into.Charges + from.Charges;
+        if (combined <= into.MaxCharges) { into.Quantity--; into.Charges = combined; }
+        else into.Charges = combined - into.MaxCharges;
+    }
+
+    /// <summary>
+    /// Whether a section takes an item, the section half of <c>FUN_14074bc30</c>: the grids (<c>main</c>, <c>backpack_content</c>) anything, but a bag only empty into a bag; a weapon slot
+    /// (<c>back</c>, <c>hip</c>) a WEAPON or CROSSBOW; <c>backpack_attach</c> a CONTAINER; a prosthetic slot a LIMB_REPLACEMENT; a clothing slot the ARMOUR or belt ITEM of that slot.
+    /// Null: taken; otherwise the refusal ("" silent).
+    /// </summary>
+    public static string? SlotRefusal(string section, FcsRecordType type, string equipmentSection, Inventory? contents) =>
+        SlotRefusal(section, type, equipmentSection, contents?.Items.Count ?? -1);
+
+    /// <summary>As <see cref="SlotRefusal(string, FcsRecordType, string, Inventory?)"/> with the number of items in a bag (-1: the item is not a bag).</summary>
+    public static string? SlotRefusal(string section, FcsRecordType type, string equipmentSection, int bagItems)
+    {
+        if (section == "backpack_content") return bagItems > 0 ? "Container cannot be placed here unless it is empty." : null;
+        if (section == "main") return null;
+        bool takes = section switch
+        {
+            "back" or "hip" => type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW,
+            "backpack_attach" => type == FcsRecordType.CONTAINER && bagItems >= 0,
+            _ when IsLimbSection(section) => type == FcsRecordType.LIMB_REPLACEMENT,
+            _ when IsEquipmentSection(section) => type is FcsRecordType.ARMOUR or FcsRecordType.ITEM && equipmentSection == section,
+            _ => false,
+        };
+        return takes ? null : "Invalid container type.";
+    }
+
+    /// <summary>A section holding one item whatever its footprint (clothing, the bag slot, the prosthetic slots); the others are grids.</summary>
+    public static bool IsSingleSlot(string section) => IsLimbSection(section) || IsEquipmentSection(section) && section is not ("back" or "hip");
+
+    /// <summary>
+    /// The right click's move into another character (<c>FUN_140713d20</c>, its target <c>FUN_14070dcd0</c>): one unit at a time, at most <paramref name="count"/> (0: until one fails), each
+    /// into the target's open bag window first (<paramref name="bagFirst"/>), then its character window: the slots of the item's type (<see cref="TryEquip"/>), then the main grid, stacks of it
+    /// first (<see cref="Inventory.AddTo"/>). Leaving its owner a unit is no longer a death item. Returns the units moved; <paramref name="equipped"/>: one was worn.
+    /// </summary>
+    public static int MoveInto(Inventory owner, ItemInstance item, int count, Inventory into, bool bagFirst, out bool equipped)
+    {
+        equipped = false;
+        int want = count <= 0 ? item.Quantity : Math.Min(count, item.Quantity), moved = 0;
+        while (moved < want)
+        {
+            bool last = item.Quantity <= 1;
+            int at = owner.Items.IndexOf(item);
+            if (at < 0) break;
+            var unit = last ? item : item.WithQuantity(1);
+            bool death = unit.Death;
+            if (last) owner.Items.RemoveAt(at);
+            unit.Death = false;
+            bool worn = false;
+            bool placed = bagFirst && into.Backpack?.Contents is { } bag && bag.AddTo("backpack_content", unit) || (worn = TryEquip(into, unit)) || into.AddTo("main", unit);
+            if (!placed)
+            {
+                unit.Death = death;
+                if (last) owner.Items.Insert(at, item);
+                break;
+            }
+            equipped |= worn;
+            if (!last) item.Quantity--;
+            moved++;
+        }
+        return moved;
     }
 }

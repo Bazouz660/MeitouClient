@@ -144,6 +144,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         CharacterTask.Dismantle => DismantlingClip,
         // An operator at work plays its functionality's clip (Observed, Task_OperateMachine; stonemine without one).
         CharacterTask.Operate => cold.Operating ? cold.OperateClip is { } clip && SitClipOf(clip) is >= 0 and var used ? used : DismantlingClip : -1,
+        // In a bed: the clip its functionality names (Observed, Task_UseBed: sleepinbed, sleeponfloor), else lying on the floor.
+        CharacterTask.Sleep => cold.InSomething != Locks.HeldState.Bed ? -1 : cold.OperateClip is { } bed && SitClipOf(bed) is >= 0 and var lain ? lain : LyingClip,
+        // A captor killing, eating or processing a captive (Task_KillPrisoner, Task_EatPrisoner, Task_ProcessNewSlave, Observed).
+        CharacterTask.Idle when cold.ActionClip is { } act && SitClipOf(act) is >= 0 and var acting => acting,
         _ => -1,
     };
     // The combat system asks this system for its hit reaction clips (it owns the stun, this system the clips).
@@ -296,10 +300,13 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         bool carried = !cold.CarriedBy.IsNone;
         var stance = StanceOf(cold) with { Combat = cold.InCombat && !approaching };
         bool down = cold.Medical is { Incapacitated: true };
+        bool crawling = !carried && cold.Medical is { Crawling: true };
         if (HoldsForRagdoll(a, down, carried, ragdoll)) return Vector2.Zero;
 
         if (down && !a.WasDown && !carried && !ragdoll.Has) StartAction(a, fall, false);   // a ragdoll falls instead
         if (carried) a.Action = -1;   // held on the shoulder: no falling or getting up
+        // Waking with a leg down there is nothing to get up on: the original's get-up plays the crawl idle and ends at once (docs/game/ragdolls.md "Getting up").
+        else if (!down && a.WasDown && crawling) a.Action = -1;
         else if (!down && a.WasDown)
         {
             StartAction(a, getUp, false);
@@ -336,6 +343,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         }
         // In deep water a race that swims plays its swimming clips (category 4), the ordinary ones where none fits.
         else if (!fullTechnique && technique < 0 && !carried && cold is { WaterState: 3, Race.Swims: true } && Swim(a, stance, speed, lower)) { }
+        // A character with a leg down crawls: the grounded clips (category 5), whose lower layer is the whole body as no upper clip plays over it.
+        else if (!fullTechnique && crawling && Crawl(a, stance, speed, task, cold, dt, seed, key, tick, lower, out legs)) moving = legs > 0;
         else if (!fullTechnique)
         {
             moving = MathF.Abs(speed) >= MovingSpeed;
@@ -419,6 +428,35 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         }
         return false;
     }
+
+    /// <summary>
+    /// The crawling clips to play added to <paramref name="wanted"/> (engine choice of the pick; the original's posture and category 5 are <b>Observed</b>): moving, <see cref="AnimationLibrary.CrawlMovement"/>
+    /// (<paramref name="legs"/> its count, the synched phase follows it); else <c>crawl use</c> for the tasks that kneel to work (the original's medic clip becomes it, docs/game/locks.md), else a
+    /// <see cref="AnimationLibrary.CrawlIdles"/> draw kept for its idle time. False, with nothing added, when the data has no crawl clip that fits (a weapon in the left hand).
+    /// </summary>
+    bool Crawl(CharacterAnimation a, in AnimationStance stance, float speed, CharacterTask task, CharacterCold cold, float dt, ulong seed, ulong key, long tick,
+        List<(int Index, float Weight)> wanted, out int legs)
+    {
+        legs = 0;
+        if (MathF.Abs(speed) >= MovingSpeed)
+        {
+            Library.CrawlMovement(speed, stance, wanted);
+            if (wanted.Count > 0) { a.Idle = -1; legs = wanted.Count; return true; }
+        }
+        if (HeldClip(task, cold) is >= 0 and var held && held == TreatingClip && CrawlUseClip >= 0)
+        {
+            wanted.Add((CrawlUseClip, 1));
+            a.Idle = -1;
+            return true;
+        }
+        var idles = Library.CrawlIdles(stance);
+        if (idles.Count == 0) return false;
+        StandingIdle(a, idles, dt, seed, key, tick, wanted);
+        return wanted.Count > 0;
+    }
+
+    /// <summary>The kneeling work clip of a crawler (<c>crawl use</c>, category 5); -1 when the data has none.</summary>
+    int CrawlUseClip { get; } = library.IndexOf("crawl use");
 
     /// <summary>
     /// The layers' targets from <paramref name="wanted"/>, the synched phase (from the first <paramref name="legs"/> entries), the weights faded and the times advanced, with
@@ -623,7 +661,11 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     /// <summary>What a character holds and does, as the clips' conditions read it; leg health in per cent weighs the limp clips.</summary>
     static AnimationStance StanceOf(CharacterCold cold)
     {
-        var stance = new AnimationStance { Right = new HandHold(cold.DrawnWeapon), Combat = cold.InCombat, Stealth = (cold.Orders & CharacterOrders.Sneak) != 0, CarryingLeft = !cold.Carrying.IsNone, BeingCarried = !cold.CarriedBy.IsNone };
+        var stance = new AnimationStance
+        {
+            Right = new HandHold(cold.DrawnWeapon), Combat = cold.InCombat, Stealth = (cold.Orders & CharacterOrders.Sneak) != 0, CarryingLeft = !cold.Carrying.IsNone, BeingCarried = !cold.CarriedBy.IsNone,
+            Prone = cold.CarriedBy.IsNone && cold.Medical is { Crawling: true },   // the crawl records are prone; no standing clip (stumbles included) fits a crawler
+        };
         if (cold.Medical is not { } body) return stance;
         float left = 100, right = 100;
         foreach (var part in body.PartSpan)

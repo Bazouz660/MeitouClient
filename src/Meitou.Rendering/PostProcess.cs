@@ -144,11 +144,11 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     sealed class CompositePass : FullscreenProgram
     {
         public readonly SamplerSlot Scene, Ao, Adapted;
-        public readonly UniformHandle Auto, Exposure, UseAo, Dither, SceneSize, Tone, ToneMix, Grade, Saturation, Contrast, Night, Balance;
+        public readonly UniformHandle Auto, Exposure, UseAo, Dither, SceneSize, Sharpen, Tone, ToneMix, Grade, Saturation, Contrast, Night, Balance;
         public CompositePass(GpuContext gpu) : base(gpu, PostProcessShaders.Composite, "post composite")
         {
             (Scene, Ao, Adapted) = (P.Sampler("uScene"), P.Sampler("uAo"), P.Sampler("uAdapted"));
-            SceneSize = P.Uniform("uSceneSize");
+            (SceneSize, Sharpen) = (P.Uniform("uSceneSize"), P.Uniform("uSharpen"));
             (Auto, Exposure, UseAo, Dither) = (P.Uniform("uAuto"), P.Uniform("uExposure"), P.Uniform("uUseAo"), P.Uniform("uDither"));
             (Tone, ToneMix, Grade, Saturation, Contrast) = (P.Uniform("uTone"), P.Uniform("uToneMix"), P.Uniform("uGrade"), P.Uniform("uSaturation"), P.Uniform("uContrast"));
             (Night, Balance) = (P.Uniform("uNight"), P.Uniform("uBalance"));
@@ -298,9 +298,13 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     /// <summary>The low-resolution particles' coverage for the upscalers' reactive mask (<see cref="PostProcessShaders.ParticleCoverage"/>).</summary>
     sealed class ParticleCoveragePass : FullscreenProgram
     {
-        public readonly SamplerSlot Accum;
-        public readonly UniformHandle Limit;
-        public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage") => (Accum, Limit) = (P.Sampler("uAccum"), P.Uniform("uLimit"));
+        public readonly SamplerSlot Accum, LowDepth, Depth;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage")
+        {
+            (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
+            (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"), P.Uniform("uFullSize"), P.Uniform("uLimit"));
+        }
     }
 
     float nearPlane = 1, farPlane = 1000, fovY = 0.87f, aspect = 1;
@@ -524,8 +528,8 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         Stamp("start");
         frameIndex++;
         JitterPixels = Temporal ? Jitter.Offset(frameIndex, JitterPhases) : Vector2.Zero;
-        // Textures at the display size's detail: log2 of the scale, and further for the vendor upscalers as they recommend (DECISIONS 15).
-        Gpu.LodBias = Temporal ? MathF.Log2(width / (float)displayWidth) - (allocatedKind == UpscalerKind.Taa ? 0.5f : 1f) : 0;
+        // Textures at the display size's detail: log2 of the scale, and one further as the vendor upscalers recommend (DECISIONS 15); TAA too.
+        Gpu.LodBias = Temporal ? MathF.Log2(width / (float)displayWidth) - 1 : 0;
         SceneTargets = PassTargets.Of(sceneColour!.Texture, sceneDepth!.Texture, GiAlbedoTarget);
     }
 
@@ -725,6 +729,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         // Without an upscaler the scene may still be smaller than the display (the render scale): the composite then resamples it (Catmull-Rom).
         bool plainScaled = postColour.Width != displayWidth || postColour.Height != displayHeight;
         c.P.Set(c.SceneSize, plainScaled ? postColour.Width : 0f, plainScaled ? postColour.Height : 0f);
+        c.P.Set(c.Sharpen, Temporal && sharpenAfter ? 2 * Math.Clamp(o.Upscale.Sharpness, 0, 1) : 0f);
         c.P.Set(c.Auto, auto ? 1 : 0);
         c.P.Set(c.Exposure, o.Exposure);
         c.P.Set(c.UseAo, ao && !aoApplied ? 1 : 0);   // applied before the particles: only the debug view still reads it
@@ -980,8 +985,9 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     public PassTargets ParticleTargets(int divisor) => LowFor(divisor).Targets;
 
     /// <summary>
-    /// Prepares one low-resolution particle pass (docs/formats/particle-universe.md "Low-resolution particles"): the target pair at 1/<paramref name="divisor"/>
-    /// of the render size (made or remade when the size changed), the scene's depth reduced to it (farthest of each block, as the depth of a depth-only rendering).
+    /// Prepares one low-resolution particle pass (docs/render-post.md "Colour, night and particles"): the target pair at 1/<paramref name="divisor"/>
+    /// of the render size (made or remade when the size changed), the scene's depth reduced to it (nearest and farthest of each block in a checkerboard, as the
+    /// depth of a depth-only rendering).
     /// Call after <see cref="RunFogVolumes"/> and before opening the host on <see cref="ParticleTargets"/>.
     /// </summary>
     public void BeginParticlesLow(int divisor)
@@ -1043,6 +1049,9 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     /// </summary>
     public const float UpscaleNear = 1, UpscaleFar = 1_000_000;
 
+    /// <summary>Whether the composite sharpens the upscaled picture (<see cref="UpscaleOptions.Sharpness"/>): after TAA and DLSS, which leave it soft.</summary>
+    bool sharpenAfter;
+
     /// <summary>Motion vectors, then the vendor upscaler or TAA into the history; returns the display-size picture.</summary>
     Target2D RunUpscale()
     {
@@ -1072,6 +1081,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         (historyA, historyB) = (historyB, historyA);
         var output = historyB!;
         bool done = false;
+        sharpenAfter = true;
         if (external is not null)
         {
             if (!merged) Velocity(upscaleDepth!, 1);
@@ -1091,7 +1101,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
                 Eye = eyeNow, Right = new Vector3(viewRotation.M11, viewRotation.M21, viewRotation.M31), Up = new Vector3(viewRotation.M12, viewRotation.M22, viewRotation.M32),
                 Forward = -new Vector3(viewRotation.M13, viewRotation.M23, viewRotation.M33), Aspect = aspectNow,
             });
-            if (done) ActiveUpscaler = external.Name;
+            if (done) (ActiveUpscaler, sharpenAfter) = (external.Name, external.Kind != UpscalerKind.Fsr);   // FSR sharpens itself (RCAS)
             else
             {
                 Console.WriteLine($"upscaler  {external.Name} failed; using TAA from now on");
@@ -1180,6 +1190,12 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
             // The low-resolution particles' share: from their accumulation, added to what is there (the full-size ones drew theirs above).
             var c = particleCoveragePass;
             Bind(c.P, c.Accum, low.Accum);
+            Bind(c.P, c.LowDepth, low.Depth);
+            Bind(c.P, c.Depth, sceneDepth);
+            c.P.Set(c.LowSize, (float)low.Accum!.Width, (float)low.Accum.Height);
+            c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
+            c.P.Set(c.Div, (float)low.Divisor);
+            c.P.Set(c.FullSize, (float)width, (float)height);
             c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
                 PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = mask });

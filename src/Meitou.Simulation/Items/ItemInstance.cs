@@ -28,7 +28,23 @@ public sealed class ItemInstance
     public string Section { get; set; } = "main";
     public int X { get; set; }
     public int Y { get; set; }
-    public int Quantity { get; set; } = 1;
+    int quantity = 1;
+    public int Quantity
+    {
+        get => quantity;
+        set
+        {
+            if (value < quantity && Buyback is { } receipt) Buyback = receipt.Skip(quantity - value);
+            else if (value > quantity) Buyback = null;
+            quantity = value;
+        }
+    }
+    TradeReceipt? buyback;
+    internal TradeReceipt? Buyback
+    {
+        get => buyback is { Session.Active: true } ? buyback : null;
+        set => buyback = value;
+    }
     public int Level { get; set; }
     public int ItemFunction { get; set; }
     /// <summary>Quality 0 to 100 (clothing from the character's armour grade).</summary>
@@ -70,7 +86,7 @@ public sealed class ItemInstance
     {
         Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = UnitWeight, StackLimit = StackLimit,
-        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death,
+        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };
 
     /// <summary>Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (carry-loot.md 4.4: the from-owner is set and of another faction).</summary>
@@ -79,8 +95,11 @@ public sealed class ItemInstance
     /// <summary>The weight this item and what is in it add to the load.</summary>
     public float Weight => UnitWeight * Quantity + (Contents?.ContentWeight() ?? 0) * ContentsFactor;
 
-    /// <summary>How full a single food item or charged tool (medkit, splint kit, robot repair) is, 0 to 1, for the inventory's charge bar; null for items without one (stacks, gear, ammunition).</summary>
-    public float? ChargeFraction => MaxCharges > 0 && Quantity == 1 && (IsFood || ItemFunction != 0) ? Math.Clamp(Charges / MaxCharges, 0f, 1f) : null;
+    /// <summary>
+    /// How full the item (a stack's partly used unit) is, 0 to 1, for the inventory cell's charge bar, whose width is charges / maximum (<c>FUN_140711200</c>, <b>Observed</b>); null when the
+    /// maximum is 1 or less (no bar: gear, plain items).
+    /// </summary>
+    public float? ChargeFraction => MaxCharges > 1 ? Math.Clamp(Charges / MaxCharges, 0f, 1f) : null;
 
     /// <summary>The hunger levels eating the item gives: <see cref="Charges"/> / 100.</summary>
     public float Nutrition => IsFood ? Charges / 100f : 0;

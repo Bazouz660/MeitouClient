@@ -7,7 +7,7 @@ items); the launcher never downloads or hosts mods.
 
 ## Releases
 
-- One repository, two tag families: the game `v<version>` (`release.yml`), the launcher `launcher-v<version>`
+- One repository, two tag families: the game `v<version>` (`release.yml`, nightlies `nightly.yml`), the launcher `launcher-v<version>`
   (`launcher-release.yml`, changelog `launcher/CHANGELOG.md`). A full launcher release is marked Latest and game releases never
   are, so `/releases/latest` (README's link) is the newest launcher; README's
   setup links are `/releases/latest/download/<name>`, so the Setup/AppImage/pkg names must stay free of the version. Full releases of both pass
@@ -16,7 +16,7 @@ items); the launcher never downloads or hosts mods.
   token a tag or release (HTTP 403 "Resource not accessible by integration") on a commit whose `.github/workflows/` files differ from
   the current master, as it lacks the `workflows` permission. So pushing a workflow edit while a release runs fails its release step;
   re-run it from a new dispatch, or publish the run's artifacts by hand with `gh release create` (launcher 1.1.1 was).
-- Nightlies: `release.yml` also runs twice a day (05:00 UTC "nightly", 14:00 UTC "daily", or by hand with `nightly`) and publishes
+- Nightlies: `nightly.yml` runs twice a day (05:00 UTC "nightly", 16:00 UTC "daily", or by hand) and publishes
   `v<X.Y.Z+1>-nightly.<yyyymmdd>`, a second build on the same UTC day `….<yyyymmdd>.2`
   (patch after the newest full release) as a pre-release without a changelog section; its notes list every
   commit since the newest game tag (GitHub's generated notes cover only merged pull requests, so nightlies don't use them). It is skipped when nothing
@@ -80,7 +80,7 @@ through a browser may be blocked outright.
 
 ## Game zips per runtime
 
-`release.yml` runs `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
+`release.yml` and `nightly.yml` run `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
 both osx RIDs on macOS) and attaches all four zips to the one `v<version>` release. Each zip has a single top folder
 `Meitou-<version>-<rid>/` with the game (named by `Meitou.Game`'s `AssemblyName`), `meitou-viewer` and the self-contained .NET runtime. Unix zips are made with
 `zip(1)` (execute bits kept), macOS binaries and dylibs are ad-hoc signed, runtime debug symbols (`*.dbg`, ~250 MB) are dropped.

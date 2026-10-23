@@ -48,6 +48,22 @@ public sealed partial class WwisePlayer : IDisposable
     /// <summary>The voices of music clips last mixed (part of <see cref="Stats"/>' voices).</summary>
     public int MusicVoices { get; private set; }
 
+    /// <summary>
+    /// Meitou's voice cap (docs/audio.md "Voice cap"): at most this many sounds besides the music are mixed in a block, the loudest at the listener; the others run on
+    /// silently (no decoding) and come back in place when they are among the loudest again. 0: every sound is mixed. Set from any thread.
+    /// </summary>
+    public int VoiceCap { get; set; }
+
+    /// <summary>The sounds the cap left silent in the last block.</summary>
+    public int Silenced { get; private set; }
+
+    /// <summary>How much louder a sound mixed in the last block counts for the cap (a factor on its level).</summary>
+    const float CapHysteresis = 1.5f;
+
+    float[] loudness = new float[64];
+    int[] order = new int[64];
+    readonly HashSet<int> silenced = [];
+
     /// <summary>True once the bank has been read and handed to the audio thread (and not unloaded since).</summary>
     public bool IsBankLoaded(string name) => loadedBanks.ContainsKey(Normalize(name));
 
@@ -159,18 +175,43 @@ public sealed partial class WwisePlayer : IDisposable
         }
         int voices = 0, music = 0;
         for (int i = sounds.Count - 1; i >= 0; i--)
+            if (sounds[i].Done)
+            {
+                sounds[i].Dispose();
+                sounds.RemoveAt(i);
+            }
+        // The voice cap (Meitou's rule, docs/audio.md "Voice cap"): past VoiceCap sounds, only the loudest at the listener are mixed; the rest keep their place silently.
+        int cap = VoiceCap, cappable = 0;
+        if (loudness.Length < sounds.Count) (loudness, order) = (new float[sounds.Count * 2], new int[sounds.Count * 2]);
+        for (int i = 0; i < sounds.Count; i++)
+        {
+            // A sound heard last block counts half as loud again: one at the cap's edge must get clearly quieter to give way, not flip every block.
+            float heard = sounds[i].Prepare(Gain) * (sounds[i].Heard ? CapHysteresis : 1);
+            if (cap > 0 && sounds[i].Cappable) { loudness[cappable] = -heard; order[cappable++] = i; }
+        }
+        if (cap > 0 && cappable > cap)
+        {
+            Array.Sort(loudness, order, 0, cappable);
+            for (int k = cap; k < cappable; k++) silenced.Add(order[k]);
+        }
+        for (int i = 0; i < sounds.Count; i++)
         {
             var s = sounds[i];
-            if (s.Done)
+            if (silenced.Contains(i))
             {
-                s.Dispose();
-                sounds.RemoveAt(i);
+                // Heard last block: one more block fading to silence (the voice's gain ramp), then silent.
+                if (s.Heard) s.FadeOut(mix, frames);
+                else s.Skip(frames);
+                s.Heard = false;
                 continue;
             }
-            s.Mix(mix, frames, Gain);
+            s.Mix(mix, frames);
+            s.Heard = true;
             voices++;
             if (s.IsMusic) music++;
         }
+        Silenced = silenced.Count;
+        silenced.Clear();
         MixAuxBuses(mix, frames);
         Stats = (roots.Count, voices, loading.Count, media.Count);
         MusicVoices = music;
@@ -640,20 +681,58 @@ public sealed partial class WwisePlayer : IDisposable
             if (voice is { Ended: true }) End();
         }
 
-        public void Mix(float[] mix, int frames, float masterGain)
+        // This block's gains, from Prepare: the level, the dry and send attenuations, the pan, the low-pass coefficient and the resampling rate.
+        float level, dry, send, panLeft, panRight, lowPassCoefficient;
+        double rate;
+
+        /// <summary>Whether the player may leave this sound silent for a block (<see cref="VoiceCap"/>): any but a music clip, while its voice can keep its place.</summary>
+        public bool Cappable => !IsMusic && voice is { CanSkip: true };
+
+        /// <summary>The frames of this block before the sound starts (a music clip starting inside it), taken off the pending delay.</summary>
+        bool Start(int frames, out int first)
         {
-            if (voice is null || Done) return;
-            int first = 0;
-            if (delayFrames > 0)
+            first = 0;
+            if (delayFrames <= 0) return true;
+            if (delayFrames >= frames)
             {
-                if (delayFrames >= frames)
-                {
-                    delayFrames -= frames;
-                    return;
-                }
-                first = (int)delayFrames;
-                delayFrames = 0;
+                delayFrames -= frames;
+                return false;
             }
+            first = (int)delayFrames;
+            delayFrames = 0;
+            return true;
+        }
+
+        /// <summary>Mixes the block with the gains <see cref="Prepare"/> worked out.</summary>
+        public void Mix(float[] mix, int frames)
+        {
+            if (voice is null || Done || !Start(frames, out int first)) return;
+            for (int i = 0; i < sends.Length; i++)
+                targets[i] = new VoiceSend(sends[i].Prepare(frames), level * send * panLeft, level * send * panRight);
+            voice.Mix(mix, frames, rate, level * dry * panLeft, level * dry * panRight, lowPassCoefficient, first, targets.AsSpan(0, sends.Length));
+        }
+
+        /// <summary>Mixed in the last block (the voice cap's hysteresis and fade-out).</summary>
+        public bool Heard;
+
+        /// <summary>Mixes the block ramping from the last gains to silence: a sound the cap silences fades out over one block instead of cutting.</summary>
+        public void FadeOut(float[] mix, int frames)
+        {
+            (level, dry, send) = (0, 0, 0);
+            Mix(mix, frames);
+        }
+
+        /// <summary>Leaves the block silent: the voice's clock runs on (<see cref="Voice.Skip"/>).</summary>
+        public void Skip(int frames)
+        {
+            if (voice is null || Done || !Start(frames, out int first)) return;
+            voice.Skip(frames, rate, first);
+        }
+
+        /// <summary>Works out the block's gains (the node chain, the buses, the place); returns how loud the sound is at the listener, dry or sent, for the voice cap.</summary>
+        public float Prepare(float masterGain)
+        {
+            if (voice is null || Done) return 0;
             float db = rolledVolume, cents = rolledPitch, lowPass = rolledLowPass, linear = 1;
             WwiseObject? child = null;
             foreach (var n in chain)
@@ -704,12 +783,12 @@ public sealed partial class WwisePlayer : IDisposable
                     lowPass += coneLowPass;
                 }
             }
-            var (panLeft, panRight) = Spatial.PanGains(pan);
-            float level = voiceGain * busGain;
-            for (int i = 0; i < sends.Length; i++)
-                targets[i] = new VoiceSend(sends[i].Prepare(frames), level * send * panLeft, level * send * panRight);
-            double rate = (double)voice.Clip.SampleRate / Player.outputRate * Math.Pow(2, cents / 1200.0);
-            voice.Mix(mix, frames, rate, level * dry * panLeft, level * dry * panRight, LowPassCoefficient(lowPass), first, targets.AsSpan(0, sends.Length));
+            (panLeft, panRight) = Spatial.PanGains(pan);
+            level = voiceGain * busGain;
+            (this.dry, this.send) = (dry, send);
+            lowPassCoefficient = LowPassCoefficient(lowPass);
+            rate = (double)voice.Clip.SampleRate / Player.outputRate * Math.Pow(2, cents / 1200.0);
+            return level * Math.Max(dry, sends.Length > 0 ? send : 0);
         }
 
         /// <summary>

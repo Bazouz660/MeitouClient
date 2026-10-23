@@ -138,13 +138,14 @@ public sealed class Releases(HttpClient http)
         return [.. list.OrderByDescending(r => r.Published)];
     }
 
-    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> or a same-day second build <c>….20261020.2</c> (release.yml): its number and build date.</summary>
-    public static (string Number, DateOnly? Nightly) ParseVersion(string version)
+    /// <summary>A nightly's version, <c>0.15.1-nightly.20261020</c> or a same-day second build <c>….20261020.2</c> (nightly.yml): its number, build date and that day's build (1 for the plain date).</summary>
+    public static (string Number, DateOnly? Nightly, int Build) ParseVersion(string version)
     {
         int at = version.IndexOf("-nightly.", StringComparison.Ordinal);
-        if (at < 0) return (version, null);
-        var stamp = version[(at + "-nightly.".Length)..].Split('.')[0];
-        return (version[..at], DateOnly.TryParseExact(stamp, "yyyyMMdd", out var date) ? date : null);
+        if (at < 0) return (version, null, 0);
+        var stamp = version[(at + "-nightly.".Length)..].Split('.');
+        int build = stamp.Length > 1 && int.TryParse(stamp[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int n) ? n : 1;
+        return (version[..at], DateOnly.TryParseExact(stamp[0], "yyyyMMdd", out var date) ? date : null, build);
     }
 
     /// <summary>"v0.15.0", a nightly "v0.15.1 nightly".</summary>
@@ -152,7 +153,7 @@ public sealed class Releases(HttpClient http)
 
     /// <summary>
     /// Installed game versions (folders of <c>versions/</c> holding the game), newest version first: a release before its own
-    /// pre-releases (<c>0.15.0</c> before <c>0.15.0-nightly.20261020</c>), nightlies of one version newest date first.
+    /// pre-releases (<c>0.15.0</c> before <c>0.15.0-nightly.20261020</c>), nightlies of one version newest date first, then that day's newest build.
     /// </summary>
     public static List<string> Installed()
     {
@@ -162,6 +163,8 @@ public sealed class Releases(HttpClient http)
             .Select(Path.GetFileName).OfType<string>()
             .OrderByDescending(v => System.Version.TryParse(v.Split('-')[0], out var n) ? n : new System.Version())
             .ThenBy(v => v.Contains('-'))
+            .ThenByDescending(v => ParseVersion(v).Nightly)
+            .ThenByDescending(v => ParseVersion(v).Build)
             .ThenByDescending(v => v, StringComparer.Ordinal)];
     }
 

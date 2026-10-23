@@ -20,6 +20,16 @@ public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Ta
     public bool Queued { get; init; }
 }
 
+/// <summary>
+/// The context menu's Follow (order 31, <c>Task_Follow</c>; docs/game/ui-input.md "Context menu verbs"): the characters (the selection when empty) keep a formation place behind
+/// <see cref="Target"/> until another order replaces it or the target is gone (<see cref="CharacterCold.FollowOrder"/>). <b>Engine</b>: the squad follower's slot rule, not saved.
+/// </summary>
+public sealed record FollowOrder(IReadOnlyList<CharacterId> Characters, CharacterId Target) : SimCommand
+{
+    /// <summary>Bodyguard (order 45) rather than Follow (31): the follower also fights whoever attacks the target (<see cref="CharacterCold.Guarding"/>). <b>Engine</b> reading of the order: the original shares the follow order giver and the task type's data names no more.</summary>
+    public bool Guard { get; init; }
+}
+
 /// <summary>Sandbox only: fixes a character's speed mode (null: leave) and/or its walking speed in units per second (null: leave; 0: the speed chain's again). The animation sandbox sends it, the game never does.</summary>
 public sealed record SandboxMovement(CharacterId Character, byte? Mode, float? Speed) : SimCommand;
 
@@ -79,6 +89,9 @@ public sealed record SelectCommand(IReadOnlyList<CharacterId> Characters, bool A
 
 /// <summary>Clears order selection and shows another faction's character in the HUD panels. <see cref="CharacterId.None"/> clears inspection only.</summary>
 public sealed record InspectCommand(CharacterId Target) : SimCommand;
+
+/// <summary>The player's character a pinned inventory window shows (<see cref="CharacterId.None"/>: none): the snapshot carries its item grid while it is not selected. Display only.</summary>
+public sealed record ShowInventoryCommand(CharacterId Target) : SimCommand;
 
 /// <summary>The building the HUD panels show (docs/game/ui-screens.md "Selected building"): the snapshot then carries its doors' state. A null instance clears it. Display only.</summary>
 public sealed record InspectBuildingCommand(string? Instance) : SimCommand;

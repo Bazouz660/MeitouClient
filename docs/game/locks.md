@@ -76,7 +76,11 @@ Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values spa
   played at speed `clamp(0.01 x skill, 0.55, 2.0)` (**Verified**, speed is cosmetic: it does not change the roll timing).
 - **XP** (`FUN_1408c62e0`, **Verified**): after each roll, stat 37 gains `k x map[37] x ((101 - stat) / 101)^2` with
   `k = 1.2` on success, 0.24 on failure. The lock level is passed but unused.
-- **Messages/sounds**: "Lockpicking (Chance {p}%)" on the bar, "Pick success!" / "Pick failed" floating text,
+- **Bar** (**Verified**, Task_PickLock slot 2 `FUN_140359160`): each update sets the task's floating bar
+  (`FloatingProgressBar::ProgressBarWidget`, `FUN_1406e8580`, layout `Kenshi_ProgressBarPanel`: `ProgressBar` fill, `Text`
+  caption) to pick time / next-roll time and its caption to "Lockpicking (Chance {p}%)" with the cage penalty. Its screen anchor
+  (character vfunc +0x38) and the visibility flag (character `+0x1a8`) are **Unknown**.
+- **Messages/sounds**: "Pick success!" / "Pick failed" floating text,
   `Character_Unlock_Success`. Wwise events: [audio](../audio.md#characters-footsteps-combat-voices).
 - **Target** (`Task_PickLock` slot 5): a building handle (a door resolves to its lock-owning object) or a **character**, meaning
   that character's cage (only when they are in a building prison). Shackles: the item handle, or a character, meaning their
@@ -86,7 +90,7 @@ Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values spa
   called on every update of the task, before the roll): a building owned by another faction -> code 2 (Burglary) against the
   owner faction; a cage holding a character, or another character's shackles -> code 7 against the captive's owner faction
   (character `+0x1a0 -> +0xe0`). economy.md lists code 7 as "Terrorism" (from the game's name table); which label the game shows for freeing is **Unknown**.
-- **Success side effects**: the owner squad's "house locked" flag is cleared; a freed character gets relation event 0xd from
+- **Success side effects**: the picker's own squad's "house locked" flag is cleared when the door is of its own home (**Observed**, `FUN_140359160`: a stranger's pick leaves the owners' flag set); a freed character gets relation event 0xd from
   the picker (0xe on failure) (**Observed**).
 
 ## Cutting and breaking (285 / 185 cut, 286 / 186 break)
@@ -152,7 +156,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Owner lock/unlock** (77/79/162/198, 78/80/140; B list `isObjectMine`): progress 0.3 per game second, so 3.3 s; ends with
   `Character_Lock` / `Character_Unlock_Success`. Locking closes the door first. No skill or level involved (**Verified**).
 - **Residents** (`allDoorsLocked` 87, `FUN_140596bd0`): true when the character is in bed, or its squad's "house locked" flag
-  is set (squad AI object +0xe8, set by Task_LockDoor when no door of the home is open, cleared by unlocking, picking or a
+  is set (squad AI object +0xe8, saved `homelok`; set by Task_LockDoor and Task_CloseDoor (a door with a working lock) when no door of the home is open, cleared by unlocking, picking or a
   non-player opening a door), else when the home building has no door that is open, broken or effectively unlocked
   (`FUN_1408cb1c0`, which also returns that door as the next target). Base AI_PACKAGE hours (**Verified** data):
 
@@ -168,6 +172,15 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Initial door state** (`FUN_140553210`, when the home building is assigned to a squad; **Verified**): CLOSED -> unlocked, not
   broken, closed; OPEN -> unlocked, open; LOCKED -> locked, closed; BROKEN -> lock broken, door broken. Saved buildings keep
   their saved values. The gate on building +0xa8 that allows it is **Unknown** (presumably "not restored from a save").
+- **Level-data door state**: the level data's GAMESTATE_BUILDING of a placed building carries the [save keys](#save-keys), so a
+  building no save has starts from them (**Verified** data, census of the merged `newland/leveldata` zones: 996 doored building
+  states have `state0`: 547 closed, 442 open, 7 opening, `doa0` matching, `lock lvl0` 20..49; 265 have no door keys). Town gates
+  (`Defensive Gate II-IV`, `Defensive Gate level 2`, `Makeshift Gate`) are mostly open (51 open, 22 closed, 29 closed and locked,
+  2 opening; all `wants lock`).
+  That the original applies them on a new game is **Observed** (the save format: base buildings keep their level state's handle,
+  [save](../formats/save.md#object-handles-and-slot-lists)). Meitou: lock and door state from the level state, the save's on top;
+  only doors with a `state` key count as restored, so `initial door state` still applies to the others (**engine choice**, the
+  +0xa8 gate is Unknown).
 
 ## Cages and beds
 
@@ -183,9 +196,53 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   cages whose owner faction is `not real` or has `fundamental type` 8 (**Observed**). Lifting a prisoner out of another faction's cage
   (`FUN_14034fbe0`): the lifter gets code 7, the prisoner code 0xc (**Observed**).
 - **Release** (`Task_ReleasePrisoner` 110): clears the occupancy, "{1} has been released from prison." (**Observed**).
-- **Beds** (`Task_UseBed`, `Task_GetOutOfBed`): `+0x2f8 = 1`, bed handle +0x300 ([carry-loot](carry-loot.md)); beds have no lock.
+- **Beds**: `+0x2f8 = 1`, bed handle +0x300 ([carry-loot](carry-loot.md)); beds have no lock. Details below.
 - Character save keys: `in something` (= +0x2f8) and `in what` (handle +0x300) (**Verified**, `FUN_1406280a0`); platoons
   save `imprisoned` (`FUN_140372ef0`).
+
+### Beds
+
+**Observed** (decompiled, kenshi_x64.exe 1.0.68) unless marked. Data: every bed has `max operators` 1 and `use range` 15; the clip is the functionality's
+`animation` (`sleepinbed` for Bed, Old Bed and the Skeleton Repair Bed, `sleeponfloor` for Camp and Fish Bed) (**Verified**, data probe).
+- **Enter / leave** (`FUN_14032e2f0(character, enter, bed)`): entering sets `+0x2f8 = 1` and the handle, and adds the character to the bed's occupant
+  set (UseableStuff slot 159 `FUN_1400f8030`, refused once the set holds `max operators`); leaving (`FUN_140345620`) removes it and clears both.
+  "Free for X" (slot 158 `FUN_1400f7bf0`): X is in the set or the set is below `max operators`.
+- **Task_UseBed** (98 USE_BED, 100 GET_PUT_IN_BED, 258 USE_BED_ORDER; slots 1 `FUN_140357d00`, 2 `FUN_140351770`, 5 `FUN_140347950`, 6 `FUN_140347ba0`):
+  the character is put at the bed's position and orientation and plays its clip; with the task's flag +0xa0 (set by which callers is **Unknown**) it first
+  checks power ("This bed needs power to operate.", `FUN_140299370`) and rent (`FUN_140357ad0`: a negative cost is passed on to the payment only when
+  the bed has a parent building, slot 59); sound `Character_Bed` / `Get_In`; then enters. Row 258 has no done-list (it runs until replaced), row 98's is
+  `isFullyRested`, `isInBed` ([ai-tasks](ai-tasks.md)).
+- **Task_GetOutOfBed** (116, 208, 257; `FUN_140345760`, `FUN_140348480`): `Get_Out` sound; when the bed's clip is `gotobed` it is played backwards and
+  the character leaves at 10 %, else at once.
+- **Task_PutInSomething** for a bed (99; the body's task type 100; `FUN_140358170`, `FUN_140358670`): a player-faction carrier pays the rent first: its own
+  cost, or the body's when that is non-negative and lower (a refusal fails the task). Once the put-down clip is below 0.2 and the bed is free for the
+  body, both are unlinked and the body enters the bed, then is placed at the bed's nearest type-4 node (`FUN_14038ab50`). A relation event follows
+  (faction vfunc 5 with the task's +0x7c; amount **Unknown**).
+- **Rent cost** (UseableStuff slot 152 `FUN_140330ab0(bed, character)`): 0 with no bed faction, when the faction's flag +0x1d0 is set (**Unknown**),
+  when ally(bed faction, character's) ([factions](factions-squads-towns.md) 3.3), for a `fundamental type` 8 (bandit) owner, or when the parent
+  building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when a further test `FUN_140621230` fails (**Unknown**) or the house has no
+  resident squad, or its template's `public beds` is false (unless the building's +0xc4 is 3, **Unknown**); else the template's `bed usage cost`,
+  x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats).
+- **Payment** (`FUN_1403576c0`, player faction only): -1 → the character says "This isn't mine", refused; > 0 → free when this bed was paid less than
+  24 (game hours, **Observed**) ago (a global map keyed by the name string at `+0x58` of the third argument, the empty string when null, storing the game time as a float; never saved, **Verified** by references, [save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), else "Can't afford c.{1} for bed rental." and refused, or paid with
+  "Paid c.{1} for bed rental.".
+- **Bed search** (`FUN_1408cfe00`, target finder of 153 Going to bed (**Verified**: its registration in `FUN_140319a60` stores the thunk at row +0x160)
+  and desire of 148): a character in a bed keeps it. For a player-faction character: the complete buildings of function mask 0x40 (BF_BED only; skeleton
+  beds are not searched) in its town, else the nearest town within √1.5625e7 ≈ 3953, plus its home building's town (`FUN_1408cbea0`); each free one not in
+  the squad's give-up list weighs 0.5 for the character's faction, 0.01 for a faction that counts it as an ally, else is skipped; x3 when its
+  construction needs more than 1 material (Building+0x188), x2 with a parent building, x4 when slot 35 > 0 (**Unknown**). The heaviest wins (first on a
+  tie, `FUN_1408daa90`). **Other characters** (**Verified** by decompile, order of the steps; what the building lists hold is **Observed**): a target already set is kept. The candidate list
+  is built from the first step that yields a bed: (1) the beds (interior furniture of function 6, `FUN_14054d4f0`) of the home building (the squad's Ownerships +0x38 hand); (2) with the squad type
+  (status +0xdc) not 4, those of the nearest "designated" building (`BuildingFinderNearestAllies_Designated`, kind 2; its per-building test `FUN_1408dac20` reads the building's designation record (vfunc 0x160), its faction, a shop test, a give-up test and an occupancy count `FUN_1403344c0`
+  and is only partly read; the meaning of the designation kinds is **Unknown**); (3) with the squad type not 1, 2, 5 or 6, those of the nearest designated building of kind 3;
+  (4) else the buildings of function mask 0x40 (`BuildingFinderNearestAllies_Function`, the 3 x 3 grid cells of zones round the character, whole list kept in the finder's order). The first bed in
+  the list that is not in the squad's give-up list (`FUN_1402690e0` count below 1) and that `UseableStuff` vfunc 0x4f0 (a place free) accepts is the target, passed over only when the squad's home is
+  not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
+  that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
+  town (engine choices for steps 2 to 4 and the order); nothing in Meitou calls it for an NPC yet (NPC sleepers go to the home spot of their mind).
+- **UI**: a quick right click on a bed (function 6 or 25) gives 258 (UseableStuff slot 131 `FUN_140299230`); the held menu (`FUN_1407a6bc0`) offers
+  99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (verb names `FUN_14079b2d0`).
+- Meitou: [simulation](../simulation.md#cages-beds-and-locks).
 
 ## Containers (Meitou)
 
@@ -193,11 +250,18 @@ Interior items with `has inventory` (grid as for a [storage](buildings-productio
 A resident squad with `vendors` has its home's stock containers filled and unlocked by the building filler, trader or not ([building shops](economy.md#building-shops-observed-decompile));
 the others start empty (what else the original stocks them with is **Unknown**). **Engine choices**, not Verified against the original: a right click with a selection walks the nearest
 character to one (`OpenContainerOrder`, reach 20) and opens a storage window beside the inventory, staying open until the player closes it (asking for the same container again reopens it, also while paused); the character's inventory opens beside it for an order-driven container and not when a storage or rock is merely selected (the original has no walk-away test; an opener who is down or gone closes it); the player's own locked one refuses
-("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's containers refuse, their stock being the shop's one merged inventory (`Shop.ForBuilding`); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk. Items move with
+("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's containers all show the shop's one merged inventory (`Shop.ForBuilding`, `PlayerSystem.GridOf`; engine choice, the original keeps the stock in the containers): taking from it is the theft of any other faction's container (the item is marked stolen from the container's owner), putting into it is refused ("That stock is the shop's."); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk, the menu's Loot (and Alt) steals at once. Items move with
 `PutInMachine` / `TakeFromMachine` addressed by the fixture id, within 60 of it ("Out of trading range.", [economy](economy.md#trading-range)). Contents are saved in Meitou's own GAMESTATE_BUILDING string `meitou container <layout index>` (the index of the fixture id; JSON list of items with cell, quality, level,
 material, maker, charge and a bag's contents; absent while empty; `Locks/ContainerSave.cs`), the original's interior ids being unmapped. Like the locks, only into building states the
 save already holds (zones visited), and the original ignores the key (**Unverified**). A lock on a stored shackle and prosthetic wear are not kept. Theft rolls
 ([carry-loot](carry-loot.md)) for taking from another faction's container are not modelled.
+
+## Player orders on locks
+
+Engine orders built on the tasks above (`LockSystem.Force.cs`, `LockSystem.Cages.cs`; context-menu verbs in [ui-input](ui-input.md#context-menu-verbs)):
+- **Use Tools / Use Strength** (285 / 286, `ForceLockOrder`) on a door's, container's or cage's lock: the nearest selected character walks to it (a door from the nearer side) and cuts it (hardness falls as the shackle cut, the best tool is used up, the lock is broken) or breaks it (one strength test, a broken door lock also breaks the door); the picking crime is booked each update (Burglary against the owner, or code 7 for a cage with a captive). **Verified** by vtables / **Observed**: the shackle tasks' update is shared (above); that doors and containers take the same formulas is an engine reading.
+- **Smash** (226, a door only): the NPC basher (above) without an attack target; needs a weapon ("I need a weapon to smash that" otherwise), walks to the stand-off spot and swings every 1.5 s; Burglary is booked per swing. Engine choice: the swing time.
+- **Set Free** (110, `SetFreeOrder`): the nearest selected character walks to the prisoner's cage and, unless it is locked ("It's locked."), lets the prisoner out as `FixtureRegistry.Release` does (cage unlocked and emptied, sentence and slave state cleared). Out of another faction's cage a pending code 7 (Terrorism) is booked as for lifting a prisoner out. **Get in** (107, `GetInCageOrder`): the character walks into a free, unlocked cage and is imprisoned. **Put in** (108): `PutInCageOrder.Cage` names the cage; **Pick Lock** of an empty cage `PickLockOrder.Cage`. Engine choices: the walks and reaches.
 
 ## Save keys
 

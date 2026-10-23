@@ -72,6 +72,9 @@ public sealed partial class PopulationSystem
         c.PickingLock = null;
         c.BuildSite = null;
         c.BuildBar = 0;
+        c.FetchSite = null;
+        c.FetchItem = null;
+        c.FetchRecord = null;
         c.SquadId = -1;
     }
 
@@ -148,13 +151,9 @@ public sealed partial class PopulationSystem
         squad.SpawnSize = Math.Max(size, squad.Members.Count);
         stored.Members.Clear();
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
-        var lead = table.Next[squad.Leader.Slot].Position;
-        foreach (var id in squad.Members)
-        {
-            var at = table.Next[id.Slot].Position;
-            table.Cold(id.Slot)!.FormationOffset = MovementSystem.OffsetOfPlace(new Vector2(at.X - lead.X, at.Z - lead.Z));
-        }
         world.Squads.Add(squad);
+        Memory?.Restore(squad.Id, stored.Memory);
+        stored.Memory = null;
         // A resident in its bed takes it again.
         world.Fixtures.Bind(world);
         return squad;

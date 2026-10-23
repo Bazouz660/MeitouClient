@@ -7,7 +7,7 @@ Crime prices/ledger: [economy](economy.md); body/load: [stats](character-stats.m
 ## Carry and release
 
 **Verified** carriable race gate (53-race probe), left-arm usable medical+0x166, left shoulder/
-Bip01 L UpperArm attachment. Collapsed/missing left arm prevents carrying; right arm irrelevant.
+Bip01 L UpperArm attachment. A collapsed, missing or crushed left arm prevents carrying ([arms](combat.md#arms)); right arm irrelevant.
 **Observed** target must resolve character and differ from carrier; already-carried targets
 require permitted snatch/partner check. AI down-state gate and player context-menu eligibility
 are different. Race carry-bone affects attachment; exact transform/secondary character type unknown.
@@ -32,7 +32,7 @@ Ground pickup can raise Theft inside another faction's building.
 container0.3+1.95*thievery/100*t, t=lerp(0.5,1,clamp(distance/200)), half in same building,
 sleeping/lying doubles, different floor*1.5. Unconscious/dead/carried/imprisoned watcher (or down
 thief) guarantees success, but pending crime still exists. Caught creates Theft timer30,
-reaction/relation event and XP with high-probability/imprisonment/timer exemptions.
+a reaction (no faction relation event: none of the slot-5 callers in [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile) is a theft or loot path) and XP with high-probability/imprisonment/timer exemptions.
 
 Witnesses must be eligible and care about victim for theft/fencing/looting/kidnapping;
 assault/murder have separate branches. Ordinary witness reacts; only police-like witness with
@@ -89,7 +89,7 @@ kidnap 132 with 0x4008 / 0x811 and `allowBed` 1): walks the owner's sensed list,
 (the bits are **Unknown**); the nearest (squared XZ distance) passing all of these wins: the target is down (ragdolled or carried, `FUN_1407d1440`, or the byte
 `+0x5b8`) or, only when `allowBed`, in a bed (`+0x2f8 == 1`); not carried (`+0x3d4`), not dead, special state 0 (not caged; bed 1 when allowed), not an animal
 (slot `0x248` is `asAnimal`), and not in the squad's give-up list (`FUN_1402690e0`, a handle-pair list every finder tests; its writer was not traced). Rescue also requires
-the target to share the owner's slot-11 object (probably its faction; **Observed**: tested when `include` has bit 1 and a global flag at `+0x112` is clear). So raiders also take sleepers out of beds. 132 is a
+the target to share the owner's slot-11 object (probably its faction; **Observed**: tested when `include` has bit 1 and a global flag at `+0x112` (Rescue Allies, [squad AI options](ai-tasks.md#squad-ai-options)) is clear). So raiders also take sleepers out of beds. 132 is a
 planner goal (A: 153 got a victim, B: not carrying, effect 48 carrying); 254 has no finder: its B list 153, 154 chains 132, then 112/281 find a cage (`FUN_1408d0770`) and 108 puts the
 carried one in. What sets `Status+0xe9` ("innocent victim") was not found: it is saved with the slave state (`FUN_140626580` / `FUN_140626830`), cleared by the per-update
 `FUN_140852a30` (not carried and in its town's bed, or carried by a friend) and read at the lift's release (`FUN_1405ce1e0`) and by `FUN_1406cc470` / `FUN_1407211b0`;
@@ -97,8 +97,8 @@ it is not part of target eligibility.
 
 ## Unknowns
 
-1. The **bed search** for rescue (`FUN_1408cfe00`): range, which beds (own buildings only, or rented town beds), and what "if there's beds"
-   needs; without it job 148 cannot decide whether to run.
+1. The bed search (`FUN_1408cfe00`) is decoded for player-faction characters and, in outline, for others ([locks](locks.md#beds)); the meaning of the designated-building kinds is not.
+   Where 106 (no target finder) gets its bed is **Unknown**.
 2. The **sensed-list category bits** (`FUN_140853960` masks 1, 0x4010, 0x20, 0x210, 0x4008, 0x811, 0x10): which bit is ally, enemy, dead, slave;
    and the size of the sensed list, which is the search range of every finder.
 3. The **status object at `Character+0x1a0`** (int at +0, saved as `slavestate`: 1 slave, 2 escaped slave; the setter `FUN_1405a4940` posts "{1} has been enslaved" for a free player-faction character and sets `+0x110` to 250 on 2; its callers: caging, the squad factory's `slaves`, slave processing (task 182), escapes, release and bail); its `+0x88`, `+0xe0` (a slave's owner faction); its class name, and what sets `+0xe9` (the "innocent victim" flag; see the character finder).
@@ -109,8 +109,8 @@ it is not part of target eligibility.
    are real, the UI events behind `FUN_140713d20` and `FUN_140715560` were not mapped.
 6. **Witness timing**: how often `FUN_1408580d0` runs per sensed character, with what range and line of sight, and how the pending timer `+0x90`
    counts down (`FUN_140851f40` sets it; the decrement was not found).
-7. `PUT_DOWN_CARRIED_DUDE_IF_THEY_CAN_WALK` (169): its "can walk" test; the bed task given to a body put in a bed (kind 4 from `FUN_14038ab50`).
-8. The **bed rent** amount (`FUN_1403576c0`) and whether allied factions' beds charge it.
+7. `PUT_DOWN_CARRIED_DUDE_IF_THEY_CAN_WALK` (169): its "can walk" test. (Kind 4 of `FUN_14038ab50` is the bed's nearest type-4 node the body is placed at, [locks](locks.md#beds).)
+8. Bed rent: decoded ([locks](locks.md#beds)); allied factions' beds are free. The town-type and `FUN_140621230` tests in it are **Unknown**.
 9. A **despawn timer** for ground items.
 10. The steal order type 0x1d of the ALT path (`FUN_1407fc440`): the taskType table says 29 is `MOVE_CUS_ORDERED`.
 11. The **speed caps** of the `carrying left/right` movement clips (RACE `male/female carry ragdoll` are unused: [ragdolls](ragdolls.md)).

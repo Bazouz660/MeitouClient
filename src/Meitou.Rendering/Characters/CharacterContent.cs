@@ -22,9 +22,26 @@ internal sealed class AssetPart
     public Matrix4x4 Offset = Matrix4x4.Identity;
     /// <summary>Index among the character's bone-attached parts (the matrices <see cref="CharacterRenderer"/> keeps per frame); -1 for shared parts.</summary>
     public int AttachIndex = -1;
-    /// <summary>Only while the weapon in hand is sheathed or drawn (<see cref="CharacterPart.Shown"/>).</summary>
+    /// <summary>Only while the weapon or crossbow is stowed or in hand (<see cref="CharacterPart.Shown"/>).</summary>
     public WeaponShown Shown;
-    public bool ShowsWith(bool weaponDrawn) => Shown == WeaponShown.Always || (Shown == WeaponShown.Drawn) == weaponDrawn;
+    /// <summary>When it shows by the bolts loaded in its crossbow (<see cref="CharacterPart.ShownShots"/>).</summary>
+    public int ShownShots;
+    /// <summary>The first loaded bolt of the crossbow in the hands: its origin is the muzzle (<see cref="CharacterRenderer.Muzzle"/>).</summary>
+    public bool Muzzle;
+    /// <summary>
+    /// Whether the part shows with a weapon drawn (<paramref name="weaponDrawn"/>), that weapon being the crossbow (<paramref name="ranged"/>) or the back melee weapon
+    /// (<paramref name="back"/>, else the hip one), with <paramref name="shots"/> bolts loaded in the crossbow.
+    /// </summary>
+    public bool ShowsWith(bool weaponDrawn, bool ranged, int shots = 1, bool back = false) => (ShownShots == 0 || (ShownShots < 0 ? shots <= 0 : shots >= ShownShots)) && Shown switch
+    {
+        WeaponShown.Drawn => weaponDrawn && !ranged && !back,
+        WeaponShown.Sheathed => !(weaponDrawn && !ranged && !back),
+        WeaponShown.BackDrawn => weaponDrawn && !ranged && back,
+        WeaponShown.BackSheathed => !(weaponDrawn && !ranged && back),
+        WeaponShown.RangedDrawn => weaponDrawn && ranged,
+        WeaponShown.RangedSheathed => !(weaponDrawn && ranged),
+        _ => true,
+    };
     public required PartMaterial Material;
     /// <summary>The mesh file's bounds (the LOD value's centre and radius), in the part's own space.</summary>
     public required Vector3 BoundsCentre;
@@ -81,12 +98,21 @@ internal sealed class PartMaterial
     public bool ClipOnNormalAlpha, Dyed, DoubleSided;
     /// <summary>Worn on the body's skeleton (the original's Skinned template): matte (its glossMult is 0).</summary>
     public bool Worn;
+    /// <summary>A person's body (not an animal's): its bare skin may scatter light under the <c>skin</c> switch (<see cref="CharacterShaders.Skin"/>), by its race's choice
+    /// (<see cref="CharacterRenderer.SkinRaces"/>, else <see cref="SkinDefault"/>).</summary>
+    public bool Skin, SkinDefault;
+    /// <summary>The RACE record's string id of a body (<see cref="Skin"/>).</summary>
+    public string? Race;
     public int VestCount;
     public bool[] VestColoured = new bool[3];
     public Vector3 ShirtColour, SkinTone, HairColour;
     public bool HasShirtColour;
     public Vector4 HairAlpha, HairMult, BeardAlpha, DiffuseChannel = new(1, 0, 0, 0), AlphaChannel = new(1, 0, 0, 0), Colour1, Colour2;
     public float AlphaThreshold;
+    /// <summary>An item's gloss multiplier (an icon's material <c>specular mult</c>, rtticons.hlsl's <c>glossMult</c>); 1 for the others.</summary>
+    public float GlossMult = 1;
+    /// <summary>An icon whose mesh has vertex colours: they multiply the albedo (the game's <c>RTTIcons_Coloured</c>).</summary>
+    public bool VertexColoured;
     /// <summary>The body's normal blend weight towards <see cref="CharacterShaders.SlotBlendNormal"/> (the original's <c>muscleBlend</c>).</summary>
     public float MuscleBlend;
 }
@@ -224,21 +250,26 @@ internal sealed class CharacterContent : IDisposable
     readonly ConcurrentDictionary<(string Path, int Bones, bool Close), Lazy<Prepared>> prepared = new();
 
     /// <summary>The preparation of a mesh, made once (any thread; the first caller's level settings stand).</summary>
-    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false) =>
-        prepared.GetOrAdd((path.ToLowerInvariant(), boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close)));
+    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false, bool icon = false) =>
+        prepared.GetOrAdd((path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close, icon)));
+
+    /// <summary>The bone count an icon's mesh is kept under (<see cref="prepared"/>, <see cref="meshes"/>): its tangents are built the icon shader's way (<see cref="Model.Build"/>).</summary>
+    const int IconBones = -2;
 
     /// <summary>Reads a mesh file and makes its levels and index buffers (no GPU work, any thread): with its skinning weights for a skeleton of <paramref name="boneCount"/>
     /// bones (null: unskinned); its generated levels start <paramref name="lodScale"/> times farther than the rule gives. A <paramref name="close"/> mesh (the character editor's
     /// close-up) keeps only its full level: generating the others is nearly all of the time a mesh takes (a hair 1 to 2 s), and the editor shows one character up close.</summary>
-    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close)
+    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close, bool icon = false)
     {
         var messages = new List<string>();
         try
         {
             var mesh = OgreMeshReader.ReadFile(path);
-            var model = Model.Build(mesh, boneCount, gameBinormals: true);
+            var model = Model.Build(mesh, boneCount, gameBinormals: !icon, tangentSign: icon);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
             if (limbs is not null) MarkLimbs(model, limbs);
+            // Not an icon's: its colour is the mesh's own vertex colour (CharacterShaders.VertexColoured), and icons take no skin.
+            if (!icon) MarkCurvature(model);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
             var centre = mesh.Bounds is { } b ? (b.Min + b.Max) / 2 : model.Center;
             float radius = mesh.Bounds is { } bb ? bb.Radius : model.Radius, fileRadius = radius;
@@ -278,11 +309,11 @@ internal sealed class CharacterContent : IDisposable
     }
 
     /// <summary>A mesh by file, uploaded the first time: prepared here unless a worker has done it (<see cref="Fetched"/>), or after waiting for the worker preparing it.</summary>
-    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false)
+    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false, bool icon = false)
     {
-        var key = (path.ToLowerInvariant(), boneCount ?? -1, close);
+        var key = (path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close);
         if (meshes.TryGetValue(key, out var cached)) return cached;
-        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close).Value;
+        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close, icon).Value;
         prepared[key] = new Lazy<Prepared>(Uploaded);
         Messages.AddRange(messages);
         return meshes[key] = ready is null ? null : Upload(ready);
@@ -314,6 +345,34 @@ internal sealed class CharacterContent : IDisposable
         return new LoadedMesh(gpuMesh, ready.FirstMaterialName, ready.Centre, ready.Radius, ready.Morphs, ready.ShadowDistances, ready.ShadowFirst, ready.PickBoxes,
             ready.FileDistances, ready.FileFirst, ready.FileRadius);
     }
+
+    /// <summary>
+    /// Whether the mesh <see cref="BuildIcon"/> draws <paramref name="item"/> with is read (so building it only uploads): the first call starts reading it on a worker, and the
+    /// answer is false until that is done. True too when there is no mesh (<see cref="BuildIcon"/> reports it). Render thread.
+    /// </summary>
+    public bool IconMeshReady(GameRecord item)
+    {
+        // Asked again every frame while it waits: the first answer's reading is kept by item.
+        if (iconReads.TryGetValue(item, out var started)) return started is null || started.IsValueCreated;
+        string field = ItemIconStyle.MeshOf(item);
+        if (field.Length == 0 || FindMesh(field) is not { } path || meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true))) { iconReads[item] = null; return true; }
+        var lazy = Prepare(path, null, 1, false, LodPixelsPerRadian, close: true, icon: true);
+        iconReads[item] = lazy;
+        if (lazy.IsValueCreated) return true;
+        if (iconFetches.Add(path.ToLowerInvariant()))
+            BackgroundWork.RunUrgent(() =>
+            {
+                try { _ = lazy.Value; }
+                catch (Exception) { }   // a file that cannot be read: BuildIcon meets it again on the render thread and reports it
+                return true;
+            });
+        return false;
+    }
+
+    /// <summary>Icon meshes whose reading has been started on a worker (<see cref="IconMeshReady"/>).</summary>
+    readonly HashSet<string> iconFetches = [];
+    /// <summary>The reading <see cref="IconMeshReady"/> waits on, by item (null: nothing to wait for).</summary>
+    readonly Dictionary<GameRecord, Lazy<Prepared>?> iconReads = new(ReferenceEqualityComparer.Instance);
 
     readonly Dictionary<CharacterAppearance, Task> fetching = [];
     int fetchesRunning;
@@ -362,7 +421,7 @@ internal sealed class CharacterContent : IDisposable
     {
         closeUp.Clear();
         foreach (var (key, lazy) in prepared)
-            if (key.Close && !(lazy.IsValueCreated && ReferenceEquals(lazy.Value, Uploaded))) prepared.TryRemove(key, out _);
+            if (key.Close && key.Bones != IconBones && !(lazy.IsValueCreated && ReferenceEquals(lazy.Value, Uploaded))) prepared.TryRemove(key, out _);
     }
 
     /// <summary>Whether a mesh file has been prepared (for any skeleton), as a close-up or with its levels.</summary>
@@ -444,6 +503,41 @@ internal sealed class CharacterContent : IDisposable
                 bool below = limb >= 0 && v.Position.Y < (limb < 2 ? hide.ArmBelow : hide.LegBelow);
                 v.Colour.Y = below ? 1 << limb : 0;
             }
+    }
+
+    /// <summary>
+    /// Writes each vertex's curvature (1 / radius, world units) into its colour's Z, for the Meitou skin (docs/character-renderer.md "Skin"): over the edges at the vertex,
+    /// the mean of how far the normal turns per unit of length, then averaged over the vertices that share its position (a UV seam must not show). Baked per vertex and
+    /// interpolated, it is smooth across triangles; a screen-space estimate is constant per triangle and drew the low-poly faceting in red.
+    /// </summary>
+    static void MarkCurvature(Model model)
+    {
+        foreach (var part in model.Parts)
+        {
+            var v = part.Vertices;
+            var sum = new float[v.Length];
+            var count = new int[v.Length];
+            var idx = part.Indices;
+            for (int t = 0; t + 2 < idx.Length; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    uint a = idx[t + e], b = idx[t + (e + 1) % 3];
+                    float length = Vector3.Distance(v[a].Position, v[b].Position);
+                    if (length < 1e-5f) continue;
+                    float k = Vector3.Distance(Vector3.Normalize(v[a].Normal), Vector3.Normalize(v[b].Normal)) / length;
+                    sum[a] += k; count[a]++;
+                    sum[b] += k; count[b]++;
+                }
+            static Vector3 Key(Vector3 p) => new(MathF.Round(p.X, 3), MathF.Round(p.Y, 3), MathF.Round(p.Z, 3));
+            var byPosition = new Dictionary<Vector3, (float Sum, int Count)>();
+            for (int i = 0; i < v.Length; i++)
+                byPosition[Key(v[i].Position)] = byPosition.TryGetValue(Key(v[i].Position), out var s) ? (s.Sum + sum[i], s.Count + count[i]) : (sum[i], count[i]);
+            for (int i = 0; i < v.Length; i++)
+            {
+                var s = byPosition[Key(v[i].Position)];
+                v[i].Colour.Z = s.Count > 0 ? s.Sum / s.Count : 0;
+            }
+        }
     }
 
     /// <summary>How much farther a part's generated levels start (<see cref="HairLodScale"/> for a person's hair and beard).</summary>
@@ -537,7 +631,7 @@ internal sealed class CharacterContent : IDisposable
             var ap = new AssetPart
             {
                 Label = $"{part.Record.Type} '{part.Record.Name}' .{part.Field}", Mesh = loaded.Gpu, Shared = shared, Material = ItemMaterial(c, part, path, loaded),
-                BoundsCentre = loaded.Centre, BoundsRadius = loaded.Radius, Shown = part.Shown, HideSide = part.HideSide, PickBoxes = loaded.PickBoxes ?? [],
+                BoundsCentre = loaded.Centre, BoundsRadius = loaded.Radius, Shown = part.Shown, ShownShots = part.ShownShots, Muzzle = part is { Field: "live ammo", ShownShots: 1, Shown: WeaponShown.RangedDrawn }, HideSide = part.HideSide, PickBoxes = loaded.PickBoxes ?? [],
                 FileDistances = loaded.FileDistances, FileFirst = loaded.FileFirst, FileRadius = loaded.FileRadius,
             };
             if (!shared)
@@ -547,7 +641,8 @@ internal sealed class CharacterContent : IDisposable
                 int bone = point is null ? -1 : rig.Handle(point.Bone) ?? -1;
                 if (bone < 0) bone = rig.Skeleton.Bones.FirstOrDefault(b => b.Parent is null)?.Handle ?? 0;
                 ap.Bone = bone;
-                if (point is not null) ap.Offset = Matrix4x4.CreateFromQuaternion(point.Rotation) * Matrix4x4.CreateTranslation(point.Position);
+                if (point is not null) ap.Offset = Matrix4x4.CreateFromQuaternion(point.Rotation) * Matrix4x4.CreateTranslation(point.Position + part.PointOffset);
+                if (part.Local is { } local) ap.Offset = local * ap.Offset;
                 ap.AttachIndex = asset.AttachCount++;
             }
             asset.Parts.Add(ap);
@@ -591,6 +686,8 @@ internal sealed class CharacterContent : IDisposable
             HairAlpha = Channel(c.Hair?.GetInt("head alpha channel" + f, 1) ?? 1), HairMult = Channel(c.Hair?.GetInt("head channel" + f) ?? 0),
             BeardAlpha = Channel(c.Beard?.GetInt("head alpha channel" + f, 1) ?? 1),
             ShirtColour = colour is null ? Vector3.One : CharacterAppearance.Rgb(colour.GetInt("color 1")), HasShirtColour = colour is not null,
+            // Animals: fur and hide; a robot race (RACE `is robot`, skeletons) is off by default (docs/character-renderer.md "Skin").
+            Skin = c.Animal is null, SkinDefault = CharacterRenderer.SkinByDefault(c.Race), Race = c.Race.StringId,
         };
         // Animal meshes put the mirrored half of the body at u 1..2 (goat, bull, beak thing: Observed, the meshes' texture coordinates), so their textures repeat; a
         // person's body texture has the transparent border (the head sits beside it at v -1..0). That Kenshi repeats them is an engine reading (the animal material was not read).
@@ -704,13 +801,14 @@ internal sealed class CharacterContent : IDisposable
     {
         string field = ItemIconStyle.MeshOf(item);
         if (field.Length == 0 || FindMesh(field) is not { } path) { Messages.Add($"icon mesh not found: {field}"); return null; }
-        // The level the icon is drawn at is the first: the generated ones start far out.
-        var loaded = Mesh(path, null, float.MaxValue / 4);
+        // Only the full level: an icon is drawn once, up close (generating the others is nearly all of a mesh's preparation).
+        var loaded = Mesh(path, null, close: true, icon: true);
         if (loaded is null || loaded.Gpu.Parts.Count == 0) return null;
-        var m = new PartMaterial { Shading = CharacterShaders.ShadeItem };
+        var m = new PartMaterial { Shading = CharacterShaders.ShadeItem, VertexColoured = loaded.Gpu.Parts[0].HasColours };
         if (spec is not null)
         {
             m.Description = $"icon {spec.Type} '{spec.Name}'";
+            m.GlossMult = spec.GetFloat("specular mult", 1);
             m.Tex[CharacterShaders.SlotDiffuse] = Texture(Tex(spec, "texture map"), false);
             m.Tex[CharacterShaders.SlotNormal] = Texture(Tex(spec, "normal map"), false);
             m.ClipOnNormalAlpha = Tex(spec, "normal map") is not null;
@@ -720,8 +818,9 @@ internal sealed class CharacterContent : IDisposable
                 m.Description += $", dye '{dye.Name}'";
                 m.Tex[CharacterShaders.SlotColourMap] = Texture(Tex(spec, "color map"), false);
                 m.Dyed = true;
-                m.Colour1 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 1")), spec.GetFloat("paint factor 1"));
-                m.Colour2 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 2")), spec.GetFloat("paint factor 2"));
+                // The icon's dye has no paint factor: the game's colour alpha is the COLOR_DATA's top byte, 0 in every record.
+                m.Colour1 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 1")), 0);
+                m.Colour2 = new Vector4(CharacterAppearance.Rgb(dye.GetInt("color 2")), 0);
             }
         }
         else

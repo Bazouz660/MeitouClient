@@ -7,8 +7,9 @@ namespace Meitou.Tests.Characters;
 public class CharacterLayoutTests
 {
     [Fact]
-    public void Instance_is_144_bytes() => Assert.Equal(CharInstance.Size, Unsafe.SizeOf<CharInstance>());
-
-    [Fact]
-    public void Material_record_is_256_bytes() => Assert.Equal(CharacterMaterialRecord.Size, Unsafe.SizeOf<CharacterMaterialRecord>());
+    public void Instance_is_144_bytes_and_the_material_record_256()
+    {
+        Assert.Equal(CharInstance.Size, Unsafe.SizeOf<CharInstance>());
+        Assert.Equal(CharacterMaterialRecord.Size, Unsafe.SizeOf<CharacterMaterialRecord>());
+    }
 }

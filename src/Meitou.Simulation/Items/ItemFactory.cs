@@ -61,13 +61,23 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
     }
 
     /// <summary>
+    /// The main grid of a character of <paramref name="record"/>: an ANIMAL_CHARACTER's <c>inventory w</c> x <c>inventory h</c> (Skimmer and Garru 4 x 8, Beak Thing 8 x 8; <b>Verified</b>
+    /// by probe), a person's <see cref="Inventory.MainWidth"/> x <see cref="Inventory.MainHeight"/>.
+    /// </summary>
+    public static (int Width, int Height) MainSize(GameRecord? record) =>
+        record is { Type: Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER } animal && animal.GetInt("inventory w") > 0 && animal.GetInt("inventory h") > 0
+            ? (animal.GetInt("inventory w"), animal.GetInt("inventory h"))
+            : (Inventory.MainWidth, Inventory.MainHeight);
+
+    /// <summary>
     /// The inventory of a new character: what the generator rolled to wear and carry (clothing in its slot's section, a backpack, the crossbow and weapons at hip/back), then the CHARACTER
     /// record's <c>inventory</c> list (an ITEM reference whose first value is the quantity; entries with 0 never spawn, <b>Observed</b>), and last its <c>death items</c> the same way,
     /// marked <see cref="ItemInstance.Death"/> (docs/game/animals.md "Death items").
     /// </summary>
     public Inventory Build(GameRecord? character, Meitou.Data.Characters.Loadout? loadout)
     {
-        var inventory = new Inventory();
+        var (width, height) = MainSize(character);
+        var inventory = new Inventory(width, height);
         if (loadout is not null)
         {
             foreach (var c in loadout.Clothing)
@@ -85,6 +95,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             if (loadout.Crossbow is { } x) AddWeapon(inventory, x);
             foreach (var w in loadout.Weapons) AddWeapon(inventory, w);
         }
+        if (character is { Type: FcsRecordType.ANIMAL_CHARACTER }) AddAnimalBackpacks(inventory, character);
         if (character is not null)
             foreach (var r in character.GetReferences("inventory"))
             {
@@ -104,6 +115,25 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
     }
 
     /// <summary>
+    /// A new animal's luggage (docs/game/animals.md "Pack animals", <c>FUN_14062a130</c>, <b>Observed</b>): every entry of the ANIMAL_CHARACTER's <c>backpack</c> list is made and
+    /// added, whatever its values (the Pack Bull's entry is (0, 0, 0)); the first goes on the <c>backpack_attach</c> slot, so a pack beast carries its bag's grid from the start.
+    /// More entries go where they fit (none in the data has two).
+    /// </summary>
+    void AddAnimalBackpacks(Inventory inventory, GameRecord animal)
+    {
+        foreach (var r in animal.GetReferences("backpack"))
+        {
+            if (Create(r.TargetStringId) is not { Type: FcsRecordType.CONTAINER } pack) continue;
+            if (inventory.Backpack is null)
+            {
+                pack.Section = "backpack_attach";
+                inventory.Items.Add(pack);
+            }
+            else inventory.Add(pack);
+        }
+    }
+
+    /// <summary>
     /// An <b>engine choice</b>: a character whose loadout rolled a crossbow gets one item of the crossbow's <c>ammo</c> (one stack of bolts: 10 to 40 shots by the record's
     /// <c>charges</c>) unless its record's list already gave it some. Only 3 of the 40 base-game CHARACTER records with crossbows list bolts; how the original equips
     /// NPC crossbowmen with ammunition is <b>Unknown</b> (docs/simulation.md "Combat", ranged).
@@ -117,15 +147,31 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
         if (Create(ammo) is { } bolts) inventory.Add(bolts);
     }
 
+    /// <summary>
+    /// A loadout weapon in its section and row; when another weapon already holds those cells (a two-row crossbow fills the back), in the hip when that is free, else in the
+    /// pockets: two weapons never share cells.
+    /// </summary>
     void AddWeapon(Inventory inventory, Meitou.Data.Characters.LoadoutWeapon w)
     {
         if (Create(w.Weapon.StringId, 1) is not { } item) return;
-        item.Section = w.Section;
-        item.Y = w.Row;
         item.Level = w.Level;
         item.MaterialId = w.Model?.StringId ?? "";
         item.CompanyId = w.Manufacturer?.StringId ?? "";
-        inventory.Items.Add(item);
+        if (Place(inventory, item, w.Section, w.Row) || Place(inventory, item, "hip", 0)) inventory.Items.Add(item);
+        else
+        {
+            item.Section = "main";
+            inventory.Add(item);
+        }
+    }
+
+    /// <summary>Puts <paramref name="item"/> at the start of <paramref name="row"/> of an equipment <paramref name="section"/> when it fits there and the cells are free.</summary>
+    static bool Place(Inventory inventory, ItemInstance item, string section, int row)
+    {
+        var size = InventoryCommands.SectionSize(section);
+        if (item.Width > size.Width || row + item.Height > size.Height || !inventory.IsFree(section, 0, row, item.Width, item.Height)) return false;
+        (item.Section, item.X, item.Y) = (section, 0, row);
+        return true;
     }
 
     /// <summary>

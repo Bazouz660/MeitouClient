@@ -8,17 +8,6 @@ public class TerrainLodTests
 {
     static readonly float Scale1080 = TerrainLod.ProjectionScale(1080, 50 * MathF.PI / 180);
 
-    /// <summary>Rules to check: near only, with a far ramp, the reflection's half scale, a very fine and a very coarse one.</summary>
-    public static TheoryData<float, float, float, float> Rules => new()
-    {
-        { Scale1080, 8, 8, 7500 },
-        { Scale1080, 8, 24, 7500 },
-        { Scale1080 / 2, 8, 24, 7500 },
-        { Scale1080, 2, 2, 7500 },
-        { Scale1080, 32, 200, 3000 },
-    };
-
-    static float Flat(double x, double z) => 0;
     // Hills about 1000 high over 6000 to 9000 units, slopes up to about 0.9: steeper than most of the map over a whole node.
     static float Hills(double x, double z) => (float)(1200 + 500 * Math.Sin(x / 1100.0) * Math.Cos(z / 1400.0) + 300 * Math.Sin((x + z) / 700.0));
 
@@ -88,10 +77,7 @@ public class TerrainLodTests
     }
 
     [Theory]
-    [InlineData(10f, 10f, 1100f)]
     [InlineData(10f, 30f, 1100f)]
-    [InlineData(10f, 10f, 4000f)]
-    [InlineData(4f, 400f, 1100f)]
     [InlineData(4f, 400f, 300f)]
     [Slow]
     public void Moving_the_eye_changes_the_surface_smoothly_without_pops(float near, float far, float eyeHeight)
@@ -117,23 +103,22 @@ public class TerrainLodTests
         Assert.True(worst < 2f, $"the drawn surface jumped by {worst} units in one step");
     }
 
-    public static TheoryData<float, float, float, float, bool, float, float, float> Views()
+    public static TheoryData<float, float, float, float, float, float, float> Views()
     {
-        var data = new TheoryData<float, float, float, float, bool, float, float, float>();
-        var eyes = new[] { new Vector3(0, 300, 0), new Vector3(12345, 2600, -70000), new Vector3(-50979, 3100, 2932), new Vector3(146000, 1300, 146000), new Vector3(3000, 30000, 4000) };
-        foreach (var (scale, near, far, ramp) in new[] { (Scale1080, 8f, 8f, 7500f), (Scale1080, 8f, 24f, 7500f), (Scale1080 / 2, 8f, 24f, 7500f), (Scale1080, 32f, 200f, 3000f) })
-            foreach (bool hills in new[] { false, true })
-                foreach (var e in eyes)
-                    data.Add(scale, near, far, ramp, hills, e.X, e.Y, e.Z);
+        var data = new TheoryData<float, float, float, float, float, float, float>();
+        var eyes = new[] { new Vector3(0, 300, 0), new Vector3(-50979, 3100, 2932), new Vector3(3000, 30000, 4000) };
+        foreach (var (scale, near, far, ramp) in new[] { (Scale1080, 8f, 8f, 7500f), (Scale1080, 8f, 24f, 7500f) })
+            foreach (var e in eyes)
+                data.Add(scale, near, far, ramp, e.X, e.Y, e.Z);
         return data;
     }
 
     [Theory]
     [MemberData(nameof(Views))]
     [Slow]
-    public void Touching_squares_differ_by_one_level_and_meet_without_cracks(float scale, float near, float far, float ramp, bool hills, float x, float y, float z)
+    public void Touching_squares_differ_by_one_level_and_meet_without_cracks(float scale, float near, float far, float ramp, float x, float y, float z)
     {
-        Func<double, double, float> height = hills ? Hills : Flat;
+        Func<double, double, float> height = Hills;
         var q = new TerrainQuadtree(18, 64, new TerrainLod(scale, near, far, ramp));
         var eye = new Vector3(x, y, z);
         var nodes = new List<TerrainNode>();

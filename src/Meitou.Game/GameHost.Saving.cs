@@ -19,6 +19,7 @@ sealed partial class GameHost
 {
     bool quickSaveRequested, quickLoadRequested;
     string? saveRequestedFolder, loadRequestedFolder, readingFolder;
+    (string Folder, ImportOptions Options)? importRequested;
     Task? saveWrite;
 
     // What the world was loaded from: the next capture carries the save's records the world does not model through (null for a world that started new).
@@ -51,14 +52,14 @@ sealed partial class GameHost
     Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
         Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
         {
-            // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel scripts its fight.
-            Parts = IsSandbox || IsDuel ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
+            // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel and the battle script their fights.
+            Parts = IsSandbox || IsDuel || IsBattle ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
             Aggro = new Meitou.Simulation.AggroSettings { RecordLog = true },
-            // NPCs that see a player character say a line as a speech bubble (docs/game/dialogue.md "Ambient conversations"); the sandbox and the duel stay silent.
-            Dialogue = new Meitou.Simulation.Dialogue.DialogueSettings { AmbientEvents = !IsSandbox && !IsDuel },
+            // NPCs that see a player character say a line as a speech bubble (docs/game/dialogue.md "Ambient conversations"); the sandbox, the duel and the battle stay silent.
+            Dialogue = new Meitou.Simulation.Dialogue.DialogueSettings { AmbientEvents = !IsSandbox && !IsDuel && !IsBattle },
             Population = new Meitou.Simulation.PopulationSettings
             {
-                Background = interactive && !IsDuel, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
+                Background = interactive && !IsDuel && !IsBattle, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
                 CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
                 NestsMultiplier = (settings ?? difficulty)[6],
             },
@@ -85,6 +86,7 @@ sealed partial class GameHost
         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
         if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
         if (loadRequestedFolder is { } sourceFolder) { loadRequestedFolder = null; BeginQuickLoad(sourceFolder); }
+        if (importRequested is { } import) { importRequested = null; BeginImport(import.Folder, import.Options); }
 
         if (preparedBase is null && SavesAvailable(out _) && session.World.Player.Exists)
         {
@@ -96,7 +98,7 @@ sealed partial class GameHost
     /// <summary>Whether this run has a game to save and load: the population (so not <c>--no-population</c> or the sandbox).</summary>
     bool SavesAvailable(out string reason)
     {
-        reason = popData is null || population is null || IsSandbox ? "No game to save or load here (needs the town population)" : "";
+        reason = popData is null || population is null || IsFlat ? "No game to save or load here (needs the town population)" : "";
         return reason.Length == 0;
     }
 
@@ -189,11 +191,43 @@ sealed partial class GameHost
     }
 
     /// <summary>
+    /// Imports a save into a new world (docs/formats/save.md "Importing a game"): the save is read on a worker and cut down to what the ticks keep (<see cref="SaveImport"/>), then
+    /// loaded as any save is. The difficulty is what the advanced options hold, not the save's.
+    /// </summary>
+    void BeginImport(string folder, ImportOptions options)
+    {
+        if (!SavesAvailable(out string reason)) { player.Notice(reason, true); return; }
+        if (Busy()) { player.Notice("Save or load still in progress", true); return; }
+        if (!File.Exists(Path.Combine(folder, SaveFolder.QuickSaveName))) { player.Notice("Failed to import game: the save is no longer available", true); return; }
+        readingFolder = folder;
+        var settings = player.NewGameOptions;
+        var data = popData!;
+        Task<SaveGame>? read = null;
+        string summary = "";
+        AudioGameStarts();
+        StartSceneLoad(player.TitleOpen,
+            Stage("read", () => read = Task.Run(() =>
+            {
+                var game = SaveImport.Filter(SaveGame.Load(folder), options, data);
+                settings.Write(game.Camera);
+                return game;
+            })),
+            // The squads moved to the reset place stand on its ground, whose navmesh is waited for.
+            Stage("navmesh", () => (options & ImportOptions.ResetPositions) != 0 && read!.IsCompletedSuccessfully ? NavmeshAround(SaveImport.ResetPosition) : null),
+            Stage("build", () =>
+            {
+                if ((options & ImportOptions.ResetPositions) != 0 && nav is not null && read!.IsCompletedSuccessfully) SaveImport.PlaceOnGround(read.Result, nav.Walkability.GroundHeight);
+                return SwapInSave(read!, interactive: true, out summary, new SaveLoadOptions { Appearances = data.Appearances, ResetRelations = (options & ImportOptions.Relations) == 0 });
+            }),
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); return null; }));
+    }
+
+    /// <summary>
     /// Swaps in a world made from the save (at a tick boundary, the frame loop's) and hooks the host to it: the game clock, the camera on the player's squad. Returns the
     /// navmesh of the zones round the player to wait for before the first tick (<see cref="SettleNewWorld"/>); throws <see cref="SceneLoadFailed"/> when the save does
     /// not load (the old world stays).
     /// </summary>
-    Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary)
+    Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary, SaveLoadOptions? loadOptions = null)
     {
         if (read.IsFaulted || read.IsCanceled)
         {
@@ -212,7 +246,7 @@ sealed partial class GameHost
             // A world that fails to load leaves the old one running (ReplaceWorld drops the half-made one).
             session.ReplaceWorld(built.Systems, world =>
             {
-                loaded = SaveLoader.Load(world, read.Result, data, new SaveLoadOptions { Appearances = data.Appearances });
+                loaded = SaveLoader.Load(world, read.Result, data, loadOptions ?? new SaveLoadOptions { Appearances = data.Appearances });
                 if (world.Squads.Find(world.Player.Squad) is { Members.Count: > 0 } squad)
                 {
                     world.Player.Selection.Clear();
@@ -271,11 +305,11 @@ sealed partial class GameHost
         return navmesh;
     }
 
-    void FinishLoadNotice(string summary)
+    void FinishLoadNotice(string summary, bool imported = false)
     {
         Console.WriteLine($"load      {summary}");
         var missing = loadedSave?.MissingMods ?? [];
-        player.Notice(missing.Count == 0 ? "Loaded" : $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}", missing.Count > 0);
+        player.Notice(missing.Count == 0 ? (imported ? "Imported" : "Loaded") : $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}", missing.Count > 0);
     }
 
     /// <summary>

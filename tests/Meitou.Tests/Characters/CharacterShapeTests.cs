@@ -60,7 +60,7 @@ public class CharacterLodTests
 
     [Fact]
     [Slow]
-    public void Human_male_body_has_one_reduced_level_at_200()
+    public void Human_male_body_has_one_reduced_level_at_200_and_named_morph_poses()
     {
         var install = GameInstall.Locate();
         Assert.SkipWhen(install is null, "Kenshi install not found");
@@ -68,6 +68,12 @@ public class CharacterLodTests
         var levels = CharacterLod.Levels(mesh);
         Assert.Equal(2, levels.Count);
         Assert.Equal(200, levels[1].Distance);
+        // The body's poses are named morphs.
+        Assert.Equal(23, mesh.Poses.Count);
+        Assert.Contains(mesh.Poses, p => p.Name == "wide_cheekbones");
+        Assert.All(mesh.Poses, p => Assert.Equal(1, p.Target));
+        int poseVertices = (int)mesh.SubMeshes[0].VertexData!.VertexCount;
+        Assert.All(mesh.Poses, p => Assert.All(p.Vertices, v => Assert.True(v.Index < poseVertices)));
         for (int s = 0; s < mesh.SubMeshes.Count; s++)
         {
             var full = levels[0].Indices[s]!;

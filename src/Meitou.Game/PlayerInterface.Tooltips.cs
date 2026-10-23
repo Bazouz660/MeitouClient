@@ -46,7 +46,7 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddHoverLabel(List<UiControl> controls)
     {
-        if (inventoryDrag is not null || tradeDrag is not null || jobDrag is not null || dragging || uiPainter is not { } painter) { HideTooltip(); return; }
+        if (held is not null || jobDrag is not null || dragging || uiPainter is not { } painter) { HideTooltip(); return; }
         if (TooltipTarget(controls) is not { } hit) { HideTooltip(); return; }
         long now = Stopwatch.GetTimestamp();
         if (hit.Name != tipTarget)
@@ -147,7 +147,7 @@ sealed partial class PlayerInterface
     }
     void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given)
     {
-        float minimum = TitleOpen ? 0 : StandardTextPixels * Height / 1080f;
+        float minimum = TitleOpen ? 0 : StandardPixels;
         Vector2 Measure(string text, float wrap)
         {
             var size = painter.MeasureText(TooltipFont, text, Height, wrap, minimum);
@@ -279,6 +279,77 @@ sealed partial class PlayerInterface
         _ => null,
     };
 
+    // The colour tags of the bounty rows (kenshi_colours.xml Main, Title, Greyed; FUN_1405d2da0's static strings).
+    const string MainTag = "#afa68b", TitleTag = "#492620", GreyTag = "#444444";
+
+    /// <summary>
+    /// The bounty panel's tooltip rows (<c>FUN_1405d2da0</c>, docs/game/ui-screens.md section 4): per faction its name and <c>c.{1,num}</c> (Main for the local faction, else Greyed),
+    /// <c>-Wanted For: </c> with the first four crimes and a <c> </c> row with the rest; then the imprisonment row, or a rule, the turn-in line and the local faction's expiry.
+    /// <paramref name="everyExpiry"/> (Meitou UI): each faction's expiry under its own rows instead.
+    /// </summary>
+    static List<(string Key, string Value)> BountyRows(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties, PrisonView? prison, bool everyExpiry)
+    {
+        var rows = new List<(string, string)>();
+        foreach (var bounty in bounties)
+        {
+            string tone = bounty.Local ? MainTag : GreyTag, wanted = bounty.Local ? "" : GreyTag;
+            rows.Add((tone + bounty.Faction, tone + Loc.Tr("c.{1,num}", bounty.Amount)));
+            var crimes = bounty.Crimes.Split(", ", StringSplitOptions.RemoveEmptyEntries);
+            if (crimes.Length > 0) rows.Add((wanted + Loc.Tr("-Wanted For:") + " ", wanted + string.Join(", ", crimes.Take(4))));
+            if (crimes.Length > 4) rows.Add((" ", wanted + string.Join(", ", crimes.Skip(4))));
+            if (everyExpiry) rows.Add((Expiry(bounty), ""));
+        }
+        if (prison is { } p)
+        {
+            int left = (int)Math.Ceiling(p.HoursLeft);
+            rows.Add(p.Sentence >= 2000 ? (Loc.Tr("Imprisoned, sentence time:"), TitleTag + Loc.Tr("FOREVER"))
+                : left > 0 ? (Loc.Tr("Imprisoned, sentence time remaining:"), TitleTag + Loc.Tr(left == 1 ? "{1,num} hr" : "{1,num} hrs", left))
+                : (Loc.Tr("Imprisoned"), Loc.Tr("Waiting to be released")));
+            return rows;
+        }
+        rows.Add(("-------------------------", ""));
+        rows.Add((Loc.Tr("This character is wanted by the authorities. Turn them in for a reward."), ""));
+        // The original appends the expiry to the turn-in line after a line break; a row of its own here, so its colour tag leads it.
+        if (bounties.FirstOrDefault(v => v.Local) is { Amount: > 0 } local) { if (!everyExpiry) rows.Add((Expiry(local), "")); }
+        else rows.Add((MainTag + Loc.Tr("This character is not wanted by the local faction"), ""));
+        return rows;
+
+        // FUN_1405d1110: int(lifetime - elapsed) hours, "Notorious" in Title above 9999 (the lifetime is then 9999999).
+        static string Expiry(Meitou.Simulation.Crime.BountyLine bounty)
+        {
+            if (double.IsPositiveInfinity(bounty.HoursLeft)) return TitleTag + Loc.Tr("Notorious: The bounty will never expire.");
+            int hours = (int)bounty.HoursLeft;
+            return MainTag + Loc.Tr(hours == 1 ? "The bounty will expire in {1,num} hr" : "The bounty will expire in {1,num} hrs", hours);
+        }
+    }
+
+    /// <summary>
+    /// The bounty panel's own text (the other output of <c>FUN_1405d2da0</c>): wanted by the local faction, Title <c>Bounty:</c> and its amount in Main; else both Greyed
+    /// with the largest bounty (<c>FUN_140853740</c>).
+    /// </summary>
+    static HudLine BountyLine(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties) =>
+        bounties.FirstOrDefault(v => v.Local) is { Amount: > 0 } local
+            ? new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", local.Amount), TitleColour, MainColour)
+            : new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", bounties.Count == 0 ? 0 : bounties.Max(v => v.Amount)), GreyColour, GreyColour);
+
+    /// <summary>
+    /// The status lines of a slave (<c>FUN_1405d4260</c>, <b>Observed</b>; docs/game/ui-screens.md section 4): a title, "Slave" (state 1) or "Escaped slave" (state 2), and its text naming the owner
+    /// ("someone" without one); a player character's text ends with the hint on the obedient-slave job (state 1) or on keeping the looks-like-a-slave level low (state 2). Engine choices:
+    /// the hint is shown for player characters, the title takes the Title colour and the text the Main one.
+    /// </summary>
+    static List<(string Key, string Value)> SlaveRows(SlaveView slave, bool player)
+    {
+        string owner = slave.Owner.Length > 0 ? slave.Owner : Loc.Tr("someone");
+        bool escaped = slave.State == 2;
+        string hint = !player ? "" : escaped
+            ? Loc.Tr("Keep your [Looks Like A Slave] level as low as possible, wear clothing or disguises and find a plastic surgeon to restore your hair. Don't get spotted.")
+            : Loc.Tr("Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master. You can remove this job, but beware of the consequences...");
+        string text = escaped
+            ? Loc.Tr("A slave of {1} that has been seen escaping. Needs to lay low for a day and avoid getting spotted. {2}", owner, hint)
+            : Loc.Tr("A slave belonging to {1}. Not considered a person with rights, a slave works for his master until death and nothing more. {2}", owner, hint);
+        return [(TitleTag + Loc.Tr(escaped ? "Escaped slave" : "Slave"), ""), (MainTag + text.TrimEnd(), "")];
+    }
+
     /// <summary>Gives the HUD's widgets their tooltips (user strings through the bindings, which the arranged controls merge) and the selected building's status word its own.</summary>
     void BindTooltips(UiBindings b)
     {
@@ -289,11 +360,23 @@ sealed partial class PlayerInterface
             b.Properties[name] = properties;
         }
         foreach (var (widget, text) in HudTips) Add(widget, text);
+        if (Lead() is { } wanted && (wanted.Bounties.Count > 0 || wanted.Slave is not null))
+        {
+            var rows = wanted.Slave is { } slave ? SlaveRows(slave, wanted.IsPlayer) : [];
+            if (wanted.Bounties.Count > 0) rows.AddRange(BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou));
+            foreach (string name in new[] { "BountyPanel", "BountyText" })
+            {
+                var properties = b.Properties.TryGetValue(name, out var existing) ? new Dictionary<string, string>(existing) : [];
+                foreach (var pair in UiTooltips.RowProperties(rows, "fixed")) properties[pair.Key] = pair.Value;
+                b.Properties[name] = properties;
+            }
+        }
         if (BuildingFocus() is { } focus)
         {
             var (_, _, _, status, _) = BuildingLines(focus);
             if (BuildingStatusTip(status, Machine(focus.SiteId)?.Farm is not null) is { } tip) Add("HealthText", tip);
         }
+        else if (Lead()?.Body is { } body) Add("HealthText", HealthWordTip(body));
     }
 
     // ---- item tooltips (the Item classes' vfunc_79: FUN_1407ae130 and its callees) ----
@@ -304,9 +387,11 @@ sealed partial class PlayerInterface
     {
         /// <summary>Only the name (the machine slots' items, which the original's tooltip shows the same way).</summary>
         public bool Brief { get; init; }
+        /// <summary>The customer's own item while trading (its Sell value is the transfer's price); otherwise a stock item's Value is.</summary>
+        public bool Goods { get; init; }
         public static ItemTip NameOnly(string record, string material, string name, int quantity) => new(record, material, name, quantity, 0, 0, "", 0, 0, 0, -1, null, null) { Brief = true };
         public static ItemTip Of(InventoryItemView v, TradeItemView? trade = null, string? mapNote = null) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote);
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null };
         public static ItemTip Of(TradeItemView v) =>
             new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null);
     }
@@ -314,8 +399,9 @@ sealed partial class PlayerInterface
     static string Number(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// A prosthetic's rows (Meitou's; the original's limb rows are not decoded): the grade of its level in the grade colour, its HP, unarmed bonus and every multiplier that is not 1 at
-    /// that level (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.Multiplier"/>), a bonus in the good colour and a penalty in the bad one.
+    /// A prosthetic's rows (<c>FUN_1407a9080</c>, <b>Verified</b> in the decompile): the grade of its level in the grade colour, <c>-Max HP</c>, the <c>-----STATS-----</c> header, a row
+    /// per stat whose multiplier at that level is not 1 (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.Multiplier"/>) as int((m - 1) x 100) percent with its sign, a bonus in
+    /// the good colour and a penalty in the bad one, <c>-Unarmed damage bonus</c> when not 0, and a rule (the weight follows).
     /// </summary>
     static IEnumerable<TooltipLine> LimbRows(Meitou.Data.Gameplay.Bodies.LimbReplacement limb, int level)
     {
@@ -323,18 +409,17 @@ sealed partial class PlayerInterface
         yield return new(Loc.Tr("{1} Grade", Loc.Tr(ArmourTooltip.GradeNames[grade])), "", GradeTone(grade));
         float t = Math.Clamp(level * 0.01f, 0, 1);
         yield return new("-Max HP", Number(MathF.Floor(limb.Hp(t))), TooltipTone.Title, TooltipTone.Ink);
-        if (limb.UnarmedDamageBonus(t) is not 0 and var unarmed)
-            yield return new("-Martial arts bonus", unarmed.ToString(CultureInfo.InvariantCulture), TooltipTone.Title, unarmed < 0 ? TooltipTone.Bad : TooltipTone.Good);
-        (Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string Label)[] stats = limb.IsLeg
-            ? [(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Athletics, "Athletics"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Stealth, "Stealth"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Swimming, "Swimming")]
-            : [(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength, "Strength"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Dexterity, "Dexterity"),
-               (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Thieving, "Thievery"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Crossbows, "Crossbows"), (Meitou.Data.Gameplay.Bodies.StatsEnumerated.Swimming, "Swimming")];
-        foreach (var (stat, label) in stats)
+        yield return new("-----STATS-----", "", TooltipTone.Grey);
+        foreach (var stat in Enum.GetValues<Meitou.Data.Gameplay.Bodies.StatsEnumerated>())
         {
             float m = limb.Multiplier(stat, t);
-            if (MathF.Abs(m - 1) < 0.005f) continue;
-            yield return new("-" + label, m.ToString("0.00", CultureInfo.InvariantCulture) + "x", TooltipTone.Title, m < 1 ? TooltipTone.Bad : TooltipTone.Good);
+            if (m == 1) continue;
+            int percent = (int)((m - 1) * 100);
+            yield return new("-" + StatLabel(stat), (percent >= 1 ? "+" : "") + percent.ToString(CultureInfo.InvariantCulture) + "%", TooltipTone.Title, m < 1 ? TooltipTone.Bad : TooltipTone.Good);
         }
+        if (limb.UnarmedDamageBonus(t) is not 0 and var unarmed)
+            yield return new("-Unarmed damage bonus", unarmed.ToString(CultureInfo.InvariantCulture), TooltipTone.Title, unarmed < 0 ? TooltipTone.Bad : TooltipTone.Good);
+        yield return new("----------------", "", TooltipTone.Grey);
     }
 
     /// <summary>
@@ -350,6 +435,7 @@ sealed partial class PlayerInterface
         string? model = type == Meitou.Data.Fcs.FcsRecordType.WEAPON && t.Material.Length > 0 && RecordName?.Invoke(t.Material) is { Length: > 0 } m ? m : null;
         string name = t.Brief && model is not null ? model + " " + t.Name : t.Name;
         var lines = new List<TooltipLine> { new(t.Quantity > 1 ? $"{name} ({t.Quantity})" : name, "", TooltipTone.Title) };
+        if (t.Trade is { Buyback: true }) lines.Add(new("Buyback", ""));
         if (t.Brief) return lines;
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
         if (model is not null) lines.Add(new(model, "", GradeTone(ArmourTooltip.GradeOf(t.Level))));
@@ -367,7 +453,14 @@ sealed partial class PlayerInterface
         int function = type == Meitou.Data.Fcs.FcsRecordType.ITEM ? record!.GetInt("item function") : 0;
         float unitWeight = t.Quantity > 0 ? t.Weight / t.Quantity : t.Weight;
         TooltipLine Row(string label, string value, TooltipTone valueTone = TooltipTone.Ink) => new("-" + label, value, TooltipTone.Ink, valueTone);
-        if (function == 3) lines.Add(new("[Food]", "", TooltipTone.Good));
+        if (function == 3)
+        {
+            // One unit's charges left, truncated, then the record's ingredients by name (", "-joined, empty for raw food); no leading hyphen.
+            lines.Add(new("[Food]", "", TooltipTone.Good));
+            lines.Add(new("Nutrition", ((int)t.Charges).ToString(CultureInfo.InvariantCulture) + " nu", TooltipTone.Ink, TooltipTone.Ink));
+            var ingredients = string.Join(", ", record!.GetReferences("ingredients").Select(r => RecordName?.Invoke(r.TargetStringId)).Where(n => n is { Length: > 0 }));
+            lines.Add(new("Ingredients", ingredients, TooltipTone.Ink, TooltipTone.Ink));
+        }
         else if (function == 15) lines.Add(new("Possibly Edible", "", TooltipTone.Good));
         else if (function == 13) lines.Add(new("[Book]", "", TooltipTone.Main));
         else if (function == 16) lines.Add(new("[Ammunition]", "", TooltipTone.Main));
@@ -408,11 +501,12 @@ sealed partial class PlayerInterface
         }
         if (t.Trade is { } trade)
         {
-            // Value and Sell value: the stack's prices, with the trader factor as a mark-up in the bad colour (FUN_14079e7a0).
+            // Value and Sell value: one unit's prices (slot 81), with the trader factor as a mark-up in the bad colour (FUN_14079e7a0).
             int percent = trade.PriceFactor > 1 ? (int)((trade.PriceFactor - 1) * 100) : trade.PriceFactor < 1 ? (int)((1 - trade.PriceFactor) * 100) : 0;
             string suffix = trade.PriceFactor == 1 ? "" : $" ({(trade.PriceFactor > 1 ? "+" : "-")}{percent}%)";
-            lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, suffix, TooltipTone.Bad));
-            lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, suffix, TooltipTone.Bad));
+            // A buyback price is the exact refund, not marked up.
+            lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && !t.Goods ? "" : suffix, TooltipTone.Bad));
+            lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && t.Goods ? "" : suffix, TooltipTone.Bad));
         }
         if (armour is not null)
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id)).Select(ArmourRow));

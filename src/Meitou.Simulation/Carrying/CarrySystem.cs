@@ -34,7 +34,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public GameConstants Constants { get; } = constants;
     /// <summary>The length of the <c>shoulder lift left</c> clip in seconds (1 when the clip lengths are not known).</summary>
     public float LiftSeconds { get; } = liftSeconds > 0 ? liftSeconds : 1;
-    /// <summary>The live relation table: with it, being seen looting changes the victim faction's view of the player and an ally counts as friendly. Null: no relation effects.</summary>
+    /// <summary>The live relation table: with it an ally counts as friendly. Null: only the same faction does.</summary>
     public FactionRelations? Relations { get; set; }
     /// <summary>The crime system a player's looting is reported to (a pending Looting; null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
@@ -56,19 +56,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     // ------------------------------------------------------------------ rules
 
     /// <summary>
-    /// Whether the left arm can carry (the original's <c>isCarryingArmOK</c>, the medical object's left-arm byte): no part whose <c>collapse part</c> has the left arm bit (4) is collapsed,
-    /// and the left arm is not a stump (<b>Verified</b>: the bit and the three writers, docs/game/carry-loot.md). The right arm does not matter.
+    /// Whether the left arm can carry (the original's <c>isCarryingArmOK</c>, the medical object's left-arm byte, <see cref="MedicalState.ArmWorks"/>; <b>Verified</b>: the bit and the
+    /// three writers, docs/game/carry-loot.md). The right arm does not matter.
     /// </summary>
-    public static bool LeftArmUsable(MedicalState medical)
-    {
-        foreach (var p in medical.PartSpan)
-        {
-            if ((p.Template.CollapsePart & 4) == 0) continue;
-            if (p.Template.Collapses && p.IsDown) return false;
-            if (p.Template.LimbSlot == 0 && p.Limb == LimbState.Stump) return false;
-        }
-        return true;
-    }
+    public static bool LeftArmUsable(MedicalState medical) => medical.ArmWorks(left: true);
 
     /// <summary>A character that can be given a pick-up: awake, with a body, not fighting, not carrying or carried, with a usable left arm.</summary>
     public static bool CanCarry(CharacterCold cold) =>
@@ -153,16 +144,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case PutDownOrder put:
                     foreach (var id in Who(world, put.Carriers))
-                    {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold) continue;
-                        if (table.Next[slot].Task == (byte)CharacterTask.PutDown) continue;
-                        MovementSystem.Stop(table, slot);
-                        table.Next[slot].Task = (byte)CharacterTask.PutDown;
-                        table.Next[slot].TaskTime = 0;
-                        cold.CarryTarget = cold.Carrying;
-                        cold.LiftTime = 0;
-                        cold.ResumeTask = CharacterTask.Idle;
-                    }
+                        if (table.TryResolveNext(id, out int slot)) BeginPutDown(world, slot);
                     break;
                 case RescueJobCommand job:
                 {
@@ -191,6 +173,20 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var table = world.Characters;
         if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(c) || !CanBeLifted(table.Cold(b)!)) return false;
         Begin(table, carrier, body, CharacterTask.PickUp, resume);
+        return true;
+    }
+
+    /// <summary>Starts the put-down of the body the character in <paramref name="slot"/> carries (the order 'Put Down', and the carrying jobs' drop; serial phases): false when it carries nothing or cannot act, or is putting down already.</summary>
+    public bool BeginPutDown(World world, int slot)
+    {
+        var table = world.Characters;
+        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
+        MovementSystem.Stop(table, slot);
+        table.Next[slot].Task = (byte)CharacterTask.PutDown;
+        table.Next[slot].TaskTime = 0;
+        cold.CarryTarget = cold.Carrying;
+        cold.LiftTime = 0;
+        cold.ResumeTask = CharacterTask.Idle;
         return true;
     }
 
@@ -313,7 +309,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         }
         LootWindow(world);
         KeepLinks(world);
-        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) Rescue(world, table);
+        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); }
     }
 
     void Lift(World world, CharacterTable table, int i, float dt)
@@ -338,6 +334,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 End(table, i);
                 return;
             }
+            // Out of a bed: the attach clears the state (carry-loot.md, Character +0x2f8).
+            if (table.Cold(b)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, cold.CarryTarget);
             Link(table, i, b);
         }
         else if (!attached && before > CarrySettings.AttachAt * LiftSeconds) { End(table, i); return; }   // dropped again mid-lift
@@ -377,7 +375,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     /// <summary>
     /// Ends a link (serial). <paramref name="drop"/>: the body falls where the carrier stands (the carrier went down, lost its arm or turned to fight); else it is set down beside the
-    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoMinutes"/>).
+    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoSeconds"/>).
     /// </summary>
     void Unlink(World world, int carrier, int body, bool drop)
     {
@@ -405,7 +403,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         if (body.Medical is not { Dead: false } medical || body.Race is not { } race) return;
         var ctx = new MedicalContext(Constants, bodyOptions, race) { Toughness = body.Stats?.Toughness ?? 0, Strength = body.Stats?.Strength ?? 50, HasStats = body.Stats is not null };
-        medical.KnockOut(medical.PutDownKoMinutes(ctx, MedicalState.PutDownKoFactor(carrier.Stats?[StatsEnumerated.Assassination] ?? 0)));
+        medical.KnockOut(medical.PutDownKoSeconds(ctx, MedicalState.PutDownKoFactor(carrier.Stats?[StatsEnumerated.Assassination] ?? 0)));
     }
 
     /// <summary>The links every tick (serial, after the body tick): drops, wake-ups, broken links, and the body kept at its carrier.</summary>
@@ -477,17 +475,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         End(table, i);
     }
 
-    /// <summary>What a loot of <paramref name="taken"/> items sets off: being seen by the victim's faction (true; the relations), the pending Looting crime, the <see cref="Loots"/> entry.</summary>
-    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left, bool penalise = true)
+    /// <summary>
+    /// What a loot of <paramref name="taken"/> items sets off: being seen by the victim's faction (true), the pending Looting crime, the <see cref="Loots"/> entry. No relation event: none of
+    /// the game's relation events comes from looting (docs/game/factions-squads-towns.md 3.5); the crime's witnesses do the rest.
+    /// </summary>
+    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left)
     {
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
-        bool seen = false;
-        if (taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(table, i, t))
-        {
-            seen = true;
-            if (penalise && Relations is { } relations) PlayerRelations.Event(world, relations, victim.Faction, RelationEventKind.Stealing);
-        }
+        bool seen = taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t);
         if (taken > 0) Crimes?.Loot(world, i, t);
         loots.Add(new LootEntry(world.Tick, table.IdOf(i), table.IdOf(t), taken, left, seen));
         return seen;
@@ -518,7 +514,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// One item of the open loot (its grids, bag or worn gear) into the looter's inventory: the drop's place when it takes the item, else the first room (what does not fit stays); marked
+    /// A right click on an item of the open loot (its grids, bag or worn gear): units into the looter's inventory (<see cref="InventoryCommands.MoveInto"/>; what does not fit stays), marked
     /// stolen when the loot is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>). Gear changing hands re-dresses both.
     /// </summary>
     void TakeLoot(World world, TakeLootItem take)
@@ -536,41 +532,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.IsPlayer) world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
             return;
         }
-        bool worn = InventoryCommands.IsEquipmentSection(item.Section), wear = take.Section is { } s && InventoryCommands.IsEquipmentSection(s);
-        int mark = item.StolenFrom, before = item.Quantity, death = DeathUnits(from);
+        bool worn = InventoryCommands.IsEquipmentSection(item.Section);
+        int mark = item.StolenFrom, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
-        bool all = take.Section is { } section && InventoryCommands.Transfer(from, token, cold.Inventory!, section, take.X, take.Y);
-        if (!all && wear)
-        {
-            item.StolenFrom = mark;
-            if (cold.IsPlayer) world.Post($"{cold.Name} cannot wear {item.Name} there.");
-            return;
-        }
-        if (!all && take.Section is null && take.Count > 0 && take.Count < item.Quantity)
-        {
-            // Some units of a stack (a right click): the rest stays, unmarked.
-            var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
-            int moved = InventoryCommands.MoveUnits(owner, item, take.Count, cold.Inventory!);
-            item.StolenFrom = mark;
-            if (moved == 0)
-            {
-                if (cold.IsPlayer) world.Post($"{cold.Name} has no room for {item.Name}.");
-                return;
-            }
-            all = true;
-            wear = false;
-        }
-        if (!all)
-        {
-            wear = false;
-            bool flagged = item.Death;
-            item.Death = false;
-            all = cold.Inventory!.Add(item);
-            if (all) from.Remove(item);
-            else item.Death = flagged;
-        }
-        if (!all) item.StolenFrom = mark;
-        if (!all && item.Quantity == before)
+        var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
+        int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear);
+        if (owner.Items.Contains(item)) item.StolenFrom = mark;   // what stays keeps its mark
+        if (moved == 0)
         {
             if (cold.IsPlayer) world.Post($"{cold.Name} has no room for {item.Name}.");
             return;
@@ -578,13 +546,39 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         Butcher(world, i, t, death);
         if (worn) Assembly?.RefreshEquipment(victim);
         if (wear) Assembly?.RefreshEquipment(cold);
-        // Seen taking from one open window: one relations penalty and one message, as a take-all (engine choice).
+        Seen(world, i, t, owner.Items.Contains(item) ? 1 : 0);
+    }
+
+    /// <summary>Seen taking from one open window: one message, as a take-all (engine choice).</summary>
+    void Seen(World world, int looter, int body, int left)
+    {
+        var table = world.Characters;
         bool first = seenLoot != world.Player.OpenLoot;
-        if (Looted(world, table, i, t, 1, all ? 0 : 1, first))
+        if (Looted(world, table, looter, body, 1, left))
         {
-            if (first && cold.IsPlayer) world.Post($"{cold.Name} was seen looting {victim.Name}");
+            if (first && table.Cold(looter)!.IsPlayer) world.Post($"{table.Cold(looter)!.Name} was seen looting {table.Cold(body)!.Name}");
             seenLoot = world.Player.OpenLoot;
         }
+    }
+
+    /// <summary>The open loot's looter and body while it may stay open, for the held item (<see cref="PlayerState.Held"/>); null when none is open.</summary>
+    internal (CharacterId Looter, CharacterId Body)? OpenLoot(World world) =>
+        OpenLootPair(world) is var (i, t) ? (world.Characters.IdOf(i), world.Characters.IdOf(t)) : null;
+
+    /// <summary>
+    /// A held item that came out of the open loot's body went to someone else (placed in a window or given; its stolen mark is the held item's, <see cref="PlayerState.Held"/>): a death item
+    /// butchers a live body (<paramref name="death"/>: it was one), and the looting may be seen (<see cref="Looted"/>), as a right click's take.
+    /// </summary>
+    internal void TookHeld(World world, bool death)
+    {
+        if (OpenLootPair(world) is not var (i, t)) return;
+        var victim = world.Characters.Cold(t)!;
+        if (death && victim.Medical is { Dead: false } medical)
+        {
+            medical.Butcher();
+            world.Post($"{victim.Name} has been butchered");
+        }
+        Seen(world, i, t, 0);
     }
 
     /// <summary>The units of <paramref name="inventory"/>'s death items (<see cref="ItemInstance.Death"/>).</summary>
@@ -611,7 +605,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// <summary>The open loot whose looting was already seen (see <see cref="TakeLoot"/>).</summary>
     CharacterId seenLoot = CharacterId.None;
 
-    /// <summary>One of the looter's items into the open loot: a free cell of its main grid or bag, or a free equipment slot that takes it (<see cref="InventoryCommands.Transfer"/>).</summary>
+    /// <summary>A right click on one of the looter's items: units into the open loot (<see cref="InventoryCommands.MoveInto"/>); a worn bag with contents stays.</summary>
     void PutLoot(World world, PutLootItem put)
     {
         if (OpenLootPair(world) is not var (i, t) || put.Character != world.Player.LootOpener) return;
@@ -621,19 +615,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var item = looter.Inventory!.All().ElementAtOrDefault(put.Item.Index);
         if (item is null || item.Contents is not null && item.Section == "backpack_attach") return;
         bool worn = InventoryCommands.IsEquipmentSection(item.Section);
-        if (put.FirstFit)
-        {
-            var token = put.Item;
-            if (item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
-                !InventoryCommands.IsMovableSection(item.Section)) return;
-            var owner = looter.Inventory.Items.Contains(item) ? looter.Inventory : looter.Inventory.Backpack?.Contents;
-            if (owner is null || InventoryCommands.MoveUnits(owner, item, put.Count, body.Inventory!) == 0) return;
-            if (worn) Assembly?.RefreshEquipment(looter);
-            return;
-        }
-        if (!InventoryCommands.Transfer(looter.Inventory, put.Item, body.Inventory!, put.Section, put.X, put.Y)) return;
+        var token = put.Item;
+        if (item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
+            !InventoryCommands.IsMovableSection(item.Section)) return;
+        var owner = looter.Inventory.Items.Contains(item) ? looter.Inventory : looter.Inventory.Backpack?.Contents;
+        if (owner is null || InventoryCommands.MoveInto(owner, item, put.Count, body.Inventory!, put.BagFirst, out bool wear) == 0) return;
         if (worn) Assembly?.RefreshEquipment(looter);
-        if (InventoryCommands.IsEquipmentSection(put.Section)) Assembly?.RefreshEquipment(body);
+        if (wear) Assembly?.RefreshEquipment(body);
     }
 
     /// <summary>
@@ -673,11 +661,11 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// Whether a member of the victim's faction sees the looter: awake, not carried, and the looter within its sight by the original's daylight test (<see cref="AggroSystem.Visibility"/>,
-    /// range <see cref="CarrySettings.Sight"/> x its race's <c>vision range mult</c>, the view cone). The original's witness rules are richer (docs/game/carry-loot.md "Witnesses"); this is the
+    /// Whether a member of the victim's faction sees the looter: awake, not carried, and the looter within its sight (<see cref="SightMap.Sees"/>, outdoor range
+    /// <see cref="CarrySettings.Sight"/> x its race's <c>vision range mult</c>). The original's witness rules are richer (docs/game/carry-loot.md "Witnesses"); this is the
     /// part the engine has.
     /// </summary>
-    bool Witnessed(CharacterTable table, int looter, int victim)
+    bool Witnessed(World world, CharacterTable table, int looter, int victim)
     {
         var next = table.Next;
         int faction = table.Cold(victim)!.Faction;
@@ -686,7 +674,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         {
             if (w == looter || w == victim || !next[w].Alive) continue;
             if (table.Cold(w) is not { Medical.Incapacitated: false } c || c.Faction != faction || !c.CarriedBy.IsNone) continue;
-            if (AggroSystem.Visibility(next[w].Position, next[w].Yaw, at, AggroSystem.RangeOf(c, Settings.Sight)) > 0) return true;
+            if (world.Sight.Sees(w, looter, next[w].Position, next[w].Yaw, at, AggroSystem.RangeOf(c, Settings.Sight)) > 0) return true;
         }
         return false;
     }
@@ -738,7 +726,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         for (int s = 0; s < table.HighWater; s++)
         {
             if (s == i || !next[s].Alive || taken.Contains(s)) continue;
-            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || other.Faction != cold.Faction || !CanBeLifted(other)) continue;
+            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }

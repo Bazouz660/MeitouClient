@@ -1,0 +1,160 @@
+# Nightly pre-release twice a day (05:00 nightly, 16:00 daily, UTC) or by hand, when there are game changes since the last v* tag: the same
+# zips as release.yml (tools/scripts/package-release.ps1), tagged v<X.Y.Z+1>-nightly.<yyyymmdd>[.<n>], never marked Latest (docs/launcher.md).
+name: Nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * *" # nightly, 05:00 UTC: after the late-evening work
+    - cron: "0 16 * * *" # daily, 16:00 UTC: the morning's work, before the evening
+
+permissions:
+  contents: write
+
+jobs:
+  # Makes up the version and notes, runs the quick tests; nothing is built or released if this fails.
+  # No game changes since the newest v* tag (nightly or full) stops here without failing.
+  version:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        id: version
+        shell: pwsh
+        env:
+          KIND: ${{ github.event.schedule == '0 16 * * *' && 'Daily' || 'Nightly' }}
+        run: |
+          # Skipped when nothing the game zips are built from changed since the newest game tag, nightly or full.
+          $last = git tag -l "v[0-9]*" --sort=-creatordate | Select-Object -First 1
+          if ($last) {
+            git diff --quiet $last HEAD -- . ':!news' ':!site' ':!launcher' ':!docs' ':!.github/workflows'
+            if ($LASTEXITCODE -eq 0) { "No game changes since $last; no nightly." >> $env:GITHUB_STEP_SUMMARY; "skip=true" >> $env:GITHUB_OUTPUT; exit 0 }
+          }
+          # <next patch of the newest full release>-nightly.<UTC date>[.<n>]: after that release, before the next one (semver). A second
+          # build the same day (the daily) gets .2, which sorts after the plain date in semver and as a string.
+          $full = git tag -l "v[0-9]*" --sort=-v:refname | Where-Object { $_ -notmatch '-' } | Select-Object -First 1
+          $n = if ($full) { [Version]$full.TrimStart('v') } else { [Version]'0.0.0' }
+          $v = "$($n.Major).$($n.Minor).$($n.Build + 1)-nightly.$((Get-Date).ToUniversalTime().ToString('yyyyMMdd'))"
+          $base = $v; $n = 1
+          while (git tag -l "v$v") { $n++; $v = "$base.$n" }
+          # Every commit since that tag: GitHub's generated notes list only merged pull requests, and most work is committed to master directly.
+          $range = if ($last) { "$last..HEAD" } else { 'HEAD' }
+          $commits = git log --no-merges --format='- %s (%h)' $range
+          $since = if ($last) { " since $last" } else { '' }
+          Set-Content -Path "$env:RUNNER_TEMP/changes.md" -Value (@("$env:KIND build of master at $($env:GITHUB_SHA.Substring(0, 7)): untested, may be broken.", '', "## Changes$since", '') + $commits) -Encoding utf8
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "skip=false" >> $env:GITHUB_OUTPUT
+
+      - name: Quick tests
+        if: steps.version.outputs.skip != 'true'
+        run: dotnet test --filter "Category!=Slow&Category!=Bench" -c Release
+
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes.md
+          if-no-files-found: error
+
+  # One zip per runtime. Unix zips are made on Unix so the execute bits survive; macOS ones on a Mac, which signs the binaries.
+  package:
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    strategy:
+      matrix:
+        include:
+          - { rid: win-x64, os: windows-latest }
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: osx-x64, os: macos-latest }
+          - { rid: osx-arm64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Package
+        shell: pwsh
+        run: ./tools/scripts/package-release.ps1 -Version "${{ needs.version.outputs.version }}" -Rid ${{ matrix.rid }} -Output out -Cache "$env:RUNNER_TEMP/release-cache"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.rid }}
+          path: out/Meitou-${{ needs.version.outputs.version }}-${{ matrix.rid }}.zip
+          compression-level: 0
+          if-no-files-found: error
+
+  release:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zip-*
+          merge-multiple: true
+          path: out
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: changes
+          path: ${{ runner.temp }}
+
+      # The notes list every commit already (the version step), so no generated notes.
+      - name: Tag and release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $zips = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64') | ForEach-Object { "out/Meitou-$env:VERSION-$_.zip" }
+          foreach ($zip in $zips) { if (-not (Test-Path $zip)) { throw "$zip missing" } }
+          $notes = (Get-Content -Raw "$env:RUNNER_TEMP/changes.md").Trim()
+          gh release create "v$env:VERSION" @zips --target $env:GITHUB_SHA `
+            --title "Meitou $env:VERSION" --notes $notes --latest=false --prerelease
+
+      # Only the newest 14 nightlies (a week of two a day) are kept, so the releases page and the launcher's Versions list stay short.
+      - name: Prune old nightlies
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $old = gh release list --limit 200 --json tagName,createdAt | ConvertFrom-Json |
+            Where-Object { $_.tagName -match '^v.*-nightly\.' } | Sort-Object createdAt -Descending | Select-Object -Skip 14
+          foreach ($r in $old) { gh release delete $r.tagName --cleanup-tag --yes }
+
+      # Posts the commit list to Discord as an embed linking the release; skipped without the DISCORD_WEBHOOK_URL secret.
+      - name: Announce on Discord
+        shell: pwsh
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if (-not $env:WEBHOOK) { 'No DISCORD_WEBHOOK_URL secret; not announced.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/v$env:VERSION"
+          $commits = @(Get-Content "$env:RUNNER_TEMP/changes.md" | Where-Object { $_.StartsWith('- ') })
+          # An embed description holds at most 4096 characters; longer lists end with a count and the release has them all.
+          $text = "Untested build of master at $($env:GITHUB_SHA.Substring(0, 7)), may be broken.`n"
+          for ($i = 0; $i -lt $commits.Count; $i++) {
+            if ($text.Length + $commits[$i].Length -gt 3900) { $text += "`n…and $($commits.Count - $i) more"; break }
+            $text += "`n$($commits[$i])"
+          }
+          $body = @{ embeds = @(@{ title = "Meitou $env:VERSION"; url = $url; description = $text; color = 0xE0A030 }) } | ConvertTo-Json -Depth 4
+          Invoke-RestMethod -Uri $env:WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

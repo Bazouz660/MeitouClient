@@ -45,7 +45,8 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     readonly UniformHandle centre, axisW, axisH, colour;
     readonly SamplerSlot sprite;
     readonly SampledImage?[][] sprites;
-    readonly (uint Key, int Version)[] slots = new (uint, int)[Slots];
+    // Each layer's cell, the cell version it shows, the rewrite it was cleared at and how many of the cell's appended decals it holds since (TerrainDecalStore.CellRewrite).
+    readonly (uint Key, int Version, int Rewrite, int Appended)[] slots = new (uint, int, int, int)[Slots];
     readonly List<(float Distance, uint Key)> near = [];
     readonly HashSet<uint> drawn = [];
     readonly Vector4[] cells = new Vector4[Slots];
@@ -133,7 +134,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
         {
             if (layerOf[i] >= 0) continue;
             for (int s = 0; s < Slots; s++)
-                if (!taken[s]) { layerOf[i] = s; taken[s] = true; slots[s] = (near[i].Key, 0); break; }
+                if (!taken[s]) { layerOf[i] = s; taken[s] = true; slots[s] = (near[i].Key, 0, 0, 0); break; }
         }
 
         IGpuCommandList? cmd = null;
@@ -147,9 +148,14 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
             cells[count++] = new Vector4(column, row, layer, 0);
             int version = store.CellVersion(key);
             if (slots[layer].Version == version) continue;
-            slots[layer] = (key, version);
             cmd ??= gpu.BeginNative("terrain decals");
-            DrawLayer(cmd, layer, store.In(key));
+            // Only decals added since the layer was drawn: those drawn over it (a battle's cells change every few ticks); any gone: the layer cleared and drawn again.
+            int rewrite = store.CellRewrite(key);
+            var appended = store.Appended(key);
+            var slot = slots[layer];
+            if (slot.Version != 0 && slot.Rewrite == rewrite && slot.Appended <= appended.Length) DrawLayer(cmd, layer, appended[slot.Appended..], clear: false);
+            else DrawLayer(cmd, layer, store.In(key), clear: true);
+            slots[layer] = (key, version, rewrite, appended.Length);
         }
         if (cmd is not null)
         {
@@ -161,15 +167,17 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     }
 
     /// <summary>
-    /// Clears <paramref name="layer"/> and draws <paramref name="decals"/> into it (<c>FUN_1408dec40</c>): a quad centred on the decal's place in the cell, its sides the
-    /// half sizes / 10240 in clip space along the rotation, the texture × the colour (its alpha at most the life). The colour is alpha blended (red, green, blue only),
-    /// then the alpha added (alpha only), the game's separate blend.
+    /// Clears <paramref name="layer"/> when <paramref name="clear"/> and draws <paramref name="decals"/> into it (<c>FUN_1408dec40</c>): a quad centred on the decal's
+    /// place in the cell, its sides the half sizes / 10240 in clip space along the rotation, the texture × the colour (its alpha at most the life). The colour is alpha
+    /// blended (red, green, blue only), then the alpha added (alpha only), the game's separate blend.
     /// </summary>
-    void DrawLayer(IGpuCommandList cmd, int layer, ReadOnlySpan<TerrainDecal> decals)
+    void DrawLayer(IGpuCommandList cmd, int layer, ReadOnlySpan<TerrainDecal> decals, bool clear)
     {
+        if (!clear && decals.IsEmpty) return;
         var t = PassTargets.Of(target, null);
-        var clear = new RenderTarget(target!.Attachment(0, layer), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f));
-        t = t with { Colour = clear };
+        var colourTarget = new RenderTarget(target!.Attachment(0, layer), clear ? LoadOp.Clear : LoadOp.Load,
+            clear ? new ClearColour(0f, 0f, 0f, 0f) : default);
+        t = t with { Colour = colourTarget };
         cmd.BeginRendering(t.Rendering);
         var blendColour = new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         var addAlpha = new BlendState(true, BlendingFactor.One, BlendingFactor.One);

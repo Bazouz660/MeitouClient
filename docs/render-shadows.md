@@ -11,12 +11,24 @@ Shadow-quality default2 uses4096²; Tab supports1024/2048/4096. Cascade arrays i
 Meitou cascade; consumers must use current layer count/splits, not assume four tiles everywhere.
 Depth-array views, samplers, receiver blocks and frame-global publication must agree.
 
+Meitou bias and stability (`MeitouShadowFit`, `ShadowPass.Meitou`): caster bias in the cascade's
+texels, 1 fixed plus 2 x the slope capped at 4 (the game's 0.75 world units and up to 2 % of the
+box depth detached post and wall shadows under a low sun); the receiver's 0.5-2 texel normal offset
+keeps acne off (**Observed**, Hub at 17:30, no acne at 1080p). Texel grids are anchored at the
+camera's focus point, moved only while the sun turns and the point is 200+ units away (anchored at
+the eye, the first cascade's grid slid boom x sun turn under the squad). Least filter radius 1.5
+texels: a 0.06° sun turn changed 0.36 % of a Hub view by more than 8 levels, 0.56 % at 1 texel.
+
 ## Scheduling and casters
 
 Near cascades refresh rapidly; far cascades cache/stagger according to camera/sun changes.
 `shadow-spread` budgets one due far cascade per frame; invalidation must not reuse an incompatible
 matrix. GPU culls and CPU zone/group work lists are per cascade. `shadow-zone-box` excludes
 nonintersecting zone bounds before building lists. Record secondaries in stable caster order.
+Object casters keep only what the colour pass draws: the dither range at its middle (one of two
+blending levels; a distant town only beyond the camera's fade). Ignoring it, the Hub's baked distant
+mesh (the intact town) cast roof shadows into its ruins and platforms at every distance (**Observed**,
+Hub 14:00: matches `--distant-range 0` after the fix, not before).
 
 `shadow-coarse` / generated object levels select geometry against cascade texel size, not colour
 pixel size. Preserve silhouette and alpha coverage; impostor casters have their own fade/plane.

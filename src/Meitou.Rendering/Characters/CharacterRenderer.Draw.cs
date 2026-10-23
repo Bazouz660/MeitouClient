@@ -86,7 +86,7 @@ internal sealed unsafe partial class CharacterRenderer
             float worldScale = world.ScaleLength();
             foreach (var part in l.Asset.Parts)
             {
-                if (!part.ShowsWith(l.WeaponDrawn)) continue;
+                if (!part.ShowsWith(l.WeaponDrawn, l.RangedDrawn, l.Shots, l.BackDrawn)) continue;
                 Matrix4x4 model = world;
                 if (!part.Shared) model = attach[l.AttachBase + part.AttachIndex] * world;
                 float modelScale = part.Shared ? worldScale : model.ScaleLength();
@@ -154,7 +154,7 @@ internal sealed unsafe partial class CharacterRenderer
         job.Frame = nativeFrame.Prepare(in view, [bones.Binding, materials.Binding, content.Morphs.Binding(Gpu.Frame), previousBones.Binding]);
         job.Cull = depthPass ? CullMode.None : CullMode.Back;
         for (int a = 0; a < 9; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
-        job.Push = new CharacterPush { DepthIndex = motionPass ? motionDepth : 0, Fill = new(Fill, 0) };
+        job.Push = new CharacterPush { DepthIndex = motionPass ? motionDepth : 0, Fill = new(Fill, 0), SkinLut = SkinShading ? skinScattering.Index : 0 };
         job.RowCount = motionPass ? 9 : 5;
         if (job.Draws.Length < active.Count) job.Draws = new DrawJob.Draw[Math.Max(active.Count, job.Draws.Length * 2)];
         int n = 0;

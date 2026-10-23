@@ -55,6 +55,8 @@ public sealed class ProgramInfo
     public ShaderModel Model { get; init; }
     public byte[]? VertexCode { get; init; }
     public byte[]? FragmentCode { get; init; }
+    public byte[]? TessControlCode { get; init; }
+    public byte[]? TessEvaluationCode { get; init; }
     public byte[]? ComputeCode { get; init; }
     /// <summary>The legacy compile result (reflection of both stages, default blocks), null for other models.</summary>
     public CompiledProgram? Compiled { get; init; }
@@ -86,7 +88,11 @@ public readonly record struct GpuProgram(int Index, ProgramInfo Info)
     public ShaderModel Model => Info.Model;
     public byte[]? VertexCode => Info.VertexCode;
     public byte[]? FragmentCode => Info.FragmentCode;
+    public byte[]? TessControlCode => Info.TessControlCode;
+    public byte[]? TessEvaluationCode => Info.TessEvaluationCode;
     public byte[]? ComputeCode => Info.ComputeCode;
+    /// <summary>The program has a tessellation evaluation stage (its pipelines draw patch lists).</summary>
+    public bool Tessellated => Info.TessEvaluationCode is not null;
     public CompiledProgram? Compiled => Info.Compiled;
     public Shaders.ShaderReflection? VertexReflection => Info.VertexReflection;
     public Shaders.ShaderReflection? FragmentReflection => Info.FragmentReflection;

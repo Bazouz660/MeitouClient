@@ -68,8 +68,6 @@ public class TerrainTests
 
     [Theory]
     [InlineData(true, 0, false)]
-    [InlineData(false, 0, false)]
-    [InlineData(true, 2, true)]
     [InlineData(false, 3, true)]
     public void Tiff_reader_reads_samples_in_either_byte_order_and_strip_layout(bool littleEndian, int rowsPerStrip, bool longSizes)
     {

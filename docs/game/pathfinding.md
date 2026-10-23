@@ -67,7 +67,7 @@ mode3 follows group's slowest. The HUD sets them as character orders 2/1/0/0x10 
 uses the squad members walking in mode3. FCS force-speed3 means NO_SPEED_CHANGE and remaps to4, not runtime
 mode3. FCS `MoveSpeed` (editor enum, **Verified**): WALK 0, JOG 1, RUN 2, GROUPED 3, NO_SPEED_CHANGE 4. Follow/avoidance/formation use character footprint and previous neighbour state.
 Original formation details and off-screen arrival remain partly unknown. Whether living characters block each other beyond the
-separation steering is **Unknown** (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
+separation steering is **Unknown**; sitting characters are never pushed (**Observed** in play) (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
 
 ## Own builder
 
@@ -77,6 +77,9 @@ and area-change ends are open) and water/door costs. **Observed** (zone 18.39, `
 shack's stair straddles the tile line x−62208 and its foot came out as 6..8-unit portals, so a 2*radius rule kept radius-4
 agents under the house; the west half's foot meets the walkboard in a near-miss T, joined as an inner seam. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
 reference evidence, not a runtime dependency or proof of DotRecast polygon parity.
+**Terrain** as the original: every second heightmap sample (36 units), slope 40° per triangle. **Observed** (zone 20.32, `meitou-tools navmesh`):
+at 18 units each right triangle (legs 18) near 40° was walkable or not on its own, and 2-unit cells kept every one, so cliff fringes were saw teeth
+and spikes; at 36 the outline matches `tile20.32.hkt`, terrain triangles drop 139k → 35k, polygons 15250 → 13602.
 
 **Furniture** comes from building layouts (`BuildingLayouts`), none when destroyed. **Verified**
 (Hub, `meitou-tools navmesh`): parts with collision 189→309.
@@ -87,13 +90,37 @@ inside the bounds of `Storm_House_01_Interior-stairs` (`is stairs`, only in `int
 without the list that storey and the Watchtower `2-Newwworld-INGAME` floors +130/+190/+290 were unkept; with it paths from the door seed reach them.
 **Destroyed interiors**: a part with a `destroyed mesh` but no `destroyed collision` keeps its intact `xml collision` (**Verified**,
 `FUN_14055f6e0`; with no `phs or mesh` its `xml collision` is cleared instead). A destroyed building has no doors, so its interior has no seed.
-Engine choice: such an interior keeps nothing (no largest-region fallback); the ruin's floor is the exterior's. **Observed** (zone 20.32,
-`meitou-tools navmesh`, "flyin" save): all 17 seedless interiors there are destroyed; the Bughouse `4937-Newwworld-INGAME` kept 149
-polygons at Y1710..1757 (its `Storm_House_02_UpstairsWALLS-AND-ROOF.xml` floor and wall tops; terrain ~1580) and outlaws stood on them
-under the drawn ruined roof. The original exterior tile has no polygons above Y1680 there; whether its interior job keeps that island is **Unknown**.
+**Observed** (original tiles 20.32, 18.35, 19.29, 20.29, interior groups decoded as Info + 10 × vertex, matched to Meitou's interiors by box):
+the original keeps a mesh in each destroyed seedless interior, on its ground floor only (e.g. Storm House `32-Newwworld-INGAME` 6 faces at
+Y1571..1578, Bughouse `4937-` 32 faces at Y1608..1619). Meitou's largest region there can be wall tops (Bughouse: 149 polygons at Y1710..1757
+under the ruined roof) or an upper floor (Stationhouse `4-`, Y1703). Engine choice: keep every region whose lowest point is within
+`SeedPruner.DestroyedFloorBand` (40) of the interior's lowest polygon; upper storeys there are 60+ higher. Without it, squatters housed in
+these nodeless ruins stood on the terrain under their floors. The island has no door join, as in the original.
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
-**Entrance seeds** (engine choice): cross the door's width axis, then use the lowest collision floor with agent-height headroom.
+**Entrance seeds** (engine choice): cross the door's width axis. An exterior seed stands on the highest walkable surface at its marker at most
+`DoorSeedRise` (5) above the door box's base (the original drops the marker with a ray), else on the terrain or water; an interior seed on the lowest
+collision floor with agent-height headroom. **Observed** (Defensive Gate IV `2934-Walls2.mod`, zone 24.27, "this gate is fucked" save): its walkable
+convex foundation spans Y 65..157 over ground at 138; seeds at the terrain height matched the ground inside the foundation (19 headroom) and kept it,
+and walkers stepped down onto it at the slab's edge. `tile24.27.hkt` has only the slab and its ramps there.
+**Solids** (engine choice): Recast rasterises surfaces, so ground inside a closed solid survives as floor. Every convex shape (box, capsule, hull) of a
+walkable part becomes a `NavSolid`; a walkable span whose floor, at its cell's middle, is inside every face plane (1 below the upward ones) is removed
+(obstacles keep the prism carver). The height surfaces (`NavSurfaces`) drop the same insides: **Observed** (that gate) its stair is a tilted box
+whose top face runs on inside the foundation, from 151 down to ~124 under the slab, and a walker's height followed it under the floor. **Observed** (`meitou-tools navmesh`, zones 24.27, 20.32, 21.32, 18.35, 19.29, 21.42, 21.31, 10.31, 18.39, 20.29, 23.22):
+unpruned polygons drop 1..24 %, kept area sampled against the original tiles changes under 0.3 %; the gate's under-floor layer is gone; interior area
+drops only in ruins (Hub Stationhouse `4-`, Bughouse `4937-`: floor strips inside the thick walls and fallen slabs). The door and stair paths listed
+in this section still resolve.
+**Underground** (engine choice): the terrain is solid below its surface, so an exterior walkable span more than the agent height (18) under the
+heightmap at its cell's middle is removed. **Observed** (zone 24.27 by the Bad Teeth gate): a buried part's top face at 120 under ground at 159.
+**Compare** (`meitou-tools navmesh --compare x,z ...`): samples each zone every 8 units against `tileX.Y.hkt`: points on both, only ours, only the
+original's, ours-only points in a building footprint, and points where ours has more layers than the original with one 10+ under our top (floors under
+floors). Interiors are not read from the tiles, so our interior floors count as ours-only; the original's big polygons float up to ~20 over hollows, so
+heights are not compared. **Observed** (the 11 zones above): ours-only 1.7..10.9 % and original-only 0.9..7.5 % of the original's area; the underground
+rule takes extra-layer points from 221 to 65 (24.27) and 507 to 194 (20.32); what is left is mostly walls and walkways the original prunes.
+**Interior seeds**: without a door seed the building's first shopkeeper or general node of its interior layout is the seed (the original's rule, below);
+Meitou also uses it when the door seeds find no polygon (engine choice). **Observed** (`meitou-tools navmesh`): doorless Hive Commune Huts (10.31
+`50-Newwworld-INGAME`, clipped at the zone border) kept nothing before and 75 of 102 polygons with it; Stack's Old Storm House `14-` (19.29), whose
+door seed misses its floor, 0 → 73 of 113 (its door still has no join).
 **Observed** (35 base door records and their box collision extents): `door navmesh axis` 0 selects exporter X width, 1 exporter Y width;
 using that width as the crossing direction leaves Shark's Swamp House `321-Newwworld-INGAME` room unseeded.
 Its platform has overlapping upward faces near Y122/133; the lower face lacks headroom. A zone21.42 route from
@@ -145,10 +172,18 @@ seed keeps nothing (no largest-region fallback) and is kept through the closure 
 doors in 20.29; built only in 19.29 they had no door join and their 20.29 half was invisible to point queries. Now a path from the
 street reaches the door and the far end of the Y-House. Doorless interiors on a border (20.32/21.32 `20-`, `26-Newwworld`) lose their
 fallback island.
+**Polygon heights** (engine choice): a polygon's plane can be ~25 off its surface (Recast polygons span ramps and terrain folds), so each tile samples
+its walkable spans every 2 cells (`HeightGrid`, bilinear); a polygon keeps the grid only when a sample leaves its plane by more than 2, and one
+whose samples all lie within 3 of the heightmap (or the water) keeps just a marker and reads the heightmap. **Observed** (headless probe, 20000 random
+points against the nearest walkable collision or terrain): mesh heights more than 5 off went from 14.4 to 2.1 % (24.27), 11 to 0.7 % (20.32) and
+9.3 to 0.5 % (18.35), at 1.5..3.3 MB of samples per zone.
 **Heights**: **Observed** polygons are up to ~15 off over stairs/ramps (Hub gate), so standing
 heights snap to walkable collision (`NavSurfaces`, also its edge within `EdgeReach`: the mesh overhangs raised floors, e.g. the Hub bar landing) or zone terrain (water-surface polygons keep their height); the layer is picked by mesh or real height within
 `StandRise` of the character wins. A layer more than `StandDrop` (12) below the character is not stepped onto (engine choice: the
-ground 22..28 under the Storm House floor, Observed, showed through furniture holes and walkers fell to it); with no layer in range, a
+ground 22..28 under the Storm House floor, Observed, showed through furniture holes and walkers fell to it). A snap more than `StandRise` off the
+character takes the collision surface at the character's own height instead when that is within `TerrainSnapRange` (30) of the mesh (engine choice;
+**Observed** at the rock by the Hub's gate, -51686, 2740: our polygon spans its top (1595) and slope, sags to ~1580 and lies nearer a face inside the
+rock (~1567), stranding a walker on the top; the original's cached tile has a polygon flat at 1594.8 there); with no layer in range, a
 polygon within `EdgeTolerance` counts. A character already off every layer near its height still steps down.
 **Long routes** (engine choice): goals in unloaded zones use `CoarseRoute` (192-unit terrain grid, slope and
 water costs; a step whose centre line crosses a building's footprint hull costs `BuildingCost` 40×, so routes go round
@@ -189,7 +224,9 @@ Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short r
   the origin and multiplied by 0.1. The job type (`job+0x58 & 7`) chooses the branch: 3 builds an interior, 0 and 1 an
   exterior box.
   - **Terrain** (FUN_1403c16c0): the zone's height grid (FUN_140a08a20) as an N × N vertex grid over the zone, two
-    triangles per cell, material −1. The grid resolution N was not traced (**Unknown**).
+    triangles per cell, material −1. FUN_140a08a20 was not traced, but **Observed** (`tile20.32.hkt`): the cliff outlines step on every second
+    heightmap sample, a 36-unit grid (N 128) from the zone origin, cut diagonally as our grid (corner (i+1, j) to (i, j+1)); of the tile's 8642
+    mesh-end vertices 2739 lie on a 36-unit line and 2740 on an 18-unit one (chance ~1600), so the odd samples are not used.
   - **Water** (FUN_1403c0250): one quad over the zone at the water level (from the node DAT_142135c48, 100 in the base game,
     [../formats/terrain.md](../formats/terrain.md)), material 3, only when the water level is above the lowest terrain
     vertex of the zone.
@@ -216,6 +253,10 @@ Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short r
     has `BuildingClassType` 12 = BCTYPE_SHELL_WITH_INTERIOR (the class at +0x198, virtual slot 0x358; enum order from the
     FCS) and the +0x1f0 → +0x2c flag clear; each becomes a carver (FUN_1403c1ae0 builds the volume, FUN_140dd9e80 wraps it as an `hkaiCarver`
     with flags 0, i.e. without CARVER_ERODE_EDGES, the only flag). A carver removes the navmesh inside it, so the exterior navmesh has a hole where a house's interior is; the interior is built separately.
+    **Observed** (original tiles 23.22, 24.22, point-in-polygon on a 5-unit grid within 40 of the origin): no exterior polygon under Old Storm
+    House `407-`, Stephouse `560-`, Storm House `403-`/`671-`, Bughouse `433-` (0 of 289 points each), although their terrain lies 14..26 below
+    the hull's floor. Meitou: an interior mask carver reaches `CarverDrop` (60) below its hull (engine choice); from the hull's bottom only, the
+    ground under raised floors stayed as a crawlspace joined to the street and Blister Hill's residents walked under its houses.
   - **Door painters** (FUN_1403c4520): door shapes (group 5) of door buildings, searched in the AABB grown by 20 units on
     every side (the 20 is a search margin, not a painter size); the door shape's hull, its pose shifted by 5 units along
     one local axis, becomes a convex painter volume with material 4 (open door), so faces under a door get face data 4.
@@ -312,7 +353,7 @@ Shift+F11 in the game (`GameHost.NavOverlay.cs`, `NavmeshOverlayRenderer`) steps
 above the mesh, over the finished picture and fainter where the scene hides it. Meitou: polygons cyan (door polygons blue, seed-pruned red), mesh ends
 yellow. Original: polygons magenta, ends orange, edges joined to the next tile violet. Rebuilt on a worker when the world or view changes.
 **Observed** (Hub, zone 20.32): the original's polygons are large and simplified, building footprints are holes (interiors separate), and rock and cliff
-cuts follow a blocky ~10-unit raster outline. The original has no such view (`rebuild_navmesh` Ctrl+Shift+F11 only rebuilds).
+cuts follow the blocky 36-unit terrain grid (generator inputs, terrain). The original has no such view (`rebuild_navmesh` Ctrl+Shift+F11 only rebuilds).
 
 ## Unknowns
 
@@ -324,7 +365,7 @@ cuts follow a blocky ~10-unit raster outline. The original has no such view (`re
   building flag at +0x1f0 → +0x2c that gates carvers and part of the WALKABLE rule; the global seed list DAT_14212f470;
   the ray-hit kind that still allows a ground seed; whether OverrideSettings material −1 means "any material".
 - Whether the path request converts the footprint radius to Havok units.
-- Steering rules for formation slots and the full avoidance parameters
+- Steering rules for formation slots (Meitou's engine choice: [simulation](../simulation.md#movement-and-paths)) and the full avoidance parameters
   (the repulsion's absolute magnitude).
 - Whether face data values other than 3, 4, 5 and the gate nibble exist; how building construction and destruction
   update faces (path mode switches at runtime).

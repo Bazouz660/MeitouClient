@@ -131,6 +131,7 @@ sealed partial class GameHost
             case SoundKind.BoltHit: sounds.BoltHit(subject, e.Armoured); break;
             case SoundKind.BoltStuck: sounds.BoltStuck(e.Position, groundSurfaces?.At(e.Position.X, e.Position.Z) ?? -1); break;
             case SoundKind.Shot: sounds.Shot(subject); break;
+            case SoundKind.TurretShot: sounds.TurretShot(e.Position); break;
             case SoundKind.Down: sounds.Down(subject, other); break;
             case SoundKind.Alert: sounds.Alert(subject); break;
             case SoundKind.Eat: sounds.Job(subject, "Character_Consume", CharacterSounds.FootstepLimit, "Consume", "Eat"); break;

@@ -30,7 +30,7 @@ public sealed unsafe partial class WorldObjectRenderer
     /// Draws the stage's prop into <paramref name="colour"/> and <paramref name="depth"/>, which hold the character already (outside any pass): the stage's camera and light,
     /// the stage's lighting (a fog distance of -2) and no weather. Nothing while its mesh is not loaded.
     /// </summary>
-    public void DrawStageProp(GpuTexture colour, GpuTexture depth, Matrix4x4 viewProjection, Vector3 eye, Vector3 light)
+    public void DrawStageProp(GpuTexture colour, GpuTexture depth, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, float fogDistance = -2)
     {
         if (stageInstance is not { Gpu: { } gpu, Materials: { } materials } inst) return;
         foreach (var b in batchMap.Values) b.Count = 0;
@@ -50,7 +50,7 @@ public sealed unsafe partial class WorldObjectRenderer
         cmd.BeginRendering(new RenderingDesc(targets.Colour, targets.Depth, targets.Width, targets.Height));
         Gpu.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
         Gpu.SetPassViewport(new PixelViewport(0, 0, targets.Width, targets.Height, 0, 1), new PixelRect(0, 0, (uint)targets.Width, (uint)targets.Height));
-        var constants = new ViewConstants { ViewProjection = Matrix4x4.CreateTranslation(eye) * viewProjection, Eye = Vector3.Zero, LightDir = light, FogDistance = -2 };
+        var constants = new ViewConstants { ViewProjection = Matrix4x4.CreateTranslation(eye) * viewProjection, Eye = Vector3.Zero, LightDir = light, FogDistance = fogDistance };
         PrepareDraws(iconOptions, wire: false);
         for (int d = 0; d < drawCount; d++) draws[d].Push.Spare = MeshSurface.NoWeather;
         RecordDraws(colourProg, wire: false, in constants, default);

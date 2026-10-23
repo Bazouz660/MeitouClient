@@ -34,7 +34,7 @@ public class MyGuiScreenTests
         """);
 
     [Fact]
-    public void BoundWindowSizeAndTemplateScalePreserveTheClientAndCloseButton()
+    public void BoundWindowSizeAndTemplateScalePreserveTheClientAndCloseButtonWithoutChangingSource()
     {
         var host = new MyGuiScreenHost(Resources());
         host.Register("bag", Window()); host.Open("bag");
@@ -43,17 +43,14 @@ public class MyGuiScreenTests
         Assert.Equal(new UiRect(250, 200, 500, 400), frame.Single(c => c.Type == "Window").Bounds);
         Assert.Equal(new UiRect(690, 200, 60, 60), frame.Single(c => c.Action == "mygui:close:Root").Bounds);
         Assert.Equal(new UiRect(263, 273, 100, 25), frame.Single(c => c.Name == "Name").Bounds);
-    }
 
-    [Fact]
-    public void TemplateClientAndHeaderResizeWithoutChangingSource()
-    {
+        // Unbound, the template's client and header resize without changing the source.
         var source = Window();
         var expanded = MyGuiTemplates.Expand(source, Resources());
-        var frame = MyGuiPresentation.Arrange(expanded, 800, 600, new(), []);
-        Assert.Equal(new UiRect(9, 39, 100, 25), frame.Single(c => c.Name == "Name").Bounds);
-        Assert.Equal(new UiRect(270, 0, 30, 30), frame.Single(c => c.Action == "mygui:close:Root").Bounds);
-        Assert.Equal("Inventory", frame.Single(c => c.Properties.ContainsKey("CaptionOwner")).Caption);
+        var plain = MyGuiPresentation.Arrange(expanded, 800, 600, new(), []);
+        Assert.Equal(new UiRect(9, 39, 100, 25), plain.Single(c => c.Name == "Name").Bounds);
+        Assert.Equal(new UiRect(270, 0, 30, 30), plain.Single(c => c.Action == "mygui:close:Root").Bounds);
+        Assert.Equal("Inventory", plain.Single(c => c.Properties.ContainsKey("CaptionOwner")).Caption);
         Assert.Equal("WindowFrame", source.Roots[0].Skin);
         Assert.Equal(3, source.Widgets.Count());
     }

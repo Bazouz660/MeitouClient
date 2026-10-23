@@ -122,8 +122,13 @@ public sealed partial class DialogueSystem
             if (node.PersonalityRequired != 0 && (node.PersonalityRequired & bit) == 0) return false;
             if ((node.PersonalityForbidden & bit) != 0) return false;
         }
-        // DC_HAS_TAG reads the speaker squad's memory of the target, which Meitou does not keep: with no record only lines that require nothing pass.
-        if (node.MemoryRequired != 0) return false;
+        // DC_HAS_TAG (FUN_140674c50): the speaker squad's long-term tags on the target hold every required tag and no forbidden one; never noted: only lines that require
+        // nothing pass; no target: not tested.
+        if ((node.MemoryRequired | node.MemoryForbidden) != 0 && tc is not null)
+        {
+            if (Memory.Find(world, mc.SquadId, other) is not { } known) { if (node.MemoryRequired != 0) return false; }
+            else if ((known.Long & node.MemoryRequired) != node.MemoryRequired || (known.Long & node.MemoryForbidden) != 0) return false;
+        }
         if (node.IsRoot && (mc.DialogueLocks?.TryGetValue(node.StringId, out bool locked) == true ? locked : node.Locked)) return false;
         if (node.OneAtATime && node.IsRoot && SquadOf(world, me).Any(m => m != me && open?.Npc == m && open.Root == node)) return false;
         if (node.ChanceTemporary < 99 && Rng.Float(NextRoll(world, me)) * 100 >= node.ChanceTemporary) return false;
@@ -166,17 +171,8 @@ public sealed partial class DialogueSystem
 
     string FactionId(int faction) => data.Relations.Contains(faction) ? data.Factions[faction].Id : "";
 
-    /// <summary>The placed town at <paramref name="at"/> (its radius on the ground), or -1.</summary>
-    int TownAt(Vector3 at)
-    {
-        for (int i = 0; i < data.Sites.Count; i++)
-        {
-            var site = data.Sites[i];
-            float r = MathF.Max(site.Town.SizeRadius * site.Town.TownRadiusMult, 100);
-            if (Vector2.DistanceSquared(new(at.X, at.Z), new(site.Position.X, site.Position.Z)) <= r * r) return i;
-        }
-        return -1;
-    }
+    /// <summary>The placed town whose radius holds <paramref name="at"/> (the game's position lookup, <see cref="PopulationData.TownAt"/>: the town status of a character), or -1.</summary>
+    int TownAt(Vector3 at) => data.TownAt(at);
 
     string? TownFaction(World world, Vector3 at) =>
         TownAt(at) is >= 0 and var site && site < data.SiteFactions.Count && data.SiteFactions[site] is >= 0 and var f ? FactionId(f) : null;

@@ -176,6 +176,13 @@ internal sealed partial class ZoneGeometryGatherer
     /// <summary>A door painter reaches this far below its hull and is grown by <see cref="DoorPainterGrow"/> on each side (engine choice).</summary>
     const float DoorPainterDrop = 10, DoorPainterGrow = 3;
 
+    /// <summary>
+    /// How far below its hull an interior mask carver reaches (engine choice): the hull starts at the floor, and the ground 14..26 under a raised floor
+    /// would otherwise stay as a crawlspace joined to the street (Observed: Blister Hill, residents walked under Old Storm Houses and Stephouses). The
+    /// original's tiles have no polygon under these houses.
+    /// </summary>
+    const float CarverDrop = 60;
+
     void AddShape(ZoneGeometry g, PreparedShape shape, Matrix4x4 node, float walkableSlope, bool carve)
     {
         var pts = new Vector3[shape.Vertices.Length];
@@ -189,11 +196,41 @@ internal sealed partial class ZoneGeometryGatherer
         }
         if (hi.X < g.ZoneMin.X - g.Margin || lo.X > g.ZoneMax.X + g.Margin || hi.Z < g.ZoneMin.Y - g.Margin || lo.Z > g.ZoneMax.Y + g.Margin) return;
         EmitTriangles(g, pts, shape.Indices, walkableSlope);
+        if (walkableSlope > 0 && shape.IsConvex && Solid(pts, shape.Indices, lo, hi) is { } solid)
+        {
+            g.Solids.Add(solid);
+            g.Stats.Solids++;
+        }
         if (carve && shape.IsConvex)
         {
             g.Carvers.Add(NavGeometry.Footprint(pts, lo.Y, hi.Y, 0));
             g.Stats.Carvers++;
         }
+    }
+
+    /// <summary>The planes of a closed convex shape (its triangles' planes, turned away from its centre, duplicates merged); null for a flat one.</summary>
+    static NavSolid? Solid(Vector3[] pts, int[] idx, Vector3 lo, Vector3 hi)
+    {
+        var centre = Vector3.Zero;
+        foreach (var p in pts) centre += p;
+        centre /= pts.Length;
+        var planes = new List<Vector4>();
+        for (int t = 0; t < idx.Length; t += 3)
+        {
+            var a = pts[idx[t]];
+            var n = Vector3.Cross(pts[idx[t + 1]] - a, pts[idx[t + 2]] - a);
+            float len = n.Length();
+            if (len < 1e-6f) continue;
+            n /= len;
+            float d = -Vector3.Dot(n, a);
+            if (Vector3.Dot(n, centre) + d > 0) { n = -n; d = -d; }
+            if (Vector3.Dot(n, centre) + d > -0.5f) return null; // the centre on a face: no volume to speak of
+            bool known = false;
+            foreach (var q in planes)
+                if (Vector3.Dot(n, new Vector3(q.X, q.Y, q.Z)) > 0.9999f && MathF.Abs(d - q.W) < 0.1f) { known = true; break; }
+            if (!known) planes.Add(new Vector4(n, d));
+        }
+        return planes.Count < 4 ? null : new NavSolid([.. planes], new Vector2(lo.X, lo.Z), new Vector2(hi.X, hi.Z));
     }
 
     void EmitTriangles(ZoneGeometry g, Vector3[] pts, int[] idx, float walkableSlope)
@@ -224,7 +261,7 @@ internal sealed partial class ZoneGeometryGatherer
             yMax = Math.Max(yMax, pts[i].Y);
         }
         // A door painter needs some thickness to catch cells; a door's hull is only a few units deep (engine choice).
-        target.Add(NavGeometry.Footprint(pts, carver ? yMin : yMin - DoorPainterDrop, yMax, carver ? 0 : DoorPainterGrow));
+        target.Add(NavGeometry.Footprint(pts, yMin - (carver ? CarverDrop : DoorPainterDrop), yMax, carver ? 0 : DoorPainterGrow));
         if (carver) stats.Carvers++; else stats.Painters++;
     }
 }

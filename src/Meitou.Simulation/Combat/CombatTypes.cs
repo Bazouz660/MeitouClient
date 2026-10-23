@@ -13,6 +13,12 @@ public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, Character
     public bool Defensive { get; init; }
 }
 
+/// <summary>
+/// Shoot At (order 235, offered to a character on a turret): the gunners (the selection when empty) that man a turret fire at <see cref="Target"/> instead of choosing; the turret keeps
+/// the target until it is gone and waits while it is out of range or blocked (<see cref="CharacterCold.TurretTarget"/>).
+/// </summary>
+public sealed record ShootAtOrder(IReadOnlyList<CharacterId> Gunners, CharacterId Target) : SimCommand;
+
 /// <summary>What a resolved blow did, for the log (a combat log, damage numbers, tests).</summary>
 public readonly record struct CombatLogEntry(long Tick, int Attacker, int Defender, int Blow, BlowOutcome Outcome, int Part, float Cut, float Blunt, float Pierce, float Stun, bool Knockout, bool Death)
 {

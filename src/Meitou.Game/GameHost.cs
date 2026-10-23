@@ -54,13 +54,13 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     /// <summary>This run uses the native Metal loop: the shared world object exists, but its Vulkan post/loading path does not drive it.</summary>
     bool metalRenderer;
     // Fallback services for a host whose renderers are not in WorldFrame.Gpu yet (the shared title, audio and save code asks through these).
-    WorldWeather? hostWeather = null;
+    WorldWeather? fallbackWeather = null;
     WorldObjectRenderer? hostObjects = null;
     FoliageRenderer? hostFoliage = null;
     CharacterRenderer? hostCharacters = null;
     WorldLamps? hostLamps = null;
     Func<float, float, float>? hostGround = null;
-    WorldWeather? ActiveWeather => gpu is null ? hostWeather : gpu.Weather ?? hostWeather;
+    WorldWeather? ActiveWeather => gpu is null ? fallbackWeather : gpu.Weather ?? fallbackWeather;
     WorldObjectRenderer? ActiveObjects => gpu is null ? hostObjects : gpu.Objects ?? hostObjects;
     FoliageRenderer? ActiveFoliage => gpu is null ? hostFoliage : gpu.Foliage ?? hostFoliage;
     CharacterRenderer? ActiveCharacters => gpu is null ? hostCharacters : gpu.Characters ?? hostCharacters;
@@ -105,6 +105,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         finally { DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
     }
 
+    /// <summary>The start opens on the title (no start, save, sandbox or duel was asked for).</summary>
+    bool OpensOnTitle(bool interactive) => g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !IsBattle && !g.NoPopulation;
+
     void Boot(VulkanDisplay display, bool interactive)
     {
         var context = display.Context;
@@ -123,13 +126,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (!o.NoParticles) titleParticleFactory = () => ParticleRenderer.Create(context, install, gpu.Particles?.Library);
         if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = Meitou.Rendering.Upscalers.VendorUpscalers.Factory(display.Context, streamline);
         (camera, render) = WorldFrame.Setup(scene, o);
-        render.Grid = IsSandbox;
+        render.Grid = IsFlat;
         LoadingStep("people");
         var (heights, (walkability, systems, constants)) = AwaitLoading(simulation);
         LoadingStep("world");
+        var clock = GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay);
         session = new WorldSession(scene.Focus, (scene.X0, scene.Z0, scene.X1, scene.Z1), gpu.Terrain.HeightAt, o.Hour, config.TickRate,
-            clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
-            simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
+            clock: clock,
+            simulation: worldSettings = new Meitou.Simulation.WorldSettings
+            {
+                Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
+                Sunrise = (float)clock.Sunrise, Sunset = (float)clock.Sunset,
+            },
             systems: systems, walkability: walkability);
         BootPlayer(display, interactive);
     }
@@ -147,9 +155,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         Meitou.Data.Gameplay.GameConstants? constants = null;   // parsed once: the body factory's, else for the clock alone
         if (!g.NoPopulation && scene.Database is { } gameDb)
         {
-            // The sandbox and the duel walk on open ground (the heightmap): the sandbox has no world, and the duel's spot may be a navmesh island the build prunes.
-            // Neither has towns: the duel's two characters are the only ones.
-            var levels = IsSandbox || IsDuel ? null : scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install, includeInteriors: true);
+            // The sandbox, the duel and the battle walk on open ground (the heightmap): the sandbox has no world, and the duel's spot may be a navmesh island the build prunes.
+            // None has towns: their own characters are the only ones.
+            var levels = IsSandbox || IsDuel || IsBattle ? null : scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install, includeInteriors: true);
             if (levels is not null)
             {
                 nav = new Meitou.Navigation.NavSystem(install, gameDb, levels!, heights.HeightAt);
@@ -177,6 +185,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
             var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root), biomes: biomes, buildings: buildings, roads: levels?.Roads());
+            if (levels is not null) data.Sight = new BuildingSight(install, gameDb, levels, scene.Objects?.Layouts ?? new Meitou.Data.World.BuildingLayouts(gameDb, levels.Interiors));
             if (nav is not null) nav.Walkability.Roads = data.Roads;   // one network for both: on-screen long routes take the roads as the off-screen squads do
             // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
             if (levels is not null)
@@ -211,13 +220,23 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     /// </summary>
     void ConfigurePlayerInterface(PlayerInterface ui)
     {
+        ui.FixLoadButton = config.FixLoadButton;
         // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
         ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
         ui.WindSpeed = () => ActiveWeather?.State.WindSpeed ?? 0;
         ui.BuildHost = MakeBuildServices();
-        ui.FactionName = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
+        // generation template, with the player's relation towards it.
+        ui.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
+            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
+            : [];
+        // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
+        ui.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
+            ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
         ui.SquadLimits = () => popData?.Bodies.Constants;
         ui.Rocks = () => popData?.ResourceNodes;
+        ui.AlliedFaction = faction => popData is { } d && session.World.Player.Faction is (>= 0 and var mine) && d.Relations.Contains(faction) && d.Relations.IsAlly(mine, faction);
         ui.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
         ui.MapTowns = () => popData?.Sites ?? [];
         ui.MapFactionOf = id =>
@@ -264,6 +283,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
+
         player.MoveMarker = gpu.MoveMarker ??= MoveMarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
@@ -280,7 +300,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             () => Meitou.Data.Save.SaveCatalog.Scan(Meitou.Simulation.Saving.QuickSave.DefaultRoot, install.SaveDirectory,
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
             assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
-        if (g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation) player.ShowTitle();
+        if (OpensOnTitle(interactive)) player.ShowTitle();
         if (nav is not null && (start is not null || !interactive))
         {
             // The squad is placed on the mesh, and a still has its town at once: wait for the zones round the start (a cold build is about 2 s, then cached).
@@ -303,10 +323,12 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         }
         if (IsSandbox && population is not null) target = SandboxSpawn();
         if (IsDuel && population is not null) target = DuelStart();
+        if (IsBattle && population is not null) target = BattleStart();
         if (!IsSandbox && crowd > 0 && population is not null) SpawnCrowd(target, crowd);
         LoadingStep("characters");
         if (scene.Database is { } characterDb && !g.NoPopulation && gpu.Characters is null)
-            gpu.Characters = new CharacterRenderer(context, install, characterDb, assets, characterRigs) { Source = FillDrawList, Guard = gpu.Guard, GeneratedLod = o.CharacterLod };
+            gpu.Characters = new CharacterRenderer(context, install, characterDb, assets, characterRigs) { Source = FillDrawList, Guard = gpu.Guard, GeneratedLod = o.CharacterLod, SkinShading = o.SkinShading, SkinRaces = config.SkinRaces, EnhancedIcons = o.MeitouIcons,
+                PoseClock = () => animClock ? animSeconds : realTime.Elapsed.TotalSeconds };   // the frame clock DrawWorld gives the foliage sway: a recorded flight poses the same every take
         var rig = session.Camera;
         rig.Place(new Vector2(target.X, target.Z), (o.Yaw ?? 30) * MathF.PI / 180,
             (o.Pitch ?? Meitou.Data.World.KenshiCamera.InitialPitchDegrees) * MathF.PI / 180, o.Distance ?? Meitou.Data.World.KenshiCamera.InitialDistance);
@@ -381,6 +403,13 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
 
     void DrawWorld(int width, int height)
     {
+        // The stage and the portraits finished as the world is (a change of the options redraws the portraits).
+        if (gpu.Characters is { } previews)
+        {
+            previews.Look = Meitou.Rendering.Characters.PreviewLook.Of(o.Post);
+            player.PortraitSize = Meitou.Rendering.Characters.CharacterRenderer.PortraitSizeFor(previews.Look);
+            SyncIconLook();
+        }
         if (TitleVisible) { DrawTitleWorld(width, height); return; }
         if (player.EditorOpen) { DrawEditorStage(width, height); return; }
         if (gpu.Characters is { StageRequest: not null } staged) staged.StageRequest = null;
@@ -397,9 +426,14 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             weather.Paused = sim.IsPaused || skyArrival is not null;
             weather.GameSpeed = (float)(sim.Speed > 0 ? sim.Speed : sim.LastNonZeroSpeed);
         }
+        Meitou.Rendering.StageClock.Lap(Meitou.Rendering.StageClock.Host);   // the profiler: the host's frame so far, then the blood marks apart from the terrain's update
         UpdateBlood();
+        Meitou.Rendering.StageClock.Lap(Meitou.Rendering.StageClock.Blood, "blood marks");
+        UpdateWeatherSource();
         UpdateInteriorView();
-        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, (float)seconds / 600f, o.FogDistance,
+        // The frame's animation time (particles, water, wet surfaces) is game time: still while paused, faster at higher speeds.
+        float gameTime = (float)(session.Clock.GameSeconds / 600 % 1e4);
+        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
             weatherHour: (float)session.Clock.HourOfDay);
     }
 

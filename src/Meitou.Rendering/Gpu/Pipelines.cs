@@ -74,7 +74,7 @@ public static unsafe class PipelineFactory
 
     public static Pipeline CreateGraphics(VulkanDevice device, ShaderModule vertex, ShaderModule fragment, PipelineLayout layout,
         ReadOnlySpan<VertexInput> inputs, PrimitiveType topology, AttachmentFormats targets, BlendState blendState,
-        ColorMask colourMask, PolygonKind polygon, bool alphaToCoverage, bool depthClamp, ColorMask extraMask = 0)
+        ColorMask colourMask, PolygonKind polygon, bool alphaToCoverage, bool depthClamp, ColorMask extraMask = 0, ShaderModule tessControl = default, ShaderModule tessEvaluation = default)
     {
         var entry = "main"u8;
         int n = inputs.Length;
@@ -148,15 +148,25 @@ public static unsafe class PipelineFactory
             if (targets.ShadingRate) rendering.PNext = &rate;
             fixed (byte* name = entry)
             {
-                var stages = stackalloc PipelineShaderStageCreateInfo[2];
+                var stages = stackalloc PipelineShaderStageCreateInfo[4];
                 stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vertex, PName = name };
                 stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fragment, PName = name };
+                // Tessellated (ShaderLibrary.NativeTessellated): patch lists of three control points, the domain's origin at the lower left as in GL (so the
+                // evaluation stage's winding means what it means there).
+                bool tessellated = tessEvaluation.Handle != 0;
+                if (tessellated)
+                {
+                    stages[2] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.TessellationControlBit, Module = tessControl, PName = name };
+                    stages[3] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.TessellationEvaluationBit, Module = tessEvaluation, PName = name };
+                }
+                var origin = new PipelineTessellationDomainOriginStateCreateInfo { SType = StructureType.PipelineTessellationDomainOriginStateCreateInfo, DomainOrigin = TessellationDomainOrigin.LowerLeft };
+                var tessellation = new PipelineTessellationStateCreateInfo { SType = StructureType.PipelineTessellationStateCreateInfo, PNext = &origin, PatchControlPoints = 3 };
                 var info = new GraphicsPipelineCreateInfo
                 {
                     SType = StructureType.GraphicsPipelineCreateInfo,
                     PNext = &rendering,
                     Flags = targets.ShadingRate ? PipelineCreateFlags.CreateRenderingFragmentShadingRateAttachmentBitKhr : 0,
-                    StageCount = 2, PStages = stages,
+                    StageCount = tessellated ? 4u : 2u, PStages = stages, PTessellationState = tessellated ? &tessellation : null,
                     PVertexInputState = &vertexInput, PInputAssemblyState = &assembly, PViewportState = &viewportState,
                     PRasterizationState = &raster, PMultisampleState = &multisample, PDepthStencilState = &depthStencil,
                     PColorBlendState = &blend, PDynamicState = &dynamic, Layout = layout,
@@ -272,7 +282,7 @@ public sealed unsafe class PipelineLibrary : IGpuPipelines, IDisposable
         if (p.VertexModule.Handle == 0 || p.FragmentModule.Handle == 0) throw new ArgumentException($"{p.Name}: not a graphics program");
         var handle = PipelineFactory.CreateGraphics(device, p.VertexModule, fragment.Handle != 0 ? fragment : p.FragmentModule, p.Layout, d.Vertex.Inputs, d.Topology, d.Targets, d.Blend,
             d.ColourMask, d.Polygon, d.AlphaToCoverage, d.DepthClamp,
-            p.FragmentReflection?.Outputs.Any(o => o.Location == 1) == true ? DrawState.Rgba : ColorMask.None);
+            p.FragmentReflection?.Outputs.Any(o => o.Location == 1) == true ? DrawState.Rgba : ColorMask.None, p.TessControlModule, p.TessEvaluationModule);
         if (d.Name.Length > 0) device.SetName(ObjectType.Pipeline, handle.Handle, d.Name);
         return handle;
     }

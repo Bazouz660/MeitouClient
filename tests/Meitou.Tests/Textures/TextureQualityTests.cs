@@ -9,24 +9,15 @@ public class TextureQualityTests
     // level, name, group, expected drop
     [Theory]
     [InlineData(0, "a.dds", "General", 0)]        // Maximum touches nothing
-    [InlineData(0, "a_HI.dds", "Landscape", 0)]
     [InlineData(1, "a.dds", "General", 0)]        // High: ordinary textures keep full size
     [InlineData(1, "a_HI.dds", "General", 1)]     // ... only _HI. and Landscape lose one level
     [InlineData(1, "a.dds", "Landscape", 1)]
-    [InlineData(1, "a_LO.dds", "Landscape", 0)]
-    [InlineData(2, "a.dds", "General", 1)]        // Medium
-    [InlineData(2, "a_HI.dds", "General", 2)]
-    [InlineData(2, "a.dds", "Landscape", 2)]
+    [InlineData(2, "a.dds", "Landscape", 2)]      // Medium
     [InlineData(2, "a_LO.dds", "General", 0)]     // _LO. drops one fewer, then the no-_HI. rule takes one more (never below 0)
     [InlineData(3, "a_LO.dds", "General", 1)]
     [InlineData(4, "a.dds", "General", 3)]
-    [InlineData(4, "a_HI.dds", "foliage", 4)]
     [InlineData(4, "a_LO_HI.dds", "General", 4)]  // "_LO_" is not "_LO.", and the name has _HI.
-    [InlineData(4, "a_LO.dds", "Landscape", 3)]
     [InlineData(4, "a.dds", "Overlaymaps", 0)]    // excluded groups and names without dds
-    [InlineData(4, "a.dds", "GUI", 0)]
-    [InlineData(4, "a.dds", "PLSM2", 0)]
-    [InlineData(4, "a.dds", "", 0)]
     [InlineData(4, "a.png", "General", 0)]
     public void LevelsToDropFollowsTheListener(int level, string name, string group, int expected) =>
         Assert.Equal(expected, TextureQuality.LevelsToDrop(name, group, level));

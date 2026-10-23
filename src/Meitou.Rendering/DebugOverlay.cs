@@ -11,7 +11,7 @@ namespace Meitou.Rendering;
 
 /// <summary>
 /// Text panels drawn over the frame (the viewer's frame statistics and key list). Text is rasterised from a monospace
-/// system font with stb_truetype; without one the overlay stays off. Draws into <see cref="Target"/> after
+/// system font with stb_truetype (else the game's Exo2); without a font the overlay stays off. Draws into <see cref="Target"/> after
 /// everything else, so screenshots taken before it don't include it. Native (docs/renderer-native.md 7.5, 8.9): one <see cref="LegacyProgram"/>
 /// draw in a segment and rendering of its own, the vertices in the frame's constants, the font a native R8 texture.
 /// </summary>
@@ -27,6 +27,9 @@ public sealed unsafe class DebugOverlay : IDisposable
     [
         @"C:\Windows\Fonts\consola.ttf", @"C:\Windows\Fonts\CascadiaMono.ttf", @"C:\Windows\Fonts\cour.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf", "/usr/share/fonts/liberation/LiberationMono-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSansMono-Regular.ttf", "/usr/share/fonts/noto/NotoSansMono[wdth,wght].ttf",   // Arch (newer noto-fonts ships the variable file)
+        "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf", "/usr/share/fonts/liberation-mono/LiberationMono-Regular.ttf",   // Fedora
         // stb_truetype cannot bake from .ttc collections without an index, so macOS needs a plain .ttf (Menlo is a .ttc here).
         "/System/Library/Fonts/Supplemental/Courier New.ttf", "/System/Library/Fonts/SFNS.ttf",
         "/System/Library/Fonts/Menlo.ttc",
@@ -133,10 +136,13 @@ public sealed unsafe class DebugOverlay : IDisposable
         samplerAtlas = program.Sampler("uAtlas");
     }
 
-    /// <summary>The overlay, or null when no monospace font is found.</summary>
-    public static DebugOverlay? TryCreate(IGpuContext gpu)
+    /// <summary>
+    /// The overlay, or null when no font is found: a monospace system font (the columns are padded with spaces), else, if <paramref name="resolve"/>
+    /// finds game files, the game's standard face (proportional, so columns drift).
+    /// </summary>
+    public static DebugOverlay? TryCreate(IGpuContext gpu, Func<string, string?>? resolve = null)
     {
-        var path = FontCandidates.FirstOrDefault(File.Exists);
+        var path = FontCandidates.FirstOrDefault(File.Exists) ?? resolve?.Invoke(UiPainter.StandardFontFile);
         return path is null ? null : new DebugOverlay(gpu, File.ReadAllBytes(path));
     }
 

@@ -115,8 +115,8 @@ Conditions: 50 `hasBuildingMaterials` (`FUN_14059ba50`: nothing outstanding, or 
 one of an outstanding item), 51 `buildingHasBuildingMaterials` (`FUN_1405a39c0`: site not stalled), 150
 `HAVE_SOME_BUILD_MATS` (`FUN_140597530`, **Observed**: inventory holds the target's item). `Task_Build`
 (`FUN_14034a440`) plays `medic` (sounds `Character_Build_Loop_Start/Stop`), pushes build work each update and ends
-when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, auto-job scoring and
-dismantle: [buildings-production](buildings-production.md#construction-tick).
+when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, fetching (115 -> 247),
+the Engineer job (125), repair and dismantle: [buildings-production](buildings-production.md#construction-tick).
 
 ## Prospecting
 
@@ -574,6 +574,75 @@ Rules: [economy 11.5, 11.7](economy.md#115-bail-and-sentence). **Observed** (eva
 | goal 276 Liberating prisoners | finder `FUN_1408cf140` (`BuildingFinder_CagesToLiberate`): a cage of a faction that fails the relation test `FUN_1406b2630` (read as allied) holding an occupant that is not an enemy |
 | 133 / 207, 256 `Task_GetOutOfCage` | constructor flag "escape" 0 for 133, 1 for 207 and 256 ([locks](locks.md#cages-and-beds)) |
 
+## Prisoner fate and slave rows
+
+**Observed** (TaskData registrations in `FUN_140319a60`: desire at `+0x108`, finder at `+0x160`; the desire thunks resolve to `AI` vtable slots; task classes from their vtables).
+Meitou: [simulation, captives](../simulation.md#captives).
+
+| Goal | Desire | Finder / rule |
+| --- | --- | --- |
+| 135 Kill random prisoner, 282 Dinner time | AI slot 20 `FUN_14032e9b0`: 1 when the character's town's kill timer has passed, or every cage it knows is held by a live character (`FUN_1405a1ab0`, the CAGES_ARE_ALL_FULL test; false with no cage); else 0. A town not yet in the timer map gets now + uniform[1, 15) h (`FUN_14034a810`, `FUN_1409b1c80(1, 15)`), a global map keyed by the town | `FUN_1408d0d90` (also 139): keeps a remembered occupied cage, else the cage finder `FUN_1408d0770(ai, occupied, 8)`: function-8 buildings, weight clamp(1 - d^2/4608^2, 1e-5, 1), x100 same faction (another faction's only when a town test `FUN_140621230` passes, **Unknown**), x100 in the character's home, x1e-5 for the police case; the best weight wins. No target when the occupant's RACE `robot` (`+0x7c`) is set; else the occupant fires event 10 MARKED_FOR_DEATH at the chooser |
+| 139 Eat random prisoner | slot 19 (1) | as 135 |
+| 183 Watching slaves | slot 61 `FUN_140597b20`: with a target, slot 59; else 1 while not carrying and character vfunc `0x368` is 0 | `FUN_1408cd630`: none while itself held; sensed characters (masks 0x60 / 0x110) in slave state that need processing; else `BuildingFinder_SlavesToProcess` over its home town: occupied function-8 cages of non-player factions passing the `BuildingFinder_Cages` tests, occupant not of its own squad, within 180 (squared 32400) and needing processing |
+| 260 Watching for new slaves | slot 61 | `FUN_1408cc110`: the same building finder; the first occupant that is not down (vfunc 6) and in slave state 0 |
+| 167 Capturing slave | slot 61 | `FUN_1408cdd00`: sensed (0x4008 / 0x11) down or dead or legs-down characters, uncarried, free, not animals, not in the give-up list, NPC class (status `+0xdc`) not 1 LAW_ENFORCEMENT, 3 TRADER or 5 DIPLOMAT, slave state not 1, `FUN_140644170` false (already shackled); the nearest. Plan and tasks: [Slave work, shout and capture](#slave-work-shout-and-capture) |
+| 168 Carrying slaves | `FUN_140599480` (the rescue desire) | `FUN_1408cdf50`: sensed (0x20 / 0x210) down characters in slave state, owned by its faction (status `+0xe0`), uncarried, free; the nearest |
+| 173 Gathering slaves, 245 Gathering unholy slaves | slot 63 `FUN_14059b940`: 1 while the platoon's slave list holds at most 3 characters up and free (vfunc 6 false, `+0x2f8` 0) | 173 `FUN_1408cc4b0`: the nearest occupied processable cage of its faction in the squad's current town; 245 `FUN_1408d1410`: own-faction cages, the first occupant that is a woman (appearance `sex female`, `FUN_140295a50`) or of another race than the gatherer |
+| 217 Gathering slaves for shipping | slot 64 `FUN_140597b80`: in a TOWN or OUTPOST (town `+0xd8` 2 or 1); for a player town (or faction byte `+8`) only an allied one | `FUN_1408cc600`: cages of any faction in the town, not player-owned, with a live awake occupant (vfunc `0x360` false) not twice in the give-up list; the nearest |
+| 174 Ordering slaves (`Task_GetSlave`) | slot 19 | its start posts message type 5 (target, self) to the global queue `DAT_1421346d8` and ends; what the queue does with type 5 is **Unknown** (effect: 116 TARGET_IS_MY_SLAVE) |
+| 182 Processing slave (`Task_ProcessNewSlave`) | slot 19 | 3 s of `medic`; then items of the weapon and armour sections not locked shackles (armour `+0x244` 6 kept) go to the processor's storage or inventory; the faction's `slave clothing` is made and put on where the slot is free (`FUN_1403560e0`); event 35 INTRODUCING_NEW_SLAVE (37 RECAPTURED_A_SLAVE when vfunc `0x3e0`) to it; slave state 1 (`FUN_1405a4940`), owner set when it had none, its jobs cleared and job 187 Obedient Slave added toward the owner; every platoon of the processor's faction and every sensed ally lists it (`FUN_14067aca0`) |
+| 188 Working the slaves | slot 65 `FUN_14059a0a0`: 0.25 x the platoon's slave list size | `FUN_1408cd940`: a random live, uncarried, free slave of the platoon's list not in the give-up list; B list isDialogDelivered; the event is the row's own, 38 SHOUT_AT_SLAVE_WORKER (**Verified**: the registration stores 0x26 at TaskData `+0x130`) |
+| 192 Delivering slaves | slot 65 | none; B: !26, atDestinationTown |
+| 194 / 218 Selling slaves | 65; 218 slot 66 `FUN_140597c70`: only in a prison or slave camp (town type 7, 5) | `FUN_1408ca950`: a random allied building of designation flag 0x80000 in the town whose owner is a character or squad (`+0xd8` 1 / 0x22): its leader; B isDialogDelivered (event 39 SLAVE_DELIVERY) |
+| 172 Getting in my cage | slot 19 | `FUN_1408caaf0`: for a slave whose owner handle is a character or squad: the nearest free cage of the owner's faction |
+| 189 / 190 Worker | slot 19 | `FUN_1408cac60` / `FUN_1408cadb0`: a random building of the platoon's town whose BuildingFunction is in mask 0x41a (bits MINE, RESEARCH, REFINERY, CRAFTING); a character whose side differs from the town's (squad ownership `+0x250`) only works there as a slave of state 1; none found: 0. Effects IS_WORKING (123, 189) and IS_WORKING_PRETEND (136, 190), acted out by 87 / 221 Operating machine |
+| 187 Obedient Slave | - | no desire or finder: a job added when a character is enslaved (the slave window's sale, processing), scored by its own branch in `FUN_14050e5b0` (see below) |
+
+- **Kill** (`Task_KillPrisoner`, 134 and 196): faces the target (a character, or a cage's occupant) and plays `chop down static`; each time the clip passes 0.55 the
+  character's weapon attack (`FUN_1408868b0`, the race multipliers included) lands through the target's take-hit virtual and the target says event 11 SCREAMING_TORTURE. When the
+  target is dead the character's town gets a new kill time, now + uniform[1, 15) h. 134 needs a drawn weapon.
+- **Eat** (`Task_EatPrisoner`, 220): walks to within 20 of the target (XZ); a robot target ends it. Then each update: faces it, plays `eat`, says event 52 EATING_SOMETHING_SOUNDS,
+  and calls the target's being-eaten virtual with 1.0 (`FUN_1404356f0`): unless dead, and while vfunc `0x358` is false (read as "conscious", **Unknown**) or its byte `+0x4f` is set, the
+  target says event 11 and gains toughness XP (`FUN_1408c6430(stats, dt, 10, 21)`: the continuous entry, [character-stats](character-stats.md#levelling-xp), amount 10, stat 21 Toughness), then the
+  medical update `FUN_140650370`: rate = 1 x lerp(2, 0.4, toughness x stat scale x 0.01) per second (x5 instead when medical `+0x164`, **Unknown**); parts from the last down:
+  the first with h - 1.1 s > -M loses rate x dt from flesh and from the treated pool and the update ends; a limb with nothing left is severed when the global `DAT_142133504`
+  is set; with nothing left, a counter `+0x15c` rises, and past 5 the character dies ("eaten"; "{1} has been eaten alive." for the player's). A robot is never eaten. The end
+  of the task resets the town's kill time as Kill's does. A target not imprisoned and with `+0x278` set is bitten once and the eater re-ordered (order 0x23, **Unknown**).
+- Whether the kill timer map is saved is **Unknown** (Meitou keeps it in the running game only).
+
+### Slave work, shout and capture
+
+Meitou: [simulation, captives](../simulation.md#captives).
+- **Worker** (189 `AUTO_LABOURING_MINES`, 190 `..._PRETEND`; **Verified** registrations in `FUN_140319a60`: effects 0x7b IS_WORKING and 0x88 IS_WORKING_PRETEND, finders `FUN_1408cac60` /
+  `FUN_1408cadb0`; only 190 commits, 0.5 + r x 2 h, crowd 1). They are not slave-only: the data lists them in "worker fighter indie resident", "Shop" (slave list), "working mines and farms",
+  "Work, Protect, Capture", "South drone sacrifice farmer" and, in the Slave role list, "slave worker day guard" (171 at 0.1, 189, 172 at night, 190). The finder asks the platoon's town
+  (`Blackboard +0x88`) for a building through `BuildingFinder_SpecialFunction` (mask 0x41a read as bits, **Observed**: 1 MINE, 3 RESEARCH, 4 REFINERY, 10 CRAFTING) and takes one at random
+  (slot 2 `FUN_1409fb020`: index `FUN_1409b3b40(0, n - 1)`); the town test is the one in the table above. Acting out is 87 (real: needs the machine's inputs and output room, power, a free operator slot) or
+  221 (pretend); both `Task_OperateMachine` ([sitting and the held tool](ai-tasks.md#town-goals), [production](buildings-production.md#production)). Meitou's NPC towns have no running machines, so both are
+  the same standing at the building at its functionality's clip (`stonemine` by default): **engine choice**, the building's `use range` is not read (30 units).
+- **Obedient Slave** (187, flags 0x75, no lists; **Observed**, `FUN_14050e5b0`): a job whose type is 0xbb is not scored like the others. For a character in slave state 1 that is not
+  player-controlled (`FUN_1405c9750`) and whose owner handle (`+0x328` of the slave's AI owner object) names a character (type 1) or a squad (0x5b), the job loads the owner platoon's
+  Slave role list (role 4, tiers mask 0xe: `FUN_14026b790`) into the slave's own goal list (`+0x178`) and scores that with the normal scorer `FUN_14050df10`. So a slave runs its owner's
+  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad than its owner's, and a faction owner, are not modelled.
+  The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+- **Shout** (188, `Task_TalktoPlayer`, slots 1 and 2 `FUN_14034c5a0` / `FUN_14034c7c0`): the event is the row's (TaskData `+0x130`: **Verified** 0x26 for 188, 0x27 for 194 and 218, 9 for 158 and 283).
+  Start fires it at the target (`FUN_140684990`); each update walks to the target (vfunc `0x3b0`), repeats event 9, gives up after 25 minutes with event 60, and ends when the dialogue is free.
+  The slavers' event-38 lines ("shout at slave worker": chance temporary 10, six lines) are in "slaver guard MAIN" and "Holy Nation Paladin". Meitou paces it: a worker shouts at most every 60 to 180 game seconds.
+- **Capture** (167): the planner chain is 167 (effect isChained 134) <- 166 Restraining (`Task_CuffTarget`; needs 38, at location, 118 TARGET_IS_UNARMED, 7 target down) <- 181 Stripping weapons
+  (`Task_StripWeapons`; effect 118). **Strip** (**Observed**, `FUN_14034e7b0`): `medic` for 0.8 s, then the items of the target's `hip` and `back` sections (`FUN_140747ff0`) go to the
+  stripper's inventory (else its storage), and the stripper's squad sets short-term tag 6 on the target (`FUN_1406744a0`; nothing found reads tag 6). **Cuff** (`FUN_14034af20`): a "Restraining" bar
+  with `medic`, progress += 0.1 x a per-update float of the character (`+0xc4`, read as frame time: about 10 s, **Unknown**), full at 0.99: the cuffer says event 37 RECAPTURED_A_SLAVE to the
+  target (its lines "new slave capture" / "slave recapture", no effects) and posts message type 5 to the global list `DAT_1421346d8`. The shackles themselves are not put on anywhere in the task
+  (**Unknown** where; Meitou puts the stock `SHACKLES` on). The list's only reader, `FUN_140a0af10` (via `DAT_1421346d0`), sums per-listener contributions around a point: no game logic
+  was found for type 5, which `Task_GetSlave` (174) posts too. Carrying the cuffed one to a cage is goal 112 (not decoded); 168 lifts a downed slave (`Task_LiftSomething`, effect 115) before 112.
+  The packages that list 167 and 168 are slaver, guard and workmaster packages ("addon- slave catching", "wandering slaver base", "slave worker day guard", the Rebirth and Holy Nation guards).
+- **Looks like a slave**: processing (182) makes state 120 TARGET_LOOKS_LIKE_A_SLAVE true. The watchers' "needs processing" test `FUN_1408ca3d0`: a character with no owner needs it; one with an owner of an
+  allied faction needs it unless its slave state is not 2 or 3 and vfunc `0x3e0` is true and `FUN_1405a6bb0(platoon, character)` holds. That function (**Observed**, outline): an animal is fine, NPC
+  class 1 or 5 is not; otherwise the torso and leg slots (inventory sections 5 and 6) must be empty, shackles or items of the owner faction's `slave clothing` list, and the shackle slot (section 9) must hold a locked item.
+  Meitou's reading (**engine choice**): wearing locked shackles or any of the owner's slave clothing; an owner with none always passes.
+- **Cage memory**: `Task_PutInSomething` for a cage (`FUN_140358670`) makes the prisoner's squad remember the putter as captor (`FUN_140673a20(prisoner, putter, 5)`) and calls `FUN_14067aca0`, which
+  adds the prisoner to the putter's, its allies' and its squad members' platoon lists (the "slave list"). [Squad memory](dialogue.md#squad-memory) has the other writers.
+
 ## Desire and commitment
 
 **Observed** (TaskData constructor `FUN_14061d350`, registrations in `FUN_140319a60` parsed for all 253 rows, scorer `FUN_14050df10`, `AITaskSytem`
@@ -644,8 +713,8 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 
 - 16 ATTACK_ENEMIES: effect state 6 `isNoEnemiesInVicinity` (registered without an evaluator). Finder `FUN_14059f3a0` walks the
   looker's sensed characters (sense list kind 4) that are seen or heard (entry +0x38 / +0x39), drops those of a faction
-  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (read as
-  enemy tests, **Unknown** in detail); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
+  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
+  and area tests, [perception](perception.md#the-attack-on-sight-tests)); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
 - 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
   resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
   each squad mate the looker senses by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
@@ -657,18 +726,30 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 
 **Observed** (target finders named; TaskData effects lead the planner to the task that acts them out):
 
-- **37 Wandering town** (`FUN_140999a60`): keeps a target that is still a general node; else a random building of the character's town in its zone
-  (`FUN_1409fc6c0` over `FUN_1409fbb00`, a building filter **Unknown**), then a random node of type 1 (NODE_GENERAL) in it whose owner is unset or the
-  character's faction (`FUN_14038c2f0`); none: 0. Effect `atNode`, acted out by 51 Stand at node.
+- **37 Wandering town** (`FUN_140999a60`): keeps a target that is still a general node; else one building drawn uniformly from the **public**
+  buildings of the character's town in the zone it stands in (`FUN_1409fc6c0` over `FUN_1409fbb00`: the zone's building list, Building vfunc 82, which
+  returns +0xc8, the `public day` flag, see [locks](locks.md)), then a random node of type 1 (NODE_GENERAL) in it whose owner is unset or the
+  character's faction (`FUN_14038c2f0`); none (no public building, or the drawn one has no such node): 0. Effect `atNode`, acted out by 51 Stand at
+  node. Vfunc 82 is false for some building kinds (1, 0x22) under a player-side condition (**Unknown**); the flag's default on buildings without a
+  resident template is **Unknown**.
 - **47 general node / 20 Shopkeeper** (`FUN_14099f280` / `FUN_14099e920`): a node of that type in the home building (owner unset or own faction),
-  reserved; guard posts fall back to general nodes.
+  reserved; guard posts fall back to general nodes. A node marker faces along its local −X: for 784 of 990 shopkeeper nodes in base-game town interiors,
+  yaw − 90° points at the nearest Shop Counter's side the node stands on (**Verified**, layouts placed by `TownBuildings`, compared with each counter's
+  yaw; the rest are corner or odd-angled counters). The engine turns a character arriving at a node that way.
 - **118 Shopping** (`FUN_1409997f0`): a shop of the town selling an item on the character's shopping list (`FUN_1409fc070`), else a random shop
   (`FUN_1409fc1b0`); factor 1 for a BF_SHOP building, 0.4 otherwise. Then 119 (`Task_Shopping`) at it.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating
   machine, i.e. using furniture there; with no free one the plan fails and another goal wins.
-- **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6): its town is the squad's home town, else the nearest friendly one
-  (`FUN_1402916b0`); its bar a random one of the town's buildings of designation 3 (BD_BAR, the residents' template's `building designation`), with a
-  free spot reserved there; with none it settles for something else (`FUN_140292de0`, **Unknown**).
+- **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6; **Observed**): its town is the squad's home town, else the nearest friendly one
+  (`FUN_1402916b0`); only while that town's zone is loaded. The town's buildings of designation 3 (BD_BAR, the residents' template's
+  `building designation`; town vfunc `0x2d0`) are scanned cyclically from a random one; the first with a free **table** wins, that table is
+  reserved for the squad in a global table→squad map (`DAT_14212ddb8`) and becomes the package's target. A town with no bar takes a free table
+  outdoors in it; all bars full: no target. The table search (`FUN_140292de0`, `BuildingFinder_TableToSitAt` vfunc 5) keeps furniture of
+  function mask 0x10810 (BF_REFINERY, BF_CORPSE_DISPOSAL, BF_TABLE) in the town, of a faction not hostile to the squad's, inside the bar (or,
+  with no bar, inside no building), in a public building (vfunc 82) and not reserved. The outdoors variant (flag +0x151, BarOutdoors) skips the
+  bars and takes a free outdoor table. So a bar holds as many visiting squads as it has free tables.
+- **36 Patrolling town** (`Task_PatrolTown` slots 1-3, **Observed**): walks to its target's position (start, update and resume pass modes 0/1/2
+  to the mover `FUN_1405c6b30`); row 36 has no target finder, so where the target comes from is **Unknown**.
 - Building layouts' `is bar` / `is shop` are 0 on every exterior layout of the base game and mods checked (2 interior layouts set `is bar`, 9 `is shop`),
   so they do not mark bars and shops (**Verified** over the merged `interiors.level`).
 - **43 Staying home** (`FUN_1408cbc00`): furniture in the home whose BuildingFunction is in mask 0x2049a (bits MINE, RESEARCH, REFINERY, TRAINING,
@@ -687,7 +768,6 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   facing, turned round when that nearest one is behind it. With none found, the seat's facing. Layout stool rotations are arbitrary (Observed: the Hub's
   Storm House, up to 161° off their table).
 - **24 Wandering** (`FUN_140998040`): the nearest town; list A holds `atATown`, so it is dropped while in a town.
-- **36 Patrolling town**: `Task_PatrolTown`, behaviour **Unknown**.
 - **180 Man the gate** (`Task_ManTheGate` slot 2 `FUN_140342c50`, target `FUN_140338690`; **Observed**, disassembly): the gate is the
   task's target, else the Blackboard's home (`HOME_GATE`), else the town's gate nearest the character (town vfunc `0x308`), each only when it
   is a GatewayBuilding (vfunc `0x3d8`). The guard walks to its first door's point `+0x3bc` and turns along `+0x3bc - +0x3c8`. A door's
@@ -741,16 +821,89 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   character's +0x450, its byte +0x348, `FUN_1407f4d20`, a set lookup; meanings **Unknown**), +0x116 "Sleep when injured" → 257 "Getting out of
   bed once healed" above 153 "Go home and go to bed", and +0x118 "Sit when idle" → 275 "Sitting around" (its task is built with a float 0.5 where the others pass 1, meaning **Unknown**).
   Tooltips (**Verified**, `FUN_140005e11`): ditch puts excess carried materials into storage when idle; sleep goes to bed when injured and idle;
-  sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**. Saved as CAMERA bools ([save](../formats/save.md)).
-  Same panel: +0x110 Heal Allies, +0x111 Help Allies, +0x112 Rescue Allies, +0x114 Feed Animals, +0x115 Share Food, +0x11a Shoot first.
+  sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**; its target finder is the bed search (**Verified**, [locks](locks.md#beds)). Saved as CAMERA bools ([save](../formats/save.md)).
+  The other options of the panel: [Squad AI options](#squad-ai-options). Feed and share: [eating](character-stats.md#eating).
 - **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
   `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
   through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2
-  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`.
+  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`. The GAMESTATE_CHARACTER bool `chase mode` is the
+  same switch (**Verified**: the writer `FUN_1406280a0` stores the byte +0x35 of the orders receiver at character +0x650 → +0x20; the loader
+  `FUN_140626f50` passes it back as toggle 15); the orders panel's `OrdersChaseButton` (captioned JOBS) is this switch.
+- **Finders of the jobs** (**Verified** registrations in `FUN_140319a60`, finder thunks resolved; readings **Observed**; "sensed" = the
+  character's sensed list `FUN_140853960(include, exclude)`, whose bits are **Unknown**):
+  - 58 Medic / 57 Robotics: `FUN_14099f690` with a flag (58: 0, 57: 1; [Medic jobs](#medic-jobs)). Desire `FUN_140998410` (both, and 250).
+  - 250 Splint Rigging: `FUN_14099e240`: X = min(medic skill, the best splint kit's quality, own inventory or backpack; none: 0); sensed (1, 0x10)
+    of the medic's own faction only, not of a robot race, not in a give-up list, not carried (unless the carrier fails a test); weight =
+    `needsSplint`(X) (`FUN_140646400`, its returned weight **Unknown**) × the nearness of [Medic jobs](#medic-jobs) (that pass's extra flag reads
+    CharStats +0x12b); a patient in the squad's give-up list × 0.05; ≥ 0.95 is taken at once. The medic itself is a candidate.
+  - 16 Attacking enemies: `FUN_14059f3a0` ([Combat goals](#combat-goals)); it searches only while the AI's +0xbc (read as the count of sensed
+    enemies) is nonzero, which is also the condition of the kind-2 job pass above.
+  - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
+    (vfunc 0x248), not carried, passes a character vfunc 0x3e8 test or has faction flag +0x1d0 (**Unknown**), is in no give-up list, and holds an
+    item `FUN_140998950` accepts (inventory, then backpack). Effect 148 → looting.
+  - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building whose handle equals the home building hand of the character's
+    Ownerships (+0x38; `Hand` vfunc 0x10 is "not equal", so the test `== 0` means equal; for the player faction the Ownerships is one shared object whose home is **Unknown**), down (vfunc 0x30), special state
+    (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250`: only while the character's own building (vfunc 0x78) passes vfunc 0x2f0 (a function) and `FUN_1406211e0`(Ownerships,
+    building) (the home, the +0x80 building, or one of the Ownerships' faction); sensed (0x400e, 0x201) in that building, not carried, down, special state not 2 (not caged), vfunc 0x118 > 0
+    (**Unknown**). Their companions 224 / 274 carry the body outside: `Task_TakeIntruderOutside` (**Verified** by decompile, slots 2/5/7 `FUN_1403355e0`/`FUN_14033da80`/`FUN_1403356e0`) walks
+    to the point beyond the home building's first door (`Building` vfunc 0x3e0 → door +0x3bc, pushed out by a factor 1.1 of a reference vector, **Unknown**); its start (slot 2) ends the task
+    without a home building and drops at once when nothing is carried; its update (slot 7) drops the body (`FUN_1405ce1e0`) once the walk is over or 5 game minutes (elapsed hours x 60 >= 5,
+    **Observed**) have passed. `Task_TakeIntruderOutsideTown` walks to the town's exit point (`Town` vfunc 0x38 `FUN_140927120`, a cached point refreshed on a timer: 200 beyond a door of one of its
+    buildings through vfunc 0x290 `FUN_140929560`, else beyond the door of a building `FUN_1409b2ab0` finds; only partly read, **Observed**) and drops it there.
+  - 138 Find corpses: `FUN_1408cfb00`: a building of function 8 (cage) of the character's (`FUN_1408cbea0` mask 0x100) holding a dead,
+    non-robot body not in a give-up list, else `FUN_1408ce170` (the nearest dead uncarried body: sensed (0x10, 0), down `FUN_1407d1440`, not carried, a flag at +0x5bc, not in a give-up list; for
+    an animal finder only other races). 137 Corpse disposal: `FUN_1408d1090` → `FUN_1408d0770`(1, 0xb): the building of function 11 (BF_CORPSE_DISPOSAL, the Cooking pot / Corpse disposal
+    functionalities of `Four Cadavres` and the rebirth shredder, **Verified** data) among the character's buildings whose `UseableStuff` vfunc 0x4f0 holds, weight clamp(1 - d^2 / 2.097e7, 1e-5, 1) (`FUN_1409b2380`),
+    x100 for the character's faction (else it must pass the ally test `FUN_140621230`), x100 when it stands in the home building, x1e-5 for a player-type squad member when the parent building's vfunc 0x290 is false;
+    the heaviest wins. At the machine `Task_FeedCorpseIntoMachine` (136; slot 3 `FUN_1403567a0`, **Verified**) lets go of the body and kills/removes it ("incinerated or cooked"), plays `Armor_Worn` and
+    `Character_Drop_Person` and floats the functionality's `string` ("Incinération") over the machine.
+  - 45 Bodyguard, 31 Staying close and 97 Training have no finder: they act on the job's own target; 45 and 31 are goals (Task_Blank, rows above) on the job's character, the context menu gives
+    them as "Follow" (31) and "Bodyguard" (45), the dispatcher always adds 45 as a job. 97 is `Task_UseTrainingDummy` (slots 1-3 `FUN_1403513a0`, `FUN_14035c1e0`, `FUN_140345570`; **Verified** by
+    decompile): the dummy (function 7, BF_TRAINING; the animation event `Impact Dummy`, a "Training" progress bar for the player's characters) is operated through `UseableStuff` vfunc 0x4b0: with a
+    positive `stat used` (+0x3f8) it calls the continuous XP entry with a cap, `FUN_1408c64f0`(stats, dt, 2.0, &stat, cap = the float +0x1a4, stat number): nothing once the stat is at the cap, else the
+    same gain as the operating XP (`0.02 x dt x exp gain mult x 2.0 x race[stat]`) through the core curve with that cap, ((cap - stat) / cap)^2, so the stat approaches the cap without reaching it.
+    The cap is **Observed** to be the BUILDING's `output rate` (MkI 6, II 11, III 16; lock 11/21/31; assassin 10/20/30; the descriptions promise levels 5/10/15, the displayed level being the whole part);
+    the field +0x1a4 itself was not traced to the record. The bar shows the stat's fraction (+0x3a4). The row's conditions are 38 `hasOneWorkingArm`, 73, `isAtLocation`.
+    The XP is the user's own stat, not the injured one. Meitou: [simulation](../simulation.md#job-lists).
 - **UI** (strings, `FUN_14072b540` JobsPanel): "No jobs assigned", "To add jobs, hold shift key when giving an order", the Jobs toggle "If this is
   disabled then the character won't do any of the jobs listed."; tutorial: jobs are reordered by dragging and removed with X. Row text: **Unknown**.
-- **Unknown:** what +0xbc of the AI flags is; what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not
+- **Unknown:** what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not
   empty, output not full, at the machine); how 124 "Hauling to" gets the items it needs (B 67 `haveSomeResourcesFor`; no row's effect is 67).
+
+### Medic jobs
+
+**Observed** (`FUN_14099f690`, `FUN_140998200`, `FUN_140998b90`, `FUN_1406b2460`, `FUN_140643ca0`; constants **Verified**).
+- Kits: organic (item function 1) and robot (12) in the medic's inventory or its backpack.
+- Candidates: sensed (1, 0x10); with flag 0 (job 58) not of a robot race (RACE byte +0x7c, `is robot`; the splint finder tests the same byte);
+  not in a give-up list; not carried (unless the carrier fails a test); `FUN_140436610`(c, 1, 0) false; and either the medic is of the player
+  faction or the patient is not injured in a way `FUN_140644170` reports and is seen or heard.
+- Need = (organic kit: the medical state's float +0xac) + (robot kit: +0xa8); a dead patient (+0x164) -0.1; an NPC medic counts both without kits
+  for an imprisoned patient or one it owns. Another faction's patient: × 0.8 when vfunc 0x3f0 holds, else × relation / 100 (own faction 100), at least
+  0.05 (0.01 for a player medic under a condition).
+- Nearness = 1 - d² / 3397386.5 (about 1843 units), clamped to at most 1, and at least 0.4 when both stand in the same building.
+- Score = need × nearness. The same faction always counts; another faction only when the score is at least 0.1 **and** the medic is not of the
+  player's faction or Heal Allies is on. A patient in the give-up list scores × 0.05; ≥ 0.001 and on the planner's target list is taken at once.
+  The medic itself scores its plain need. The highest wins; with none, an NPC whose package says `heals strangers` looks again more widely.
+
+## Squad AI options
+
+The overview's AI tab, bytes of `DAT_142134690` (**Verified**: CAMERA writer `FUN_1403eb710` / reader `FUN_1403ebf50`, key per byte): +0x110 `heal`,
++0x111 `help`, +0x112 `rescue`, +0x113 `stay`, +0x114 `feed`, +0x115 `share`, +0x116 `sleep`, +0x117 `ditch`, +0x118 `sit`, +0x119 `eject`, +0x11a
+`shootfirst`. Captions and tooltips **Verified** in the exe. New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
+feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
+- **Heal Allies** (+0x110): the medic finder's other-faction test ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
+- **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a
+  player-faction looker each fighting candidate's threat (`FUN_14099a190`) is × `FUN_1409b2380`(d², 10, 1000, 0.1); one of another faction is
+  skipped with the option off and squared with it on. Result capped at 1.2.
+- **Rescue Allies** (+0x112): the character finder `FUN_1408cd2d0` ([carry-loot](carry-loot.md#32-goals-and-their-target-finders)) requires the
+  rescuer's faction only for a player-faction rescuer with the option off.
+- **Feed Animals** (+0x114): off, the player characters' eating `FUN_1405d29c0` returns for an animal (vfunc 0x248), and desire `FUN_140597cb0`
+  is 0 for an animal (its rows **Unknown**).
+- **Share Food** (+0x115): in `FUN_1405d29c0` (the player characters' eating), with no food in its own inventory or backpack and (`FUN_140856bc0`,
+  floats +0x4bc ≤ 0, +0x4b8 < 2.25, meanings **Unknown**) a character takes food from the backpack of a squad member within 200 units (squared 40000).
+- **Shoot first** (+0x11a): turret target choice `FUN_1404374d0`: enemies (sensed 4, 0x210) weigh `FUN_140435d70`(…, 1), unseen × 0.1, the current
+  target × 1.5; with none, a player gunner with the option takes sensed (2, 0x210) characters whose faction's type (+0x34) is 0 or 8 or whose
+  faction default (+0x60) is below -30, with weight 0.6.
 
 ## Unknowns
 

@@ -37,6 +37,8 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         public bool Landmark;
         /// <summary>A door part: the open amount its <see cref="Transform"/> was last posed at (-1: not yet; <c>WorldObjectRenderer.PoseDoor</c>).</summary>
         public float DoorOpen = -1;
+        /// <summary>A turret part (<see cref="PlacedMesh.Joints"/>): the <see cref="TurretPose.Version"/> its <see cref="Transform"/> was last posed at (0: from its placement; <c>WorldObjectRenderer.PoseTurret</c>).</summary>
+        public int TurretStamp;
         public GpuObjectMesh? Gpu;
         public ObjectMaterialSet? Materials;
         /// <summary>Whether it stands in a loaded building's interior, as last found (<c>WorldObjectRenderer.InInterior</c>); one object, so a view recorded on another thread reads it whole.</summary>

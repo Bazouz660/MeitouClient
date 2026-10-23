@@ -30,6 +30,15 @@ public sealed record CharacterPart
     public AttachSlot? Slot { get; init; }
     /// <summary>For <see cref="AttachMode.Bone"/>: the attachment point name (<c>hands</c>, <c>hip</c>, <c>back</c>, <c>back2</c>).</summary>
     public string? Point { get; init; }
+    /// <summary>Added to the attachment point's position, in the bone's frame: a carried crossbow's <c>equip offset</c> along z.</summary>
+    public Vector3 PointOffset { get; init; }
+    /// <summary>The part's own placement in the item it belongs to, before the attachment point's (a loaded bolt in its crossbow); null: none.</summary>
+    public Matrix4x4? Local { get; init; }
+    /// <summary>
+    /// When the part shows by the bolts loaded in its crossbow: 0 always; n &gt; 0 while at least n are (the loaded string with 1, bolt n - 1); -1 while none is (the unloaded
+    /// string).
+    /// </summary>
+    public int ShownShots { get; init; }
     /// <summary>The material the item was made with, if chosen (MATERIAL_SPECS_CLOTHING of clothing, MATERIAL_SPECS_WEAPON model of a weapon).</summary>
     public GameRecord? Material { get; init; }
     /// <summary>When the part shows: always, or only while the weapon in hand is sheathed or drawn (the first weapon's meshes).</summary>
@@ -41,8 +50,11 @@ public sealed record CharacterPart
     public int HideSide { get; init; }
 }
 
-/// <summary>When a <see cref="CharacterPart"/> shows: the first weapon has its sheathed <c>mesh</c> and its drawn <c>bare sword</c> and <c>sheath</c> in one appearance.</summary>
-public enum WeaponShown : byte { Always, Sheathed, Drawn }
+/// <summary>
+/// When a weapon part shows: always; while the hip melee weapon is sheathed (also while the crossbow or the back weapon is out) or drawn; while the crossbow is in the
+/// hands (shooting) or not (on the back); the same for the back melee weapon (which of the two is drawn goes by the arms, docs/game/combat.md "Arms").
+/// </summary>
+public enum WeaponShown : byte { Always, Sheathed, Drawn, RangedSheathed, RangedDrawn, BackSheathed, BackDrawn }
 
 /// <summary>A clothing texture layered onto the body (ARMOUR <c>vest texture</c>; character.hlsl "vest").</summary>
 public sealed record BodyLayer(GameRecord Record, string Diffuse, string? Normal, string? ColourMap);
@@ -283,10 +295,14 @@ public sealed class CharacterAppearance
             weapons.Add((extra, point, null));
         }
         result.LoadAttachmentPoints(installRoot, race);
-        // The weapon a fight draws is the first WEAPON (hip, then back: CharacterAssembly.MakeFighter); it gets its sheathed and drawn meshes, the renderer shows one set.
-        int inHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON);
+        // A fight draws the first WEAPON of the hip or of the back, by the arms (CharacterAssembly.MakeFighter, Fighter.Weapon): each gets its sheathed and drawn meshes, the
+        // renderer shows one set.
+        int hipInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "hip"), backInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "back");
+        int bowInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW);
         for (int i = 0; i < weapons.Count; i++)
-            result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model, both: !options.WeaponDrawn && i == inHand);
+            if (weapons[i].Weapon.Type == FcsRecordType.CROSSBOW) result.AddCrossbow(weapons[i].Weapon, weapons[i].Point, drawable: i == bowInHand);
+            else result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model,
+                both: !options.WeaponDrawn && (i == hipInHand || i == backInHand), back: i == backInHand);
         var lightRoll = new Random(loadout?.Seed ?? options.Seed ?? 0);
         foreach (var item in worn.Concat(items.Where(i => i.Type is FcsRecordType.ATTACHMENT or FcsRecordType.CONTAINER)).Concat(loadout?.Carried.Select(c => c.Record) ?? []))
             if (CarriedLights.From(db, installRoot, item, female, lightRoll) is { } carried) result.Lights.Add(carried);
@@ -380,15 +396,16 @@ public sealed class CharacterAppearance
         Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = field, Mode = AttachMode.SharedSkeleton, Slot = slot, Material = material });
     }
 
-    /// <param name="both">Both sets: the sheathed mesh tagged <see cref="WeaponShown.Sheathed"/>, the drawn ones <see cref="WeaponShown.Drawn"/> (a renderer that follows the fight).</param>
-    void AddWeapon(GameRecord weapon, bool female, string slot, bool drawn, int backCount, GameRecord? model = null, bool both = false)
+    /// <param name="both">Both sets: the sheathed mesh tagged <see cref="WeaponShown.Sheathed"/>, the drawn ones <see cref="WeaponShown.Drawn"/> (a renderer that follows the fight);
+    /// with <paramref name="back"/> <see cref="WeaponShown.BackSheathed"/> and <see cref="WeaponShown.BackDrawn"/>.</param>
+    void AddWeapon(GameRecord weapon, bool female, string slot, bool drawn, int backCount, GameRecord? model = null, bool both = false, bool back = false)
     {
         if (slot == "back" && backCount > 0) slot = "back2";
         string Field(string f) => f == "mesh" && female && weapon.GetPath("mesh female").Length > 0 ? "mesh female" : f;
         bool bare = weapon.GetPath("bare sword").Length > 0;
         if ((drawn || both) && bare)
         {
-            var shown = both ? WeaponShown.Drawn : WeaponShown.Always;
+            var shown = !both ? WeaponShown.Always : back ? WeaponShown.BackDrawn : WeaponShown.Drawn;
             Parts.Add(new CharacterPart { Record = weapon, Mesh = weapon.GetPath("bare sword"), Field = "bare sword", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands", Material = model, Shown = shown });
             if (weapon.GetPath("sheath") is { Length: > 0 } sheath)
                 Parts.Add(new CharacterPart { Record = weapon, Mesh = sheath, Field = "sheath", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Shown = shown });
@@ -398,7 +415,38 @@ public sealed class CharacterAppearance
         string field = Field("mesh");
         if (weapon.GetPath(field) is not { Length: > 0 } mesh) { Notes.Add($"'{weapon.Name}' has no mesh"); return; }
         Parts.Add(new CharacterPart { Record = weapon, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Material = model,
-            Shown = both && bare ? WeaponShown.Sheathed : WeaponShown.Always });
+            Shown = !(both && bare) ? WeaponShown.Always : back ? WeaponShown.BackSheathed : WeaponShown.Sheathed });
+    }
+
+    /// <summary>
+    /// A crossbow (docs/characters.md "Crossbows", <b>Observed</b>): its <c>mesh</c>, <c>extra mesh loaded</c> / <c>extra mesh unloaded</c> and a <c>live ammo</c> bolt per shot
+    /// (by <see cref="CharacterPart.ShownShots"/>) at <paramref name="slot"/>, pushed out by its <c>equip offset</c> (default 1.2) along the point's z, and, for the one a fight
+    /// draws (<paramref name="drawable"/>), the same in the <c>hands</c> point without the offset while shooting (<see cref="WeaponShown.RangedDrawn"/>): the original moves the
+    /// whole crossbow there.
+    /// </summary>
+    void AddCrossbow(GameRecord bow, string slot, bool drawable)
+    {
+        if (bow.GetPath("mesh") is not { Length: > 0 } mesh) { Notes.Add($"'{bow.Name}' has no mesh"); return; }
+        var offset = new Vector3(0, 0, bow.GetFloat("equip offset", 1.2f));
+        string loaded = bow.GetPath("extra mesh loaded"), unloaded = bow.GetPath("extra mesh unloaded");
+        string bolt = bow.GetPath("live ammo");
+        // A loaded bolt sits at the barrel (barrel pos Y, barrel pos Z, 0 in the crossbow's frame), turned -90 degrees about x, then about z.
+        var boltAt = Matrix4x4.CreateRotationZ(-MathF.PI / 2) * Matrix4x4.CreateRotationX(-MathF.PI / 2)
+            * Matrix4x4.CreateTranslation(bow.GetFloat("barrel pos Y", 0), bow.GetFloat("barrel pos Z", 0), 0);
+        int shots = Math.Max(bow.GetInt("num shots", 1), 1);
+        foreach (bool hands in drawable ? new[] { false, true } : [false])
+        {
+            var shown = !drawable ? WeaponShown.Always : hands ? WeaponShown.RangedDrawn : WeaponShown.RangedSheathed;
+            var point = hands ? "hands" : slot;
+            var at = hands ? Vector3.Zero : offset;
+            CharacterPart Part(string file, string field, int whenShots, Matrix4x4? local = null) =>
+                new() { Record = bow, Mesh = file, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = point, PointOffset = at, Shown = shown, ShownShots = whenShots, Local = local };
+            Parts.Add(Part(mesh, "mesh", 0));
+            if (loaded.Length > 0) Parts.Add(Part(loaded, "extra mesh loaded", 1));
+            if (unloaded.Length > 0) Parts.Add(Part(unloaded, "extra mesh unloaded", -1));
+            if (bolt.Length > 0)
+                for (int i = 0; i < shots; i++) Parts.Add(Part(bolt, "live ammo", i + 1, boltAt));
+        }
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ public class HungerTests
     {
         var m = Healthy();
         var events = new List<MedicalEvent>();
-        Run(m, Context(toughness: 0), 200, step: 0.25f, events);
+        Run(m, Context(toughness: 0), 200 / MedicalState.GameHoursPerSecond, step: 0.25f / MedicalState.GameHoursPerSecond, events);   // 200 game hours
         Assert.True(m.Dead);
         Assert.Equal(DeathCause.Starvation, m.Cause);
         Assert.Contains(events, e => e.Kind == MedicalEventKind.KnockedOut);
@@ -66,7 +66,7 @@ public class BloodAndKoTests
     [Fact]
     public void Wounds_clot_and_blood_recovers_once_bleeding_stops()
     {
-        var race = new RaceData { StringId = "x", HungerRate = 0, Anatomy = Human.Anatomy };   // never hungry, so 4000 hours can pass
+        var race = new RaceData { StringId = "x", HungerRate = 0, Anatomy = Human.Anatomy };   // never hungry, so 4000 seconds can pass
         var m = Healthy(race);
         var ctx = Context(race);
         m.ApplyHit(LArm, new HitDamage(20, 0, 0), ctx);   // wound 20 x 0.001 = 0.02
@@ -81,6 +81,33 @@ public class BloodAndKoTests
         Assert.True(m.Blood > lowest);
         Run(m, ctx, 4000, step: 1);
         Assert.Equal(cap, m.Blood, 3);
+    }
+}
+
+public class LegCollapseTests
+{
+    /// <summary>A body whose right leg has flesh <paramref name="flesh"/>, bandage <paramref name="bandage"/> and rig <paramref name="rig"/>, ticked once so it holds the KO point of toughness 50.</summary>
+    static MedicalState Leg(float flesh, float bandage = 0, float rig = 0, LimbState limb = LimbState.Original)
+    {
+        var m = Healthy();
+        var leg = m.Parts[RLeg];
+        (leg.Flesh, leg.Bandage, leg.Rig, leg.Limb) = (flesh, bandage, rig, limb);
+        m.Tick(1e-4f, Context(toughness: 50));
+        return m;
+    }
+
+    [Fact]
+    public void One_leg_crawls_below_the_ko_point_not_below_zero_and_bandage_not_rig_lifts_it()
+    {
+        // docs/game/ragdolls.md "Forced crawl": KO point at toughness 50 = -(10 + 75 x 0.5) = -47.5.
+        Assert.Equal(-47.5f, Leg(100).LegKoPoint, 3);
+        var limping = Leg(-20);
+        Assert.True(limping.Parts[RLeg].IsDown);             // under 0 by the arm rule, but a leg only limps there
+        Assert.False(limping.Crawling);
+        Assert.True(Leg(-60).Crawling);                      // past the KO point: down
+        Assert.False(Leg(-60, bandage: 30).Crawling);        // h - s + b = -30: up again
+        Assert.True(Leg(-60, rig: 40).Crawling);             // a splint does not count in this test
+        Assert.True(Leg(100, limb: LimbState.Stump).Crawling);   // a stump is always down
     }
 }
 

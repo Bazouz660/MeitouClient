@@ -19,8 +19,11 @@ sealed partial class GameHost
     int viewedFloor;
     readonly Dictionary<string, int> interiorView = new(StringComparer.Ordinal);
     readonly List<InteriorVolume> viewed = [];
-    /// <summary>The characters standing above the viewed floor of a building in the view: not drawn (game: FUN_1409fb540 hides objects above their building's floor).</summary>
-    readonly HashSet<CharacterId> aboveFloor = [];
+    /// <summary>
+    /// The characters not drawn: those above the viewed floor of a building in the view (game: FUN_1409fb540 hides objects above their building's floor), and
+    /// those inside a building seen from outside, whose interior is not drawn (a construction site is open, so its builders stay).
+    /// </summary>
+    readonly HashSet<CharacterId> hiddenIndoors = [];
     // The followed character and the floor it was last seen on (game: PI+0x270 / +0x290): the viewed floor follows that floor's changes only.
     CharacterId? floorFollow;
     int followedFloor = -1;
@@ -31,30 +34,30 @@ sealed partial class GameHost
     /// <summary>
     /// Every frame: each non-destroyed building that holds a player character (its indoor hull contains the character) is put in the interior view at the viewed
     /// floor; every other building shows its outside. Game: the player interface's per-frame interior driver over the player's characters. Then the characters
-    /// in those buildings above the viewed floor are marked to be left out of the draw list.
+    /// in those buildings above the viewed floor, and those inside the other buildings, are marked to be left out of the draw list.
     /// </summary>
     void UpdateInteriorView()
     {
         if (ActiveObjects is not { } objects) return;
         interiorView.Clear();
         viewed.Clear();
-        aboveFloor.Clear();
+        hiddenIndoors.Clear();
         var characters = session.CurrentSnapshot.Characters;
         FollowFloor(objects);
         foreach (var c in characters)
             if (c.IsPlayer && objects.InteriorAt(DrawnPosition(c), InsideMargin) is { } building && interiorView.TryAdd(building.PlacementId, viewedFloor))
                 viewed.Add(building);
         objects.InteriorView = interiorView;
-        if (viewed.Count == 0 || viewedFloor >= 3) return;
+        session.Camera.Floors ??= CameraFloor;
         foreach (var c in characters)
         {
             var at = DrawnPosition(c);
-            foreach (var building in viewed)
-                if (building.Contains(at, InsideMargin))
-                {
-                    if (building.FloorAt(at) > viewedFloor) aboveFloor.Add(c.Id);
-                    break;
-                }
+            if (viewed.Find(b => b.Contains(at, InsideMargin)) is { } inView)
+            {
+                if (viewedFloor < 3 && inView.FloorAt(at) > viewedFloor) hiddenIndoors.Add(c.Id);
+            }
+            // Strictly inside (no margin): one on the doorstep stays drawn.
+            else if (objects.InteriorAt(at) is { } closed && objects.Construction?.ContainsKey(closed.PlacementId) != true) hiddenIndoors.Add(c.Id);
         }
     }
 
@@ -74,6 +77,18 @@ sealed partial class GameHost
         int floor = objects.InteriorAt(at, InsideMargin) is { } building ? building.FloorAt(at) : 0;
         if (floorFollow != id || floor != followedFloor) ViewedFloor = floor;
         (floorFollow, followedFloor) = (id, floor);
+    }
+
+    /// <summary>
+    /// The highest floor up to the viewed one of the buildings in the interior view at (x, z), or null: the strategy camera's pivot rides on it, so a followed
+    /// character's floor stays the view's centre when panning lets go of it. Engine limit: other buildings are not ground to the camera (the game's rays hit them too).
+    /// </summary>
+    float? CameraFloor(float x, float z)
+    {
+        float? best = null;
+        foreach (var b in viewed)
+            if (interiorView.TryGetValue(b.PlacementId, out int floor) && b.FloorHeightAt(x, z, floor) is { } y && (best is null || y > best)) best = y;
+        return best;
     }
 
     /// <summary>How far (units) outside the indoor hull a character still counts as inside (engine choice: the feet stand on the floor at the hull's bottom).</summary>

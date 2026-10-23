@@ -28,6 +28,52 @@ sealed partial class PlayerInterface
 
     void PlaceBagWindow() => PlaceInventoryBeside("bag", left: true);
 
+    /// <summary>
+    /// The limbs window's place (<c>FUN_1406e4960</c>, <b>Verified</b>): its right edge on the left edge of the inventory (of its bag window when that is open), its top at the margin
+    /// (5% of the smaller screen side); when that is off the screen, at the left edge with the inventory and its bag pushed right of it. Not moved with the inventory afterwards.
+    /// </summary>
+    void PlaceLimbsWindow()
+    {
+        var frames = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent);
+        UiRect? Root(string screen) => faithfulScreens.IsOpen(screen) ? frames.FirstOrDefault(f => f.Id == screen)?.Controls.FirstOrDefault(c => c.Type == "Window")?.Bounds : null;
+        if (Root("limbs") is not { } limbs || (Root("bag") ?? Root("inventory")) is not { } anchor) return;
+        float margin = 0.05f * Math.Min(Width, Height);
+        float x = anchor.X - limbs.Width;
+        if (x < 0)
+        {
+            foreach (string screen in new[] { "inventory", "bag" })
+                if (faithfulScreens.IsOpen(screen)) faithfulScreens.SetOffset(screen, faithfulScreens.GetOffset(screen) + new Vector2(-x, 0));
+            x = 0;
+        }
+        faithfulScreens.SetOffset("limbs", faithfulScreens.GetOffset("limbs") + new Vector2(x - limbs.X, margin - limbs.Y));
+    }
+
+    /// <summary>
+    /// The four prosthetic slots (<c>FUN_1400d04d0</c>, <c>FUN_1401534f0</c>, <b>Verified</b>): arms 2 x 6 cells, legs 2 x 7; a slot is enabled only for a stump or a fitted
+    /// prosthetic, else drawn with the skin's disabled tile and refusing drops (the simulation's check).
+    /// </summary>
+    void ArrangeLimbSlots(List<UiControl> controls, CharacterSnapshot lead)
+    {
+        for (int k = 0; k < 4; k++)
+        {
+            string section = k switch { 0 => "left_arm_replace", 1 => "right_arm_replace", 2 => "left_leg_replace", _ => "right_leg_replace" };
+            int index = controls.FindIndex(c => c.Name == section);
+            if (index < 0) continue;
+            var slot = controls[index];
+            int state = (lead.LimbBits >> (2 * k)) & 3;
+            bool open = state is (int)Meitou.Simulation.Bodies.LimbState.Stump or (int)Meitou.Simulation.Bodies.LimbState.Replaced;
+            controls[index] = slot with
+            {
+                Bounds = slot.Bounds with { Width = 2 * InventoryCell, Height = (k < 2 ? 6 : 7) * InventoryCell },
+                Properties = new Dictionary<string, string>(slot.Properties)
+                {
+                    ["TileSize"] = FormattableString.Invariant($"{InventoryCell} {InventoryCell}"),
+                    ["State"] = open ? "normal" : "disabled",
+                },
+            };
+        }
+    }
+
     /// <summary>Puts window <paramref name="id"/> beside <paramref name="anchor"/>'s, moving the anchor in when the pair would not fit the screen.</summary>
     void PlaceInventoryBeside(string id, bool left, string anchor = "inventory")
     {
@@ -155,13 +201,15 @@ sealed partial class PlayerInterface
             inventoryScroll[id] = Math.Clamp(inventoryScroll.GetValueOrDefault(id) - direction * view.View.Height, 0, view.Maximum);
     }
 
-    void AddInventorySummary(List<UiControl> controls, CharacterSnapshot lead)
+    /// <summary>The data panel's lines; an animal's window shows only the weight and burden rows (the original's animal inventory, observed).</summary>
+    void AddInventorySummary(List<UiControl> controls, CharacterSnapshot lead, bool animal = false)
     {
         string weight = lead.ItemGrid?.TotalWeight.ToString("0", CultureInfo.InvariantCulture) ?? "0";
         if (lead.ItemGrid?.CarryCapacity is { } capacity) weight += "/" + capacity.ToString("0", CultureInfo.InvariantCulture);
         var (burdenWord, burdenColour) = BurdenText(lead.Hud?.Encumbrance ?? 1);
         const string muted = "0.3 0.28 0.25";
-        AddLines(controls, "datapanel", [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour), new("Disguise:", "None"), new("", ""),
+        AddLines(controls, "datapanel", animal ? [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour)]
+            : [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour), new("Disguise:", "None"), new("", ""),
             new("Slave of:", "-", muted, muted), new("Looks like slave:", "-", muted, muted)], 20 * InventoryScale);
     }
 

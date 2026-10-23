@@ -32,10 +32,7 @@ sealed partial class GameHost
     string SandboxRecord(Meitou.Data.GameDatabase db)
     {
         if (g.SandboxCharacter is { } want)
-            return db.Find(want)?.StringId
-                ?? db.Records.Values.Where(r => r.Type is FcsRecordType.CHARACTER or FcsRecordType.ANIMAL_CHARACTER).OrderBy(r => r.Type == FcsRecordType.ANIMAL_CHARACTER)
-                    .FirstOrDefault(r => string.Equals(r.Name, want, StringComparison.OrdinalIgnoreCase))?.StringId
-                ?? throw new ArgumentException($"--sandbox-character: no CHARACTER or ANIMAL_CHARACTER named '{want}'");
+            return FindCharacter(db, want)?.StringId ?? throw new ArgumentException($"--sandbox-character: no CHARACTER or ANIMAL_CHARACTER named '{want}'");
         var start = NewGameStart.Find(NewGameStart.LoadAll(db), NewGameStart.DefaultName);
         foreach (var link in start?.Squad ?? [])
         {
@@ -47,6 +44,19 @@ sealed partial class GameHost
         return "Greenlander";
     }
 
+    /// <summary>The record a command line names: any record by id, else the CHARACTER (before the ANIMAL_CHARACTER) of that name, ignoring case.</summary>
+    static Meitou.Data.GameRecord? FindCharacter(Meitou.Data.GameDatabase db, string want) =>
+        db.Find(want) ?? db.Records.Values.Where(r => r.Type is FcsRecordType.CHARACTER or FcsRecordType.ANIMAL_CHARACTER).OrderBy(r => r.Type == FcsRecordType.ANIMAL_CHARACTER)
+            .FirstOrDefault(r => string.Equals(r.Name, want, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary><c>--sandbox-races</c>: every person race with the first CHARACTER record that lists it as its only race (records with a choice of races are skipped), by race name.</summary>
+    static List<(string Race, string Record)> SandboxRaces(Meitou.Data.GameDatabase db) =>
+        db.Records.Values.Where(r => r.Type == FcsRecordType.CHARACTER)
+            .Select(r => (Id: r.StringId, Races: r.GetReferences("race").Select(x => x.TargetStringId).ToList()))
+            .Where(x => x.Races.Count == 1 && db.Find(x.Races[0]) is not null)
+            .GroupBy(x => x.Races[0]).Select(grp => (Race: db.Find(grp.Key)!.Name, Record: grp.First().Id))
+            .OrderBy(x => x.Race, StringComparer.Ordinal).ToList();
+
     /// <summary>Spawns the hero (and the foe), selects the hero, applies the command-line start state; returns where the camera starts.</summary>
     Vector3 SandboxSpawn()
     {
@@ -55,13 +65,21 @@ sealed partial class GameHost
         float half = g.Sandbox >= 2 ? 15 : 0;
         sandboxHero = population!.SpawnSandbox(world, record, new Vector2(-half, 0), player: true, yaw: MathF.PI / 2);
         if (g.Sandbox >= 2) sandboxFoe = population.SpawnSandbox(world, record, new Vector2(half, 0), player: false, yaw: -MathF.PI / 2);
-        // n above 2: the rest stand idle in rings round the pair (the player's faction, so they keep out of the fight), 15 units apart, a look each.
-        for (int i = 0, ring = 1, placed = 0; i < g.Sandbox - 2; i++, placed++)
+        // n above 2: the rest stand idle in rings round the pair (the player's faction, so they keep out of the fight), 15 units apart, a look each;
+        // --sandbox-races: then one of every person race, in the rings after them.
+        var extra = Enumerable.Repeat(record, Math.Max(0, g.Sandbox - 2)).ToList();
+        if (g.SandboxRaces)
+        {
+            var races = SandboxRaces(scene.Database!);
+            Console.WriteLine($"sandbox   {races.Count} races: {string.Join(", ", races.Select(x => x.Race))}");
+            extra.AddRange(races.Select(x => x.Record));
+        }
+        for (int i = 0, ring = 1, placed = 0; i < extra.Count; i++, placed++)
         {
             int perRing = (int)(2 * MathF.PI * (25 + 15 * ring) / 15);
             if (placed == perRing) { ring++; placed = 0; perRing = (int)(2 * MathF.PI * (25 + 15 * ring) / 15); }
             float r = 25 + 15 * ring, angle = 2 * MathF.PI * placed / perRing;
-            population.SpawnSandbox(world, record, new Vector2(r * MathF.Cos(angle), r * MathF.Sin(angle)), player: true, yaw: angle + MathF.PI, variant: i + 1);
+            population.SpawnSandbox(world, extra[i], new Vector2(r * MathF.Cos(angle), r * MathF.Sin(angle)), player: true, yaw: angle + MathF.PI, variant: i + 1);
         }
         playerSquad = world.Squads.Find(world.Player.Squad);
         world.Commands.Enqueue(new SelectCommand([sandboxHero]) { Tick = world.Tick });

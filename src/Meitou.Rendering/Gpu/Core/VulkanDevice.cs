@@ -212,6 +212,8 @@ public sealed unsafe class VulkanDevice : IDisposable
     public bool FillModeNonSolid { get; private set; }
     public bool DepthClamp { get; private set; }
     public bool SamplerAnisotropy { get; private set; }
+    /// <summary>Tessellation shaders are on (the core feature; the ground displacement uses them, GroundRelief).</summary>
+    public bool HasTessellation { get; private set; }
     /// <summary>Pipeline statistics queries are on (<see cref="VulkanDeviceOptions.TriangleMeasurements"/> and the device has them).</summary>
     public bool HasPipelineStatistics { get; private set; }
     /// <summary>VK_KHR_fragment_shader_barycentric is on (<see cref="VulkanDeviceOptions.TriangleMeasurements"/> and the device has it).</summary>
@@ -306,7 +308,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         sb.AppendLine($"Queues: graphics family {GraphicsFamily}, transfer family {TransferFamily}{(HasDedicatedTransfer ? " (dedicated)" : " (shared with graphics)")}");
         sb.AppendLine($"dynamicRendering={HasDynamicRendering} synchronization2={HasSynchronization2} timelineSemaphore={HasTimelineSemaphore} extendedDynamicState={HasExtendedDynamicState}");
         sb.AppendLine($"extendedDynamicState2={HasExtendedDynamicState2} (logicOp={HasExtendedDynamicState2LogicOp}, patchControlPoints={HasExtendedDynamicState2PatchControlPoints})");
-        sb.AppendLine($"fillModeNonSolid={FillModeNonSolid} depthClamp={DepthClamp} samplerAnisotropy={SamplerAnisotropy} textureCompressionBC={TextureCompressionBC} independentBlend={IndependentBlend} imageCubeArray={ImageCubeArray}");
+        sb.AppendLine($"fillModeNonSolid={FillModeNonSolid} depthClamp={DepthClamp} samplerAnisotropy={SamplerAnisotropy} tessellationShader={HasTessellation} textureCompressionBC={TextureCompressionBC} independentBlend={IndependentBlend} imageCubeArray={ImageCubeArray}");
         sb.AppendLine($"bindless={HasBindless} multiDrawIndirect={MultiDrawIndirect} drawIndirectFirstInstance={DrawIndirectFirstInstance} drawIndirectCount={DrawIndirectCount} shaderDrawParameters={ShaderDrawParameters}");
         sb.AppendLine($"pushDescriptor={HasPushDescriptor} (max {MaxPushDescriptors}) depthClipControl={HasDepthClipControl} vertexInputDynamicState={HasVertexInputDynamicState} swapchain={HasSwapchain}");
         sb.AppendLine($"rayQuery={HasRayQuery} bufferDeviceAddress={HasBufferDeviceAddress}");
@@ -769,6 +771,7 @@ public sealed unsafe class VulkanDevice : IDisposable
         FillModeNonSolid = core.FillModeNonSolid;
         DepthClamp = core.DepthClamp;
         SamplerAnisotropy = core.SamplerAnisotropy;
+        HasTessellation = core.TessellationShader;
         TextureCompressionBC = core.TextureCompressionBC;
         IndependentBlend = core.IndependentBlend;
         ImageCubeArray = core.ImageCubeArray;
@@ -896,6 +899,7 @@ public sealed unsafe class VulkanDevice : IDisposable
             FillModeNonSolid = FillModeNonSolid,
             DepthClamp = DepthClamp,
             SamplerAnisotropy = SamplerAnisotropy,
+            TessellationShader = HasTessellation,
             TextureCompressionBC = TextureCompressionBC,
             IndependentBlend = IndependentBlend,
             ImageCubeArray = ImageCubeArray,

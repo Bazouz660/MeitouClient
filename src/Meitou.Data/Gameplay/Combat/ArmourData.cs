@@ -45,6 +45,25 @@ public sealed record ArmourData
     public float AssassinationMult { get; init; } = 1;
     public float WeightKg { get; init; }
     public IReadOnlyList<PartCoverage> Coverage { get; init; } = [];
+    /// <summary><c>weather protection amount</c> (0..1): what the piece adds to its wearer's protection from each of <see cref="WeatherProtection"/> (docs/formats/weather.md "Protection").</summary>
+    public float WeatherProtectionAmount { get; init; }
+    /// <summary><c>weather protection0</c>, <c>1</c>...: the <see cref="World.WeatherAffecting"/> kinds the piece protects from, without None and repeats (the loader's set).</summary>
+    public IReadOnlyList<World.WeatherAffecting> WeatherProtection { get; init; } = [];
+
+    /// <summary>Whether the piece protects from <paramref name="kind"/>.</summary>
+    public bool Protects(World.WeatherAffecting kind) => WeatherProtection.Contains(kind);
+
+    /// <summary>
+    /// The non-zero values of a numbered list field (<c>name0</c>, <c>name1</c>...) as the loaders read it (<c>FUN_140898e90</c>, <c>FUN_14042efa0</c>, <b>Verified</b>):
+    /// up to the first missing key, a 0 skipped, each value once.
+    /// </summary>
+    public static IReadOnlyList<World.WeatherAffecting> NumberedKinds(GameRecord r, string prefix)
+    {
+        var list = new List<World.WeatherAffecting>();
+        for (int i = 0; r.Ints.TryGetValue(prefix + i, out int n); i++)
+            if (n != 0 && !list.Contains((World.WeatherAffecting)n)) list.Add((World.WeatherAffecting)n);
+        return list;
+    }
 
     /// <summary>The coverage percentage of a part (0 when the piece does not list it: a missing entry never covers).</summary>
     public int CoverageOf(string partStringId)
@@ -80,5 +99,7 @@ public sealed record ArmourData
         AssassinationMult = RecordReading.Float(r, "asassination mult", 1),
         WeightKg = RecordReading.Float(r, "weight kg", 0),
         Coverage = [.. r.GetReferences("part coverage").Select(x => new PartCoverage(x.TargetStringId, x.Values.Value0))],
+        WeatherProtectionAmount = RecordReading.Float(r, "weather protection amount", 0),
+        WeatherProtection = NumberedKinds(r, "weather protection"),
     };
 }

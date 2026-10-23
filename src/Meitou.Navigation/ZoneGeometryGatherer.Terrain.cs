@@ -15,14 +15,20 @@ internal sealed partial class ZoneGeometryGatherer
         return map.ReadWindow((int)Math.Floor(c0) - 1, (int)Math.Floor(r0) - 1, WorldLayout.SamplesPerZone + 3, WorldLayout.SamplesPerZone + 3);
     }
 
+    /// <summary>Heightmap samples per terrain quad edge.</summary>
+    const int TerrainSampleStep = 2;
+
+    static int FloorTo(int value, int step) => (int)Math.Floor(value / (double)step) * step;
+
     void AddTerrain(ZoneGeometry g)
     {
-        int step = 1;
-        int c0 = (int)Math.Floor(WorldLayout.ToSample(g.ZoneMin.X - g.Margin, g.ZoneMin.Y - g.Margin).Column);
-        int r0 = (int)Math.Floor(WorldLayout.ToSample(g.ZoneMin.X - g.Margin, g.ZoneMin.Y - g.Margin).Row);
+        // Every second sample (36 units), on even samples, as the original's generator (docs/game/pathfinding.md, terrain grid).
+        int step = TerrainSampleStep;
+        int c0 = FloorTo((int)Math.Floor(WorldLayout.ToSample(g.ZoneMin.X - g.Margin, g.ZoneMin.Y - g.Margin).Column), step);
+        int r0 = FloorTo((int)Math.Floor(WorldLayout.ToSample(g.ZoneMin.X - g.Margin, g.ZoneMin.Y - g.Margin).Row), step);
         int c1 = (int)Math.Ceiling(WorldLayout.ToSample(g.ZoneMax.X + g.Margin, g.ZoneMax.Y + g.Margin).Column);
         int r1 = (int)Math.Ceiling(WorldLayout.ToSample(g.ZoneMax.X + g.Margin, g.ZoneMax.Y + g.Margin).Row);
-        int cols = c1 - c0 + 1, rows = r1 - r0 + 1;
+        int cols = (c1 - c0 + step - 1) / step + 1, rows = (r1 - r0 + step - 1) / step + 1;
         var win = map.ReadWindow(c0, r0, cols, rows, step);
         float water = WorldWater.Height;
         var index = new int[cols * rows];

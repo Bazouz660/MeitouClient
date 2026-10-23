@@ -28,7 +28,7 @@ Part of the world view of `meitou-viewer` (and the game, which shares `src/Meito
   `1 - saturate(5 sunY)`, sent as `uAtmoMaps.z - 1`): the swamp's 827A47 (0.47, sun brightness 0.72; **Verified** BIOMES records) otherwise reads
   near black at night with or without GI. Lit surfaces, water foam and the probes' sky rays all read the floored map.
   The "Ambient light strength" slider (ours, default 1) multiplies the environment factor (`uAtmoLight.w`, the `WorldLighting` ambients), so the flat ambient,
-  the probes' sky rays and the GI resolve all scale; the sun's bounce does not. "Night ambient light strength" (ours, default 1) multiplies it further,
+  the probes' sky rays and the GI resolve all scale; the sun's bounce does not. "Night ambient light strength" (ours, default 1 = 1.2x the game's, `SkyRenderer.NightAmbientBase`) multiplies it further,
   weighted `1 - saturate(5 sunY)` like the exposure's night floor. Auto exposure does not undo either at night while the mean scene luminance stays under
   that floor (0.28, so the scale is pinned at 0.55 / 0.28); by day, inside the 0.8..1.2 band, it largely does.
   New shaders include `AtmosphereShaders.Functions` (sky.md, "Using the atmosphere in a new shader"). The old colour model

@@ -125,10 +125,16 @@ public sealed class NavSurfaces
         return h;
     }
 
-    /// <summary>The walkable non-terrain triangles of gathered geometry (buildings and foliage) whose box touches the zone box grown by <paramref name="margin"/>.</summary>
+    /// <summary>
+    /// The walkable non-terrain triangles of gathered geometry (buildings and foliage) whose box touches the zone box grown by <paramref name="margin"/>, without their parts
+    /// inside a solid (<see cref="ZoneGeometry.Solids"/>, the builder's rule): a stair box's top face goes on inside the foundation it leans on, and a walker's height
+    /// followed it down under the floor (docs/game/pathfinding.md, "Solids").
+    /// </summary>
     internal static Vector3[] From(ZoneGeometry g, Vector2 zoneMin, Vector2 zoneMax, float margin = 8)
     {
         var list = new List<Vector3>();
+        var pieces = new List<List<Vector3>>();
+        var next = new List<List<Vector3>>();
         var v = g.Vertices;
         for (int t = g.BuildingFirstTriangle; t < g.TriangleCount; t++)
         {
@@ -137,8 +143,61 @@ public sealed class NavSurfaces
             var a = new Vector3(v[ia], v[ia + 1], v[ia + 2]); var b = new Vector3(v[ib], v[ib + 1], v[ib + 2]); var c = new Vector3(v[ic], v[ic + 1], v[ic + 2]);
             if (MathF.Max(a.X, MathF.Max(b.X, c.X)) < zoneMin.X - margin || MathF.Min(a.X, MathF.Min(b.X, c.X)) > zoneMax.X + margin
                 || MathF.Max(a.Z, MathF.Max(b.Z, c.Z)) < zoneMin.Y - margin || MathF.Min(a.Z, MathF.Min(b.Z, c.Z)) > zoneMax.Y + margin) continue;
-            list.Add(a); list.Add(b); list.Add(c);
+            pieces.Clear();
+            pieces.Add([a, b, c]);
+            float x0 = MathF.Min(a.X, MathF.Min(b.X, c.X)), x1 = MathF.Max(a.X, MathF.Max(b.X, c.X));
+            float z0 = MathF.Min(a.Z, MathF.Min(b.Z, c.Z)), z1 = MathF.Max(a.Z, MathF.Max(b.Z, c.Z));
+            foreach (var solid in g.Solids)
+            {
+                if (x1 < solid.Min.X || x0 > solid.Max.X || z1 < solid.Min.Y || z0 > solid.Max.Y) continue;
+                next.Clear();
+                foreach (var piece in pieces) Outside(piece, solid, next);
+                (pieces, next) = (next, pieces);
+                if (pieces.Count == 0) break;
+            }
+            foreach (var piece in pieces)
+                for (int k = 1; k + 1 < piece.Count; k++) { list.Add(piece[0]); list.Add(piece[k]); list.Add(piece[k + 1]); }
         }
         return [.. list];
+    }
+
+    /// <summary>
+    /// Adds the parts of a convex polygon outside the solid to <paramref name="output"/> (convex pieces). Inside means as in the builder: below every face, by more than
+    /// <see cref="ZoneNavMeshBuilder.SolidTopInset"/> under the upward ones, so the solid's own top stays.
+    /// </summary>
+    static void Outside(List<Vector3> polygon, NavSolid solid, List<List<Vector3>> output)
+    {
+        // Wholly outside one face: kept whole (most polygons near a solid, its own top among them).
+        foreach (var plane in solid.Planes)
+        {
+            var n = new Vector3(plane.X, plane.Y, plane.Z);
+            float d = plane.W + (plane.Y > 0 ? ZoneNavMeshBuilder.SolidTopInset : 0);
+            bool all = true;
+            foreach (var p in polygon) if (Vector3.Dot(n, p) + d < 0) { all = false; break; }
+            if (all) { output.Add(polygon); return; }
+        }
+        var rest = polygon;
+        foreach (var plane in solid.Planes)
+        {
+            var n = new Vector3(plane.X, plane.Y, plane.Z);
+            float d = plane.W + (plane.Y > 0 ? ZoneNavMeshBuilder.SolidTopInset : 0);
+            List<Vector3> outside = [], inside = [];
+            for (int i = 0; i < rest.Count; i++)
+            {
+                var p = rest[i];
+                var q = rest[(i + 1) % rest.Count];
+                float dp = Vector3.Dot(n, p) + d, dq = Vector3.Dot(n, q) + d;
+                (dp >= 0 ? outside : inside).Add(p);
+                if (dp >= 0 != dq >= 0)
+                {
+                    var cut = Vector3.Lerp(p, q, dp / (dp - dq));
+                    outside.Add(cut);
+                    inside.Add(cut);
+                }
+            }
+            if (outside.Count >= 3) output.Add(outside);
+            if (inside.Count < 3) return;
+            rest = inside;
+        }
     }
 }

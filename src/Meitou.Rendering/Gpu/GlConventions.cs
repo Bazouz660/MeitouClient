@@ -151,6 +151,7 @@ public static class GlConventions
         PrimitiveType.LineStrip => PrimitiveTopology.LineStrip,
         PrimitiveType.Points => PrimitiveTopology.PointList,
         PrimitiveType.TriangleFan => PrimitiveTopology.TriangleFan,
+        PrimitiveType.PatchList => PrimitiveTopology.PatchList,
         _ => throw new NotSupportedException($"primitive {mode}"),
     };
 
@@ -444,6 +445,7 @@ public enum PrimitiveType : int
     Triangles = 0x4,
     TriangleStrip = 0x5,
     TriangleFan = 0x6,
+    PatchList = 0xE,
 }
 
 /// <summary>What a render target does with its contents when the pass begins (GL's load op).</summary>

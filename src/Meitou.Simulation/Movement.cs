@@ -38,6 +38,15 @@ public enum CharacterTask : byte
     Haul = 15,
     /// <summary>Stands where it is and prospects for one game second (<see cref="CharacterCold.Prospecting"/>, <see cref="Production.ProductionSystem"/>; the original's <c>Task_Prospecting</c>, order 150).</summary>
     Prospect = 16,
+    /// <summary>
+    /// A builder whose site waits for materials it does not carry walks to <see cref="CharacterCold.FetchSite"/> or ground item <see cref="CharacterCold.FetchItem"/> and takes
+    /// <see cref="CharacterCold.FetchRecord"/>, then goes back to <see cref="CharacterCold.BuildSite"/> (<see cref="Construction.ConstructionSystem"/>; the original's task 247 "Collecting resource").
+    /// </summary>
+    FetchMaterials = 17,
+    /// Walks to a bed and lies in it, then lies there (<see cref="Locks.BedSystem"/>; the original's <c>Task_UseBed</c>, orders 98, 100, 258). Lying in a bed (<see cref="Locks.HeldState.Bed"/>)
+    /// with any other task, the character gets up: another order replaced it.
+    /// </summary>
+    Sleep = 18,
 }
 
 /// <summary>Bits of <see cref="CharacterHot.Flags"/> the movement system uses.</summary>

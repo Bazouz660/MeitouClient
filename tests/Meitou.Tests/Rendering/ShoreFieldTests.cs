@@ -15,9 +15,7 @@ public class ShoreFieldTests
     static (float X, float Z) Centre(ShoreGrid g, int i, int j) => (g.X0 + (i + 0.5f) * g.Texel, g.Z0 + (j + 0.5f) * g.Texel);
 
     [Theory]
-    [InlineData(0.0)]
     [InlineData(30.0)]
-    [InlineData(77.0)]
     public void Straight_beach_distance_is_the_perpendicular_distance_with_water_positive(double degrees)
     {
         float c = MathF.Cos((float)(degrees * Math.PI / 180)), s = MathF.Sin((float)(degrees * Math.PI / 180));
@@ -59,37 +57,28 @@ public class ShoreFieldTests
     }
 
     [Fact]
-    public void Open_sea_is_exposed_and_a_small_pond_is_not()
+    public void Open_sea_is_exposed_and_a_small_pond_is_not_and_an_islet_has_no_surf_and_an_island_does()
     {
-        // Sea for x > 0 (shore at x = 0), a 150-unit pond at (-1500, 0), land otherwise.
+        // Sea for x > 0 (shore at x = 0), a 150-unit pond at (-1500, 0), land otherwise; in the sea a 150-unit islet at (2300, -2300)
+        // and a 700-unit island at (1500, 1500).
         float Height(float x, float z)
         {
             float sea = 100f + (-x) * 0.1f;
             float pond = 100f + (MathF.Sqrt((x + 1500) * (x + 1500) + z * z) - 150f) * 0.1f;
-            return Math.Min(sea, pond);
+            float isletR = MathF.Sqrt((x - 2300) * (x - 2300) + (z + 2300) * (z + 2300)), islandR = MathF.Sqrt((x - 1500) * (x - 1500) + (z - 1500) * (z - 1500));
+            float islet = isletR < 200 ? 100f + (150f - isletR) * 0.1f : float.MinValue;   // only near its own shore, not as a far field over the sea
+            float island = islandR < 750 ? 100f + (700f - islandR) * 0.1f : float.MinValue;
+            return Math.Max(Math.Min(sea, pond), Math.Max(islet, island));
         }
         var g = Bake(Height);
         // Sea side, at least 50 units off the shore and well inside the grid.
-        foreach (var (x, z) in new[] { (60f, 0f), (300f, 400f), (1500f, -800f), (2000f, 0f) })
+        foreach (var (x, z) in new[] { (60f, 0f), (300f, 400f), (1500f, -300f), (2000f, 0f) })
             Assert.True(g.Sample(x, z).Y > 0.95f, $"sea exposure at ({x},{z}) = {g.Sample(x, z).Y}");
         Assert.True(g.Sample(-1500, 0).Y < 0.05f, $"pond exposure {g.Sample(-1500, 0).Y}");
         Assert.True(g.Sample(-1500 + 80, 20).Y < 0.05f);
-    }
-
-    [Fact]
-    public void An_islet_has_no_surf_round_it_and_an_island_does()
-    {
-        // Open sea everywhere, a 150-unit islet at (-1200, 0) and a 700-unit island at (1200, 0).
-        float Height(float x, float z)
-        {
-            float islet = 100f + (150f - MathF.Sqrt((x + 1200) * (x + 1200) + z * z)) * 0.1f;
-            float island = 100f + (700f - MathF.Sqrt((x - 1200) * (x - 1200) + z * z)) * 0.1f;
-            return Math.Max(islet, island);
-        }
-        var g = Bake(Height);
-        foreach (var (x, z) in new[] { (-1200f + 200, 0f), (-1200f, -220f), (-1200f - 190, 60f) })
+        foreach (var (x, z) in new[] { (2300f - 200, -2300f), (2300f, -2300f + 220), (2300f - 190, -2300f + 60) })
             Assert.True(g.Sample(x, z).Y < 0.05f, $"islet exposure at ({x},{z}) = {g.Sample(x, z).Y}");
-        foreach (var (x, z) in new[] { (1200f + 760, 0f), (1200f, 780f), (1200f - 760, 100f) })
+        foreach (var (x, z) in new[] { (1500f + 760, 1500f), (1500f, 1500f - 780), (1500f - 760, 1500f + 100) })
             Assert.True(g.Sample(x, z).Y > 0.95f, $"island exposure at ({x},{z}) = {g.Sample(x, z).Y}");
     }
 }

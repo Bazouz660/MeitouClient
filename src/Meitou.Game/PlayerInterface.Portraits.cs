@@ -23,6 +23,13 @@ sealed partial class PlayerInterface
     /// <summary>The atlas cells after the squad's: the conversation window's speaker and player character.</summary>
     public const int DialogueNpcCell = PortraitCells - 2, DialoguePlayerCell = PortraitCells - 1;
 
+    /// <summary>How much of its atlas cell a portrait fills (<see cref="CharacterRenderer.PortraitSizeFor"/>); the host sets it with the renderer's look.</summary>
+    public int PortraitSize { get; set; } = CharacterRenderer.FaithfulPortraitSize;
+
+    /// <summary>An ImageBox's <c>ImageRect</c> for atlas cell <paramref name="cell"/>: the part of the cell its portrait fills.</summary>
+    string PortraitRect(int cell) => FormattableString.Invariant(
+        $"{cell % CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {cell / CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {PortraitSize} {PortraitSize}");
+
     /// <summary>The characters the squad bar shows, the active squad's in order: the first atlas cells (<see cref="PortraitMembers"/>).</summary>
     public IReadOnlyList<CharacterSnapshot> SquadBarMembers()
     {
@@ -57,9 +64,8 @@ sealed partial class PlayerInterface
         foreach (var (name, cell) in new[] { ("NpcPortrait", DialogueNpcCell), ("PlayerPortrait", DialoguePlayerCell) })
         {
             if (controls.FirstOrDefault(c => c.Name == name) is not { } frame) continue;
-            int column = cell % CharacterRenderer.PortraitColumns, row = cell / CharacterRenderer.PortraitColumns, size = CharacterRenderer.PortraitSize;
             controls.Add(new($"{name}-image", "ImageBox", frame.Bounds, "", "", "", true,
-                new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = FormattableString.Invariant($"{column * size} {row * size} {size} {size}") },
+                new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = PortraitRect(cell) },
                 Vector4.Zero, Pickable: false, Clip: frame.Clip));
         }
     }
@@ -86,8 +92,7 @@ sealed partial class PlayerInterface
             var state = PortraitStateOf(m, camera.Eye, camera.Target);
             controls.Add(PortraitImage($"portrait-back-{i}", At(0, 0, 135, 135), "Background", (state & PortraitState.Hurt) != 0 ? "Hurt" : "Normal", PortraitFlash(m.Id, state)));
             if (BackOverlayName(state) is { Length: > 0 } back) controls.Add(PortraitImage($"portrait-back-overlay-{i}", At(6, 5, 124, 124), "BackOverlay", back));
-            int column = i % CharacterRenderer.PortraitColumns, row = i / CharacterRenderer.PortraitColumns, cell = CharacterRenderer.PortraitSize;
-            var portrait = new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = FormattableString.Invariant($"{column * cell} {row * cell} {cell} {cell}") };
+            var portrait = new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = PortraitRect(i) };
             if ((state & PortraitState.Faded) != 0) portrait["Alpha"] = "0.25";
             controls.Add(new($"portrait-{i}", "ImageBox", At(6, 6, 124, 123), "", "", "", true, portrait, Vector4.Zero));
             if (FrontOverlayName(state) is { Length: > 0 } front) controls.Add(PortraitImage($"portrait-front-overlay-{i}", At(6, 6, 124, 123), "FrontOverlay", front));

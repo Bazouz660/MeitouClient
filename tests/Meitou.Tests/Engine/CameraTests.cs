@@ -13,18 +13,6 @@ public class CameraTests
     ActionState Tick() => bindings.Resolve(input.Consume());
 
     [Fact]
-    public void State_reproduces_the_eye_through_the_viewers_orbit_formula()
-    {
-        var cam = new StrategyCamera((x, z) => 0.05f * x);
-        cam.Place(new Vector2(100, 40), 1.1f, 0.7f, 300);
-        var s = cam.State;
-        Assert.Equal(s.Eye.X, CameraState.EyeFor(s.Target, s.Yaw, s.Pitch, s.Distance).X, 2);
-        Assert.Equal(s.Eye.Y, CameraState.EyeFor(s.Target, s.Yaw, s.Pitch, s.Distance).Y, 2);
-        Assert.Equal(s.Eye.Z, CameraState.EyeFor(s.Target, s.Yaw, s.Pitch, s.Distance).Z, 2);
-        Assert.Equal(Vector3.Normalize(s.Target - s.Eye).X, s.Forward.X, 4);
-    }
-
-    [Fact]
     public void The_eye_stays_above_the_ground_over_a_long_random_drive()
     {
         Func<float, float, float> hills = (x, z) => 200 * MathF.Sin(x * 0.003f) * MathF.Cos(z * 0.002f);

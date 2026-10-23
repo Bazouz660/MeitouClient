@@ -171,24 +171,6 @@ public class WeatherTests
             Assert.Equal(raw.GetInt("wind update time") == 0 ? WeatherDef.NeverMinutes : raw.GetInt("wind update time"), w.WindUpdateMinutes);
             Assert.True(w.WindUpdateMinutes > 0);
         }
-    }
-
-    [Fact]
-    [Slow]
-    public void Base_game_seasons_and_regions_follow_the_calendar_and_fallback_rules()
-    {
-        Assert.SkipWhen(InstallData.Install is null, $"No Kenshi install configured ({GameInstall.EnvironmentVariable}).");
-        var db = InstallData.BaseGame!;
-        var data = WeatherData.Load(db);
-        string Lengths(string region) => string.Join("/", data.FindRegion(region)!.Seasons.Select(s => s.Days));
-        Assert.Equal("75/25", Lengths("Desert"));
-        Assert.Equal(["Desert Blasts", "Desert Summer"], data.FindRegion("Desert")!.Seasons.Select(s => s.Season.Name));
-        Assert.Equal("33/17/50", Lengths("Skinner's Roam"));
-        Assert.Equal(["Clear Times", "Clear AND Storm Mix SHORTSEASON", "Dust Storm Approach"], data.FindRegion("Skinner's Roam")!.Seasons.Select(s => s.Season.Name));
-        Assert.Equal("50/50", Lengths("Cannibal Plains"));
-        Assert.Equal("91/9", Lengths("Spider Plains"));
-        Assert.Equal(["south coast", "purple desert"], data.FindRegion("Spider Plains")!.Seasons.Select(s => s.Season.Name));
-        Assert.Equal("100", Lengths("Venge"));
 
         // Regions without seasons are always clear.
         foreach (var name in new[] { "Central", "Arm of Okran", "Berserker Country", "Empire", "Obedience", "Rebirth", "Watcher's Rim" })
@@ -212,6 +194,17 @@ public class WeatherTests
         var windowed = data.Seasons.Where(s => s.Weathers.Any(w => w.Weather.HasTimeWindow)).ToList();
         Assert.Equal(["Desert Calm hot 0.6", "venge beams"], windowed.SelectMany(s => s.Weathers).Select(w => w.Weather).Where(w => w.HasTimeWindow).Select(w => w.Name).Distinct().Order());
         Assert.All(windowed, s => Assert.Equal(("Default", 0), (s.Weathers[^1].Weather.Name, s.Weathers[^1].Weight)));
+
+        // Season lengths and names per region, and the venge beams window.
+        string Lengths(string region) => string.Join("/", data.FindRegion(region)!.Seasons.Select(s => s.Days));
+        Assert.Equal("75/25", Lengths("Desert"));
+        Assert.Equal(["Desert Blasts", "Desert Summer"], data.FindRegion("Desert")!.Seasons.Select(s => s.Season.Name));
+        Assert.Equal("33/17/50", Lengths("Skinner's Roam"));
+        Assert.Equal(["Clear Times", "Clear AND Storm Mix SHORTSEASON", "Dust Storm Approach"], data.FindRegion("Skinner's Roam")!.Seasons.Select(s => s.Season.Name));
+        Assert.Equal("50/50", Lengths("Cannibal Plains"));
+        Assert.Equal("91/9", Lengths("Spider Plains"));
+        Assert.Equal(["south coast", "purple desert"], data.FindRegion("Spider Plains")!.Seasons.Select(s => s.Season.Name));
+        Assert.Equal("100", Lengths("Venge"));
         var venge = data.FindRegion("Venge")!.Seasons[0].Season;
         Assert.Equal(5f, venge.Weathers.Single(w => w.Weather.Name.StartsWith("venge beams")).Weather.StartTime);
         Assert.Equal(23f, venge.Weathers.Single(w => w.Weather.Name.StartsWith("venge beams")).Weather.EndTime);

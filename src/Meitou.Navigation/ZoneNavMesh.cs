@@ -34,6 +34,11 @@ public sealed class ZoneNavMesh
     public int[]? DoorOf { get; internal set; }
     /// <summary>The walkable collision triangles the polygons stand for, for exact heights (<see cref="NavSurfaces"/>); null when none were kept.</summary>
     public NavSurfaces? Surfaces { get; internal set; }
+    /// <summary>
+    /// Per polygon: the heights of its own surface on a grid (<see cref="HeightGrid"/>), null for one that lies on its plane; the array is null when none has any
+    /// (docs/game/pathfinding.md, "Heights").
+    /// </summary>
+    public HeightGrid?[]? Heights { get; internal set; }
     /// <summary>The zone's heightmap samples (exact terrain heights; the simulation's own grid is exact only near where the game started). Read when the zone loads, not cached.</summary>
     public Meitou.Data.World.HeightWindow? Terrain { get; internal set; }
 
@@ -77,9 +82,13 @@ public sealed class ZoneNavMesh
         return w[vertex];
     }
 
+    /// <summary><see cref="Heights"/> from a list with one entry per polygon (null when every entry is).</summary>
+    internal static HeightGrid?[]? HeightsOf(List<HeightGrid?> list) => list.Any(h => h is not null) ? [.. list] : null;
+
     /// <summary>A copy without the pruned polygons (and the vertices only they used), neighbours renumbered; what the game keeps and caches.</summary>
     public ZoneNavMesh WithoutPruned()
     {
+        var heights = new List<HeightGrid?>();
         var map = new int[PolygonCount];
         int count = 0;
         for (int p = 0; p < PolygonCount; p++) map[p] = Kept[p] ? count++ : -1;
@@ -94,6 +103,7 @@ public sealed class ZoneNavMesh
         {
             if (!Kept[p]) continue;
             int n = map[p];
+            heights.Add(Heights?[p]);
             polygons[n] = Polygons[p].Select(v =>
             {
                 if (!vertexMap.TryGetValue(v, out int i)) { i = vertices.Count; vertexMap[v] = i; vertices.Add(Vertices[v]); }
@@ -114,6 +124,7 @@ public sealed class ZoneNavMesh
         {
             ZoneX = ZoneX, ZoneZ = ZoneZ, Vertices = [.. vertices], Polygons = polygons, Neighbours = neighbours, Areas = areas, Links = links,
             Kept = Enumerable.Repeat(true, count).ToArray(), BoundsMin = BoundsMin, BoundsMax = BoundsMax, DoorIds = DoorIds, DoorOf = doorOf, Surfaces = Surfaces, Terrain = Terrain,
+            Heights = HeightsOf(heights),
         };
     }
 
@@ -259,9 +270,19 @@ public sealed class ZoneNavMesh
         return sum / p.Length;
     }
 
-    /// <summary>Height of the polygon's surface at (x, z) (its plane through the first three vertices), assuming the point lies inside.</summary>
+    /// <summary>
+    /// Height of the polygon's surface at (x, z), assuming the point lies inside: its height samples there (<see cref="Heights"/>), else its fan over the corners.
+    /// </summary>
     public float HeightAt(int polygon, float x, float z)
     {
+        if (Heights?[polygon] is { } grid)
+        {
+            if (grid == HeightGrid.OnTerrain)
+            {
+                if (Terrain is { } terrain && terrain.TryHeightAt(x, z, out float ground)) return MathF.Max(ground, Meitou.Data.World.WorldWater.Height);
+            }
+            else if (grid.TryHeightAt(x, z, out float sampled)) return sampled;
+        }
         var p = Polygons[polygon];
         // The polygon is convex and nearly planar: interpolate over the fan triangle containing the point.
         var a = Vertices[p[0]];
@@ -340,5 +361,45 @@ public sealed class ZoneNavMesh
             }
         }
         return result;
+    }
+}
+
+/// <summary>
+/// The heights of one polygon's surface every <see cref="Step"/> units from (<see cref="X0"/>, <see cref="Z0"/>), row-major, NaN where the heightfield had none of the
+/// polygon's own surface (docs/game/pathfinding.md, "Heights").
+/// </summary>
+public sealed class HeightGrid(float x0, float z0, float step, int columns, int rows, float[] values)
+{
+    /// <summary>For a polygon lying on the terrain: its height is the zone's heightmap (<see cref="ZoneNavMesh.Terrain"/>, the water's height over the sea), no samples kept.</summary>
+    public static readonly HeightGrid OnTerrain = new(0, 0, 1, 0, 0, []);
+
+    public float X0 { get; } = x0;
+    public float Z0 { get; } = z0;
+    public float Step { get; } = step;
+    public int Columns { get; } = columns;
+    public int Rows { get; } = rows;
+    public float[] Values { get; } = values;
+
+    /// <summary>The height at (x, z) between the four samples round it, those that have none left out; false when none of the four has one.</summary>
+    public bool TryHeightAt(float x, float z, out float height)
+    {
+        float u = Math.Clamp((x - X0) / Step, 0, Columns - 1), v = Math.Clamp((z - Z0) / Step, 0, Rows - 1);
+        int i = Math.Min((int)u, Math.Max(0, Columns - 2)), j = Math.Min((int)v, Math.Max(0, Rows - 2));
+        float fu = Math.Clamp(u - i, 0, 1), fv = Math.Clamp(v - j, 0, 1);
+        int i1 = Math.Min(i + 1, Columns - 1), j1 = Math.Min(j + 1, Rows - 1);
+        float sum = 0, weight = 0, plain = 0;
+        int found = 0;
+        Add(Values[j * Columns + i], (1 - fu) * (1 - fv));
+        Add(Values[j * Columns + i1], fu * (1 - fv));
+        Add(Values[j1 * Columns + i], (1 - fu) * fv);
+        Add(Values[j1 * Columns + i1], fu * fv);
+        height = weight > 1e-4f ? sum / weight : found > 0 ? plain / found : 0;
+        return found > 0;
+
+        void Add(float h, float w)
+        {
+            if (float.IsNaN(h)) return;
+            sum += h * w; weight += w; plain += h; found++;
+        }
     }
 }

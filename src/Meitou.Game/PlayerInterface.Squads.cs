@@ -35,6 +35,8 @@ sealed partial class PlayerInterface
     void BindSquadTabs(UiBindings b)
     {
         var tabs = SquadTabSquads();
+        // No player character at all (the --battle, --duel, a sandbox of NPCs): nothing to select, so no empty bar.
+        if (PlayerCharacters().Count == 0) { b.Hidden.Add("SquadPanel"); return; }
         b.TabCaptions["SquadPanel"] = [.. tabs.Select(s => s.Name)];
         b.SelectedTabs["SquadPanel"] = Math.Max(0, tabs.FindIndex(s => s.Id == session.CurrentSnapshot.ActiveSquad));
     }
@@ -154,9 +156,8 @@ sealed partial class PlayerInterface
         controls.Add(new($"{name}-back", "Widget", At(0, 0, 1, 1), "", "", "", true, new Dictionary<string, string>(), new Vector4(0.458f, 0.423f, 0.396f, 1), Pickable: false, Clip: clip));
         if (atlasCell >= 0)
         {
-            int column = atlasCell % CharacterRenderer.PortraitColumns, row = atlasCell / CharacterRenderer.PortraitColumns, px = CharacterRenderer.PortraitSize;
             controls.Add(new($"{name}-image", "ImageBox", At(0.0375f, 0.0375f, 0.9125f, 0.9125f), "", "", "", true,
-                new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = FormattableString.Invariant($"{column * px} {row * px} {px} {px}") },
+                new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = PortraitRect(atlasCell) },
                 Vector4.Zero, Pickable: false, Clip: clip));
         }
         controls.Add(new($"{name}-name", "TextBox", At(0.05f, 0.05f, 0.9f, 0.8875f), member.Name, "", "Kenshi_TextboxStandardText", true,

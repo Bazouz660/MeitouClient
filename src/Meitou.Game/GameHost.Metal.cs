@@ -310,7 +310,7 @@ sealed partial class GameHost
         // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.
         InteriorMaskRenderer? interiorMask = objects is null ? null : new InteriorMaskRenderer(ctx, objects);
         worldGpu.InteriorMask = interiorMask;
-        hostWeather = weather;
+        fallbackWeather = weather;
         hostLamps = lamps;
         hostObjects = objects;
         hostFoliage = foliage;
@@ -372,7 +372,7 @@ sealed partial class GameHost
         if (characters is not null) Console.WriteLine($"metal     crowd ready ({characters.Assets} appearances)");
         else if (scene.Database is { } characterDb && !g.NoPopulation)
         {
-            characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0 };
+            characters = new CharacterRenderer(ctx, install, characterDb, assets, characterRigs) { Source = FillWorldDrawList, SettleFirst = true, LoadBudget = 0, GeneratedLod = o.CharacterLod, SkinShading = o.SkinShading, SkinRaces = config.SkinRaces, EnhancedIcons = o.MeitouIcons, PoseClock = () => realTime.Elapsed.TotalSeconds };
             worldGpu.Characters = characters;
             Console.WriteLine("metal     characters ready (population draw list)");
         }
@@ -435,7 +435,7 @@ sealed partial class GameHost
                 var (atlas, sampled) = characters.PortraitAtlas;
                 hud.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled);
             }
-            ConnectItemIcons(hud);
+            ConnectItemIcons();
             hud.ConfigureFrontend(scene.Database,
                 () => SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
@@ -676,6 +676,21 @@ sealed partial class GameHost
             toggles.Add(new Toggle("Planetshine", () => sky.Planetshine, v => sky.Planetshine = v));
             toggles.Add(new Toggle("Night sky", () => sky.MeitouStars, v => sky.MeitouStars = v));
             toggles.Add(new Toggle("Clouds", () => sky.LitClouds, v => sky.LitClouds = v));
+
+            // The Meitou character, icon and audio switches from the Vulkan panel, which the shared renderers read.
+            if (characters is not null)
+            {
+                toggles.Add(new Toggle("Skin scattering", () => characters.SkinShading, v => characters.SkinShading = v));
+                toggles.Add(new Toggle("Enhanced item icons", () => characters.EnhancedIcons, v => characters.EnhancedIcons = v));
+            }
+            toggles.Add(new Toggle("Meitou voices", () => o.MeitouVoices, v => o.MeitouVoices = v));
+
+            // Ground relief (docs/render-terrain.md): the parallax works without tessellation, so it is available on Metal too.
+            sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10,
+                v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
+            sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10,
+                v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
+            toggles.Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
 
             // Water reflection: the same game setting and reflection range the Vulkan panel exposes; the reflection pass is seam-neutral.
             if (worldGpu.Reflection is { } reflection)
@@ -1277,6 +1292,15 @@ sealed partial class GameHost
             // seam's Vulkan-only gaps (no reflection, GI, low-resolution particles or fog-rate target).
             gpu.GameHours = session.Clock.HoursSinceStart;
             UpdateBlood();
+            if (characters is not null)
+            {
+                characters.Look = Meitou.Rendering.Characters.PreviewLook.Of(o.Post);
+                if (hud is not null)
+                {
+                    hud.PortraitSize = Meitou.Rendering.Characters.CharacterRenderer.PortraitSizeFor(characters.Look);
+                    SyncIconLook();
+                }
+            }
             var savedParticles = gpu.Particles;
             if (titleLook) { gpu.Weather = null; gpu.Particles = null; }   // the staged title sky and its own dust, not the world's weather
             try

@@ -15,7 +15,8 @@ The game draws these lights in both looks, so this is not a Faithful / Meitou sw
   clipped to its convex footprint and height range with a0.5-unit surface tolerance (see [zones](formats/zones.md#interior-masks)).
   Masks above32 edges are unsupported; direct lamps have no occluder shadows within that hull.
   - Night-only lamps (`WorldLightRule.Night`: the owner's functionality is BF_LIGHT) are left out while the daylight factor is above 0.1;
-    the rest are always on. A placed building's lamps are scaled by its power share (`SetRuntimePower`) and left out at 0. World lamps
+    the rest are always on. The `interiorlamps` switch (Meitou, default) keeps interior-layout lamps on by day too; Faithful: night only.
+    Player lamps placed during play are not interior lamps. A placed building's lamps are scaled by its power share (`SetRuntimePower`) and left out at 0. World lamps
     take no power factor: the town buildings' power and on state are **Unknown** ([lights](formats/lights.md#when-a-light-is-on)).
   - Lanterns characters carry (`CharacterAppearance.Lights`, [lights](formats/lights.md#carried-lanterns)) are posed with the character each frame
     (`CharacterRenderer.CollectLamps`) and binned after the others as `WorldLamps.Moving`; they are night-only.

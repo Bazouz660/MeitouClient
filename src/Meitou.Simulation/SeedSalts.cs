@@ -37,6 +37,8 @@ internal static class SeedSalts
 
     /// <summary>Counter (under <see cref="RngPurpose.Spawn"/>) of the roll that decides whether a bar squad is present.</summary>
     public const ulong BarChance = 77;
+    /// <summary>Counter (under <see cref="RngPurpose.Think"/>) of the roll that picks which of a town's bars a squad starting a bar package goes to.</summary>
+    public const ulong BarPick = 78;
     /// <summary>Counter of the roll that picks which squad template a town's roaming pool draws.</summary>
     public const ulong RoamingPick = 5;
     /// <summary>Counter base of the roll for the look of member n of a town squad (n is added).</summary>
@@ -49,6 +51,8 @@ internal static class SeedSalts
     public const ulong AiPatrol = 0x5041UL;
     /// <summary>The AI's desire rolls, commitment lengths and town targets (<see cref="Ai.AiSystem"/>; the tick and goal type are mixed in).</summary>
     public const ulong AiDesire = 0x5043UL, AiCommit = 0x5044UL, AiTarget = 0x5045UL;
+    /// <summary>The package classes' rolls (<see cref="Ai.AiSystem"/>; the tick is mixed in): a trader's stay and its next town, a passing-by assault's wait.</summary>
+    public const ulong AiTraderWait = 0x5046UL, AiTraderTown = 0x5047UL, AiAssaultWait = 0x5048UL;
     /// <summary>A platoon's short-range patrol point off screen (<see cref="Ai.PlatoonJobs"/>).</summary>
     public const ulong PlatoonPatrol = 0x5050UL;
 

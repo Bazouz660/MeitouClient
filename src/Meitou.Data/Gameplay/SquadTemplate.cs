@@ -55,6 +55,8 @@ public sealed record SquadTemplate
     public string LayoutExterior { get; init; } = "";
     /// <summary><c>initial door state</c> (DoorState: 0 CLOSED, 1 OPEN, 2 LOCKED, 3 BROKEN), applied to the home building when it is assigned (docs/game/locks.md "Doors").</summary>
     public int InitialDoorState { get; init; }
+    /// <summary><c>public day</c> (fcs.def default true): written over the home building's public flag when it is assigned (docs/game/locks.md "Data").</summary>
+    public bool PublicDay { get; init; } = true;
     /// <summary><c>nest</c> links.</summary>
     public IReadOnlyList<RecordLink> Nest { get; init; } = [];
 
@@ -122,6 +124,7 @@ public sealed record SquadTemplate
             LayoutExterior = r.GetString("layout exterior"),
             BuildingDesignation = r.GetInt("building designation"),
             InitialDoorState = r.GetInt("initial door state"),
+            PublicDay = RecordReading.Bool(r, "public day", true),
             Nest = Links("nest"),
             IsTrader = RecordReading.Bool(r, "is trader", false),
             Vendors = Links("vendors"),

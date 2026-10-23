@@ -31,4 +31,5 @@ the same four plus `Info` (`uidhex;x;y;z`, world units) after its mesh. **Verifi
   `oppositeFace` −1 at an end, `flags` 4 on the sample), `vertices` vec4, `streamingSets` (per neighbour tile: `thisUid`, `oppositeUid`,
   `meshConnections` face/edge pairs joined across), `faceData` / `edgeData` (stride 1), `aabb`.
 - Exterior vertices: world = zone origin + 10 × (x, y, z). **Verified**: median height off the heightmap 0.0 in 5 zones; swapped axes do not fit.
-- Interior vertices are in a frame of their own (x/z 0..~430, y ~50-370 whatever the building's height): **Unknown** transform.
+- Interior vertices: world = Info position + 10 × (x, y, z). **Observed** (tile20.32: `600815` lands on the Storm House `4933-Newwworld-INGAME`
+  floor and upper storey, `190815` on Storm House `32-`'s floor; both Infos lie about (−155, −67, −153) from their Storm House's origin).

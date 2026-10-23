@@ -70,11 +70,24 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
 
     Lazy<FloorSurfaces>? floors;
 
+    /// <summary>How far above a point the search for something over it starts (the floor it stands on is not its cover).</summary>
+    public const float CoverClearance = 5;
+
+    /// <summary>
+    /// Whether <paramref name="p"/> has the building over it: a floor, stairs or roof part of its collision straight above, from <see cref="CoverClearance"/> up
+    /// (<see cref="FloorSurfaces.LowestAbove"/>). False on a walkable roof and in a roofless part, which the hull's height range still holds: Meitou's indoor
+    /// lighting asks this, the floor view and the sounds ask <see cref="Contains"/> as the game does.
+    /// </summary>
+    public bool Covered(Vector3 p) => floors?.Value.LowestAbove(p.X, p.Z, p.Y + CoverClearance) is not null;
+
     /// <summary>
     /// The floor (0..3) a character standing at <paramref name="feet"/> in this building is on, from the building's floor collision under it (made on first use;
     /// 0 when nothing is hit). See <see cref="FloorSurfaces.FloorAt"/>.
     /// </summary>
     public int FloorAt(Vector3 feet) => floors?.Value.FloorAt(feet) ?? 0;
+
+    /// <summary>The highest floor or stairs surface at (<paramref name="x"/>, <paramref name="z"/>) on floors up to <paramref name="floor"/>, or null (<see cref="FloorSurfaces.HighestUpTo"/>).</summary>
+    public float? FloorHeightAt(float x, float z, int floor) => floors?.Value.HighestUpTo(x, z, floor);
 
     // The interior mask collision's triangles in world space (three corners each): the indoor space itself, concave where the building is.
     Vector3[] maskCorners = [];
@@ -180,6 +193,8 @@ public sealed partial class FloorSurfaces
     sealed record Surface(int Floor, bool Stairs, Vector3[] Corners, float YMin, float YMax, Vector2 Min, Vector2 Max);
 
     readonly List<Surface> surfaces = [];
+    /// <summary>The <c>is unwalkable roof</c> parts: no floor, only cover (<see cref="LowestAbove"/>).</summary>
+    readonly List<Surface> roofs = [];
 
     /// <summary>How far above the feet the downward ray starts (game: 10 units above the character).</summary>
     public const float RayStart = 10;
@@ -201,14 +216,14 @@ public sealed partial class FloorSurfaces
         foreach (var p in WorldObjectLayout.Building(db, building, placementId, position, rotation, new BuildingState { WithInterior = true }))
         {
             var part = p.Source;
-            if (p.Owner != building || part.GetBool("passable") || part.GetBool("is unwalkable roof") || !seen.Add(part.StringId)) continue;
+            if (p.Owner != building || part.GetBool("passable") || !seen.Add(part.StringId)) continue;
             if (collision.Mesh(part.GetPath("xml collision")) is not { } mesh) continue;
             var corners = new Vector3[mesh.Indices.Length];
             for (int i = 0; i < corners.Length; i++) corners[i] = Vector3.Transform(mesh.Vertices[mesh.Indices[i]], node);
             if (corners.Length == 0) continue;
             var min = new Vector2(corners.Min(c => c.X), corners.Min(c => c.Z));
             var max = new Vector2(corners.Max(c => c.X), corners.Max(c => c.Z));
-            result.surfaces.Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
+            (part.GetBool("is unwalkable roof") ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
                 corners.Min(c => c.Y), corners.Max(c => c.Y), min, max));
         }
         return result;

@@ -75,7 +75,7 @@ sealed partial class PlayerInterface
         dragging = false;
         steering = false;
         mapDrag = null;
-        inventoryDrag = null;
+        (held, liftPress, lifting, heldSerial) = (null, null, null, 0);
         selectedFor = null;
         selected = [];
         selectedBuilding = null;

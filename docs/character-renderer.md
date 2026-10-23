@@ -15,14 +15,35 @@ state must match motion history. Skin/body/head/hair/item modes share world ligh
 Head uses UV+(0,1); dye/vest/overlays and cutout rules come from research. Same-instance caster
 pass preserves alpha coverage. Face morphs and body shape precede skinning.
 
+### Skin (Meitou `skin` switch)
+
+Faithful lights skin as every surface (`kenshiLight`, the game's deferred pass: clamped N·L). Meitou: Penner's pre-integrated skin
+diffuse replaces the sun's N·L on bare skin (`SkinScattering`: a 64² RGBA16F table baked at start-up from the six-Gaussian skin
+profile of GPU Gems 3 ch. 14, each layer normalised along the ring; u = N·L, v = √(1/r ÷ 1 mm⁻¹)). Curvature 1/r is baked per vertex at load
+(`CharacterContent.MarkCurvature`, vertex colour Z, not on icon meshes, whose vertex colours tint them: mean |Δnormal| / |Δposition| over the vertex's edges, averaged over vertices sharing a position) and
+interpolated; a screen-space fwidth estimate was constant per triangle and drew the low-poly facets and outlines in red. At 1 unit = 100 mm (an **Observed** scale, [terrain](formats/terrain.md)), times 30 (`SkinScatterScale`, a look: at true size the
+profile barely reaches a face's 5-8 cm radius, terminator red 0.016 → 0.019; ×30 gives about 0.16 and a tail past N·L −0.2). Red, green and blue read the table with the
+normal map mixed 0.6 / 0.3 / 0 towards the smooth normal. Only what the table adds over plain N·L is kept (its strongest channel): its loss of red
+on the lit side (energy moved into the shadow) turned sunlit skin cyan-grey. That extra light takes the skin's own hue, saturated (albedo ÷ its
+brightest channel, squared): red-orange on human skin, amber on hive chitin, teal on fishmen, any modded race its own. Skin share: body-shaded
+parts of people (`CharacterShaders.Skin`; not animals; stumps included) whose race has it on, times what vest layers and hair/beard overlays leave
+bare. Per race (`CharacterRenderer.SkinRaces`, settings Graphics > Skin, `meitou.user.json` `skinRaces`: only races changed from the default): every
+person race of the loaded data (RACE records no ANIMAL_CHARACTER uses, mods included) is on unless RACE `is robot`. World and Meitou
+stage (fog distance -3) and the portraits (the plain model, fog distance 0: their fixed key light is near the camera, so the glow stays on the
+shadowed cheek, jaw and neck); the game's stage and icons keep N·L. Lamps too: the character shader defines `LAMP_SKIN`, and
+`LampShaders.lampLight` takes each lamp's diffuse from `lampSkinDiffuse` (the same term, per-fragment inputs set in `main`); the specular keeps
+N·L. Faithful: push `skinLut` 0, unchanged.
+Limits: the sun shadow is not scattered, so the band past the terminator ends at the shadow edge; no back-lit
+translucency (ears).
+
 ## Content, LOD and memory
 
 `CharacterContent` owns buffers/textures/morph arena; worker fetching/preparation precedes render
 uploads. Reuse appearances/content; replace only after ready and retire after GPU consumers.
 `CharacterTextureBudget` shares mip/VRAM pressure policy; unavailable content uses a stand-in.
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
-Generated four-level reductions are always enabled; pose updates stagger by distance:120/300/600
-units every2/4/8 frames, animal scale by radius/16. `CharacterInstance.FullRateAnimation` bypasses
+Generated four-level reductions are always enabled; pose rates fall with distance from the nearer of the eye and the camera's look-at
+point (`Focus`): past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
 distance throttling for presentation actors and the player's characters. Shadow LOD doubles choice with cascade floors.
 Clamp stored bounds to real mesh extent. Animation rendering does not independently integrate
 walk-loop root movement; simulation owns relocation. Quads/morph and motion buffers retain
@@ -34,7 +55,19 @@ Animal race/body/mesh/fur/clips/size use shared assembly with animal inputs, not
 Portraits use the same content/shading with a dedicated camera/render target; avoid mutating
 world draw state. Asset/appearance failure must not corrupt another instance or portrait.
 Portrait cells redraw only when their character, appearance, size, camera serial or streamed
-texture images/swizzle change; animation and frame counts do not invalidate the cached still.
+texture images/swizzle change, or the look below does; animation and frame counts do not.
+
+### Meitou stage and portraits
+
+`PreviewLook` (set from the world's options every frame): enhanced when Meitou's tone map, grade or
+temporal AA is on. The editor stage (stage light unclamped, fog distance -3, platform included) is
+drawn into RGBA16F at 2x each way with Meitou AA (1x past 16.6 Mpx); each portrait (plain model) alone
+into a 1024 px RGBA16F square (4x its cell). `PreviewResolve` tone maps each sample, averages by
+coverage (anti-aliased edges on the transparent background), grades and dithers into the 8-bit
+picture. Atlas cells are 256 px apart; enhanced portraits fill them (the original's 128 px were stretched to the
+squad bar's 120-230 px from 1080 to 4K lines and looked soft), faithful ones keep 128 px in the corner. Portraits keep the
+fixed plain light: a still drawn under the live sky would depend on the hour it was drawn. Faithful
+keeps the original's direct 8-bit stage and 128 px plain portraits. No SSAO, shadows or GI (no scene).
 Atlas layout (Meitou): squad members take cells 0-29; the conversation window's speaker and player
 character take the last two (30, 31) while a conversation is open.
 Item icons (`CharacterRenderer.Icons.cs`) are the same: an item's mesh drawn through the item shader into a texture of its own, as a pseudo-instance that the world and shadow views skip;

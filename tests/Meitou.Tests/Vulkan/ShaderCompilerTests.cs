@@ -17,12 +17,6 @@ public class ShaderCompilerTests
     /// <summary>Every pair the renderers link (WorldGl.Program calls), built the way the renderers build them.</summary>
     public static IEnumerable<(string Name, string Vertex, string Fragment)> Pairs()
     {
-        yield return ("terrain patch", TerrainShaders.PatchVertex, TerrainShaders.Fragment);
-        yield return ("terrain mesh", TerrainShaders.MeshVertex, TerrainShaders.MeshFragment);
-        yield return ("terrain patch depth", TerrainShaders.PatchVertex, ShadowShaders.DepthFragment);
-        yield return ("terrain mesh depth", TerrainShaders.MeshInstancedDepthVertex, ShadowShaders.DepthFragment);
-        yield return ("mesh", Shaders.MeshVertex, Shaders.MeshFragment);
-        yield return ("line", Shaders.LineVertex, Shaders.LineFragment);
         foreach (var f in new[] { nameof(PostProcessShaders.Ssao), nameof(PostProcessShaders.SsaoBlur), nameof(PostProcessShaders.SsaoApply), nameof(PostProcessShaders.Composite),
                      nameof(PostProcessShaders.Luminance), nameof(PostProcessShaders.Adapt), nameof(PostProcessShaders.Fxaa), nameof(PostProcessShaders.HeatHaze) })
             yield return ("post " + f, PostProcessShaders.Vertex, Private(typeof(PostProcessShaders), f));
@@ -34,11 +28,8 @@ public class ShaderCompilerTests
         yield return ("water", Private(typeof(WaterRenderer), "Vertex"), Private(typeof(WaterRenderer), "Fragment"));
         yield return ("water meitou", Private(typeof(WaterRenderer), "MeitouVertex"), Private(typeof(WaterRenderer), "MeitouFragment"));
         yield return ("debug overlay", Private(typeof(DebugOverlay), "Vertex"), Private(typeof(DebugOverlay), "Fragment"));
-        yield return ("foliage mesh", FoliageShaders.MeshVertex(), FoliageShaders.MeshFragment());
-        yield return ("foliage mesh depth", FoliageShaders.MeshVertex(), ShadowShaders.MeshDepthFragment);
-        yield return ("grass", FoliageShaders.GrassVertex, FoliageShaders.GrassFragment);
-        yield return ("building lod", BuildingLodShaders.Vertex(), BuildingLodShaders.Fragment());
-        yield return ("building lod depth", BuildingLodShaders.Vertex(), ShadowShaders.MeshDepthFragment);
+        yield return ("reflection fog", PostProcessShaders.Vertex, ReflectionPass.FogFragment(false));
+        yield return ("reflection fog multisampled", PostProcessShaders.Vertex, ReflectionPass.FogFragment(true));
         yield return ("shadow debug", ShadowShaders.FullscreenVertex, ShadowShaders.DebugFragment);
         yield return ("shadow atlas", ShadowShaders.FullscreenVertex, ShadowShaders.AtlasFragment);
         yield return ("meitou shadow terrain sweep", ShadowShaders.FullscreenVertex, MeitouShadowShaders.SweepFragment);

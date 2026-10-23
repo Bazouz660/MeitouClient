@@ -220,6 +220,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         active.Clear();
         foreach (var f in foci) ZoneActivation.AddZonesAround(f, settings.FastZoneHopping ? 1 : 0, active);
         world.VisitedZones.UnionWith(active);
+        world.ActiveZones = active;
         long grace = (long)Math.Ceiling(settings.UnloadGraceSeconds / world.TickSeconds);
         foreach (var site in data.Sites)
         {
@@ -277,7 +278,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         foreach (int id in state.Squads)
         {
             if (world.Squads.Find(id) is not { } squad) continue;
-            var stored = new StoredSquad { Name = squad.Name, HomeBuilding = squad.HomeBuilding, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id, Ai = Saving.AiSave.Of(squad.Ai) ?? squad.SavedAi };
+            var stored = new StoredSquad { Name = squad.Name, HomeBuilding = squad.HomeBuilding, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id, Ai = Saving.AiSave.Of(squad.Ai) ?? squad.SavedAi, Memory = Memory?.Take(squad.Id) };
             var at = Store(world, squad, stored);
             world.Squads.Remove(id);
             if (stored.Members.Count == 0) continue;
@@ -337,8 +338,12 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         // but for the centre zone of another town: a file there would tell the original that town was made, with no residents saved for it.
         foreach (var b in site.Buildings)
             if (b.Zone == site.Zone || !centres.Contains(b.Zone)) world.VisitedZones.Add(b.Zone);
-        foreach (var built in town.Squads)
+        var centre = new Vector2(site.Position.X, site.Position.Z);
+        foreach (var made in town.Squads)
         {
+            // A gate has no nodes and its origin is inside the wall, ~110 from the opening: its residents are made at their gate guard's post (engine choice).
+            var built = made.Home is { IsGate: true } gate && !HasNode(gate) && Ai.AiSystem.PostOf(world, gate, centre) is { } post
+                && Ai.AiSystem.FrontOf(post) is var front ? made with { Position = new Vector2(front.X, front.Z), NearY = front.Y + SpotLift } : made;
             var squad = SpawnSquad(world, built, site, radius);
             state.Squads.Add(squad.Id);
             MakePrisoners(world, built, squad, site, radius, state);
@@ -461,12 +466,20 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             float x = built.Position.X + plan.Offset.X, z = built.Position.Y + plan.Offset.Y;
             if (!(built.NearY is { } nearY ? walk.IsWalkable(x, z, nearY) : walk.IsWalkable(x, z))) (x, z) = (built.Position.X, built.Position.Y);
             // Inside, on the floor and not on the ground showing through a hole furniture cuts in it (the spot's height is its own plus SpotLift).
-            if (built.NearY is { } floorY && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onFloor) (x, z) = (onFloor.X, onFloor.Z);
+            float? standY = built.NearY;
+            if (built.NearY is { } floorY)
+            {
+                // A building without nodes makes them at its origin, often under a raised floor: that floor first (the ground under it is near the origin).
+                bool atOrigin = built.Home is { } h && !HasNode(h);
+                if (!atOrigin && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onFloor) (x, z) = (onFloor.X, onFloor.Z);
+                else if (built.Home is { } home && HomeFloor(walk, home, x, z, floorY - SpotLift) is { } inside) (x, z, standY) = (inside.X, inside.Z, inside.Y + SpotLift);
+                else if (atOrigin && walk.FloorNear(x, z, floorY - SpotLift, SpotLift) is { } onGround) (x, z) = (onGround.X, onGround.Z);
+            }
             var race = assembly.RaceOf(plan.RecordId, member.Appearance);
             var record = data.Db.Find(plan.RecordId);
             var hot = new CharacterHot
             {
-                Position = new Vector3(x, Ground(walk, x, z, built.NearY), z),
+                Position = new Vector3(x, Ground(walk, x, z, standY), z),
                 Yaw = yaw,
                 Health = 100,
                 Task = (byte)(player || idle ? CharacterTask.Idle : plan.Role == SquadRole.Leader || !hasLeader ? CharacterTask.Wander : CharacterTask.Follow),
@@ -483,7 +496,6 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
                 RecordId = plan.RecordId,
                 SquadId = squad.Id,
                 Role = (int)plan.Role,
-                FormationOffset = plan.Offset - (leaderPlan?.Offset ?? Vector2.Zero),
                 IsPlayer = player,
                 Orders = player ? Orders.PlayerDefaults : CharacterOrders.None,
                 FootprintRadius = race?.GetFloat("pathfind footprint radius") ?? 0,

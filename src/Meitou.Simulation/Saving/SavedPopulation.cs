@@ -69,6 +69,9 @@ public sealed class SavedPlatoon
     public AiSave? Ai { get => aiSet ? ai : AiSave.Read(Source.Record); set { ai = value; aiSet = true; } }
     AiSave? ai;
     bool aiSet;
+    /// <summary>What its squad remembered when it last left the world (<see cref="MemorySet"/>; else the record's keys are the memory, read when its squad is made).</summary>
+    public Dialogue.SquadMemoryData? Memory { get; set; }
+    public bool MemorySet { get; set; }
 }
 
 /// <summary>
@@ -86,6 +89,12 @@ public sealed class SavedPopulation
     /// <summary>The save's clock, which is world tick 0 (bounty timers are read against it).</summary>
     public SaveClock Clock { get; init; }
     public int PlayerFaction { get; init; } = -1;
+    /// <summary>The squads' memories (the dialogue system's; null: none), which the platoons' <c>tags</c> keys are restored into when their squads are made.</summary>
+    public Dialogue.SquadMemory? Memory { get; set; }
+    /// <summary>The characters made from the save by their handle's container and slot, for the memory keys that name them.</summary>
+    public Dictionary<(int C, int I), CharacterId> Spawned { get; } = [];
+    /// <summary>The character a handle of the save names, when it is in the world (null otherwise).</summary>
+    public CharacterId? CharacterOf(Hand h) => !h.IsNull && Spawned.TryGetValue((h.C, h.I), out var id) ? id : null;
     public List<SavedPlatoon> Platoons { get; } = [];
     /// <summary>The save's nests in list order: the wild layout takes them before rolling more (empty: none, e.g. a Meitou save from before nests were written).</summary>
     public List<SavedNest> Nests { get; } = [];
@@ -231,6 +240,7 @@ internal static class SavedCharacters
         if (cold.IsPlayer && sc.GameState is { } orders) Orders.Read(orders, cold);
         // In a bed or a cage, and the sentence (docs/simulation.md "Cages, beds and locks"); the fixture binds when its town registers.
         HeldSave.Read(sc.GameState, cold, context.Handles, context.InstanceOf);
+        if (cold.InSomething == Locks.HeldState.Bed) hot.Task = (byte)CharacterTask.Sleep;   // it lies there until an order (Locks.BedSystem)
         if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf);
         // The portrait camera's number: the saved one, else the handle's serial (CharacterAnimal::vfunc_18).
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;
@@ -238,7 +248,8 @@ internal static class SavedCharacters
         cold.Save.InWhat = cold.InWhat;
         // The body: the saved stats and medical state go to the body systems, the rest of the assembly (inventory, fighter) is made as for a new character.
         if (race is not null && stats is not null && medical is not null)
-            assembly.AttachSaved(cold, race, stats, medical, p.Record, p.Inventory ?? (p.Items.Count > 0 ? SavedKit.ToInventory(p.Items, data.Items, notes) : null));
+            assembly.AttachSaved(cold, race, stats, medical, p.Record, p.Inventory ?? (p.Items.Count > 0 ? SavedKit.ToInventory(p.Items, data.Items, notes, p.Record) : null),
+                sc.GameState is { } aged && aged.Floats.TryGetValue("age", out float age) ? age : 1);
         else if (race is not null)
             notes?.Add($"{platoonName}: {cold.Name} has no stats or medical state that could be read; it has no body in the world.");
         return world.Characters.Spawn(hot, cold, world.Tick);
@@ -355,6 +366,7 @@ internal static class SavedCharacters
             ref var hot = ref world.Characters.Next[id.Slot];
             hot.TaskTime = 0.5f + Rng.Float(Rng.Hash(world.Seed, (ulong)squad.Id << 8 | (uint)(m.Slot & 0xFF), RngPurpose.Think)) * 3;
             m.Live = id;
+            context.Spawned[(m.Source.Handle.C, m.Source.Handle.I)] = id;
             if (UniqueCharacters.IsUnique(data.Db.Find(p.Source.RecordId))) world.Uniques.Bind(p.Source.RecordId, id);
             squad.Members.Add(id);
             if (leads && squad.Leader.IsNone) squad.Leader = id;
@@ -363,19 +375,18 @@ internal static class SavedCharacters
         foreach (var n in notes) context.Log(n);
         if (squad.Members.Count == 0) return null;
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
-        // The followers keep the places they had round the leader.
-        var lead = world.Characters.Next[squad.Leader.Slot].Position;
-        foreach (var id in squad.Members)
-        {
-            var at = world.Characters.Next[id.Slot].Position;
-            world.Characters.Cold(id.Slot)!.FormationOffset = MovementSystem.OffsetOfPlace(new Vector2(at.X - lead.X, at.Z - lead.Z));
-        }
         // Its shop as it was when it left the world, else the save's (a fresh fill when the save has none).
         squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);
         squad.SavedAi = sp.Ai;
         world.Squads.Add(squad);
+        // What the squad remembered: the save's, else what it kept when it last left the world.
+        if (context.Memory is { } memory)
+        {
+            memory.Restore(squad.Id, sp.MemorySet ? sp.Memory : MemorySave.Read(sp.Source.Record, context.CharacterOf));
+            (sp.Memory, sp.MemorySet) = (null, false);
+        }
         sp.Touched = true;
-        context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {lead.X:0}, {lead.Z:0}");
+        context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {world.Characters.Next[squad.Leader.Slot].Position.X:0}, {world.Characters.Next[squad.Leader.Slot].Position.Z:0}");
         return squad;
     }
 
@@ -383,7 +394,7 @@ internal static class SavedCharacters
     public static void Store(World world, SavedPlatoon sp, Vector2 anchor)
     {
         var table = world.Characters;
-        if (sp.PlatoonId >= 0 && world.Platoons.Find(sp.PlatoonId) is { } platoon && world.Squads.Find(platoon.SquadId) is { } squad) { sp.Shop = squad.Shop; sp.Ai = AiSave.Of(squad.Ai) ?? squad.SavedAi; }
+        if (sp.PlatoonId >= 0 && world.Platoons.Find(sp.PlatoonId) is { } platoon && world.Squads.Find(platoon.SquadId) is { } squad) { sp.Shop = squad.Shop; sp.Ai = AiSave.Of(squad.Ai) ?? squad.SavedAi; if (world.Saved?.Memory is { } memory) (sp.Memory, sp.MemorySet) = (memory.Take(squad.Id), true); }
         foreach (var m in sp.Members)
         {
             if (m.Live.IsNone) continue;

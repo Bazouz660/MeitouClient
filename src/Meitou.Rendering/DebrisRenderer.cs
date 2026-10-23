@@ -6,8 +6,11 @@ using Meitou.Rendering.Gpu;
 
 namespace Meitou.Rendering;
 
-/// <summary>One loose mesh in the world: its file, its size and where it is (rotation and translation, the mesh's middle at the translation).</summary>
-public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion Rotation, Vector3 Position);
+/// <summary>
+/// One loose mesh in the world: its file, its size and where it is (rotation and translation, the mesh's middle at the translation); <paramref name="Stretch"/> lengthens
+/// it along its own z (a bolt in flight).
+/// </summary>
+public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion Rotation, Vector3 Position, float Stretch = 1);
 
 /// <summary>
 /// Loose meshes thrown about by the host (luckyren Mode's bones and limbs, docs/game/luckyren.md): each a static mesh, centred on its bounds, textured with
@@ -185,8 +188,8 @@ public sealed unsafe class DebrisRenderer : IDisposable
         foreach (var piece in pieces)
         {
             // Only meshes loaded before (Extent): nothing is uploaded inside the pass.
-            if (!meshes.TryGetValue(piece.Mesh, out var mesh) || mesh is null || !FrustumTests.SphereVisible(frustum, piece.Position, mesh.Extent.Length() * piece.Scale)) continue;
-            var m = Matrix4x4.CreateScale(piece.Scale) * Matrix4x4.CreateFromQuaternion(piece.Rotation) * Matrix4x4.CreateTranslation(piece.Position - eye);
+            if (!meshes.TryGetValue(piece.Mesh, out var mesh) || mesh is null || !FrustumTests.SphereVisible(frustum, piece.Position, mesh.Extent.Length() * piece.Scale * MathF.Max(piece.Stretch, 1))) continue;
+            var m = Matrix4x4.CreateScale(piece.Scale, piece.Scale, piece.Scale * piece.Stretch) * Matrix4x4.CreateFromQuaternion(piece.Rotation) * Matrix4x4.CreateTranslation(piece.Position - eye);
             program.Set(this.model, in m);
             for (int k = 0; k < 3; k++) bindings[k] = new GpuBufferBinding(mesh.Vertices.Handle, (ulong)(k * 12));
             cmd.BindVertexBuffers(0, bindings);

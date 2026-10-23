@@ -42,6 +42,8 @@ internal sealed class WorldLamps : IDisposable
 
     /// <summary>Whether the lamps light the world (the bench's <c>lights</c> switch).</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>The <c>interiorlamps</c> switch's Meitou side: night-only lamps of interior layouts shine day and night (the game: night only).</summary>
+    public bool InteriorAllDay { get; set; } = true;
     /// <summary>The lamps of the world, once loaded; and those in this frame's grid.</summary>
     public int Count => lamps?.Length ?? 0;
     public int InGrid { get; private set; }
@@ -116,7 +118,8 @@ internal sealed class WorldLamps : IDisposable
 
     /// <summary>
     /// Bins the lamps around <paramref name="eye"/> for this frame (the pulsing and shimmering ones at their power now). <paramref name="daylight"/> is the game's daylight
-    /// factor (<see cref="WorldLights.DaylightFactor"/>): night-only lamps are left out above <see cref="WorldLights.NightDaylightLimit"/>.
+    /// factor (<see cref="WorldLights.DaylightFactor"/>): night-only lamps are left out above <see cref="WorldLights.NightDaylightLimit"/>
+    /// (interior ones only without <see cref="InteriorAllDay"/>).
     /// </summary>
     public void Update(Vector3 eye, WorldObjectRenderer? objects = null, float daylight = 0)
     {
@@ -148,7 +151,7 @@ internal sealed class WorldLamps : IDisposable
         {
             var l = Lamp(i);
             if (l.Position.X + l.Radius < x0 || l.Position.X - l.Radius > x1 || l.Position.Z + l.Radius < z0 || l.Position.Z - l.Radius > z1) continue;
-            if (!WorldLights.IsLit(l, daylight) || PowerFactor(i) <= 0) continue;
+            if (!WorldLights.IsLit(l, l.Interior && InteriorAllDay ? 0 : daylight) || PowerFactor(i) <= 0) continue;
             var room = l.Interior ? objects?.InteriorFor(l.PlacementId) : null;
             // An unloaded or unrepresentable room must not turn its lights into unbounded outdoor lamps.
             if (l.Interior && (room is null || room.Footprint.Length is < 3 or > MaxRoomEdges)) continue;

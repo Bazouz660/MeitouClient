@@ -213,6 +213,7 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
 
     /// <inheritdoc/>
     public bool HasRayQuery => Device.HasRayQuery;
+    public bool HasTessellation => Device.HasTessellation;
 
     /// <inheritdoc/>
     public bool ConstantVertexAttributes => true;

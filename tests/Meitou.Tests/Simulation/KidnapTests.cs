@@ -44,15 +44,15 @@ public class KidnapTests
         return id;
     }
 
-    /// <summary>The jail town of the arrest tests with a cannibal-like squad whose package has goal 254 beside a knocked-out player character: lift, carry, cage.</summary>
-    static List<ulong> Scripted(int threads, out (bool Caged, bool Kidnapped, bool Logged) seen, int minPartition = 1)
+    /// <summary>The jail town of the arrest tests with a cannibal-like squad whose package has goal 254 beside a knocked-out player character: lift, carry, cage; pinned in <see cref="GoldenHashTests"/>.</summary>
+    internal static List<ulong> Scripted(int threads)
     {
         var data = ArrestTests.Town();
         var carry = new CarrySystem(BaseGame, BodyOptions.Default, 1) { Relations = data.Relations };
         using var population = new PopulationSystem(data);
         var kidnap = new KidnapSystem(data, population, carry, new KidnapSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        using var world = new SimWorld(new WorldSettings { Seed = 31, Threads = threads, PublishSnapshots = false, MinPartitionSize = minPartition }, walk,
+        using var world = new SimWorld(new WorldSettings { Seed = 31, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [new PlayerSystem(), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), carry, kidnap]);
         world.Fixtures.RegisterSite(world, data, 0);
         int city = data.FactionIndex("50-a");
@@ -80,20 +80,11 @@ public class KidnapTests
             hashes.Add(world.StateHash());
         }
         var cold = world.Characters.Cold(victim.Slot)!;
-        seen = (cold.IsImprisoned && cold.InWhat is "0.0:cageA" or "0.0:cageB", cold.Kidnapped,
-            kidnap.Log.Any(e => e.Kind == KidnapEventKind.Lifted && e.Victim == victim) && kidnap.Log.Any(e => e.Kind == KidnapEventKind.Caged && e.Victim == victim));
-        return hashes;
-    }
-
-    [Fact]
-    public void A_kidnapping_hashes_the_same_at_1_4_and_16_threads()
-    {
-        var one = Scripted(1, out var seen);
+        var seen = (Caged: cold.IsImprisoned && cold.InWhat is "0.0:cageA" or "0.0:cageB", cold.Kidnapped,
+            Logged: kidnap.Log.Any(e => e.Kind == KidnapEventKind.Lifted && e.Victim == victim) && kidnap.Log.Any(e => e.Kind == KidnapEventKind.Caged && e.Victim == victim));
         // It covers what it is for: the downed player character was lifted, carried to a cage of the raiders' town and held there as kidnapped.
         Assert.True(seen.Caged && seen.Kidnapped && seen.Logged, $"{seen}");
-        Assert.Equal(one, Scripted(4, out _));
-        Assert.Equal(one, Scripted(16, out _));
-        Assert.Equal(one, Scripted(4, out _, minPartition: 16));
+        return hashes;
     }
 
     [Fact]
