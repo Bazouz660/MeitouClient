@@ -76,7 +76,8 @@ sealed class CharacterAssembly(PopulationData data)
             foreach (var item in inventory.Items.Where(i => i.Section == section && i.Type == FcsRecordType.CROSSBOW))
                 if (crossbow is null && combat.Crossbow(item.Record) is { } x)
                     crossbow = CrossbowInstance.Create(item.Level * 0.01f, x, combat.Constants, data.BodyOptions.GlobalDamageMultiplier);
-        var fighter = new Fighter(First("hip"), armour, inventory.Backpack is not null) { BackWeapon = First("back"), Crossbow = crossbow };
+        float? backpackStealth = inventory.Backpack is { } pack ? data.Db.Find(pack.Record)?.GetFloat("stealth mult", 1) ?? 1 : null;
+        var fighter = new Fighter(First("hip"), armour, backpackStealth) { BackWeapon = First("back"), Crossbow = crossbow };
         if (medical is not null) fighter.SetArms(medical.ArmWorks(left: false), medical.ArmWorks(left: true));
         return fighter;
     }

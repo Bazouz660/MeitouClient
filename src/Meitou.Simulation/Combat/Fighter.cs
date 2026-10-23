@@ -61,30 +61,38 @@ public sealed class Fighter
     public float DexterityMult => Naked ? NakedBonus : dexterity;
     /// <summary>Product of the pieces' <c>dodge mult</c> (the gear's dodge value for <see cref="DefenceFormulas.DodgeSkill"/>, x 100); 1.1 when <see cref="Naked"/>.</summary>
     public float DodgeMult => Naked ? NakedBonus : dodgeMult;
-    readonly float dexterity, dodgeMult, assassin, ranged;
+    /// <summary>
+    /// The gear's stealth factor (CharStats <c>+0x3c</c>, <c>FUN_140887030</c>, <b>Verified</b>): the backpack's <c>stealth mult</c> (1 without one) times each piece's
+    /// <see cref="ArmourPiece.Stealth"/>; 1.2 when <see cref="Naked"/>. The backpack's value also seeds <see cref="DodgeMult"/>.
+    /// </summary>
+    public float StealthMult => Naked ? NakedStealth : stealth;
+    readonly float dexterity, dodgeMult, assassin, ranged, stealth;
     /// <summary>The dodge and dexterity factor of a <see cref="Naked"/> character (Verified literal).</summary>
     public const float NakedBonus = 1.1f;
+    /// <summary>The stealth factor of a <see cref="Naked"/> character (Verified literal).</summary>
+    public const float NakedStealth = 1.2f;
     /// <summary>
     /// The gear factors of the stat multiplier (<see cref="StatFactors"/>, <c>CharStats</c> +0x40 to +0x50 as <c>FUN_140887030</c> writes them, <b>Verified</b>): the products of
     /// <c>asassination mult</c>, <c>dexterity mult</c>, <c>damage output mult</c> and <c>ranged skill mult</c>. No dust storm here (its factor is 1).
     /// </summary>
     public StatFactors Factors => new(assassin, DexterityMult, DamageOutput, ranged, 1);
     /// <summary>
-    /// Wearing no armour and no backpack: the gear refresh then puts 1.1 for dodge and dexterity and 1.2 for stealth (<c>FUN_140887030</c>, <b>Verified</b> literals). Meitou's
-    /// stealth does not read the gear's <c>stealth mult</c> yet, so only the first two apply. Never for an animal (engine choice: whether the refresh runs for animals is <b>Unknown</b>).
+    /// Wearing no armour and no backpack: the gear refresh then puts 1.1 for dodge and dexterity and 1.2 for stealth (<c>FUN_140887030</c>, <b>Verified</b> literals).
+    /// Never for an animal (engine choice: whether the refresh runs for animals is <b>Unknown</b>).
     /// </summary>
     public bool Naked => !IsAnimal && armour.Length == 0 && !backpack;
     readonly bool backpack;
     /// <summary>Product of the pieces' <c>combat speed mult</c>: scales the speed attack animations play at.</summary>
     public float CombatSpeed { get; }
 
-    /// <param name="backpack">Whether a backpack is worn (only for <see cref="Naked"/>).</param>
-    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, bool backpack = false)
+    /// <param name="backpackStealth">The worn backpack's <c>stealth mult</c>, null without one (a negative value counts as 1).</param>
+    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, float? backpackStealth = null)
     {
         hip = weapon;
         this.armour = armour is null ? [] : [.. armour];
-        this.backpack = backpack;
-        float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = 1, speed = 1;
+        backpack = backpackStealth is not null;
+        float seed = backpackStealth is { } b ? b < 0 ? 1 : b : 1;
+        float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = seed, speed = 1, sneak = seed;
         assassin = ranged = 1;
         foreach (var p in this.armour)
         {
@@ -97,7 +105,9 @@ public sealed class Fighter
             speed *= p.Data.CombatSpeedMult;
             assassin *= p.Data.AssassinationMult;
             ranged *= p.Data.RangedSkillMult;
+            sneak *= p.Stealth;
         }
+        stealth = sneak;
         DefenceBonus = def;
         AttackBonus = atk;
         UnarmedBonus = unarmed;

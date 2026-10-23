@@ -35,14 +35,14 @@ but light and dust. Meitou: `MedicalState.Light` from `SightMap.Light` each tick
 ### Effective stealth
 
 **Verified** (decompile; in game "no hunger or arm term", #46): the getter sends stat 16 not to the table but
-to `FUN_140884850`: s = clamp(stored x 0.75 if carrying (Character +0x348) x 2 if the character's vfunc 0x368
-is non-zero (**Unknown**) x encumbrance (CharStats +0x190) x the body term (medical +0xb4) x the gear's stealth
+to `FUN_140884850`: s = clamp(stored x 0.75 if carrying (Character +0x348) x 2 while the posture is not 0
+(vfunc 0x368 = `FUN_1405c7e10`, Character +0xe0: crawling or ragdolled, [ragdolls](ragdolls.md#forced-crawl)) x encumbrance (CharStats +0x190) x the body term (medical +0xb4) x the gear's stealth
 (CharStats +0x3c) x the fitted limbs' factor `FUN_140644b90(16)` x 0.01, 0, 1); the getter returns s x 100 and
 the sneak speed `FUN_140884920` reads s. Body term (`FUN_140644da0`): clamp(lowest health fraction over TORSO and
 LEG parts, 1 with none, + toughness x scale x 0.01, 0, 1). Its only caller is the sense update `FUN_1408586d0`,
 past an early return on a Character +0xd4 byte, so otherwise it keeps its last value (1 at start; **Observed**,
 fits #46's torso at 0.5 leaving stealth at 1). The table's stealth case (A; 0.9, 0.9, 0.8) exists, but no caller
-found reaches it. Meitou: `Orders.Stealth`, without the gear term and the x2.
+found reaches it. Meitou: `Orders.Stealth`; its x2 is for the forced crawl only (Meitou has no voluntary crawl).
 
 ### Gear factors
 
@@ -50,13 +50,19 @@ found reaches it. Meitou: `Orders.Stealth`, without the gear term and the x2.
 loader `FUN_140898e90`). Over the worn armour list (Character +0x4a8/+0x4b0) it multiplies the pieces' floats
 into CharStats: +0x40 `asassination mult` (assassination row), +0x44 `dexterity mult` (dexterity row), +0x48
 `damage output mult` (katana, sabres, hackers, heavy, blunt rows; used only when not 1 and above 0), +0x50
-`ranged skill mult` (crossbows and friendly fire rows), +0x38 `dodge mult`, +0x3c stealth (the backpack's +0x248
-times each piece's `stealth mult`), +0x4c `fist injury mult`; sums `perception bonus` (+0x30), `unarmed bonus`
-(+0x2c) and the attack/defence bonuses. With no armour and no backpack (inventory section 12) dodge and
-dexterity are 1.1 and stealth 1.2 (literals at `14169bb44`, `1416852f0`). The stun row factor `FUN_1406439f0`
+`ranged skill mult` (crossbows and friendly fire rows), +0x38 `dodge mult`, +0x3c stealth, +0x4c `fist injury
+mult`; sums `perception bonus` (+0x30), `unarmed bonus` (+0x2c) and the attack/defence bonuses. Stealth and dodge
+both start from the worn backpack's `stealth mult` (CONTAINER +0x248, `FUN_140763810`; negative becomes 1), 1
+without one. With no armour and no backpack (inventory section 12) dodge and dexterity are 1.1 and stealth 1.2
+(literals at `14169bb44`, `1416852f0`). A piece's stealth (ARMOUR +0x25c, disassembly of `FUN_140898e90`), with
+t = quality + `level bonus` x 0.01: lerp(t, material lo, hi) x lerp(t, class lo, hi) x `stealth mult`; 1 if
+`stealth mult` is negative; a hat (`slot` 3) that lists coverage is raised to 1. The tables (constructor
+`FUN_1408a8f90`, material +0x1c, class +0x18 of the [economy](economy.md#42-armour-and-clothing-type-3) tables):
+CLOTH and LEATHER 1..1, CHAIN 0.3..0.7, METAL_PLATE 0.1..0.8; GEAR_CLOTH and LIGHT 1..1, MEDIUM 0.9..0.9,
+HEAVY 0..0.4. The stun row factor `FUN_1406439f0`
 is the dust storm: lerp(1, 0.5, v) while medical +0x148 = 1, v = medical +0x14c = the storm strength x (1 -
 the gear's protection), clamped 0..1 (`FUN_140648ef0`, which also posts "You are in a dust storm, it affects
-your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` (no gear stealth term; the dust value is `MedicalState.DustStatFactor`,
+your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` / `StealthMult`, `ArmourPiece.Stealth` (the dust value is `MedicalState.DustStatFactor`,
 [weather](../formats/weather.md#effects-on-characters)); crossbow and assassination skills take their factor in `CombatSystem.Eff`,
 dexterity and damage output stay applied by the combat formulas (`DexterityMult`, `DamageOutput`, the latter
 to the whole packet where the original scales the weapon skill: **Observed** difference, not changed).

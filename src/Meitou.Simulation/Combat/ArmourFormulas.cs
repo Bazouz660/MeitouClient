@@ -5,7 +5,7 @@ namespace Meitou.Simulation.Combat;
 /// <summary>
 /// One worn piece with its defences computed (docs/game/combat.md "Armour", loader <c>FUN_140898e90</c>, <b>Observed</b>). <see cref="Data"/> keeps the record for the coverage test.
 /// </summary>
-public readonly record struct ArmourPiece(ArmourData Data, float Quality, float CutDefence, float BluntDefence, float PierceDefence, float CutIntoStun)
+public readonly record struct ArmourPiece(ArmourData Data, float Quality, float CutDefence, float BluntDefence, float PierceDefence, float CutIntoStun, float Stealth = 1)
 {
     /// <summary>The quality fractions of the armour grades 0 to 5 (PROTOTYPE .. MASTER): 5, 20, 40, 60, 80, 95 per cent (docs/characters.md, <b>Verified</b>); any other grade 20.</summary>
     public static float QualityOfGrade(int grade) => grade switch { 0 => 0.05f, 1 => 0.20f, 2 => 0.40f, 3 => 0.60f, 4 => 0.80f, 5 => 0.95f, _ => 0.20f };
@@ -28,6 +28,33 @@ public readonly record struct ArmourPiece(ArmourData Data, float Quality, float 
         _ => ((0.1f, 0f, 0f), (0.85f, 0.6f, 90f)),
     };
 
+    /// <summary>The material and class tables' stealth factors (low, high) (docs/game/character-stats.md "Gear factors", <b>Verified</b>).</summary>
+    public static (float Low, float High) MaterialStealth(ArmourType m) => m switch
+    {
+        ArmourType.Chain => (0.3f, 0.7f),
+        ArmourType.MetalPlate => (0.1f, 0.8f),
+        _ => (1, 1),
+    };
+
+    public static (float Low, float High) ClassStealth(ArmourClass c) => c switch
+    {
+        ArmourClass.Medium => (0.9f, 0.9f),
+        ArmourClass.Heavy => (0, 0.4f),
+        _ => (1, 1),
+    };
+
+    /// <summary>
+    /// The piece's stealth factor (<c>FUN_140898e90</c>): lerp(t, material) x lerp(t, class) x <c>stealth mult</c>; 1 when <c>stealth mult</c> is negative; a hat (slot 3)
+    /// that lists coverage never goes below 1.
+    /// </summary>
+    public static float StealthOf(ArmourData a, float t)
+    {
+        var (mLo, mHi) = MaterialStealth(a.Material);
+        var (cLo, cHi) = ClassStealth(a.Class);
+        float s = a.StealthMult >= 0 ? WeaponStats.Lerp(t, mLo, mHi) * WeaponStats.Lerp(t, cLo, cHi) * a.StealthMult : 1;
+        return a.Slot == 3 && a.Coverage.Count > 0 && s < 1 ? 1 : s;
+    }
+
     /// <summary>
     /// Builds the piece. With t = quality + level bonus x 0.01: cut defence = clamp(lerp(t, low.cut, high.cut) x class cut + lerp(t, 0, cut def bonus), 0, 0.9); blunt defence likewise
     /// (cap 0.8); flat pierce defence = lerp(t, low.pierce, high.pierce) x pierce def mult; cut-into-stun = clamp(field, 0, 1). A shirt (slot 8) that lists coverage has its cut and blunt
@@ -47,7 +74,7 @@ public readonly record struct ArmourPiece(ArmourData Data, float Quality, float 
             blunt *= 0.8f;
             pierce *= 0.5f;
         }
-        return new ArmourPiece(a, quality, cut, blunt, pierce, Math.Clamp(a.CutIntoStun, 0, 1));
+        return new ArmourPiece(a, quality, cut, blunt, pierce, Math.Clamp(a.CutIntoStun, 0, 1), StealthOf(a, t));
     }
 }
 
