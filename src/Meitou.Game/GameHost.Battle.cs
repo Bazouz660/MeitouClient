@@ -54,7 +54,7 @@ sealed partial class GameHost
 
     string BattleSide(int side) => $"{battleSides[side].Count} x {battleSides[side].Name}";
 
-    /// <summary>Fills a new world with the two blocks: side 0 south (−Z) facing +Z, side 1 north facing −Z, each centred on the spot's X.</summary>
+    /// <summary>Fills a new world with the two blocks, a squad each (its first fighter leads): side 0 south (−Z) facing +Z, side 1 north facing −Z, each centred on the spot's X.</summary>
     void BattleSetup(World world, PopulationSystem population)
     {
         for (int side = 0; side < 2; side++)
@@ -63,14 +63,14 @@ sealed partial class GameHost
             var fighters = battleFighters[side];
             fighters.Clear();
             float sign = side == 0 ? -1 : 1;
+            var offsets = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
                 int rank = i / BattleRankWidth, inRank = Math.Min(BattleRankWidth, count - rank * BattleRankWidth);
-                float x = (i % BattleRankWidth - (inRank - 1) / 2f) * BattleSpacing, z = sign * (BattleGap / 2 + rank * BattleSpacing);
-                // Facing +Z is yaw 0; a look of its own per fighter.
-                fighters.Add(population.SpawnSandbox(world, record, new Vector2(battleSpot.X + x, battleSpot.Z + z), player: false,
-                    yaw: side == 0 ? 0 : MathF.PI, variant: side * 1000 + i + 1, faction: faction));
+                offsets[i] = new Vector2((i % BattleRankWidth - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
             }
+            // Facing +Z is yaw 0; a look of its own per fighter.
+            fighters.AddRange(population.SpawnSandboxSquad(world, record, new Vector2(battleSpot.X, battleSpot.Z), offsets, side == 0 ? 0 : MathF.PI, side * 1000 + 1, faction));
         }
         battleOrderedAt = -1;
         battleOver = false;
