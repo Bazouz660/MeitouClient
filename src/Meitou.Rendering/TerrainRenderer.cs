@@ -545,7 +545,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 c.Diffuse = Index(set.Diffuse, BindlessKind.Texture2DArray, standInArray);
                 c.Normal = Index(set.Normal, BindlessKind.Texture2DArray, standInArray);
                 c.Height = Index(set.Height, BindlessKind.Texture2DArray, standInArray);
-                c.Parallax = patches && textured && SandParallax.Active && set.Height is not null ? 1u : 0u;
+                c.Parallax = patches && textured && SandParallax.Active && set.Height is not null ? SandParallax.Depth : 0;
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);
                 c.Cells = Index(set.Cells, BindlessKind.UTexture2D, standInUInt);
                 c.BlendMap = Index(set.BlendMap, BindlessKind.Texture2D, standIn2D);

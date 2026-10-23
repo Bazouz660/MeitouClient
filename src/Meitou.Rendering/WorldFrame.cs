@@ -1042,6 +1042,8 @@ static class WorldFrame
         }
         sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
+        // Ours (docs/render-terrain.md "Sand parallax"): the depth of the sand's ripples, 0 off (the checkbox below toggles it too).
+        sliders.Add(new Slider("Sand parallax depth (cm)", 0, 40, () => SandParallax.Depth * 10, v => SandParallax.Depth = MathF.Round(v * 2) / 20, "0.0"));
         // The game's `Shadow Range` slider goes 1000 to 9000; the viewer allows more (the cascades stretch over it), and its left end (0) turns the
         // shadows off (low-end GPUs).
         Toggle? fifthCascade = null;
@@ -1110,6 +1112,7 @@ static class WorldFrame
         // The Faithful / Meitou switches as checkboxes (ticked: Meitou), the F-key toggles' state.
         var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
+        (toggles ??= []).Add(new Toggle("Sand parallax", () => SandParallax.Active, v => SandParallax.Active = v, OnOff: true));
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)
