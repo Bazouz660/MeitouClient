@@ -294,11 +294,19 @@ public sealed class FrameProfiler : IDisposable
     /// <summary>The VRAM pie at the top right is shown (Shift+F12 in the game), with the profiler chart or without it.</summary>
     public bool ShowVram { get; set; }
 
-    // VRAM is read every 30 frames (a driver call), for the chart's header and the pie; only while either is shown.
+    // VRAM (a driver call) and RAM are read every 30 frames, for the chart's header and the pie; only while either is shown.
     void RefreshVram()
     {
-        if (vramAge-- <= 0) { vram = native.Device.VideoMemory(); vramSlices = VramSlices(); vramAge = 30; }
+        if (vramAge-- <= 0)
+        {
+            vram = native.Device.VideoMemory();
+            vramSlices = VramSlices();
+            ram = (Environment.WorkingSet, GC.GetTotalMemory(false));
+            vramAge = 30;
+        }
     }
+
+    (long WorkingSet, long Managed) ram;
 
     /// <summary>The VRAM pie at the top right, while <see cref="ShowVram"/>.</summary>
     public void DrawVram(DebugOverlay overlay, int width, int height)
@@ -500,8 +508,9 @@ public sealed class FrameProfiler : IDisposable
         float x0 = margin, x1 = width - margin, y1 = height - margin, y0 = Math.Max(y1 - panelH, margin);
         overlay.Rect(x0, y0, x1, y1, DebugOverlay.PanelColour);
         RefreshVram();
-        string header = $"Profiler: {(showGpu ? "GPU" : "render thread (includes driver waits)")} ms per stage, last {History} frames   (F12: {(showGpu ? "cpu" : "off")})   " +
-            $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   ";
+        // The process's RAM: its working set (all it holds in physical memory) and the managed heap within it.
+        string header = string.Create(CultureInfo.InvariantCulture, $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   " +
+            $"ram {ram.WorkingSet / 1073741824.0:0.00} GB (managed {ram.Managed / 1073741824.0:0.00})   ");
         overlay.Text(header, x0 + pad, y0 + pad, DebugOverlay.TextColour);
         // The whole frame (FrameColour line): mean of the last frames, frames a second and the longest kept.
         double frameMean = Mean(frameTime, cpuHead, cpuCount, meanFrames);
