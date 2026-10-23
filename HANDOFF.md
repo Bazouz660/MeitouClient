@@ -60,8 +60,11 @@ The previous safe mode is no longer needed for the black-terrain/water/foliage f
 workflow already builds `osx-arm64` and `osx-x64` packages (README has the download links). Settings now has a **Renderer**
 choice on macOS Apple silicon: **Vulkan (MoltenVK)** is the default and reference, **Metal** starts the game with
 `--renderer metal`, removes `DYLD_LIBRARY_PATH` and needs no Homebrew Vulkan loader. The choice lives in `launcher.json`
-and is appended after Launch arguments, so it overrides a hand-written `--renderer`. The launcher runs installed GitHub
-releases, not a local checkout; a release without the Metal backend reports the game's error in the status line.
+and is appended after Launch arguments, so it overrides a hand-written `--renderer`. Vulkan now gets a narrow
+`~/Library/Application Support/Meitou/vulkan/` loader folder through `DYLD_LIBRARY_PATH` (symlinks to the loader and
+MoltenVK) instead of all of `/opt/homebrew/lib`, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies.
+The launcher runs installed GitHub releases, not a local checkout; a release without the Metal backend reports the
+game's error in the status line.
 
 A debug `dotnet run` from the agent shell on 2026-10-23 failed before showing a window with Avalonia.Native
 `RenderTimer` error `-6661` (no active display/WindowServer session after the crash); the Release build is 0 warnings /

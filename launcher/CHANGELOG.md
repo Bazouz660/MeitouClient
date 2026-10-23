@@ -6,6 +6,8 @@ Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.
 
 - macOS Apple silicon: Settings → Renderer chooses native **Metal** or **Vulkan (MoltenVK)**. Vulkan stays the default;
   Metal needs no Homebrew Vulkan loader and is started without `DYLD_LIBRARY_PATH`.
+- macOS Vulkan now gets a narrow `vulkan/` loader folder through `DYLD_LIBRARY_PATH` instead of all of Homebrew's library
+  folder, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies.
 
 ## v1.1.1
 

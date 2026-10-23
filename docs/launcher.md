@@ -91,9 +91,11 @@ The launcher's data folder (its program, once installed, is Velopack's, e.g. `%L
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
 `launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, presets) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
-versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** also gets `DYLD_LIBRARY_PATH` and the MoltenVK
-setting ([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
-**Metal** gets neither and is started with `--renderer metal`.
+versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** gets `DYLD_LIBRARY_PATH` pointing at the
+launcher's `vulkan/` folder (symlinks to `libvulkan.1.dylib` and `libMoltenVK.dylib`, with the sources found under Homebrew) plus the
+MoltenVK setting ([macos-port](macos-port.md#running)); Play refuses with a `brew install` hint when no loader is found. Keeping the
+loader in its own folder avoids putting all of Homebrew's `libjpeg`/`libpng` on the game's dyld path. **Metal** gets neither and is
+started with `--renderer metal`.
 Play refuses while the game it started still runs. A game that exits with a non-zero code is reported in the status line with its
 `log.txt` path.
 

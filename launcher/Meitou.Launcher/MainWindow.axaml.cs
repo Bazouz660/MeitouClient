@@ -914,18 +914,47 @@ public sealed partial class MainWindow : Window
     }
 
     // dlopen's default path lacks Homebrew's lib dir, and a launcher started from Finder has no DYLD_LIBRARY_PATH, so the game
-    // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Values already set win.
-    // False when no folder on the resulting path holds the loader.
+    // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Instead of putting the
+    // whole Homebrew lib directory on the game's dyld path (which injects libjpeg/libpng into AppKit/ImageIO), link only the
+    // Vulkan loader into the launcher's own folder. A user-supplied path is searched too, but the game gets the narrow folder.
     static bool AddMacVulkanEnvironment(IDictionary<string, string?> environment)
     {
         environment.TryGetValue("DYLD_LIBRARY_PATH", out var existing);
-        var dirs = (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries).ToList();
-        foreach (var dir in new[] { "/opt/homebrew/lib", "/usr/local/lib" })
-            if (!dirs.Contains(dir) && File.Exists(Path.Combine(dir, "libvulkan.1.dylib"))) dirs.Add(dir);
-        if (dirs.Count > 0) environment["DYLD_LIBRARY_PATH"] = string.Join(':', dirs);
+        var candidates = (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(["/opt/homebrew/lib", "/usr/local/lib"])
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        string? source = candidates.FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libvulkan.1.dylib")));
+        if (source is null) return false;
+        string? molten = candidates.FirstOrDefault(dir => File.Exists(Path.Combine(dir, "libMoltenVK.dylib")));
+        string loaderDirectory = LinkVulkanLibraries(source, molten) ?? source;
+        environment["DYLD_LIBRARY_PATH"] = loaderDirectory;
         if (!environment.TryGetValue("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", out var mvk) || string.IsNullOrEmpty(mvk))
             environment["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1";
-        return dirs.Any(d => File.Exists(Path.Combine(d, "libvulkan.1.dylib")));
+        return true;
+    }
+
+    // The loader is looked up by name from DYLD_LIBRARY_PATH; the ICD JSON still points MoltenVK at its absolute Homebrew path.
+    static string? LinkVulkanLibraries(string source, string? molten)
+    {
+        try
+        {
+            var directory = Path.GetFullPath(Path.Combine(LauncherConfig.DataDirectory, "vulkan"));
+            if (Path.GetFullPath(source) == directory) return directory;
+            Directory.CreateDirectory(directory);
+            Link(Path.Combine(directory, "libvulkan.1.dylib"), Path.Combine(source, "libvulkan.1.dylib"));
+            if (molten is not null) Link(Path.Combine(directory, "libMoltenVK.dylib"), Path.Combine(molten, "libMoltenVK.dylib"));
+            return directory;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    static void Link(string path, string target)
+    {
+        if (Path.GetFullPath(path) == Path.GetFullPath(target)) return;
+        try { File.Delete(path); }
+        catch (FileNotFoundException) { }
+        File.CreateSymbolicLink(path, target);
     }
 
     // Space-separated, with double quotes around arguments that contain spaces.

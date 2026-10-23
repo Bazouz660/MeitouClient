@@ -12,11 +12,12 @@ A native Metal path next to Vulkan: [metal-backend](metal-backend.md).
   lacks it). SIP-restricted launchers such as `nohup` strip that variable; GLFW then reports it "doesn't support
   Vulkan". `VulkanDevice.Create` checks for `libvulkan.1.dylib` first and names this cause.
 - `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=1` is needed (lifts Metal's 16-sampler cap for regular descriptor sets).
-- The launcher's Play sets both for **Vulkan** (Homebrew lib dirs holding `libvulkan.1.dylib` appended to any existing
-  `DYLD_LIBRARY_PATH`; an existing MVK value is kept): a Finder-started launcher has neither (#20). **Unknown**: not yet
-  confirmed on a Mac. A `~/lib` symlink does not help (**Observed**, #20). The launcher's **Metal** choice starts the
-  game with `--renderer metal` and removes `DYLD_LIBRARY_PATH`; it needs neither the loader nor MoltenVK. Metal is offered
-  on Apple silicon only in the launcher for now.
+- The launcher's Play sets both for **Vulkan** and searches the existing `DYLD_LIBRARY_PATH` plus Homebrew for the loader;
+  it then symlinks `libvulkan.1.dylib` and `libMoltenVK.dylib` into `~/Library/Application Support/Meitou/vulkan` and points
+  the game's `DYLD_LIBRARY_PATH` at that narrow folder, not at all of `/opt/homebrew/lib` (an existing MVK value is kept):
+  a Finder-started launcher has neither (#20). **Unknown**: not yet confirmed on a Mac. A `~/lib` symlink does not help
+  (**Observed**, #20). The launcher's **Metal** choice starts the game with `--renderer metal` and removes
+  `DYLD_LIBRARY_PATH`; it needs neither the loader nor MoltenVK. Metal is offered on Apple silicon only in the launcher for now.
 - Screenshots and other `C:\Temp` defaults land in a folder literally named `C:\Temp` under the CWD.
 
 ## MoltenVK constraints and the fixes
