@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Data.Textures;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
@@ -9,7 +10,7 @@ namespace Meitou.Rendering;
 /// The blood on the ground (docs/game/blood-decals.md): the decal cells nearest the eye within the game's <c>Decal Range</c>, up to <see cref="Slots"/>, each drawn into
 /// a layer of a <c>Decal Resolution</c>² texture array (the game's <c>Kenshi_Decal_Texture_n</c>), which the terrain's colour shader lays over its albedo
 /// (<see cref="Apply"/>). A layer is drawn again only when its cell changes or a new cell takes it. Each decal is its texture × its colour, alpha blended into the
-/// colour and added into the alpha, as the game's <c>Quad2DMaterial</c> draws it.
+/// colour and added into the alpha, as the game's <c>Quad2DMaterial</c> draws it: one instanced draw per layer, each decal's texture by its bindless index.
 /// </summary>
 public sealed unsafe class TerrainDecalRenderer : IDisposable
 {
@@ -17,34 +18,61 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     public const int Slots = 8;
 
     const string Vertex = """
-        #version 330 core
-        uniform vec2 uCentre;
-        uniform vec2 uAxisW;
-        uniform vec2 uAxisH;
-        out vec2 vUv;
+        #version 450
+        layout(location = 0) in vec4 aQuad;     // the centre and the width axis, in clip space
+        layout(location = 1) in vec4 aColour;   // its alpha at most the life
+        layout(location = 2) in vec2 aAxisH;    // the height axis
+        layout(location = 3) in uint aSprite;   // the texture's bindless index
+        layout(location = 0) out vec2 vUv;
+        layout(location = 1) out vec4 vColour;
+        layout(location = 2) flat out uint vSprite;
         void main()
         {
-            vec2 q = vec2(gl_VertexID & 1, gl_VertexID >> 1);
+            vec2 q = vec2(gl_VertexIndex & 1, gl_VertexIndex >> 1);
             vUv = q;
-            gl_Position = vec4(uCentre + (q.x - 0.5) * uAxisW + (q.y - 0.5) * uAxisH, 0.0, 1.0);
+            vColour = aColour;
+            vSprite = aSprite;
+            gl_Position = vec4(aQuad.xy + (q.x - 0.5) * aQuad.zw + (q.y - 0.5) * aAxisH, 0.0, 1.0);
         }
         """;
 
-    const string Fragment = """
-        #version 330 core
-        in vec2 vUv;
-        out vec4 fragColour;
-        uniform sampler2D uSprite;
-        uniform vec4 uColour;
-        void main() { fragColour = texture(uSprite, vUv) * uColour; }
+    static readonly string Fragment = "#version 450\n" + BindlessTable.Declarations(NativeShaders.BindlessSet) + """
+        layout(location = 0) in vec2 vUv;
+        layout(location = 1) in vec4 vColour;
+        layout(location = 2) flat in uint vSprite;
+        layout(location = 0) out vec4 fragColour;
+        void main() { fragColour = texture(textures2D[nonuniformEXT(vSprite)], vUv) * vColour; }
         """;
 
+    /// <summary>One decal's instance row (<see cref="Vertex"/>'s inputs).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    struct DecalInstance
+    {
+        public const int Size = 48;
+        public Vector4 Quad, Colour;
+        public Vector2 AxisH;
+        public uint Sprite, Pad;
+    }
+
+    static readonly VertexLayout Rows = new(
+        new VertexInput(0, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, DecalInstance.Size, true),
+        new VertexInput(1, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, DecalInstance.Size, true),
+        new VertexInput(2, Silk.NET.Vulkan.Format.R32G32Sfloat, DecalInstance.Size, true),
+        new VertexInput(3, Silk.NET.Vulkan.Format.R32Uint, DecalInstance.Size, true));
+
+    // The colour alpha blended (red, green, blue), the alpha added: the game's separate blend in one pass.
+    static readonly BlendState Blend = new(true, Silk.NET.Vulkan.BlendFactor.SrcAlpha, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha,
+        AlphaSrc: Silk.NET.Vulkan.BlendFactor.One, AlphaDst: Silk.NET.Vulkan.BlendFactor.One);
+
     readonly GpuContext gpu;
-    readonly LegacyProgram program;
-    readonly NativeSegment segment;
-    readonly UniformHandle centre, axisW, axisH, colour;
-    readonly SamplerSlot sprite;
+    readonly NativeFrame frame;
+    readonly ShaderProgram program;
+    GraphicsPipeline? pipeline;
     readonly SampledImage?[][] sprites;
+    // Each sprite's bindless index (uint.MaxValue: none), registered with the samplers of spriteBias (the upscaler's LOD bias, as the images give them).
+    readonly uint[][] spriteIndex;
+    float spriteBias = float.NaN;
+    DecalInstance[] instances = new DecalInstance[256];
     // Each layer's cell, the cell version it shows, the rewrite it was cleared at and how many of the cell's appended decals it holds since (TerrainDecalStore.CellRewrite).
     readonly (uint Key, int Version, int Rewrite, int Appended)[] slots = new (uint, int, int, int)[Slots];
     readonly List<(float Distance, uint Key)> near = [];
@@ -58,13 +86,9 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     {
         this.gpu = gpu;
         this.sprites = sprites;
-        program = LegacyProgram.Create(gpu, Vertex, Fragment, "terrain decals");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, "terrain decals");
-        centre = program.Uniform("uCentre");
-        axisW = program.Uniform("uAxisW");
-        axisH = program.Uniform("uAxisH");
-        colour = program.Uniform("uColour");
-        sprite = program.Sampler("uSprite");
+        frame = new NativeFrame(gpu);
+        program = frame.Program(Vertex, Fragment, "terrain decals");
+        spriteIndex = [.. sprites.Select(list => Enumerable.Repeat(uint.MaxValue, list.Length).ToArray())];
     }
 
     /// <summary>The renderer for the decal textures <paramref name="files"/> (per <see cref="TerrainDecalType"/>, its variants in order); a file that cannot be read draws nothing.</summary>
@@ -96,6 +120,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     /// <summary>Picks the cells near <paramref name="eye"/> and draws the layers whose cell changed. Before the scene (outside a pass).</summary>
     public void Record(TerrainDecalStore store, Vector3 eye)
     {
+        RegisterSprites();
         near.Clear();
         float range = MathF.Max(Range, 0);
         foreach (uint key in store.Cells)
@@ -153,8 +178,8 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
             int rewrite = store.CellRewrite(key);
             var appended = store.Appended(key);
             var slot = slots[layer];
-            if (slot.Version != 0 && slot.Rewrite == rewrite && slot.Appended <= appended.Length) DrawLayer(cmd, layer, appended[slot.Appended..], clear: false);
-            else DrawLayer(cmd, layer, store.In(key), clear: true);
+            if (slot.Version != 0 && slot.Rewrite == rewrite && slot.Appended <= appended.Length) DrawLayer(cmd, layer, store, appended[slot.Appended..], clear: false);
+            else DrawLayer(cmd, layer, store, store.In(key), clear: true);
             slots[layer] = (key, version, rewrite, appended.Length);
         }
         if (cmd is not null)
@@ -169,42 +194,59 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     /// <summary>
     /// Clears <paramref name="layer"/> when <paramref name="clear"/> and draws <paramref name="decals"/> into it (<c>FUN_1408dec40</c>): a quad centred on the decal's
     /// place in the cell, its sides the half sizes / 10240 in clip space along the rotation, the texture × the colour (its alpha at most the life). The colour is alpha
-    /// blended (red, green, blue only), then the alpha added (alpha only), the game's separate blend.
+    /// blended (red, green, blue only) and the alpha added, the game's separate blend; one instanced draw in the decals' order.
     /// </summary>
-    void DrawLayer(CommandList cmd, int layer, ReadOnlySpan<TerrainDecal> decals, bool clear)
+    void DrawLayer(CommandList cmd, int layer, TerrainDecalStore store, ReadOnlySpan<TerrainDecal> decals, bool clear)
     {
         if (!clear && decals.IsEmpty) return;
+        if (instances.Length < decals.Length) instances = new DecalInstance[Math.Max(decals.Length, instances.Length * 2)];
+        int n = 0;
+        foreach (var d in decals)
+        {
+            var indices = spriteIndex[(int)d.Type];
+            if (d.Variant >= indices.Length || indices[d.Variant] == uint.MaxValue) continue;
+            float angle = d.Rotation / 1000f, s = MathF.Sin(angle), c = MathF.Cos(angle);
+            uint abgr = d.Colour;
+            instances[n++] = new DecalInstance
+            {
+                Quad = new Vector4(d.LocalX * 2 / 1000f - 1, d.LocalZ * 2 / 1000f - 1, d.HalfWidth / 10240f * s, d.HalfWidth / 10240f * c),
+                AxisH = new Vector2(d.HalfHeight / 10240f * c, -d.HalfHeight / 10240f * s),
+                Colour = new Vector4((abgr & 0xFF) / 255f, (abgr >> 8 & 0xFF) / 255f, (abgr >> 16 & 0xFF) / 255f, MathF.Min((abgr >> 24) / 255f, store.LifeLeft(d))),
+                Sprite = indices[d.Variant],
+            };
+        }
         var t = PassTargets.Of(target, null);
         var colourTarget = new RenderTarget(target!.Attachment(0, layer), clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load,
             new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(0f, 0f, 0f, 0f)), target.Image);
         t = t with { Colour = colourTarget };
         cmd.BeginRendering(t.Rendering);
-        var blendColour = new BlendState(true, Silk.NET.Vulkan.BlendFactor.SrcAlpha, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha);
-        var addAlpha = new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.One);
-        for (int pass = 0; pass < 2; pass++)
+        if (n > 0)
         {
-            var state = pass == 0
-                ? DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: blendColour, mask: DrawState.Rgb)
-                : DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: addAlpha, mask: Silk.NET.Vulkan.ColorComponentFlags.ABit);
+            var rows = gpu.Frame.Constants.Allocate((ulong)(n * DecalInstance.Size), 16);
+            MemoryMarshal.AsBytes(instances.AsSpan(0, n)).CopyTo(new Span<byte>(rows.Pointer, n * DecalInstance.Size));
+            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: Blend);
             state.Record(cmd, t);
-            cmd.BindPipeline(segment.Get(state, t.Formats, null));
-            foreach (var d in decals)
-            {
-                var images = sprites[(int)d.Type];
-                if (d.Variant >= images.Length || images[d.Variant] is not { } image) continue;
-                float angle = d.Rotation / 1000f, s = MathF.Sin(angle), c = MathF.Cos(angle);
-                uint abgr = d.Colour;
-                float alpha = MathF.Min((abgr >> 24) / 255f, d.Life);
-                program.Set(centre, d.LocalX * 2 / 1000f - 1, d.LocalZ * 2 / 1000f - 1);
-                program.Set(axisW, d.HalfWidth / 10240f * s, d.HalfWidth / 10240f * c);
-                program.Set(axisH, d.HalfHeight / 10240f * c, -d.HalfHeight / 10240f * s);
-                program.Set(colour, (abgr & 0xFF) / 255f, (abgr >> 8 & 0xFF) / 255f, (abgr >> 16 & 0xFF) / 255f, alpha);
-                program.Bind(sprite, image.Sampled());
-                program.Flush(cmd);
-                cmd.Draw(4);
-            }
+            cmd.BindPipeline(pipeline ??= gpu.Pipelines.Get(state.Pipeline(program, Rows, Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, t.Formats, "terrain decals")));
+            frame.Bind(cmd, program.Layout, default);
+            Span<BufferBinding> buffers = [new(rows.Handle, rows.Offset), new(rows.Handle, rows.Offset + 16), new(rows.Handle, rows.Offset + 32), new(rows.Handle, rows.Offset + 40)];
+            cmd.BindVertexBuffers(0, buffers);
+            cmd.Draw(4, (uint)n);
         }
         cmd.EndRendering();
+    }
+
+    /// <summary>The sprites into the bindless table, again with new samplers when the LOD bias they are sampled with changed.</summary>
+    void RegisterSprites()
+    {
+        if (gpu.LodBias == spriteBias) return;
+        spriteBias = gpu.LodBias;
+        for (int t = 0; t < sprites.Length; t++)
+            for (int v = 0; v < sprites[t].Length; v++)
+            {
+                if (sprites[t][v] is not { } image) continue;
+                if (spriteIndex[t][v] == uint.MaxValue) spriteIndex[t][v] = gpu.Bindless.Register(BindlessKind.Texture2D, image.Sampled());
+                else gpu.Bindless.Update(BindlessKind.Texture2D, spriteIndex[t][v], image.Sampled());
+            }
     }
 
     /// <summary>The cells for the terrain's colour shader (<c>uBlood</c>, <c>uBloodCount</c>, <c>uBloodCellSize</c>, <c>uBloodCells</c>): none until a cell is drawn.</summary>
@@ -224,8 +266,13 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     {
         if (bindless is { } b) gpu.Bindless.Free(BindlessKind.Texture2DArray, b.Index);
         target?.Dispose();
+        foreach (var list in spriteIndex)
+            foreach (uint index in list)
+                if (index != uint.MaxValue) gpu.Bindless.Free(BindlessKind.Texture2D, index);
         foreach (var list in sprites)
             foreach (var image in list) image?.Dispose();
+        gpu.Pipelines.Forget(program);
         program.Dispose();
+        frame.Dispose();
     }
 }

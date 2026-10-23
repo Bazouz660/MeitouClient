@@ -21,7 +21,8 @@ public enum TerrainDecalType : byte
 /// <param name="HalfHeight">Size × the texture's height × 10.</param>
 /// <param name="Rotation">The angle in radians × 1000: the texture's width axis points along (sin, cos) in X/Z.</param>
 /// <param name="Colour">ABGR (A in the top byte, R in the bottom): the race's blood colour and the decal's opacity.</param>
-/// <param name="Life">Seconds of game time left (99 when made); the opacity is at most this.</param>
+/// <param name="Life">Seconds of game time left (99 when made; the opacity is at most this), as a save holds it; inside a <see cref="TerrainDecalStore"/> the
+/// <see cref="TerrainDecalStore.Clock"/> time it runs out at.</param>
 public record struct TerrainDecal(uint Key, TerrainDecalType Type, byte Variant, short LocalX, short LocalZ, short HalfWidth, short HalfHeight, short Rotation,
     uint Colour, float Life);
 
