@@ -381,7 +381,9 @@ Ranged state is hashed when used. Weapon/turret research: [combat.md](game/comba
 ### Animals
 
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
-animals use faction hostility and carrying/damage rules where eligible. Unarmed humans use
+animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
+bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
+([animals](game/animals.md#ageing)). Not built: the player animals' feeding goals (player characters have no AI). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations

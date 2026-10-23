@@ -182,7 +182,11 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     {
                         if (!table.TryResolveNext(id, out int slot) || !table.Cold(slot)!.IsPlayer) continue;
                         MovementSystem.Stop(table, slot);
+                        table.Cold(slot)!.Following = CharacterId.None;
                     }
+                    break;
+                case FollowOrder follow:
+                    Following.Apply(world, follow);
                     break;
                 case Items.ReadMapItem read:
                     ReadMap(world, read);

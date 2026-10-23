@@ -378,7 +378,7 @@ the exe scales it at load is **Unknown** (the formula is read as multiplying the
 | --- | --- | --- |
 | Selling a slave to a slaver | `CharacterTrading_SlaveSelling` `FUN_1406a6f50` | an explicit override if the caller gave one, else `clamp(buyValue / 2, 200, 2500)` |
 | Buying a slave | `CharacterTrading_SlaveBuying` `FUN_1406a7970` | override or `buyValue`; **doubled** when the character is of the player's faction |
-| Buying an animal | `CharacterTrading_AnimalBuying` `FUN_1406a9440` | override or 14000, times `(growth + 0.1)` where `growth` = the animal's `vfunc 0x398` (age/maturity 0..1) |
+| Buying an animal | `CharacterTrading_AnimalBuying` `FUN_1406a9440` | override or 14000, times `(age + 0.1)`, the age the animal's `vfunc 0x398`; list and confirm in [animals](animals.md#buying-animals) |
 | Paying bail | `CharacterTrading_PrisonerBailout` | section 11.5 |
 
 The override is the dialogue effect's val0 when it is 1 or more. **Slave windows** (DA 41 `CHOOSE_SLAVES_SELLING` / 42 `CHOOSE_SLAVES_BUYING`, `FUN_140680560`,

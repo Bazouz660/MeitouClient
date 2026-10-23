@@ -366,6 +366,8 @@ public static partial class SaveCapture
             if (id.IsNone) RagdollSave.Write(g, null);
             else if (world.Systems.OfType<Ragdolls.RagdollSystem>().FirstOrDefault() is { } ragdolls) RagdollSave.Write(g, ragdolls.SaveState(id));
             if (cold.PortraitSerial is { } portraitSerial) g.Ints["portrait_serial"] = (int)portraitSerial;
+            // The character's slot 0x398 (FUN_1406280a0): an animal's age, 1 for people (docs/game/animals.md "Ageing"; Verified in vanilla saves).
+            if ((cold.Stats ?? link?.Stats) is { } aged) g.Floats["age"] = aged.Scale;
         }
 
         // Body: stats and medical state, from the host, else the loaded ones, else (for a new character) defaults.

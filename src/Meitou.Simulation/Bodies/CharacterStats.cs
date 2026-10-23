@@ -34,7 +34,7 @@ public sealed class CharacterStats
 
     /// <summary>
     /// The read-time stat multiplier (<c>CharStats</c> +0x34): 1 for people here; an animal's is its age (<c>CharStatsAnimal</c> sets it from the character's slot 0x398,
-    /// which returns the age, <b>Observed</b>, docs/game/animals.md). The combat formulas multiply the stats they read by it; it is not saved (an animal's comes from its record).
+    /// which returns the age, <b>Observed</b>, docs/game/animals.md). The combat formulas multiply the stats they read by it. An animal's grows over time (<see cref="BodySystem"/>) and is saved as GAMESTATE_CHARACTER <c>age</c>.
     /// </summary>
     public float Scale { get; set; } = 1;
 

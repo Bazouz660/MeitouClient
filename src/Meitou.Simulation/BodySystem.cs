@@ -61,6 +61,20 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         return (kind, factor * world.Research.Upgrade(fixture.RecordId).ProductionMult);
     }
 
+    /// <summary>
+    /// A living animal grows (<c>CharacterAnimal</c> slot 0xe8, <c>FUN_1405cdf00</c>, docs/game/animals.md "Ageing", <b>Observed</b>): while its age is below
+    /// <see cref="AnimalData.GrowUntil"/> it gains <paramref name="dt"/> / (day length x <c>lifespan</c>) per update. The age is its stats multiplier; its size lerp(age, scale min,
+    /// scale max) is the parts' HP multiplier, the blood capacity's and the hunger rate's k at once (the original reads slot 0x390 each time). The drawn size follows only in
+    /// steps: once the age has moved more than 0.05 past <see cref="CharacterCold.ShownAge"/> it is noted, and below 0.95 the look is refreshed to it.
+    /// </summary>
+    static void Age(CharacterCold cold, AnimalData animal, CharacterStats stats, MedicalState medical, float dt)
+    {
+        if (stats.Scale >= AnimalData.GrowUntil || animal.AgePerSecond <= 0) return;
+        stats.Scale += dt * animal.AgePerSecond;
+        medical.SetAnimalBody(animal.Scale(stats.Scale), animal.HpMult);
+        if (stats.Scale - cold.ShownAge > AnimalData.ResizeStep && stats.Scale < AnimalData.ResizeBelow) cold.ShownAge = stats.Scale;
+    }
+
     public void Act(World world, Partition part, EffectBuffer effects)
     {
         var table = world.Characters;
@@ -80,6 +94,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 n.Velocity = Vector3.Zero;
             }
             if (medical.Dead) continue;
+            if (cold.Animal is { } animal) Age(cold, animal, stats, medical, world.TickSeconds);
             // The load: the inventory weight, plus carry person weight while carrying someone, against the strength the injuries leave (character-stats.md "Encumbrance and carrying").
             float load = cold.Inventory?.ContentWeight() ?? 0;
             bool carrying = !cold.Carrying.IsNone;

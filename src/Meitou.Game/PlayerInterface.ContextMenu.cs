@@ -9,7 +9,7 @@ namespace Meitou.Game;
 /// The context menu (the original's ContextMenuGUI, <c>Kenshi_ContextMenu</c>; docs/game/ui-input.md section 7): holding the command (right) button on a character for
 /// <see cref="ContextHoldSeconds"/> opens a menu of the orders the selection can give it, titled with its name; a quicker click gives the default order at once, as before.
 /// A left click on a verb gives it; any other click, or Esc, closes the menu. The verbs are the original's names for the orders Meitou has (attack, trade, first aid, pick up,
-/// put down, loot); Talk opens a conversation (<see cref="Meitou.Simulation.Dialogue.DialogueSystem"/>); the rest of its verb list (follow, bodyguard...) waits for those systems.
+/// put down, loot, follow); Talk opens a conversation (<see cref="Meitou.Simulation.Dialogue.DialogueSystem"/>); the rest of its verb list (bodyguard...) waits for those systems.
 /// </summary>
 sealed partial class PlayerInterface
 {
@@ -44,6 +44,9 @@ sealed partial class PlayerInterface
             if (target.StealthKoChance is { } chance)
                 verbs.Add(($"{Loc.Tr("Stealth KO")} ({Math.Clamp(chance, 0, 100):0}%)", () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));
         }
+        // One of the player's own, up, uncaged and not selected: the original's "Follow" (order 31, FUN_1407a6bc0; its "Inventory" and "Bodyguard" there are not built).
+        if (!down && target.IsPlayer && target.Prison is null && !selection.Contains(id))
+            verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
         if (target.Body is { Dead: false, NeedsAid: true })
             verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
         if (target.Body is { Dead: false, NeedsSplint: true })

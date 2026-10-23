@@ -125,6 +125,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     continue;
                 }
                 GoTo(table, slot, target, cold.RunSpeed);
+                cold.Following = CharacterId.None;   // a move order ends a Follow order
                 (cold.GoalHeight, cold.GoalHeightAt) = (order.Target.Y, target);
             }
         }
@@ -238,6 +239,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             {
                 var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
                 var leader = Followed(squad, cold);
+                if (!cold.Following.IsNone && (leader.Slot == i || !table.IsAlive(leader)))
+                {
+                    // The one it was ordered to follow is gone: it stands where it is (engine choice; the original's end of order 31 is not traced).
+                    cold.Following = CharacterId.None;
+                    n.Task = (byte)CharacterTask.Idle;
+                    continue;
+                }
                 if (leader.IsNone || leader.Slot == i || !table.IsAlive(leader))
                 {
                     n.Task = (byte)CharacterTask.Wander;
@@ -289,9 +297,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
     }
 
-    /// <summary>Whom a follower keeps its slot by: a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
+    /// <summary>Whom a follower keeps its slot by: the character a Follow order named (<see cref="CharacterCold.Following"/>), a contract's mission target (Ai.AiMind.FollowTarget), else its squad's leader.</summary>
     static CharacterId Followed(Squad? squad, CharacterCold cold) =>
-        cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
+        !cold.Following.IsNone ? cold.Following : cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
 
     /// <summary>A follower's slot relative to <paramref name="leader"/> facing <paramref name="yaw"/>: its rank among the squad's other members (<see cref="Formation.Slot"/>).</summary>
     static Vector2 SlotOffset(Squad? squad, CharacterId self, CharacterId leader, float yaw)

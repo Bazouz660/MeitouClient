@@ -13,8 +13,8 @@ Weapon-level references manufacturer. Attack-type can disagree with weapon categ
 not found as an exe string (**Observed** editor-only inference, not all-mod guarantee).
 Bonedog/Garru/Bull/Leviathan/spider/crab and other creatures have distinct clips/materials/limits.
 
-Animal faction/hostility/run-away ratio applies ordinary relations; senses/blood/egg behaviours
-are separately decoded/uncertain. Race carriable gate governs lifting (Leviathan excluded in
+Animal faction/hostility/run-away ratio applies ordinary relations; smell/egg behaviours were not found
+([below](#breeding-and-eggs)). Race carriable gate governs lifting (Leviathan excluded in
 survey), not an invented mass threshold. Death items ([below](#death-items)), backpack and natural weapon are record inputs.
 Appearance uses animal mesh/fur/body scale; race-specific animation names and bounds matter.
 Pose/LOD distances can scale by animal size in engine, not original scheduler proof.
@@ -53,7 +53,7 @@ Pose/LOD distances can scale by animal size in engine, not original scheduler pr
 | 0x238 (`vfunc_71`) | 1 | `HP mult` (`+0x6dc`; read by `14062f000`, 1 when 0 or below) | part body scale (+0x5c), blood capacity |
 | 0x250 (`vfunc_74`) | the humanoid stats object | null | blood capacity uses s = 1; the hit path cannot sever limbs |
 | 0x390 (`vfunc_114`) | 1 | lerp(`+0x700`, `scale min`, `scale max`) | part HP multiplier (+0x58, rewritten each tick), blood capacity, hunger rate |
-| 0x398 (`vfunc_115`) | 1 | `+0x700` | the stats multiplier `+0x34` |
+| 0x398 (`vfunc_115`) | 1 | `+0x700`, the age ([Ageing](#ageing)) | the stats multiplier `+0x34`, the save's `age` |
 
 ### 7. Animations
 
@@ -101,8 +101,87 @@ from the start.
 Meitou: `ItemFactory.Build` adds them (`ItemInstance.Death`), stacks merge only with the same flag, the feed search skips them,
 moving an item out of its inventory clears it, and a loot take that removes flagged units from a live body butchers it.
 
-## 8. Not found
+## Ageing
 
-How the game levels the natural weapon item (`14062aa60` makes it from `weapon` and the `weapon level`
-manufacturer without a level argument; the default was not traced, **Unknown**), the consumers of `animal
-strength`, lifespan and the smells, how an animal ages (the writer of `+0x700`), animal AI goals.
+`CharacterAnimal` keeps `lifespan` at `+0x6f8`, `scale min` / `scale max` at `+0x6f0` / `+0x6f4`, `smell blood` / `smell eggs` at `+0x6e8` /
+`+0x6ec`, `HP mult` at `+0x6dc` (all read by `FUN_14062f000`, slot 0x378), the age at `+0x700` and the age of the last size refresh at `+0x6fc`
+(the constructor `FUN_1405c8150` sets both to its age argument) (**Observed**).
+- Getters (**Observed**): slot 0x398 the age; 0x388 sets it (only the save loader `FUN_140626f50` calls it on an animal); 0x390 the size
+  lerp(age, min, max); 0x3a8 `1 - (1 - scale min) x age` (consumers not traced); 0x430 / 0x438 the two smells (callers not traced).
+- Growth (slot 0xe8, `FUN_1405cdf00`, run by the character update, **Observed**): while alive (`+0x5bc` clear) and age < 1.1, age +=
+  `dt / 2618.18 / lifespan`, dt the update's elapsed time (`+0xcc`, the same value the base update passes on) and 2618.18 s the day length
+  (`FUN_14066cd50`). So `lifespan` is the game days from age 0 to 1. When the age has moved more than 0.05 past `+0x6fc`, `+0x6fc` takes it and,
+  below 0.95, the look's size is refreshed (appearance vfunc 0x30); slot 0x390 is read live by the body each tick ([Body](#3-body)).
+- So the stats multiplier (= age) keeps growing to 1.1, the size to lerp(1.1). Spawn ages come from the squad template ([factions 5.1](factions-squads-towns.md));
+  ages above 1.1 do not grow.
+- Saves: GAMESTATE_CHARACTER float `age` = slot 0x398 (`FUN_1406280a0`), read back through slot 0x388 (**Verified**: 159 828 vanilla platoon
+  records all have it, people 1, animals 0.00002 .. 2.07). Loading an animal below 0.99 rebuilds its look (`FUN_140627b30`).
+- Age word (slot 0x3a0, `FUN_1408882b0`): below 0.4 "Pup", below 0.6 "Teen", up to 1.1 "Adult", above "Elder".
+
+Meitou: `BodySystem.Age` grows `CharacterStats.Scale` and resets the body's size each tick, `CharacterCold.ShownAge` is `+0x6fc` (the drawn
+size), the save writes and reads `age`.
+
+## Pack animals
+
+- A new animal's inventory (`FUN_14062a130`, slot 0x2c0, **Observed**): a 5 x 4 `backpack_attach` section, the main grid `inventory w` x
+  `inventory h` (4 x 8 when either is below 1), then every `backpack` list entry is made and added equipped, whatever its values (Pack Bull's
+  entry is (0, 0, 0)); a saved inventory replaces this. Pack Beast and Pack Bull carry their CONTAINER this way.
+- Nothing else ties the bag to the squad: it is an ordinary inventory (feeding from squad mates reads it, [simulation](../simulation.md#items-and-eating)).
+
+Meitou: `ItemFactory.AddAnimalBackpacks`.
+
+## AI goals
+
+The character's permanent goals (`FUN_140621b70`, called on creation and on every faction change `FUN_1405cbac0`, **Observed**):
+IDLE (14) at 0.1, SELF_PRESERVATION (32, target itself) at 1.0, the FACTION's `AI Goals` (unless a platoon field, `+0x658 -> +0x78 -> +0xf8 + 0x210`,
+is set; the player faction's lists "Protect allies"), then:
+- not the player's faction (FACTION `+0x250` clear): the RACE's `AI Goals`;
+- the player's faction: AQUIRE_FOOD_AT_HOMEBASE (243) at 0.5 unless present; an animal also gets its RACE's `AI Goals`, EAT_FOOD_ON_GROUND (259)
+  at 0.5, and loses EAT_A_RANDOM_DEAD_BODY (230).
+
+Animal races list their feeding goals (**Verified**, probe): goats, bulls, garru, turtles "eating food on the ground"; bonedogs and boneyard wolves
+also "eating corpses" and the three limb games; beak things and spiders "eating any bodies"; raptors "eating crops". The ANIMAL_CHARACTER's own
+`AI Goals` (Follow leader on Pet Dog, Settler's Pup, Cornelius) is not read: the exe's only references to the string are this function and the two
+package loaders (**Observed**).
+
+## Following
+
+No goal makes an owned animal follow anyone (above). The player orders it like a person: the context menu offers "Follow" (verb 31,
+STAY_CLOSE_TO_TARGET) on one of the player's own characters who is up, uncaged and not selected (`FUN_1407a6bc0`, beside "Inventory" 26 and
+"Bodyguard" 45, **Observed**). The order giver (`FUN_1405c8da0`) then drops one follow order closing a circle back to the ordered character
+(`FUN_1405c8c10`, for orders 31 and 45). How the original follower moves (distance, speed) is **Unknown**.
+
+Meitou: `FollowOrder` sets `CharacterCold.Following` and the follow task (the squad formation slot behind that character); a move or stop
+order clears it; when the followed one is gone the follower stands (engine choice).
+
+## Buying animals
+
+DA 48 `CHOOSE_ANIMALS_BUYING` (`FUN_140680560`, **Observed**; 12 DIALOG_ACTION records in the data use it, **Verified**), when the target is not the
+speaker, opens the character trading window (`CharacterTrading_AnimalBuying` `FUN_1406a9440`, title "Buying Animals", confirm "Buy") on:
+1. every animal (slot 0x248) within 3000 units of the speaker, of the speaker's faction, whose town (`FUN_1405ce5f0`) is the speaker's, not dead;
+2. then the animals of the speaker's own platoon within 2304 units not dead and not yet listed.
+
+Rows: price = (val0 if 1 or more, else 14000) x (age + 0.1), truncated. Panel 1 "Strength:" (stats vfunc 0x10) and "Melee Attack:"
+(`FUN_140884ee0`; both read the age), "Gender:" Female / Male (appearance `sex female`, `FUN_140295a50`); panel 2 the name and "Age:" with
+"<age word> (<age x 100>)".
+
+Confirm (`FUN_1406aac20`, **Observed**):
+- more ticked rows than free places (CONSTANTS `max faction size` minus the player's characters): message box "Character Limit Reached",
+  "You cannot hire any more characters" / "You can only hire {1} more character(s)"; nothing is bought.
+- each bought animal: its AI orders cleared, toughness, athletics, melee defence, melee attack, martial arts, dodge, stealth, mass combat and
+  swimming x 0.25 (`FUN_1406aa730`), recruited as by DA 3/18 (`FUN_140692820`, [dialogue](dialogue.md#recruiting)).
+- each item in the bought animals' backpacks goes into the backpack of the seller's platoon members (tried from the last), else is destroyed.
+- the total is taken from the player's money; the character editor opens on the bought animals (`FUN_1406e32f0` -> `FUN_1405f4dd0`, mode 1).
+
+Meitou: `DialogueSystem` `CharacterTradeKind.AnimalBuying`; the town test is `Squad.Town`; the editor is not opened.
+
+## Breeding and eggs
+
+No breeding was found: "egg", "eggs", "pregnant", "mother" and "baby" are not strings of the exe (whole-string search), and the only `female chance` readers are the character
+factories, which roll the look's gender (`FUN_140581770`, `FUN_1402e2b50`; **Observed**). `smell eggs` is stored and has a getter whose callers
+were not traced. Eggs are not built.
+
+## Not found
+
+The default level of the natural weapon (`14062aa60` makes it without a level argument), the consumers of `animal strength`, the smells and
+slot 0x3a8; the movement rule of a Follow order.
