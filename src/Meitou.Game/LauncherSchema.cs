@@ -46,7 +46,7 @@ static class LauncherSchema
                     // Null defaults: the game's value depends on the Faithful / Meitou mode until the slider is saved.
                     Settings =
                     [
-                        Graphics(WorldFrame.TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, 1, Meitou.Data.Textures.TextureQuality.Default) with
+                        Graphics(WorldFrame.TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, 1, 0) with
                             { Labels = [.. Meitou.Data.Textures.TextureQuality.Labels] },
                         Graphics(WorldFrame.ObjectDistanceSlider, 1000, 400000, 100, Enhancements.MeitouObjectDistance) with { Logarithmic = true },
                         Graphics(WorldFrame.ShadowDistanceSlider, KenshiShadows.MinRange * 0.9f, 200000, 100, Enhancements.MeitouShadowRange) with
