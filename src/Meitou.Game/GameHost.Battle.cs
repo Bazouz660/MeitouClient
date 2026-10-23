@@ -13,12 +13,12 @@ sealed partial class GameHost
 {
     /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart.</summary>
     const float BattleGap = 40, BattleSpacing = 6;
-    const int BattleRankWidth = 10;
+    const int BattleRankWidth = 25;
     /// <summary>No orders before this tick: the blocks stand a moment before they charge.</summary>
     const int BattleOrderTick = 30;
 
-    /// <summary>The default spot (the owner's pick, 2026-10-23): a plateau about 3280 high, from camera code 01E66D91C77F164D45EA7C6446E5B9F6BF86EBB13F0000FA44.</summary>
-    public static readonly Vector2 BattleSpot = new(-74460, 14623);
+    /// <summary>The default spot (the owner's pick, 2026-10-23): a plateau about 1380 high, from camera code 01C69590C7EAFBAB44A4CE5146EAC4B2BFD203D43E755F7D44.</summary>
+    public static readonly Vector2 BattleSpot = new(-74028, 13428);
 
     bool IsBattle => g.Battle is not null;
     /// <summary>The floor is the sandbox's: the animation sandbox's, or the battle's with <c>--battle-map sandbox</c>.</summary>
