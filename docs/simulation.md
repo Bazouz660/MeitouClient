@@ -10,7 +10,8 @@ Control: 30 Hz real time, input/UI/camera continue while paused. Simulation: 1/3
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
-clocks, input and camera, and disposes systems/services.
+clocks, input and camera, and disposes systems/services. Of a frame's ticks only the last two publish
+a snapshot (`RunTick(publish)`), the pair the host interpolates between.
 
 At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
 and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
