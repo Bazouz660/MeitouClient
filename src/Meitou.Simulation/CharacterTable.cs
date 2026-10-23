@@ -56,6 +56,14 @@ public sealed class CharacterCold
     public float FollowPathTime { get; set; }
     /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
     public CharacterId FollowOrder { get; set; } = CharacterId.None;
+    /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
+    public bool Guarding { get; set; }
+    /// <summary>The target a manned-turret gunner was told to shoot at (Shoot At, 235; <see cref="Combat.ShootAtOrder"/>); None: the gunner chooses. Not saved; hashed only while set.</summary>
+    public CharacterId TurretTarget { get; set; } = CharacterId.None;
+    /// <summary>The caged prisoner this character walks to free (Set Free, 110; <see cref="Locks.SetFreeOrder"/>); None: none. Not saved; hashed only while set.</summary>
+    public CharacterId Freeing { get; set; } = CharacterId.None;
+    /// <summary>The free cage this character walks to get into (Get in, 107; <see cref="Locks.GetInCageOrder"/>); null: none. Not saved; hashed only while set.</summary>
+    public string? EnteringCage { get; set; }
     /// <summary>The path being followed (world positions, the next one at <c>CharacterHot.PathCursor</c>); replaced whole in a serial phase.</summary>
     public Vector3[] Path { get; set; } = [];
     /// <summary>
@@ -258,6 +266,12 @@ public sealed class CharacterCold
     public string? PickingLock { get; set; }
     /// <summary>The door this character is bashing in (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
     public string? Bashing { get; set; }
+    /// <summary>Whether <see cref="Bashing"/> was ordered by the player (Smash, 226) rather than found by the pursuit: the basher then needs no attack target. Hashed with <see cref="Bashing"/>.</summary>
+    public bool BashOrdered { get; set; }
+    /// <summary>The fixture whose lock this character cuts or breaks by order (Use Tools 285, Use Strength 286; <see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
+    public string? ForcingLock { get; set; }
+    /// <summary>How <see cref="ForcingLock"/> is forced.</summary>
+    public Locks.LockForce Force { get; set; }
     /// <summary>Game seconds since the last swing at <see cref="Bashing"/>' door (-1: walking there).</summary>
     public float BashTime { get; set; }
     /// <summary>The shackles this character is working on (<see cref="Locks.LockSystem"/>: picking, cutting; null: none). Hashed only while set.</summary>
@@ -508,7 +522,10 @@ public sealed class CharacterTable
             // The AI's decision and the trade hold add to the hash only while set, so worlds without AI packages hash as before.
             if (k.Ai is { } mind) { hasher.Add(0x41694D64); mind.Hash(ref hasher); }
             if (k.Engaged) hasher.Add(0x456E6761);
-            if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); }   // only while set, so worlds without follow orders hash as before
+            if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); if (k.Guarding) hasher.Add(0x47756172); }
+            if (!k.TurretTarget.IsNone) { hasher.Add(0x54725467); hasher.Add(k.TurretTarget); }
+            if (!k.Freeing.IsNone) { hasher.Add(0x46726565); hasher.Add(k.Freeing); }
+            if (k.EnteringCage is { } entering) { hasher.Add(0x456E7472); hasher.Add(Rng.StableHash(entering)); }   // only while set, so worlds without follow orders hash as before
             if (k.DialogueLocks is { Count: > 0 } locks)
             {
                 hasher.Add(0x4C6F6B73);
@@ -524,7 +541,8 @@ public sealed class CharacterTable
             if (k.Kidnapped) hasher.Add(0x4B64706E);
             if (k.SlaveState != 0) { hasher.Add(0x536C7653); hasher.Add(k.SlaveState); hasher.Add(k.SlaveOwner); }
             if (k.PickingLock is { } pick) { hasher.Add(0x5069636B); hasher.Add(Rng.StableHash(pick)); }
-            if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); }
+            if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); if (k.BashOrdered) hasher.Add(0x4F726473); }
+            if (k.ForcingLock is { } force) { hasher.Add(0x466F7263); hasher.Add(Rng.StableHash(force)); hasher.Add((int)k.Force); }
             if (k.Shackles is { } job) { hasher.Add(0x5368636B); hasher.Add(Rng.Key(job.Wearer)); hasher.Add((int)job.Work); }
             if (k.PickingUpItem is { } taking) { hasher.Add(0x54616B65); hasher.Add(taking); }
             // A builder's site, bar and the task it goes back to add to the hash only while it works one, so worlds without sites hash as before.

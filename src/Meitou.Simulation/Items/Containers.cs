@@ -62,15 +62,11 @@ namespace Meitou.Simulation
                 MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
                 return;
             }
-            if (world.Squads.All.Any(s => s.Shop?.Building == fixture.Building))
+            if (ShopOf(world, fixture) is not null && !order.Alt && theirs)
             {
-                // A shop's stock: the original's hint and a move without Alt; with Alt Meitou still refuses (the stock is the shop's one merged inventory, engine choice).
-                if (!order.Alt && theirs)
-                {
-                    world.Post("Hold down the ALT key to steal items");
-                    MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
-                }
-                else world.Post($"{walker.Name}: That stock is the shop's. Trade with the shopkeeper.");
+                // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the stock window shows the shop's merged stock).
+                world.Post("Hold down the ALT key to steal items");
+                MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
                 return;
             }
             var player = world.Player;
@@ -116,6 +112,15 @@ namespace Meitou.Simulation
                 if (!keep) player.OpenContainer = null;
             }
         }
+
+        /// <summary>The building shop whose stock lies in <paramref name="container"/>'s building, if any.</summary>
+        internal static Trading.Shop? ShopOf(World world, Locks.Fixture container) => world.Squads.All.Select(s => s.Shop).FirstOrDefault(s => s?.Building == container.Building);
+
+        /// <summary>
+        /// The grid a container window works on: the container's own, but in a building shop the shop's one merged stock (<see cref="Trading.Shop.ForBuilding"/>), so every stock container of
+        /// the shop shows the whole stock and taking from it is the theft of the original's shop container (<b>engine choice</b>: the original keeps the stock in the containers themselves).
+        /// </summary>
+        internal static Items.Inventory GridOf(World world, Locks.Fixture container) => ShopOf(world, container)?.Stock ?? container.Contents!;
 
         static bool SameFloor(Vector3 a, Vector3 b) => MathF.Abs(a.Y - b.Y) <= ContainerFloorSlack;
 

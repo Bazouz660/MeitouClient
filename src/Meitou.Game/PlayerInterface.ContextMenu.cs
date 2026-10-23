@@ -119,17 +119,23 @@ sealed partial class PlayerInterface
             if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
         }
         else if (selection.Contains(id)) { if (!down) verbs.Add(("Escape", () => Say(new Meitou.Simulation.Locks.GetOutOrder([id]) { Tick = session.World.Tick }))); }
-        else if (target.CarriedBy.IsNone) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+        else if (target.CarriedBy.IsNone)
+        {
+            // Its cage the player's: Set Free (110) and the pick-up verb; another faction's: the pick-up verb alone (the cage's own menu has Set Free).
+            if (prison.CageOwner == session.World.Player.Faction) verbs.Add(("Set Free", () => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
+            verbs.Add(PickUpVerb(target));
+        }
     }
 
     /// <summary>
     /// One of the player's own characters: another one than the selection is followed (31), and down it is picked up (225) and its inventory opened beside the selection's (26, labelled
-    /// Trade for the player's own). Not built: Bodyguard (45), Trade with a standing character, Stand Up (28).
+    /// Trade for the player's own), and Bodyguard (45, <see cref="FollowOrder.Guard"/>). Not built: Trade with a standing character, Stand Up (28: needs the voluntary crawl, which Meitou does not have).
     /// </summary>
     void OwnCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
         var id = target.Id;
         if (selection.Contains(id)) return;
+        verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
         if (!down || !target.CarriedBy.IsNone) return;
         verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
@@ -137,9 +143,9 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// Another faction's character. Standing: Talk To (12), Stealth KO (228, with its chance) while a selected character sneaks, and against a hostile one Attack Target (5), against
-    /// anyone else Attack Unprovoked (61) and Follow (31); Meitou adds Trade with a trader (its quick order). Down: Loot (26) and Pick Up (225). Not built: Attack All (16), Bodyguard (45),
-    /// Kidnap (246, Meitou's Pick Up stands in), Throw out of home / town (223, 273), Shoot At (235).
+    /// Another faction's character (docs/game/ui-input.md "Context menu verbs"). Standing: Talk To (12), Stealth KO (228, with its chance) while a selected character sneaks; against a hostile one Attack
+    /// All (16) and Attack Target (5), against anyone else Attack Unprovoked (61), Bodyguard (45) and Follow (31); Meitou adds Trade with a trader (its quick order). With the lead on a turret every
+    /// attack becomes Shoot At (235). Down: Loot (26) and the pick-up verb (<see cref="PickUpVerb"/>). Not built: Throw out of home / town (223, 273).
     /// </summary>
     void OtherCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
@@ -148,27 +154,74 @@ sealed partial class PlayerInterface
         {
             if (!target.CarriedBy.IsNone) return;
             verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
-            verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+            verbs.Add(PickUpVerb(target));
             return;
         }
+        bool onTurret = Selected().LastOrDefault() is { Turret: not null };
+        bool hostile = Hostile(target);
         if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
-        if (target.IsTrader && !Hostile(target)) verbs.Add(("Trade", () => Say(new Meitou.Simulation.Trading.OpenTrade(selection[0], id) { Tick = session.World.Tick })));
+        if (target.IsTrader && !hostile) verbs.Add(("Trade", () => Say(new Meitou.Simulation.Trading.OpenTrade(selection[0], id) { Tick = session.World.Tick })));
+        if (onTurret)
+        {
+            // The lead mans a turret: the attacks give way to Shoot At (235), which sends every selected gunner's fire at the target.
+            var gunners = Selected().Where(c => c.Turret is not null).Select(c => c.Id).ToArray();
+            verbs.Add(("Shoot At", () => Say(new Meitou.Simulation.Combat.ShootAtOrder(gunners, id) { Tick = session.World.Tick })));
+            return;
+        }
         if (target.StealthKoChance is { } chance)
             verbs.Add((WithChance("Stealth KO", chance), () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));
-        if (Hostile(target))
+        if (hostile)
         {
             // Fighting back at someone attacking the squad is defence, not an assault on its faction (as the quick order).
+            verbs.Add(("Attack All", () => AttackAll(selection, target)));
             verbs.Add(("Attack Target", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Defensive = target.FightsPlayer })));
             return;
         }
         verbs.Add(("Attack Unprovoked", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick })));
+        verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
+    }
+
+    /// <summary>How far from the clicked enemy Attack All looks for the others (an engine choice: the original's order 16 is "Attacking enemies", whose reach is <b>Unknown</b>).</summary>
+    const float AttackAllRadius = 800;
+
+    /// <summary>
+    /// Attack All (16, "Attacking enemies"; <b>engine</b> reading): every standing hostile character within <see cref="AttackAllRadius"/> of the clicked one is a target, and each selected
+    /// character attacks the nearest of them to itself.
+    /// </summary>
+    void AttackAll(IReadOnlyList<CharacterId> selection, CharacterSnapshot clicked)
+    {
+        var snapshot = session.CurrentSnapshot;
+        var foes = snapshot.Characters.Where(c => c.Id == clicked.Id || StandingHostile(c) && Vector3.Distance(c.Position, clicked.Position) <= AttackAllRadius).ToList();
+        var groups = new Dictionary<CharacterId, List<CharacterId>>();
+        foreach (var id in selection)
+        {
+            if (snapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } mine) continue;
+            var foe = foes.MinBy(f => Vector3.DistanceSquared(f.Position, mine.Position))!;
+            if (!groups.TryGetValue(foe.Id, out var list)) groups[foe.Id] = list = [];
+            list.Add(id);
+        }
+        foreach (var (foeId, attackers) in groups)
+            Say(new Meitou.Simulation.Combat.AttackOrder(attackers, foeId) { Tick = session.World.Tick, Defensive = foes.First(f => f.Id == foeId).FightsPlayer });
+    }
+
+    /// <summary>
+    /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) for an ally that is not a trader and for a caged character, else Kidnap (246), which
+    /// shows the chance column (100% for a downed target, <c>FUN_140885600</c>). Both give the pick-up order; the kidnapping is a crime only when witnessed. Not read: the original's tests of the
+    /// target's owner object, its +0xf0 list and the AI state 8.
+    /// </summary>
+    (string, Action) PickUpVerb(CharacterSnapshot target)
+    {
+        var id = target.Id;
+        void Give() => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick });
+        bool friendly = AlliedFaction?.Invoke(target.Faction) == true && !target.IsTrader;
+        return friendly || target.Prison is not null ? ("Pick Up", Give) : (WithChance("Kidnap", 100), Give);
     }
 
     /// <summary>
     /// A container (the original's building branch for a storage with an inventory): unlocked, Inventory (the player's) or Loot (26); another faction's locked one, Pick Lock (76). The
-    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once. Not built: Use Tools / Use Strength on a
-    /// container's lock (285, 286) and Auto-Haul (124) on an interior container.
+    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once (a shop's merged stock is stolen from);
+    /// a locked one also has Use Tools and Use Strength (285, 286). Not built: Auto-Haul (124) on an interior container.
     /// </summary>
     List<(string Caption, Action Give)> ContainerVerbs(Meitou.Simulation.Locks.ContainerSpot container)
     {
@@ -176,7 +229,12 @@ sealed partial class PlayerInterface
         if (SelectedIds().Count == 0) return verbs;
         bool own = container.Owner == session.World.Player.Faction;
         if (!container.Locked) verbs.Add((own ? "Inventory" : "Loot", () => OpenContainer(container.Id, true)));
-        else if (!own && container.Owner >= 0) verbs.Add(("Pick Lock", () => OpenContainer(container.Id, true)));
+        else
+        {
+            if (!own && container.Owner >= 0) verbs.Add(("Pick Lock", () => OpenContainer(container.Id, true)));
+            verbs.Add(("Use Tools", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], container.Id, Meitou.Simulation.Locks.LockForce.Tools) { Tick = session.World.Tick })));
+            verbs.Add(("Use Strength", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], container.Id, Meitou.Simulation.Locks.LockForce.Strength) { Tick = session.World.Tick })));
+        }
         return verbs;
     }
 
@@ -189,7 +247,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A door (the original's door branch): unlocked, the player's own gets Lock (77), every one Open (72) or Close (73); locked, the player's Unlock (140), another faction's Pick Lock (76).
-    /// Lock and Unlock act on all the building's doors (Meitou's lock order is per building, engine choice). Not built: Use Tools / Use Strength / Smash on a door (285, 286, 226).
+    /// Lock and Unlock act on all the building's doors (Meitou's lock order is per building, engine choice). A locked one also has Use Tools, Use Strength and Smash (285, 286, 226: <see cref="Meitou.Simulation.Locks.ForceLockOrder"/>).
     /// </summary>
     List<(string Caption, Action Give)> DoorVerbs((Meitou.Simulation.Locks.DoorPick Door, bool Locked) pick)
     {
@@ -201,6 +259,9 @@ sealed partial class PlayerInterface
         {
             if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
             else verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id, true) { Tick = session.World.Tick })));
+            verbs.Add(("Use Tools", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Tools) { Tick = session.World.Tick })));
+            verbs.Add(("Use Strength", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Strength) { Tick = session.World.Tick })));
+            verbs.Add(("Smash", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Smash) { Tick = session.World.Tick })));
             return verbs;
         }
         if (own) verbs.Add(("Lock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));

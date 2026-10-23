@@ -185,7 +185,11 @@ public sealed class PendingCrime
 public sealed record PayBailOrder(CharacterId Prisoner) : SimCommand;
 
 /// <summary>The carriers (the selection when empty) take the bodies they carry to the nearest free cage and put them in; a wanted captive pays its bounty (<see cref="ArrestSystem.Claim"/>).</summary>
-public sealed record PutInCageOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand;
+public sealed record PutInCageOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand
+{
+    /// <summary>The cage to take them to (a clicked cage, Put in 108); null: the nearest free one.</summary>
+    public string? Cage { get; init; }
+}
 
 /// <summary>A bounty line for the HUD (selected characters only): who wants the character, how much, for what, and the hours left (infinity: never expires).</summary>
 /// <summary>One bounty for the HUD; <see cref="Local"/>: the local faction's (the cage owner's while imprisoned, else the town the character stands in; docs/game/ui-screens.md section 4).</summary>

@@ -139,6 +139,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         if (world.Tick % CheckEveryTicks != 0) return;
         var table = world.Characters;
         var next = table.Next;
+        ResumeGuards(world, table);
         var taken = new HashSet<int>();
         for (int a = 0; a < table.HighWater; a++)
         {
@@ -156,6 +157,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                 taken.Add(t);
                 JoinMates(world, table, t, defenders, taken, CanFight);
             }
+            // Bodyguards of the attacked character come too (Bodyguard, order 45).
+            Guards(world, table, t, a, defenders, taken);
             // Allies come to a defender that is already fighting too.
             HelpAllies(world, table, t, a, defenders, taken);
             // The Hold order answers only an attacker within reach (Orders.HoldReach).
@@ -164,6 +167,38 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                 if (Orders.Has(table.Cold(defenders[k].Slot), CharacterOrders.Hold) && !Orders.InHoldReach(next[defenders[k].Slot].Position, from)) defenders.RemoveAt(k);
             if (defenders.Count == 0) continue;
             world.Defer(new AttackOrder(defenders, attacker) { Tick = world.Tick + 1, Defensive = true });
+        }
+    }
+
+    /// <summary>
+    /// Bodyguard (order 45, <b>engine</b> reading): the free characters following <paramref name="slot"/> as bodyguards (<see cref="CharacterCold.Guarding"/>) within <see cref="JoinRange"/> of it
+    /// defend it against <paramref name="attacker"/>, in slot order; never against a character of their own faction.
+    /// </summary>
+    static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    {
+        var next = table.Next;
+        var target = new CharacterId(slot, next[slot].Generation);
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || s == attacker || table.Cold(s) is not { Guarding: true } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
+            var d = next[s].Position - next[slot].Position;
+            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            defenders.Add(new CharacterId(s, next[s].Generation));
+            taken.Add(s);
+        }
+    }
+
+    /// <summary>A bodyguard whose fight ended (its task fell back to idle) goes back to its target.</summary>
+    static void ResumeGuards(World world, CharacterTable table)
+    {
+        var next = table.Next;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Guarding: true, InCombat: false } c) continue;
+            if (c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) { c.Guarding = false; c.FollowOrder = CharacterId.None; continue; }
+            next[s].Task = (byte)CharacterTask.Follow;
+            next[s].TaskTime = 0;
+            c.FollowPathTime = 0;
         }
     }
 
@@ -214,6 +249,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         if (task == (byte)CharacterTask.Attack) return false;
         if (table.Cold(slot) is not { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true } cold) return false;   // a carrier does not answer (the original's engagement weight is 0 while carrying)
         // The Passive order (non-combat mode) does not answer attacks by itself.
-        return !cold.IsPlayer || task == (byte)CharacterTask.Idle && (cold.Orders & CharacterOrders.Passive) == 0;
+        return !cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0;
     }
 }

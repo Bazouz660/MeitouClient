@@ -5,7 +5,11 @@ using Meitou.Simulation.Bodies;
 namespace Meitou.Simulation.Locks;
 
 /// <summary>Pick the lock of <see cref="Prisoner"/>'s cage (the original's Task_PickLock with a character target): the characters (the selection when empty) walk to it, or a caged one picks its own.</summary>
-public sealed record PickLockOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : SimCommand;
+public sealed record PickLockOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : SimCommand
+{
+    /// <summary>The cage to pick instead, by fixture id, when it is empty (then <see cref="Prisoner"/> is None).</summary>
+    public string? Cage { get; init; }
+}
 
 /// <summary>The characters (the selection when empty) leave their cage (Task_GetOutOfCage): refused while it is locked; an escape unless the sentence is served.</summary>
 public sealed record GetOutOrder(IReadOnlyList<CharacterId> Characters) : SimCommand;
@@ -34,7 +38,10 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
             {
                 case PickLockOrder pick:
                 {
-                    if (!table.TryResolveNext(pick.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } || world.Fixtures.Find(where) is not { } cage) break;
+                    Fixture? cage;
+                    if (pick.Cage is not null) cage = world.Fixtures.Find(pick.Cage) is { Kind: FixtureKind.Cage } empty ? empty : null;
+                    else cage = table.TryResolveNext(pick.Prisoner, out int p) && table.Cold(p) is { IsImprisoned: true, InWhat: { } where } ? world.Fixtures.Find(where) : null;
+                    if (cage is null) break;
                     foreach (var id in Who(world, pick.Characters))
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
@@ -66,6 +73,15 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 case DoorOrder door:
                     DoorOrderInput(world, door);
                     break;
+                case SetFreeOrder free:
+                    SetFreeInput(world, free);
+                    break;
+                case GetInCageOrder getIn:
+                    GetInInput(world, getIn);
+                    break;
+                case ForceLockOrder force:
+                    ForceInput(world, force);
+                    break;
             }
         }
     }
@@ -76,6 +92,8 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
         Rounds(world);
         ShackleWorkers(world);
         Bashers(world);
+        ForcedLocks(world);
+        CageWorkers(world);
         var table = world.Characters;
         var next = table.Next;
         for (int s = 0; s < table.HighWater; s++)

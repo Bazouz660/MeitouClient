@@ -416,7 +416,7 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   the sum of its BUILDING record's materials; the player's own site gets Dismantle (after "Are you sure?" the selection dismantles it, `DismantleOrder`,
   engine choice for the unknown callback) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
-  buildings only; its toggle and the For sale line are not built (no public flag or purchase in the simulation).
+  buildings only; its toggle and the For sale line are not built: the simulation has no public flag on a player building (and its consumers in the town AI are **Unknown**) and no purchase of a town building.
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
@@ -546,7 +546,7 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
 - `FactionInfoPanel` holds a DatapanelGUI ("mfactioninfo", `FUN_140494720`): `---Active Contracts---` (#444444) and the contract rows
   (`FUN_1404927f0`: a "Renew" / "Manage Contract" button per contract and a `-----------` rule), then `---Upcoming Events---` (#444444) and the
   rows of each entry of a list at `DAT_1421345b8` (`FUN_1407f2ef0`; what they are is **Unknown**).
-- Meitou: the name read only (renaming is not built), the lines for every faction but the player's, the `not real` ones and the template (engine
+- Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has and posts "This faction name already exists" otherwise (the original's message box and the empty-name rule are not built / **Unknown**; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction but the player's, the `not real` ones and the template (engine
   choice for the unknown filters), sorted ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
   with nothing under them (no contracts or events are modelled).
 

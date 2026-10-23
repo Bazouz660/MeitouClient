@@ -158,6 +158,8 @@ KO/coma/death thresholds use [character-stats](character-stats.md). Never tick m
 
 ## Ranged and turrets
 
+**Shoot At** (context-menu order 235, offered when the lead mans a turret; [ui-input](ui-input.md#context-menu-verbs)): Meitou's `ShootAtOrder` sets `CharacterCold.TurretTarget` on each selected gunner; the turret's target choice then returns that character while it lives and is free (not dead, caged or carried), instead of scoring candidates, and waits while it is out of range or blocked. The order ends when the gunner stops manning. Engine reading (**Unknown** how the original's 235 binds the target to the gunner's controller).
+
 Controller phases reload → steady aim → fire; target motion/range, skill/injury, equipment and
 line of sight determine timing/spread. Bolts retain launch/direction/velocity/impact/friendly-hit
 state and consume ammo charges; do not model hitscan. Turret objects and mounted ammo/reload

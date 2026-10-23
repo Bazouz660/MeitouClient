@@ -167,6 +167,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (cold.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);
             Stop(table, s);
             cold.FollowOrder = order.Target;
+            cold.Guarding = order.Guard;
             cold.FollowPathTime = 0;
             table.Next[s].Task = (byte)CharacterTask.Follow;
             table.Next[s].TaskTime = 0;

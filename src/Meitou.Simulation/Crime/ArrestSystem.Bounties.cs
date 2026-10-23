@@ -54,7 +54,7 @@ public sealed partial class ArrestSystem
             {
                 case PayBailOrder bail: PayBail(world, bail.Prisoner); break;
                 case PutInCageOrder put:
-                    foreach (var id in put.Carriers.Count > 0 ? put.Carriers : world.Player.Selection.ToArray()) StartCaging(world, id);
+                    foreach (var id in put.Carriers.Count > 0 ? put.Carriers : world.Player.Selection.ToArray()) StartCaging(world, id, put.Cage);
                     break;
             }
         }
@@ -150,12 +150,13 @@ public sealed partial class ArrestSystem
 
     // ------------------------------------------------------------------ putting a captive in a cage, and the claim
 
-    void StartCaging(World world, CharacterId carrier)
+    void StartCaging(World world, CharacterId carrier, string? chosen = null)
     {
         var table = world.Characters;
         if (Carry is null || !table.TryResolveNext(carrier, out int s) || table.Cold(s) is not { IsPlayer: true, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: false } c) return;
         cagings.RemoveAll(k => k.Carrier == carrier);
-        var cage = FindCageFor(world, s, c, null);
+        var cage = chosen is not null ? world.Fixtures.Find(chosen) is { Kind: FixtureKind.Cage } picked && FixtureRegistry.IsFree(table, picked) && !Reserved(picked, null) && !cagings.Exists(k => k.Cage == picked.Id) ? picked : null
+            : FindCageFor(world, s, c, null);
         if (cage is null) { world.Post($"{c.Name}: no free cage nearby"); return; }
         cagings.Add(new Caging { Carrier = carrier, Captive = c.Carrying, Cage = cage.Id });
         MovementSystem.GoTo(table, s, new Vector2(cage.Position.X, cage.Position.Z), c.RunSpeed);

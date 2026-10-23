@@ -62,6 +62,8 @@ public static class SaveLoader
         int playerIndex = playerFaction is not null && data.FactionIndex(playerFaction.Id) is var pi and >= 0 ? pi : data.PlayerFaction;
         world.Player.Faction = playerIndex;
         world.Player.Money = camera.PlayerMoney;
+        // A renamed player faction (the CAMERA's name differs from the data's).
+        world.Player.FactionName = camera.PlayerFactionName is { Length: > 0 } savedName && playerIndex >= 0 && savedName != data.Factions[playerIndex].Name ? savedName : null;
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
         LoadTownKnowledge(save, data, world.Player);
         LoadUniques(camera.Record, data, world.Uniques);

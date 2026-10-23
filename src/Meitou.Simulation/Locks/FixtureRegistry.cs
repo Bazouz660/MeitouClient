@@ -49,6 +49,12 @@ public sealed class FixtureRegistry
     /// <summary>Where the containers with an inventory stand, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
     public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }))];
 
+    List<Fixture>? cageList;
+
+    /// <summary>Every cage, for the host's picking; rebuilt (serial phases) when a building registers or goes, or a cage's lock or occupant changes (<see cref="Touch"/>).</summary>
+    public IReadOnlyList<CageSpot> CageSpots(CharacterTable table) =>
+        [.. (cageList ??= [.. all.Where(f => f.Kind == FixtureKind.Cage)]).Select(f => new CageSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }, IsFree(table, f) ? CharacterId.None : f.Occupant))];
+
     IReadOnlyList<BedSpot>? bedSpots;
 
     /// <summary>Every bed, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
@@ -138,7 +144,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
-        bedSpots = null;
+        bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(StateKeys.Of(state), b.Key, list, level: false);
         else if (b.LevelState is { } levelState) Restore(StateKeys.Of(levelState), b.Key, list, level: true);
         SyncDoors(b.Key);
@@ -187,7 +193,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
         doorPicks = null;
-        bedSpots = null;
+        bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
         SyncDoors(site.Id);
         if (bed is not null) Bind(world);
@@ -215,7 +221,7 @@ public sealed class FixtureRegistry
         foreach (var f in list) { all.Remove(f); byId.Remove(f.Id); }
         containerSpots = null;
         doorPicks = null;
-        bedSpots = null;
+        bedSpots = null; cageList = null;
         initialApplied.Remove(buildingInstance);
         doors?.SetDoorsBlocked(buildingInstance, false);
     }

@@ -128,7 +128,7 @@ public sealed partial class PlayerSystem
         if (ContainerFor(world, site, lift.Actor, out var opener) is { } container)
         {
             if (opener is null || world.Player.OpenContainer != site) return;
-            var grid = container.Contents!;
+            var grid = PlayerSystem.GridOf(world, container);
             var item = grid.Items.ElementAtOrDefault(t.Index);
             if (!Matches(item, t, section: false)) return;
             Hold(world, lift, Split(grid, item!, lift.Whole), grid, "main", item!.X, item.Y);
@@ -184,7 +184,7 @@ public sealed partial class PlayerSystem
             default:
                 if (place.Section != "main") return null;
                 if (ContainerFor(world, into.Site, held.Actor, out var opener) is { } container)
-                    return opener is not null && world.Player.OpenContainer == into.Site ? new(container.Contents!, container.Contents!, "main", container.Contents!.Width, container.Contents.Height, null, container, null) : null;
+                    return opener is not null && world.Player.OpenContainer == into.Site && PlayerSystem.ShopOf(world, container) is null ? new(PlayerSystem.GridOf(world, container), PlayerSystem.GridOf(world, container), "main", PlayerSystem.GridOf(world, container).Width, PlayerSystem.GridOf(world, container).Height, null, container, null) : null;
                 return world.SystemOf<Production.ProductionSystem>()?.Reach(world, held.Actor, into.Site, out _) is { Storage: { } storage } m
                     ? new(storage, storage, "main", storage.Width, storage.Height, null, null, m) : null;
         }

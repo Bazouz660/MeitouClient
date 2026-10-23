@@ -181,7 +181,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
 /// <summary>A floating progress bar's caption and fill (0..1).</summary>
 public readonly record struct TaskBar(string Text, float Progress);
 
-public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
+public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft)
+{
+    /// <summary>The faction owning the cage it is in (-1 none) and the cage's fixture id.</summary>
+    public int CageOwner { get; init; }
+    public string? CageId { get; init; }
+}
 
 /// <summary>
 /// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and
@@ -240,6 +245,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<Locks.ContainerSpot> Containers { get; init; } = [];
     /// <summary>Every bed fixture, for picking (<see cref="Locks.FixtureRegistry.BedSpots"/>).</summary>
     public IReadOnlyList<Locks.BedSpot> Beds { get; init; } = [];
+    /// <summary>Every cage fixture, for picking (<see cref="Locks.FixtureRegistry.CageSpots"/>); its occupant is as of this tick.</summary>
+    public IReadOnlyList<Locks.CageSpot> Cages { get; init; } = [];
     /// <summary>Every door, where its leaf is, for the right click (<see cref="Locks.DoorOrder"/>); its state is in <see cref="Doors"/>.</summary>
     public IReadOnlyList<Locks.DoorPick> DoorPicks { get; init; } = [];
     /// <summary>Bumped when an item is dropped or goes: the host diffs <see cref="GroundItems"/> by id when it changes.</summary>

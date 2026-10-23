@@ -388,24 +388,32 @@ Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner fac
 | Hostile | standing: 12 (talk tests), not on a turret 228, 16, 5; on a turret 235. Otherwise 228, 26, the pick-up verb with 223 / 273, 5 when up in state 0. Then 69 as above |
 | Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 (robotic repair), 25 (first aid, `FUN_1407c05a0`), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
 
-The pick-up verb (`FUN_140796f80`): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose +0x1a0 → +0x88 object
-is set and not the player's: 225 when it is friendly to the lead (slot 126) and two further tests fail, else 246 Kidnap when nothing is at +0xf0 and its
-AI state is not 8 (225 while imprisoned); every other case 225. `FUN_140793d80` adds 223 when the target's home (slot 59)
-is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
+The pick-up verb (`FUN_140796f80`, **Verified** by re-reading the decompile 2026-10-23): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose
++0x1a0 → +0x88 object is set and whose faction has +0x250 clear: 225 when it is friendly to the lead (slot 126, vfunc +0x3f0) and not a trader (`FUN_1405cff70`) and `FUN_140796240` is false;
+else, when the count at +0xf0 (`FUN_140854080(+0xf0, 0)`) is below 1 and its AI state (+0x1a0 → +0xdc) is not 8: 246 Kidnap, or 225 while imprisoned (+0x2f8 = 2); every other case 225.
+Kidnap's chance column (`FUN_140885600`) is 100 for a downed target whose byte +0x278 is clear (**Observed**), else a clamp of stat products (not decoded). `FUN_140793d80` adds 223 when the target's
+home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
+**Dispatch** (`FUN_1407fa650` → `FUN_1407f9e20`, **Observed**): 45, 0x111 and 0xdf go through the job giver `FUN_1407f5a90` (sound `Permanent_Job`), every other order through
+`FUN_1407f9e20`, which per selected character swaps 5 / 16 / 0x3d for 0x107 / 0x106 / 0x10a when `FUN_1407f2840(character)` is true (**Unknown** which characters: Meitou reads it as a
+ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
 **Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` returns byte +0xd4
-unless `FUN_140436610(c, 1)` (Meitou reads it as sneaking; [ai-tasks](ai-tasks.md#perma-jobs) reads it as a slave test); where a cage opens its menu at once.
+unless `FUN_140436610(c, 1)` (Meitou reads it as sneaking; [ai-tasks](ai-tasks.md#perma-jobs) reads it as a slave test); where a cage opens its menu at once; the posture 1 (voluntary crawl)
+that 28 Stand Up answers to ([ragdolls](ragdolls.md#forced-crawl): the legs' forced crawl is 2).
 
-Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`):
-the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO), Shift on Use giving the job.
-Containers and doors now open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
+Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
+the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job.
+Containers and doors open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
 Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's downed character: its inventory beside the
-selection's), Pick Up, First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up on a caged
-character (stand-ins for the cage's verbs: cages cannot be pointed at), Inventory / Loot / Pick Lock on containers (Loot uses the Alt path, so a shop's
-stock answers that it is the shop's: stealing it is not built), Open / Close / Lock / Unlock (all the building's doors) / Pick Lock on doors, Build,
-Use, Auto-Haul (storage, as the job), Inventory (storage, furnace), Man Turret, Dismantle. Engine additions: Trade with a trader, Put in Cage, Put on
-Shackles, Cancel Construction, the door buttons, Mine. Not built: Attack All, Bodyguard, Stand Up, Kidnap, Throw out of home / town, Shoot At, Set
-Free, Get in, Put in, Repair / Repairs, Training, Corpse Disposal, Auto-Haul 152, Use Tools / Use Strength / Smash on locks and doors, item menus
-(Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
+selection's), Pick Up and Kidnap (the same pick-up order; Kidnap when the target is not an ally or is a trader, shown with 100%; the kidnapping is a crime only when witnessed,
+[carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
+character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
+Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Use, Auto-Haul (storage, as the job),
+Inventory (storage, furnace), Man Turret, Dismantle. **Bodyguard** (45, `FollowOrder.Guard`): follows like 31 and fights whoever attacks the target (engine reading; the perma-job form is another
+agent's). **Attack All** (16, **engine reading**): every standing hostile within 800 of the clicked one is a target and each selected character attacks the nearest. **Shoot At** (235): replaces the
+attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
+(`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied.
+Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Not built: Stand Up, Throw out of home / town, Repair / Repairs, Training,
+Corpse Disposal, Auto-Haul 152, Lock / Unlock of a cage (Pick Lock stands in), item menus (Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 

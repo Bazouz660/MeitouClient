@@ -84,7 +84,7 @@ public static partial class SaveCapture
         camera.PlayerMoney = (int)Math.Clamp(world.Player.Money, int.MinValue, int.MaxValue);
         camera.Version = SaveGame.GameVersion;
         camera.SetMods(options.DataFiles);
-        if (data.PlayerFaction >= 0) camera.PlayerFactionName = data.Factions[data.PlayerFaction].Name;
+        if (data.PlayerFaction >= 0) camera.PlayerFactionName = world.Player.FactionName ?? data.Factions[data.PlayerFaction].Name;
         SquadAiKeys.Write(camera.Record, world.Player.SquadAi);
         camera.Record.Strings[SaveLoader.SeedKey] = world.Seed.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (options.View is { } view)
@@ -235,7 +235,7 @@ public static partial class SaveCapture
         var table = world.Characters;
         var written = new Dictionary<CharacterId, SaveCharacter>();
         string playerFactionId = data.PlayerFaction >= 0 ? data.Factions[data.PlayerFaction].Id : "204-gamedata.base";
-        string playerFactionName = data.PlayerFaction >= 0 ? data.Factions[data.PlayerFaction].Name : "Nameless";
+        string playerFactionName = world.Player.FactionName ?? (data.PlayerFaction >= 0 ? data.Factions[data.PlayerFaction].Name : "Nameless");
         var playerState = game.Factions.FirstOrDefault(f => f.Id == playerFactionId);
         int squads = 0, members = 0;
 

@@ -137,6 +137,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                             crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }
+                case ShootAtOrder shoot:
+                    foreach (var id in shoot.Gunners.Count > 0 ? shoot.Gunners : world.Player.Selection.ToArray())
+                        if (table.TryResolveNext(id, out int g) && table.Cold(g) is { IsPlayer: true, Gunning: not null } gunner && table.TryResolveNext(shoot.Target, out int victim) && victim != g
+                            && table.Cold(victim) is { Medical.Dead: false }) gunner.TurretTarget = shoot.Target;
+                    break;
                 case StopCommand stop:
                     foreach (var id in stop.Characters) Disengage(table, id);
                     break;

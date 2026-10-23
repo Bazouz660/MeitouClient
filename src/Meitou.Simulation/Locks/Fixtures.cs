@@ -32,6 +32,9 @@ public readonly record struct BedData(int Function, string? Clip, float Material
 public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
 
 /// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction, where its closed leaf is (else its building's origin) and how far it slides fully open (<see cref="DoorSpot.Slide"/>).</summary>
+/// <summary>A cage for picking: its fixture id, CAGE-function BUILDING record, place, owner faction (-1 none), whether its lock holds and who is in it (None: free).</summary>
+public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant);
+
 public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default);
 
 /// <summary>The door's motion state as saved in <c>state&lt;i&gt;</c> (docs/game/locks.md "Doors"; not the DoorState enum): 0 closed, 1 open, 2 opening, 3 closing.</summary>

@@ -10,6 +10,11 @@ public sealed class PlayerState
     /// <summary>The player's faction, a position in the world's faction list (-1 before a game starts).</summary>
     public int Faction { get; set; } = -1;
     public bool Exists => Faction >= 0;
+    /// <summary>
+    /// The player faction's name once renamed (the faction tab's name box, <see cref="RenameFactionCommand"/>; docs/game/ui-screens.md "Faction tab"); null: the faction's own name from the data
+    /// ("Nameless"). Saved as the CAMERA string <c>pfaction name</c>, the GAMESTATE_FACTION name and the player platoons' faction name. Hashed only while set.
+    /// </summary>
+    public string? FactionName { get; set; }
     /// <summary>Money in cats (NEW_GAME_STARTOFF <c>money</c>; how it is spent is the economy stage).</summary>
     public long Money { get; set; }
     /// <summary>The selected characters, in the order they were selected.</summary>
@@ -115,6 +120,7 @@ public sealed class PlayerState
         h.Add(Money);
         h.Add(Squad);
         if (SquadAi != SquadAi.Defaults) h.Add(0x53714169 + (int)SquadAi);
+        if (FactionName is { } renamed) { h.Add(0x464E616D); h.Add(Rng.StableHash(renamed)); }
         if (Held is { } held)
         {
             h.Add(0x48656c64);
@@ -129,11 +135,35 @@ public sealed class PlayerState
     }
 }
 
+/// <summary>
+/// The faction tab's rename (<c>FUN_1404923d0</c>, docs/game/ui-screens.md "Faction tab"): a name no faction has yet becomes the player faction's name; a taken one is refused with
+/// "This faction name already exists" (an empty name is refused too, <b>engine choice</b>: the original's empty-name rule is <b>Unknown</b>).
+/// </summary>
+public sealed record RenameFactionCommand(string Name) : SimCommand;
+
 /// <summary>Applies the player's selection and stop commands (step 1 of the tick). Move orders are the movement system's.</summary>
 public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSystem
 {
     readonly CharacterAssembly? assembly = data is null ? null : new(data);
     internal PopulationData? Data => data;
+    /// <summary>The longest faction name taken (engine choice: the original's box limit is <b>Unknown</b>).</summary>
+    public const int FactionNameLength = 64;
+
+    /// <summary>The name the player faction goes by: the rename, else the data's.</summary>
+    public string? PlayerFactionName(World world) =>
+        world.Player.FactionName ?? (data is not null && world.Player.Faction >= 0 && world.Player.Faction < data.Factions.Count ? data.Factions[world.Player.Faction].Name : null);
+
+    void RenameFaction(World world, string text)
+    {
+        var player = world.Player;
+        string name = text.Trim();
+        if (name.Length > FactionNameLength) name = name[..FactionNameLength];
+        if (!player.Exists || name.Length == 0 || name == PlayerFactionName(world)) return;
+        // FUN_1402e7950: any other faction already named so. (The data's names; the player's own old name is free again.)
+        if (data is not null && data.Factions.Where((f, i) => i != player.Faction).Any(f => f.Name == name)) { world.Post("This faction name already exists"); return; }
+        player.FactionName = name == data?.Factions[player.Faction].Name ? null : name;
+    }
+
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         var table = world.Characters;
@@ -193,6 +223,9 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     break;
                 case Items.QuickMoveItem quick:
                     QuickMove(world, quick);
+                    break;
+                case RenameFactionCommand rename:
+                    RenameFaction(world, rename.Name);
                     break;
                 case SquadAiCommand option:
                     player.SquadAi = option.On ? player.SquadAi | option.Option : player.SquadAi & ~option.Option;

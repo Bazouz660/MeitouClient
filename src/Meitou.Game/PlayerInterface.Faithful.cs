@@ -92,7 +92,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "dialogue") DialogueAction(e);
         else if (e.Screen == CharacterTradeScreen) CharacterTradeAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
-        else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); }
+        else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); FactionAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
         else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });

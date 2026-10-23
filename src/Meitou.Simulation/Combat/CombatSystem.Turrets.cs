@@ -125,7 +125,7 @@ public sealed partial class CombatSystem
             var cold = table.Cold(i);
             if (cold is null) continue;
             cold.Gunning = null;
-            if (!table.Next[i].Alive || Manning(world, i, cold) is not { } post) continue;
+            if (!table.Next[i].Alive || Manning(world, i, cold) is not { } post) { cold.TurretTarget = CharacterId.None; continue; }
             if (!turrets.TryGetValue(post.Key, out var t))
             {
                 if (TurretGuns.Get(post.BuildingId) is not { } gun) continue;
@@ -258,6 +258,12 @@ public sealed partial class CombatSystem
         var at = prev[g].Position;
         float range = t.Gun.Gun.Range;
         int current = t.Target >= 0 && t.Target < prev.Length && prev[t.Target].Alive && prev[t.Target].Generation == t.TargetGeneration ? t.Target : -1;
+        // Shoot At: the ordered target is kept while it lives and is free (out of range or blocked, the turret waits).
+        if (!gc.TurretTarget.IsNone)
+        {
+            if (table.TryResolveNext(gc.TurretTarget, out int ordered) && prev[ordered].Alive && table.Cold(ordered) is { Medical.Dead: false, IsImprisoned: false } oc0 && oc0.CarriedBy.IsNone) return ordered;
+            gc.TurretTarget = CharacterId.None;
+        }
         var found = turretCandidates ??= [];
         found.Clear();
         var scan = new TurretScan { Table = table, Found = found };

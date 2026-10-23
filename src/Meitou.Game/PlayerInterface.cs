@@ -111,6 +111,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
             else if (kind == Picked.Container && ContainerClick(p, alt)) { }
             else if (kind == Picked.Door && DoorClick(p, alt)) { }
             else if (kind == Picked.Bed && BedPress(p)) { }
+            else if (kind == Picked.Cage && CageClick(p)) { }
             else if (kind == Picked.Rock && RockPress(p)) { }
             else if (kind is Picked.Site or Picked.None && SitePress(p)) { }
             else if (Ray(p) is { } ray && MoveHit(ray.Origin, ray.Direction) is { } hit)
@@ -218,6 +219,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     public void Steer(bool final = false)
     {
         UpdateContextMenu();
+        UpdateFactionName();
         UpdateBed();
         UpdateMap();
         if (!final) UpdateBuild();

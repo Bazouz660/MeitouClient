@@ -817,8 +817,9 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     static void PutInContainer(World world, Locks.Fixture container, CharacterCold cold, PutInMachine put)
     {
+        if (PlayerSystem.ShopOf(world, container) is not null) { world.Post("That stock is the shop's."); return; }   // engine choice: a shop's stock is not a place to leave things
         var root = cold.Inventory!;
-        var storage = container.Contents!;
+        var storage = PlayerSystem.GridOf(world, container);
         var item = root.All().ElementAtOrDefault(put.Item.Index);
         var token = put.Item;
         if (item is null || item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
@@ -845,7 +846,7 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
-        var storage = container.Contents!;
+        var storage = PlayerSystem.GridOf(world, container);
         if (take.Index < 0 || take.Index >= storage.Items.Count) return;
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;

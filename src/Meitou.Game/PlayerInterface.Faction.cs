@@ -21,11 +21,34 @@ sealed partial class PlayerInterface
 
     bool FactionShown => faithfulScreens.IsOpen("overview") && faithfulScreens.GetTab("overview", "TabsMain") == FactionTab;
 
-    /// <summary>The player faction's name in the tab's name box (the original's text is the player interface's faction name; renaming is not built, so the box is read only).</summary>
+    const string FactionNameBox = "FactionNameText";
+
+    /// <summary>What was typed in the name box and is not yet accepted (null: nothing).</summary>
+    string? factionDraft;
+
+    /// <summary>
+    /// The player faction's name in the tab's name box (the original's text is the player interface's faction name). The box takes typing; accepting it or losing the key focus renames
+    /// (<see cref="UpdateFactionName"/>, <c>FUN_1404923d0</c>), and a box not being typed in shows the faction's current name.
+    /// </summary>
     void BindFactionTab(UiBindings b)
     {
-        b.Text["FactionNameText"] = FactionName?.Invoke(session.World.Player.Faction) ?? "Nameless";
-        b.Disabled.Add("FactionNameText");
+        string name = FactionName?.Invoke(session.World.Player.Faction) ?? "Nameless";
+        if (faithfulScreens.Focus is not { Screen: "overview", Widget: FactionNameBox }) faithfulScreens.SetText("overview", FactionNameBox, name);
+        b.Text[FactionNameBox] = name;
+    }
+
+    /// <summary>A text change in the name box is kept as the draft; the box losing the focus (or the tab closing) sends the rename of the last one.</summary>
+    void FactionAction(MyGuiEvent e)
+    {
+        if (e.Widget == FactionNameBox && e.Action == "text") factionDraft = e.Text;
+    }
+
+    /// <summary>Once a frame: a draft whose box no longer has the key focus is sent as <see cref="RenameFactionCommand"/>.</summary>
+    void UpdateFactionName()
+    {
+        if (factionDraft is not { } draft || faithfulScreens.Focus is { Screen: "overview", Widget: FactionNameBox }) return;
+        factionDraft = null;
+        Say(new Meitou.Simulation.RenameFactionCommand(draft) { Tick = session.World.Tick });
     }
 
     /// <summary>
