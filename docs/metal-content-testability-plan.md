@@ -1,9 +1,10 @@
 # Metal content testability plan
 
-Status: **Milestones A-C implemented** (2026-10-22); A is manually accepted, B's blood path is
-validated, and debris/luckyren, C and D-E still await manual checks. This plan is about making the
-game's content and systems easy to exercise through the native Metal host. Read it with
-[metal-backend](metal-backend.md); Vulkan remains the reference path.
+Status: **Milestones A-C implemented** (2026-10-22), with D's settings callbacks and E's water
+reflection in (2026-10-23); A is manually accepted, B's blood path is validated, and the rest still
+awaits manual checks. This plan is about making the game's content and systems easy to exercise
+through the native Metal host. Read it with [metal-backend](metal-backend.md); Vulkan remains the
+reference path.
 
 The content data and simulation are already shared. Metal loads the same world, population,
 towns, items, dialogue, trade, crafting, construction, farming, combat and saves. The gaps below
@@ -344,14 +345,14 @@ out of the P0 content-testing gate.
 
 ### Known gaps
 
-- No water reflection pass; Metal water is the faithful surface only.
-- Meitou water (FFT/shore/refraction path) is not the Metal path.
+- The shared water reflection pass now runs on Metal; the faithful surface reflects the scene.
+- Meitou water (FFT/shore/refraction path) is not the Metal path yet; its maps still need packing
+  for Metal's 16-sampler stage and refraction is off.
 - No low-resolution particle targets.
 - No fog-rate (fog shading-rate) target.
 - No object motion / reactive-mask path for temporal upscalers.
 - No HDR/EDR output.
-- Meitou cloud/fog parity remains listed as unfinished in the Metal handoff; confirm the current
-  state before scheduling it.
+- The Meitou cloud renderer is seam-neutral; compare its parity views with Vulkan.
 - Metal GI remains experimental and opt-in; do not make it part of content testability.
 
 ### Work order

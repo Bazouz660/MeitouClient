@@ -28,7 +28,7 @@ internal sealed class ShoreField : IDisposable
     /// <summary>A finished bake: the world rectangle, and the texels, or the one value every texel has.</summary>
     sealed record Baked(float X0, float Z0, float X1, float Z1, bool Uniform, Vector2 Value, float[]? Texels, double Ms);
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly int size;
     readonly float texel;
     TerrainTexture? texture;
@@ -51,7 +51,7 @@ internal sealed class ShoreField : IDisposable
     // The upload in progress: a full-size texture filled a few rows a frame.
     (Baked Bake, TerrainTexture Target, int Row)? uploading;
 
-    public ShoreField(GpuContext gpu, int size = DefaultSize, float texel = DefaultTexel)
+    public ShoreField(IGpuContext gpu, int size = DefaultSize, float texel = DefaultTexel)
     {
         this.gpu = gpu;
         this.size = size;

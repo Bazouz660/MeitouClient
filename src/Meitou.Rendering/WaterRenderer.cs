@@ -894,16 +894,15 @@ public sealed unsafe class WaterRenderer : IDisposable
     WaterRenderer(IGpuContext gpu, SampledImage[] maps, Vector4 seaA, Vector4 seaB, Vector3 seaColour, int gridSegments, int oceanSize,
         bool meitouWaves, bool shoreField)
     {
-        // The ocean FFT and the shore field are Vulkan-typed: the faithful water (the quad) does not read them, so a second backend can ask for neither.
-        ocean = meitouWaves ? new OceanWaves((GpuContext)gpu, oceanSize) : null;
-        shore = shoreField ? new ShoreField((GpuContext)gpu) : null;
+        // The ocean FFT and the shore field are seam-neutral; the faithful water (the quad) simply does not read them.
+        ocean = meitouWaves ? new OceanWaves(gpu, oceanSize) : null;
+        shore = shoreField ? new ShoreField(gpu) : null;
         Meitou = meitouWaves;
         gridStep = (float)(2 * Math.PI / gridSegments);
         (this.seaA, this.seaB, this.seaColour) = (seaA, seaB, seaColour);
         Gpu = gpu;
         this.maps = maps;
         faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", PrimitiveType.TriangleStrip);
-        // The Meitou fragment reads more samplers than Metal allows one stage; a second backend starts with the faithful quad.
         meitou = meitouWaves ? new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", PrimitiveType.Triangles) : null;
         float[] corners = [-1, -1, -1, 1, 1, -1, 1, 1]; // triangle strip, counter-clockwise from above
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");

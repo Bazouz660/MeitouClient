@@ -2,7 +2,6 @@ using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
 
 using Meitou.Rendering.Gpu.Core;
 
@@ -41,7 +40,7 @@ public sealed unsafe class OceanWaves : IDisposable
     public const float RebuildAngle = 0.17f, RebuildChange = 0.12f;
 
     const int Cascades = 3;
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly GpuProgram evolve, fft, assemble;
     readonly GpuComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
@@ -62,7 +61,7 @@ public sealed unsafe class OceanWaves : IDisposable
     double? lastPass;
     bool foamCleared;
 
-    public OceanWaves(GpuContext ctx, int size = DefaultSize)
+    public OceanWaves(IGpuContext ctx, int size = DefaultSize)
     {
         if (size is not (64 or 128 or 256)) throw new ArgumentOutOfRangeException(nameof(size), "64, 128 or 256");
         this.ctx = ctx;
@@ -183,7 +182,7 @@ public sealed unsafe class OceanWaves : IDisposable
         if (!foamCleared) { cmd.FillBuffer(foam.Handle, 0, foam.Size, 0); foamCleared = true; }
         cmd.Order();
         var stamps = (ctx.Frame.Timestamps.Allocate(), ctx.Frame.Timestamps.Allocate());
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, PipelineStageFlags2.ComputeShaderBit);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint groups = (uint)Size / 16;
         Run(cmd, evolve, evolvePipe, b, push, groups, groups, Cascades);
         Compute(cmd);
@@ -192,9 +191,7 @@ public sealed unsafe class OceanWaves : IDisposable
         Run(cmd, fft, fftPipe, b, push with { Pass = 1 }, (uint)Size, Cascades, 1);
         Compute(cmd);
         Run(cmd, assemble, assemblePipe, b, push, groups, groups, Cascades);
-        var copy = new BarrierBatch();
-        copy.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit);
-        cmd.Barrier(copy);
+        cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.TransferSrc)]);
         for (int c = 0; c < Cascades; c++)
         {
             cmd.CopyBufferToImage(output.Handle, (ulong)c * texels * 8, displacement, 0, c);
@@ -202,7 +199,7 @@ public sealed unsafe class OceanWaves : IDisposable
         }
         cmd.GenerateMips(displacement);
         cmd.GenerateMips(slopes);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, PipelineStageFlags2.AllTransferBit);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.All);
         if (stamps.Item1.IsValid && stamps.Item2.IsValid) pendingTimes.Add(stamps);
         cmd.EndLabel();
         FrameProfiler.PreStamp(cmd, 9);   // the water stage: the ocean's FFT is the water's
@@ -215,7 +212,7 @@ public sealed unsafe class OceanWaves : IDisposable
         for (int i = 0; i < pendingTimes.Count; i++)
         {
             var (b, e) = pendingTimes[i];
-            if (b.Frame + ctx.Device.Frames.Count + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }   // never collected
+            if (b.Frame + ctx.FramesInFlight + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }   // never collected
             if (!q.TryRead(b, out ulong tb) || !q.TryRead(e, out ulong te)) continue;
             GpuMicroseconds += (te - tb) / 1000.0;
             GpuTimed++;
@@ -225,8 +222,9 @@ public sealed unsafe class OceanWaves : IDisposable
 
     void Write(uint slot, Vector4[][] s)
     {
+        using var batch = ctx.Uploads.Begin();
         for (int c = 0; c < Cascades; c++)
-            ctx.Uploads.Write(spectrum, ((ulong)slot * Cascades + (ulong)c) * texels * 16, MemoryMarshal.AsBytes(s[c].AsSpan()));
+            batch.Write(spectrum, ((ulong)slot * Cascades + (ulong)c) * texels * 16, MemoryMarshal.AsBytes(s[c].AsSpan()));
     }
 
     static void Compute(IGpuCommandList cmd)
@@ -237,7 +235,7 @@ public sealed unsafe class OceanWaves : IDisposable
     void Run(IGpuCommandList cmd, GpuProgram p, GpuComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
-        var slots = ctx.Shaders.Backend(p).ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
+        var slots = p.Info.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
         int count = slots.Length;
         var bindings = stackalloc GpuBinding[count];
         for (int i = 0; i < count; i++)

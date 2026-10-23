@@ -4,7 +4,6 @@ using System.Numerics;
 using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
 using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 using Meitou.Rendering.Gpu.Core;
@@ -45,7 +44,7 @@ public sealed class ReflectionPass : IDisposable
     FrameBlock? unshadowed;
 
     /// <summary>The native GPU API (all native since phase 8 stage 3: the pass is the guests' host, docs/renderer-native.md 8.9).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly PassTimer timer;
     readonly WorldRenderOptions options = new();
     // The texture the water samples, and the depth beside it when the scene is drawn without multisampling; else the multisampled twins the
@@ -60,7 +59,7 @@ public sealed class ReflectionPass : IDisposable
     readonly List<double> gpuSamples = [];
     readonly List<double> cpuSamples = [];
 
-    public ReflectionPass(GpuContext gpu)
+    public ReflectionPass(IGpuContext gpu)
     {
         Gpu = gpu;
         timer = new PassTimer(gpu);
@@ -215,7 +214,9 @@ public sealed class ReflectionPass : IDisposable
     /// <summary>The most samples a colour and depth target may have on this device (VkGl answered GL's MAX_SAMPLES with 8).</summary>
     int MaxSamples()
     {
-        var l = Gpu.Device.Limits;
+        // Metal opens the same pass without multisampling: its water comparison uses the single-sample path.
+        if (Gpu is not GpuContext vulkan) return 1;
+        var l = vulkan.Device.Limits;
         uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
         int max = 1;
         while (max < 64 && (both & (uint)(max * 2)) != 0) max *= 2;
@@ -304,15 +305,15 @@ public sealed class ReflectionPass : IDisposable
         if (unlit) Gpu.Globals.OverrideBlock(ShadowShaders.ReceiverBlock, (unshadowed ??= new FrameBlock(Gpu, ShadowPass.ReceiverBytes)).Binding);   // zeros: shadows off
         var target = msColour is not null ? PassTargets.Of(msColour, msDepth) : PassTargets.Of(colour, depth);
         // Wave 4 (docs/renderer-native.md 6): the guests' segments are secondaries, recorded on the job threads when the pass ends.
-        bool secondaries = Recording.Secondaries;
+        bool secondaries = Gpu.RecordsSecondaries;
         cmd.BeginRendering(new RenderingDesc(
             target.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 1) },
             target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             target.Width, target.Height), secondaries);
         // What the guests draw with: the scene's state (depth tested with less-or-equal and written, no culling, blending or clamp, every channel).
         // The sky turns the depth test off for itself.
-        Gpu.BeginHostPass((CommandList)cmd, target, DrawState.Scene(target.Formats));
-        if (secondaries) Gpu.Frame.Parallel.Begin((CommandList)cmd, target.Formats, ReflectionStage);
+        Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
+        if (secondaries && Gpu is GpuContext vulkanGpu) vulkanGpu.Frame.Parallel.Begin((CommandList)cmd, target.Formats, ReflectionStage);
         Lap(4);
         sky.Draw(skyProjection, colours);
         Lap(0);
@@ -351,7 +352,7 @@ public sealed class ReflectionPass : IDisposable
         ViewProjection = mapped;   // x and y do not depend on the near plane
         Valid = hasImage = !first;
 
-        if (Gpu.Frame.Parallel.Open) Gpu.Frame.Parallel.End();
+        if (Gpu is GpuContext parallelGpu && parallelGpu.Frame.Parallel.Open) parallelGpu.Frame.Parallel.End();
         cmd.EndRendering();
         if (msColour is not null)
         {

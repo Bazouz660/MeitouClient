@@ -836,18 +836,16 @@ static class WorldFrame
         {
             var messages = new List<string>();
             step?.Invoke("water");
-            // The Meitou water's FFT, shore field and reflection/refraction are still Vulkan paths. Metal gets the
-            // game's faithful surface until those pieces are ported, but from the same construction path.
+            // The Meitou water's FFT and shore field are seam-neutral; its fragment still needs the water maps packed
+            // to fit Metal's 16 sampler stage and refraction needs the Vulkan scene copy, so Metal keeps the faithful
+            // surface for now. The reflection pass itself draws the mirrored scene through IGpuContext on either backend.
             bool meitouWater = o.MeitouWater && context is GpuContext;
             gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
                 Ready(waterSource!), meitouWaves: meitouWater, shoreField: meitouWater);
             gpu.Water.Meitou = meitouWater;
-            if (context is GpuContext vulkanWater)
-            {
-                step?.Invoke("reflections");
-                gpu.Reflection = new ReflectionPass(vulkanWater) { Level = o.WaterReflection, Range = ReflectionRange };
-            }
-            else gpu.Water.Refraction = false;
+            step?.Invoke("reflections");
+            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
+            if (context is not GpuContext) gpu.Water.Refraction = false;
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }

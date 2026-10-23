@@ -3,7 +3,7 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Base HEAD: `4791a496 metal: share WorldFrame construction and SceneHost on IGpuContext`  
-Workspace: content/testability Milestones A-C implemented; A is manually accepted and B's blood path is validated (debris/luckyren and C stills await manual checks).
+Workspace: content/testability Milestones A-C implemented, D callbacks and the shared water reflection pass in; A is manually accepted and B's blood path is validated (debris/luckyren, D/E and C stills await manual checks).
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests

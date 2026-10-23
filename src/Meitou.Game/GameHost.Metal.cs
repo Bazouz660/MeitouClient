@@ -668,8 +668,16 @@ sealed partial class GameHost
             toggles.Add(new Toggle("Night sky", () => sky.MeitouStars, v => sky.MeitouStars = v));
             toggles.Add(new Toggle("Clouds", () => sky.LitClouds, v => sky.LitClouds = v));
 
-            // Water: the Meitou clarity controls only mean something on the Meitou surface; the faithful surface has no reflection
-            // pass yet, so its Vulkan-only controls stay hidden instead of pretending to work.
+            // Water reflection: the same game setting and reflection range the Vulkan panel exposes; the reflection pass is seam-neutral.
+            if (worldGpu.Reflection is { } reflection)
+            {
+                sliders.Add(new Slider(WorldFrame.WaterReflectionSlider, 0, 4, () => reflection.Level,
+                    v => reflection.Level = (int)MathF.Round(v), "0",
+                    Text: v => (int)MathF.Round(v) switch { 0 => "0 off", 1 => "1 landscape", 2 => "2 characters", 3 => "3 buildings", _ => "4 everything" }));
+                sliders.Add(new Slider("Reflection range x (game 0.6)", 0.1f, 50, () => reflection.Range,
+                    v => reflection.Range = v, "0.00", Logarithmic: true));
+            }
+            // Water: the Meitou clarity controls only mean something on the Meitou surface; the faithful surface keeps them hidden.
             if (water is { Meitou: true })
             {
                 sliders.Add(new Slider("Water clarity x (Meitou)", 0.25f, 8, () => water.Clarity,
