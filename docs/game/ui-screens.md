@@ -133,7 +133,7 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   0x8, 0x10, 0x20 (0x2 always added); Import is live once a save is selected; Advanced options opens its own options window, filled from the save's
   difficulty block. Importing resets the world as a new game does (no start), restores the clock, money, faction name, town discovery and the player's
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
-  faction relations; with the reset tick the squads go to (-43500, 0, -6625). Meitou: the window only (Import shows a notice).
+  faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
 ### Loading screen
 

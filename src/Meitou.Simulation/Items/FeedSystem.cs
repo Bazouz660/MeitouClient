@@ -58,8 +58,14 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
         {
             if (!state[i].Alive || table.Cold(i) is not { Medical: { Dead: false } med, Race: { } race, Inventory: { } own } cold) continue;
             bool animal = !med.HasStatsObject;
-            if (animal && (options & SquadAi.Feed) == 0) continue;
             bool playerSide = PlayerSide(world, cold);
+            // A limb in the mouth is all it does (FUN_1405dc650): the usual look for food comes only when the mouth is empty, and the Feed Animals option does not matter to it.
+            if (cold.Mouth is { } held)
+            {
+                if (MouthDue(world, cold, med, playerSide)) EatFromMouth(world, i, cold, med, held);
+                continue;
+            }
+            if (animal && (options & SquadAi.Feed) == 0) continue;
             bool wants = playerSide || cold.SlaveState == 1 || med.Hunger < NpcWantsBelow;
             if (!wants || med.Fed > 0 || !(med.Hunger < HungryBelow)) continue;
             Inventory? from = own;
@@ -69,6 +75,44 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
             if (food is null || from is null) continue;
             Eat(world, i, med, from, food);
         }
+    }
+
+    /// <summary>The <c>item function</c> of a limb: the one thing an animal picks up into its mouth (<c>FUN_14034f340</c>, item +0x124 = 0x11, Verified).</summary>
+    public const int LimbFunction = 17;
+
+    /// <summary>
+    /// An animal that picks up a limb holds it in its mouth (<c>FUN_14034f340</c>, <c>FUN_1405d0b50</c>, <b>Verified</b> decompile): a limb it held before is let go at its feet, the new one is
+    /// taken off the ground into <see cref="CharacterCold.Mouth"/> and eaten later (<see cref="MouthDue"/>); anything else goes in the inventory as for anyone (<see cref="CanHold"/>). Engine
+    /// choice: every animal has the "mouth" attach point the original tests for (without one the original eats the limb on the spot); a held limb is not saved.
+    /// </summary>
+    public static bool CanHold(CharacterCold cold, ItemInstance item) => cold.Medical is { HasStatsObject: false } && item.ItemFunction == LimbFunction;
+
+    /// <summary>Takes the limb into the mouth (when <see cref="CanHold"/>); the caller has taken it off the ground.</summary>
+    public static void HoldInMouth(World world, int slot, CharacterCold cold, ItemInstance item)
+    {
+        if (cold.Mouth is { } before) world.GroundItems.Drop(before, world.Characters.Next[slot].Position, world.Characters.Next[slot].Yaw);
+        cold.Mouth = item;
+        cold.MouthSinceTick = world.Tick;
+    }
+
+    /// <summary>
+    /// Whether the limb in the mouth is eaten now (<c>FUN_1405dc650</c>, <b>Verified</b>; minutes are game minutes since it was taken, f the animal's age <see cref="CharacterCold.ShownAge"/>).
+    /// An adult (f above 0.9) of the player's side eats it at once when its stomach is empty and its hunger below 2.6, else after 15 minutes; any other animal after 45 minutes with an empty
+    /// stomach, else after 60 + 120 x (1 - f) minutes.
+    /// </summary>
+    static bool MouthDue(World world, CharacterCold cold, MedicalState med, bool playerSide)
+    {
+        double minutes = (world.Tick - cold.MouthSinceTick) * BodySystem.HoursPerTick * 60;
+        float f = cold.ShownAge;
+        if (f > 0.9f && playerSide) return med.Fed <= 0 && med.Hunger < 2.6f || minutes > 15;
+        return med.Fed <= 0 && minutes > 45 || minutes > (1 - f) * 120 + 60;
+    }
+
+    /// <summary>The mouth is emptied and the limb bitten (<c>FUN_1405d0d20</c>): eaten whole, for 30.</summary>
+    static void EatFromMouth(World world, int slot, CharacterCold cold, MedicalState med, ItemInstance limb)
+    {
+        cold.Mouth = null;
+        Eat(world, slot, med, null, limb);
     }
 
     /// <summary>The player's side for eating (<c>FUN_140856bc0</c>): a character of the player's faction (the original also counts one an AI of the player's owns, not modelled).</summary>
@@ -114,7 +158,7 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
     /// One bite (<c>FUN_1405d0780</c>): min(charges, 300 - hunger, 50) comes off the item (a limb, <c>item function</c> 17, is eaten whole for 30), which goes when nothing is left; the
     /// stomach gets a hundredth of it. With more than one unit in the stack the next unit starts full (engine choice: food does not stack in the data).
     /// </summary>
-    static void Eat(World world, int slot, MedicalState med, Inventory from, ItemInstance item)
+    static void Eat(World world, int slot, MedicalState med, Inventory? from, ItemInstance item)
     {
         bool limb = item.ItemFunction == 17;
         float amount = limb ? 30 : item.Charges;
@@ -123,7 +167,7 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
         if (item.Charges <= 0 || limb)
         {
             bool more = item.Quantity > 1;
-            from.RemoveOne(item);
+            from?.RemoveOne(item);
             if (more) item.Charges = item.MaxCharges;
         }
         med.Fed = amount * 0.01f;

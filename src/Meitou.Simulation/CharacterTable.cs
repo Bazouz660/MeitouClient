@@ -284,6 +284,10 @@ public sealed class CharacterCold
     public Locks.ShackleJob? Shackles { get; set; }
     /// <summary>The ground item this character walks to and picks up (<see cref="Items.GroundItems"/> id, <see cref="PlayerSystem"/>; null: none). Hashed only while set.</summary>
     public int? PickingUpItem { get; set; }
+    /// <summary>The limb an animal holds in its mouth (<see cref="Items.FeedSystem.HoldInMouth"/>; null: none), eaten later by <see cref="Items.FeedSystem"/>. Hashed only while set; not saved.</summary>
+    public Items.ItemInstance? Mouth { get; set; }
+    /// <summary>The world tick at which <see cref="Mouth"/> was taken.</summary>
+    public long MouthSinceTick { get; set; }
     /// <summary>The building site the <see cref="CharacterTask.Build"/>, <see cref="CharacterTask.Dismantle"/> or <see cref="CharacterTask.DeliverMaterials"/> task works (<see cref="Construction.BuildSite.Id"/>; null: none). Serial phases only. Hashed only while set.</summary>
     public string? BuildSite { get; set; }
     /// <summary>The material delivery bar (0 to 1, filling at 0.2 per second, <see cref="CharacterTask.DeliverMaterials"/>). Hashed with <see cref="BuildSite"/>.</summary>
@@ -551,6 +555,7 @@ public sealed class CharacterTable
             if (k.ForcingLock is { } force) { hasher.Add(0x466F7263); hasher.Add(Rng.StableHash(force)); hasher.Add((int)k.Force); }
             if (k.Shackles is { } job) { hasher.Add(0x5368636B); hasher.Add(Rng.Key(job.Wearer)); hasher.Add((int)job.Work); }
             if (k.PickingUpItem is { } taking) { hasher.Add(0x54616B65); hasher.Add(taking); }
+            if (k.Mouth is { } mouth) { hasher.Add(0x4D6F7574); hasher.Add(Rng.StableHash(mouth.Record)); hasher.Add(k.MouthSinceTick); }
             // A builder's site, bar and the task it goes back to add to the hash only while it works one, so worlds without sites hash as before.
             if (k.BuildSite is { } site)
             {

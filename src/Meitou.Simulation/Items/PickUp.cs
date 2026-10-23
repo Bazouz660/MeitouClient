@@ -57,6 +57,14 @@ namespace Meitou.Simulation
                 }
                 c.PickingUpItem = null;
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                // An animal takes a limb in its mouth and eats it later (docs/game/character-stats.md "Eating").
+                if (Items.FeedSystem.CanHold(c, item.Item))
+                {
+                    world.GroundItems.Take(id);
+                    Items.FeedSystem.HoldInMouth(world, s, c, item.Item);
+                    world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
+                    continue;
+                }
                 // What does not fit stays on the ground (Inventory.Add leaves it in the item).
                 int before = item.Item.Quantity;
                 if (inventory.Add(item.Item)) { world.GroundItems.Take(id); world.EmitSound(SoundKind.PickedUp, s, next[s].Position); }

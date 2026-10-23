@@ -115,8 +115,55 @@ A queued request (kind at +0xA0 of the request object) is run on the next frame;
 | --- | --- |
 | 1 | `SaveManager::saveGame` (`FUN_140375360`), then write `continue=<name>` to `settings.cfg` |
 | 2 | `SaveManager::loadGame` (`FUN_140373f00`) |
-| 3 | `SaveManager::importGame` (`FUN_140378a30`, flags in +0xA4): new world, keeps the squad of the chosen save |
+| 3 | `SaveManager::importGame` (`FUN_140378a30`, flags in +0xA4): new world, keeps the player squads and parts of the chosen save ([import](#importing-a-game-savemanagerimportgame-fun_140378a30)) |
 | 4 | New game: sets the version string to "1.0.68", reloads the game data and starts the chosen NEW_GAME_STARTOFF |
+
+### Importing a game (`SaveManager::importGame`, `FUN_140378a30`)
+
+**Verified** (decompile of `FUN_140378a30`, `FUN_140377710` (zone files), `FUN_14047bad0` (the window's press) and the callees named below).
+Import is a new game that brings part of an old save. The window's ticks are the flag bits ([window](../game/ui-screens.md#title-screen-and-its-windows)):
+Reset squad positions 0x1, Buildings 0x4, Research 0x8, Dead NPCs 0x10, Relations 0x20; 0x2 is always added and nothing tests it. In order:
+
+1. `<save>/quick.save` must exist, else the request fails. The version string becomes "1.0.68" and the whole world is reset as a new game does
+   (`FUN_14036cb80`: factions, platoons, research, unique table, player name = the `204-gamedata.base` faction's name or "Nameless"). Factions are made from the
+   FACTION records with **no** saved faction states. While background loading is busy the request is retried next frame.
+2. The old `quick.save` is read into the save container. The clock hour is set to 10, then step 8 overwrites the clock.
+3. Towns come from the level data as in a new game. **Buildings**: the save's towns of the player faction that were `discovered` and are not nests are loaded
+   (the outposts the player made are in `GAMESTATE_TOWN_INSTANCE_LIST`, `FUN_140935120`, `FUN_1403722d0`); a player town inside another player town's radius is removed
+   (log "Town too close. Removing", `FUN_14092ae80`).
+4. Always (`FUN_140372560`): every non-nest town of the save gives its `discovered` and `explored` to the new town; player towns are set discovered and explored. **Dead NPCs**
+   also applies the save's `replacementTown`. No town at all logs "No towns loaded."
+5. **Buildings**, zone files (`FUN_140377710`; a save whose version is below 0x245 uses `FUN_140377d10`, not read): each `zone/*.zone` keeps only the building instances that are removal entries
+   (empty target) or whose state is owned by the player faction; the others, the zone's loose items and every other record are not copied. A zone with a kept instance gets the
+   root bool `imported` = true and its file in the new working folder; the zone is marked as having a file (so it makes no residents). The owner test is on the state's owner string
+   (`FUN_140387dd0`; the exact key **Observed** as `owner faction ID`).
+6. **Dead NPCs**: the unique table is read again (`FUN_1409aa270`) keeping the entries that are not alive (state 0 dead, 2 imprisoned) with their player flag and handle; a
+   non-player imprisoned entry whose handle test passes is unclaimed (polarity **Unknown**). Without the tick the table is empty at this point.
+7. The player's squads: the save's PLATOON records whose `faction stringID` is the player faction and whose name is not `__DEAD_SQUAD__`. The `squad index` is erased; with
+   **Reset** the platoon `position` is first (500, 0, 51000). The squads are loaded (`FUN_1407f88c0`; one that does not resolve shows "One of your squads has somehow loaded off
+   the map, reload your game with [reset positions] selected..."), each squad's platoon file is copied whole from the save (only if absent), and every `unique` CHARACTER in it is
+   entered in the unique table, claimed, with a null handle. Members, inventories, medical state and stats are therefore the old files'.
+8. No player squad left: `platoon/Nameless_0.platoon` of the new working folder is loaded, "Load game error! Your squad has been salvaged. Awarded 10000 cats as compensation." and +10000.
+9. **Research**: off, research is reset and `_Default Start` is completed; on, the first RESEARCH record is read (`FUN_1408360f0`). Then from CAMERA: `time day/hour/minute` and the sky
+   transition (`FUN_14066db50`), money = max(0, `player money`) (+10000 when salvaged), the faction name = `pfaction name` (empty: as step 1), the camera pose
+   (`FUN_1407ade60`) and the squad option bools (`FUN_1403ebf50`).
+10. **Reset**: the camera goes to (-43500, 0, -6625) and `FUN_14036b370` puts every player squad at that point + (i, 0, i), i the squad's index in the list (an inactive one is
+    activated there). What lies there is **Unknown**.
+11. **Relations**: each GAMESTATE_FACTION of the save is loaded into its faction's relation object with the import flag set (`FUN_1409ef4e0`; which fields the flag skips is
+    **Unknown**). Without the tick the factions keep their FACTION record values.
+12. Last, `FUN_1406ba3a0` (per faction, activates one squad failing a 100-unit test; meaning **Unknown**) and a rescan of the save folder.
+
+Not carried (**Verified** by absence): the NEW_GAME_STARTOFF (only request kind 4 applies one), every other faction's platoons and NPCs, nests, others' buildings and zone items, the
+BIOMES weather (whether it is regenerated elsewhere is **Unknown**), the war states. The difficulty is not read from the save: `importGame` never calls the reader (only `loadGame`
+does), so the game runs with the nine difficulty globals as they stand, which are the save's values only if the Advanced options window was opened with that save selected
+(`FUN_14047ab70` copies the row's block, `FUN_140912f80`) and whatever the sliders then hold.
+
+Meitou (`SaveImport`, `GameHost.BeginImport`): the loaded save is cut down to the same parts in memory (`SaveImport.Filter`) and then loaded by `SaveLoader` as any save, so what the loader
+makes is what a load of that smaller save makes. Engine choices: the squads' `squad index` is renumbered from 0 in their old order; with Reset the members stand on a line 2 units apart at
+their squad's point, on the ground there (`PlaceOnGround`); a save without a player squad is refused instead of salvaged; imprisoned uniques not in the player's squads are dropped from the table
+(their characters are not carried) instead of tested by handle; the finished research of "off" is `_Default Start` only; the weather and decals start fresh; war states are dropped with
+the NPC platoons; the "too close" player-town test, the version-gated tick enabling of old saves (< 0.90.0) and the `imported` zone marker are not built. The relation table is shared by the
+data, so an import without Relations first sets it back to the FACTION values (`FactionRelations.Reset`).
 
 ### Object handles and slot lists
 
@@ -473,7 +520,7 @@ not started) and reads them back (a missing phase start is the load's hour, as t
 - The roles of BIOMES `E<n>` instances (EffectHandler state fields), `_w_fog_a`, the short-key CAMERA floats and bools (`bs cod gdm ht nnm ps rs`, `bl ep`), `TI day/dat0`, `towntime`, `ssct`, and whether MEDICAL `fed` / `KO` are the stomach buffer and the KO timer (the other MEDICAL floats are explained above).
 - Whether `loadGame` rejects or adapts to a `mods` list that differs from the current load order (nothing in the sample: single base-game save).
 - Prisoners, dead characters, bounties, trade and mission state, and player outposts: not present in an early-game sample. Player-built building and outpost keys are known from the code only ([zones](zones.md#placement-keys), [outposts](#player-outposts)).
-- The condition list of the autosave pause, and how `Import Game` selects squads (`FUN_140378a30`, `FUN_140377710`).
+- The condition list of the autosave pause.
 - How relations, trust and `trustNeg` change during play (only the fresh-world values are explained), and what the player faction (no relation table, but a `known` list and `global trust`) uses instead.
 - Why level buildings have a different target in the save than in the level list (179 of 6743 in four saves; in zone 19.29 two placements have swapped targets, same positions: a random variant pick is a guess).
 - Saves made by other game versions or with mods: layout of `mods` and unknown record types would show.

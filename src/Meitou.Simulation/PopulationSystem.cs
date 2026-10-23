@@ -220,6 +220,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         active.Clear();
         foreach (var f in foci) ZoneActivation.AddZonesAround(f, settings.FastZoneHopping ? 1 : 0, active);
         world.VisitedZones.UnionWith(active);
+        world.ActiveZones = active;
         long grace = (long)Math.Ceiling(settings.UnloadGraceSeconds / world.TickSeconds);
         foreach (var site in data.Sites)
         {
