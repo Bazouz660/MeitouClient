@@ -94,6 +94,8 @@ public sealed class StandardSystemSet
     public Meitou.Simulation.Crime.ArrestSystem? Arrest { get; init; }
     public Meitou.Simulation.Kidnap.KidnapSystem? Kidnap { get; init; }
     public Meitou.Simulation.Locks.LockSystem? Locks { get; init; }
+    /// <summary>Built with first aid.</summary>
+    public Meitou.Simulation.Locks.BedSystem? Beds { get; init; }
     public Meitou.Simulation.Trading.TradeSystem? Trade { get; init; }
     public Meitou.Simulation.Ai.AiSystem? Ai { get; init; }
     public Meitou.Simulation.Construction.ConstructionSystem? Construction { get; init; }
@@ -122,6 +124,8 @@ public sealed class StandardSystemSet
 /// <item><b>Carry after body, before combat</b>: its <c>SlowWorld</c> sees the knock-outs of this tick's medical step and the corpses the body system removed, so a carrier that went down
 /// drops its load in the same tick; its <c>Inputs</c> come before combat's, so a carrier ordered to attack lets go of the body first. Everything it does is serial.</item>
 /// <item><b>Kidnap right after carry</b>: it lifts with the carry system and cages with the fixtures, in the same serial step order; it adds nothing to the hash until a kidnapping runs.</item>
+/// <item><b>Beds after carry</b> (with first aid): a carrier lets go of the body it lays in a bed with the carry system's links; its <c>Inputs</c> come after movement's, so a move order has got a
+/// sleeper up already, and its <c>SlowWorld</c> after the body system's knock-outs. It adds nothing to the hash until a bed trip runs or a rent is paid.</item>
 /// <item><b>Construction after carry, before combat</b>: its walks and work (all serial) see the characters the body and carry systems left this tick, and a builder ordered to attack lets go of its site before combat's <c>Inputs</c> run; it adds nothing to the hash until the player has a site.</item>
 /// <item><b>Production right after construction</b>: it sees the sites completed this tick and makes their machines; it adds nothing to the hash until the player has a working building.</item>
 /// <item><b>Feed after body</b>: the game's order; eating reads hunger the body system advanced in the same tick.</item>
@@ -173,10 +177,12 @@ public static class StandardSystems
             // Raiders lifting the downed and carrying them to a cage of their faction: right after the carry system, whose lift and links it uses; it adds nothing to the hash until one runs.
             if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap) { Deeds = deeds });
         }
+        Meitou.Simulation.Locks.BedSystem? beds = null;
+        if (Has(StandardParts.FirstAid)) systems.Add(beds = new Meitou.Simulation.Locks.BedSystem(data) { Carry = carry });
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
         if (Has(StandardParts.Construction)) systems.Add(construction = new Meitou.Simulation.Construction.ConstructionSystem(data, o.Construction));
         Meitou.Simulation.Production.ProductionSystem? production = null;
-        if (Has(StandardParts.Production)) systems.Add(production = new Meitou.Simulation.Production.ProductionSystem(data, o.Production) { Assembly = new CharacterAssembly(data), Construction = construction });
+        if (Has(StandardParts.Production)) systems.Add(production = new Meitou.Simulation.Production.ProductionSystem(data, o.Production) { Assembly = new CharacterAssembly(data), Construction = construction, Beds = beds });
         if (Has(StandardParts.Combat)) systems.Add(combat!);
         if (Has(StandardParts.Animation))
         {
@@ -220,6 +226,6 @@ public static class StandardSystems
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
         if (arrest is not null) arrest.Talk = talk;
-        return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Crime = crime, Arrest = arrest, Locks = locks, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
+        return new StandardSystemSet { Systems = systems, Population = population, Movement = movement, Combat = combat, Aggro = aggro, Carry = carry, Kidnap = kidnap, Crime = crime, Arrest = arrest, Locks = locks, Beds = beds, Trade = trade, Ai = ai, Construction = construction, Production = production, Ragdolls = ragdolls, Dialogue = talk };
     }
 }

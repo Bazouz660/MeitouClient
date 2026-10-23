@@ -97,8 +97,8 @@ it is not part of target eligibility.
 
 ## Unknowns
 
-1. The **bed search** for rescue (`FUN_1408cfe00`): range, which beds (own buildings only, or rented town beds), and what "if there's beds"
-   needs; without it job 148 cannot decide whether to run.
+1. The bed search (`FUN_1408cfe00`) is decoded for player-faction characters ([locks](locks.md#beds)); the NPC branch's designated-building finders are not.
+   Where 106 (no target finder) gets its bed is **Unknown**.
 2. The **sensed-list category bits** (`FUN_140853960` masks 1, 0x4010, 0x20, 0x210, 0x4008, 0x811, 0x10): which bit is ally, enemy, dead, slave;
    and the size of the sensed list, which is the search range of every finder.
 3. The **status object at `Character+0x1a0`** (int at +0, saved as `slavestate`: 1 slave, 2 escaped slave; the setter `FUN_1405a4940` posts "{1} has been enslaved" for a free player-faction character and sets `+0x110` to 250 on 2; its callers: caging, the squad factory's `slaves`, slave processing (task 182), escapes, release and bail); its `+0x88`, `+0xe0` (a slave's owner faction); its class name, and what sets `+0xe9` (the "innocent victim" flag; see the character finder).
@@ -109,8 +109,8 @@ it is not part of target eligibility.
    are real, the UI events behind `FUN_140713d20` and `FUN_140715560` were not mapped.
 6. **Witness timing**: how often `FUN_1408580d0` runs per sensed character, with what range and line of sight, and how the pending timer `+0x90`
    counts down (`FUN_140851f40` sets it; the decrement was not found).
-7. `PUT_DOWN_CARRIED_DUDE_IF_THEY_CAN_WALK` (169): its "can walk" test; the bed task given to a body put in a bed (kind 4 from `FUN_14038ab50`).
-8. The **bed rent** amount (`FUN_1403576c0`) and whether allied factions' beds charge it.
+7. `PUT_DOWN_CARRIED_DUDE_IF_THEY_CAN_WALK` (169): its "can walk" test. (Kind 4 of `FUN_14038ab50` is the bed's nearest type-4 node the body is placed at, [locks](locks.md#beds).)
+8. Bed rent: decoded ([locks](locks.md#beds)); allied factions' beds are free. The town-type and `FUN_140621230` tests in it are **Unknown**.
 9. A **despawn timer** for ground items.
 10. The steal order type 0x1d of the ALT path (`FUN_1407fc440`): the taskType table says 29 is `MOVE_CUS_ORDERED`.
 11. The **speed caps** of the `carrying left/right` movement clips (RACE `male/female carry ragdoll` are unused: [ragdolls](ragdolls.md)).

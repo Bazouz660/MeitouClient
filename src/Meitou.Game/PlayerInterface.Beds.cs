@@ -1,0 +1,76 @@
+using System.Numerics;
+using Meitou.Simulation;
+using Meitou.Simulation.Locks;
+
+namespace Meitou.Game;
+
+/// <summary>
+/// Beds (docs/game/ui-input.md "Building hover and click", docs/game/locks.md "Beds"): with characters selected the pointer over a bed is <c>use</c>; a quick right click gives the original's
+/// order 258 "Sleep" (<see cref="UseBedOrder"/>: the nearest selected walks there and lies in it until another order). Held, the menu offers the original's one bed verb: "Put in Bed"
+/// (<see cref="PutInBedOrder"/>) while a selected character carries someone, else "Sleep", followed by a player bed's site verbs. A quick click while a selected character carries
+/// someone lays the body in instead (<b>engine choice</b>: the original's quick click gives 258 regardless, whose plan needs the sleeper not to carry, and how it meets that is
+/// <b>Unknown</b>).
+/// </summary>
+sealed partial class PlayerInterface
+{
+    /// <summary>How near the pointer a bed's projected middle must be, in pixels (an engine choice, as for containers: beds have no pick mesh here).</summary>
+    const float BedPickPixels = 30;
+
+    BedSpot? PickBed(Vector2 pixel) => PickBedAt(pixel)?.Bed;
+
+    /// <summary>The bed whose middle (half a unit above its spot) projects nearest the pixel within <see cref="BedPickPixels"/>, if any and not hidden behind a wall, with the ray distance.</summary>
+    (BedSpot Bed, float T)? PickBedAt(Vector2 pixel)
+    {
+        if (Ray(pixel) is not { } ray) return null;
+        (BedSpot, float)? best = null;
+        float bestDistance = BedPickPixels;
+        foreach (var b in session.CurrentSnapshot.Beds)
+        {
+            var middle = b.Position + new Vector3(0, 0.5f, 0);
+            if (Project(middle) is not { } at) continue;
+            float d = Vector2.Distance(at, pixel), t = Vector3.Distance(ray.Origin, middle);
+            if (d < bestDistance && !Hidden(ray, t)) (best, bestDistance) = ((b, t), d);
+        }
+        return best;
+    }
+
+    (BedSpot Bed, Vector2 At, long Since)? bedPending;
+
+    /// <summary>A right press on a bed with characters selected: released before the hold time it gives the quick order, held longer it opens the menu (true: taken).</summary>
+    bool BedPress(Vector2 p)
+    {
+        if (SelectedIds().Count == 0 || PickBed(p) is not { } bed) return false;
+        bedPending = (bed, p, System.Diagnostics.Stopwatch.GetTimestamp());
+        return true;
+    }
+
+    /// <summary>The selected characters carrying someone.</summary>
+    CharacterId[] Carriers() => [.. Selected().Where(c => !c.Carrying.IsNone).Select(c => c.Id)];
+
+    void SleepIn(BedSpot bed) => Say(new UseBedOrder([], bed.Id) { Tick = session.World.Tick });
+
+    void PutIn(BedSpot bed, CharacterId[] carriers) => Say(new PutInBedOrder(carriers, bed.Id) { Tick = session.World.Tick });
+
+    /// <summary>The right button let go: a press on a bed released before the menu opened.</summary>
+    void BedRelease()
+    {
+        if (bedPending is not { } pending) return;
+        bedPending = null;
+        if (Carriers() is { Length: > 0 } carriers) PutIn(pending.Bed, carriers);
+        else SleepIn(pending.Bed);
+    }
+
+    /// <summary>Once a frame: a bed press held long enough opens its menu (the original's <c>FUN_1407a6bc0</c>: 99 when the selection carries someone, else the bed's order 258).</summary>
+    void UpdateBed()
+    {
+        if (bedPending is not { } pending || System.Diagnostics.Stopwatch.GetElapsedTime(pending.Since).TotalSeconds < ContextHoldSeconds) return;
+        bedPending = null;
+        if (SelectedIds().Count == 0) return;
+        var bed = pending.Bed;
+        var carriers = Carriers();
+        var verbs = new List<(string Caption, Action Give)> { carriers.Length > 0 ? ("Put in Bed", () => PutIn(bed, carriers)) : ("Sleep", () => SleepIn(bed)) };
+        // A bed the player built: its site's verbs too (dismantle...), which its quick click no longer reaches.
+        if (session.CurrentSnapshot.Buildings.FirstOrDefault(s => bed.Id == s.Id + "@bed0") is { } site) verbs.AddRange(SiteVerbs(site));
+        contextMenu = new(buildHost?.ItemName(bed.Record) ?? bed.Record, pending.At, verbs);
+    }
+}

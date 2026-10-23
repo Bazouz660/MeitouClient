@@ -171,7 +171,7 @@ sealed partial class PlayerInterface
     static readonly HashSet<string> OrderCommands = new(StringComparer.Ordinal)
     {
         "MoveOrder", "AttackOrder", "BuildOrder", "DismantleOrder", "GetOutOrder", "LootOrder", "OpenLootOrder", "PayBailOrder", "PickLockOrder", "PickUpOrder", "PutDownOrder", "PutInCageOrder", "PutShacklesOrder",
-        "OperateOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder",
+        "OperateOrder", "PutInBedOrder", "RestOrder", "SplintOrder", "StealthKoOrder", "TalkOrder", "TreatOrder", "UseBedOrder",
     };
 
     /// <summary>A command the player is about to send: orders sound as the exe's order dispatcher (1407f9e20), item moves and trades as the inventory handlers.</summary>

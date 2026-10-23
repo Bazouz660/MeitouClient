@@ -95,9 +95,10 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// The implicit job of a character whose list has none to run (docs/game/ai-tasks.md "Perma-jobs": the original's lowest keys, in this order), with the jobs switch on and not a
-    /// slave. <see cref="SquadAi.Ditch"/>: carried items a storage takes go there (242; only with no queued orders). <see cref="SquadAi.Sleep"/>: an injured character lies in a free
-    /// bed until healed (153, then 257). <see cref="SquadAi.Sit"/>: a free chair (275). The one it is on is kept while it holds. Distances are from where it idles, its squad
-    /// leader when it follows, so a follower gets up when the leader walks off.
+    /// slave. <see cref="SquadAi.Ditch"/>: carried items a storage takes go there (242; only with no queued orders). <see cref="SquadAi.Sleep"/>: an injured character lies in the bed
+    /// the bed search finds (153, whose target finder it is, <b>Verified</b>; <see cref="Locks.FixtureRegistry.FindBed"/>) until healed (then 257 gets it up). <see cref="SquadAi.Sit"/>: a free
+    /// chair (275). The one it is on is kept while it holds (a bed within <see cref="Locks.FixtureRegistry.BedSearchRange"/>). Distances are from where it idles, its squad leader when it
+    /// follows, so a follower gets up when the leader walks off.
     /// </summary>
     (TaskType Type, string Site)? ImplicitPick(World world, int slot, CharacterTask idle)
     {
@@ -115,11 +116,12 @@ public sealed partial class ProductionSystem
                 && NearestSite(world, at, Settings.HaulRange, (_, m) => m.Data.IsStorage && m.Storage is not null && inv.All().Any(item => Takes(world, m, item))) is { } store)
                 return (TaskType.DITCH_ALL_RESOURCES, store);
         }
-        if ((options & SquadAi.Sleep) != 0 && Injured(cold))
+        if ((options & SquadAi.Sleep) != 0 && Injured(cold) && Beds is not null)
         {
-            if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && Site(world, bed) is { } kept && Gap(kept.Position, at) <= Settings.HaulRange)
+            if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && world.Fixtures.Find(bed) is { } kept
+                && Gap(kept.Position, at) <= Locks.FixtureRegistry.BedSearchRange)
                 return (TaskType.GO_HOME_AND_GO_TO_BED, bed);
-            if (NearestSite(world, at, Settings.HaulRange, (s, m) => IsBed(m) && Free(world, cold, s, m)) is { } free) return (TaskType.GO_HOME_AND_GO_TO_BED, free);
+            if (Beds.FindFor(world, slot) is { } free) return (TaskType.GO_HOME_AND_GO_TO_BED, free.Id);
         }
         if ((options & SquadAi.Sit) != 0)
         {
@@ -129,9 +131,6 @@ public sealed partial class ProductionSystem
         }
         return null;
     }
-
-    /// <summary>BF_BED and the skeleton bed (6, 25).</summary>
-    static bool IsBed(Machine m) => m.Data.Function is TownBuildings.BedFunction or TownBuildings.SkeletonBedFunction;
 
     /// <summary>BF_CHAIR and BF_THRONE (17, 24; docs/game/ai-tasks.md "Town goals").</summary>
     static bool IsSeat(Machine m) => m.Data.Function is TownBuildings.ChairFunction or ThroneFunction;
@@ -164,15 +163,21 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        var site = Site(world, siteId)!;
-        var m = Ensure(world, site)!;
         var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)table.Next[slot].Task;
-        if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m);
+        if (type == TaskType.GO_HOME_AND_GO_TO_BED)
+        {
+            // A bed fixture: the bed system walks it there and lays it in (task Sleep); the job keeps the bed's id.
+            if (world.Fixtures.Find(siteId) is not { } bed || Beds is null) return;
+            Beds.StartSleep(world, slot, bed);
+            if (table.Next[slot].Task != (byte)CharacterTask.Sleep) return;
+            cold.OperateSite = siteId;
+        }
         else
         {
-            Begin(world, slot, site, m);
-            // A bed names no clip: the sleeper lies as on the floor (engine choice).
-            if (IsBed(m)) cold.OperateClip = AnimationLibrary.AnimalLyingRecord;
+            var site = Site(world, siteId)!;
+            var m = Ensure(world, site)!;
+            if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m);
+            else Begin(world, slot, site, m);
         }
         cold.JobIndex = -1;
         cold.Implicit = type;
@@ -203,7 +208,7 @@ public sealed partial class ProductionSystem
     static bool JobTask(CharacterCold cold, CharacterTask task) =>
         cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count && cold.Jobs[cold.JobIndex].Type == TaskType.JOB_BUILDER
             ? task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials
-            : task is CharacterTask.Operate or CharacterTask.Haul;
+            : task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep;
 
     /// <summary>
     /// Whether a job cannot run (the original skips such a job: an unmet start condition the planner cannot meet, or the target finder found nothing; docs/game/ai-tasks.md "Perma-jobs").

@@ -279,7 +279,7 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        if (n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul)
+        if (n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {
             MovementSystem.Stop(table, slot);
             // A job's task goes back to the following or wandering it took the character from.
@@ -297,8 +297,10 @@ public sealed partial class ProductionSystem : ITickSystem
 
     public void Schedule(World world)
     {
-        // Job lists also run for the engineer job while a site is unfinished or damaged.
-        if (world.Machines.Count == 0 && !sweep && (Construction is null || !world.Buildings.AnyNeedsWork)) return;
+        // Job lists also run for the engineer job while a site is unfinished or damaged, and with no machine they can still send the injured to bed
+        // (the "Sleep when injured" option).
+        if (world.Machines.Count == 0 && !sweep && (Construction is null || !world.Buildings.AnyNeedsWork)
+            && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
         PickJobs(world);
         var table = world.Characters;
         float dt = world.TickSeconds;
@@ -313,6 +315,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 else End(table, i);
                 continue;
             }
+            if (n.Task == (byte)CharacterTask.Sleep) continue;   // the bed of the "Sleep when injured" option, in OperateSite (BedSystem walks it)
             if (cold.OperateSite is not { } id)
             {
                 // A hauler an order took off its job.
@@ -411,7 +414,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 continue;
             }
             if (!AtSite(n, site, m)) continue;
-            // A chair or bed (an implicit job): sat or lain on, no work.
+            // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
             if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
@@ -805,6 +808,8 @@ public sealed partial class ProductionSystem : ITickSystem
 
     /// <summary>Re-dresses a character that put on something taken out of a storage or container (null: not re-dressed).</summary>
     internal CharacterAssembly? Assembly { get; set; }
+    /// <summary>The beds the "Sleep when injured" option lies in (null: the option does nothing).</summary>
+    public Locks.BedSystem? Beds { get; set; }
 
     /// <summary>
     /// The complete machine at <paramref name="site"/> when <paramref name="who"/> (one of the player's characters) may move items in and out of it from where it stands; posts

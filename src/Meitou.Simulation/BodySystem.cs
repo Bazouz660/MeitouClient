@@ -38,17 +38,15 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     const float BedReach = 3;
 
     /// <summary>
-    /// The bed a character lies in (character state 1; <c>FUN_140652000</c>, character-stats.md "Beds"): the one it is held in, else for an AI asleep at its home's bed spot
-    /// (or the "Sleep when injured" bed task) the bed fixture there. Its kind is the functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED) and its factor the
+    /// The bed a character lies in (character state 1; <c>FUN_140652000</c>, character-stats.md "Beds"): the one it is held in (the player's beds, <see cref="Locks.BedSystem"/>), else for an
+    /// AI asleep at its home's bed spot the bed fixture there. Its kind is the functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED) and its factor the
     /// Building's <c>+0x3c0</c>: <c>output rate</c> x <c>production mult</c> x the research production multiplier. None outside a bed.
     /// </summary>
     (BedKind Kind, float Factor) BedOf(World world, CharacterCold cold, in CharacterHot n)
     {
         if (db is null) return (BedKind.None, 1);
         var fixture = cold.InSomething == Locks.HeldState.Bed && cold.InWhat is { } id ? world.Fixtures.Find(id)
-            : n.Task == (byte)CharacterTask.Rest && cold.Ai?.Behaviour == Ai.AiBehaviour.Sleep
-              || n.Task == (byte)CharacterTask.Operate && cold.Implicit == Meitou.Data.Gameplay.Ai.TaskType.GO_HOME_AND_GO_TO_BED && cold.Operating
-                ? world.Fixtures.BedAt(n.Position, BedReach) : null;
+            : n.Task == (byte)CharacterTask.Rest && cold.Ai?.Behaviour == Ai.AiBehaviour.Sleep ? world.Fixtures.BedAt(n.Position, BedReach) : null;
         if (fixture is null) return cold.InSomething == Locks.HeldState.Bed ? (BedKind.Bed, 1) : (BedKind.None, 1);
         var (kind, factor) = beds.GetOrAdd(fixture.RecordId, rid =>
         {
@@ -74,7 +72,9 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             if (cold.Medical is not { } medical || cold.Race is not { } race || cold.Stats is not { } stats) continue;
             ref var n = ref next[i];
             if (medical.Dead && cold.DiedTick < 0) cold.DiedTick = world.Tick;   // also when something outside the tick killed it (a hit)
-            if (medical.Incapacitated && (n.Task != (byte)CharacterTask.Idle || (n.Flags & (ushort)MoveFlags.AnyPath) != 0))
+            // One lying in a bed keeps its task there (it would get up with any other, BedSystem); only its path goes.
+            if (medical.Incapacitated && cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep) n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
+            else if (medical.Incapacitated && (n.Task != (byte)CharacterTask.Idle || (n.Flags & (ushort)MoveFlags.AnyPath) != 0))
             {
                 MovementSystem.Stop(table, i);
                 n.Velocity = Vector3.Zero;
@@ -121,7 +121,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut)
                 {
-                    MovementSystem.Stop(table, i);
+                    if (cold.InSomething != Locks.HeldState.Bed) MovementSystem.Stop(table, i);   // one in a bed stays in it
                     n.Velocity = Vector3.Zero;
                 }
             }
