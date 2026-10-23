@@ -16,17 +16,23 @@ internal static class WarSave
     static readonly string[] Timers = [PhaseStartKey, FightStartKey, ArrivedKey, AnnouncedKey, CarryStartKey];
     static readonly string[] HandParts = ["TYPE", "C", "CS", "I", "S"];
 
-    /// <summary>The platoon handles (container and serial) the states' <c>p&lt;i&gt;</c> name, of type 1 or 34 (the reader takes no other).</summary>
-    public static HashSet<(int C, int CS)> PlatoonHandles(IEnumerable<FcsRecord> wars)
+    /// <summary>
+    /// The platoon handles (container and serial) the states' <c>p&lt;i&gt;</c> name, of type 1 or 34 (the reader takes no other), each with the <c>home c&lt;j&gt;</c> town handle of
+    /// the running campaign its <c>forces&lt;i&gt;</c> names (<see cref="Hand.Null"/> when none does).
+    /// </summary>
+    public static Dictionary<(int C, int CS), Hand> PlatoonHomes(IEnumerable<FcsRecord> wars)
     {
-        var set = new HashSet<(int, int)>();
+        var homes = new Dictionary<(int, int), Hand>();
         foreach (var war in wars)
         {
-            int n = war.Ints.GetValueOrDefault("num plats");
-            for (int i = 0; i < n; i++)
-                if (Hand.Read(war, $"p{i}") is { Type: 1 or (int)FcsRecordType.PLATOON } h) set.Add((h.C, h.CS));
+            var byId = new Dictionary<int, Hand>();
+            for (int j = 0, n = war.Ints.GetValueOrDefault("num actives"); j < n; j++)
+                byId.TryAdd(war.Ints.GetValueOrDefault($"id c{j}"), Hand.Read(war, $"home c{j}"));
+            for (int i = 0, n = war.Ints.GetValueOrDefault("num plats"); i < n; i++)
+                if (Hand.Read(war, $"p{i}") is { Type: 1 or (int)FcsRecordType.PLATOON } h)
+                    homes.TryAdd((h.C, h.CS), byId.GetValueOrDefault(war.Ints.GetValueOrDefault($"forces{i}"), Hand.Null));
         }
-        return set;
+        return homes;
     }
 
     /// <summary>

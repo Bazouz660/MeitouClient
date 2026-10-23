@@ -482,6 +482,12 @@ never made is written as a PLATOON with content file `platoon/` (no file) so its
 `meitou phase start c<i>`, `meitou fight start c<i>`, `meitou arrived c<i>`, `meitou announced c<i>`, `meitou carry start c<i>` (absolute game hours; absent:
 not started) and reads them back (a missing phase start is the load's hour, as the original). **Observed** (headless, real data): all five come back equal.
 
+Campaign platoons in a game save need not have a placed `basetown`: in the owner's modded day-397 save, a cannibal raid's platoon has a nest `hometown`
+and no file, and a nomad trader's has an empty `basetown` and one character (**Observed**). Meitou loads every platoon a `p<i>` names as its campaign's travelling
+stand-in, homed at the campaign's `home c<i>` town when its `basetown` is no placed town, never as a [wild platoon](#wild-and-nest-platoons-meitou-mapping); a
+campaign left without platoons is defeated at once ([campaigns](../game/factions-squads-towns.md#campaigns)). **Observed** (headless, that save): all 5 resolving
+campaigns keep their platoon after 600 ticks; before, the two on the wild path were defeated on the first update.
+
 ### Squad memory
 
 A platoon's memory of characters (`SquadMemory`, [dialogue](../game/dialogue.md#squad-memory)). **Observed** (writer `FUN_1406789e0`, reader `FUN_140678cb0`; the key
