@@ -87,7 +87,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return v > MinVisibility && dist <= range * v ? v : 0;
     }
 
-    /// <summary>The noise a moving character makes reaches lerp(speed / max speed, 350, 600) units (<c>FUN_140851d10</c>, Verified constants; clear weather, not sneaking).</summary>
+    /// <summary>The weather's factor on the noise of the character in <paramref name="slot"/> (<see cref="WeatherSystem.NoiseFactor"/>; 1 without a cold row).</summary>
+    static float Noise(CharacterTable table, int slot) => table.Cold(slot) is { } c ? WeatherSystem.NoiseFactor(c) : 1;
+
+    /// <summary>The noise a moving character makes reaches lerp(speed / max speed, 350, 600) units (<c>FUN_140851d10</c>, Verified constants; clear weather: the caller applies <see cref="WeatherSystem.NoiseFactor"/>; not sneaking).</summary>
     public const float NoiseNear = 350, NoiseFar = 600;
     /// <summary>The chance per check that a character within the noise range is heard when it is not sneaking (<c>FUN_140857500</c>, Verified constant).</summary>
     public const float HearOdds = 0.75f;
@@ -103,8 +106,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The original's chance to hear a character at <paramref name="distance"/> with noise range <paramref name="noise"/>: 0.75 x (1 - d^2 / N^2), rolled each check.</summary>
     public static float HearChance(float distance, float noise) => noise > 0 && distance < noise ? HearOdds * (1 - distance * distance / (noise * noise)) : 0;
 
-    /// <summary>A character's daylight sight range R: <paramref name="sight"/> x its race's <c>vision range mult</c>.</summary>
-    public static float RangeOf(CharacterCold cold, float sight) => sight * (cold.Race?.VisionRangeMult ?? 1);
+    /// <summary>A character's daylight sight range R: <paramref name="sight"/> x its race's <c>vision range mult</c> x the weather's factor (<see cref="WeatherSystem.SightFactor"/>).</summary>
+    public static float RangeOf(CharacterCold cold, float sight) => sight * (cold.Race?.VisionRangeMult ?? 1) * WeatherSystem.SightFactor(cold);
 
     struct Slot
     {
@@ -372,8 +375,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             float speed = new Vector2(other.Velocity.X, other.Velocity.Z).Length();
             float p = stealth >= 0
-                ? speed > 0.01f ? Orders.SneakHearChance(MathF.Sqrt(d2), Orders.SneakNoise(stealth), stealth) : 0
-                : HearChance(MathF.Sqrt(d2), NoiseRange(speed, other.MaxSpeed));
+                ? speed > 0.01f ? Orders.SneakHearChance(MathF.Sqrt(d2), Orders.SneakNoise(stealth, Noise(s.Table, slot)), stealth) : 0
+                : HearChance(MathF.Sqrt(d2), NoiseRange(speed, other.MaxSpeed) * Noise(s.Table, slot));
             if (!(p > 0) || Rng.Float(Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot)) >= p) return;
         }
         s.Best = slot;

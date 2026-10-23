@@ -21,7 +21,8 @@ is stored as0.75; continuous base0.02*dt, event base0.075. Caller clamps are not
 L=lerp(l0,1,limb), m=H*L; optional pain factor lerp(p0,1,clamp(2.5*P,0,1)); output
 clamp(lerp(f0,1,m),0,1), then requested limb-item/bonus factors. P's origin is unknown;
 it behaves as tolerance, not accumulated stun. Limb aggregates: A best arm, Hd head, T lowest
-torso health fraction. Perception/friendly-fire add their stun factor. Table preserves each
+torso health fraction. Perception/friendly-fire add the dust factor `FUN_1406439f0`, lerp(dust,1,0.5)
+([weather](../formats/weather.md#effects-on-characters), **Verified**). Table preserves each
 stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
 
 ## Hunger, blood and parts

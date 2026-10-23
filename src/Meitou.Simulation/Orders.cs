@@ -144,8 +144,8 @@ public static class Orders
     /// <summary>The seconds a full spot meter takes to empty once the looker no longer sees its target (<c>FUN_140853aa0</c>: it falls by dt / 260, Verified literal).</summary>
     public const float SpotForgetSeconds = 260;
 
-    /// <summary>A sneaking mover's noise range: lerp(s, 450, 80) (docs/game/perception.md "Hearing", Verified constants; clear weather).</summary>
-    public static float SneakNoise(float stealth) => 450 + (80 - 450) * stealth;
+    /// <summary>A sneaking mover's noise range: lerp(s, 450 f, 80) (docs/game/perception.md "Hearing", Verified constants), f the weather's factor (<see cref="WeatherSystem.NoiseFactor"/>, 1 in clear weather).</summary>
+    public static float SneakNoise(float stealth, float weather = 1) => 450 * weather + (80 - 450 * weather) * stealth;
 
     /// <summary>The chance to hear a sneaking target at <paramref name="distance"/>: 0.1 x (1 - s) x (1 - d^2 / N^2) ("Hearing"; the 0.05 squad case is not modelled).</summary>
     public static float SneakHearChance(float distance, float noise, float stealth) =>

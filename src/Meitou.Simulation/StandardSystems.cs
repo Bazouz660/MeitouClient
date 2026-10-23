@@ -164,7 +164,7 @@ public static class StandardSystems
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
         if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid) { Deeds = deeds, Relations = Has(StandardParts.Aggro) ? data.Relations : null });
-        if (Has(StandardParts.Body)) systems.Add(new BodySystem(data.Bodies.Constants, data.BodyOptions, o.BodyTimeScale, data.Db));
+        if (Has(StandardParts.Body)) { systems.Add(new BodySystem(data.Bodies.Constants, data.BodyOptions, o.BodyTimeScale, data.Db)); systems.Add(new WeatherSystem(data.Bodies.Constants)); }
         Meitou.Simulation.Carrying.CarrySystem? carry = null;
         Meitou.Simulation.Kidnap.KidnapSystem? kidnap = null;
         Meitou.Simulation.Ragdolls.RagdollSystem? ragdolls = null;

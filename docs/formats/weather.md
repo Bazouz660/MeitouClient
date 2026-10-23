@@ -82,8 +82,67 @@ Particle fade comes from affectors, fog volumes from effect fade/lifecycle.
 within a region immediate; static map-feature units immortal. Missing particle images/materials
 fall back to white. Fog-volume ground movement and effect lights are not fully implemented.
 **Verified** plugin constructor default quota500; ash techniques total1550. Denser original ash
-remains unexplained. **Observed** gameplay: dust accuracy, acid/ground/water, gas/burning,
-weather-protection, collector rain and generator wind; full effects untraced.
+remains unexplained. Gameplay effects: [Effects on characters](#effects-on-characters); collector rain
+and generator wind are untraced.
+
+## Effects on characters
+
+**Verified (decompiled)**, the character's weather update `FUN_1405cf790` (CharacterHuman vtable +0x288, called from the
+character update `FUN_1405d00b0` with the character's dt, seconds of character time). Each call, in order:
+
+1. Clear the character's weather (animation holder `+0x198` kind, `+0x1a0` strength, `+0x190` overlay flag). Skip all while
+   `DAT_142134690+0x2f0` is set (**Unknown** switch); stop (also skipping step 5's smoke) when the position has no BIOME_GROUP.
+2. Acid, unless the RACE `weather immunity` lists WA_ACID: water state 3 (swimming, `FUN_1405c7fd0`; a bed/cage gives 0, a carried
+   body its carrier's) → acid water with dose dt x `acidic water`; else outdoors (location 0xb, not on a roof), not down
+   (slot 6), not carried, special state 0 (no bed/cage) and boots section (9) present and empty → acid ground, dose dt x `acidic ground`.
+3. Local effects: each listed (kind, strength) pair not immune: BURNING → fire, GAS → gas, with dose dt x strength; the list
+   is then emptied. Other kinds in it (dust units) do nothing.
+4. Region weather: needs the weather's `affect type` ≠ NONE, the character outdoors or on top (perception slot 60), not
+   immune. Sets the holder to (kind, region strength s, overlay on). DUST: unless vfunc +0x358 (**Unknown**), dust update with s;
+   the overlay (shield-eyes animation) plays only without protection and when the view does not point along the wind
+   (dot ≤ 0). ACID: a ray down from 1000 above; a hit more than 10 over the feet on a building with `is shelter` protects;
+   else acid rain with dose dt (s is **not** used). RAIN/BURNING/GAS weathers only set the holder.
+5. Toggle the smoke EFFECT `55638-Newwworld.mod` on the character while acid rain hurt it. Dialogue events (`FUN_140684990`):
+   61 acid feet, 62 acid rain, 63 acid water, 65 poison gas, 69 burning.
+
+Damage writes the part fields directly, as `FUN_140644a70` (no wound, blood loss, wear or hit multiplier). "Blunt d" means flesh −=
+d x `blunt permanent organ damage` (0 in the base game, so stun only), stun += the rest. A part *burns* unless it is a limb whose
+limb state is not original (stump, prosthetic, crushed). P = protection, below.
+
+| Effect | Function | Rule |
+|---|---|---|
+| acid water | `FUN_140646c80` | every burning part blunt dose x 0.25 |
+| acid ground | `FUN_140647010` | none for `is robot`; each original leg with flesh > 50: blunt dose x 0.2 |
+| acid rain | `FUN_1406472c0` | every burning part blunt 0.08 dt (1 − P) |
+| fire | `FUN_140648460` | every burning part flesh −= 10 dose (1 − P) |
+| gas | `FUN_140647e30` | dose x 4, x 0.5 unconscious (medical +0x161), x (1 − P); first torso part without side (part-map order, **Unknown**) blunt |
+| dust | `FUN_140648ef0` | medical +0x14c = s; if s > 0: flag +0x148 = 1, value = clamp(s − sP, 0, 1) |
+
+Dust consumers: attack and martial-arts skill getters (`FUN_1408844c0`, `FUN_140884580`; the stats panel's "Weather penalty") subtract
+(int)(10 dust); `FUN_1406439f0` multiplies the perception and friendly-fire stat rows by lerp(dust, 1, 0.5). No other writer of +0x148
+or +0x14c exists (**Observed**, instruction search), so the penalty keeps its last value after the storm until the next dust update
+or a reload. Sight and hearing read the holder: [perception](../game/perception.md) (sight x lerp(s(1 − P), 1, 0.4 dust / 0.75
+other); noise x lerp(s, 1, 0.25 dust / 0.75 rain or acid)). The status-bar notices ("Acid!", "Feet Burning!", "Dust Storm ({1}
+protection)"...) go to player characters only.
+
+**Protection** P (`FUN_140887030` on equip, CharStats map +0x58; the medical functions sum the same worn list): the sum of ARMOUR
+`weather protection amount` over the worn pieces whose `weather protection<N>` lists the kind, unclamped (`FUN_140886d10` returns 1
+for an immune race). The numbered lists (`weather protection<N>`, RACE `weather immunity<N>`) are read up to the first missing key,
+0 skipped (`FUN_140898e90`, `FUN_14042efa0`). **Verified** probe of the merged data: only DUST (1) and ACID (2) weathers have an affect
+type (acid strength irrelevant, see above); affecting EFFECTs are dust, burning (beams, fire twister) and gas (WANDERING_GAS);
+robots and skeletons are immune to 1-4, Hive/cannibals/goats to acid, fishmen to acid and gas.
+
+**Local units** (`EffectHandler` slot 7 `FUN_1401020e0`, every frame, or once after a delay for one-shot handlers `FUN_140102310`):
+characters within radius R of the unit and outdoors (location 0xb) get (affect type, strength) put in their list (`FUN_1405cbcc0`:
+a later unit of the same kind replaces the strength). R = `effect radius`, else 0.375 x the particle bounds' xz diagonal.
+Strength (`FUN_140100cb0`): the unit's +0x48 inside R (its falloff to 2R is unreachable, the query radius being R); where +0x48 comes
+from between `effect strength min/max` is **Unknown** (equal for the base burning and gas effects).
+
+**Meitou** (`WeatherSystem`, `MedicalState.Weather.cs`, host `GameHost.Weather.cs`): runs every tick in the slow-world phase;
+the host gives the scheduler's region at each place (the schedule, not a viewer-forced weather) and the live affecting units of the
+particle groups. Engine choices: a race with `no shoes` has no boots slot; "down" is incapacitated or carried; units without
+`effect radius` are left out; unit strength is `effect strength min`; dead characters are skipped. Not modelled: shelters, the
+overlay animation, the smoke effect, the notices, the dialogue events, the vfunc +0x358 and +0x2f0 gates.
 
 ### WEATHER (type 80; Verified: fcs.def and the loader FUN_1409de7b0)
 
@@ -97,7 +156,7 @@ weather-protection, collector rain and generator wind; full effects untraced.
 | `wetness` (0..1) | target wetness of surfaces |
 | `dust`, `dust inside`, `dust slope` | dust on objects outside, inside buildings, and the slope it sticks to |
 | `heat haze` (0..1) | the heat-haze post effect's strength |
-| `affect type` (`WeatherAffecting`: WA_NONE, WA_DUSTSTORM, WA_ACID, WA_BURNING, WA_GAS, WA_RAIN), `affect strength` | direct effect on characters (gameplay) |
+| `affect type` (`WeatherAffecting`: WA_NONE, WA_DUSTSTORM, WA_ACID, WA_BURNING, WA_GAS, WA_RAIN), `affect strength` | direct effect on characters ([below](#effects-on-characters); `affect strength` is not read there) |
 | `effect strength min/max` | "Maximum effect strength"; the game reads `min` twice (below) |
 | `start time`, `end time` (hours) | time-of-day window; equal values = any time |
 | `effects` → EFFECT (val0 max count active at once, 0 = no limit; val1/val2 min/max respawn time in real seconds; 0/0 = all spawned at once) | the weather's particle effects |
@@ -128,7 +187,7 @@ to a region without seasons) is **Observed**: not read from the game, 120..720 m
 ### BIOME_GROUP (type 95; Verified: fcs.def, FUN_1409df8d0, FUN_1408fd6e0)
 
 `index` (the colour in `areasmap.tga`), `seasons` → SEASON with val0 = **order**, val1 = **share of the year** (relative to the
-other seasons), `weather strength multiplier min/max`, `acidic ground`, `acidic water` (gameplay). The world's BIOMES records
+other seasons), `weather strength multiplier min/max`, `acidic ground`, `acidic water` ([effects on characters](#effects-on-characters)). The world's BIOMES records
 (terrain texturing, [terrain.md](terrain.md)) take no part in the weather.
 
 ### EFFECT (type 82; Verified: fcs.def, FUN_1400fa0c0) and EFFECT_FOG_VOLUME (type 96)
@@ -157,7 +216,8 @@ colour`, offsets, `ground movement`.
 - `ground movement` of EFFECT_FOG_VOLUME (read by the game into the volume's holder; its use was not traced).
 - Whether the game's ash is denser than the data says (see "Density"); the lights of effects (the plugin quota is Verified above).
 - The wandering units' exact walk and turn rules, and where the game places lightning (it snaps to metal objects).
-- The full gameplay effect of each `WeatherAffecting` value.
+- Gameplay: the switch `DAT_142134690+0x2f0`, character vfunc +0x358 (dust gate), a unit's strength between min and max,
+  the gas part's map order, and whether WEATHER `affect strength` is read at all (the character update never reads it).
 
 ## Expression reference
 
@@ -191,3 +251,4 @@ Evidence scopes below apply only to their named sources/checks.
 - The particle scripts (Observed: `data/particles/scripts/*.pu`; the format, the survey and the implementation: [particle-universe.md](particle-universe.md))
 - Effect placers on the map (Verified: records and `features.dat`)
 - Base-game data (Verified: merged base records, 2026-10-05)
+- Effects on characters (Verified (decompiled), FUN_1405cf790 and the functions named there; Verified probe of the merged data, 2026-10-23)

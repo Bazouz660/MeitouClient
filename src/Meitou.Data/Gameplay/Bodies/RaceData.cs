@@ -53,6 +53,9 @@ public sealed class RaceData
     public float BuyValue { get; init; } = 100;
 
     public bool IsRobot { get; init; }
+    /// <summary><c>weather immunity0</c>, <c>1</c>...: the <see cref="World.WeatherAffecting"/> kinds that do nothing to the race (docs/formats/weather.md "Effects on characters").</summary>
+    public IReadOnlyList<World.WeatherAffecting> WeatherImmunity { get; init; } = [];
+    public bool ImmuneTo(World.WeatherAffecting kind) => WeatherImmunity.Contains(kind);
     public bool Swims { get; init; }
     public bool Carriable { get; init; }
     public bool SingleGender { get; init; }
@@ -150,6 +153,7 @@ public sealed class RaceData
             ExtraAttackSlots = RecordReading.Int(r, "extra attack slots", 0),
             BuyValue = RecordReading.Float(r, "buy value", 100),
             IsRobot = RecordReading.Bool(r, "is robot", false),
+            WeatherImmunity = Combat.ArmourData.NumberedKinds(r, "weather immunity"),
             Swims = RecordReading.Bool(r, "swims", false),
             Carriable = RecordReading.Bool(r, "carriable", false),
             SingleGender = RecordReading.Bool(r, "single gender", false),
