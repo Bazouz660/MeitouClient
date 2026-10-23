@@ -159,7 +159,7 @@ sealed partial class PlayerInterface
         b.Actions["FloorArrowDown"] = "meitou:floor-down";
         b.Actions["BuildButton"] = "meitou:build";
         if (buildMode) foreach (string name in BuildHiddenHud) b.Hidden.Add(name);
-        if (lead is null || lead.Bounties.Count == 0) b.Hidden.Add("BountyPanel");
+        if (lead is null || lead.Bounties.Count == 0 && lead.Slave is null) b.Hidden.Add("BountyPanel");   // a bounty or a status line (Slave, Escaped slave) shows it
         // The information panel starts collapsed (as the original's, docs/game/ui-screens.md section 4): the extending part (name, state lines, extended stats) slid down
         // until its bottom is the panel's, behind the stats panel, so only the name and the state lines show; the ^ button between them toggles it.
         if (!infoExpanded && faithfulHud.Find("InformationPanel") is { } info && faithfulHud.Find("ExtendingPanel") is { } extending)

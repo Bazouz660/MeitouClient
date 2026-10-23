@@ -96,6 +96,9 @@ Meitou: [simulation, captives](../simulation.md#captives).
 
 Slot 3 returns 4 in the base class, 1 for signals 1 and 25, 2 for `RetreatAndRefresh`, 0 for 11 and 28 (meaning **Unknown**).
 
+The goals these packages list (capture 167, carry 168, work the slaves 188, the slaves' own worker 189 / 190 and obedience 187) are in [ai-tasks, slave work, shout and capture](ai-tasks.md#slave-work-shout-and-capture).
+A slave's Slave role list runs through the Obedient Slave job (187): [role lists](#goal-loading).
+
 ### Package classes
 
 **Verified** by code (the blackboard update `FUN_1402732b0` → slot walk `FUN_140272570`, activation `FUN_1402721a0`, the class vtables) unless marked.

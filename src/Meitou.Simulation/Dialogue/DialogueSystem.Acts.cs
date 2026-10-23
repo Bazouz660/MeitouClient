@@ -41,6 +41,30 @@ public sealed partial class DialogueSystem
         return data.Relations.Contains(ac.Faction) && data.Relations.Contains(bc.Faction) && data.Relations.IsAlly(ac.Faction, bc.Faction);
     }
 
+    /// <summary>
+    /// A character put <paramref name="captive"/> in a cage (<c>Task_PutInSomething</c> for the cage, <c>FUN_140358670</c>, <b>Observed</b>): the captive's squad remembers the captor with
+    /// the long-term tag 5 MY_CAPTOR. Wired to <see cref="FactionDeeds.CagedHook"/>.
+    /// </summary>
+    public void Captured(World world, int captor, int captive)
+    {
+        var table = world.Characters;
+        if (table.Cold(captive) is { SquadId: >= 0 } cc && table.Cold(captor) is not null) Memory.Remember(world, cc.SquadId, table.IdOf(captor), MemoryTag.Captor);
+    }
+
+    /// <summary>
+    /// Event 13 UNLOCK_MY_CAGE_OR_SHACKLES fired by a freed prisoner at its liberator (<c>FUN_140684990</c>, <b>Observed</b>): unless the speaker's squad already remembers the liberator as its captor,
+    /// it remembers it with the long-term tag 3 FREED_ME and the short-term TEMP_ALLY. The original does this before choosing a line, whether or not one is said; only a speaker that is
+    /// awake gets that far (a dead or unconscious one only for the events of a mask that excludes 13).
+    /// </summary>
+    void Freed(World world, CharacterId speaker, CharacterId liberator)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(speaker, out int s) || !Awake(table, s) || table.Cold(s) is not { SquadId: >= 0 } sc) return;
+        if (Memory.Find(world, sc.SquadId, liberator) is { } known && (known.Long >> MemoryTag.Captor & 1) != 0) return;
+        Memory.Remember(world, sc.SquadId, liberator, MemoryTag.FreedMe);
+        Memory.Flag(world, sc.SquadId, liberator, MemoryTag.TempAlly);
+    }
+
     /// <summary>DC 52 I_LOVE_THIS_GUY (<c>FUN_140599590</c>): the squad's long-term tags on the character hold LIFESAVER or FREED_ME.</summary>
     bool Loves(World world, CharacterCold mc, CharacterId who) => (Memory.Find(world, mc.SquadId, who)?.Long & MemoryTag.LoveMask) is > 0;
 

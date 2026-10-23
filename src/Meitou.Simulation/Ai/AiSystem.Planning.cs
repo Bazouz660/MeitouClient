@@ -9,7 +9,7 @@ public sealed partial class AiSystem
     /// <summary>Kinds of <see cref="PlanTarget"/> the finders give.</summary>
     static class Targets
     {
-        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5;
+        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5, Work = 6;
     }
 
     /// <summary>How near a home's position counts as at home (units; engine stand-in for the original's inside-the-building test).</summary>
@@ -86,7 +86,7 @@ public sealed partial class AiSystem
         {
             if (t.IsNone) return true;
             var p = Me.Position;
-            float slack = t.Kind == Targets.Turret ? TurretSlack : system.Settings.PostSlack;
+            float slack = t.Kind == Targets.Turret ? TurretSlack : t.Kind == Targets.Work ? WorkReach : system.Settings.PostSlack;
             if (Vector2.DistanceSquared(Flat(p), Flat(t.Position)) > slack * slack) return false;
             // A spot on a floor counts on that floor only (NaN: no floor).
             return float.IsNaN(t.Position.Y) || MathF.Abs(p.Y - t.Position.Y) <= FloorSlack;
@@ -190,6 +190,11 @@ public sealed partial class AiSystem
                 case TaskType.RELAX_IN_TOWN_PACKAGE or TaskType.SIT_AROUND:
                     if (type == TaskType.SIT_AROUND && board.Home is null) return new PlanTarget(Targets.Spot, Me.Position);
                     return board.SeatClaims.TryGetValue(slot, out var seat) && !mind.SeatUnreachable ? new PlanTarget(Targets.Seat, seat.Position) : default;
+                case TaskType.AUTO_LABOURING_MINES or TaskType.AUTO_LABOURING_MINES_PRETEND:
+                    // The building it works at: the one it walks to now, else the pick it will make (the same roll, AiMind.WorkEpoch).
+                    if (mind.Behaviour == AiBehaviour.Work && mind.Goal?.Task.Type == type && mind.Target is { } current) return new PlanTarget(Targets.Work, current);
+                    return system.PickWork(world, world.Characters.IdOf(slot), board.Town, mind.WorkEpoch + (mind.WorkActive ? 1 : 0)) is { } work
+                        ? new PlanTarget(Targets.Work, new Vector3(work.Position.X, float.NaN, work.Position.Z)) : default;
                 case TaskType.MAN_A_TURRET or TaskType.MAN_A_TURRET_ON_BUILDING or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TURRET:
                     return board.TurretClaims.TryGetValue(slot, out int t) && (uint)t < (uint)board.Turrets.Count && board.Turrets[t].Turret is { } turret
                         ? new PlanTarget(Targets.Turret, TurretSpot(world, turret)) : default;

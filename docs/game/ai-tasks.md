@@ -585,28 +585,63 @@ Meitou: [simulation, captives](../simulation.md#captives).
 | 139 Eat random prisoner | slot 19 (1) | as 135 |
 | 183 Watching slaves | slot 61 `FUN_140597b20`: with a target, slot 59; else 1 while not carrying and character vfunc `0x368` is 0 | `FUN_1408cd630`: none while itself held; sensed characters (masks 0x60 / 0x110) in slave state that need processing; else `BuildingFinder_SlavesToProcess` over its home town: occupied function-8 cages of non-player factions passing the `BuildingFinder_Cages` tests, occupant not of its own squad, within 180 (squared 32400) and needing processing |
 | 260 Watching for new slaves | slot 61 | `FUN_1408cc110`: the same building finder; the first occupant that is not down (vfunc 6) and in slave state 0 |
-| 167 Capturing slave | slot 61 | `FUN_1408cdd00`: sensed (0x4008 / 0x11) down or dead or legs-down characters, uncarried, free, not animals, not in the give-up list, status `+0xdc` not 1, 3 or 5, slave state not 1, `FUN_140644170` false; the nearest |
+| 167 Capturing slave | slot 61 | `FUN_1408cdd00`: sensed (0x4008 / 0x11) down or dead or legs-down characters, uncarried, free, not animals, not in the give-up list, NPC class (status `+0xdc`) not 1 LAW_ENFORCEMENT, 3 TRADER or 5 DIPLOMAT, slave state not 1, `FUN_140644170` false (already shackled); the nearest. Plan and tasks: [Slave work, shout and capture](#slave-work-shout-and-capture) |
 | 168 Carrying slaves | `FUN_140599480` (the rescue desire) | `FUN_1408cdf50`: sensed (0x20 / 0x210) down characters in slave state, owned by its faction (status `+0xe0`), uncarried, free; the nearest |
 | 173 Gathering slaves, 245 Gathering unholy slaves | slot 63 `FUN_14059b940`: 1 while the platoon's slave list holds at most 3 characters up and free (vfunc 6 false, `+0x2f8` 0) | 173 `FUN_1408cc4b0`: the nearest occupied processable cage of its faction in the squad's current town; 245 `FUN_1408d1410`: own-faction cages, the first occupant that is a woman (appearance `sex female`, `FUN_140295a50`) or of another race than the gatherer |
 | 217 Gathering slaves for shipping | slot 64 `FUN_140597b80`: in a TOWN or OUTPOST (town `+0xd8` 2 or 1); for a player town (or faction byte `+8`) only an allied one | `FUN_1408cc600`: cages of any faction in the town, not player-owned, with a live awake occupant (vfunc `0x360` false) not twice in the give-up list; the nearest |
 | 174 Ordering slaves (`Task_GetSlave`) | slot 19 | its start posts message type 5 (target, self) to the global queue `DAT_1421346d8` and ends; what the queue does with type 5 is **Unknown** (effect: 116 TARGET_IS_MY_SLAVE) |
 | 182 Processing slave (`Task_ProcessNewSlave`) | slot 19 | 3 s of `medic`; then items of the weapon and armour sections not locked shackles (armour `+0x244` 6 kept) go to the processor's storage or inventory; the faction's `slave clothing` is made and put on where the slot is free (`FUN_1403560e0`); event 35 INTRODUCING_NEW_SLAVE (37 RECAPTURED_A_SLAVE when vfunc `0x3e0`) to it; slave state 1 (`FUN_1405a4940`), owner set when it had none, its jobs cleared and job 187 Obedient Slave added toward the owner; every platoon of the processor's faction and every sensed ally lists it (`FUN_14067aca0`) |
-| 188 Working the slaves | slot 65 `FUN_14059a0a0`: 0.25 x the platoon's slave list size | `FUN_1408cd940`: a random live, uncarried, free slave of the platoon's list not in the give-up list; B list isDialogDelivered (event 38 SHOUT_AT_SLAVE_WORKER, **Inferred**) |
+| 188 Working the slaves | slot 65 `FUN_14059a0a0`: 0.25 x the platoon's slave list size | `FUN_1408cd940`: a random live, uncarried, free slave of the platoon's list not in the give-up list; B list isDialogDelivered; the event is the row's own, 38 SHOUT_AT_SLAVE_WORKER (**Verified**: the registration stores 0x26 at TaskData `+0x130`) |
 | 192 Delivering slaves | slot 65 | none; B: !26, atDestinationTown |
 | 194 / 218 Selling slaves | 65; 218 slot 66 `FUN_140597c70`: only in a prison or slave camp (town type 7, 5) | `FUN_1408ca950`: a random allied building of designation flag 0x80000 in the town whose owner is a character or squad (`+0xd8` 1 / 0x22): its leader; B isDialogDelivered (event 39 SLAVE_DELIVERY) |
 | 172 Getting in my cage | slot 19 | `FUN_1408caaf0`: for a slave whose owner handle is a character or squad: the nearest free cage of the owner's faction |
-| 189 / 190 Worker | slot 19 | `FUN_1408cac60` / `FUN_1408cadb0`: a building of special function 0x41a of the town for a slave owned by the town's side (a player-owned town only takes a slave of state 1) |
+| 189 / 190 Worker | slot 19 | `FUN_1408cac60` / `FUN_1408cadb0`: a random building of the platoon's town whose BuildingFunction is in mask 0x41a (bits MINE, RESEARCH, REFINERY, CRAFTING); a character whose side differs from the town's (squad ownership `+0x250`) only works there as a slave of state 1; none found: 0. Effects IS_WORKING (123, 189) and IS_WORKING_PRETEND (136, 190), acted out by 87 / 221 Operating machine |
+| 187 Obedient Slave | - | no desire or finder: a job added when a character is enslaved (the slave window's sale, processing), scored by its own branch in `FUN_14050e5b0` (see below) |
 
 - **Kill** (`Task_KillPrisoner`, 134 and 196): faces the target (a character, or a cage's occupant) and plays `chop down static`; each time the clip passes 0.55 the
   character's weapon attack (`FUN_1408868b0`, the race multipliers included) lands through the target's take-hit virtual and the target says event 11 SCREAMING_TORTURE. When the
   target is dead the character's town gets a new kill time, now + uniform[1, 15) h. 134 needs a drawn weapon.
 - **Eat** (`Task_EatPrisoner`, 220): walks to within 20 of the target (XZ); a robot target ends it. Then each update: faces it, plays `eat`, says event 52 EATING_SOMETHING_SOUNDS,
-  and calls the target's being-eaten virtual with 1.0 (`FUN_1404356f0`): unless dead, the target says event 11 and gains toughness XP (`FUN_1408c6430(stats, dt, 10, 21)`), then the
+  and calls the target's being-eaten virtual with 1.0 (`FUN_1404356f0`): unless dead, and while vfunc `0x358` is false (read as "conscious", **Unknown**) or its byte `+0x4f` is set, the
+  target says event 11 and gains toughness XP (`FUN_1408c6430(stats, dt, 10, 21)`: the continuous entry, [character-stats](character-stats.md#levelling-xp), amount 10, stat 21 Toughness), then the
   medical update `FUN_140650370`: rate = 1 x lerp(2, 0.4, toughness x stat scale x 0.01) per second (x5 instead when medical `+0x164`, **Unknown**); parts from the last down:
   the first with h - 1.1 s > -M loses rate x dt from flesh and from the treated pool and the update ends; a limb with nothing left is severed when the global `DAT_142133504`
   is set; with nothing left, a counter `+0x15c` rises, and past 5 the character dies ("eaten"; "{1} has been eaten alive." for the player's). A robot is never eaten. The end
   of the task resets the town's kill time as Kill's does. A target not imprisoned and with `+0x278` set is bitten once and the eater re-ordered (order 0x23, **Unknown**).
 - Whether the kill timer map is saved is **Unknown** (Meitou keeps it in the running game only).
+
+### Slave work, shout and capture
+
+Meitou: [simulation, captives](../simulation.md#captives).
+- **Worker** (189 `AUTO_LABOURING_MINES`, 190 `..._PRETEND`; **Verified** registrations in `FUN_140319a60`: effects 0x7b IS_WORKING and 0x88 IS_WORKING_PRETEND, finders `FUN_1408cac60` /
+  `FUN_1408cadb0`; only 190 commits, 0.5 + r x 2 h, crowd 1). They are not slave-only: the data lists them in "worker fighter indie resident", "Shop" (slave list), "working mines and farms",
+  "Work, Protect, Capture", "South drone sacrifice farmer" and, in the Slave role list, "slave worker day guard" (171 at 0.1, 189, 172 at night, 190). The finder asks the platoon's town
+  (`Blackboard +0x88`) for a building through `BuildingFinder_SpecialFunction` (mask 0x41a read as bits, **Observed**: 1 MINE, 3 RESEARCH, 4 REFINERY, 10 CRAFTING) and takes one at random
+  (slot 2 `FUN_1409fb020`: index `FUN_1409b3b40(0, n - 1)`); the town test is the one in the table above. Acting out is 87 (real: needs the machine's inputs and output room, power, a free operator slot) or
+  221 (pretend); both `Task_OperateMachine` ([sitting and the held tool](ai-tasks.md#town-goals), [production](buildings-production.md#production)). Meitou's NPC towns have no running machines, so both are
+  the same standing at the building at its functionality's clip (`stonemine` by default): **engine choice**, the building's `use range` is not read (30 units).
+- **Obedient Slave** (187, flags 0x75, no lists; **Observed**, `FUN_14050e5b0`): a job whose type is 0xbb is not scored like the others. For a character in slave state 1 that is not
+  player-controlled (`FUN_1405c9750`) and whose owner handle (`+0x328` of the slave's AI owner object) names a character (type 1) or a squad (0x5b), the job loads the owner platoon's
+  Slave role list (role 4, tiers mask 0xe: `FUN_14026b790`) into the slave's own goal list (`+0x178`) and scores that with the normal scorer `FUN_14050df10`. So a slave runs its owner's
+  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad than its owner's, and a faction owner, are not modelled.
+  The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+- **Shout** (188, `Task_TalktoPlayer`, slots 1 and 2 `FUN_14034c5a0` / `FUN_14034c7c0`): the event is the row's (TaskData `+0x130`: **Verified** 0x26 for 188, 0x27 for 194 and 218, 9 for 158 and 283).
+  Start fires it at the target (`FUN_140684990`); each update walks to the target (vfunc `0x3b0`), repeats event 9, gives up after 25 minutes with event 60, and ends when the dialogue is free.
+  The slavers' event-38 lines ("shout at slave worker": chance temporary 10, six lines) are in "slaver guard MAIN" and "Holy Nation Paladin". Meitou paces it: a worker shouts at most every 60 to 180 game seconds.
+- **Capture** (167): the planner chain is 167 (effect isChained 134) <- 166 Restraining (`Task_CuffTarget`; needs 38, at location, 118 TARGET_IS_UNARMED, 7 target down) <- 181 Stripping weapons
+  (`Task_StripWeapons`; effect 118). **Strip** (**Observed**, `FUN_14034e7b0`): `medic` for 0.8 s, then the items of the target's `hip` and `back` sections (`FUN_140747ff0`) go to the
+  stripper's inventory (else its storage), and the stripper's squad sets short-term tag 6 on the target (`FUN_1406744a0`; nothing found reads tag 6). **Cuff** (`FUN_14034af20`): a "Restraining" bar
+  with `medic`, progress += 0.1 x a per-update float of the character (`+0xc4`, read as frame time: about 10 s, **Unknown**), full at 0.99: the cuffer says event 37 RECAPTURED_A_SLAVE to the
+  target (its lines "new slave capture" / "slave recapture", no effects) and posts message type 5 to the global list `DAT_1421346d8`. The shackles themselves are not put on anywhere in the task
+  (**Unknown** where; Meitou puts the stock `SHACKLES` on). The list's only reader, `FUN_140a0af10` (via `DAT_1421346d0`), sums per-listener contributions around a point: no game logic
+  was found for type 5, which `Task_GetSlave` (174) posts too. Carrying the cuffed one to a cage is goal 112 (not decoded); 168 lifts a downed slave (`Task_LiftSomething`, effect 115) before 112.
+  The packages that list 167 and 168 are slaver, guard and workmaster packages ("addon- slave catching", "wandering slaver base", "slave worker day guard", the Rebirth and Holy Nation guards).
+- **Looks like a slave**: processing (182) makes state 120 TARGET_LOOKS_LIKE_A_SLAVE true. The watchers' "needs processing" test `FUN_1408ca3d0`: a character with no owner needs it; one with an owner of an
+  allied faction needs it unless its slave state is not 2 or 3 and vfunc `0x3e0` is true and `FUN_1405a6bb0(platoon, character)` holds. That function (**Observed**, outline): an animal is fine, NPC
+  class 1 or 5 is not; otherwise the torso and leg slots (inventory sections 5 and 6) must be empty, shackles or items of the owner faction's `slave clothing` list, and the shackle slot (section 9) must hold a locked item.
+  Meitou's reading (**engine choice**): wearing locked shackles or any of the owner's slave clothing; an owner with none always passes.
+- **Cage memory**: `Task_PutInSomething` for a cage (`FUN_140358670`) makes the prisoner's squad remember the putter as captor (`FUN_140673a20(prisoner, putter, 5)`) and calls `FUN_14067aca0`, which
+  adds the prisoner to the putter's, its allies' and its squad members' platoon lists (the "slave list"). [Squad memory](dialogue.md#squad-memory) has the other writers.
 
 ## Desire and commitment
 

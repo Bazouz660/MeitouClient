@@ -402,6 +402,14 @@ public sealed class AiMind
     public bool SeatUnreachable { get; set; }
     /// <summary>The sitting clip of the chair it sits on (<see cref="HomeSpot.SitClip"/>), for <see cref="AnimationSystem"/>; null when not seated. Follows from the goal and seat, so not hashed.</summary>
     public string? SitClip { get; set; }
+    /// <summary>
+    /// The work goals' pick of building (<see cref="AiBehaviour.Work"/>): the number of picks made since it last stopped working, so the plan's finder and the act-out name the same
+    /// building (the pick is a roll of this and the character), and whether it is working now.
+    /// </summary>
+    public int WorkEpoch { get; set; }
+    public bool WorkActive { get; set; }
+    /// <summary>The clip it plays at its work (the ANIMATION its building's functionality names), cleared with <see cref="CharacterCold.ActionClip"/> when it stops; null when not working.</summary>
+    public string? WorkClip { get; set; }
     /// <summary>Its first think puts it where its plan's walk ends (<see cref="Squad.Resume"/>: back from its town's time unloaded); cleared by that think.</summary>
     public bool Resume { get; set; }
     /// <summary>Where the serial step puts it this tick (set by the think that took <see cref="Resume"/> up); null otherwise.</summary>
@@ -430,6 +438,7 @@ public sealed class AiMind
         hasher.Add(SeatUnreachable);
         hasher.Add(CommitUntil);
         hasher.Add(Target ?? new Vector3(float.NaN));
+        if (WorkActive || WorkEpoch != 0) { hasher.Add(WorkEpoch); hasher.Add(WorkActive); }
         if (Resume) hasher.Add(0x52657375);
         if (PlaceAt is { } place) hasher.Add(place);
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);

@@ -330,7 +330,25 @@ sealed partial class PlayerInterface
     static HudLine BountyLine(IReadOnlyList<Meitou.Simulation.Crime.BountyLine> bounties) =>
         bounties.FirstOrDefault(v => v.Local) is { Amount: > 0 } local
             ? new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", local.Amount), TitleColour, MainColour)
-            : new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", bounties.Max(v => v.Amount)), GreyColour, GreyColour);
+            : new(Loc.Tr("Bounty:"), Loc.Tr("c.{1,num}", bounties.Count == 0 ? 0 : bounties.Max(v => v.Amount)), GreyColour, GreyColour);
+
+    /// <summary>
+    /// The status lines of a slave (<c>FUN_1405d4260</c>, <b>Observed</b>; docs/game/ui-screens.md section 4): a title, "Slave" (state 1) or "Escaped slave" (state 2), and its text naming the owner
+    /// ("someone" without one); a player character's text ends with the hint on the obedient-slave job (state 1) or on keeping the looks-like-a-slave level low (state 2). Engine choices:
+    /// the hint is shown for player characters, the title takes the Title colour and the text the Main one.
+    /// </summary>
+    static List<(string Key, string Value)> SlaveRows(SlaveView slave, bool player)
+    {
+        string owner = slave.Owner.Length > 0 ? slave.Owner : Loc.Tr("someone");
+        bool escaped = slave.State == 2;
+        string hint = !player ? "" : escaped
+            ? Loc.Tr("Keep your [Looks Like A Slave] level as low as possible, wear clothing or disguises and find a plastic surgeon to restore your hair. Don't get spotted.")
+            : Loc.Tr("Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master. You can remove this job, but beware of the consequences...");
+        string text = escaped
+            ? Loc.Tr("A slave of {1} that has been seen escaping. Needs to lay low for a day and avoid getting spotted. {2}", owner, hint)
+            : Loc.Tr("A slave belonging to {1}. Not considered a person with rights, a slave works for his master until death and nothing more. {2}", owner, hint);
+        return [(TitleTag + Loc.Tr(escaped ? "Escaped slave" : "Slave"), ""), (MainTag + text.TrimEnd(), "")];
+    }
 
     /// <summary>Gives the HUD's widgets their tooltips (user strings through the bindings, which the arranged controls merge) and the selected building's status word its own.</summary>
     void BindTooltips(UiBindings b)
@@ -342,9 +360,10 @@ sealed partial class PlayerInterface
             b.Properties[name] = properties;
         }
         foreach (var (widget, text) in HudTips) Add(widget, text);
-        if (Lead() is { Bounties.Count: > 0 } wanted)
+        if (Lead() is { } wanted && (wanted.Bounties.Count > 0 || wanted.Slave is not null))
         {
-            var rows = BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou);
+            var rows = wanted.Slave is { } slave ? SlaveRows(slave, wanted.IsPlayer) : [];
+            if (wanted.Bounties.Count > 0) rows.AddRange(BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou));
             foreach (string name in new[] { "BountyPanel", "BountyText" })
             {
                 var properties = b.Properties.TryGetValue(name, out var existing) ? new Dictionary<string, string>(existing) : [];

@@ -116,6 +116,25 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         return table.Cold(slot) is { IsPlayer: false, Fleeing: false, Engaged: false } c && c.Fighter is not { IsAnimal: true } && CarrySystem.CanCarry(c);
     }
 
+    /// <summary>
+    /// Has the member in <paramref name="slot"/> lift <paramref name="victim"/> and carry it to a cage of its faction in range (the carrying and caging of goals 167 and 168, which the
+    /// <see cref="CaptiveSystem"/> starts once it has cuffed or found the captive; the original's goal 112 puts the carried one in a cage). False when the member cannot carry, the victim
+    /// is someone's pick already, or no free cage is in range.
+    /// </summary>
+    public bool Carry(World world, int slot, CharacterId victim)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(victim, out int v) || !FreeKidnapper(world, slot) || Busy(table.IdOf(slot))) return false;
+        foreach (var a in abductions) if (a.Victim == victim) return false;
+        var cold = table.Cold(slot)!;
+        if (CageFor(world, table.Next[v].Position, cold.Faction, null) is null) return false;
+        var task = (CharacterTask)table.Next[slot].Task;
+        if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle)) return false;
+        cold.Engaged = true;
+        abductions.Add(new Abduction { Carrier = table.IdOf(slot), Victim = victim, Faction = cold.Faction });
+        return true;
+    }
+
     // ------------------------------------------------------------------ the tick
 
     public void SlowWorld(World world)

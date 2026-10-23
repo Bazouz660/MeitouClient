@@ -644,7 +644,7 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   buyer's money is the slaver's squad purse (`Squad.Money`, a trader's shop money); the confirm re-checks the window's gate (a row ticked, total within the buyer's money) and
   does nothing otherwise; a slave bought free out of a squad of others leads a new "Wandering Squad" (`SquadManagement.DismissTemplate`, as a dismissed character) of its faction, or a new player squad for
   one of the player's; event 51 fires after it is out of its cage; the window closes when the slaver or the customer is no longer awake. It is neither saved nor hashed.
-- Not built: the obedience job 187, slave work (189, 190), 188 "Working the slaves" (a dialogue shout), the status panel's Slave / Escaped slave lines; from the slave windows: the squads' long-term memory tags (3 FREED_ME, 5 MY_CAPTOR; Meitou keeps none), task 133 as such (Meitou walks a bought caged
+- Not built: task 133 as such (Meitou walks a bought caged
   slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**), the obedient-slave order (187) and the shackles put on a sold character; DA 48 (animals).
 
 
@@ -703,8 +703,26 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 - **Packages** (`PackageClass` 8 to 11, rules in `AiSystem.Captives.cs` as the facts): cannibal retreat (1, 25), cannibals at home (27), prisoner gathering (10, 24), slave shipping (11,
   28; Meitou always takes the nearest slave camp not hostile to the squad, the other town rule's flag being **Unknown**); the cannibal patrol (4) does not start while the town's cages
   are full. A squad's slaves are its live slave members in slave state 1 (engine reading of the platoon's slave list).
-- Not built: 167 capturing and 168 carrying slaves, 188, 187, 189 / 190, the being-eaten toughness XP, re-processing a slave that does not look like one, the off-screen side of
-  shipping (a platoon unloaded on the way keeps its usual roaming).
+- **Capture** (167, `CaptiveSystem.Capture.cs`; facts: [slave work, shout and capture](game/ai-tasks.md#slave-work-shout-and-capture)): the nearest downed, uncarried, uncaged character in sight that is
+  not of the capturer's side (engine reading of the sensed-class masks), no slave (state 1), not law enforcement, trader or diplomat and not shackled. The capturer walks to it, strips the `hip` and
+  `back` items into its inventory (0.8 s of `medic`), cuffs it (10 s, engine choice; locked stock `SHACKLES` put on, what it wore in that slot goes to its inventory; event 37) and has `KidnapSystem.Carry` lift
+  it to a cage of its faction in range (goal 112 in the original), where it is held as kidnapped and then enslaved by the processing jobs. **Carry** (168): the same for a downed slave of the
+  carrier's faction, without strip or cuff. A target a job gave up on is left alone for an hour (engine give-up list). **Observed** (probe, Rebirth, real data): a downed character of the player's faction
+  beside the garrison leader is stripped, shackled, carried to a cage and enslaved by the Cage Wardens in about 1250 ticks; its squad then remembers the capturer as captor.
+- **Shout** (188): a worker with slaves of its squad up and uncaged says event 38 at a random one and walks towards it for up to 8 s (or within 40); the same worker again after 0.5 to 1.5 x 120 game
+  seconds (engine pacing).
+- **Work** (189, 190; `AiBehaviour.Work` in the AI, not a job: it competes by score like any goal): a worker of a town with a mine, research bench, refinery or crafting bench (BuildingFunction 1, 3, 4,
+  10) walks to a random one (a pick of the character and `AiMind.WorkEpoch`, kept while it works there) to within 30 units, faces it and plays its functionality's clip (`stonemine` by default) as
+  `ActionClip`. NPC towns run no machines here, so nothing is produced. **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day. The
+  Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run.
+- **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of its side that does not look like one (no locked shackles and none of
+  its owner's slave clothing; an owner without slave clothing never does).
+- **Status lines**: a slave or escaped slave selected shows the bounty panel with its status rows ("Slave" / "Escaped slave" and the owner's text, the player-character hints) in its tooltip, ahead of the
+  bounty rows (`CharacterSnapshot.Slave`, `PlayerInterface.SlaveRows`; [ui-screens, information panel](game/ui-screens.md#4-hud-mainbargui)). Ex-slave (state 3), "Looks like a slave", "Situation" and "Time remaining" rows are not built.
+- **Squad memory**: a caged captive's squad remembers the captor (5, through `FactionDeeds.CagedHook`), a freed prisoner's squad the liberator (3 and TEMP ALLY, event 13), a sold slave's squad the customer
+  (5), a bought one's the buyer (3).
+- Not built: the off-screen side of shipping (a platoon unloaded on the way keeps its usual roaming), goal 112 as such (captives are carried by the kidnapping system), the real operation of machines by
+  workers, short-term tag 6 of the strip.
 
 ## Buildings
 

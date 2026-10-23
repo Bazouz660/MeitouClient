@@ -233,7 +233,7 @@ sealed partial class PlayerInterface
         string faction = FactionName?.Invoke(lead.Faction) ?? "";
         AddLines(controls, "NameText", [new(lead.Name, faction, TitleColour, TitleColour)], row, sidePixels);
         AddLines(controls, "StateText", StateLines(lead), row, sidePixels);
-        if (lead.Bounties.Count > 0) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
+        if (lead.Bounties.Count > 0 || lead.Slave is not null) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
         // The base game draws the stats labels in the painted face (Observed: glyph shapes and widths match Sentencia at its resized 22 pt); the values
         // take the standard face, like the medical column's numbers.
         AddLines(controls, "StatsText", StatsLines(lead), row, font: "Kenshi_PaintedTextFont_Medium", valueFont: "Kenshi_StandardFont_Medium", valuePixels: sidePixels);
