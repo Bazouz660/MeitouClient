@@ -993,8 +993,8 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (the medic jobs take allied factions' patients scoring ≥ 0.1), Help Allies (`RetaliationSystem.HelpAllies`: free idle player characters
   within `JoinRange` 250 of an attacked character of an allied faction defend it, unless the attacker is the player's; engine: no distance
   weight), Rescue Allies (above), Share Food (`FeedSystem`: a player character with no food takes it from a squad mate's backpack within 200,
-  only with the option), Feed Animals (off: the player's animals do not eat), Shoot first (stored; `SquadAiRules.ShootsFirstAt` holds the
-  original's rule for the turret code, turrets do not fire yet).
+  only with the option), Feed Animals (off: the player's animals do not eat), Shoot first (`SquadAiRules.ShootsFirstAt`: with no enemy in its
+  sights a player turret gunner also takes dangerous neutrals at weight 0.6).
 - **Saves** (`Saving/MachineSave`, `ResearchSave`). Each building's production and farm keys go into its
   GAMESTATE_BUILDING. Items go into an INVENTORY_STATE `<site>-inventory`, listed first by the building, with sections
   `in<k>`, `out` and `main`.

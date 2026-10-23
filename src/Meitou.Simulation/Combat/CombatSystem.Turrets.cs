@@ -249,7 +249,7 @@ public sealed partial class CombatSystem
     /// again in the pass; the best above 1e-6 wins, else the current one is kept. The first pass takes the gunner's enemies (the faction relations, or anyone fighting it). With none, an NPC
     /// gunner's turret takes characters of default-hostile factions (own default relation below -30) and anyone fighting a member of the gunner's faction. Not targets: the dead, the carried,
     /// the caged; a target down scores 0 for an NPC gunner and x 0.01 for the player's. <b>Engine choices</b>: every candidate counts as seen (the original's sense list and its seen flag),
-    /// the 1.5 for "fights the gunner" (<c>FUN_1405ca6f0</c>), the candidate radius; the player's Shoot first pass is not modelled (no such option yet).
+    /// the 1.5 for "fights the gunner" (<c>FUN_1405ca6f0</c>), the candidate radius. A player gunner with Shoot first then takes the neutrals of <see cref="SquadAiRules.ShootsFirstAt"/>.
     /// </summary>
     int ChooseTurretTarget(World world, TurretState t, int g, CharacterCold gc)
     {
@@ -300,7 +300,21 @@ public sealed partial class CombatSystem
             if (s > bestScore) (best, bestScore) = (o, s);
         }
         if (best < 0) best = current;
-        if (best >= 0 || gc.IsPlayer || Relations is null) return best;
+        if (best >= 0 || Relations is null) return best;
+        if (gc.IsPlayer)
+        {
+            // Shoot first (the squad AI option): with no enemy in its sights a player gunner also takes dangerous neutrals, at 0.6 of an enemy's weight.
+            if ((world.Player.SquadAi & SquadAi.ShootFirst) == 0) return best;
+            foreach (int o in found)
+            {
+                if (o == g || !prev[o].Alive || table.Cold(o) is not { } oc || !Relations.Contains(oc.Faction)) continue;
+                var faction = Relations.Factions[oc.Faction];
+                if (!SquadAiRules.ShootsFirstAt(world.Player.SquadAi, (int)faction.FundamentalType, faction.DefaultRelation)) continue;
+                float s = Score(o, TurretFormulas.FullRange) * SquadAiRules.ShootFirstWeight;
+                if (s > bestScore) (best, bestScore) = (o, s);
+            }
+            return best;
+        }
         foreach (int o in found)
         {
             if (o == g || !prev[o].Alive || table.Cold(o) is not { } oc) continue;

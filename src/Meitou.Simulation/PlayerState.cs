@@ -312,7 +312,7 @@ public static class SquadAiRules
     /// <summary>
     /// Whether a player turret gunner with <see cref="SquadAi.ShootFirst"/> may take a sensed non-enemy of a faction whose fundamental type is <paramref name="fundamentalType"/> and
     /// whose own default relation is <paramref name="defaultRelation"/> (<c>FUN_1404374d0</c>, asked only when no enemy is in its sights): type 0 or 8, or a default below -30.
-    /// Such a target weighs <see cref="ShootFirstWeight"/> where an enemy weighs 1. For the turret code; Meitou's turrets do not fire yet.
+    /// Such a target weighs <see cref="ShootFirstWeight"/> where an enemy weighs 1 (CombatSystem.Turrets.cs).
     /// </summary>
     public static bool ShootsFirstAt(SquadAi options, int fundamentalType, float defaultRelation) =>
         (options & SquadAi.ShootFirst) != 0 && (fundamentalType is 0 or 8 || defaultRelation < -30);
