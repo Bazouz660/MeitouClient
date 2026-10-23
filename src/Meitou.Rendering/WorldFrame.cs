@@ -1146,7 +1146,7 @@ static class WorldFrame
         return $"{minutes / 60:00}:{minutes % 60:00}";
     }
 
-    /// <summary>The unit of <c>Draw</c>'s <c>time</c> argument: both callers pass the real seconds divided by 600.</summary>
+    /// <summary>The unit of <c>Draw</c>'s <c>time</c> argument: seconds divided by 600 (the viewer's real seconds, the game's game seconds).</summary>
     const double SecondsPerTimeUnit = 600;
 
     /// <summary>Per-cascade and per-step CPU times in the stats strings (ShadowPass.CasterStats, FoliageRenderer's details); the viewer's screenshots and benchmarks turn it on.</summary>
@@ -1269,7 +1269,7 @@ static class WorldFrame
         // so a high eye sees the sea fade into the sky instead of a cut-off edge.
         camera.ViewDistance = Math.Max(camera.MinViewDistance, light.FogDistance / 0.7f);
         StageClock.Lap(3);
-        // The weather's camera particles step on the frame clock (the caller's time, 1/600 s units; constant, so still, in pictures).
+        // The weather's camera particles step on the caller's time (1/600 s units; the game's clock, so still while paused; constant, so still, in pictures).
         // They count as their own stage (the profiler's "particles", with their draw below).
         UpdateParticles(gpu, camera);
         if (gpu.Particles is { } updated)

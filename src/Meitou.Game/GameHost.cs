@@ -379,7 +379,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         }
         UpdateBlood();
         UpdateInteriorView();
-        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, (float)seconds / 600f, o.FogDistance,
+        // The frame's animation time (particles, water, wet surfaces) is game time: still while paused, faster at higher speeds.
+        float gameTime = (float)(session.Clock.GameSeconds / 600 % 1e4);
+        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
             weatherHour: (float)session.Clock.HourOfDay);
     }
 
