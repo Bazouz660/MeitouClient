@@ -52,6 +52,8 @@ Offscreen frames have no present wait. Render-thread benchmark totals exclude `d
 In the game the head is split too: `host` (the host's frame work before the world draw), `blood` (the host's blood marks and pools, then
 the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own work.
 `sim` (game only) is the simulation ticks run on the render thread before the frame's clock starts (`FrameProfiler.Outside`); it counts in the total.
+It opens (not plotted) to the world ticks per frame and the mean tick's ms, the tick phases (`World.Profile`, `TickProfile`; on while F12 shows; a
+parallel phase is wall time up to its barrier), `outside ticks` (control ticks, host orders) and the ten costliest systems (all their spans: serial calls, parallel phases, effect applies).
 F12's legend groups stages (update, pre-frame, scene, present) into one summed row and line each; a click on a `+` row opens it (plotting
 its stages instead), `-` closes it.
 The orange line on both charts and the header's `frame` (mean of the last 30, fps, max) is the whole frame's wall time, one `BeginFrame` to the next:

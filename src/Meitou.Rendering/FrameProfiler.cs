@@ -68,9 +68,9 @@ public sealed class FrameProfiler : IDisposable
 
     // The legend's open groups and upd-chars's parts; each row drawn last (its top and what a click on it opens: a group, PartsRow or nothing, -1),
     // the legend's box, a closed group's summed series on the side shown, and the series plotted.
-    const int PartsRow = -2;
+    const int PartsRow = -2, SimRow = -3;
     readonly bool[] groupOpen = new bool[Groups.Length];
-    bool partsOpen;
+    bool partsOpen, simOpen;
     readonly List<(float Top, int Opens)> rows = [];
     (float X0, float Y0, float X1, float Y1, float LineHeight) legendBox;
     readonly float[][] groupSeries = Groups.Select(_ => new float[History]).ToArray();
@@ -158,6 +158,34 @@ public sealed class FrameProfiler : IDisposable
     /// <summary>Render-thread work before <see cref="BeginFrame"/> that belongs to the next frame: the game's simulation ticks (<see cref="StageClock.Sim"/>), the last call's ms.</summary>
     public void Outside(double simMs) => outsideSim = simMs;
 
+    // The simulation's parts (Outside with parts): the names, how many lead as phases (the last of them the time outside the world's ticks; the rest are systems, listed by
+    // cost), each part's ms and the world ticks per frame, listed under sim in the legend, not plotted. simNow is the newest call's, kept with the frame at EndFrame.
+    string[] simNames = [];
+    int simPhases;
+    float[][] simParts = [];
+    readonly float[] simTicks = new float[History];
+    double[] simNow = [];
+    int simNowTicks;
+    readonly List<(string Name, double Ms)> simRows = [];
+
+    /// <summary>
+    /// <see cref="Outside(double)"/> with the ticks' breakdown: <paramref name="names"/> (the same array while the parts stay the same) with their <paramref name="ms"/>, the first
+    /// <paramref name="phases"/> of them phases shown in order (the last the time outside the ticks), the rest systems shown by cost; <paramref name="ticks"/> the world ticks run.
+    /// </summary>
+    public void Outside(double simMs, int ticks, string[] names, ReadOnlySpan<double> ms, int phases)
+    {
+        outsideSim = simMs;
+        if (!ReferenceEquals(names, simNames))
+        {
+            simNames = names;
+            simParts = names.Select(_ => new float[History]).ToArray();
+            simNow = new double[names.Length];
+        }
+        simPhases = phases;
+        ms[..Math.Min(ms.Length, simNow.Length)].CopyTo(simNow);
+        simNowTicks = ticks;
+    }
+
     /// <summary>After the frame is presented: the last stage (overlay, submit, present) ends and the frame's laps are kept.</summary>
     public void EndFrame()
     {
@@ -176,6 +204,10 @@ public sealed class FrameProfiler : IDisposable
             sum += StageClock.Ms[s];
         }
         for (int p = 0; p < parts.Length; p++) parts[p][cpuHead] = (float)StageClock.PartMs[p];
+        for (int p = 0; p < simParts.Length; p++) simParts[p][cpuHead] = (float)simNow[p];
+        simTicks[cpuHead] = simNowTicks;
+        Array.Clear(simNow);
+        simNowTicks = 0;
         cpu[Other][cpuHead] = 0;
         cpu[Total][cpuHead] = (float)sum;
         frameTime[cpuHead] = (float)frameMs;
@@ -434,13 +466,14 @@ public sealed class FrameProfiler : IDisposable
         const int meanFrames = 30;
         float lh = overlay.LineHeight, cw = overlay.CharWidth;
 
+        if (simOpen) SimRows(meanFrames);
         int rowCount = 0;
         for (int gi = 0; gi < Groups.Length; gi++)
         {
             var stages = Groups[gi].Stages;
             if (stages.Length > 1) rowCount++;
             if (stages.Length == 1 || groupOpen[gi])
-                foreach (int s in stages) rowCount += 1 + (s == StageClock.UpdChars && partsOpen ? parts.Length : 0);
+                foreach (int s in stages) rowCount += 1 + (s == StageClock.UpdChars && partsOpen ? parts.Length : 0) + (s == StageClock.Sim && simOpen ? simRows.Count + 1 : 0);
         }
         float panelH = (rowCount + 2.5f) * lh + 2 * pad;
         float x0 = margin, x1 = width - margin, y1 = height - margin, y0 = Math.Max(y1 - panelH, margin);
@@ -474,14 +507,28 @@ public sealed class FrameProfiler : IDisposable
         bool Plots(int s) => showGpu ? OnGpu(s) : OnCpu(s);
         void StageRow(int s, string indent)
         {
-            bool expands = s == StageClock.UpdChars;
-            float top = NextRow(expands ? PartsRow : -1);
+            bool expands = s == StageClock.UpdChars || s == StageClock.Sim && simNames.Length > 0;
+            bool open = s == StageClock.Sim ? simOpen : partsOpen;
+            float top = NextRow(!expands ? -1 : s == StageClock.Sim ? SimRow : PartsRow);
             overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[s]);
             if (Plots(s)) plotted.Add((hist[s], Colours[s], s == Total ? 2f : 1.5f, head, count));
-            string label = indent + (expands ? partsOpen ? "- " : "+ " : "  ") + Label(s);
+            string label = indent + (expands ? open ? "- " : "+ " : "  ") + Label(s);
             overlay.Text($"{label,-16}{Ms(OnCpu(s), Mean(cpu[s], cpuHead, cpuCount, meanFrames)),10}{Ms(gpuCount > 0 && OnGpu(s), Mean(gpu[s], gpuHead, gpuCount, meanFrames)),10}",
                 lx + swatch + 6, top, DebugOverlay.TextColour);
-            if (!expands || !partsOpen) return;
+            if (!expands || !open) return;
+            if (s == StageClock.Sim)
+            {
+                // The world ticks a frame ran and the mean tick, then the phases, the time outside the ticks and the costliest systems.
+                double ticks = Mean(simTicks, cpuHead, cpuCount, meanFrames), inTicks = 0;
+                for (int p = 0; p < simPhases - 1; p++) inTicks += simRows[p].Ms;
+                overlay.Text(string.Create(CultureInfo.InvariantCulture, $"{indent}    {ticks:0.0} ticks, {(ticks > 0 ? inTicks / ticks : 0):0.00} ms each"), lx + swatch + 6, NextRow(-1), dim);
+                foreach (var (name, ms) in simRows)
+                {
+                    string row = indent + "    " + name;
+                    overlay.Text($"{(row.Length > 16 ? row[..16] : row),-16}{Ms(true, ms),10}{"",10}", lx + swatch + 6, NextRow(-1), dim);
+                }
+                return;
+            }
             // Its parts, render thread only (the GPU work they record is in the passes that run it); not plotted.
             for (int p = 0; p < parts.Length; p++)
                 overlay.Text($"{indent + "    " + StageClock.PartNames[p],-16}{Ms(true, Mean(parts[p], cpuHead, cpuCount, meanFrames)),10}{"",10}", lx + swatch + 6, NextRow(-1), dim);
@@ -571,9 +618,22 @@ public sealed class FrameProfiler : IDisposable
             if (at.Y < top || at.Y >= top + lh) continue;
             if (opens >= 0) groupOpen[opens] = !groupOpen[opens];
             else if (opens == PartsRow) partsOpen = !partsOpen;
+            else if (opens == SimRow) simOpen = !simOpen;
             break;
         }
         return true;
+    }
+
+    /// <summary>The sim rows to list: the phases in order, then the systems costing the most over the last <paramref name="frames"/> frames and the rest as one row.</summary>
+    void SimRows(int frames)
+    {
+        const int Shown = 10;
+        simRows.Clear();
+        for (int p = 0; p < simPhases && p < simParts.Length; p++) simRows.Add((simNames[p], Mean(simParts[p], cpuHead, cpuCount, frames)));
+        var systems = Enumerable.Range(simPhases, Math.Max(0, simParts.Length - simPhases))
+            .Select(p => (Name: "  " + simNames[p], Ms: Mean(simParts[p], cpuHead, cpuCount, frames))).OrderByDescending(r => r.Ms).ToList();
+        simRows.AddRange(systems.Take(Shown));
+        if (systems.Count > Shown) simRows.Add(("  other systems", systems.Skip(Shown).Sum(r => r.Ms)));
     }
 
     public void Dispose()

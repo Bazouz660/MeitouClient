@@ -445,11 +445,12 @@ sealed partial class GameHost
             }
             // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
+            session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off };
             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
             DuelHoldClock();
             double advanceMs = Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
             advanceTotal += advanceMs;
-            profiler?.Outside(advanceMs);   // F12's sim row
+            if (profiler is not null) SimProfile(profiler, advanceMs);   // F12's sim row and its parts
             WorldNews();
             HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
             HandleNewGame();
@@ -673,6 +674,32 @@ sealed partial class GameHost
         double remaining = end - clock.Elapsed.TotalSeconds;
         if (remaining > 0.002) Thread.Sleep(TimeSpan.FromSeconds(remaining - 0.0015));
         while (clock.Elapsed.TotalSeconds < end) Thread.SpinWait(64);
+    }
+
+    // F12's sim parts: the names (the tick phases, the time outside the world's ticks, the world's systems), made again when the world is, and the frame's ms.
+    World? simNamesFor;
+    string[] simNames = [];
+    double[] simMs = [];
+
+    /// <summary>Hands the frame's <paramref name="advanceMs"/> to the profiler with the world's tick profile split into phases and systems, and clears the profile.</summary>
+    void SimProfile(FrameProfiler profiler, double advanceMs)
+    {
+        var world = session.World;
+        var profile = world.Profile;
+        int phases = TickProfile.PhaseNames.Length;
+        if (simNamesFor != world || simNames.Length != phases + 1 + world.Systems.Count)
+        {
+            simNamesFor = world;
+            simNames = [.. TickProfile.PhaseNames, "outside ticks", .. world.Systems.Select(s => s.GetType().Name is var n && n.EndsWith("System", StringComparison.Ordinal) && n.Length > 6 ? n[..^6] : n)];
+            simMs = new double[simNames.Length];
+        }
+        Array.Clear(simMs);
+        double inTicks = 0;
+        for (int p = 0; p < phases; p++) inTicks += simMs[p] = profile.PhaseMs[p];
+        simMs[phases] = Math.Max(0, advanceMs - inTicks);
+        for (int k = 0; k < profile.SystemMs.Length && phases + 1 + k < simMs.Length; k++) simMs[phases + 1 + k] = profile.SystemMs[k];
+        profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1);
+        profile.Clear();
     }
 
     /// <summary>Between ticks: the world's messages for the player go to the HUD and the log, the fights hostility started to the log.</summary>
