@@ -64,8 +64,24 @@ public static class PermaJobs
         [TaskType.PICKUP_INTRUDERS_TOWN] = new(1, false, TaskType.PICKUP_INTRUDERS_TOWN, TaskType.TAKE_INTRUDER_OUTSIDE_TOWN),
     };
 
-    /// <summary>The types a Meitou character carries out from its list; the others are kept, shown and saved but never started.</summary>
+    /// <summary>
+    /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Others run elsewhere: medic 58,
+    /// robotics 57 and splinting 250 in <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238 in <see cref="Carrying.CarrySystem"/>, attacking enemies 16 in
+    /// <see cref="AggroSystem"/>. The rest are kept, shown and saved but never started.
+    /// </summary>
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB;
+
+    /// <summary>
+    /// Whether the job at <paramref name="k"/> of the list may start for a character on <paramref name="task"/> (the original's keys N+8, N+7, ... in list order, highest first;
+    /// docs/game/ai-tasks.md "Perma-jobs"): it is free (no task of its own, wandering or following), on an implicit job, or on a list job further down; and the jobs switch is on
+    /// or the type ignores it. False for k below 0 (no such job).
+    /// </summary>
+    public static bool FreeFor(CharacterCold cold, CharacterTask task, int k) =>
+        k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || cold.Implicit is not null || cold.JobIndex > k)
+        && ((cold.Orders & CharacterOrders.Jobs) != 0 || IgnoresSwitch(cold.Jobs[k].Type));
+
+    /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
+    public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);
 
     /// <summary>
     /// The job an order of <paramref name="ordered"/> becomes (<b>Verified</b>: the row's +0xc when it has one), or null when it cannot be a job and the order runs once: the type has no row,

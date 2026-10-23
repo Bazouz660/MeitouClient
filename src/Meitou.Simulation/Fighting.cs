@@ -126,7 +126,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
 /// free too. An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed; the original's Passive toggle (non-combat mode) would turn it off and is not modelled (its default is off).
-/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>.
+/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
+/// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
 /// </summary>
 public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
 {
@@ -146,12 +147,17 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var st = combat.StateOf(attacker);
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration || table.Cold(a) is not { Medical.Incapacitated: false }) continue;
-            if (!CanFight(table, t, taken)) continue;
             // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
             if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
-            var defenders = new List<CharacterId> { new(t, next[t].Generation) };
-            taken.Add(t);
-            JoinMates(world, table, t, defenders, taken, CanFight);
+            var defenders = new List<CharacterId>();
+            if (CanFight(table, t, taken))
+            {
+                defenders.Add(new(t, next[t].Generation));
+                taken.Add(t);
+                JoinMates(world, table, t, defenders, taken, CanFight);
+            }
+            // Allies come to a defender that is already fighting too.
+            HelpAllies(world, table, t, a, defenders, taken);
             // The Hold order answers only an attacker within reach (Orders.HoldReach).
             var from = next[a].Position;
             for (int k = defenders.Count - 1; k >= 0; k--)
@@ -176,6 +182,27 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var d = next[s].Position - next[slot].Position;
             if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange) continue;
             fighters.Add(m);
+            taken.Add(s);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="SquadAi.Help"/> (the protect-allies finders <c>FUN_14099ca10</c> / <c>FUN_14099cf80</c>, which take a fighting character of another faction only with the global
+    /// +0x111 set, and then with the weight squared): the player's free characters within <see cref="JoinRange"/> of a defender of another, allied faction (relation 50 or more) join
+    /// its defence, in slot order. The original's distance weighting is not modelled (engine reduction).
+    /// </summary>
+    void HelpAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    {
+        if ((world.Player.SquadAi & SquadAi.Help) == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { IsPlayer: false, Medical.Incapacitated: false } ally || !relations.Contains(ally.Faction)) return;
+        if (table.Cold(attacker) is not { IsPlayer: false } foe || foe.Faction == world.Player.Faction) return;   // never against its own side
+        var next = table.Next;
+        var at = next[slot].Position;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
+            var d = next[s].Position - at;
+            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
     }

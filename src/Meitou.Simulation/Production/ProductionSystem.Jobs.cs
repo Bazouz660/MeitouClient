@@ -23,6 +23,16 @@ public sealed partial class ProductionSystem
             if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold) PermaJobs.Add(cold, add.Type, new PermaJob(add.Type, add.Site));
     }
 
+    void AddOrderJobs(World world, AddOrderJob add)
+    {
+        var table = world.Characters;
+        var ordered = add.Ordered;
+        // A first aid on a robot is the original's robot repair order (60), whose job is Robotics.
+        if (ordered == TaskType.FIRST_AID_ORDER && table.TryResolveNext(add.Target, out int t) && table.Cold(t)?.Race is { IsRobot: true }) ordered = TaskType.FIRST_AID_ROBOT;
+        foreach (var id in Who(world, add.Characters))
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold) PermaJobs.Add(cold, ordered, PermaJob.Untargeted(ordered));
+    }
+
     void RemoveJobAt(World world, RemoveJob remove)
     {
         var table = world.Characters;

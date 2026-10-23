@@ -103,7 +103,7 @@ sealed partial class PlayerInterface
         // Meitou stand-in for dragging shackles onto a down or caged character's armour slot: a selected character carrying some puts them on, locked.
         if (target.CanBeShackled && Selected().Any(c => c.CarriesShackles))
             verbs.Add(("Put on Shackles", () => Say(new Meitou.Simulation.Locks.PutShacklesOrder(Selected().Where(c => c.CarriesShackles).Select(c => c.Id).ToArray(), id) { Tick = session.World.Tick })));
-        return verbs;
+        return [.. verbs.Select(v => (v.Item1, JobOrOrder(v.Item1, id, v.Item2)))];   // Shift turns an order into a job (PlayerInterface.SquadAi.cs)
     }
 
     /// <summary>

@@ -12,6 +12,13 @@ public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string 
 public sealed record AddJob(IReadOnlyList<CharacterId> Characters, Meitou.Data.Gameplay.Ai.TaskType Type, string Site) : SimCommand;
 
 /// <summary>
+/// Gives characters (the selection when empty) the job an order of <paramref name="Ordered"/> on a character becomes, untargeted, at the end of their job lists (Shift with First Aid,
+/// Splint Injuries, an attack or a loot; <see cref="PermaJobs.Add"/>): 25 → 58 Medic (60 → 57 Robotics, which a first aid on a robot <paramref name="Target"/> is), 249 → 250 Splint
+/// Rigging, 4 / 5 / 61 → 16 Attacking enemies, 26 → 238 Foraging animals.
+/// </summary>
+public sealed record AddOrderJob(IReadOnlyList<CharacterId> Characters, Meitou.Data.Gameplay.Ai.TaskType Ordered, CharacterId Target) : SimCommand;
+
+/// <summary>
 /// The original's order 146 USE_TURRET on a complete turret of the player's (function 12): the nearest of the characters (the selection when empty) that can act operates it, standing at
 /// its gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>); the combat system fires it (docs/simulation.md "Production", "Combat").
 /// </summary>
