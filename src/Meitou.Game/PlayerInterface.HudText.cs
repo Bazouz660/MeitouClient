@@ -55,6 +55,7 @@ sealed partial class PlayerInterface
         CharacterTask.Build => Loc.Tr("Building"),
         CharacterTask.Dismantle => Loc.Tr("Dismantling"),
         CharacterTask.DeliverMaterials => Loc.Tr("Delivering materials"),
+        CharacterTask.FetchMaterials => Loc.Tr("Collecting resource"),
         CharacterTask.Operate => Loc.Tr("Operating machine"),
         CharacterTask.Haul => Loc.Tr("Hauling"),
         CharacterTask.Prospect => Loc.Tr("Prospecting"),

@@ -643,7 +643,7 @@ Player construction contract (Faithful UI). Facts: [construction](game/buildings
 [placement](game/buildings-production.md#placement), [build menu](game/buildings-production.md#build-menu),
 [build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Out of scope: the
 outpost behaviour beyond the record (residents, raids, renaming, the map marker), the door x3 rule,
-power, fetching from storage (task 247); production and research: [Production](#production).
+power, anything that damages a complete building; production and research: [Production](#production).
 
 **Shared types** (stubs f4cb78c, filled by the simulation track):
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
@@ -683,11 +683,12 @@ of their mean, else a new outpost there; a level town of another faction leaves 
 
 **ConstructionSystem** (`StandardParts.Construction`, in `All`; `StandardSystemSet.Construction`) runs after Carry, before
 Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option, 1), `Reach` 20, `SettleReach` 150,
-`Footprint` (record -> radius, optional), `AutoEveryTicks` 15.
+`Footprint` (record -> radius, optional).
 - `Inputs`: `PlaceBuildings` re-checks only the data half (a BUILDING, unlocked, `TownBlock`); a failing plan is dropped
   with `World.Post(Message)`. A total of 0 completes at once, so a free building is complete from the first snapshot.
-  `BuildOrder` (player characters, awake, not carried or caged; a complete site is ignored, repair needs building health
-  and does nothing) and `DismantleOrder` set the `CharacterTask`s `Build` / `Dismantle` and `CharacterCold.BuildSite`
+  `BuildOrder` (player characters, awake, not carried or caged; Build and Repair alike work a site that `NeedsWork`:
+  unfinished, or complete with progress below its target, the original's damage) and `DismantleOrder` set the
+  `CharacterTask`s `Build` / `Dismantle` and `CharacterCold.BuildSite`
   (the selection when the list is empty). Dismantling is refused with the original's texts while a site stands in the
   site ("I have to dismantle the furniture first." for interior furniture and nodes, else "I have to unmount the
   buildings first."). `CancelSite` removes an incomplete site with nothing delivered, else posts "Dismantle it to get the
@@ -696,31 +697,40 @@ Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option
 - `Schedule`: a worker walks to the site like a medic to a patient (goal = site XZ, free speed, asked again after a wait
   when the path failed). It has arrived within `Reach` + footprint of the site, or once its path has ended within
   `SettleReach` more (**Unknown**: the original's work distance; a site that is a navmesh obstacle cannot be walked
-  into). Work ends when the site is gone, complete (building), the character is down, fighting, carried, carrying or caged,
-  or another order replaced the task.
+  into). A fetcher walks to its source instead (a building as a site; a ground item within `PlayerSystem.PickUpReach`, or
+  twice that once its path has ended; a source that is gone sends it back to building). Work ends when the site is gone,
+  no longer `NeedsWork` (building), the character is down, fighting, carried, carrying or caged, or another order replaced
+  the task.
 - `SlowWorld`: arrived workers in slot order. *Build*: a stalled site (`sum(min(delivered, required)) <= progress`) turns
-  into *DeliverMaterials* if the builder carries a missing item, else the work ends (fetching, task 247, is not built);
+  into *DeliverMaterials* if the builder carries a missing item, else into *FetchMaterials* when `Source` finds one, else
+  the work ends;
   otherwise progress += rate x `lerp(0.3, 2, e/100)` x dt x `BuildingSpeed` x CONSTANTS `build speed` x 0.75^k, e the
   engineering stat times its injury multiplier (engine choice), dt = `TickSeconds`, k the builders that already worked
   the site this tick (the 0.75 counter resets each tick: the engine reading of the **Unknown** reset; capped at 15, above
   100 it restarts), engineering XP (`XpService.Engineering`); a rate of 0 or less completes at once; at
   `progress >= target` the site completes (`Complete`, message "Building '<name>' construction complete." for the player's
-  faction). *DeliverMaterials*: the bar fills at 0.2 per second (`CharacterCold.BuildBar`); full, it hands over one unit
-  of each missing type (inventory first, then backpack) and the task returns to *Build* (whether the original repeats
-  deliveries before building is **Unknown**; fetching aside, the two alternate). *Dismantle*: a complete site first
+  faction); a repair (complete, never stalled, no materials) stops at the target. *DeliverMaterials*: the bar fills at
+  0.2 per second (`CharacterCold.BuildBar`); full, it hands over one unit of each missing type (inventory first, then
+  backpack) and the task returns to *Build* (whether the original repeats deliveries before building is **Unknown**).
+  *FetchMaterials* (`CharacterCold.FetchSite` / `FetchItem` / `FetchRecord`, hashed with the site): `Source` follows the
+  [original's finder](game/buildings-production.md#material-delivery) for each owed material in list order: a loose item
+  of it within 1200 of the builder (engine: the nearest), else the nearest player storage holding it, else the nearest
+  player machine whose output holds it, both within squared distance 4.246733e7 (the AI's default range mode; engine:
+  no town filter, no remembered source, exact record). At a building it takes up to 2 units while it has room, a loose
+  item whole (the rest stays); with something taken it walks back as *Build*, else the work ends. *Dismantle*: a complete site first
   becomes incomplete with progress at most target - 1; then progress -= dt x `lerp(0.05, 4, e/100)` x 4 x rate (no option
   or constant), XP as building; at 0 the delivered materials come back and the site is removed. The `medic` clip plays
   for building and delivering, `stonemine` for dismantling (`AnimationSystem.HeldClip`).
-- Refund: entry i with something delivered gives `max(1, trunc(U x delivered))`, U = m + (1 - m) x
+- Refund: entry i with something delivered gives `max(1, trunc(U x delivered))` units, U = m + (1 - m) x
   `Rng.Float(Rng.Hash(seed, StableHash(id), RngPurpose.Build, i))`, m = CONSTANTS `min dismantle materials percentage` /
-  100. Engine (no ground items yet): the items go to the dismantler's inventory, then backpack; what does not fit is lost
-  with a message. A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
+  100; each unit is its own ground item (`GroundItems.Drop`, yaw 0) at x, z = position + (2u - 1) r, u from streams
+  `2000 + (i << 16) + 2k` and `+1`, r = the footprint radius, at least `Reach` (engine: the original's bounding box is
+  not in the sim). A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
   (**Verified** rule: progress 0.4 x target, delivered floor(delivered x U[0.3, 0.5) + 0.5)).
-- Auto-job (not in `AiSystem`: player characters have no AI mind): every `AutoEveryTicks` an idle, wandering or following
-  player character with the Jobs order, a race and stats takes the site with the best score `max(2 (1 - d^2/9000^2),
-  0.0001) / (n + 1)` (n workers on it); not complete, paused, destroyed or being dismantled, and not stalled unless the
-  character carries a missing item (the original's planner cost is **Unknown**; this avoids a walk to a site it cannot
-  work). It goes back to its wander or follow task afterwards.
+- Engineer job (125, run by the [job lists](#production)): `EngineerSite` scores the faction's sites that `NeedsWork`,
+  not paused, destroyed, attached or being dismantled, `max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)` (d 3D, n others
+  working it), skipping a stalled site the character carries nothing for and `Source` cannot feed; `StartBuilding` sends
+  it there. Without the job nobody builds unordered (the original has no other auto-build).
 - `BuildingsRevision` bumps on add, complete, a complete building becoming a site (dismantling started), destroyed and
   remove. `Version` (progress, delivery, pause) only rebuilds the published list.
 
@@ -875,12 +885,14 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
   to the next; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
-  character to the following or wandering it took it from. Meitou runs two types; the others are kept,
-  listed and saved:
+  character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork`.
+  Meitou runs three types; the others are kept, listed and saved:
   - 87 Operating machine: blocked while others hold every operator place or the machine has no work (no power; no queued research or craft; a
     farm with nothing ripe or dead; an empty input the operator cannot fill from its pack or a storage; a full output no storage takes).
   - 124 Hauling to (`CharacterTask.Haul`): the nearest player machine within `HaulRange` of the storage whose output the storage takes is
     emptied into the hauler's pack and carried there; items the hauler already carries that some machine makes go first. Blocked with neither.
+  - 125 Engineer (ordered as 2 Build or 95 Repair; Shift + quick right click on an unfinished site): builds `ConstructionSystem.EngineerSite`'s
+    pick, whatever the job's target ([buildings](#buildings)); its tasks are *Build*, *DeliverMaterials* and *FetchMaterials*. Blocked with no site.
   - Implicit jobs (`ImplicitPick`): with no list job to run, the switch on and not a slave, the squad AI options (`PlayerState.SquadAi`, the
     overview's AI tab, all on by default) start, in this order: Ditch items (242: carried items some player machine makes go to the nearest
     storage within `HaulRange` that takes them, as a Haul trip; only with no queued orders), Sleep when injured (153: a body part below full

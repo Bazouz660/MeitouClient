@@ -72,6 +72,9 @@ public sealed partial class PopulationSystem
         c.PickingLock = null;
         c.BuildSite = null;
         c.BuildBar = 0;
+        c.FetchSite = null;
+        c.FetchItem = null;
+        c.FetchRecord = null;
         c.SquadId = -1;
     }
 

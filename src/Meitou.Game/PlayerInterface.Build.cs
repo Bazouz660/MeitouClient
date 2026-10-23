@@ -578,7 +578,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The right button let go: a press on a site released before the menu opened gives the quick order (Build; Operate a finished machine). With Shift a finished machine or storage is
-    /// added to the selection's job lists instead (the original's Perma-Jobs: Operating machine, Hauling to).
+    /// added to the selection's job lists instead (the original's Perma-Jobs: Operating machine, Hauling to; on an unfinished site, Engineer).
     /// </summary>
     void SiteRelease()
     {
@@ -590,7 +590,10 @@ sealed partial class PlayerInterface
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
             return;
         }
-        if (!pending.Site.Complete) Say(new BuildOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
+        // With Shift the Build order becomes the Engineer job (125), which builds any unfinished site.
+        if (SlowModifier && !pending.Site.Complete)
+            Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), Meitou.Data.Gameplay.Ai.TaskType.BUILD, pending.Site.Id) { Tick = session.World.Tick });
+        else if (!pending.Site.Complete) Say(new BuildOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Operable: true }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Function: Meitou.Data.World.ObjectRanges.TurretFunction })
             Say(new Meitou.Simulation.Production.UseTurretOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });   // the original's order 146 USE_TURRET

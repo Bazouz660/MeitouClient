@@ -78,6 +78,8 @@ public sealed partial class ProductionSystem : ITickSystem
 
     public ProductionSettings Settings { get; }
     public ItemFactory Items => items;
+    /// <summary>The construction system the engineer job (125) builds through; null: the job never runs.</summary>
+    public ConstructionSystem? Construction { get; init; }
 
     /// <summary>What a BUILDING does once built (null for one that neither works nor stores); read once.</summary>
     public MachineData? Data(string record)
@@ -295,7 +297,8 @@ public sealed partial class ProductionSystem : ITickSystem
 
     public void Schedule(World world)
     {
-        if (world.Machines.Count == 0 && !sweep) return;
+        // Job lists also run for the engineer job while a site is unfinished or damaged.
+        if (world.Machines.Count == 0 && !sweep && (Construction is null || !world.Buildings.AnyNeedsWork)) return;
         PickJobs(world);
         var table = world.Characters;
         float dt = world.TickSeconds;
