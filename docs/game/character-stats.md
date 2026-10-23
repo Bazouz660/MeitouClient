@@ -114,8 +114,10 @@ any movement or animation, with the bubble "I don't have a medkit." Whether a sq
 avoids the refusal is **Unknown** (Meitou accepts any kit `FindKit` would use).
 
 **Verified** carried person adds CONSTANTS weight30, independent of body/race/inventory.
-**Observed** capacity C=1.2*strength*strength-injury-mult+15; encumbrance
-clamp((C-0.05W)/(0.95W),0,1), 1 through W<=C and0 at W>=20C. It affects speed, hunger, XP/dodge.
+**Verified** in game (1.0.65, scripted harness, issue #45; strength -20..45, W 15/16.4/46.4 kg, torso wounds, hunger):
+capacity C=1.2*s+15, unrounded, s = strength through its whole stat multiplier (hunger too, floor 0.1); encumbrance
+clamp((C-0.05W)/(0.95W),0,1), both clamps seen, W includes a carried person. Stored at CharStats+0x190, the return of
+`FUN_1408838b0`. **Observed**: it affects speed, hunger, XP/dodge (consumers not checked in game).
 Weapon inventory weight multiplier0.5; backpack effect scales contents.
 **Verified** ITEM `stackable` is integer capacity,1 means one per cell; bolt items use charges
 for shots. Gear/container/map/crossbow/limb item types cap1. Other stacks use
@@ -538,5 +540,5 @@ read and at least one consumer found through the data cross-references; base val
 - Degeneration, healing, stun: `D = clamp(((M - h - b) * 100 / M - 20) / (90 - 20), 0, 1)`; `degMult = lerp(degeneration mult 1 (1.7), degeneration mult 99 (0.03), toughness / 100)`; `heal = min(b, dt * 0.05 * heal rate mult (0.25) * R)`; `h <= M`; `R = (M / 100) * A`
 - Knock-out, coma, death: `k = lerp(knockout mult 1 (3.0), knockout mult 99 (0.75), toughness / 100)`
 - First aid, medkits and robot repair: `h + b <= M`; `rate = lerp(1, 15, min(skill, kit quality) * 0.01) * medic speed mult (3)`
-- Encumbrance and carrying: `C = carry weight mult * strength * strengthInjuryMultiplier + encumbrance base`; `e = clamp((C - 0.05 W) / (0.95 W), 0, 1)`; `W <= C`
+- Encumbrance and carrying: `C = carry weight mult * strength * strengthInjuryMultiplier + encumbrance base` (strength's whole stat multiplier); `e = clamp((C - 0.05 W) / (0.95 W), 0, 1)`; `W <= C`
 - CONSTANTS used by this subsystem: `field address = 0x142133dd0 + 4 * index`
