@@ -57,7 +57,7 @@ public static class Enhancements
         Func<bool>? cloudFog = null, Action<bool>? setCloudFog = null,
         Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null, Func<bool>? characterLod = null, Action<bool>? setCharacterLod = null,
         Func<bool>? skin = null, Action<bool>? setSkin = null, Func<bool>? interiorLamps = null, Action<bool>? setInteriorLamps = null,
-        Func<bool>? icons = null, Action<bool>? setIcons = null) =>
+        Func<bool>? icons = null, Action<bool>? setIcons = null, Func<bool>? blood = null, Action<bool>? setBlood = null) =>
     [
         new("ao", "Ambient occlusion", "off", "SSAO",
             () => post.Ssao, v => post.Ssao = v, "the game ships SSAO but has it disabled"),
@@ -138,6 +138,9 @@ public static class Enhancements
         new("icons", "Item icons", "the game's", "supersampled",
             icons ?? (() => false), setIcons ?? (_ => { }),
             "the game draws an inventory item's icon from its mesh with one sample a pixel (jagged edges, shimmering fine detail) and shows the pictures it saved before; Meitou draws each one supersampled 4 x 4, as the enhanced portraits, and keeps its own pictures (docs/game/ui-screens.md \"Item icons\")"),
+        new("blood", "Blood cells", "8 nearest", $"up to {TerrainDecalRenderer.MaxSlots}",
+            blood ?? (() => false), setBlood ?? (_ => { }),
+            $"the game draws the blood of only the 8 terrain cells (288 units square) nearest the camera, so a big battle's blood ends at a straight cell edge and the cells past it dry up unseen; Meitou draws every cell within Decal Range, up to {TerrainDecalRenderer.MaxSlots} (docs/game/blood-decals.md)"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

@@ -39,6 +39,7 @@ sealed partial class GameHost
         var files = BloodTextureFiles(assets.Configured);
         decalStore = new TerrainDecalStore([.. files.Select(list => (IReadOnlyList<(int, int)>)[.. list.Select(DdsSize)])]);
         gpu.Decals = TerrainDecalRenderer.Create(context, files);
+        gpu.Decals.Meitou = o.MeitouBlood;
         gpu.Decals.Resolution = (int)AudioSystem.Setting(install, "Decal Resolution", 1024, 512, 2048);
         gpu.Decals.Range = AudioSystem.Setting(install, "Decal Range", 1000, 0, 5000);
         gpu.DecalStore = decalStore;

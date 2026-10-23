@@ -494,7 +494,7 @@ static partial class TerrainShaders
         uniform sampler2DArray uBlood; // the blood decal cells near the eye (TerrainDecalRenderer): one layer each
         uniform int uBloodCount;       // cells in use (0: no blood)
         uniform float uBloodCellSize;
-        uniform vec4 uBloodCells[8];   // column, row, layer
+        uniform vec4 uBloodCells[32];  // column, row, layer
 
         vec4 P(int biome, int k) { return texelFetch(uParams, ivec2(k, biome), 0); }
 
@@ -904,7 +904,7 @@ static partial class TerrainShaders
             float bloodCellSize;
             uint height;
             float parallax;
-            vec4 bloodCells[8];
+            vec4 bloodCells[32];
             float displace;
             uint relief;
             float displaceEnd;
@@ -1040,7 +1040,7 @@ static partial class TerrainShaders
 
 /// <summary>The C# side of <see cref="TerrainShaders.ConstantsBlock"/> (std140; offsets checked against the reflection by a test). GLSL bools
 /// are 32-bit (0 / 1).</summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 400)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 784)]
 struct TerrainConstants
 {
     [System.Runtime.InteropServices.FieldOffset(0)] public System.Numerics.Vector4 CoarseRect;
@@ -1090,14 +1090,14 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(248)] public uint Height;
     [System.Runtime.InteropServices.FieldOffset(252)] public float Parallax;
     [System.Runtime.InteropServices.FieldOffset(256)] public BloodCells BloodCells;
-    [System.Runtime.InteropServices.FieldOffset(384)] public float Displace;
-    [System.Runtime.InteropServices.FieldOffset(388)] public uint Relief;
-    [System.Runtime.InteropServices.FieldOffset(392)] public float DisplaceEnd;
-    [System.Runtime.InteropServices.FieldOffset(396)] public float ParallaxEnd;
+    [System.Runtime.InteropServices.FieldOffset(768)] public float Displace;
+    [System.Runtime.InteropServices.FieldOffset(772)] public uint Relief;
+    [System.Runtime.InteropServices.FieldOffset(776)] public float DisplaceEnd;
+    [System.Runtime.InteropServices.FieldOffset(780)] public float ParallaxEnd;
 }
 
-/// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[8]</c>).</summary>
-[System.Runtime.CompilerServices.InlineArray(8)]
+/// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[32]</c>).</summary>
+[System.Runtime.CompilerServices.InlineArray(TerrainDecalRenderer.MaxSlots)]
 struct BloodCells
 {
     System.Numerics.Vector4 cell;

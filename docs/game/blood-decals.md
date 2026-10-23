@@ -63,11 +63,15 @@ drawn as quads (centre `lx·2/1000 − 1`, half sizes / 10240 in clip space, rot
 with `texture × colour`, colour alpha = min(alpha, life), alpha-blended colour and additive alpha.
 The terrain draws the cell's nodes again with `TerrainBlood`: depth equal, the texture's colour
 alpha-blended over the G-buffer albedo, gloss kept. The game ranks the candidate cells by decal
-count and distance (**Observed**; we take the nearest).
+count and distance (**Observed**; we take the nearest). Consequence (**Observed**, vanilla battle
+footage): a big battle's blood ends at a straight cell edge, and the cells past the eighth age out
+unseen.
 
 ## Meitou
 
-One faithful path, no switch. Engine choices: the blood is mixed into the terrain colour shader's
+The `blood` switch (Meitou, default): every cell within `Decal Range` is drawn, up to 32 layers (at
+most 256 MB of them: 16 at 2048²), the array growing by 8 as more cells are near; Faithful keeps the
+game's 8. Expiry is unchanged (undrawn cells still age). Engine choices: the blood is mixed into the terrain colour shader's
 albedo before lighting (our terrain is forward-lit, no second pass); the cells are a texture array
 read by cell index. Marks more than 20 units above the ground are dropped (upper floors). A pool's
 decal is grown in steps of a 25th of its half size (and at the cap), not at every texel change, and in place

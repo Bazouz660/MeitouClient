@@ -7,15 +7,18 @@ using Meitou.Rendering.Gpu;
 namespace Meitou.Rendering;
 
 /// <summary>
-/// The blood on the ground (docs/game/blood-decals.md): the decal cells nearest the eye within the game's <c>Decal Range</c>, up to <see cref="Slots"/>, each drawn into
+/// The blood on the ground (docs/game/blood-decals.md): the decal cells nearest the eye within the game's <c>Decal Range</c>, up to <see cref="FaithfulSlots"/> or <see cref="MaxSlots"/>, each drawn into
 /// a layer of a <c>Decal Resolution</c>² texture array (the game's <c>Kenshi_Decal_Texture_n</c>), which the terrain's colour shader lays over its albedo
 /// (<see cref="Apply"/>). A layer is drawn again only when its cell changes or a new cell takes it. Each decal is its texture × its colour, alpha blended into the
 /// colour and added into the alpha, as the game's <c>Quad2DMaterial</c> draws it: one instanced draw per layer, each decal's texture by its bindless index.
 /// </summary>
 public sealed unsafe class TerrainDecalRenderer : IDisposable
 {
-    /// <summary>The cells drawn at once (the game's eight decal textures).</summary>
-    public const int Slots = 8;
+    /// <summary>The cells drawn at once: the game's eight decal textures (<see cref="Meitou"/> off), up to <see cref="MaxSlots"/> with it on.</summary>
+    public const int FaithfulSlots = 8, MaxSlots = 32;
+
+    /// <summary>The most memory the Meitou layers take (<see cref="MaxSlots"/> at 1024², 16 at 2048²); the game's 8 whatever it costs.</summary>
+    const long LayerBudget = 256L << 20;
 
     const string Vertex = """
         #version 450
@@ -74,11 +77,12 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     float spriteBias = float.NaN;
     DecalInstance[] instances = new DecalInstance[256];
     // Each layer's cell, the cell version it shows, the rewrite it was cleared at and how many of the cell's appended decals it holds since (TerrainDecalStore.CellRewrite).
-    readonly (uint Key, int Version, int Rewrite, int Appended)[] slots = new (uint, int, int, int)[Slots];
+    readonly (uint Key, int Version, int Rewrite, int Appended)[] slots = new (uint, int, int, int)[MaxSlots];
     readonly List<(float Distance, uint Key)> near = [];
     readonly HashSet<uint> drawn = [];
-    readonly Vector4[] cells = new Vector4[Slots];
+    readonly Vector4[] cells = new Vector4[MaxSlots];
     Texture? target;
+    int layers;
     (Texture Texture, uint Index)? bindless;
     int count;
 
@@ -114,6 +118,12 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     /// <summary>The game's <c>Decal Range</c>: how far from the eye (X/Z, to the cell's square) cells are drawn.</summary>
     public float Range { get; set; } = 1000;
 
+    /// <summary>
+    /// The <c>blood</c> switch: every cell within <see cref="Range"/> is drawn, up to <see cref="MaxSlots"/> (fewer at a large <see cref="Resolution"/>), the array
+    /// growing by 8 layers as more are near; off: the game's <see cref="FaithfulSlots"/> nearest, so a battle's blood ends at a cell edge.
+    /// </summary>
+    public bool Meitou { get; set; } = true;
+
     /// <summary>Whether <paramref name="key"/>'s cell is on a layer now (its decals then do not expire: <see cref="TerrainDecalStore.Age"/>).</summary>
     public bool Drawn(uint key) => drawn.Contains(key);
 
@@ -132,33 +142,37 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
             if (d <= range) near.Add((d, key));
         }
         near.Sort((a, b) => a.Distance.CompareTo(b.Distance));
-        if (near.Count > Slots) near.RemoveRange(Slots, near.Count - Slots);
-
         int resolution = Math.Clamp(Resolution, 64, 4096);
-        if (near.Count > 0 && (target is null || target.Desc.Width != resolution))
+        int limit = Meitou ? (int)Math.Clamp(LayerBudget / ((long)resolution * resolution * 4) / 8 * 8, FaithfulSlots, MaxSlots) : FaithfulSlots;
+        if (near.Count > limit) near.RemoveRange(limit, near.Count - limit);
+
+        // Meitou: the array grows by 8 layers when more cells are near than it holds (every layer drawn again); it does not shrink.
+        int need = Math.Max(FaithfulSlots, (near.Count + 7) / 8 * 8);
+        if (near.Count > 0 && (target is null || target.Desc.Width != resolution || layers < need))
         {
             if (bindless is { } old) gpu.Bindless.Free(BindlessKind.Texture2DArray, old.Index);
             bindless = null;
             target?.Dispose();
-            target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, resolution, resolution, Layers: Slots, Kind: TextureKind.Texture2DArray,
+            layers = target is null || target.Desc.Width != resolution ? need : Math.Max(layers, need);
+            target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, resolution, resolution, Layers: layers, Kind: TextureKind.Texture2DArray,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "terrain decals"));
             Array.Clear(slots);
         }
 
         // A cell keeps its layer while it stays near; the others go to the layers left free.
         drawn.Clear();
-        Span<bool> taken = stackalloc bool[Slots];
-        Span<int> layerOf = stackalloc int[Slots];
+        Span<bool> taken = stackalloc bool[MaxSlots];
+        Span<int> layerOf = stackalloc int[MaxSlots];
         for (int i = 0; i < near.Count; i++)
         {
             layerOf[i] = -1;
-            for (int s = 0; s < Slots; s++)
+            for (int s = 0; s < layers; s++)
                 if (!taken[s] && slots[s].Version != 0 && slots[s].Key == near[i].Key) { layerOf[i] = s; taken[s] = true; break; }
         }
         for (int i = 0; i < near.Count; i++)
         {
             if (layerOf[i] >= 0) continue;
-            for (int s = 0; s < Slots; s++)
+            for (int s = 0; s < layers; s++)
                 if (!taken[s]) { layerOf[i] = s; taken[s] = true; slots[s] = (near[i].Key, 0, 0, 0); break; }
         }
 
