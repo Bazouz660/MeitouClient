@@ -726,13 +726,28 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// Whether the instance stands in a loaded building's interior (<see cref="InteriorAt"/>), kept on it until the interiors or its place change: every view
     /// (the camera's, each shadow cascade's, the reflection's) asks it of each piece of furniture.
     /// </summary>
-    bool InInterior(ObjectStreamer.Instance inst)
+    bool InInterior(ObjectStreamer.Instance inst) => InteriorOf(inst).Inside;
+
+    ObjectStreamer.InteriorAnswer InteriorOf(ObjectStreamer.Instance inst)
     {
         var at = inst.Transform.Translation;
-        if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known.Inside;
+        if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known;
         bool inside = InteriorAt(at) is not null;
-        inst.Interior = new(streamer.InteriorVersion, at, inside);
-        return inside;
+        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it.
+        var holder = InteriorAt(at, 2);
+        return inst.Interior = new(streamer.InteriorVersion, at, inside, holder?.PlacementId, holder?.FloorAt(at) ?? 0);
+    }
+
+    /// <summary>
+    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by where it
+    /// stands in that building's hull: it is hidden with that floor (game: FUN_1409fb540 hides objects above their building's floor, as the host does for characters).
+    /// </summary>
+    bool StandsAbove(ObjectStreamer.Instance inst)
+    {
+        var p = inst.Placed;
+        if (InteriorView.Count == 0 || AllFloors || p.Kind != PlacedKind.BuildingPart || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
+        var answer = InteriorOf(inst);
+        return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;
     }
 
     /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
@@ -948,7 +963,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     {
         if (inst.Gpu is not { } gpu) return;
         if (!ReferenceEquals(inst.Mesh.Gpu, gpu)) { Unresolve(zone, inst); return; }
-        if (InteriorHidden(inst.Placed)) return;
+        if (InteriorHidden(inst.Placed) || StandsAbove(inst)) return;
         if (inst.Placed.DoorIndex >= 0) PoseDoor(inst, gpu);
         if (inst.Placed.Joints is not null) PoseTurret(inst, gpu);
         float value = Vector3.Distance(inst.Centre, eye) - inst.Radius;

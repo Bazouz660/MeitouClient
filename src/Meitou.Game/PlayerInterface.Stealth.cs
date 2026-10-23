@@ -58,7 +58,7 @@ sealed partial class PlayerInterface
         int n = 0;
         foreach (var c in session.CurrentSnapshot.Characters)
         {
-            if (!c.IsPlayer || c.Name.Length == 0 || EditorOpen || c.CarriedBy != CharacterId.None) continue;
+            if (!c.IsPlayer || c.Name.Length == 0 || EditorOpen || c.CarriedBy != CharacterId.None || !c.Selected && HiddenInWorld?.Invoke(c.Id) == true) continue;
             var feet = where(c);
             if (Vector3.DistanceSquared(Eye, feet) >= NameTagRangeSquared) continue;
             if (Project(feet + new Vector3(0, CharacterHeight + 4, 0)) is not { } head) continue;
@@ -81,6 +81,9 @@ sealed partial class PlayerInterface
             n++;
         }
     }
+
+    /// <summary>Whether the world leaves a character undrawn (above the viewed floor, or inside a closed building): its tag shows only while it is selected.</summary>
+    public Func<CharacterId, bool>? HiddenInWorld { get; set; }
 
     MyGuiLayout? taskBarLayout;
 
