@@ -92,6 +92,148 @@ static partial class TerrainShaders
         """;
 
     /// <summary>
+    /// The sand displacement (SandParallax, docs/render-terrain.md "Sand displacement"): how far the ground is raised at a point, from the biome
+    /// layers the material shows there. Only a layer with a height (a sand layer: its height array slice is not flat, so its last mip, the
+    /// average, is under 1) lifts, by its height times how much of the pixel the base layer covers (not grass, slope, dirt, road or cliff),
+    /// weighted by the biome blend. <c>sandLift(p, false)</c> is that coverage alone (the control stage's test).
+    /// </summary>
+    const string SandFunctions = """
+
+        uniform bool uTextured;
+        uniform bool uHasMaps;
+        uniform int uMapState;
+        uniform sampler2DArray uHeight;
+        uniform sampler2D uParams;
+        uniform usampler2D uCells;
+        uniform sampler2D uBlendMap;
+        uniform sampler2D uOverlay;
+        uniform vec4 uRegion;
+        uniform vec2 uCellGrid;
+        uniform float uHalfWorld;
+        uniform float uDisplace;       // world units the sand's highest point is raised by; 0 off
+        uniform vec3 uEye;
+
+        // Raised in full out to DisplaceFull, none from DisplaceEnd; segments of at least TessMinEdge, or TessPixelAngle times the distance.
+        const float DisplaceFull = 150.0, DisplaceEnd = 250.0, TessMinEdge = 0.6, TessPixelAngle = 0.004, TessMax = 64.0;
+
+        vec4 sandP(uint b, int k) { return texelFetch(uParams, ivec2(k, int(b)), 0); }
+
+        float sandLift(vec2 xz, bool height)
+        {
+            if (!uTextured) return 0.0;
+            vec2 world01 = (xz + uHalfWorld) / (2.0 * uHalfWorld);
+            ivec2 cell = clamp(ivec2(floor(world01 * uCellGrid)), ivec2(0), ivec2(uCellGrid) - 1);
+            uvec4 slots = texelFetch(uCells, ivec2(cell.x * 2, cell.y), 0);
+            uint slot4 = texelFetch(uCells, ivec2(cell.x * 2 + 1, cell.y), 0).r;
+            vec4 weights = textureLod(uBlendMap, world01, 0.0);
+            float rest = max(0.0, 1.0 - dot(weights, vec4(1.0)));
+            vec4 map = vec4(0.0);
+            if (uHasMaps && uMapState == 2)
+            {
+                map = textureLod(uOverlay, fract((xz + uHalfWorld) * uRegion.zw), 0.0);
+                map.r = max(map.r, map.g);
+            }
+            float slope = 1.0 - terrainNormal(xz).y;
+            float lift = 0.0, total = 0.0;
+            for (int k = 0; k < 5; k++)
+            {
+                uint b = k < 4 ? slots[k] : slot4;
+                float wk = k < 4 ? weights[k] : rest;
+                if (b >= 254u || wk < 0.004) continue;
+                total += wk;
+                float layer = sandP(b, 0).x;
+                if (textureLod(uHeight, vec3(0.5, 0.5, layer), 16.0).r > 0.995) continue;   // flat: not sand
+                vec4 smin = sandP(b, 5), smax = sandP(b, 6), sblend = sandP(b, 7);
+                vec4 w = smoothstep(smin - sblend, smin, vec4(slope)) * smoothstep(smax + sblend, smax, vec4(slope));
+                float cover = (1.0 - map.r) * (1.0 - w.x) * (1.0 - map.b) * (1.0 - map.a) * (1.0 - w.y);
+                if (cover <= 0.0) continue;
+                float h = height ? textureLod(uHeight, vec3(xz / 5000.0 * sandP(b, 3).xy, layer), 0.0).r : 1.0;
+                lift += wk * cover * h;
+            }
+            return total > 0.0 ? lift / total : 0.0;
+        }
+        """;
+
+    /// <summary><see cref="PatchVertex"/> for the tessellated patches: the same morphed grid point, to the control stage (no clip position).</summary>
+    public const string PatchVertexTess = "#version 330 core\n" + HeightFunctions + """
+
+        layout(location = 0) in vec2 aGrid;
+        uniform vec3 uEye;
+        uniform vec4 uNode;
+        uniform vec2 uMorph;
+        layout(location = 0) out vec3 vcWorld;
+        void main()
+        {
+            vec2 p = uNode.xy + aGrid * (uNode.z / uNode.w);
+            float d = distance(vec3(p.x, terrainHeight(p), p.y), uEye);
+            float k = uMorph.x >= 1e30 ? 0.0 : clamp((d - uMorph.x) / (uMorph.y - uMorph.x), 0.0, 1.0);
+            vec2 g = aGrid - mod(aGrid, 2.0) * k;
+            p = uNode.xy + g * (uNode.z / uNode.w);
+            vcWorld = vec3(p.x, terrainHeight(p), p.y);
+        }
+        """;
+
+    /// <summary>
+    /// The control stage: each edge's level from the edge alone (its length, its midpoint's distance, whether sand lies at its ends or middle), so
+    /// the two triangles sharing an edge split it alike and nothing cracks; 1 (not split) where there is no sand or beyond the displacement.
+    /// </summary>
+    public const string PatchControl = "#version 330 core\n" + HeightFunctions + SandFunctions + """
+
+        layout(vertices = 3) out;
+        layout(location = 0) in vec3 vcWorld[];
+        layout(location = 0) out vec3 teWorld[];
+
+        float edgeLevel(vec3 a, vec3 b)
+        {
+            vec3 m = (a + b) * 0.5;
+            float d = distance(m, uEye);
+            if (uDisplace <= 0.0 || d >= DisplaceEnd) return 1.0;
+            if (max(sandLift(m.xz, false), max(sandLift(a.xz, false), sandLift(b.xz, false))) <= 0.0) return 1.0;
+            return clamp(round(distance(a, b) / max(TessMinEdge, d * TessPixelAngle)), 1.0, TessMax);
+        }
+
+        void main()
+        {
+            teWorld[gl_InvocationID] = vcWorld[gl_InvocationID];
+            if (gl_InvocationID == 0)
+            {
+                // Outer level i is the edge facing control point i (where its coordinate is 0).
+                float e0 = edgeLevel(vcWorld[1], vcWorld[2]), e1 = edgeLevel(vcWorld[2], vcWorld[0]), e2 = edgeLevel(vcWorld[0], vcWorld[1]);
+                gl_TessLevelOuter[0] = e0;
+                gl_TessLevelOuter[1] = e1;
+                gl_TessLevelOuter[2] = e2;
+                gl_TessLevelInner[0] = max(e0, max(e1, e2));
+            }
+        }
+        """;
+
+    /// <summary>
+    /// The evaluation stage: the point on the flat triangle (the base surface is interpolated, not sampled again, so an unraised split edge is the
+    /// plain patch's edge), raised by the sand's height, fading out from <c>DisplaceFull</c> to <c>DisplaceEnd</c>. Its outputs are the patch
+    /// vertex stage's, so the terrain's fragment stage is unchanged.
+    /// </summary>
+    public const string PatchEvaluation = "#version 330 core\n" + HeightFunctions + SandFunctions + """
+
+        layout(triangles, equal_spacing, ccw) in;
+        layout(location = 0) in vec3 teWorld[32];   // gl_MaxPatchVertices, written out: InterfaceLocations sizes every array it reads
+        uniform mat4 uViewProjection;
+        out vec3 vWorld;
+        out vec3 vNormal;
+        out vec2 vCliffBlend;
+        invariant gl_Position;
+        void main()
+        {
+            vec3 p = gl_TessCoord.x * teWorld[0] + gl_TessCoord.y * teWorld[1] + gl_TessCoord.z * teWorld[2];
+            float fade = 1.0 - smoothstep(DisplaceFull, DisplaceEnd, distance(p, uEye));
+            if (uDisplace > 0.0 && fade > 0.0) p.y += uDisplace * fade * sandLift(p.xz, true);
+            vWorld = p;
+            vNormal = vec3(0.0, 1.0, 0.0);
+            vCliffBlend = vec2(0.5);
+            gl_Position = uViewProjection * vec4(p, 1.0);
+        }
+        """;
+
+    /// <summary>
     /// Plain meshes drawn with the terrain material (TERRAIN-mode map features, the game's <c>Feature_Terrain_DX11</c>;
     /// docs/formats/foliage.md, "TERRAIN-mode meshes"). The cliff projection weights are made per vertex from the mesh
     /// normal, and a surface facing up (normal.y above 0.9) takes the (z, height) projection alone, as the game's feature
@@ -188,6 +330,7 @@ static partial class TerrainShaders
         uniform sampler2DArray uNormal;
         uniform sampler2DArray uHeight;   // sand layers: height from the normal map (SandParallax), 1 the top; other layers 1
         uniform float uParallax;       // sand parallax: the depth of the height range in world units (1 unit = 10 cm); 0 off
+        uniform float uDisplace;       // sand displacement (tessellated patches near the eye) in world units; 0 off. The parallax gives way to it there.
         // Sand parallax: the fade-out distances and the self-shadow's darkening.
         const float PomFadeStart = 300.0, PomFadeEnd = 600.0, PomShadow = 0.45;
         uniform sampler2D uParams;     // row = biome, ParamTexels texels
@@ -258,9 +401,11 @@ static partial class TerrainShaders
             {
                 const int Steps = 16, ShadowSteps = 8;
                 float strength = 1.0 - smoothstep(PomFadeStart, PomFadeEnd, distance);
+                // Where the geometry is raised (SandFunctions' DisplaceFull to DisplaceEnd) the view ray is not moved again; the self-shadow stays.
+                float march = uDisplace > 0.0 ? smoothstep(150.0, 250.0, distance) : 1.0;
                 vec2 toUv = sB.xy * (uParallax * strength / 5000.0);   // the full depth in world units, in the layer's coordinate
                 vec3 v = normalize(uEye - vWorld);
-                vec2 stepUv = -v.xz / max(v.y, 0.25) * toUv / float(Steps);
+                vec2 stepUv = -v.xz / max(v.y, 0.25) * toUv * march / float(Steps);
                 vec2 p = base.p;
                 float rayH = 1.0, prevRay = 1.0;
                 float h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, prevH = h;
@@ -570,6 +715,7 @@ static partial class TerrainShaders
             uint height;
             float parallax;
             vec4 bloodCells[8];
+            float displace;
         } terrain;
 
         """;
@@ -603,7 +749,7 @@ static partial class TerrainShaders
         ["uInteriorCut"] = "terrain.interiorCut",   // declared by the cut patch variants and the meshes' colour program (InteriorMaskRenderer.WithCut)
         ["uBlood"] = "textures2DArray[terrain.blood]", ["uBloodCount"] = "terrain.bloodCount", ["uBloodCellSize"] = "terrain.bloodCellSize",
         ["uBloodCells"] = "terrain.bloodCells",
-        ["uHeight"] = "textures2DArray[terrain.height]", ["uParallax"] = "terrain.parallax",
+        ["uHeight"] = "textures2DArray[terrain.height]", ["uParallax"] = "terrain.parallax", ["uDisplace"] = "terrain.displace",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -672,6 +818,10 @@ static partial class TerrainShaders
     public static string RockBakeVertexNative() => Native(MeshVertex, RockBakePushMembers);
 
     public static string PatchVertexNative() => Native(PatchVertex);
+    /// <summary>The sand displacement's stages (SandParallax): <see cref="PatchVertexTess"/>, <see cref="PatchControl"/>, <see cref="PatchEvaluation"/>.</summary>
+    public static string PatchVertexTessNative() => Native(PatchVertexTess);
+    public static string PatchControlNative() => Native(PatchControl);
+    public static string PatchEvaluationNative() => Native(PatchEvaluation);
     public static string FragmentNative(bool interiorCut = false) => Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Fragment) : Fragment));
     /// <summary>The terrain colour pass's depth-only twin: the same vertex stage (so the depths are the same), a fragment stage that writes nothing (<see cref="TerrainLateColour"/>).</summary>
     public static string PrepassFragmentNative(bool interiorCut = false)
@@ -691,7 +841,7 @@ static partial class TerrainShaders
 
 /// <summary>The C# side of <see cref="TerrainShaders.ConstantsBlock"/> (std140; offsets checked against the reflection by a test). GLSL bools
 /// are 32-bit (0 / 1).</summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 384)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 400)]
 struct TerrainConstants
 {
     [System.Runtime.InteropServices.FieldOffset(0)] public System.Numerics.Vector4 CoarseRect;
@@ -741,6 +891,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(248)] public uint Height;
     [System.Runtime.InteropServices.FieldOffset(252)] public float Parallax;
     [System.Runtime.InteropServices.FieldOffset(256)] public BloodCells BloodCells;
+    [System.Runtime.InteropServices.FieldOffset(384)] public float Displace;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[8]</c>).</summary>

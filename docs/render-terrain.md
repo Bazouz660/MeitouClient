@@ -28,6 +28,16 @@ and toward the sun (8 steps) for a self-shadow that darkens the albedo, fading o
 and other layers are unchanged. **Observed** (decoded at 512²): `DesertSandLoop03_NML` integrates to ripple bands along u,
 `DesertSands_NML` to fine wind-aligned grain; the game's sand normal maps are BC1 2048².
 
+## Sand displacement
+
+Meitou look (`SandParallax.DisplaceActive`, Tab checkbox; needs `tessellationShader`). Main-view patches within 260 units of the
+eye (horizontally; not interior-cut ones) draw with tessellated colour and prepass programs (patch lists of 3, culling off). Edge
+levels depend on the edge alone (length, midpoint distance, sand at ends/middle), so shared edges split alike; the evaluation stage
+interpolates the flat triangle and raises it by `depth × height × base-layer cover` (sand layers only: height array's last mip
+< 0.995), full to 150 units, none from 250, where edges are unsplit and unraised and meet plain patches. Raised upward so the
+(unraised) shadow casters never shadow the troughs. The POM's view-ray march gives way over the same band; its sun march stays.
+Shadow casters, reflections and the rock bake are not tessellated.
+
 ## Interior cut
 
 Patches over a building's interior mask are cut: [render-interior-cut](render-interior-cut.md).

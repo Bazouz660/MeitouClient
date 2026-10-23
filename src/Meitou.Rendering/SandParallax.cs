@@ -16,6 +16,12 @@ public static class SandParallax
     /// <summary>Depth of the full height range in world units (1 unit = 10 cm); the Tab panel's slider sets it.</summary>
     public static float Depth { get; set; } = 1.2f;
 
+    /// <summary>Whether the sand near the eye is raised for real (tessellated patches, where the device has tessellation shaders); the Tab panel toggles it.</summary>
+    public static bool DisplaceActive { get; set; } = true;
+
+    /// <summary>Patches within this horizontal distance of the eye are drawn tessellated: beyond TerrainShaders' DisplaceEnd (250), the end of the raising.</summary>
+    public const float TessellatedRadius = 260;
+
     /// <summary>A sand layer by its normal map's name: "sand" in it, not sandstone or rock.</summary>
     public static bool IsSand(string? name)
     {

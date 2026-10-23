@@ -1113,6 +1113,7 @@ static class WorldFrame
         var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
         (toggles ??= []).Add(new Toggle("Sand parallax", () => SandParallax.Active, v => SandParallax.Active = v, OnOff: true));
+        if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Sand displacement (tessellation)", () => SandParallax.DisplaceActive, v => SandParallax.DisplaceActive = v, OnOff: true));
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)
