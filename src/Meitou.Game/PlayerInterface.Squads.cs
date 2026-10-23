@@ -35,6 +35,8 @@ sealed partial class PlayerInterface
     void BindSquadTabs(UiBindings b)
     {
         var tabs = SquadTabSquads();
+        // No player character at all (the --battle, --duel, a sandbox of NPCs): nothing to select, so no empty bar.
+        if (tabs.All(s => s.Members.Count == 0)) { b.Hidden.Add("SquadPanel"); return; }
         b.TabCaptions["SquadPanel"] = [.. tabs.Select(s => s.Name)];
         b.SelectedTabs["SquadPanel"] = Math.Max(0, tabs.FindIndex(s => s.Id == session.CurrentSnapshot.ActiveSquad));
     }
