@@ -41,7 +41,7 @@ uploads. Reuse appearances/content; replace only after ready and retire after GP
 `CharacterTextureBudget` shares mip/VRAM pressure policy; unavailable content uses a stand-in.
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
 Generated four-level reductions are always enabled; pose rates fall with distance from the camera's look-at point (`Focus`, else
-the eye): past 120/300/600 units at most 30/15/7.5 poses/s (in time, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
+the eye): from the nearer of it and the eye: past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
 distance throttling for presentation actors and the player's characters. Shadow LOD doubles choice with cascade floors.
 Clamp stored bounds to real mesh extent. Animation rendering does not independently integrate
 walk-loop root movement; simulation owns relocation. Quads/morph and motion buffers retain

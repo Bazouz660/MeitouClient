@@ -51,8 +51,8 @@ public sealed class TerrainDecalStore
 
     /// <summary>
     /// A number that changes when decals leave <paramref name="key"/> (ageing, a new world): a texture of the cell must be drawn again from <see cref="In"/>. While it
-    /// stays, the cell's changes are only additions: <see cref="Appended"/>, in order, drawn over what the texture holds (the original draws a cell's new decals onto
-    /// its texture too, clearing it only for a new cell).
+    /// stays, the cell's changes are only additions: <see cref="Appended"/>, in order, drawn over what the texture holds (the original likely draws a cell's new decals onto
+    /// its texture too: it clears it only for a new cell, docs/game/blood-decals.md).
     /// </summary>
     public int CellRewrite(uint key) => rewrites.GetValueOrDefault(key);
 
