@@ -378,7 +378,9 @@ sealed partial class GameHost
         session.Ticked += actions =>
         {
             highlightHeld = actions.Held(InputAction.Highlight);
-            if (actions.Pressed(InputAction.Quit) && !IsDuel) quit = true;   // the duel is for filming: Esc must not close it
+            // The duel is for filming: Esc must not close it. The terrain sandbox has no game menu: Esc opens the settings (close the window to leave).
+            if (actions.Pressed(InputAction.Quit) && g.TerrainSandbox is not null) { if (panel is not null) panel.Visible = true; }
+            else if (actions.Pressed(InputAction.Quit) && !IsDuel) quit = true;
             // Panning (or leaving for the free camera) lets go of the character the camera follows; turning and zooming keep it.
             if (actions.Held(InputAction.MoveForward) || actions.Held(InputAction.MoveBack) || actions.Held(InputAction.MoveLeft) || actions.Held(InputAction.MoveRight) ||
                 actions.Pressed(InputAction.ToggleFreeCamera)) player.Follow = null;
@@ -560,6 +562,15 @@ sealed partial class GameHost
                         overlay.Text(fpsText, 14, top + 4, DebugOverlay.TextColour);
                         overlay.Flush(size.X, size.Y);
                         panelsBottom = top + h - 8;   // the panels add their own 16 px margin
+                    }
+                    // The terrain sandbox: the texture field's tile under the camera.
+                    if (Meitou.Rendering.GroundRelief.FieldCentre is not null && gpu.Terrain.FieldLabelAt(camera.Target.X, camera.Target.Z) is { } tileLabel)
+                    {
+                        float w = tileLabel.Length * overlay.CharWidth + 12, h = overlay.LineHeight + 8, top = panelsBottom + 8;
+                        overlay.Rect(8, top, 8 + w, top + h, DebugOverlay.PanelColour);
+                        overlay.Text(tileLabel, 14, top + 4, DebugOverlay.TextColour);
+                        overlay.Flush(size.X, size.Y);
+                        panelsBottom = top + h - 8;
                     }
                     if (statsVisible && stats.Count > 0) panelsBottom = overlay.Panel(size.X, size.Y, "Meitou   (F11 hides this)", stats, panelsBottom);
                     if (debugMenuOpen) DrawDebugMenu(overlay, size.X, size.Y, panelsBottom);
