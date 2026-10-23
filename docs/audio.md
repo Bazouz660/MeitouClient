@@ -477,6 +477,11 @@ capped. The game's own Wwise limits (`STMG` max voices and volume threshold, eac
 shows how many sounds were capped. After the mix a peak limiter (both modes, `AudioOutput.Limit`: ceiling 0.89, instant attack, 0.15 s release) turns a
 loud sum down instead of hard-clipping it at the 16-bit conversion.
 
+Starting a sound is the real cost of a big fight: opening a Vorbis stream (its codebooks) took about 1.7 ms and every voice decoded its clip again, so
+hundreds of footsteps, swings and hits a second overran the audio thread (**Observed** with `meitou-tools audio render`: 700 hits and grunts in 8 s cost 1.7 s
+of mixing). Clips up to 20 s are decoded once and shared by their voices (`PcmCache`, up to 256 MB; longer clips, the music and anything past the budget
+stream as before): the same render takes 0.57 s, about 0.3 ms a sound once its clip is decoded. A capped voice on shared samples catches up by moving its place.
+
 ### API for event sources
 
 For a host that posts its own events (footsteps, combat, UI, voices, emitters), through `AudioSystem.Player` (a `WwisePlayer`):

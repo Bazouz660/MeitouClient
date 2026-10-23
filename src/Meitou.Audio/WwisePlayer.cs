@@ -28,6 +28,7 @@ public sealed partial class WwisePlayer : IDisposable
     // Owned by the audio thread.
     readonly Dictionary<uint, WwiseObject> objects = [];
     readonly Dictionary<uint, MediaClip> media = [];
+    readonly PcmCache pcm = new();
     readonly Dictionary<uint, float> parameters = [];
     readonly Dictionary<uint, uint> states = [];
     readonly Dictionary<uint, List<uint>> history = [];
@@ -659,7 +660,8 @@ public sealed partial class WwisePlayer : IDisposable
                     delayFrames = Math.Ceiling(at - 1e-6);
                     phase = Math.Max(0, delayFrames - at) * clip.SampleRate / player.outputRate;
                 }
-                voice = new Voice(clip, plays, skip, limit, phase);
+                // A sound plays from the shared decoded samples (PcmCache) when its clip is short; a music clip (trimmed, long) streams.
+                voice = new Voice(clip, plays, skip, limit, phase, musicClip is null ? player.pcm.Get(clip) : null);
             }
         }
 
