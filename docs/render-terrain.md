@@ -18,6 +18,16 @@ world coordinates. `terrain-layer-skip` can omit insignificant layer work; thres
 choices requiring boundary/material checks. `terrain-late-colour` separates depth from shading
 where occluders justify it. A depth prepass is extra geometry, not automatically a speedup.
 
+## Sand parallax
+
+Meitou look, not in the game (`SandParallax`, on by default; no switch yet). Layers whose normal map's name has "sand" (not
+"stone"/"rock") get a height map integrated from that normal map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the
+terrain tangent frame, below 2 cycles a tile dropped, scaled by 1st/99th percentile), in an R8 array (≤512², one slice per pair
+slot; other slots flat 255). The patch shader marches the base layer's coordinate along the view ray (16 steps, 0.6 units deep)
+and toward the sun (8 steps) for a self-shadow that darkens the albedo, fading out from 300 to 600 units. Geometry, collision
+and other layers are unchanged. **Observed** (decoded at 512²): `DesertSandLoop03_NML` integrates to ripple bands along u,
+`DesertSands_NML` to fine wind-aligned grain; the game's sand normal maps are BC1 2048².
+
 ## Interior cut
 
 Patches over a building's interior mask are cut: [render-interior-cut](render-interior-cut.md).

@@ -505,7 +505,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             FineCells = new Vector2(fine.Columns - 1f, fine.Rows - 1f), FineBand = fineBand, HasFine = 1,
             HeightCoarse = Index(coarseTexture, BindlessKind.Texture2D, standIn2D),
             HeightFine = Index(fineTexture, BindlessKind.Texture2D, standIn2D),
-            Diffuse = standInArray, Normal = standInArray, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
+            Diffuse = standInArray, Normal = standInArray, Height = standInArray, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
         };
         if (material)
@@ -544,6 +544,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 var set = t.Textures;
                 c.Diffuse = Index(set.Diffuse, BindlessKind.Texture2DArray, standInArray);
                 c.Normal = Index(set.Normal, BindlessKind.Texture2DArray, standInArray);
+                c.Height = Index(set.Height, BindlessKind.Texture2DArray, standInArray);
+                c.Parallax = patches && textured && set.Height is not null ? 1u : 0u;
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);
                 c.Cells = Index(set.Cells, BindlessKind.UTexture2D, standInUInt);
                 c.BlendMap = Index(set.BlendMap, BindlessKind.Texture2D, standIn2D);

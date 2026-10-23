@@ -186,6 +186,10 @@ static partial class TerrainShaders
 
         uniform sampler2DArray uDiffuse;
         uniform sampler2DArray uNormal;
+        uniform sampler2DArray uHeight;   // sand layers: height from the normal map (SandParallax), 1 the top; other layers 1
+        uniform bool uParallax;
+        // Sand parallax: the depth of the height range in world units (1 unit = 10 cm), the fade-out distances and the self-shadow's darkening.
+        const float PomDepth = 0.6, PomFadeStart = 300.0, PomFadeEnd = 600.0, PomShadow = 0.45;
         uniform sampler2D uParams;     // row = biome, ParamTexels texels
         uniform usampler2D uCells;     // blend cells, two texels each: slots 0..3, slot 4; biome row, 254 = not loaded yet, 255 = unused
         uniform sampler2D uBlendMap;   // whole world: weights of slots 0..3; slot 4 takes the remainder
@@ -246,8 +250,50 @@ static partial class TerrainShaders
             GradCoord cliffX = gradCoord(vec2(uv.y, vert) * sA.zw), cliffZ = gradCoord(vec2(uv.x, vert) * sA.zw);
             float far = clamp(distance * fade.a - 0.3, 0.0, 1.0);
 
+            // Sand parallax (SandParallax, docs/render-terrain.md): the base layer's coordinate moved along the view ray to where the ray meets the height
+            // (1 the top, PomDepth world units down at 0), then a march toward the sun for the self-shadow. Flat layers (height 1) stop at once.
+            // The moved coordinate is sampled with the unmoved one's derivatives, so the mip does not jump where the offset does.
+            float shade = 1.0;
+            if (uParallax && distance < PomFadeEnd)
+            {
+                const int Steps = 16, ShadowSteps = 8;
+                float strength = 1.0 - smoothstep(PomFadeStart, PomFadeEnd, distance);
+                vec2 toUv = sB.xy * (PomDepth * strength / 5000.0);   // the full depth in world units, in the layer's coordinate
+                vec3 v = normalize(uEye - vWorld);
+                vec2 stepUv = -v.xz / max(v.y, 0.25) * toUv / float(Steps);
+                vec2 p = base.p;
+                float rayH = 1.0, prevRay = 1.0;
+                float h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, prevH = h;
+                for (int i = 0; i < Steps && h < rayH; i++)
+                {
+                    prevH = h; prevRay = rayH;
+                    p += stepUv; rayH -= 1.0 / float(Steps);
+                    h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r;
+                }
+                if (h >= rayH && rayH < 1.0)
+                {
+                    // Between the last two steps, where the ray crossed the height.
+                    float above = prevRay - prevH, below = h - rayH;
+                    p -= stepUv * (below / max(above + below, 1e-5));
+                }
+                base.p = p;
+                vec3 l = normalize(uLightDir);
+                if (l.y > 0.0)
+                {
+                    float hp = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, occlusion = 0.0;
+                    vec2 lightUv = l.xz / max(l.y, 0.15) * toUv / float(ShadowSteps);
+                    for (int k = 1; k <= ShadowSteps; k++)
+                    {
+                        float ray = hp + float(k) / float(ShadowSteps);
+                        if (ray >= 1.0) break;
+                        occlusion = max(occlusion, textureGrad(uHeight, vec3(p + lightUv * float(k), layersA.x), base.dx, base.dy).r - ray);
+                    }
+                    shade = 1.0 - PomShadow * smoothstep(0.0, 0.15, occlusion) * strength;
+                }
+            }
+
             Surface s;
-            s.albedo = tex(uDiffuse, base.p, layersA.x) * colour;
+            s.albedo = (uParallax ? tex(uDiffuse, base, layersA.x) : tex(uDiffuse, base.p, layersA.x)) * colour;
             if (map.r != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, grass, layersA.w) * mix(white, colour, omult.y), map.r);
             if (w.x != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, slopeUv, layersA.y) * colour, w.x);
             if (map.b != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, dirt, layersB.x) * mix(white, colour, omult.z), map.b);
@@ -258,11 +304,11 @@ static partial class TerrainShaders
                 vec4 cCliff = (tex(uDiffuse, cliffX, layersA.z) * cb.x + tex(uDiffuse, cliffZ, layersA.z) * cb.y) * mix(white, colour, omult.x);
                 s.albedo = mix(s.albedo, cCliff, w.y);
             }
-            s.albedo.rgb *= layersB.z;
+            s.albedo.rgb *= layersB.z * shade;
 
             if (uNormalMaps)
             {
-                s.normal = tex(uNormal, base.p, layersA.x);
+                s.normal = uParallax ? tex(uNormal, base, layersA.x) : tex(uNormal, base.p, layersA.x);
                 if (map.r != 0.0) s.normal = mix(s.normal, tex(uNormal, grass, layersA.w), map.r);
                 if (w.x != 0.0) s.normal = mix(s.normal, tex(uNormal, slopeUv, layersA.y), w.x);
                 if (map.b != 0.0) s.normal = mix(s.normal, tex(uNormal, dirt, layersB.x), map.b);
@@ -521,6 +567,8 @@ static partial class TerrainShaders
             uint blood;
             int bloodCount;
             float bloodCellSize;
+            uint height;
+            bool parallax;
             vec4 bloodCells[8];
         } terrain;
 
@@ -555,6 +603,7 @@ static partial class TerrainShaders
         ["uInteriorCut"] = "terrain.interiorCut",   // declared by the cut patch variants and the meshes' colour program (InteriorMaskRenderer.WithCut)
         ["uBlood"] = "textures2DArray[terrain.blood]", ["uBloodCount"] = "terrain.bloodCount", ["uBloodCellSize"] = "terrain.bloodCellSize",
         ["uBloodCells"] = "terrain.bloodCells",
+        ["uHeight"] = "textures2DArray[terrain.height]", ["uParallax"] = "terrain.parallax",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -689,6 +738,8 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(236)] public uint Blood;
     [System.Runtime.InteropServices.FieldOffset(240)] public int BloodCount;
     [System.Runtime.InteropServices.FieldOffset(244)] public float BloodCellSize;
+    [System.Runtime.InteropServices.FieldOffset(248)] public uint Height;
+    [System.Runtime.InteropServices.FieldOffset(252)] public uint Parallax;
     [System.Runtime.InteropServices.FieldOffset(256)] public BloodCells BloodCells;
 }
 
