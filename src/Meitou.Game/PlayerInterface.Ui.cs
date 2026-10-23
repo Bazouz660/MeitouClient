@@ -217,6 +217,7 @@ sealed partial class PlayerInterface
             [UiSlots.Squad] = FaithfulSlot("SquadPanel"),
         };
         if (hud) controls.AddRange(uiHost.Arrange(UiMode, Width, Height, b, slots));
+        squadBarRow = 0;   // no bar, no scrolling
         if (controls.FirstOrDefault(c => c.Name == "SquadPanel") is { } squadPanel) AddSquadPortraits(controls, squadPanel.Bounds);
         AddHudText(controls);
         AddJobRemoveButtons(controls);

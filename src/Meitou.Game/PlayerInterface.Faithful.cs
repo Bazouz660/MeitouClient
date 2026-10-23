@@ -74,6 +74,7 @@ sealed partial class PlayerInterface
         ArrangeUi();
         if (InventoryWheel(p, steps)) return true;
         if (MapWheel(p, steps)) return true;
+        if (!faithfulScreens.Contains(p) && SquadBarWheel(p, steps)) return true;
         if (SquadsWheel(p, steps)) return true;
         if (FactionWheel(p, steps)) return true;
         return EditorWheel(p, steps) || faithfulScreens.Wheel(p, steps);

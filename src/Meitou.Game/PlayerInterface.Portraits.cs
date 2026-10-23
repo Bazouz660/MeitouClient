@@ -73,6 +73,18 @@ sealed partial class PlayerInterface
     /// <summary>Gives the interface a texture drawn at run time (the portrait atlas) under <paramref name="name"/>.</summary>
     public void SetUiTexture(string name, Texture texture, SampledTexture sampled) => uiPainter?.SetTexture(name, texture, sampled);
 
+    /// <summary>The squad bar's page, its row height and how far its rows are scrolled (the ItemBox scrolls a row per wheel notch).</summary>
+    UiRect squadBarPage;
+    float squadBarRow, squadBarScroll;
+
+    /// <summary>The wheel over the squad bar scrolls its rows; clamped when the bar is laid out.</summary>
+    bool SquadBarWheel(Vector2 p, float steps)
+    {
+        if (squadBarRow <= 0 || !squadBarPage.Contains(p.X, p.Y)) return false;
+        squadBarScroll -= MathF.Sign(steps) * squadBarRow;
+        return true;
+    }
+
     void AddSquadPortraits(List<UiControl> controls, UiRect panel)
     {
         var members = SquadBarMembers();
@@ -84,13 +96,17 @@ sealed partial class PlayerInterface
         float scale = InventoryScale;
         float fit = Math.Min(page.Height * 0.9f, page.Width * 0.9f / Math.Min(members.Count, 10)) / scale;
         float size = MathF.Floor(Math.Clamp(fit, 60, 128) / 2) * 2 * scale, k = size / PortraitLayoutSize;
-        int columns = Math.Max(1, (int)(page.Width / size));
+        int columns = Math.Max(1, (int)(page.Width / size)), rows = (members.Count + columns - 1) / columns;
+        squadBarPage = page;
+        squadBarRow = size;
+        squadBarScroll = Math.Clamp(squadBarScroll, 0, Math.Max(0, rows * size - page.Height));
         var camera = session.Camera.Current;
         PrunePortraitFlashes(members);
         for (int i = 0; i < members.Count; i++)
         {
             var m = members[i];
-            float left = page.X + i % columns * size, top = page.Y + i / columns * size;
+            float left = page.X + i % columns * size, top = page.Y + i / columns * size - squadBarScroll;
+            if (top + size <= page.Y || top >= page.Y + page.Height) continue;
             UiRect At(float x, float y, float w, float h) => new(left + x * k, top + y * k, w * k, h * k);
             // The layout's depths, back to front: background, back overlay, portrait, front overlay, name, frame.
             var state = PortraitStateOf(m, camera.Eye, camera.Target);
