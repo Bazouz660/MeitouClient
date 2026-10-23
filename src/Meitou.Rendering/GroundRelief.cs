@@ -14,7 +14,7 @@ public static class GroundRelief
     public static bool ParallaxActive { get; set; } = true;
 
     /// <summary>Depth of a typical layer's full height range in world units (1 unit = 10 cm; each layer scales it by LayerDepth), for both the parallax and the displacement; the Tab panel's slider sets it.</summary>
-    public static float Depth { get; set; } = 1.2f;
+    public static float Depth { get; set; } = 2.0f;
 
     /// <summary>Whether the ground near the eye is raised for real (tessellated patches, where the device has tessellation shaders); the Tab panel toggles it.</summary>
     public static bool DisplaceActive { get; set; } = true;

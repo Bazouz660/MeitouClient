@@ -21,7 +21,7 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 ## Ground relief
 
 Meitou look, not in the game (`GroundRelief`, on by default; Tab: "Ground parallax", "Ground displacement (tessellation)",
-"Ground relief depth (cm, typical ground)", default 12; viewer K toggles the parallax). Every layer gets a height map integrated from its normal
+"Ground relief depth (cm, typical ground)", default 20; viewer K toggles the parallax). Every layer gets a height map integrated from its normal
 map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame, below 2 cycles a tile dropped,
 scaled by 1st/99th percentile, so every layer spans the full depth), in an R8 array (≤512², one slice per pair slot; a layer
 without a readable normal map flat 255). Only the base layer has relief, weighted by how much of it shows (not grass, slope,
