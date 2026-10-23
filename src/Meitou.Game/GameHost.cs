@@ -80,7 +80,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     }
 
     /// <summary>The start opens on the title (no start, save, sandbox or duel was asked for).</summary>
-    bool OpensOnTitle(bool interactive) => g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !g.NoPopulation;
+    bool OpensOnTitle(bool interactive) => g.TitlePreview || interactive && start is null && StartSave is null && !IsSandbox && !IsDuel && !IsBattle && !g.NoPopulation;
 
     void Boot(VulkanDisplay display, bool interactive)
     {
@@ -100,7 +100,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (!o.NoParticles) titleParticleFactory = () => ParticleRenderer.Create(context, install, gpu.Particles?.Library);
         if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = Meitou.Rendering.Upscalers.VendorUpscalers.Factory(display.Context, streamline);
         (camera, render) = WorldFrame.Setup(scene, o);
-        render.Grid = IsSandbox;
+        render.Grid = IsFlat;
         LoadingStep("people");
         var (heights, (walkability, systems, constants)) = AwaitLoading(simulation);
         LoadingStep("world");
@@ -129,9 +129,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         Meitou.Data.Gameplay.GameConstants? constants = null;   // parsed once: the body factory's, else for the clock alone
         if (!g.NoPopulation && scene.Database is { } gameDb)
         {
-            // The sandbox and the duel walk on open ground (the heightmap): the sandbox has no world, and the duel's spot may be a navmesh island the build prunes.
-            // Neither has towns: the duel's two characters are the only ones.
-            var levels = IsSandbox || IsDuel ? null : scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install, includeInteriors: true);
+            // The sandbox, the duel and the battle walk on open ground (the heightmap): the sandbox has no world, and the duel's spot may be a navmesh island the build prunes.
+            // None has towns: their own characters are the only ones.
+            var levels = IsSandbox || IsDuel || IsBattle ? null : scene.Objects?.Levels ?? Meitou.Data.World.WorldLevelData.Load(install, includeInteriors: true);
             if (levels is not null)
             {
                 nav = new Meitou.Navigation.NavSystem(install, gameDb, levels!, heights.HeightAt);
@@ -276,6 +276,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         }
         if (IsSandbox && population is not null) target = SandboxSpawn();
         if (IsDuel && population is not null) target = DuelStart();
+        if (IsBattle && population is not null) target = BattleStart();
         if (!IsSandbox && crowd > 0 && population is not null) SpawnCrowd(target, crowd);
         LoadingStep("characters");
         if (scene.Database is { } characterDb && !g.NoPopulation && gpu.Characters is null)

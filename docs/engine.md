@@ -23,7 +23,7 @@ settings and current key list belong in viewer. Quicksave F5/loadF9; cinematic F
 
 ## Host and loading
 
-GameHost partials own boot/interactive/offscreen, characters, saving, transitions and duel;
+GameHost partials own boot/interactive/offscreen, characters, saving, transitions, duel and battle;
 PlayerInterface owns picking/HUD/panels/commands. StandardSystems supplies order. NavAdapter
 bridges Navigation; never let UI/rendering duplicate simulation state.
 GUI executable attaches a caller's console; folder prompt creates its own when necessary.

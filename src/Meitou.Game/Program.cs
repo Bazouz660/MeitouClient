@@ -42,7 +42,7 @@ static class Program
             return 2;
         }
         // Booting to the Meitou title: the world is loaded round the title's view, which it shows first (docs/engine.md).
-        bool toTitle = game.TitlePreview || world.Screenshot is null && !game.NewGame && game.Load is null && game.Sandbox == 0 && !game.Duel && !game.NoPopulation;
+        bool toTitle = game.TitlePreview || world.Screenshot is null && !game.NewGame && game.Load is null && game.Sandbox == 0 && !game.Duel && game.Battle is null && !game.NoPopulation;
         if (world.X is null && world.Zone is null && world.Town is null && toTitle) (world.X, world.Z) = TitleComposition.Focus;
         if (world.X is null && world.Zone is null && world.Town is null) world.Town = "The Hub";
         var install = GameInstall.Locate();
@@ -63,7 +63,12 @@ static class Program
             world.TextureQuality = Math.Clamp((int)MathF.Round(savedQuality), 0, Meitou.Data.Textures.TextureQuality.Maximum);
         Meitou.Data.GameDatabase? db = null;
         Meitou.Data.Gameplay.NewGameStart? start = null;
-        if (game.Sandbox > 0)
+        if (game.Battle is not null && (game.NewGame || game.NoPopulation || game.Load is not null || game.Duel || game.Sandbox > 0))
+        {
+            Console.Error.WriteLine("--battle makes its own characters: drop --new-game, --no-population, --load, --duel and --sandbox (--battle-map sandbox is its flat floor).");
+            return 2;
+        }
+        if (game.Sandbox > 0 || game.Battle is not null && game.BattleFlat)
         {
             // The animation sandbox: no world, a flat floor (docs/simulation.md "Sandbox"). The real game data is still loaded for the characters and animations.
             db = Meitou.Data.GameDatabase.Load(Meitou.Data.LoadOrder.FromInstall(install));
@@ -72,7 +77,7 @@ static class Program
             world.NoParticles = true;   // no weather or map effects to show (the effect library and every map placer would be read)
             world.Clouds ??= 0;   // no cloud layer: the volume march and the cloud shadows skip at density 0
             world.Weather ??= "Default";   // clear; the scheduler would roll the weather of the world region under the floor
-            world.Distance ??= 70;
+            world.Distance ??= game.Battle is null ? 70 : 150;
             world.Pitch ??= 22;
             world.Yaw ??= 35;
             using var flat = WorldFrame.LoadFlat(world, db);
@@ -93,6 +98,14 @@ static class Program
             world.Distance ??= 90;
             world.Pitch ??= 8;
             world.Yaw ??= 90;   // looking west into the sunset, the pair left and right
+        }
+        if (game.Battle is not null)
+        {
+            // The battle on the map (docs/simulation.md "Battle"): the world round its spot, with no towns; the camera across the two blocks.
+            var spot = game.BattleAt is { } at ? new Vector2(at.X, at.Z) : GameHost.DuelSpot;
+            (world.X, world.Z, world.Town) = (spot.X, spot.Y, null);
+            world.Distance ??= 150;
+            world.Yaw ??= 90;
         }
         if (game.ListStarts || game.NewGame)
         {

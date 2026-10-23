@@ -51,14 +51,14 @@ sealed partial class GameHost
     Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
         Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
         {
-            // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel scripts its fight.
-            Parts = IsSandbox || IsDuel ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
+            // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel and the battle script their fights.
+            Parts = IsSandbox || IsDuel || IsBattle ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
             Aggro = new Meitou.Simulation.AggroSettings { RecordLog = true },
-            // NPCs that see a player character say a line as a speech bubble (docs/game/dialogue.md "Ambient conversations"); the sandbox and the duel stay silent.
-            Dialogue = new Meitou.Simulation.Dialogue.DialogueSettings { AmbientEvents = !IsSandbox && !IsDuel },
+            // NPCs that see a player character say a line as a speech bubble (docs/game/dialogue.md "Ambient conversations"); the sandbox, the duel and the battle stay silent.
+            Dialogue = new Meitou.Simulation.Dialogue.DialogueSettings { AmbientEvents = !IsSandbox && !IsDuel && !IsBattle },
             Population = new Meitou.Simulation.PopulationSettings
             {
-                Background = interactive && !IsDuel, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
+                Background = interactive && !IsDuel && !IsBattle, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
                 CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
                 NestsMultiplier = (settings ?? difficulty)[6],
             },
@@ -96,7 +96,7 @@ sealed partial class GameHost
     /// <summary>Whether this run has a game to save and load: the population (so not <c>--no-population</c> or the sandbox).</summary>
     bool SavesAvailable(out string reason)
     {
-        reason = popData is null || population is null || IsSandbox ? "No game to save or load here (needs the town population)" : "";
+        reason = popData is null || population is null || IsFlat ? "No game to save or load here (needs the town population)" : "";
         return reason.Length == 0;
     }
 

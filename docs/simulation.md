@@ -1136,6 +1136,13 @@ The deterministic duel harness locates a scripted knockout, runs the pre-lap fig
 then replays the last 40 seconds and 4 after KO with cinematic keys. Replacing the world/clock
 and resetting camera evaluation is required for repeatable recording.
 
+## Battle
+
+`--battle n unit m unit [--battle-map mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs (each one CHARACTER or
+ANIMAL_CHARACTER record, its own faction's looks) 40 units apart, on the duel's mesa, the sandbox floor or a map spot, with no towns
+and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
+same-faction matchups fight too; the battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
+
 ## The game host
 
 `Meitou.Game/GameHost*.cs` adapts input to commands, drives WorldSession, navmesh upkeep,

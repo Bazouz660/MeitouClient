@@ -281,6 +281,7 @@ sealed partial class GameHost
                     player.Key(key, shiftDown);
                     SandboxKey(key);
                     if (IsDuel && key == EngineKey.Backspace) duelRestartRequested = true;
+                    if (IsBattle && key == EngineKey.Backspace) battleRestartRequested = true;
                 }
             };
             kb.KeyUp += (_, k, _) =>
@@ -425,6 +426,7 @@ sealed partial class GameHost
             double frameDt = cinema.Recording ? cinema.FrameTime(dt) : dt;
             // The duel starts a lap when a flight starts (played or recorded), so every take begins with the fight's first frame, and when its lap is over.
             DuelFrame(cinema.Playing && !cinemaWasPlaying || cinema.Recording && !cinemaWasRecording);
+            BattleFrame();
             (cinemaWasPlaying, cinemaWasRecording) = (cinema.Playing, cinema.Recording);
             long a0 = Stopwatch.GetTimestamp();
             if (panel?.Visible == true)

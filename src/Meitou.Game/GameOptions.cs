@@ -28,6 +28,12 @@ sealed class GameOptions
     public bool Duel;
     /// <summary>Where the duel is fought (null: the built-in dune crest).</summary>
     public (float X, float Z)? DuelAt;
+    /// <summary>The battle (<c>--battle n unit m unit</c>, docs/simulation.md "Battle"): two groups of NPCs, each a count of one CHARACTER or ANIMAL_CHARACTER record (name or id).</summary>
+    public (int Count, string Unit)[]? Battle;
+    /// <summary><c>--battle-map sandbox</c>: the battle is fought on the sandbox's flat floor instead of the map.</summary>
+    public bool BattleFlat;
+    /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the duel's mesa).</summary>
+    public (float X, float Z)? BattleAt;
     /// <summary>The start to play (null = the default); with <c>--move-to</c> the picture shows a selected squad walking.</summary>
     public string? NewGameName;
     public (float X, float Z)? MoveTo;
@@ -53,7 +59,10 @@ sealed class GameOptions
           --sandbox-races            the sandbox adds one character of every person race (the first CHARACTER record listing only that race) in rings round the pair, whatever n is; the log lists them
           --duel [x,z]               trailer scene: two helmeted Samurai duel at sunset in the desert dunes (or at x,z), on rails: every lap is the same fight, the clock, weather and clouds start again with it,
                                      and it restarts when a cinema flight is played or recorded (Backspace restarts it); the time of day is held (22:00, or --time) and the weather clear (or --weather)
-          --move-to <x> <z>          with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
+          --battle <n> <unit> <m> <unit>  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (1..500 each), in two blocks facing each other;
+                                     no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
+          --battle-map <map>         where the battle is fought: mesa (default: the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
+          --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
           --load <save folder>       start in a save, Meitou's or the original game's (%LOCALAPPDATA%\kenshi\save\<name>), loaded as the game menu's Load does; works with --screenshot
@@ -63,7 +72,7 @@ sealed class GameOptions
           ; free camera (R/F up/down), Space pause, F2/F3/F4 speed 1x/2x/5x, F8 or PrintScreen screenshot,
           F5 quicksave, F9 quickload (Meitou's own slot under %LOCALAPPDATA%\Meitou\save), Ctrl+F9 fps counter, F10 debug menu (teleport, spawn, items, money, heal, max skills, damage), F11 statistics, F12 profiler (gpu, cpu, off), Esc game menu (save, load, exit). Shift+F1 Meitou on / off, Alt+Enter full screen,
           F6 cinematic camera editor (numpad keys as in the viewer; game-shots.json; Home the lens also in the free camera), F7 hide the interface,
-          Backspace restarts the --duel lap, PageUp/PageDown narrow/widen its lens, Home resets it.
+          Backspace restarts the --duel lap or the --battle, PageUp/PageDown narrow/widen its lens, Home resets it.
         Settings (frame limit, vsync, full screen (--windowed for one run), tick rate (tickRate), simulation threads (simThreads), the settings sliders, key bindings) are kept in meitou.user.json.
         """;
 
@@ -107,6 +116,21 @@ sealed class GameOptions
                     {
                         g.DuelAt = (x, z);
                         i++;
+                    }
+                    break;
+                case "--battle":
+                    g.Battle = [.. Enumerable.Range(0, 2).Select(_ => (Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 1, 500), Next()))];
+                    break;
+                case "--battle-map":
+                    switch (Next())
+                    {
+                        case "mesa": (g.BattleFlat, g.BattleAt) = (false, null); break;
+                        case "sandbox": (g.BattleFlat, g.BattleAt) = (true, null); break;
+                        case var map when map.Split(',') is [var mx, var mz] && float.TryParse(mx, NumberStyles.Float, CultureInfo.InvariantCulture, out float bx)
+                            && float.TryParse(mz, NumberStyles.Float, CultureInfo.InvariantCulture, out float bz):
+                            (g.BattleFlat, g.BattleAt) = (false, (bx, bz));
+                            break;
+                        default: throw new ArgumentException("--battle-map must be mesa, sandbox or x,z");
                     }
                     break;
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;

@@ -32,10 +32,7 @@ sealed partial class GameHost
     string SandboxRecord(Meitou.Data.GameDatabase db)
     {
         if (g.SandboxCharacter is { } want)
-            return db.Find(want)?.StringId
-                ?? db.Records.Values.Where(r => r.Type is FcsRecordType.CHARACTER or FcsRecordType.ANIMAL_CHARACTER).OrderBy(r => r.Type == FcsRecordType.ANIMAL_CHARACTER)
-                    .FirstOrDefault(r => string.Equals(r.Name, want, StringComparison.OrdinalIgnoreCase))?.StringId
-                ?? throw new ArgumentException($"--sandbox-character: no CHARACTER or ANIMAL_CHARACTER named '{want}'");
+            return FindCharacter(db, want)?.StringId ?? throw new ArgumentException($"--sandbox-character: no CHARACTER or ANIMAL_CHARACTER named '{want}'");
         var start = NewGameStart.Find(NewGameStart.LoadAll(db), NewGameStart.DefaultName);
         foreach (var link in start?.Squad ?? [])
         {
@@ -46,6 +43,11 @@ sealed partial class GameHost
         }
         return "Greenlander";
     }
+
+    /// <summary>The record a command line names: any record by id, else the CHARACTER (before the ANIMAL_CHARACTER) of that name, ignoring case.</summary>
+    static Meitou.Data.GameRecord? FindCharacter(Meitou.Data.GameDatabase db, string want) =>
+        db.Find(want) ?? db.Records.Values.Where(r => r.Type is FcsRecordType.CHARACTER or FcsRecordType.ANIMAL_CHARACTER).OrderBy(r => r.Type == FcsRecordType.ANIMAL_CHARACTER)
+            .FirstOrDefault(r => string.Equals(r.Name, want, StringComparison.OrdinalIgnoreCase));
 
     /// <summary><c>--sandbox-races</c>: every person race with the first CHARACTER record that lists it as its only race (records with a choice of races are skipped), by race name.</summary>
     static List<(string Race, string Record)> SandboxRaces(Meitou.Data.GameDatabase db) =>

@@ -151,7 +151,7 @@ sealed partial class GameHost
     Building.BuildServices? MakeBuildServices()
     {
         if (scene.Database is not { } db) return null;
-        var footprints = new Meitou.Navigation.BuildingFootprints(install, db, IsSandbox || IsDuel ? null : scene.Objects?.Levels);
+        var footprints = new Meitou.Navigation.BuildingFootprints(install, db, IsSandbox || IsDuel || IsBattle ? null : scene.Objects?.Levels);
         var parts = new Dictionary<string, IReadOnlyList<Meitou.Data.World.PlacedMesh>>(StringComparer.Ordinal);
         var icons = new Meitou.Data.Gameplay.Construction.BuildingIcons(Path.Combine(install.DataDirectory, "icons", "buildings"));
         IReadOnlyList<Meitou.Data.Gameplay.Construction.PlacementTown>? towns = null;

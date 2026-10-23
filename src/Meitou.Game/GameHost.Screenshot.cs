@@ -109,6 +109,7 @@ sealed partial class GameHost
             UpdateNav(wait: true);
             DuelHoldClock();
             DuelFrame(false);   // the duel's laps run on in a long still too
+            BattleFrame();
             if (g.TitlePreview) titleBattle?.Advance(session.Ticks.TickSeconds);
         }
         PrintSavedLog();
