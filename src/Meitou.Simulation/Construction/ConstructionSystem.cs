@@ -215,7 +215,7 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// The BUILDING a site of the player's can be upgraded to (docs/game/buildings-production.md "Upgrades"): its record's upgrade, unlocked by research. Engine scope: not walls (the
-    /// original's WallBuilding upgrades the whole wall line) and not a building with a machine (its production state is kept per record).
+    /// original's WallBuilding upgrades the whole wall line; a gate is a GatewayBuilding and upgrades alone) and not a building with a machine (its production state is kept per record).
     /// </summary>
     public string? CanUpgrade(World world, BuildSite site) =>
         Swappable(world, site) && BuildingUpgrades.UpgradeOf(db, site.Record) is { } target && world.Research.IsUnlocked(target) && Data(target) is not null ? target : null;
@@ -225,7 +225,7 @@ public sealed class ConstructionSystem : ITickSystem
         !site.Complete && Swappable(world, site) && BuildingUpgrades.DowngradeOf(db, site.Record) is { } lower && Data(lower) is not null ? lower : null;
 
     bool Swappable(World world, BuildSite site) =>
-        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } && world.Machines.Find(site.Id) is null;
+        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } or { IsWallGate: true } && world.Machines.Find(site.Id) is null;
 
     /// <summary>
     /// Makes a site the BUILDING <paramref name="record"/> in place (Building slots 75 / 76, docs/game/buildings-production.md "Upgrades"): no longer complete or paused, progress capped

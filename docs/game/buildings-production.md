@@ -227,7 +227,7 @@ dispatch to slots 75 / 76 through `FUN_140313d50` / `FUN_140313d90`).
 - Meitou (`UpgradeSite` / `DowngradeSite`, `ConstructionSystem.CanUpgrade` / `CanDowngrade`, chain lookup
   `BuildingUpgrades`): the site's record, name, rate, target and materials swapped, delivered amounts carried over per item
   (engine reading of the re-applied state), complete and paused cleared, progress capped at 50 / 80; a downgrade whose
-  delivered materials cover the lower record finishes at once. Engine scope: no walls or wall pieces and no building with
+  delivered materials cover the lower record finishes at once. Engine scope: no walls or wall pieces (gates, `is wall gate`, do upgrade) and no building with
   a machine (production state is per record). The doors stay registered while it is built (`BuildSite.Upgrading`, not
   saved: a reloaded unfinished upgrade gets its doors when finished) and keep their state by door index; the building
   leaves the navmesh until it is complete again (engine).

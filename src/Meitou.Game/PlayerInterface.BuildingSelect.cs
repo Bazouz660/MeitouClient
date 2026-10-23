@@ -156,7 +156,7 @@ sealed partial class PlayerInterface
     void AddUpgradeLines(Meitou.Simulation.Construction.BuildingSnapshot site, List<HudLine> state)
     {
         var snapshot = session.CurrentSnapshot;
-        if (site.WallParent is not null || DataOf(site.Record) is not { LinksTogether: false } || snapshot.Machines.Any(m => m.Site == site.Id)) return;
+        if (site.WallParent is not null || DataOf(site.Record) is not ({ LinksTogether: false } or { IsWallGate: true }) || snapshot.Machines.Any(m => m.Site == site.Id)) return;
         if (UpgradeOf?.Invoke(site.Record) is { } up && snapshot.UnlockedBuildings.Contains(up) && DataOf(up) is { } higher)
         {
             var had = new Dictionary<string, float>(StringComparer.Ordinal);
