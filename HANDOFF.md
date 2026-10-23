@@ -166,8 +166,8 @@ Verified clean:
 1. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
-   indirect arguments. Readback copies used only for statistics still need a safer post-frame path if they prove
-   unreliable.
+   indirect arguments. `MEITOU_METAL_CPU_CULL=1` restores the CPU reference for A/Bs. Readback copies used only
+   for statistics still need a safer post-frame path if they prove unreliable.
 2. Continue the scene shader ALU pass (objects/terrain dominate the save-start frame). The text
    optimization is the shared `kenshiLight`/`atmoApply` path; test Metal-specific specialisation and,
    later, a half-precision variant. Do not remove the terrain/foliage prepasses.

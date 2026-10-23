@@ -302,6 +302,9 @@ sealed partial class GameHost
             foliage.SwaySeconds = 0;   // a still picture: the grass holds still, so it repeats
             foliage.DrawGrass = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_GRASS") != "1";
             foliage.DrawMeshes = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_FOLIAGE_MESHES") != "1";
+            // The CPU cull is the reference path (and the A/B diagnostic for the Metal GPU cull).
+            foliage.GpuCull = Environment.GetEnvironmentVariable("MEITOU_METAL_CPU_CULL") != "1";
+            if (!foliage.GpuCull) Console.WriteLine("metal     foliage GPU cull disabled (MEITOU_METAL_CPU_CULL=1)");
         }
         // The buildings' interior masks (docs/render-interior-cut.md): the depth range the terrain, foliage and map features are cut by
         // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.

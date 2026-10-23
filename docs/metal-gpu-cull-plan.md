@@ -102,6 +102,7 @@ for that view and select the GPU path by visible blade count.
 
 - Vulkan build and quick tests unchanged.
 - Metal run at the save-start view with `--no-foliage` and with foliage; compare F11 instance/draw counts.
+- A/B the Metal live path with `MEITOU_METAL_CPU_CULL=1` (the CPU reference); the pictures must match.
 - Capture a Metal frame and confirm the cull compute encoders appear before the scene encoder and the indirect
   arguments produce the same instance counts as the CPU path.
 - Check `MTL_DEBUG_LAYER=1` for indirect-buffer/argument errors.
