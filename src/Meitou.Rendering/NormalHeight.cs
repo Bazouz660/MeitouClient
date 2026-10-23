@@ -1,7 +1,7 @@
 namespace Meitou.Rendering;
 
 /// <summary>
-/// A height map recovered from a tiling normal map (docs/render-terrain.md, "Sand parallax"): the normal's slopes integrated in the frequency domain
+/// A height map recovered from a tiling normal map (docs/render-terrain.md, "Ground relief"): the normal's slopes integrated in the frequency domain
 /// (Frankot–Chellappa), exact for a periodic texture up to a constant. The slopes follow the terrain shader's tangent frame (tangent along world -X,
 /// binormal along +Z, texture u along +X and v along +Z): dh/du = x / z, dh/dv = -y / z. The lowest frequencies (under two cycles a tile) are dropped,
 /// which keeps compression noise from integrating into large bumps. The result is scaled to 0..255, 255 the top.

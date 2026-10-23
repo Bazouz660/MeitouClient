@@ -100,7 +100,7 @@ public sealed unsafe class VulkanDevice : IDisposable
     public bool FillModeNonSolid { get; private set; }
     public bool DepthClamp { get; private set; }
     public bool SamplerAnisotropy { get; private set; }
-    /// <summary>Tessellation shaders are on (the core feature; the sand displacement uses them, SandParallax).</summary>
+    /// <summary>Tessellation shaders are on (the core feature; the ground displacement uses them, GroundRelief).</summary>
     public bool HasTessellation { get; private set; }
     /// <summary>Pipeline statistics queries are on (<see cref="VulkanDeviceOptions.TriangleMeasurements"/> and the device has them).</summary>
     public bool HasPipelineStatistics { get; private set; }

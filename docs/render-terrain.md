@@ -18,25 +18,26 @@ world coordinates. `terrain-layer-skip` can omit insignificant layer work; thres
 choices requiring boundary/material checks. `terrain-late-colour` separates depth from shading
 where occluders justify it. A depth prepass is extra geometry, not automatically a speedup.
 
-## Sand parallax
+## Ground relief
 
-Meitou look, not in the game (`SandParallax`, on by default; viewer K or Tab checkbox, Tab slider for depth in cm). Layers whose normal map's name has "sand" (not
-"stone"/"rock") get a height map integrated from that normal map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the
-terrain tangent frame, below 2 cycles a tile dropped, scaled by 1st/99th percentile), in an R8 array (≤512², one slice per pair
-slot; other slots flat 255). The patch shader marches the base layer's coordinate along the view ray (16 steps, default 1.2 units deep)
-and toward the sun (8 steps) for a self-shadow that darkens the albedo, fading out from 300 to 600 units. Geometry, collision
-and other layers are unchanged. **Observed** (decoded at 512²): `DesertSandLoop03_NML` integrates to ripple bands along u,
-`DesertSands_NML` to fine wind-aligned grain; the game's sand normal maps are BC1 2048².
+Meitou look, not in the game (`GroundRelief`, on by default; Tab: "Ground parallax", "Ground displacement (tessellation)",
+"Ground relief depth (cm)", default 12; viewer K toggles the parallax). Every layer gets a height map integrated from its normal
+map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame, below 2 cycles a tile dropped,
+scaled by 1st/99th percentile, so every layer spans the full depth), in an R8 array (≤512², one slice per pair slot; a layer
+without a readable normal map flat 255). Only the base layer has relief, weighted by how much of it shows (not grass, slope,
+dirt, road or cliff). One depth for all layers. **Observed** (decoded at 512²): `DesertSandLoop03_NML` integrates to ripple
+bands along u, `DesertSands_NML` to fine wind-aligned grain; the game's terrain normal maps are BC1 2048².
 
-## Sand displacement
+**Displacement** (needs `tessellationShader`): main-view patches within 260 units of the eye (horizontally; not interior-cut
+ones) draw with tessellated colour and prepass programs (patch lists of 3, culling off). Edge levels depend on the edge alone
+(length, midpoint distance, relief at ends/middle), so shared edges split alike; the evaluation stage interpolates the flat
+triangle and raises it by `depth × height × base cover`, full to 150 units, none from 250, where edges are unsplit and unraised
+and meet plain patches. Raised upward so the (unraised) shadow casters never shadow the troughs. Shadow casters, reflections
+and the rock bake are not tessellated.
 
-Meitou look (`SandParallax.DisplaceActive`, Tab checkbox; needs `tessellationShader`). Main-view patches within 260 units of the
-eye (horizontally; not interior-cut ones) draw with tessellated colour and prepass programs (patch lists of 3, culling off). Edge
-levels depend on the edge alone (length, midpoint distance, sand at ends/middle), so shared edges split alike; the evaluation stage
-interpolates the flat triangle and raises it by `depth × height × base-layer cover` (sand layers only: height array's last mip
-< 0.995), full to 150 units, none from 250, where edges are unsplit and unraised and meet plain patches. Raised upward so the
-(unraised) shadow casters never shadow the troughs. The POM's view-ray march gives way over the same band; its sun march stays.
-Shadow casters, reflections and the rock bake are not tessellated.
+**Parallax**: the patch shader marches the base layer's coordinate along the view ray (16 steps) and toward the sun (8 steps)
+for a self-shadow that darkens the albedo, fading out from 300 to 600 units. Where the ground is displaced the view-ray march
+gives way (150 to 250 units); the sun march stays. It is also the fallback without tessellation.
 
 ## Interior cut
 

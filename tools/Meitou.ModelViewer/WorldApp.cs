@@ -381,7 +381,7 @@ static partial class WorldApp
                 case Key.Equal: o.Post.Exposure = MathF.Min(o.Post.Exposure * 1.1f, 20f); PostStatus(); break;
                 case Key.T: render.Textures = !render.Textures; break;
                 case Key.N: render.NormalMaps = !render.NormalMaps; break;
-                case Key.K: SandParallax.Active = !SandParallax.Active; Console.WriteLine(SandParallax.Active ? "sand parallax on" : "sand parallax off"); break;
+                case Key.K: GroundRelief.ParallaxActive = !GroundRelief.ParallaxActive; Console.WriteLine(GroundRelief.ParallaxActive ? "ground parallax on" : "ground parallax off"); break;
                 case Key.O: render.Objects = !render.Objects; break;
                 case Key.F when gpu?.Foliage is { } foliage: foliage.Enabled = !foliage.Enabled; Console.WriteLine(foliage.Enabled ? "foliage   on" : "foliage   off"); break;
                 case Key.X: render.Wireframe = (render.Wireframe + 1) % 3; break;

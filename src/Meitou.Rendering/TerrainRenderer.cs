@@ -106,13 +106,13 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         patchPrepass = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), "terrain prepass");
         patchColourCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain interior cut");
         patchPrepassCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain prepass interior cut");
-        // The sand displacement (SandParallax): the colour and prepass programs tessellated, for the patches near the eye (the same stages in both, so the
+        // The ground displacement (GroundRelief): the colour and prepass programs tessellated, for the patches near the eye (the same stages in both, so the
         // late colour's depth test meets the prepass's depths).
         if (gpu.Device.HasTessellation)
         {
-            patchColourTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(), "terrain sand",
+            patchColourTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(), "terrain relief",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
-            patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain sand prepass",
+            patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain relief prepass",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
         }
         meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
@@ -273,7 +273,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         SortNearestFirst(eye);
         PreparePatches(current);
         SplitInteriorCut(secondary ? null : InteriorCut);
-        SplitSand(secondary, options);
+        SplitRelief(secondary, options);
         if (nodes.Count > 0)
         {
             if (options.Wireframe != 2)
@@ -283,14 +283,14 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 {
                     // Depth only now, the colour after the objects and foliage (DrawDeferred): the colour program then runs only where the terrain is what is seen.
                     RecordPatches(patchPrepass, "terrain prepass", PatchMode.Prepass, plainCount);
-                    if (sandCount > 0) RecordPatches(patchPrepassTess!, "terrain sand prepass", PatchMode.Prepass, sandCount, sandDraws);
+                    if (reliefCount > 0) RecordPatches(patchPrepassTess!, "terrain relief prepass", PatchMode.Prepass, reliefCount, reliefDraws);
                     if (cutCount > 0) RecordPatches(patchPrepassCut, "terrain prepass interior cut", PatchMode.Prepass, cutCount, cutDraws);
                     (latePending, lateFrame) = (true, frame);
                 }
                 else
                 {
                     RecordPatches(patchColour, "terrain", PatchMode.Solid, plainCount);
-                    if (sandCount > 0) RecordPatches(patchColourTess!, "terrain sand", PatchMode.Solid, sandCount, sandDraws);
+                    if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Solid, reliefCount, reliefDraws);
                     if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
                 }
                 DrawnChunks += nodes.Count;
@@ -322,7 +322,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         frame = lateFrame;
         PrepareConstants(material: true, patches: true);
         RecordPatches(patchColour, "terrain", PatchMode.Late, plainCount);
-        if (sandCount > 0) RecordPatches(patchColourTess!, "terrain sand", PatchMode.Late, sandCount, sandDraws);
+        if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Late, reliefCount, reliefDraws);
         if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
     }
 
@@ -363,20 +363,20 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         plainCount = kept;
     }
 
-    PatchDraw[] sandDraws = new PatchDraw[16];
-    int sandCount;
+    PatchDraw[] reliefDraws = new PatchDraw[16];
+    int reliefCount;
 
     /// <summary>
-    /// Moves the plain patches whose square comes within <see cref="SandParallax.TessellatedRadius"/> of the eye (horizontally) out of <see cref="patchDraws"/>
-    /// into <see cref="sandDraws"/> (<see cref="sandCount"/>), drawn by the tessellated programs: the main view only, with the displacement on.
+    /// Moves the plain patches whose square comes within <see cref="GroundRelief.TessellatedRadius"/> of the eye (horizontally) out of <see cref="patchDraws"/>
+    /// into <see cref="reliefDraws"/> (<see cref="reliefCount"/>), drawn by the tessellated programs: the main view only, with the displacement on.
     /// The displacement and the split are nil beyond its end, so these patches meet the plain ones on unraised, unsplit edges.
     /// </summary>
-    void SplitSand(bool secondary, WorldRenderOptions options)
+    void SplitRelief(bool secondary, WorldRenderOptions options)
     {
-        sandCount = 0;
-        if (secondary || patchColourTess is null || !SandParallax.DisplaceActive || options.Wireframe != 0 || !options.Textures || textures is not { HasBiomes: true }) return;
+        reliefCount = 0;
+        if (secondary || patchColourTess is null || !GroundRelief.DisplaceActive || options.Wireframe != 0 || !options.Textures || textures is not { HasBiomes: true }) return;
         var eye = frame.Eye;
-        float r2 = SandParallax.TessellatedRadius * SandParallax.TessellatedRadius;
+        float r2 = GroundRelief.TessellatedRadius * GroundRelief.TessellatedRadius;
         int kept = 0;
         for (int i = 0; i < plainCount; i++)
         {
@@ -384,8 +384,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             float x0 = d.Push.Node.X, z0 = d.Push.Node.Y, s = d.Push.Node.Z;
             float dx = MathF.Max(MathF.Max(x0 - eye.X, eye.X - (x0 + s)), 0), dz = MathF.Max(MathF.Max(z0 - eye.Z, eye.Z - (z0 + s)), 0);
             if (dx * dx + dz * dz > r2) { patchDraws[kept++] = d; continue; }
-            if (sandCount == sandDraws.Length) Array.Resize(ref sandDraws, sandDraws.Length * 2);
-            sandDraws[sandCount++] = d;
+            if (reliefCount == reliefDraws.Length) Array.Resize(ref reliefDraws, reliefDraws.Length * 2);
+            reliefDraws[reliefCount++] = d;
         }
         plainCount = kept;
     }
@@ -589,8 +589,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 c.Diffuse = Index(set.Diffuse, BindlessKind.Texture2DArray, standInArray);
                 c.Normal = Index(set.Normal, BindlessKind.Texture2DArray, standInArray);
                 c.Height = Index(set.Height, BindlessKind.Texture2DArray, standInArray);
-                c.Parallax = patches && textured && SandParallax.Active && set.Height is not null ? SandParallax.Depth : 0;
-                c.Displace = patches && textured && SandParallax.DisplaceActive && patchColourTess is not null && set.Height is not null ? SandParallax.Depth : 0;
+                c.Parallax = patches && textured && GroundRelief.ParallaxActive && set.Height is not null ? GroundRelief.Depth : 0;
+                c.Displace = patches && textured && GroundRelief.DisplaceActive && patchColourTess is not null && set.Height is not null ? GroundRelief.Depth : 0;
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);
                 c.Cells = Index(set.Cells, BindlessKind.UTexture2D, standInUInt);
                 c.BlendMap = Index(set.BlendMap, BindlessKind.Texture2D, standIn2D);

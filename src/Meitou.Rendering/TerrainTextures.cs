@@ -69,7 +69,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal, byte[][]? Height);
 
-    /// <summary>Side of the height array's layers (<see cref="SandParallax"/>): the layer size, at most 512.</summary>
+    /// <summary>Side of the height array's layers (<see cref="GroundRelief"/>): the layer size, at most 512.</summary>
     int HeightSize => Math.Min(layerSize, 512);
 
     TerrainTextures(GpuContext gpu, GameInstall install, AssetLocator assets, BlendInfoFile info, BiomeTerrain[] all, int layerSize, MapWindows? maps)
@@ -254,7 +254,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         // Layers are handed out as texture pairs become resident; the arrays are allocated whole, with every mip level.
         diffuseArray = AllocateArray(true);
         normalArray = AllocateArray(false);
-        if (SandParallax.Enabled)
+        if (GroundRelief.Enabled)
             heightArray = Make(GlConventions.VkFormat(InternalFormat.R8), HeightSize, HeightSize, (int)Math.Log2(HeightSize) + 1, Math.Max(Capacity, 1),
                 TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, "terrain textures height", kind: TextureKind.Texture2DArray);
 
@@ -402,7 +402,7 @@ public sealed unsafe class TerrainTextures : IDisposable
                 var local = new List<string>();
                 var d = LoadLayer(assets, pair.Diffuse, layerSize, true, [128, 128, 128, 60], local);
                 var n = LoadLayer(assets, pair.Normal, layerSize, false, [128, 128, 255, 255], local);
-                var h = SandParallax.Enabled ? LoadHeight(assets, pair.Normal, HeightSize) : null;
+                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, HeightSize) : null;
                 foreach (var m in local) problems.Enqueue(m);
                 result = new Decoded(pair, d, n, h);
             }
@@ -608,13 +608,13 @@ public sealed unsafe class TerrainTextures : IDisposable
     }
 
     /// <summary>
-    /// The height levels of a sand layer for <see cref="SandParallax"/>: its normal map decoded at <paramref name="size"/>² and integrated (<see cref="NormalHeight"/>),
-    /// R8 with mips; null for a layer that is not sand (by name) or a normal map that cannot be read (the layer stays flat).
+    /// The height levels of a layer for <see cref="GroundRelief"/>: its normal map decoded at <paramref name="size"/>² and integrated (<see cref="NormalHeight"/>),
+    /// R8 with mips; null for a normal map that is missing or cannot be read (the layer stays flat).
     /// </summary>
     static byte[][]? LoadHeight(AssetLocator assets, string? name, int size)
     {
-        if (!SandParallax.IsSand(name)) return null;
-        var path = assets.Find(name!) ?? assets.Find(Path.GetFileName(name!.Replace('\\', '/')));
+        if (name is null) return null;
+        var path = assets.Find(name) ?? assets.Find(Path.GetFileName(name.Replace('\\', '/')));
         if (path is null) return null;
         RgbaImage image;
         try
