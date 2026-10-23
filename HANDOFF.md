@@ -3,7 +3,7 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Current HEAD: `5f79000b metal: feed the water reactive mask to MetalFX`  
-Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted and B's blood path is validated. A short 800x600 Metal new-game smoke (3 s, `--no-audio`) reached the Meitou water, low-res particle and object-motion/reactive paths without a crash after the vertex-slot fix; full visual acceptance remains. Remaining work is polish/optimization.
+Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Remaining work is polish/optimization.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
