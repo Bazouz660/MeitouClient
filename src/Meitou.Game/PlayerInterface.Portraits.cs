@@ -79,27 +79,31 @@ sealed partial class PlayerInterface
         if (members.Count == 0) return;
         // The tab's page (the layout's TabItem rectangle inside SquadPanel).
         var page = new UiRect(panel.X + panel.Width * 0.0183727f, panel.Y + panel.Height * 0.206897f, panel.Width * 0.965879f, panel.Height * 0.737069f);
-        // The original leaves space below portraits instead of filling the tab page (docs/game/ui-screens.md); 0.76 matches its frame size (Observed).
-        float size = Math.Min(page.Height * 0.76f, page.Width / members.Count), k = size / PortraitLayoutSize;
+        // The page's ItemBox (docs/game/ui-screens.md "Squad bar"): square cells 0.9 of its height, or of its width over the members (counted up to 10), 60 to
+        // 128 px at 1080p and even, filled left to right in rows; rows past the page are cut off.
+        float scale = InventoryScale;
+        float fit = Math.Min(page.Height * 0.9f, page.Width * 0.9f / Math.Min(members.Count, 10)) / scale;
+        float size = MathF.Floor(Math.Clamp(fit, 60, 128) / 2) * 2 * scale, k = size / PortraitLayoutSize;
+        int columns = Math.Max(1, (int)(page.Width / size));
         var camera = session.Camera.Current;
         PrunePortraitFlashes(members);
         for (int i = 0; i < members.Count; i++)
         {
             var m = members[i];
-            float left = page.X + i * size, top = page.Y;
+            float left = page.X + i % columns * size, top = page.Y + i / columns * size;
             UiRect At(float x, float y, float w, float h) => new(left + x * k, top + y * k, w * k, h * k);
             // The layout's depths, back to front: background, back overlay, portrait, front overlay, name, frame.
             var state = PortraitStateOf(m, camera.Eye, camera.Target);
-            controls.Add(PortraitImage($"portrait-back-{i}", At(0, 0, 135, 135), "Background", (state & PortraitState.Hurt) != 0 ? "Hurt" : "Normal", PortraitFlash(m.Id, state)));
-            if (BackOverlayName(state) is { Length: > 0 } back) controls.Add(PortraitImage($"portrait-back-overlay-{i}", At(6, 5, 124, 124), "BackOverlay", back));
+            controls.Add(PortraitImage($"portrait-back-{i}", At(0, 0, 135, 135), "Background", (state & PortraitState.Hurt) != 0 ? "Hurt" : "Normal", PortraitFlash(m.Id, state)) with { Clip = page });
+            if (BackOverlayName(state) is { Length: > 0 } back) controls.Add(PortraitImage($"portrait-back-overlay-{i}", At(6, 5, 124, 124), "BackOverlay", back) with { Clip = page });
             var portrait = new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = PortraitRect(i) };
             if ((state & PortraitState.Faded) != 0) portrait["Alpha"] = "0.25";
-            controls.Add(new($"portrait-{i}", "ImageBox", At(6, 6, 124, 123), "", "", "", true, portrait, Vector4.Zero));
-            if (FrontOverlayName(state) is { Length: > 0 } front) controls.Add(PortraitImage($"portrait-front-overlay-{i}", At(6, 6, 124, 123), "FrontOverlay", front));
+            controls.Add(new($"portrait-{i}", "ImageBox", At(6, 6, 124, 123), "", "", "", true, portrait, Vector4.Zero, Clip: page));
+            if (FrontOverlayName(state) is { Length: > 0 } front) controls.Add(PortraitImage($"portrait-front-overlay-{i}", At(6, 6, 124, 123), "FrontOverlay", front) with { Clip = page });
             controls.Add(new($"portrait-name-{i}", "TextBox", At(4, 4, 128, 126), m.Name, "", "Kenshi_TextboxStandardText", true,
-                new Dictionary<string, string> { ["TextAlign"] = "HCenter Bottom", ["TextColour"] = "1 1 1", ["TextShadow"] = "true" }, Vector4.Zero, Pickable: false));
+                new Dictionary<string, string> { ["TextAlign"] = "HCenter Bottom", ["TextColour"] = "1 1 1", ["TextShadow"] = "true" }, Vector4.Zero, Pickable: false, Clip: page));
             controls.Add(new($"member-{i}", "Button", At(0, 0, 136, 136), "", "meitou:member", "Kenshi_PortraitFrameSkin", true,
-                new Dictionary<string, string> { ["Checked"] = m.Selected ? "true" : "false" }, Vector4.Zero, Argument: i.ToString(CultureInfo.InvariantCulture)));
+                new Dictionary<string, string> { ["Checked"] = m.Selected ? "true" : "false" }, Vector4.Zero, Argument: i.ToString(CultureInfo.InvariantCulture), Clip: page));
         }
     }
 }

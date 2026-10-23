@@ -76,7 +76,8 @@ public static partial class MyGuiPresentation
                     && layout.Find(owner)?.Type == "EditBox")
                     props["TextAlign"] = textAlign;
             }
-            if (props.GetValueOrDefault("SkipCaption") == "true") caption = "";
+            // A TabItem's caption is its tab button's, never drawn on the page.
+            if (props.GetValueOrDefault("SkipCaption") == "true" || w.Type == "TabItem") caption = "";
             string action = bindings.Actions.GetValueOrDefault(w.Name) ?? "";
             if (props.TryGetValue("TemplateEvent", out string? ev) && props.TryGetValue("TemplateOwner", out var target))
                 action = bindings.Actions.GetValueOrDefault(target + "@" + ev) ?? $"mygui:{ev}:{target}";
