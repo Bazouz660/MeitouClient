@@ -49,13 +49,14 @@ sealed partial class PlayerInterface
             } is { } listKey && faithfulScreens.ListKey(listKey)) return true;
         if (DialogueKey(key)) return true;
         if (faithfulScreens.HasModal) return true;
-        // change_squad (Tab): the squad bar shows the next squad with members (docs/game/ui-input.md section 6).
-        if (key == Meitou.Engine.Input.Key.Tab && !TitleOpen && !EditorOpen) { Say(new ActiveSquadCommand(-1) { Tick = session.World.Tick }); return true; }
+        // change_squad (Tab by default): the squad bar shows the next squad with members (docs/game/ui-input.md section 6).
+        if (Bound(InputAction.ChangeSquad, key) && !TitleOpen && !EditorOpen) { Say(new ActiveSquadCommand(-1) { Tick = session.World.Tick }); return true; }
         if (ReservedKeys.Contains(key)) return false;
-        if (key is Meitou.Engine.Input.Key.I or Meitou.Engine.Input.Key.C) { ExecuteUiAction(key == Meitou.Engine.Input.Key.I ? "inventory" : "stats", ""); return true; }
-        // toggle_map / toggle_research / toggle_crafting (M / T / Y) ask for overview tabs 0 / 2 / 3 (docs/game/ui-input.md section 6); toggle_faction (tab 1) is unbound.
+        if (Bound(InputAction.ToggleInventory, key) || Bound(InputAction.ToggleCharacterStats, key))
+        { ExecuteUiAction(Bound(InputAction.ToggleInventory, key) ? "inventory" : "stats", ""); return true; }
+        // toggle_map / toggle_faction / toggle_research / toggle_crafting (M / unbound / T / Y) ask for overview tabs 0 / 1 / 2 / 3 (docs/game/ui-input.md section 6).
         // Pressing the key of the tab already showing closes the window (engine choice: the original's toggle rule is not traced).
-        int? tab = key switch { Meitou.Engine.Input.Key.M => 0, Meitou.Engine.Input.Key.T => 2, Meitou.Engine.Input.Key.Y => 3, _ => null };
+        int? tab = Bound(InputAction.ToggleMap, key) ? 0 : Bound(InputAction.ToggleFaction, key) ? 1 : Bound(InputAction.ToggleResearch, key) ? 2 : Bound(InputAction.ToggleCrafting, key) ? 3 : null;
         if (tab is { } t)
         {
             if (faithfulScreens.IsOpen("overview") && faithfulScreens.GetTab("overview", "TabsMain") == t) faithfulScreens.Close("overview");

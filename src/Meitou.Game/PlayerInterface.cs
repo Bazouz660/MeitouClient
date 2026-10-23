@@ -261,26 +261,4 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         session.Camera.Place(new Vector2(c.Position.X, c.Position.Z), view.Yaw, view.Pitch, view.Distance);
         Follow = follow ? id : null;
     }
-
-    public void Key(Key key, bool shift)
-    {
-        if (key >= Meitou.Engine.Input.Key.D1 && key <= Meitou.Engine.Input.Key.D9)
-        {
-            long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            bool doubleTap = key == lastSelectKey && System.Diagnostics.Stopwatch.GetElapsedTime(lastSelectAt, now).TotalSeconds <= DoubleTapSeconds;
-            (lastSelectKey, lastSelectAt) = (doubleTap ? default : key, now);
-            SelectMember(key - Meitou.Engine.Input.Key.D1, shift, doubleTap);
-        }
-        // toggle_build (B): the build window and the placement ghost; not over the title, the editor or while the free camera flies.
-        else if (key == Meitou.Engine.Input.Key.B && !session.Camera.IsFree && !TitleOpen && !EditorOpen) ToggleBuildMode();
-        // focus_char (F): put the pivot on the lead selected character without following it (the free camera's F is its down key).
-        else if (key == Meitou.Engine.Input.Key.F && !session.Camera.IsFree && Selected().FirstOrDefault() is { } lead) CentreOn(lead.Id, follow: false);
-        else if (key == Meitou.Engine.Input.Key.Grave) Select(ActiveSquadMembers(), shift);
-        else if (key == Meitou.Engine.Input.Key.R && !session.Camera.IsFree) Say(new StopCommand(SelectedIds()) { Tick = session.World.Tick });
-        else if (key == Meitou.Engine.Input.Key.H && !session.Camera.IsFree) Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), shift) { Tick = session.World.Tick });
-        else if (key == Meitou.Engine.Input.Key.L && !session.Camera.IsFree) Say(new Meitou.Simulation.FirstAid.RestOrder(SelectedIds()) { Tick = session.World.Tick });
-        // Rescue (the original's NUM8; the numpad is the cinema camera's; with Shift a job, as Medic on H) and put down (the original's context menu verb "Put Down").
-        else if (key == Meitou.Engine.Input.Key.J && !session.Camera.IsFree) Say(new Meitou.Simulation.Carrying.RescueJobCommand(SelectedIds(), shift) { Tick = session.World.Tick });
-        else if (key == Meitou.Engine.Input.Key.K && !session.Camera.IsFree) Say(new Meitou.Simulation.Carrying.PutDownOrder(SelectedIds()) { Tick = session.World.Tick });
-    }
 }
