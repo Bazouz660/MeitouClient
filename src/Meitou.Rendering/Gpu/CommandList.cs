@@ -412,6 +412,8 @@ public sealed unsafe class CommandList : IGpuCommandList
         if (stages.HasFlag(GpuStage.Vertex)) f |= ShaderStageFlags.VertexBit;
         if (stages.HasFlag(GpuStage.Fragment)) f |= ShaderStageFlags.FragmentBit;
         if (stages.HasFlag(GpuStage.Compute)) f |= ShaderStageFlags.ComputeBit;
+        if (stages.HasFlag(GpuStage.TessControl)) f |= ShaderStageFlags.TessellationControlBit;
+        if (stages.HasFlag(GpuStage.TessEvaluation)) f |= ShaderStageFlags.TessellationEvaluationBit;
         return f;
     }
 
