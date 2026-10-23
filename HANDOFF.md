@@ -178,9 +178,11 @@ Verified clean:
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
    indirect arguments. `MEITOU_METAL_CPU_CULL=1` restores the CPU reference for A/Bs. Readback copies used only
    for statistics still need a safer post-frame path if they prove unreliable.
-2. Continue the scene shader ALU pass (objects/terrain dominate the save-start frame). The text
-   optimization is the shared `kenshiLight`/`atmoApply` path; test Metal-specific specialisation and,
-   later, a half-precision variant. Do not remove the terrain/foliage prepasses.
+2. Terrain is the largest steady GPU item (11.3 ms of the 22.3 ms main scene in the native capture). Use
+   [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md): isolate sampling/filtering/geometry
+   first, then test Metal compile options, specialised terrain variants, targeted half precision and the
+   solid-pass early-fragment attribute. Direct MSL is a last resort, not the starting point. Do not remove the
+   terrain/foliage prepasses.
 3. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
    6.51% and 14.29% of the latest 26.84 ms capture.
 4. Remaining polish: HDR/EDR, fog-rate VRS or a non-VRS fallback, particle reactive-mask coverage,

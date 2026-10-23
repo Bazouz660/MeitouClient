@@ -308,7 +308,8 @@ The first live GPU-cull capture (2026-10-23, 1600x1200 native) has:
   cull ~44 fps at the same view.
 
 The main encoder is wide (occupancy/bandwidth/texture work), not a single ALU hotspot. The smaller high-ALU encoders
-are shadow/terrain preparation; inspect them separately before optimising the main terrain shader.
+are shadow/terrain preparation; inspect them separately before optimising the main terrain shader. The measurement
+and shader-experiment order is in [metal-terrain-shader-plan](metal-terrain-shader-plan.md).
 
 ## Metal timestamp limitation and private statics
 
