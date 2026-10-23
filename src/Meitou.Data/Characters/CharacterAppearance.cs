@@ -51,10 +51,10 @@ public sealed record CharacterPart
 }
 
 /// <summary>
-/// When a weapon part shows: always; while the melee weapon is sheathed (also while the crossbow is out) or drawn; while the crossbow is in the hands (shooting) or
-/// not (on the back).
+/// When a weapon part shows: always; while the hip melee weapon is sheathed (also while the crossbow or the back weapon is out) or drawn; while the crossbow is in the
+/// hands (shooting) or not (on the back); the same for the back melee weapon (which of the two is drawn goes by the arms, docs/game/combat.md "Arms").
 /// </summary>
-public enum WeaponShown : byte { Always, Sheathed, Drawn, RangedSheathed, RangedDrawn }
+public enum WeaponShown : byte { Always, Sheathed, Drawn, RangedSheathed, RangedDrawn, BackSheathed, BackDrawn }
 
 /// <summary>A clothing texture layered onto the body (ARMOUR <c>vest texture</c>; character.hlsl "vest").</summary>
 public sealed record BodyLayer(GameRecord Record, string Diffuse, string? Normal, string? ColourMap);
@@ -295,11 +295,14 @@ public sealed class CharacterAppearance
             weapons.Add((extra, point, null));
         }
         result.LoadAttachmentPoints(installRoot, race);
-        // The weapon a fight draws is the first WEAPON (hip, then back: CharacterAssembly.MakeFighter); it gets its sheathed and drawn meshes, the renderer shows one set.
-        int inHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON), bowInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW);
+        // A fight draws the first WEAPON of the hip or of the back, by the arms (CharacterAssembly.MakeFighter, Fighter.Weapon): each gets its sheathed and drawn meshes, the
+        // renderer shows one set.
+        int hipInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "hip"), backInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "back");
+        int bowInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW);
         for (int i = 0; i < weapons.Count; i++)
             if (weapons[i].Weapon.Type == FcsRecordType.CROSSBOW) result.AddCrossbow(weapons[i].Weapon, weapons[i].Point, drawable: i == bowInHand);
-            else result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model, both: !options.WeaponDrawn && i == inHand);
+            else result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model,
+                both: !options.WeaponDrawn && (i == hipInHand || i == backInHand), back: i == backInHand);
         var lightRoll = new Random(loadout?.Seed ?? options.Seed ?? 0);
         foreach (var item in worn.Concat(items.Where(i => i.Type is FcsRecordType.ATTACHMENT or FcsRecordType.CONTAINER)).Concat(loadout?.Carried.Select(c => c.Record) ?? []))
             if (CarriedLights.From(db, installRoot, item, female, lightRoll) is { } carried) result.Lights.Add(carried);
@@ -393,15 +396,16 @@ public sealed class CharacterAppearance
         Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = field, Mode = AttachMode.SharedSkeleton, Slot = slot, Material = material });
     }
 
-    /// <param name="both">Both sets: the sheathed mesh tagged <see cref="WeaponShown.Sheathed"/>, the drawn ones <see cref="WeaponShown.Drawn"/> (a renderer that follows the fight).</param>
-    void AddWeapon(GameRecord weapon, bool female, string slot, bool drawn, int backCount, GameRecord? model = null, bool both = false)
+    /// <param name="both">Both sets: the sheathed mesh tagged <see cref="WeaponShown.Sheathed"/>, the drawn ones <see cref="WeaponShown.Drawn"/> (a renderer that follows the fight);
+    /// with <paramref name="back"/> <see cref="WeaponShown.BackSheathed"/> and <see cref="WeaponShown.BackDrawn"/>.</param>
+    void AddWeapon(GameRecord weapon, bool female, string slot, bool drawn, int backCount, GameRecord? model = null, bool both = false, bool back = false)
     {
         if (slot == "back" && backCount > 0) slot = "back2";
         string Field(string f) => f == "mesh" && female && weapon.GetPath("mesh female").Length > 0 ? "mesh female" : f;
         bool bare = weapon.GetPath("bare sword").Length > 0;
         if ((drawn || both) && bare)
         {
-            var shown = both ? WeaponShown.Drawn : WeaponShown.Always;
+            var shown = !both ? WeaponShown.Always : back ? WeaponShown.BackDrawn : WeaponShown.Drawn;
             Parts.Add(new CharacterPart { Record = weapon, Mesh = weapon.GetPath("bare sword"), Field = "bare sword", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands", Material = model, Shown = shown });
             if (weapon.GetPath("sheath") is { Length: > 0 } sheath)
                 Parts.Add(new CharacterPart { Record = weapon, Mesh = sheath, Field = "sheath", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Shown = shown });
@@ -411,7 +415,7 @@ public sealed class CharacterAppearance
         string field = Field("mesh");
         if (weapon.GetPath(field) is not { Length: > 0 } mesh) { Notes.Add($"'{weapon.Name}' has no mesh"); return; }
         Parts.Add(new CharacterPart { Record = weapon, Mesh = mesh, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Material = model,
-            Shown = both && bare ? WeaponShown.Sheathed : WeaponShown.Always });
+            Shown = !(both && bare) ? WeaponShown.Always : back ? WeaponShown.BackSheathed : WeaponShown.Sheathed });
     }
 
     /// <summary>

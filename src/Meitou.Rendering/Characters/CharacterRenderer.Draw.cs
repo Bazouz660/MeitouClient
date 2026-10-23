@@ -85,7 +85,7 @@ internal sealed unsafe partial class CharacterRenderer
             float worldScale = world.ScaleLength();
             foreach (var part in l.Asset.Parts)
             {
-                if (!part.ShowsWith(l.WeaponDrawn, l.RangedDrawn, l.Shots)) continue;
+                if (!part.ShowsWith(l.WeaponDrawn, l.RangedDrawn, l.Shots, l.BackDrawn)) continue;
                 Matrix4x4 model = world;
                 if (!part.Shared) model = attach[l.AttachBase + part.AttachIndex] * world;
                 float modelScale = part.Shared ? worldScale : model.ScaleLength();

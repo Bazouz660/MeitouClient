@@ -54,15 +54,20 @@ sealed class CharacterAssembly(PopulationData data)
     /// <summary>The walk speed of a character: the race's <c>walk speed</c>, 15 without a race.</summary>
     public static float WalkSpeed(GameRecord? race) => race?.GetFloat("walk speed", 15) ?? 15;
 
-    /// <summary>The weapon in hand (the first weapon: hip, then back; its quality is its level x 0.01) and the worn armour (quality / 100), docs/simulation.md "Combat".</summary>
-    Fighter MakeFighter(Inventory inventory)
+    /// <summary>
+    /// The weapons (the first of the hip and of the back section; quality the level x 0.01; which is in hand goes by the arms, <see cref="Fighter.Weapon"/>) and the worn armour
+    /// (quality / 100), docs/simulation.md "Combat".
+    /// </summary>
+    Fighter MakeFighter(Inventory inventory, MedicalState? medical)
     {
         var combat = data.Combat;
-        WeaponInstance? weapon = null;
-        foreach (var section in new[] { "hip", "back" })
+        WeaponInstance? First(string section)
+        {
             foreach (var item in inventory.Items.Where(i => i.Section == section && i.Type == FcsRecordType.WEAPON))
-                if (weapon is null && combat.Weapon(item.Record) is { } w)
-                    weapon = WeaponInstance.Create(item.Level * 0.01f, w, combat.Manufacturer(item.CompanyId), combat.WeaponMaterial(item.MaterialId), combat.Constants);
+                if (combat.Weapon(item.Record) is { } w)
+                    return WeaponInstance.Create(item.Level * 0.01f, w, combat.Manufacturer(item.CompanyId), combat.WeaponMaterial(item.MaterialId), combat.Constants);
+            return null;
+        }
         var armour = inventory.Items.Where(i => i.Type == FcsRecordType.ARMOUR && Items.InventoryCommands.IsEquipmentSection(i.Section) && combat.Armour(i.Record) is not null)
             .Select(i => ArmourPiece.Create(combat.Armour(i.Record)!, i.Quality * 0.01f));
         // The crossbow: the first CROSSBOW in the weapon sections (back, then hip), its quality the level x 0.01 like a weapon's.
@@ -71,7 +76,9 @@ sealed class CharacterAssembly(PopulationData data)
             foreach (var item in inventory.Items.Where(i => i.Section == section && i.Type == FcsRecordType.CROSSBOW))
                 if (crossbow is null && combat.Crossbow(item.Record) is { } x)
                     crossbow = CrossbowInstance.Create(item.Level * 0.01f, x, combat.Constants, data.BodyOptions.GlobalDamageMultiplier);
-        return new Fighter(weapon, armour) { Crossbow = crossbow };
+        var fighter = new Fighter(First("hip"), armour) { BackWeapon = First("back"), Crossbow = crossbow };
+        if (medical is not null) fighter.SetArms(medical.ArmWorks(left: false), medical.ArmWorks(left: true));
+        return fighter;
     }
 
     /// <summary>
@@ -92,12 +99,12 @@ sealed class CharacterAssembly(PopulationData data)
         return new Fighter(weapon) { IsAnimal = true };
     }
 
-    Fighter FighterOf(GameRecord? record, Inventory inventory) => AnimalData.From(record) is { } animal ? MakeAnimalFighter(animal) : MakeFighter(inventory);
+    Fighter FighterOf(GameRecord? record, Inventory inventory, MedicalState? medical) => AnimalData.From(record) is { } animal ? MakeAnimalFighter(animal) : MakeFighter(inventory, medical);
 
     public void RefreshEquipment(CharacterCold cold)
     {
         if (cold.Inventory is not { } inventory) return;
-        var fighter = FighterOf(data.Db.Find(cold.RecordId), inventory);
+        var fighter = FighterOf(data.Db.Find(cold.RecordId), inventory, cold.Medical);
         fighter.Guarding = cold.Fighter?.Guarding ?? false;
         fighter.EncumbranceFactor = cold.Fighter?.EncumbranceFactor ?? 1;
         cold.Fighter = fighter;
@@ -129,7 +136,7 @@ sealed class CharacterAssembly(PopulationData data)
                 (fitted.Section, fitted.X, fitted.Y) = (Meitou.Data.Gameplay.Bodies.LimbReplacement.SlotOf(k), 0, 0);
                 carried.Items.Add(fitted);
             }
-        cold.Fighter = FighterOf(record, cold.Inventory);
+        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = race.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
     }
@@ -158,7 +165,7 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Stats = stats;
         cold.Medical = medical;
         cold.Inventory = data.Items.Build(record, cold.Appearance?.Loadout);
-        cold.Fighter = FighterOf(record, cold.Inventory);
+        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
         hot.MaxSpeed = Speed.Run(raceData, stats, medical, 1);

@@ -29,13 +29,15 @@ internal sealed class AssetPart
     /// <summary>The first loaded bolt of the crossbow in the hands: its origin is the muzzle (<see cref="CharacterRenderer.Muzzle"/>).</summary>
     public bool Muzzle;
     /// <summary>
-    /// Whether the part shows with a weapon drawn (<paramref name="weaponDrawn"/>), that weapon being the crossbow (<paramref name="ranged"/>), with <paramref name="shots"/>
-    /// bolts loaded in the crossbow.
+    /// Whether the part shows with a weapon drawn (<paramref name="weaponDrawn"/>), that weapon being the crossbow (<paramref name="ranged"/>) or the back melee weapon
+    /// (<paramref name="back"/>, else the hip one), with <paramref name="shots"/> bolts loaded in the crossbow.
     /// </summary>
-    public bool ShowsWith(bool weaponDrawn, bool ranged, int shots = 1) => (ShownShots == 0 || (ShownShots < 0 ? shots <= 0 : shots >= ShownShots)) && Shown switch
+    public bool ShowsWith(bool weaponDrawn, bool ranged, int shots = 1, bool back = false) => (ShownShots == 0 || (ShownShots < 0 ? shots <= 0 : shots >= ShownShots)) && Shown switch
     {
-        WeaponShown.Drawn => weaponDrawn && !ranged,
-        WeaponShown.Sheathed => !weaponDrawn || ranged,
+        WeaponShown.Drawn => weaponDrawn && !ranged && !back,
+        WeaponShown.Sheathed => !(weaponDrawn && !ranged && !back),
+        WeaponShown.BackDrawn => weaponDrawn && !ranged && back,
+        WeaponShown.BackSheathed => !(weaponDrawn && !ranged && back),
         WeaponShown.RangedDrawn => weaponDrawn && ranged,
         WeaponShown.RangedSheathed => !(weaponDrawn && ranged),
         _ => true,

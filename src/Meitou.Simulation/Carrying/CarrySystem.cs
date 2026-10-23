@@ -368,7 +368,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     /// <summary>
     /// Ends a link (serial). <paramref name="drop"/>: the body falls where the carrier stands (the carrier went down, lost its arm or turned to fight); else it is set down beside the
-    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoMinutes"/>).
+    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoSeconds"/>).
     /// </summary>
     void Unlink(World world, int carrier, int body, bool drop)
     {
@@ -396,7 +396,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         if (body.Medical is not { Dead: false } medical || body.Race is not { } race) return;
         var ctx = new MedicalContext(Constants, bodyOptions, race) { Toughness = body.Stats?.Toughness ?? 0, Strength = body.Stats?.Strength ?? 50, HasStats = body.Stats is not null };
-        medical.KnockOut(medical.PutDownKoMinutes(ctx, MedicalState.PutDownKoFactor(carrier.Stats?[StatsEnumerated.Assassination] ?? 0)));
+        medical.KnockOut(medical.PutDownKoSeconds(ctx, MedicalState.PutDownKoFactor(carrier.Stats?[StatsEnumerated.Assassination] ?? 0)));
     }
 
     /// <summary>The links every tick (serial, after the body tick): drops, wake-ups, broken links, and the body kept at its carrier.</summary>

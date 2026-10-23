@@ -17,6 +17,8 @@ public readonly record struct CharacterInstance(long Key, CharacterAppearance Ap
     public bool WeaponDrawn { get; init; }
     /// <summary>The weapon in hand is the crossbow: its in-hand parts (<see cref="WeaponShown.RangedDrawn"/>) show, the melee weapon's sheathed ones.</summary>
     public bool RangedDrawn { get; init; }
+    /// <summary>The melee weapon in hand is the back one: its drawn parts (<see cref="WeaponShown.BackDrawn"/>) show, the hip one's sheathed.</summary>
+    public bool BackDrawn { get; init; }
     /// <summary>The bolts loaded in the crossbow: which of its loaded / unloaded strings and bolts show (<see cref="CharacterPart.ShownShots"/>).</summary>
     public int Shots { get; init; }
     /// <summary>The bolts stuck in the character (<see cref="Characters.CharacterRenderer.CollectBolts"/>).</summary>

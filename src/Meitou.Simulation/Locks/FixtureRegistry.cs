@@ -121,7 +121,7 @@ public sealed class FixtureRegistry
             list.Add(new Fixture
             {
                 Id = $"{b.Key}@bed{bed.ToString(CultureInfo.InvariantCulture)}", Building = b.Key, Kind = FixtureKind.Bed, Site = site, Owner = owner,
-                Position = spot.Position, Yaw = spot.Yaw, UseRange = 15,
+                Position = spot.Position, Yaw = spot.Yaw, UseRange = 15, RecordId = spot.Record ?? "",
             });
             bed++;
         }
@@ -445,6 +445,20 @@ public sealed class FixtureRegistry
         foreach (var (key, until) in unreachable) if (until <= world.GameHours) (expired ??= []).Add(key);
         if (expired is not null) foreach (var key in expired) unreachable.Remove(key);
         unreachable[(f.Id, faction)] = world.GameHours + hours;
+    }
+
+    /// <summary>The bed within <paramref name="range"/> of <paramref name="at"/>, taken or not (where a sleeper lies: an AI asleep at its home's bed spot is not held in it).</summary>
+    public Fixture? BedAt(Vector3 at, float range)
+    {
+        Fixture? best = null;
+        float bestD = range * range;
+        foreach (var f in all)
+        {
+            if (f.Kind != FixtureKind.Bed) continue;
+            float d2 = Vector3.DistanceSquared(at, f.Position);
+            if (d2 <= bestD) (best, bestD) = (f, d2);
+        }
+        return best;
     }
 
     /// <summary>The nearest free bed within <paramref name="range"/> of a building owned by <paramref name="faction"/> (any owner when negative). <b>Engine choice</b>: the original's bed search is Unknown.</summary>

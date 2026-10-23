@@ -17,7 +17,7 @@ and open-shop buy/sell/close commands apply between ticks and republish snapshot
 commands stay queued; neither world ticks, game time nor simulation phases advance.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
-`BodySystem.HoursPerTick=11/36000`; medical dt units remain **Unknown**. Navmesh unload uses
+`BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
 real time (30 s); population unload grace uses game time (towns 60 s, roaming 10 s).
 `RequestedPause` is independent of remembered nonzero speed. Render previous/current states
 with simulation alpha; camera uses control alpha. Positions are float world coordinates;
@@ -1144,8 +1144,8 @@ Original-game unknowns are maintained in each linked subsystem reference; do not
 - No end-of-tick hook: the combat system swaps its arrays at the end of its `SlowWorld`, so the result depends on the system order
   ([Systems and their order](#systems-and-their-order)). Moving the swap would change what retaliation reads.
 - The two `MedicalContext` builders (`BodySystem` and `CombatSystem.MakeContext`) agree on toughness, strength, encumbrance (the body system writes it to
-  `Fighter.EncumbranceFactor`, 2026-10-13) and seed, and differ in `BodyTimeScale` (combat's is 1) and `Resting` (combat's is false). So they are equivalent only at time scale 1 and for a
-  character that is not resting; with the game's `TickMedical = false` the combat one only serves hits, where neither matters.
+  `Fighter.EncumbranceFactor`) and seed, and differ in `BodyTimeScale` (combat's is 1) and the bed fields (`Bed`, `BedFactor`, `Resting`, `HealMult`; combat's are unset). So they
+  are equivalent only at time scale 1 and outside beds and cages; with the game's `TickMedical = false` the combat one only serves hits, where neither matters.
 - Combat ticks are `int` (`CombatSlot.ReadyTick`, `StunUntil`) while the world's tick is `long`.
 - `ItemInstance.StolenFrom` is not included in the inventory hash. Adding it requires updating the affected carry/crime pins; pins are platform-specific.
 - `BodyHash` does not cover the private `starveGrace` and `starvationKo` of `MedicalState` (nor every flag such as `BloodKo`), so a divergence

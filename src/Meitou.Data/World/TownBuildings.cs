@@ -29,6 +29,8 @@ public readonly record struct HomeSpot(HomeSpotKind Kind, Vector3 Position, floa
     public int NodeType { get; init; } = -1;
     /// <summary>A chair's sitting clip: the ANIMATION record its functionality's <c>animation</c> names ("sitting chair", "sitting idle" for floor seats); null otherwise.</summary>
     public string? SitClip { get; init; }
+    /// <summary>A bed's furniture (its BUILDING string id: its <c>output rate</c> is how fast it heals, docs/game/character-stats.md "Beds"); null otherwise.</summary>
+    public string? Record { get; init; }
     /// <summary>A node a goal may stand at: neither a bed nor a seat.</summary>
     public bool IsNode => Kind is not (HomeSpotKind.Bed or HomeSpotKind.Chair);
 }
@@ -178,7 +180,11 @@ public static class TownBuildings
                         HomeSpotKind? kind = node ? NodeKind(item.Building) : IsBed(db, item.Building, beds) ? HomeSpotKind.Bed : null;
                         var function = kind is null ? FunctionOf(db, item.Building, functions) : null;
                         // A node marker looks along its local -X (docs/game/ai-tasks.md "Town goals"), a bed along +Z.
-                        if (kind is { } k) spots.Add(new HomeSpot(k, at, YawOf(rotation) - (node ? MathF.PI / 2 : 0)) { NodeType = node ? item.Building.GetInt("node type") : -1 });
+                        if (kind is { } k) spots.Add(new HomeSpot(k, at, YawOf(rotation) - (node ? MathF.PI / 2 : 0))
+                        {
+                            NodeType = node ? item.Building.GetInt("node type") : -1,
+                            Record = k == HomeSpotKind.Bed ? item.Building.StringId : null,
+                        });
                         else if (function?.GetInt("function") == ChairFunction)
                         {
                             (seats ??= []).Add((spots.Count, function.GetInt("flags")));

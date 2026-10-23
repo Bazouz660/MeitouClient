@@ -67,9 +67,9 @@ public class CharacterAppearanceTests
         Assert.Contains(worn, p => p.Slot == AttachSlot.Hat);
         Assert.Contains(worn, p => p.Slot == AttachSlot.Boots && p.Record.Name == "Samurai Boots"); // Wooden Sandals (0, 400): quantity 0 never spawns
         // The weapon in hand comes as its sheathed mesh and its drawn bare blade and sheath; the renderer shows one set by the fight.
-        var weapon = Assert.Single(c.Parts, p => p.Mode == AttachMode.Bone && p.Shown == WeaponShown.Sheathed);
+        var weapon = Assert.Single(c.Parts, p => p.Mode == AttachMode.Bone && p.Shown == WeaponShown.BackSheathed);
         Assert.Equal("back", weapon.Point); // Horse Chopper (1, 100, 0): val1 ≠ 0 is the back pool
-        Assert.Equal(["hands", "back"], c.Parts.Where(p => p.Shown == WeaponShown.Drawn).Select(p => p.Point));
+        Assert.Equal(["hands", "back"], c.Parts.Where(p => p.Shown == WeaponShown.BackDrawn).Select(p => p.Point));
         Assert.True(c.AttachmentPoints.ContainsKey("hip"));
         Assert.Equal("Bip01 Prop2", c.AttachmentPoints["hands"].Bone);
     }

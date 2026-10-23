@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Numerics;
+using Meitou.Data;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation.Bodies;
@@ -12,13 +14,13 @@ namespace Meitou.Simulation;
 /// slots. A corpse is removed <see cref="CorpseHours"/> game hours after it died (an engine choice; the original's rule is <b>Unknown</b>), one luckyren Mode burst at the end of its tick (<see cref="Burst"/>).
 /// </summary>
 /// <remarks>
-/// One tick is 1/30 s of game time at speed 1, which is <see cref="HoursPerTick"/> game hours; the medical rates are per game hour
-/// (character-stats.md). <see cref="BodyTimeScale"/> multiplies the time of the part and blood rates (not hunger or the knock-out timer), see
-/// <see cref="MedicalContext.BodyTimeScale"/>.
+/// The medical tick takes the tick's seconds of character time (<see cref="World.TickSeconds"/>, character-stats.md "Time"); hunger converts them to game hours.
+/// <see cref="BodyTimeScale"/> multiplies the time of the part and blood rates (not hunger or the knock-out timer), see <see cref="MedicalContext.BodyTimeScale"/>.
+/// The bed a character lies in comes from <paramref name="db"/> (none without it).
 /// </remarks>
-public sealed class BodySystem(GameConstants constants, BodyOptions? options = null, float bodyTimeScale = 1) : ITickSystem
+public sealed class BodySystem(GameConstants constants, BodyOptions? options = null, float bodyTimeScale = 1, GameDatabase? db = null) : ITickSystem
 {
-    /// <summary>Game hours in one tick: 11/36000 h is 1/30 game s at the Verified 1200/11 s per game hour (<c>GameClock</c>). Whether the original's medical dt is in game hours is Unknown (that is what <see cref="BodyTimeScale"/> covers).</summary>
+    /// <summary>Game hours in one tick: 11/36000 h is 1/30 game s at the Verified 1200/11 s per game hour (<c>GameClock</c>).</summary>
     public const float HoursPerTick = 11f / 36000;
     /// <summary>How long a corpse lies before it is removed, in game hours.</summary>
     public const float CorpseHours = 12;
@@ -29,6 +31,35 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// <summary>The <see cref="MedicalContext.BodyTimeScale"/> every character gets (default 1: the documented rates).</summary>
     public float BodyTimeScale { get; } = bodyTimeScale;
     readonly XpService xp = new(constants, options ?? BodyOptions.Default);
+    /// <summary>A bed record's kind and healing value without research (<see cref="BedOf"/>); filled from the parallel phase.</summary>
+    readonly ConcurrentDictionary<string, (BedKind Kind, float Factor)> beds = new();
+
+    /// <summary>How far from a bed's spot an AI sleeper counts as lying in it (it sleeps at the spot without being held in the bed).</summary>
+    const float BedReach = 3;
+
+    /// <summary>
+    /// The bed a character lies in (character state 1; <c>FUN_140652000</c>, character-stats.md "Beds"): the one it is held in, else for an AI asleep at its home's bed spot
+    /// (or the "Sleep when injured" bed task) the bed fixture there. Its kind is the functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED) and its factor the
+    /// Building's <c>+0x3c0</c>: <c>output rate</c> x <c>production mult</c> x the research production multiplier. None outside a bed.
+    /// </summary>
+    (BedKind Kind, float Factor) BedOf(World world, CharacterCold cold, in CharacterHot n)
+    {
+        if (db is null) return (BedKind.None, 1);
+        var fixture = cold.InSomething == Locks.HeldState.Bed && cold.InWhat is { } id ? world.Fixtures.Find(id)
+            : n.Task == (byte)CharacterTask.Rest && cold.Ai?.Behaviour == Ai.AiBehaviour.Sleep
+              || n.Task == (byte)CharacterTask.Operate && cold.Implicit == Meitou.Data.Gameplay.Ai.TaskType.GO_HOME_AND_GO_TO_BED && cold.Operating
+                ? world.Fixtures.BedAt(n.Position, BedReach) : null;
+        if (fixture is null) return cold.InSomething == Locks.HeldState.Bed ? (BedKind.Bed, 1) : (BedKind.None, 1);
+        var (kind, factor) = beds.GetOrAdd(fixture.RecordId, rid =>
+        {
+            if (db.Find(rid) is not { } bed) return (BedKind.Bed, 1);
+            foreach (var f in bed.GetReferences("functionality").Select(r => db.Find(r.TargetStringId)))
+                if (f?.GetInt("function") is (int)BedKind.Bed or (int)BedKind.RepairBed)
+                    return ((BedKind)f.GetInt("function"), bed.GetFloat("output rate", 1) * f.GetFloat("production mult", 1));
+            return (BedKind.Bed, bed.GetFloat("output rate", 1));
+        });
+        return (kind, factor * world.Research.Upgrade(fixture.RecordId).ProductionMult);
+    }
 
     public void Act(World world, Partition part, EffectBuffer effects)
     {
@@ -53,6 +84,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             float load = cold.Inventory?.ContentWeight() ?? 0;
             bool carrying = !cold.Carrying.IsNone;
             float encumbrance = load <= 0 && !carrying ? 1 : Encumbrance.Factor(Constants, load, carrying, stats.Strength, medical.StatMultiplier(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength));
+            var (bed, bedFactor) = BedOf(world, cold, in n);
             var ctx = new MedicalContext(Constants, Options, race)
             {
                 EncumbranceFactor = encumbrance,
@@ -61,15 +93,19 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 Seed = world.Seed,
                 CharacterKey = Rng.Key(table.IdOf(i)),
                 BodyTimeScale = BodyTimeScale,
-                // Lying in a bed of the "Sleep when injured" option rests too.
-                Resting = n.Task == (byte)CharacterTask.Rest || n.Task == (byte)CharacterTask.Operate && cold.Implicit == Meitou.Data.Gameplay.Ai.TaskType.GO_HOME_AND_GO_TO_BED && cold.Operating,
+                // In a bed (state 1) a character rests: degeneration stops, the bed scales healing, blood and hunger take the resting rates; held (state 2) the organic rate doubles.
+                Bed = bed,
+                BedFactor = bedFactor,
+                RepairRate = bed == BedKind.RepairBed ? bedFactor : 0,
+                Resting = bed != BedKind.None,
+                HealMult = cold.InSomething == Locks.HeldState.Imprisoned ? 2 : 1,
             };
             // The combat system's own context (hits) reads the encumbrance from the fighter, so it matches the one used here.
             if (cold.Fighter is { } fighter) fighter.EncumbranceFactor = encumbrance;
             if (world.BloodMarks is { } marks && medical.Bleeding > 0 && cold.WaterState == 0) BloodTrail(world, marks, i, cold, medical.Bleeding, race, in n);
             events ??= [];
             events.Clear();
-            medical.Tick(HoursPerTick, ctx, events);
+            medical.Tick(world.TickSeconds, ctx, events);
             n.MaxSpeed = Speed.Run(race, stats, medical, encumbrance);
             cold.SwimSpeed = Speed.Swim(race, stats, medical, encumbrance);
             TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);

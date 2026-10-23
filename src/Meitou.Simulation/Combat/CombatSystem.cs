@@ -24,8 +24,6 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>The <see cref="Effect.Kind"/> of a blow: <c>Arg</c> is the blow (1 or 2) and <c>Amount</c> the attacker's attack number.</summary>
     public const int BlowEffect = 1;
 
-    const float HoursPerSecond = 11f / 1200f;
-
     readonly CombatTechnique[] techniques;
     readonly CombatConstants combat;
     readonly GameConstants constants;

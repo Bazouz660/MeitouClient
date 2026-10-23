@@ -59,6 +59,7 @@ public sealed partial class World
                 StuckBolts = cold?.StuckBolts is { Count: > 0 } bolts ? bolts.ToArray() : [],
                 RangedDrawn = cold is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None
                     && cold.DrawnWeapon == Meitou.Data.Gameplay.HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon,
+                BackDrawn = cold?.Fighter?.WeaponIsBack ?? false,
                 Name = cold?.Name ?? "",
                 SquadId = cold?.SquadId ?? -1,
                 IsPlayer = cold?.IsPlayer ?? false,

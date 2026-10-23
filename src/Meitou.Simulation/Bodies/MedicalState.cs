@@ -5,10 +5,10 @@ namespace Meitou.Simulation.Bodies;
 
 /// <summary>
 /// A character's medical state: body parts, blood, wounds, hunger and the KO timer (docs/game/character-stats.md "Needs", "Blood and bleeding", "Body parts and
-/// injuries", "First aid"). It belongs to one character and is stepped with <see cref="Tick"/> in game hours; the world runs characters in parallel, so
+/// injuries", "First aid"). It belongs to one character and is stepped with <see cref="Tick"/> in seconds of character time; the world runs characters in parallel, so
 /// nothing here touches shared state. Randomness comes from the world's seeded rolls through the <see cref="MedicalContext"/>, with a per-character counter kept in the state.
-/// <para>Time: <c>dt</c> is game hours (<b>Observed</b>; the <c>dt * 0.05</c> factors of the original are kept as written). One simulation tick of 1/30 s is
-/// 11/36000 game hours. The KO timer counts game minutes (an engine choice read from the starvation code multiplying hours by 60).</para>
+/// <para>Time (<b>Verified</b>, docs/game/character-stats.md "Time"): <c>dt</c> is the character time, real seconds x game speed (the <c>dt * 0.05</c> factors of the
+/// original are kept as written); hunger follows the game clock in hours. The KO timer counts the same seconds.</para>
 /// Field names follow the save keys of MEDICAL_STATE (docs/formats/save.md): <see cref="Blood"/> <c>blood</c>, <see cref="Bleeding"/> <c>bleeding</c>,
 /// <see cref="Hunger"/> <c>hung</c>, <see cref="Fed"/> <c>fed</c>, <see cref="KoTimer"/> <c>KO</c>.
 /// </summary>
@@ -264,6 +264,6 @@ public sealed partial class MedicalState
         return sum;
     }
 
-    /// <summary>The KO time in game minutes: <c>knockout time base</c> (20) plus <see cref="KoTerms"/>.</summary>
+    /// <summary>The KO time in seconds of character time: <c>knockout time base</c> (20) plus <see cref="KoTerms"/>.</summary>
     public float KoTime(in MedicalContext ctx) => ctx.Constants.KnockoutTimeBase + KoTerms(ctx);
 }

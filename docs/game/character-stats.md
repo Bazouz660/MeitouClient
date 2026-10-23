@@ -37,13 +37,41 @@ actual transition timing is not fully decoded.
 Medical parts retain flesh h, bandage b, stun s, wear w, maximum M and hit/rig/replacement state.
 Effective part health, coverage/hit choice and body aggregates are distinct. Apply blunt/cut,
 bandaging and stun to the correct quantities; do not heal untreated flesh directly.
-**Observed** part tick uses0.05*dt: untreated fraction D=clamp(((M-h-b)*100/M-20)/70,0,1),
-quarter if h+b>0. Degeneration is0.05*dt*bodypart-rate*ChanceOfDeath*degMult*D*1.2,
-degMult lerps1.7..0.03 by toughness. Non-vital robot limbs/bed rest suppress it. Treated healing
-moves min(b,0.05*dt*heal-rate*R) from b to h; self-healing converts untreated to treated at0.4
-rate while alive/conscious. Robotic factor250 location is unknown. Stun decays to0; repair
-converts wear to treated damage. Blood capacity, bleeding and robot/organic differences are
-scoped in the retained constants/expressions.
+
+### Time
+
+**Verified** (decompile): the character adds `DAT_142133794` (real seconds x game speed, [game-loop](game-loop.md#the-three-time-values))
+to Character +0xc8 every frame (`FUN_1405c7ae0`, `FUN_1405cfd90`); `FUN_1405c7d40` hands the sum to the medical update
+`FUN_140652000` and clears it. So part, blood, clot and KO-timer rates are per second of that time (a game hour is 1200/11 of them).
+Hunger instead reads the game clock's elapsed time (`FUN_14064da70` via `FUN_140791ca0`). Meitou: `MedicalState.Tick(TickSeconds)`.
+
+### Part tick (`FUN_14064f5c0`, **Verified** decompile)
+
+In order, per part: the hit multiplier falls 0.01 a second while h >= 0 (reset to 1 below). Self healing (RACE, conscious, alive,
+h - s < M - b) adds 0.05 dt `heal rate mult` R 0.4 to b and skips degeneration that tick; otherwise, while h < M and h > -3M,
+h -= 0.05 dt `bodypart degeneration rate` ChanceOfDeath degMult D 1.2 with D = clamp(((M-h-b)100/M - 20)/70, 0, 1), quartered
+when h + b > 0; degMult lerps 1.7..0.03 by toughness and is 0 for a non-vital robotic part (robot race or limb replacement)
+and in any bed. Healing: while h < M, b > 0 and the limb is not crushed (state 3), min(b, 0.05 dt `heal rate mult` R), x250
+on a robotic part, moves from b to h. R = M/100 x the organic rate (robotic for a robot race or a replacement); a stump
+(state 1) has base HP 5 and R = 2 x the organic rate without M/100. Repair (a repair bed) moves 0.05 dt `resting heal rate
+mult` x its rate from w into b. Rig is held under 50 - (h - s); s falls 0.05 dt `stun recovery rate` `heal rate mult` R.
+
+### Beds (`FUN_140652000`, **Verified** decompile)
+
+Character state 1 (in something): degeneration 0 for every part. A BF_BED (6) scales the organic rate by the Building's
++0x3c0 = `output rate` x the functionality's `production mult` x the research production multiplier (`FUN_140297b30`; base
+data: Bed 8, Camp Bed 4, Fish Bed 2, Old Bed 1); a BF_SKELETON_BED (25) the robotic rate and the repair rate by that value
+times a slot 0x368 of its slot-0x300 object (**Unknown**, taken as 1). Blood recovers x `resting heal rate mult` only in
+state 1; hunger takes `bed hunger rate` in state 1 or KO or dead. State 2 (held in a cage) doubles the organic rate; a
+third x2 (both rates) needs a character slot 0x248 that returns 0 for `Character` and `CharacterHuman` (**Unknown** which class).
+Meitou: `BodySystem.BedOf`, the bed fixture a character is held in or an AI sleeps at (no player bed command yet).
+
+### Blood and KO
+
+**Verified** (decompile): wounds lose `bleeding clot rate` x0.1 a second (`FUN_140646140`); a hit opens one of strength
+max(cut, pierce) x `bleed rate` x0.1 x scale (`FUN_1406508d0`). Bleeding = (`extra blood loss from bodyparts` x stumps
+(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`; blood falls by it a second and, with no bleeding,
+recovers `blood recovery rate` x0.1 x race `heal rate` a second. The KO timer +0xa0 falls by dt.
 
 **Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
@@ -392,8 +420,7 @@ read and at least one consumer found through the data cross-references; base val
 
 ## Unknowns
 
-- What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for,
-  and whether `dt` is exactly game hours; the unit of the KO timer.
+- What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for.
 - The per-stat floors of `FUN_1406457e0` were re-decoded from the decompile by a second reader (two rows were
   wrong and are fixed) but still not checked against assembly; the source of the pain value at Character +0xd8,
   and the consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.

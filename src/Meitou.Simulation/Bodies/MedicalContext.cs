@@ -35,7 +35,7 @@ public readonly struct MedicalContext(GameConstants constants, BodyOptions optio
     /// <summary>The owner is exempt from wear and limb loss (the object at character slot <c>+0x248</c>; meaning <b>Unknown</b>).</summary>
     public bool ExemptFromWear { get; init; }
 
-    /// <summary>Character state 1: resting. Hunger uses <c>bed hunger rate</c> and blood recovers at <c>resting heal rate mult</c>.</summary>
+    /// <summary>Character state 1: in a bed. Hunger uses <c>bed hunger rate</c> and blood recovers at <c>resting heal rate mult</c>.</summary>
     public bool Resting { get; init; }
 
     /// <summary>Using a machine: the hunger rate factor is 0.8 (probably the BUILDING's <c>hunger rate</c>).</summary>
@@ -46,19 +46,17 @@ public readonly struct MedicalContext(GameConstants constants, BodyOptions optio
 
     public BedKind Bed { get; init; }
 
-    /// <summary>The bed's own healing value (virtual <c>+0x3c0</c>; the BUILDING field is <b>Unknown</b>).</summary>
+    /// <summary>The bed's own healing value (Building <c>+0x3c0</c>: its <c>output rate</c> x the functionality's <c>production mult</c> x the research production multiplier).</summary>
     public float BedFactor { get; init; } = 1;
 
-    /// <summary>An extra healing multiplier (the original heals twice as fast in its state 2).</summary>
+    /// <summary>A multiplier of the organic heal rate: 2 in character state 2 (held in a cage or on a pole), else 1.</summary>
     public float HealMult { get; init; } = 1;
 
     /// <summary>The repair rate when at a repair object, for wear repair (0 = none).</summary>
     public float RepairRate { get; init; }
 
     /// <summary>
-    /// Multiplies <c>dt</c> for the body-part and blood rates (not hunger or the KO timer). 1 is the documented behaviour, where <c>dt</c> is game hours; the documented
-    /// rates (a 30-point stun taking about 2400 hours to clear) look slow for hours, so the original may feed those updates a larger <c>dt</c>. An engine knob until
-    /// a game session settles the unit (character-stats.md, Unknowns).
+    /// Multiplies <c>dt</c> for the body-part and blood rates (not hunger or the KO timer): a Meitou knob for tests and tuning; 1 is the original.
     /// </summary>
     public float BodyTimeScale { get; init; } = 1;
 

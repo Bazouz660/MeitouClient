@@ -63,6 +63,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool WeaponDrawn { get; init; }
     /// <summary>The weapon in hand is the crossbow (ranged combat): the renderer shows the crossbow in the hands and the melee weapon sheathed.</summary>
     public bool RangedDrawn { get; init; }
+    /// <summary>The melee weapon in hand is the back one (<see cref="Combat.Fighter.WeaponIsBack"/>): its drawn meshes show, the hip one's sheathed.</summary>
+    public bool BackDrawn { get; init; }
     /// <summary>The bolts loaded in its crossbow (<see cref="CharacterCold.CrossbowShots"/>).</summary>
     public int CrossbowShots { get; init; }
     /// <summary>The bolts stuck in the character (<see cref="CharacterCold.StuckBolts"/>).</summary>

@@ -11,7 +11,17 @@ namespace Meitou.Simulation.Combat;
 /// </summary>
 public sealed class Fighter
 {
-    public WeaponInstance? Weapon { get; }
+    /// <summary>
+    /// The weapon in hand (docs/game/combat.md "Arms"): with both arms working the <see cref="BackWeapon"/>, else the hip one; with only the right arm the hip one; without
+    /// the right arm none (fists). An animal's natural weapon always.
+    /// </summary>
+    public WeaponInstance? Weapon => IsAnimal ? hip : !rightArm ? null : leftArm ? BackWeapon ?? hip : hip;
+    /// <summary>The first weapon in the <c>back</c> section, if any (the constructor's weapon is the <c>hip</c> one).</summary>
+    public WeaponInstance? BackWeapon { get; init; }
+    /// <summary>Whether <see cref="Weapon"/> is the <see cref="BackWeapon"/> (the renderer shows that one drawn).</summary>
+    public bool WeaponIsBack => Weapon is { } w && w == BackWeapon;
+    readonly WeaponInstance? hip;
+    bool rightArm = true, leftArm = true;
     /// <summary>The crossbow carried in a weapon section (back or hip), if any: the ranged weapon (docs/simulation.md "Combat", ranged). The melee <see cref="Weapon"/> stays what it was.</summary>
     public CrossbowInstance? Crossbow { get; init; }
     /// <summary>The worn pieces, in the order they are stacked in.</summary>
@@ -51,7 +61,7 @@ public sealed class Fighter
 
     public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null)
     {
-        Weapon = weapon;
+        hip = weapon;
         this.armour = armour is null ? [] : [.. armour];
         float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = 1, speed = 1;
         foreach (var p in this.armour)
@@ -71,6 +81,14 @@ public sealed class Fighter
         DexterityMult = dex;
         DodgeMult = dodge;
         CombatSpeed = speed;
+    }
+
+    /// <summary>Sets which arms work (<see cref="Weapon"/>); true when that changes the weapon in hand. Only in the owner's own Act or a serial phase.</summary>
+    public bool SetArms(bool right, bool left)
+    {
+        var before = Weapon;
+        (rightArm, leftArm) = (right, left);
+        return Weapon != before;
     }
 
     /// <summary>Fights with fists: no weapon, or a weapon record of the unarmed category (a creature attack).</summary>

@@ -82,8 +82,10 @@ public sealed partial class CombatSystem
             {
                 events ??= [];
                 events.Clear();
-                cold.Medical.Tick(dt * HoursPerSecond, MakeContext(world, i, cold), events);
+                cold.Medical.Tick(dt, MakeContext(world, i, cold), events);
             }
+            // The weapon in hand follows the arms (docs/game/combat.md "Arms"): losing one puts the weapon away and the fight goes on with what the arms still allow.
+            if (cold.Fighter.SetArms(cold.Medical.ArmWorks(left: false), cold.Medical.ArmWorks(left: true)) && cold.InCombat && !s.Ranged) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)
             {

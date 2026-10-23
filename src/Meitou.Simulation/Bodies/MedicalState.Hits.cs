@@ -60,7 +60,7 @@ public sealed partial class MedicalState
 
     /// <summary>
     /// Applies a blow to a part (<c>FUN_14064f300</c>): h falls by cut + pierce + blunt x <c>blunt permanent organ damage</c>; s rises by the rest of the blunt plus the extra
-    /// stun; blood falls by (cut + pierce) x <c>immediate blood loss</c> x scale x race bleed rate; robots and prosthetics gain wear; a cut opens a wound. Then the
+    /// stun; blood falls by (cut + pierce) x <c>immediate blood loss</c> x scale x race bleed rate; robots and prosthetics gain wear; a cut or pierce opens a wound. Then the
     /// part is checked: down (a vital one knocks the character out), destroyed (vital: death; other: severed, subject to the Dismemberment setting and to the owner having a stats object).
     /// The part's <see cref="HealthPart.HitMult"/> is raised by 1 per hit (to 4; held to 2 when its fraction is negative, 0 when destroyed).
     /// </summary>
@@ -76,8 +76,8 @@ public sealed partial class MedicalState
         Blood -= (hit.Cut + hit.Pierce) * c.ImmediateBloodLoss * hit.Scale * race.BleedRate;
         if (p.IsRobotic(race) && !ctx.ExemptFromWear)
             p.Wear += (hit.Cut + hit.Pierce + hit.Blunt) * 0.04f * c.RobotWearRate;
-        // How a cut turns into a wound strength is not traced (the editor text of `bleed rate` is "cutDamage * this * TIME"): strength = cut x bleed rate x scale.
-        if (hit.Cut > 0 && race.BleedRate > 0) wounds.Add(hit.Cut * c.BleedRate * hit.Scale);
+        // The wound (FUN_1406508d0): strength max(cut, pierce) x bleed rate x scale, losing `bleeding clot rate` a second (TickBlood).
+        if (MathF.Max(hit.Cut, hit.Pierce) > 0 && race.BleedRate > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
 
         p.HitMult = p.IsDestroyed ? 0 : p.Fraction < 0 ? MathF.Min(p.HitMult + 1, 2) : MathF.Min(p.HitMult + 1, 4);
 
@@ -201,25 +201,25 @@ public sealed partial class MedicalState
     public static float PutDownKoFactor(float assassination) => 0.1f + 0.3f * Math.Clamp(assassination / 100, 0, 1);
 
     /// <summary>
-    /// The KO time of a character put down by a non-friendly carrier, in game minutes: max(3, (2 x <c>knockout time base</c> + <see cref="KoTerms"/>) x <paramref name="factor"/> x 4),
+    /// The KO time of a character put down by a non-friendly carrier, in seconds of character time: max(3, (2 x <c>knockout time base</c> + <see cref="KoTerms"/>) x <paramref name="factor"/> x 4),
     /// the shape of the leg-loss KO (<c>FUN_140644980</c>) with the put-down factor in place of (1 - toughness) and no random roll (the notes give that function only the blood term and
     /// no roll; which reading is right is <b>Unknown</b>, the doc's leg-loss reading is used).
     /// </summary>
-    public float PutDownKoMinutes(in MedicalContext ctx, float factor) => MathF.Max(3, (2 * ctx.Constants.KnockoutTimeBase + KoTerms(ctx)) * factor * 4);
+    public float PutDownKoSeconds(in MedicalContext ctx, float factor) => MathF.Max(3, (2 * ctx.Constants.KnockoutTimeBase + KoTerms(ctx)) * factor * 4);
 
-    /// <summary>Knocks the character out for <paramref name="minutes"/> game minutes from outside the medical rules (a drug, a scripted event); a longer running KO is kept.</summary>
-    public void KnockOut(float minutes, List<MedicalEvent>? events = null) => ApplyKo(minutes, events);
+    /// <summary>Knocks the character out for <paramref name="seconds"/> seconds of character time from outside the medical rules (a drug, a scripted event); a longer running KO is kept.</summary>
+    public void KnockOut(float seconds, List<MedicalEvent>? events = null) => ApplyKo(seconds, events);
 
-    void ApplyKo(float minutes, List<MedicalEvent>? events)
+    void ApplyKo(float seconds, List<MedicalEvent>? events)
     {
         if (Dead) return;
         if (!Unconscious)
         {
             Unconscious = true;
-            KoTimer = minutes;
+            KoTimer = seconds;
             events?.Add(new MedicalEvent(MedicalEventKind.KnockedOut));
         }
-        else KoTimer = MathF.Max(KoTimer, minutes);
+        else KoTimer = MathF.Max(KoTimer, seconds);
     }
 
     /// <summary>Kills the character because one of its death items was taken while it was down (docs/game/animals.md "Death items").</summary>

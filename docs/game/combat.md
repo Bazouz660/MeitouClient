@@ -236,9 +236,15 @@ muzzle and closes the gap to its simulated flight over 150 units (`GameHost.Laun
 `FUN_140644450`); an original or fitted prosthetic limb passes. Planner conditions 38 `hasOneWorkingArm` (either) and 161 `hasTwoWorkingArm` (both;
 `FUN_140998470`, `FUN_1409984d0`). Weapon categories 3 Heavy, 6 Bow (every crossbow, `FUN_140898c90`) and 8 Polearms need both arms; the rest only the right
 (`FUN_1409991d0`, weapon choice `FUN_1405c97a0`). Without both, the shooting gate (`FUN_1407f2840`) fails: attack orders stay melee (`FUN_1407f9e20`) and the
-Shooting tasks 262/263/266 (condition 161) are not planned; losing an arm puts a held two-arm weapon away (`FUN_1405cc230`). Melee (`FUN_140345c10`): right arm
-out, unarmed; only the right arm, the `hip` weapon; both, the `back` one may be drawn. Meitou: `MedicalState.ArmWorks` (also carrying and swimming); the
-crossbow needs both arms (`CombatSystem` ranged switch) and the planner conditions read them; the melee draw rule and Heavy/Polearm need are not built.
+Shooting tasks 262/263/266 (condition 161) are not planned; an arm's change puts the held weapon away (`FUN_1405cc230`): a two-arm one on either arm, another
+when an arm it needs is out. The melee weapon drawn (`FUN_140345c10`; hip and back are the first item of the `hip` and `back` sections, `FUN_140747c30`,
+`FUN_140747e00`): right arm out, none (fists); right only, the hip one; both, the back one unless it is a crossbow, else the hip one. The hip one replaces a drawn
+back one only when it rates higher by Item vtable +0x378, which returns 0 for every WEAPON and CROSSBOW (`FUN_1408a52d0`), so never. **Observed**, not built:
+with both arms, `FUN_140334250` keeps the weapon held instead of drawing the back one; it is true when the character's location resolves to a building whose
++0xc2 byte is 0 (indoors?). Meitou: `MedicalState.ArmWorks` (also carrying and swimming); `Fighter.Weapon` takes back or hip by the arms each tick
+(`Fighter.SetArms` in the combat Act, a change redraws), the appearance gives the first hip and back weapons both mesh sets (`WeaponShown.Back*`, snapshot
+`BackDrawn`); the crossbow needs both arms (`CombatSystem` ranged switch) and the planner conditions read them. A two-arm category at the hip with one arm is not
+traced.
 
 ### Unknowns of the ranged path
 
