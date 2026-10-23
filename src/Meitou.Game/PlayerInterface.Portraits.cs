@@ -30,6 +30,24 @@ sealed partial class PlayerInterface
     string PortraitRect(int cell) => FormattableString.Invariant(
         $"{cell % CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {cell / CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {PortraitSize} {PortraitSize}");
 
+    /// <summary>How many of the player's characters are posed every frame however far from the eye (<see cref="FullRateCharacters"/>).</summary>
+    const int FullRateCount = 10;
+
+    /// <summary>
+    /// The player's characters posed every frame however far (<see cref="CharacterInstance.FullRateAnimation"/>) into <paramref name="into"/>: the first
+    /// <see cref="FullRateCount"/> of the squad bar and then the other squads in order, and the first selected one.
+    /// </summary>
+    public void FullRateCharacters(HashSet<CharacterId> into)
+    {
+        into.Clear();
+        foreach (var c in SquadBarMembers())
+            if (into.Count < FullRateCount) into.Add(c.Id);
+        foreach (var squad in session.CurrentSnapshot.PlayerSquads)
+            foreach (var id in squad.Members)
+                if (into.Count < FullRateCount) into.Add(id);
+        if (Selected().FirstOrDefault() is { } first) into.Add(first.Id);
+    }
+
     /// <summary>The characters the squad bar shows, the active squad's in order: the first atlas cells (<see cref="PortraitMembers"/>).</summary>
     public IReadOnlyList<CharacterSnapshot> SquadBarMembers()
     {

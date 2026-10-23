@@ -117,6 +117,8 @@ sealed partial class GameHost
         return [.. editorStances.Select(s => new CharacterPose(s.Stance, animationLibrary?.IndexOf(s.Stance) is >= 0 and int k ? (float)now * animationLibrary.Definitions[k].PlaySpeed : 0, s.Weight))];
     }
 
+    readonly HashSet<CharacterId> fullRate = [];
+
     void FillDrawListCore(CharacterDrawList list)
     {
         var current = session.CurrentSnapshot;
@@ -124,6 +126,7 @@ sealed partial class GameHost
         float alpha = session.SimulationAlpha;
         // The character editor is a scene of its own (GameHost.Editor.cs): only the character being edited is posed and drawn.
         var editing = player.EditorFocus?.Character;
+        player.FullRateCharacters(fullRate);
         foreach (var c in current.Characters)
         {
             if (c.Appearance is null || editing is { } edited && c.Id != edited) continue;
@@ -159,7 +162,7 @@ sealed partial class GameHost
             var glide = player.EditorBlend(c.Id);   // after the preview, which may just have swapped the look
             list.Add(new CharacterInstance(DrawKey(c.Id), look, position, yaw, poses)
             {
-                WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, BackDrawn = c.BackDrawn, Shots = c.CrossbowShots, Bolts = BoltsOf(c), Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer,
+                WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, BackDrawn = c.BackDrawn, Shots = c.CrossbowShots, Bolts = BoltsOf(c), Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = editing is not null || fullRate.Contains(c.Id),
                 Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha),
                 BlendFrom = glide?.From, Blend = glide?.Blend ?? 0, Build = c.Build,
             });

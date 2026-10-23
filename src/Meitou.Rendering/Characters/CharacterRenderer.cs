@@ -181,7 +181,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// <summary>
     /// Characters farther than these distances from the eye are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
     /// phase of its own so the poses spread over the frames; nearer ones every frame. A fight at the camera's pivot with the boom pulled out is thinned too: only
-    /// <see cref="CharacterInstance.FullRateAnimation"/> (the player's characters) keeps the full rate.
+    /// <see cref="CharacterInstance.FullRateAnimation"/> (the player's first characters and the selected one) keeps the full rate.
     /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
     /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>

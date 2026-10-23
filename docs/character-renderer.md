@@ -44,7 +44,8 @@ uploads. Reuse appearances/content; replace only after ready and retire after GP
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
 Generated four-level reductions are always enabled; pose rates fall with distance from the eye (a fight at the
 camera's pivot is thinned too once the boom is out): past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
-distance throttling for presentation actors and the player's characters. Shadow LOD doubles choice with cascade floors.
+distance throttling for presentation actors, the first 10 of the player's characters (squad bar, then the
+other squads in order) and the first selected one (`PlayerInterface.FullRateCharacters`). Shadow LOD doubles choice with cascade floors.
 Clamp stored bounds to real mesh extent. Animation rendering does not independently integrate
 walk-loop root movement; simulation owns relocation. Quads/morph and motion buffers retain
 correct previous-frame data across skipped poses and content changes.
