@@ -32,6 +32,8 @@ sealed class PostComposite : IDisposable
     readonly ShaftApplyPass shaftApplyP;
     readonly FxaaPass fxaa;
     readonly HeatHazePass haze;
+    readonly ParticleDepthPass particleDepthP;
+    readonly ParticleCompositePass particleCompositeP;
     readonly Dictionary<(GpuProgram Program, InternalFormat Format, DrawState State), GraphicsPipelineDesc> pipelines = [];
     readonly SampledTexture sceneSampler, luminanceSampler, plainSampler, pointSampler, linearMipSampler;
 
@@ -71,6 +73,8 @@ sealed class PostComposite : IDisposable
         shaftApplyP = new ShaftApplyPass(ctx, vertex);
         fxaa = new FxaaPass(ctx, vertex);
         haze = new HeatHazePass(ctx, vertex);
+        particleDepthP = new ParticleDepthPass(ctx, vertex);
+        particleCompositeP = new ParticleCompositePass(ctx, vertex);
         var c = composite;
         exposure = c.Uniform("uExposure");
         useAo = c.Uniform("uUseAo");
@@ -489,6 +493,62 @@ sealed class PostComposite : IDisposable
         cmd.Order();
     }
 
+    /// <summary>
+    /// The low-resolution particles' depth pass: the scene's depth reduced to the target's size. The caller opens the
+    /// native segment and gives the target; this draws a fullscreen triangle with no colour attachment.
+    /// </summary>
+    public void ParticleDepth(IGpuCommandList cmd, GpuTexture sceneDepth, GpuTexture target, int fullWidth, int fullHeight, int divisor,
+        GpuTexture? colour = null)
+    {
+        var d = particleDepthP;
+        d.P.Bind(d.Depth, pointSampler with { View = sceneDepth.View() });
+        d.P.Set(d.FullSize, (float)fullWidth, (float)fullHeight);
+        d.P.Set(d.Div, (float)divisor);
+        FullscreenDepth(cmd, d.P, target, colour, target.Desc.Width, target.Desc.Height);
+    }
+
+    /// <summary>The low-resolution accumulation upsampled over the scene (depth-aware, as the Vulkan chain).</summary>
+    public void ParticleComposite(IGpuCommandList cmd, GpuTexture accum, GpuTexture lowDepth, GpuTexture sceneDepth, GpuTexture scene,
+        int divisor, float near, float far)
+    {
+        var c = particleCompositeP;
+        c.P.Bind(c.Accum, plainSampler with { View = accum.View() });
+        c.P.Bind(c.LowDepth, pointSampler with { View = lowDepth.View() });
+        c.P.Bind(c.Depth, pointSampler with { View = sceneDepth.View() });
+        c.P.Set(c.LowSize, (float)accum.Desc.Width, (float)accum.Desc.Height);
+        c.P.Set(c.NearPlanes, near, far);
+        c.P.Set(c.Div, (float)divisor);
+        var formats = new AttachmentFormats(scene.Desc.Format, InternalFormat.None);
+        var state = DrawState.For(formats, false) with
+        {
+            Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha),
+            ColourMask = DrawState.Rgb,
+        };
+        Fullscreen(cmd, c.P, scene, scene.Desc.Width, scene.Desc.Height, state, LoadOp.Load);
+    }
+
+    /// <summary>A depth-only fullscreen triangle (the low-resolution particle depth pass); a colour target keeps Metal's pipeline valid (the shader writes black).</summary>
+    void FullscreenDepth(IGpuCommandList cmd, LegacyProgram program, GpuTexture target, GpuTexture? colour, int w, int h)
+    {
+        var formats = new AttachmentFormats(colour?.Desc.Format ?? InternalFormat.None, target.Desc.Format);
+        var state = DrawState.For(formats, false, depthTest: true, depthWrite: true, compare: DepthFunction.Always);
+        if (!pipelines.TryGetValue((program.Program, formats.Colour, state), out var desc))
+            pipelines[(program.Program, formats.Colour, state)] = desc = state.Pipeline(program.Program, program.VertexLayout([]),
+                PrimitiveType.Triangles, formats, program.Name);
+        cmd.BeginRendering(new RenderingDesc(colour is null ? default : new RenderTarget(colour.Attachment(), LoadOp.Clear, default),
+            new RenderTarget(target.Attachment(), LoadOp.Clear, default, 1f), w, h));
+        cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(true, true, DepthFunction.Always);
+        cmd.SetDepthBias(false, 0, 0);
+        cmd.BindPipeline(ctx.Pipelines.Get(desc));
+        program.Flush(cmd);
+        cmd.Draw(3);
+        cmd.EndRendering();
+        cmd.Order();
+    }
+
     public void Dispose()
     {
         luminanceTarget?.Dispose();
@@ -516,6 +576,8 @@ sealed class PostComposite : IDisposable
         shaftApplyP.P.Dispose();
         fxaa.P.Dispose();
         haze.P.Dispose();
+        particleDepthP.P.Dispose();
+        particleCompositeP.P.Dispose();
     }
 
     abstract class Pass(IGpuContext ctx, string vertex, string fragment, string name)
@@ -629,6 +691,25 @@ sealed class PostComposite : IDisposable
             (Flow, Perturbation, Depth, Image) = (P.Sampler("uFlow"), P.Sampler("uPerturbation"), P.Sampler("uDepth"), P.Sampler("uImage"));
             (Phase, Amount, Tan, NearFar, FarClip, HasDepth) = (P.Uniform("uPhase"), P.Uniform("uAmount"), P.Uniform("uTan"), P.Uniform("uNearFar"),
                 P.Uniform("uFarClip"), P.Uniform("uHasDepth"));
+        }
+    }
+
+    sealed class ParticleDepthPass : Pass
+    {
+        public readonly SamplerSlot Depth;
+        public readonly UniformHandle FullSize, Div;
+        public ParticleDepthPass(IGpuContext ctx, string vertex) : base(ctx, vertex, PostProcessShaders.ParticleDepth, "post particle depth") =>
+            (Depth, FullSize, Div) = (P.Sampler("uDepth"), P.Uniform("uFullSize"), P.Uniform("uDiv"));
+    }
+
+    sealed class ParticleCompositePass : Pass
+    {
+        public readonly SamplerSlot Accum, LowDepth, Depth;
+        public readonly UniformHandle LowSize, NearPlanes, Div;
+        public ParticleCompositePass(IGpuContext ctx, string vertex) : base(ctx, vertex, PostProcessShaders.ParticleComposite, "post particle composite")
+        {
+            (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
+            (LowSize, NearPlanes, Div) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"));
         }
     }
 }

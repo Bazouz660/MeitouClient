@@ -27,6 +27,16 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     int displayWidth, displayHeight;
     long frame;
     double lastAdaptation;
+    readonly LowTarget[] lowTargets = [new(2), new(4)];
+
+    sealed class LowTarget(int divisor)
+    {
+        public readonly int Divisor = divisor;
+        public GpuTexture? Accum, Depth;
+        public PassTargets Targets = null!;
+    }
+
+    LowTarget LowFor(int divisor) => divisor >= 4 ? lowTargets[1] : lowTargets[0];
 
     public MetalPostChain(MetalContext ctx, PostComposite composite, PostTaa taa, PostOptions options, Func<bool> noTaa, Func<bool> temporal,
         Func<long, int, int, Vector2> jitter)
@@ -64,6 +74,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         get => composite.HeatHazeAmount;
         set => composite.HeatHazeAmount = value;
     }
+
     public double HeatHazeHours
     {
         get => composite.HeatHazeHours;
@@ -74,7 +85,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         get => composite.HeatHazeFarClip;
         set => composite.HeatHazeFarClip = value;
     }
-    public bool LowResParticles => false;
+    public bool LowResParticles => Options.LowResParticles;
 
     public void Begin(int width, int height)
     {
@@ -156,10 +167,43 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         volumesPending = false;
     }
 
-    public float ParticlePixelsPerUnit(float projectionM22) => 0f;
-    public PassTargets ParticleTargets(int divisor) => SceneTargets;
-    public void BeginParticlesLow(int divisor) { }
-    public void CompositeParticlesLow(int divisor) { }
+    public float ParticlePixelsPerUnit(float projectionM22) =>
+        LowResParticles ? projectionM22 * (sceneColour?.Desc.Height ?? 0) * 0.5f : 0f;
+
+    public PassTargets ParticleTargets(int divisor) => LowFor(divisor).Targets;
+
+    public void BeginParticlesLow(int divisor)
+    {
+        if (sceneColour is null) return;
+        var low = LowFor(divisor);
+        int div = low.Divisor;
+        int w = Math.Max((sceneColour.Desc.Width + div - 1) / div, 1);
+        int h = Math.Max((sceneColour.Desc.Height + div - 1) / div, 1);
+        if (low.Accum is null || low.Accum.Desc.Width != w || low.Accum.Desc.Height != h)
+        {
+            low.Accum?.Dispose();
+            low.Depth?.Dispose();
+            low.Accum = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: $"post particle accumulation 1/{div}"));
+            low.Depth = ctx.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h,
+                Use: TextureUse.DepthTarget | TextureUse.Sampled, Name: $"post particle depth 1/{div}"));
+        }
+        var depthCmd = (MetalCommandList)ctx.BeginNative("post particle depth");
+        composite.ParticleDepth(depthCmd, ctx.Depth, low.Depth!, sceneColour.Desc.Width, sceneColour.Desc.Height, div, low.Accum);
+        ctx.EndNative(depthCmd);
+        var targets = PassTargets.Of(low.Accum, low.Depth);
+        low.Targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
+    }
+
+    public void CompositeParticlesLow(int divisor)
+    {
+        if (sceneColour is null) return;
+        var low = LowFor(divisor);
+        var cmd = (MetalCommandList)ctx.BeginNative("post particle composite");
+        composite.ParticleComposite(cmd, low.Accum!, low.Depth!, ctx.Depth, sceneColour, low.Divisor, nearPlane, farPlane);
+        ctx.EndNative(cmd);
+    }
+
     public void MarkParticleDraws() { }
     public void MarkParticles() { }
 
@@ -190,7 +234,15 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         return dt;
     }
 
-    public void Dispose() => sceneColour?.Dispose();
+    public void Dispose()
+    {
+        sceneColour?.Dispose();
+        foreach (var low in lowTargets)
+        {
+            low.Accum?.Dispose();
+            low.Depth?.Dispose();
+        }
+    }
 
     Vector3 eye;
     Matrix4x4 view;

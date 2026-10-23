@@ -343,7 +343,7 @@ out of the P0 content-testing gate.
 - The shared water reflection pass now runs on Metal; the scene is mirrored into the water.
 - Meitou water (FFT/shore/foam/reflection/refraction) now runs on Metal. Metal omits water foam sun
   shadows to fit its 16-sampler stage.
-- No low-resolution particle targets.
+- Low-resolution particle targets are shared; the Metal near-plane close pass is still skipped.
 - No fog-rate (fog shading-rate) target.
 - No object motion / reactive-mask path for temporal upscalers.
 - No HDR/EDR output.
@@ -354,7 +354,7 @@ out of the P0 content-testing gate.
 
 1. Water reflection only if a content pass genuinely needs mirrored scenery.
 2. Meitou water and cloud/fog parity once the content gate is closed.
-3. Low-res particles and fog rate as performance/visual parity work.
+3. Fog rate as performance/visual parity work.
 4. Object motion/reactive mask with the temporal upscaler work.
 5. HDR/EDR at presentation time.
 

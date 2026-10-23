@@ -468,7 +468,7 @@ impostor bakes and far billboards are disabled until their atlas is fixed); the 
 auto exposure and a seam-only TAA; the faithful water;
 skinned characters (the `--crowd` harness, the `--new-game` player squad and the population draw list; the town
 population and navmesh now run in the live loop); the world's lamps and room lights; the weather's and map placers'
-particles (full size for now; the low-resolution targets and the near-plane close pass are Vulkan-only); the HUD and the faithful panels
+particles (the low-resolution targets are shared; the near-plane close pass is still Vulkan-only); the HUD and the faithful panels
 (inventory, stats, overview/map, menu), with portraits, item icons and the panels' own pointer/keyboard controls;
 the hover outline, move marker and navmesh debug overlay (Shift+F11).
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
@@ -498,11 +498,10 @@ context is Vulkan; the reflection pass and Meitou water are seam-neutral. Metal 
 `VramGuard` and uses `MetalPostChain` (`PostComposite`/`PostTaa` behind `IWorldPostChain`).
 
 `WorldFrame.Draw` now runs through that interface and owns the shared frame: weather and sky preparation, streaming,
-shadows, the scene host, the post-chain scene effects (fog volumes, shafts, SSAO), full-size particles, the post chain,
+shadows, the scene host, the post-chain scene effects (fog volumes, shafts, SSAO), particles, the post chain,
 and the finished-picture overlays. Metal's local scene/post loop is gone; its host keeps the title staging, the
-interface and the present. Vulkan still uses `PostProcess`'s GI, far-depth slice and low-resolution particles;
-Metal's chain reports one depth slice, no GI and no low-res particles. The shared draw runs the reflection pass on
-both backends when water is in view.
+interface and the present. Vulkan still uses `PostProcess`'s GI and far-depth slice; Metal's chain reports one depth
+slice and no GI. The shared draw runs the reflection pass and low-resolution particles on both backends.
 
 **Combat feedback and deterministic stills (2026-10-22).** `SetUpBlood` takes `IGpuContext`; Metal checks the blood
 setting and makes the decal store and debris renderer before a loaded save's decals are read. `UpdateBlood` runs
@@ -684,9 +683,9 @@ keys and pointer hover/clicks/scroll work, and camera movement, selection and or
 ### 6. The remaining effects
 
 `VolumetricCloudRenderer` is seam-neutral and runs through `SkyRenderer` on both backends. `ParticleRenderer`
-(weather and map placers) is wired and drawn full size over the scene; the low-resolution particle targets are
-Vulkan-only, and Metal skips the near-plane close pass because a large dust sprite crossing it produced a black
-frame and a GPU reset. `WorldLamps`,
+(weather and map placers) is wired, and the half/quarter-size particle targets are shared by both backends. Metal
+still skips the near-plane close pass because a large dust sprite crossing it produced a black frame and a GPU
+reset. `WorldLamps`,
 `HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
 wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
 faithful and Meitou look.

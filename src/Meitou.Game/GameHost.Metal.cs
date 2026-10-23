@@ -706,6 +706,15 @@ sealed partial class GameHost
                 Text: v => v >= 0.5f ? $"saturation {PostOptions.Saturation:0.00}, contrast {PostOptions.Contrast:0.00}" : "off (as the game)"));
             sliders.Add(new Slider("Heat haze strength (1 = game)", 0, 3, () => o.Post.HeatHazeStrength,
                 v => o.Post.HeatHazeStrength = MathF.Round(v * 20) / 20, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHeatHazeStrength));
+            sliders.Add(new Slider(WorldFrame.ParticleSliders[0], 0, 4,
+                () => WorldFrame.WeatherParticlesSlider(worldGpu.WeatherParticles, o.Post), v =>
+                {
+                    int i = (int)MathF.Round(v);
+                    worldGpu.WeatherParticles = i > 0;
+                    if (i > 0) (o.Post.LowResParticles, o.Post.ParticleDivisor) = i switch { 1 => (true, 4), 2 => (true, 2), 3 => (true, 0), _ => (false, 0) };
+                }, "0"));
+            sliders.Add(new Slider(WorldFrame.ParticleSliders[1], 0.1f, 1, () => worldGpu.ParticleDensity,
+                v => worldGpu.ParticleDensity = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Night grading strength (0 = game)", 0, 1, () => o.Post.NightGradeStrength,
                 v => o.Post.NightGradeStrength = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts strength", 0, 1, () => o.Post.ShaftStrength,

@@ -102,9 +102,9 @@ Metal's `MetalPostChain` wraps `PostComposite` + `PostTaa` and supplies the scen
 jitter/temporal choice and the scene effects. Metal's host no longer has its local scene/post loop: it sets up the
 title staging, portrait/hover inputs and UI, then calls `WorldFrame.Draw` (which also draws the shared overlays).
 
-The chain reports what it lacks: Metal has one depth slice, no GI and no low-resolution particles; the shared draw
-skips those paths. The reflection pass and Meitou water run on both; Vulkan still uses its far/near slices, GI and
-low-res particles.
+The chain reports what it lacks: Metal has one depth slice and no GI; the shared draw skips those paths. The
+reflection pass, Meitou water and low-resolution particles run on both; Vulkan still uses its far/near slices and
+GI.
 
 Verification for this slice: Release build 0 warnings / 0 errors; quick suite 476 passed / 2 skipped.
 The normal Metal `--new-game Wanderer` run was accepted by the user on 2026-10-22; title, editor,
