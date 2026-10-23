@@ -10,7 +10,7 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// One condition (<c>FUN_140676950</c>, docs/game/dialogue.md "Conditions"): <c>who</c> 0 tests the speaker, any other value the target. Yes/no conditions pass when the computed
     /// answer equals value &gt; 0; counts compare by <c>compare by</c> (Num3: 1 &lt;, 2 &gt;, else ==; Num2: 1 &lt;, else &gt;=). Conditions whose inputs Meitou does not have
-    /// (squad memory flags, building locks, town walls, missions, personality functions) compute "no".
+    /// (building locks, town walls and levels, faction trust, strength ratings, head counts, illegal items, training) compute "no".
     /// </summary>
     bool Condition(World world, Conversation c, DialogueCondition dc, CharacterId me, CharacterCold mc, CharacterId other)
     {
@@ -31,7 +31,15 @@ public sealed partial class DialogueSystem
             case 6 or 15 or 34 or 51: return true;
             case 1: return Num2(sF == meF ? 100 : relations.Contains(meF) && relations.Contains(sF) ? (int)relations.Get(meF, sF) : 0);
             case 2: return Num2(world.Player.Money);
-            case 3 or 12: return Num3(0);
+            case 3: return Num2(0);   // S's faction's global trust (FactionRelations +0x18, FUN_140671530): Meitou keeps no trust yet
+            case 12: return Num3(0);
+            case 7 or 8:
+            {
+                // Caged by the speaker's faction (7) or another (8); when S is the speaker, by the target's faction instead (FUN_140676950).
+                if (Cold(world, other) is not { } tcold || !s.IsImprisoned || s.InWhat is not { } cell || world.Fixtures.Find(cell) is not { } cell2) return !b;
+                int by = subjectId == me ? tcold.Faction : meF;
+                return Bool(dc.Condition == 7 ? cell2.Owner == by : cell2.Owner != by);
+            }
             case 4 or 5:
                 return Bool(Cold(world, s.Carrying) is { } body && (body.Medical?.Dead ?? false) == (dc.Condition == 5) && (body.Bounties?.AmountFor(meF) ?? 0) > 0);
             case 9: return Bool(s.SquadId >= 0 && world.Squads.Find(s.SquadId)?.Shop is not null);
@@ -41,18 +49,10 @@ public sealed partial class DialogueSystem
                 var whom = subjectId == me ? other : subjectId;
                 return Bool(Position(world, whom) is { } p && Position(world, me) is { } q && Vector3.DistanceSquared(p, q) < 67600);
             }
-            case 18:
-            {
-                var whom = subjectId == me ? other : subjectId;
-                return Num2(mc.SquadId >= 0 && met.TryGetValue((mc.SquadId, whom), out double at) ? world.GameHours - at : world.GameHours);
-            }
+            case 18: return Num2((int)Memory.HoursSince(world, mc.SquadId, subjectId));   // `who` 0 asks the squad about its own speaker: never noted
             case 17: return Bool(mc.SquadId >= 0 && world.Squads.Find(mc.SquadId)?.HomeBuilding is { } home && Position(world, subjectId) is { } inside && InBuilding(home, inside));
             case 19: return Bool(s.SquadId < 0 || world.Squads.Find(s.SquadId)?.Leader == subjectId);
-            case 20:
-            {
-                var whom = subjectId == me ? other : subjectId;
-                return Bool(mc.SquadId >= 0 && met.ContainsKey((mc.SquadId, whom)));
-            }
+            case 20: return Bool(Memory.Find(world, mc.SquadId, subjectId) is not null);
             case 24: return Bool(relations.Contains(meF) && relations.Contains(sF) && relations.IsAlly(meF, sF));
             case 25: return Bool(relations.Contains(meF) && relations.Contains(sF) && relations.IsHostile(meF, sF));
             case 27: return Bool(Parts(s, BodyPartType.Leg).Any(p => p.Flesh < 0));
@@ -64,6 +64,7 @@ public sealed partial class DialogueSystem
             case 33: return Bool(CopsAround(world, me));
             case 35: return Num3(SquadOf(world, subjectId).Count(m => world.Characters.IsAlive(m)));
             case 36: return Bool(s.IsPlayer || (world.Player.Faction >= 0 && sF == world.Player.Faction));
+            case 37: return Num3(SquadOf(world, subjectId).Count(m => Cold(world, m)?.Inventory?.Backpack is not null));
             case 38: return Bool(SquadOf(world, subjectId).All(m => Cold(world, m)?.Fighter?.IsAnimal == true));
             case 40: return Num2(s.RecentlyWanted > 0 || s.Recognition >= 1 ? s.Bounties?.AmountFor(meF) ?? 0 : 0);
             case 41: return Bool(s.Medical is { Unconscious: true, Dead: false });
@@ -73,6 +74,11 @@ public sealed partial class DialogueSystem
             case 46: return b && Cold(world, s.Carrying) is { Medical.Dead: false, NpcClass: FundamentalType.Adventurer or FundamentalType.Bandit or FundamentalType.Slave or FundamentalType.Civilian };
             case 47: return Num2(s.Bounties?.AmountFor(meF) ?? 0);
             case 48: return Bool(s.Fighter is { IsAnimal: false, Weapon: null });
+            case 50: return Bool(world.Squads.Find(mc.SquadId)?.Ai is { } board && board.MissionTarget == subjectId);
+            case 52: return Bool(Loves(world, mc, subjectId));
+            case 53: return Bool(Hates(world, mc, subjectId));
+            case 54: return Bool(ScrewOver(world, me, mc, subjectId, s));
+            case 55: return Bool(Helps(world, me, mc, subjectId, s));
             case 56: return Bool(s.InCombat);
             case 59: return Bool(s.SlaveState is 1 or 2);
             case 61: return Bool(s.SlaveState is 1 or 2 && s.SlaveOwner >= 0 && s.SlaveOwner == meF);
@@ -83,6 +89,7 @@ public sealed partial class DialogueSystem
             case 65: return Bool(s.Race is not null && s.Race.StringId == mc.Race?.StringId);
             case 66: return Bool(s.IsPlayer && world.Player.Money >= (s.Bounties?.AmountFor(meF) ?? 0));
             case 67: return Bool((s.Orders & CharacterOrders.Sneak) != 0 && !s.InCombat);
+            case 68: return Bool(world.Characters.TryResolveNext(subjectId, out int indoors) && world.Sight.BuildingOf(indoors) is not null);
             case 71: return Bool(s.Medical is { } fed && fed.Hunger < 1.7f);
             case 72:
             {
@@ -90,6 +97,9 @@ public sealed partial class DialogueSystem
                 return Bool(looks.Length == 0 || (looks.Contains(true) && looks.Contains(false)));
             }
             case 74: return Num3(-1);
+            case 75: return Bool(Position(world, subjectId) is { } loc && TownAt(loc) is >= 0 and var ptown && ptown < data.SiteFactions.Count && world.Player.Faction >= 0
+                && data.SiteFactions[ptown] == world.Player.Faction);
+            case 78: return Bool(world.Squads.Find(mc.SquadId)?.Ai?.Contract is not null);
             case 77:
                 return s.NpcClass is FundamentalType.LawEnforcement or FundamentalType.Trader or FundamentalType.Diplomat or FundamentalType.Military ? !b : b;
             case 79: return Bool(s.Race?.IsRobot == true || (s.Medical?.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced) ?? false));
