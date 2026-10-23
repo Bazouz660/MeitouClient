@@ -729,7 +729,7 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// The refund (<b>Verified</b>, <c>FUN_14029dc10</c>): each entry with something delivered gives <c>max(1, trunc(U[m, 1) x delivered))</c> items, m = CONSTANTS <c>min dismantle materials percentage</c> / 100.
-    /// The original drops them on the ground; Meitou has no ground items yet, so they go into the dismantler's inventory (then its backpack) and what does not fit is lost with a message.
+    /// The original drops them on the ground; Meitou (engine choice, not yet moved to <see cref="World.GroundItems"/>) puts them into the dismantler's inventory (then its backpack) and what does not fit is lost with a message.
     /// </summary>
     void Refund(World world, CharacterCold dismantler, BuildSite site)
     {

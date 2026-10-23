@@ -254,7 +254,7 @@ Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue a
 systems. Explicit player commands and automatic retaliation have different eligibility;
 Idle players self-defend unless Passive, and Hold prevents pursuit beyond attack reach.
 New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic job runs regardless, as the original); direct orders still run. Saved toggles override
-defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
+defaults, including explicit false values. The saved `chase mode` is kept and written but acts on nothing (its meaning is **Unknown**). Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
 spot meter fills ([perception](game/perception.md#spotting-a-sneaker)); the exposure feeds stealth XP.
 Ranged (tooltip, **Verified** in `main.pot`, mainbar.cpp:1279: "prioritise ranged attacks, melee will be a last resort"): a
@@ -587,7 +587,7 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   as squads of the template's faction (else the owner's) and each member is imprisoned in a random free cage of the home building. Engine choices: members beyond the free cages
   are not made; they are held without a sentence (`Kidnapped`: no release round, no bail, getting out is no escape). Observed: Cat (`Dust King Prisoner`) caged in the Dust King
   Tower's watchtower; Tengu's Vault and the Tower of Abuse have no cages in their homes, so none are made. A caged prisoner is no aggro target (engine choice).
-- **Putting shackles on** (`PutShacklesOrder`, verb "Put on Shackles"; engine stand-in for dragging them onto the target's armour slot, an inventory window Meitou lacks): a
+- **Putting shackles on** (`PutShacklesOrder`, verb "Put on Shackles"; engine stand-in for dragging them onto the target's armour slot, which the held item does not do yet): a
   selected character carrying unworn, unbroken shackles walks to a live NPC that is down or caged and wears none, and within `ShackleReach` puts them on, locked again
   (re-locking is an engine choice); what the target wears in that slot goes into its inventory. No crime is booked (**Unknown**). Prisoner Shackles take the boots slot.
 - **Slave state** (`CharacterCold.SlaveState` 0/1/2, `SlaveOwner`; facts: [carry-loot](game/carry-loot.md#unknowns) item 3): `DA_ENSLAVE_TARGETS_CARRIED_PERSON` (40) is the bounty
@@ -647,9 +647,10 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
 
 Player construction contract (Faithful UI). Facts: [construction](game/buildings-production.md#construction),
 [placement](game/buildings-production.md#placement), [build menu](game/buildings-production.md#build-menu),
-[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Out of scope: the
-outpost behaviour beyond the record (residents, raids, renaming, the map marker), the door x3 rule,
-power, fetching from storage (task 247); production and research: [Production](#production).
+[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Not built: outpost
+residents, renaming and the map marker (raids on outposts: [campaigns](#off-screen-tier)), the door x3 rule, builders
+fetching materials from storage (task 247; machines' hauling is in [Production](#production)). Production, power and
+research: [Production](#production).
 
 **Shared types** (stubs f4cb78c, filled by the simulation track):
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
@@ -676,7 +677,7 @@ are not reserved by the simulation (**engine gap**, the host may call `World.Bui
 placement is the host's to avoid. `World.Research` (`Construction.ResearchState`): completed RESEARCH ids and the
 `Unlocked` set (replaced, never changed in place). A new game completes the default start research
 (`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
-(`PopulationSystem.StartPlayer`); a load takes the save's. Static this milestone, not hashed.
+(`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
 **Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`; never removed) and
 `BuildSite.Town` (a number, 0 none). `PlaceBuildings` gives each new site its town by the
@@ -719,8 +720,8 @@ Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option
   for building and delivering, `stonemine` for dismantling (`AnimationSystem.HeldClip`).
 - Refund: entry i with something delivered gives `max(1, trunc(U x delivered))`, U = m + (1 - m) x
   `Rng.Float(Rng.Hash(seed, StableHash(id), RngPurpose.Build, i))`, m = CONSTANTS `min dismantle materials percentage` /
-  100. Engine (no ground items yet): the items go to the dismantler's inventory, then backpack; what does not fit is lost
-  with a message. A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
+  100. The original drops them on the ground; engine gap: they go to the dismantler's inventory, then backpack, and what
+  does not fit is lost with a message (not yet moved to [ground items](#bodies)). A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
   (**Verified** rule: progress 0.4 x target, delivered floor(delivered x U[0.3, 0.5) + 0.5)).
 - Auto-job (not in `AiSystem`: player characters have no AI mind): every `AutoEveryTicks` an idle, wandering or following
   player character with the Jobs order, a race and stats takes the site with the best score `max(2 (1 - d^2/9000^2),
@@ -946,7 +947,8 @@ prisoners or slaves and whose home has stock containers gets a building shop ins
 trader has its home's containers filled instead (`FillHome`). Only members that trade (`DialogueSystem.Trades`, [who trades](game/economy.md#who-trades)) publish `IsTrader`, the
 Trade verb and pointer. Shop state is hashed; the open trade is not, except its buyback receipts (below). A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
-Transfers and money changes must succeed together.
+Transfers and money changes must succeed together. Not built: smuggling (economy 8.5, undecoded) and stealing other than
+looting a downed character ([crimes](#crimes-and-bounties)), i.e. from a conscious owner or a shop container.
 
 Bags (engine choice; how the original trades bags and their contents is **Unknown**): a bag trades whole, the same instance with its contents grid, and only empty ("That bag
 isn't empty."), since its contents would otherwise go unpriced and unchecked for theft; a bag's contents are not shown as stock. A right click puts a bought bag into a free
@@ -1144,7 +1146,11 @@ order. Renderer state lives in Rendering; snapshots are the simulation-to-host b
 
 Original-game unknowns are maintained in each linked subsystem reference; do not infer parity from our determinism tests.
 
-**Engine gaps:** remaining AI is listed in [AI](#ai); persistent town/world state, power, hauling, crafting, outposts, full UI fidelity and physics remain incomplete (walls: see [Buildings](#buildings)). Save and combat limitations are listed in their subsystem sections.
+**Engine gaps** are listed where they apply, not here: [unique characters](#unique-characters) and [campaigns](#off-screen-tier),
+[items](#items-and-eating) (race restrictions), [ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
+[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces, rain,
+plants), [prospecting](#prospecting), [dialogue](#dialogue) (conditions on state Meitou lacks), [AI](#ai) (wars, prisoners, planner finders).
+Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-parity.md).
 
 **Behaviour and hash constraints.**
 - No end-of-tick hook: the combat system swaps its arrays at the end of its `SlowWorld`, so the result depends on the system order

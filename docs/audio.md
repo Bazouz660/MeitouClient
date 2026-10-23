@@ -348,7 +348,7 @@ and the banner (`New_Biome`, `PlayerInterface.Biome.cs`).
 31 `Campfire`, 32 `Gate`, 33 `Gen_Goods`, 34 `Hive_Hut`, 35 `Lamp`, 36 `Long_House`, 37 `Outhouse`, 38 to 42 `Store_Armor`, `Store_Building_Materials`, `Store_Flour`, `Store_Ore`, `Store_Prisoner` again, 43 `Tailor`, 44 `Tower`, 45 `Travel`, 46 `Turret`, 47 `Wall_Metal`,
 48 `Wall_Station_House`, 49 `Wall_Stone`, 50 `Wall_Wood`, 51 `Wood_Obj_Big`, 52 `Wood_Obj_Small`; the **Unknown** is which BUILDING records set which index, and whether the bank has a sound for each value). `Building_Lock_Unlock`: Meitou's stand-in for the Security button is the
 building menu's Lock Doors / Unlock Doors verb (all the doors at once; `Build_Lock` is the state before the press). `Create_or_Load_Game` comes from `MusicDirector.OnCreateOrLoadGame`, `Hover` from the poll.
-**No trigger in Meitou (not played):** `UI_Generator` (the machine panel has no power switch, [above](#machine-sounds-meitou)), `Character_Drop_Ground` (an item cannot be dragged out onto the ground: dropping outside the windows does nothing), `Create_Character` on a prisoner's release,
+**No trigger in Meitou (not played):** `UI_Generator` (the machine panel has no power switch, [above](#machine-sounds-meitou)), `Create_Character` on a prisoner's release,
 `Slider` outside the editor (no data-panel slider yet; its drag events would sound through `SoundForScreen` as the editor's do); `Building_Place`'s `Indoors` value (Meitou's ghost has no parent building to ask) is always `Outdoors`.
 
 ## Meitou's player
