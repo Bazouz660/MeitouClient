@@ -4,9 +4,10 @@ namespace Meitou.Simulation.Items;
 
 /// <summary>
 /// An item lying in the world, as the host draws it (docs/simulation.md "Ground items"): a saved one by its whole <see cref="Rotation"/>, a <see cref="Dropped"/> one turned by it
-/// about Y and laid flat on the ground by the host.
+/// about Y and laid flat on the ground by the host. <see cref="Type"/>, <see cref="Level"/> and <see cref="Quality"/> are the item's, for its label's grade colour.
 /// </summary>
-public readonly record struct GroundItemSnapshot(int Id, string Record, string Name, Vector3 Position, Quaternion Rotation, bool Dropped);
+public readonly record struct GroundItemSnapshot(int Id, string Record, string Name, Vector3 Position, Quaternion Rotation, bool Dropped,
+    Meitou.Data.Fcs.FcsRecordType Type = default, int Level = 0, float Quality = 0);
 
 /// <summary>One loose item: where it lies and how it is turned (a saved item's whole rotation, written back as read; a dropped one turned about Y).</summary>
 public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Quaternion Rotation)
@@ -71,7 +72,7 @@ public sealed class GroundItems
     /// <summary>The items as published, made again only when <see cref="Revision"/> changed.</summary>
     internal IReadOnlyList<GroundItemSnapshot> Published()
     {
-        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped))], Revision);
+        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped, i.Item.Type, i.Item.Level, i.Item.Quality))], Revision);
         return published;
     }
     IReadOnlyList<GroundItemSnapshot> published = [];

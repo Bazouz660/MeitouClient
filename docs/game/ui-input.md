@@ -225,12 +225,25 @@ Rendering details: [objects](../render-objects.md#building-sign-highlight).
 pointer `pick`; `ItemNameText` (`Kenshi_TextboxStandardText`, Kenshi_StandardFont_Medium) centred. Colours: `DropItemLabelBack/TextDefault` #ffffff,
 `...Selected` #66ff66, `...SelectedStealing` #ff6666.
 **Observed** (`ItemManager::ItemLabel`, `FUN_1401649e0` / `FUN_140162950`): the root's width is fitted to the text; a quantity above 1 is appended
-(exact text **Unknown**); the label widget takes a mouse click; hovered labels turn Selected, or SelectedStealing when the item counts as stolen
-(owner-faction test, **Unknown** detail). Weapons, armour and some other item types take their text colour from the item's grade
-(`ItemGrade0`–`5` by thresholds 16/36/51/66/81, `ItemArtifact`, else `ItemStandard`). Range and anchor **Unknown**.
+(exact text **Unknown**); the label widget takes a mouse click. Range and anchor **Unknown**.
+**Observed** (decompile: ctor `FUN_1401649e0`, hover `FUN_140162950`, colour `FUN_1401628e0` / `FUN_1401625c0`, colour load `FUN_140162e60`) colours, plate = root tint, text = `ItemNameText`:
+
+| state | plate | text |
+|---|---|---|
+| stealing, hovered | BackSelectedStealing | TextSelectedStealing |
+| stealing | BackSelectedStealing | item colour |
+| hovered | BackSelected | TextSelected |
+| otherwise | item colour | item colour |
+
+Item colour: types WEAPON, ARMOUR, ITEM, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW, LIMB_REPLACEMENT only, else BackDefault. A plain ITEM:
+`ItemArtifact` when item byte +0x180 is set (taken as the record's `artifact`, **Unknown**), else `ItemStandard`; the others by level (vfunc 0x2b8;
+Meitou uses armour's quality) <16 Grade0, <36 1, <51 2, <66 3, ≤80 4, else 5. `ItemGrade5` and `TextDefault` are not in kenshi_colours.xml (exe defaults #fceb0d,
+#ffffff); `ItemGrade4` #fceb0d there overrides the exe's #de9c00, `ItemStandard` #e0cccc, `ItemArtifact` #0dfceb. Stealing: the item's owner (vfunc 0x2a8 hand
+unless NULL_ITEM, resolved by `FUN_14079d410`, else vfunc 0x1d8 via `FUN_140792910`) has a faction with +0x250 (player's) and +0x1d0 (`not real`) both clear,
+the pick-up verb's Steal test.
 Meitou (`PlayerInterface.GroundItems.cs`): with the Highlight gating above, every item within 500 units of the camera's focus not hidden by a
-building, name only, white, green under the pointer; a label picks like its item (pointer `pick_item`, right click picks it up). Overlapping
-labels are stacked above the nearer one. No quantity, grade or stealing colours yet (ground items have no owner).
+building, name only, coloured as above; a label picks like its item (pointer `pick_item`, right click picks it up). Overlapping
+labels are stacked above the nearer one. No quantity; never stealing (ground items have no owner: `ownedby` / `insideBuilding` are not resolved).
 
 ### Hover outline
 

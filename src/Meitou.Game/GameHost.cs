@@ -250,6 +250,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         };
         player.ArmourOf = record => popData?.Combat.Armour(record);
         player.RecordName = id => popData?.Db.Find(id)?.Name;
+        player.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
         player.ItemRecordOf = id => popData?.Db.Find(id);
         player.CombatOf = () => popData?.Combat;
         player.MapItemTowns = record =>
