@@ -346,9 +346,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 n.Animation = 0;
                 continue;
             }
-            if (cold.IsImprisoned)
+            if (cold.IsImprisoned || cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep)
             {
-                // Held in its cage (put there by the fixture registry): no path, no steering, not pushed.
+                // Held in its cage or bed (put there by the fixture registry): no path, no steering, not pushed.
                 n.Velocity = Vector3.Zero;
                 n.Position = p.Position;
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);

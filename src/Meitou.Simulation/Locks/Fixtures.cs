@@ -15,9 +15,18 @@ public enum FixtureKind : byte
     Container,
     /// <summary>BUILDING_FUNCTIONALITY function 8: cages, the prisoner pole and the peeler (<see cref="Fixture.Restrains"/>).</summary>
     Cage,
-    /// <summary>A bed of an interior layout; no lock.</summary>
+    /// <summary>A bed of an interior layout, or one the player built; no lock.</summary>
     Bed,
 }
+
+/// <summary>A bed as the host picks it (<see cref="WorldSnapshot.Beds"/>): its fixture id, BUILDING record, where it is and its owner faction (-1: none).</summary>
+public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1);
+
+/// <summary>
+/// What a bed's BUILDING says (docs/game/locks.md "Beds"): its functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED), the clip it is lain in (the functionality's <c>animation</c>:
+/// <c>sleepinbed</c>, <c>sleeponfloor</c>) and the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times).
+/// </summary>
+public readonly record struct BedData(int Function, string? Clip, float Materials);
 
 /// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
 public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
@@ -99,6 +108,10 @@ public sealed class Fixture
     public bool Restrains { get; init; }
     public float UseRange { get; init; }
     public CharacterId Occupant { get; set; } = CharacterId.None;
+    /// <summary>Beds: its record's <see cref="BedData"/>; derived from the data, not hashed or saved.</summary>
+    public BedData Bed { get; init; }
+    /// <summary>Beds: inside a building (an interior's bed; the bed search weighs it twice), not one standing on its own.</summary>
+    public bool Indoors { get; init; }
 
     /// <summary>Its state came from a loaded save (the squad's <c>initial door state</c> then does not apply).</summary>
     public bool Restored { get; set; }

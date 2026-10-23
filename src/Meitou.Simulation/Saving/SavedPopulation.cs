@@ -231,6 +231,7 @@ internal static class SavedCharacters
         if (cold.IsPlayer && sc.GameState is { } orders) Orders.Read(orders, cold);
         // In a bed or a cage, and the sentence (docs/simulation.md "Cages, beds and locks"); the fixture binds when its town registers.
         HeldSave.Read(sc.GameState, cold, context.Handles, context.InstanceOf);
+        if (cold.InSomething == Locks.HeldState.Bed) hot.Task = (byte)CharacterTask.Sleep;   // it lies there until an order (Locks.BedSystem)
         if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf);
         // The portrait camera's number: the saved one, else the handle's serial (CharacterAnimal::vfunc_18).
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;

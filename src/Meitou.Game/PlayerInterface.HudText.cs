@@ -58,6 +58,7 @@ sealed partial class PlayerInterface
         CharacterTask.Operate => Loc.Tr("Operating machine"),
         CharacterTask.Haul => Loc.Tr("Hauling"),
         CharacterTask.Prospect => Loc.Tr("Prospecting"),
+        CharacterTask.Sleep => Loc.Tr("Sleeping"),
         _ => Loc.Tr("Aimless"),
     };
 

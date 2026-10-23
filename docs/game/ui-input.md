@@ -304,6 +304,7 @@ in order (task numbers are [ai-tasks](ai-tasks.md) taskTypes):
   108 (slot 131). In another faction's cage holding one of yours, Alt + right click gives 76 PICK_LOCK when its lock is locked or
   207 GET_OUT_OF_CAGE_ESCAPE when not; without Alt the bar shows "Hold down the ALT key to pick the lock." / "...to escape the cage.".
 - Another faction's non-cage building with a locked lock: Alt gives 76; without Alt the pick-lock message and a move to it.
+- A bed's held menu: 99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (`FUN_1407a6bc0`, [locks](locks.md#beds)).
 - No order while every selected character is unconscious ("Your selected character is unconscious", `FUN_1407f6f50`).
 - Holding the command button 0.2 s on the same target opens the context menu instead (`FUN_1407a6bc0`). It opens on the press, without the
   hold, for a building whose function is 8 (BF_CAGE), or 22 (BF_DOOR) whose (first) door is locked and not the player's faction's, unless

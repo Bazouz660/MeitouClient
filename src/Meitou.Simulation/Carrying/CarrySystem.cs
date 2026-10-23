@@ -329,6 +329,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 End(table, i);
                 return;
             }
+            // Out of a bed: the attach clears the state (carry-loot.md, Character +0x2f8).
+            if (table.Cold(b)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, cold.CarryTarget);
             Link(table, i, b);
         }
         else if (!attached && before > CarrySettings.AttachAt * LiftSeconds) { End(table, i); return; }   // dropped again mid-lift

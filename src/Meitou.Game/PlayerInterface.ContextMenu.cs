@@ -35,6 +35,8 @@ sealed partial class PlayerInterface
         if (carriers.Length > 0) verbs.Add(("Put Down", () => Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick })));
         // Meitou stand-in for the original's cage use (docs/simulation.md "Arrest and jail"): carry the body to the nearest free cage.
         if (carriers.Length > 0) verbs.Add(("Put in Cage", () => Say(new Meitou.Simulation.Crime.PutInCageOrder(carriers) { Tick = session.World.Tick })));
+        // Meitou stand-in for the bed's own "Put in Bed" (PlayerInterface.Beds.cs): carry the body to the bed the bed search finds.
+        if (carriers.Length > 0) verbs.Add(("Put in Bed", () => Say(new Meitou.Simulation.Locks.PutInBedOrder(carriers) { Tick = session.World.Tick })));
         if (!down && !target.IsPlayer)
         {
             if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
