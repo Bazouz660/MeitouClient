@@ -156,6 +156,7 @@ internal static partial class ZoneNavMeshBuilder
 
         foreach (int c in carvers) Mark(ctx, g.Carvers[c], NavArea.Null, chf);
         foreach (int c in solids) RemoveInside(g.Solids[c], chf);
+        if (g.Ground is { } ground) RemoveUnderground(ground, s.AgentHeight, chf);
         foreach (int c in painters) Mark(ctx, g.Painters[c], NavArea.Door, chf, s.CellSize * s.DoorInflateCells);
 
         long t2 = Stopwatch.GetTimestamp();
@@ -197,6 +198,28 @@ internal static partial class ZoneNavMeshBuilder
                     foreach (var plane in solid.Planes)
                         if (plane.X * p.X + plane.Y * p.Y + plane.Z * p.Z + plane.W >= (plane.Y > 0 ? -SolidTopInset : 0)) { inside = false; break; }
                     if (inside) chf.areas[i] = NavArea.Null;
+                }
+            }
+    }
+
+    /// <summary>
+    /// Removes the walkable spans more than <paramref name="depth"/> (the agent's height) under the terrain at the middle of their cell: the top of a building part
+    /// buried in the ground, which has headroom under the terrain's surface (Observed: zone 24.27 by Bad Teeth's gate, a face at 120 under ground at 159;
+    /// docs/game/pathfinding.md, "Solids"). Only columns with more than one span can hold one; the exterior mesh only.
+    /// </summary>
+    static void RemoveUnderground(Meitou.Data.World.HeightWindow terrain, float depth, RcCompactHeightfield chf)
+    {
+        for (int z = 0; z < chf.height; z++)
+            for (int x = 0; x < chf.width; x++)
+            {
+                var cell = chf.cells[x + z * chf.width];
+                if (cell.count < 2) continue;
+                float ground = float.NaN;
+                for (int i = cell.index, end = cell.index + cell.count; i < end; i++)
+                {
+                    if (chf.areas[i] == NavArea.Null) continue;
+                    if (float.IsNaN(ground) && !terrain.TryHeightAt(chf.bmin.X + (x + 0.5f) * chf.cs, chf.bmin.Z + (z + 0.5f) * chf.cs, out ground)) break;
+                    if (chf.bmin.Y + chf.spans[i].y * chf.ch < ground - depth) chf.areas[i] = NavArea.Null;
                 }
             }
     }

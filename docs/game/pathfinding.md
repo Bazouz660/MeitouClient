@@ -110,6 +110,13 @@ whose top face runs on inside the foundation, from 151 down to ~124 under the sl
 unpruned polygons drop 1..24 %, kept area sampled against the original tiles changes under 0.3 %; the gate's under-floor layer is gone; interior area
 drops only in ruins (Hub Stationhouse `4-`, Bughouse `4937-`: floor strips inside the thick walls and fallen slabs). The door and stair paths listed
 in this section still resolve.
+**Underground** (engine choice): the terrain is solid below its surface, so an exterior walkable span more than the agent height (18) under the
+heightmap at its cell's middle is removed. **Observed** (zone 24.27 by the Bad Teeth gate): a buried part's top face at 120 under ground at 159.
+**Compare** (`meitou-tools navmesh --compare x,z ...`): samples each zone every 8 units against `tileX.Y.hkt`: points on both, only ours, only the
+original's, ours-only points in a building footprint, and points where ours has more layers than the original with one 10+ under our top (floors under
+floors). Interiors are not read from the tiles, so our interior floors count as ours-only; the original's big polygons float up to ~20 over hollows, so
+heights are not compared. **Observed** (the 11 zones above): ours-only 1.7..10.9 % and original-only 0.9..7.5 % of the original's area; the underground
+rule takes extra-layer points from 221 to 65 (24.27) and 507 to 194 (20.32); what is left is mostly walls and walkways the original prunes.
 **Interior seeds**: without a door seed the building's first shopkeeper or general node of its interior layout is the seed (the original's rule, below);
 Meitou also uses it when the door seeds find no polygon (engine choice). **Observed** (`meitou-tools navmesh`): doorless Hive Commune Huts (10.31
 `50-Newwworld-INGAME`, clipped at the zone border) kept nothing before and 75 of 102 polygons with it; Stack's Old Storm House `14-` (19.29), whose

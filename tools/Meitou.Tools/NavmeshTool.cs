@@ -27,6 +27,7 @@ static class NavmeshTool
         bool doorsClosed = false, noInteriors = false; float? toY = null, fromY = null; float[]? near = null;
         int around = 0;
         bool fingerprint = false;
+        var compare = new List<ZoneCoordinate>();
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -46,6 +47,13 @@ static class NavmeshTool
                 case "--path": pathArg = args[++i].Split(',').Select(t => float.Parse(t, CultureInfo.InvariantCulture)).ToArray(); break;
                 case "--repeat": repeat = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--fingerprint": fingerprint = true; break;
+                case "--compare":
+                    while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        var p = args[++i].Split(',');
+                        compare.Add(new(int.Parse(p[0], CultureInfo.InvariantCulture), int.Parse(p[1], CultureInfo.InvariantCulture)));
+                    }
+                    break;
                 case "--verbose": verbose = true; break;
                 case "--box": box = args[++i].Split(',').Select(t => float.Parse(t, CultureInfo.InvariantCulture)).ToArray(); break;
                 default: Console.Error.WriteLine($"Unknown option {args[i]}"); return 2;
@@ -56,6 +64,7 @@ static class NavmeshTool
         var db = GameDatabase.Load(LoadOrder.FromInstall(install));
         var levels = WorldLevelData.Load(install, includeInteriors: true);
         Console.WriteLine($"game data and levels loaded ({watch.ElapsedMilliseconds} ms)");
+        if (compare.Count > 0) return Compare(install, db, levels, compare, settings);
         if (fingerprint) return Fingerprint(install, db, levels, zone is { } only ? [only] : [new ZoneCoordinate(20, 32), new ZoneCoordinate(21, 32)], settings);
         if (zone is null)
         {
@@ -209,6 +218,111 @@ static class NavmeshTool
             }
         }
         return 0;
+    }
+
+    /// <summary>Sample spacing of <c>--compare</c> (units).</summary>
+    const float CompareStep = 8;
+
+    /// <summary>How far below our top layer at a point another of ours has to lie to count as a floor under a floor (<c>--compare</c>).</summary>
+    const float ExtraLayer = 10;
+
+    /// <summary>
+    /// <c>--compare</c>: builds each zone alone (exterior, interiors joined) and samples it every <see cref="CompareStep"/> units against the original's exterior tile
+    /// (<see cref="OriginalNavTiles"/>), in the zone's own box. Columns: points with kept polygons on both sides, only ours, only the original's (as a share of the
+    /// original's), ours-only points that lie in a building's footprint (a solid or carver box), and points where ours has more layers than the original, one of them
+    /// more than <see cref="ExtraLayer"/> below our top one (floors under floors: enclaves). Interiors are separate meshes in the original's tiles and are not read, so the columns count
+    /// interior floors of ours as ours-only.
+    /// </summary>
+    static int Compare(GameInstall install, GameDatabase db, WorldLevelData levels, List<ZoneCoordinate> zones, NavBuildSettings settings)
+    {
+        using var gatherer = new ZoneGeometryGatherer(install, db, levels, new CollisionCache(install));
+        Console.WriteLine($"{"zone",-7} {"kept",7} {"both",8} {"ours",7} {"orig",7} {"ours%",6} {"orig%",6} {"in bldg",8} {"extra",6}");
+        foreach (var zone in zones)
+        {
+            var original = OriginalNavTiles.LoadExterior(install, zone);
+            if (original is null) { Console.WriteLine($"{zone,-7} no original tile"); continue; }
+            var g = gatherer.Gather(zone);
+            var mesh = NavMeshPipeline.BuildZone(gatherer, g, settings, out _, interiors: true);
+            var footprints = g.Solids.Select(s => (s.Min, s.Max)).Concat(g.Carvers.Where(c => c.Polygon.Length > 0).Select(c => (Min: c.Polygon.Aggregate(Vector2.Min), Max: c.Polygon.Aggregate(Vector2.Max))))
+                .Where(b => b.Max.X - b.Min.X < 1000 && b.Max.Y - b.Min.Y < 1000).ToList();
+            var originalIndex = new OriginalIndex(original);
+            int both = 0, oursOnly = 0, originalOnly = 0, inBuilding = 0, extra = 0;
+            var ours = new List<float>();
+            var theirs = new List<float>();
+            for (float x = g.ZoneMin.X + CompareStep / 2; x < g.ZoneMax.X; x += CompareStep)
+                for (float z = g.ZoneMin.Y + CompareStep / 2; z < g.ZoneMax.Y; z += CompareStep)
+                {
+                    ours.Clear();
+                    mesh.HeightsAt(x, z, ours);
+                    originalIndex.HeightsAt(x, z, theirs);
+                    if (ours.Count > 0 && theirs.Count > 0)
+                    {
+                        both++;
+                        // More layers than the original, one well under our top one: a floor under a floor (the original's big polygons float over
+                        // hollows, so its heights themselves are not compared).
+                        if (ours.Count > theirs.Count && ours.Min() < ours.Max() - ExtraLayer)
+                        {
+                            extra++;
+                            if (verbose && extra % 100 == 1) Console.WriteLine($"  extra layer at {x:0},{z:0}: ours {string.Join("/", ours.Select(y => y.ToString("0")))}, original {string.Join("/", theirs.Select(y => y.ToString("0")))}, terrain {gatherer.TerrainHeight(x, z):0}");
+                        }
+                    }
+                    else if (ours.Count > 0)
+                    {
+                        oursOnly++;
+                        foreach (var (min, max) in footprints)
+                            if (x >= min.X && x <= max.X && z >= min.Y && z <= max.Y) { inBuilding++; break; }
+                    }
+                    else if (theirs.Count > 0) originalOnly++;
+                }
+            int originalTotal = Math.Max(1, both + originalOnly);
+            Console.WriteLine($"{zone,-7} {mesh.KeptCount,7} {both,8} {oursOnly,7} {originalOnly,7} {100.0 * oursOnly / originalTotal,6:0.0} {100.0 * originalOnly / originalTotal,6:0.0} {inBuilding,8} {extra,6}");
+        }
+        return 0;
+    }
+
+    /// <summary>The original tile's polygons on a 64-unit grid, for point queries.</summary>
+    sealed class OriginalIndex
+    {
+        const float Cell = 64;
+        readonly OriginalNavMesh mesh;
+        readonly Dictionary<(int, int), List<int>> cells = [];
+
+        public OriginalIndex(OriginalNavMesh mesh)
+        {
+            this.mesh = mesh;
+            for (int p = 0; p < mesh.Polygons.Length; p++)
+            {
+                var v = mesh.Polygons[p].Select(i => mesh.Vertices[i]).ToArray();
+                for (int cx = (int)MathF.Floor(v.Min(a => a.X) / Cell); cx <= (int)MathF.Floor(v.Max(a => a.X) / Cell); cx++)
+                    for (int cz = (int)MathF.Floor(v.Min(a => a.Z) / Cell); cz <= (int)MathF.Floor(v.Max(a => a.Z) / Cell); cz++)
+                    {
+                        if (!cells.TryGetValue((cx, cz), out var list)) cells[(cx, cz)] = list = [];
+                        list.Add(p);
+                    }
+            }
+        }
+
+        /// <summary>The heights at (x, z) of every polygon containing the point (fan interpolation).</summary>
+        public void HeightsAt(float x, float z, List<float> heights)
+        {
+            heights.Clear();
+            if (!cells.TryGetValue(((int)MathF.Floor(x / Cell), (int)MathF.Floor(z / Cell)), out var list)) return;
+            foreach (int p in list)
+            {
+                var poly = mesh.Polygons[p];
+                var a = mesh.Vertices[poly[0]];
+                for (int k = 1; k + 1 < poly.Length; k++)
+                {
+                    var b = mesh.Vertices[poly[k]];
+                    var c = mesh.Vertices[poly[k + 1]];
+                    if (NavGeometry.Barycentric(x, z, a, b, c, out float u, out float v, out float w) && u >= -1e-4f && v >= -1e-4f && w >= -1e-4f)
+                    {
+                        heights.Add(u * a.Y + v * b.Y + w * c.Y);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>The paths of <c>HubNavmeshTests</c>, as round-trip formatted point lists.</summary>
