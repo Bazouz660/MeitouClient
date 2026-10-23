@@ -196,8 +196,34 @@ public sealed partial class World : IDisposable
     /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
     public bool CanTalk(CharacterId id, CharacterId? talker = null) => dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);
 
-    /// <summary>Runs one simulation tick.</summary>
-    public void RunTick()
+    // The profiled parallel phase (RunParallel): the body run, a timed wrapper made once, and each partition's Stopwatch ticks (a partition is one job, written by one thread).
+    Action<int>? timedBody;
+    Action<int>? timedRun;
+    long[] jobTicks = [];
+
+    /// <summary>One system's parallel phase over the partitions; profiled, it also sums its jobs' time and notes the slowest (<see cref="TickProfile.Jobs"/>).</summary>
+    void RunParallel(Action<int> body, TickProfile? prof, int phase, int system)
+    {
+        if (prof is null) { pool.ForEach(partitions.Length, body); return; }
+        int n = partitions.Length;
+        if (jobTicks.Length < n) jobTicks = new long[n];
+        Array.Clear(jobTicks, 0, n);
+        timedBody = body;
+        timedRun ??= i =>
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            timedBody!(i);
+            jobTicks[i] = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        };
+        pool.ForEach(n, timedRun);
+        long sum = 0, max = 0;
+        for (int i = 0; i < n; i++) { sum += jobTicks[i]; max = Math.Max(max, jobTicks[i]); }
+        prof.Jobs(phase, sum, max);
+        prof.Lap(phase, system);
+    }
+
+    /// <summary>Runs one simulation tick; <paramref name="publish"/> false skips its snapshot (a tick the host will not draw: not one of a frame's last two).</summary>
+    public void RunTick(bool publish = true)
     {
         var table = Characters;
         var prof = Profile.Enabled ? Profile : null;
@@ -223,16 +249,15 @@ public sealed partial class World : IDisposable
         // 3-5. Think, move, act (parallel; each system's phase is a barrier).
         table.Phase = TablePhase.Parallel;
         // A system that leaves a phase at its empty default is skipped there: a barrier costs more than the nothing it would wait for.
-        foreach (var p in phases) if (p.Think is { } think) { pool.ForEach(partitions.Length, think); prof?.Lap(TickProfile.Think, p.Index); }
-        foreach (var p in phases) if (p.Move is { } move) { pool.ForEach(partitions.Length, move); prof?.Lap(TickProfile.Move, p.Index); }
+        foreach (var p in phases) if (p.Think is { } think) RunParallel(think, prof, TickProfile.Think, p.Index);
+        foreach (var p in phases) if (p.Move is { } move) RunParallel(move, prof, TickProfile.Move, p.Index);
         foreach (var b in buffers) b.Reset();
         prof?.Lap(TickProfile.Act);
         foreach (var p in phases)
         {
             if (p.Act is not { } act) continue;
             foreach (var b in buffers) b.BeginSystem(p.Index);   // Effect.System is the system's real index, so the commit order does not depend on which systems act
-            pool.ForEach(partitions.Length, act);
-            prof?.Lap(TickProfile.Act, p.Index);
+            RunParallel(act, prof, TickProfile.Act, p.Index);
         }
 
         table.Phase = TablePhase.Commit;
@@ -256,7 +281,7 @@ public sealed partial class World : IDisposable
         table.EndTick();
         Tick++;
         GameHours += TickSeconds / SecondsPerGameHour;
-        if (Settings.PublishSnapshots) Publish();
+        if (publish && Settings.PublishSnapshots) Publish();
         prof?.Lap(TickProfile.Publish);
     }
 

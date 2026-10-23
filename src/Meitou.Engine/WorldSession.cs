@@ -84,16 +84,17 @@ public sealed class WorldSession : IDisposable
     public int AdvanceSimulation(double realSeconds)
     {
         int n = Simulation.Advance(realSeconds);
-        for (int i = 0; i < n; i++) SimulationTick();
+        // Only a frame's last two ticks publish: the host draws between those two snapshots, and the ones before would go unseen.
+        for (int i = 0; i < n; i++) SimulationTick(publish: i >= n - 2);
         if (Simulation.IsPaused) World.ApplyPausedInterfaceCommands();
         return n;
     }
 
-    /// <summary>One simulation tick: the world runs its phases, the game clock moves by one tick of game time.</summary>
-    void SimulationTick()
+    /// <summary>One simulation tick: the world runs its phases (publishing its snapshot when <paramref name="publish"/>), the game clock moves by one tick of game time.</summary>
+    void SimulationTick(bool publish)
     {
         World.GameHours = Clock.TotalHours;
-        World.RunTick();
+        World.RunTick(publish);
         Clock.Advance(Simulation.TickSeconds);
     }
 

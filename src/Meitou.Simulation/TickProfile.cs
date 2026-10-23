@@ -42,6 +42,27 @@ public sealed class TickProfile
 
     long partLast;
 
+    // Per parallel phase (think, move, act): the parts it adds, "<phase> cpu" (its jobs' time summed over the threads) and "<phase> slow" (the slowest job of each system's run,
+    // summed). Against the phase's wall time: wall near slow means one job holds the others up; cpu / threads near wall means the threads are all busy.
+    static readonly Dictionary<int, (string Cpu, string Slow)> JobNames = new()
+    {
+        [Think] = ("think cpu", "think slow"), [Move] = ("move cpu", "move slow"), [Act] = ("act cpu", "act slow"),
+    };
+
+    internal void Jobs(int phase, long sumTicks, long maxTicks)
+    {
+        var (cpu, slow) = JobNames[phase];
+        Add(cpu, sumTicks * 1000.0 / Stopwatch.Frequency);
+        Add(slow, maxTicks * 1000.0 / Stopwatch.Frequency);
+    }
+
+    void Add(string name, double ms)
+    {
+        for (int i = 0; i < Parts.Count; i++)
+            if (ReferenceEquals(Parts[i].Name, name) || Parts[i].Name == name) { Parts[i] = (name, Parts[i].Ms + ms); return; }
+        Parts.Add((name, ms));
+    }
+
     /// <summary>
     /// Inside a system's span: the time since the span began or the last part ended goes to the part <paramref name="name"/> (a breakdown of the system's own time, which still
     /// goes to the system at its lap). Serial phases only.
@@ -52,9 +73,7 @@ public sealed class TickProfile
         long now = Stopwatch.GetTimestamp();
         double ms = (now - Math.Max(partLast, last)) * 1000.0 / Stopwatch.Frequency;
         partLast = now;
-        for (int i = 0; i < Parts.Count; i++)
-            if (ReferenceEquals(Parts[i].Name, name) || Parts[i].Name == name) { Parts[i] = (name, Parts[i].Ms + ms); return; }
-        Parts.Add((name, ms));
+        Add(name, ms);
     }
 
     /// <summary>The time since the last lap goes to <paramref name="phase"/> and, given one, to <paramref name="system"/>.</summary>
