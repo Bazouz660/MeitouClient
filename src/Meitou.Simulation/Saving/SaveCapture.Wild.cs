@@ -1,3 +1,4 @@
+using SquadMemoryData = Meitou.Simulation.Dialogue.SquadMemoryData;
 using System.Numerics;
 using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay;
@@ -117,7 +118,7 @@ public static partial class SaveCapture
         var table = world.Characters;
         var factions = new Dictionary<string, SaveFaction>(StringComparer.Ordinal);
         foreach (var f in game.Factions) factions.TryAdd(f.Id, f);
-        void Write(WildSite site, string templateId, int factionIndex, long money, string? package, List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members)
+        void Write(WildSite site, string templateId, int factionIndex, long money, string? package, List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members, SquadMemoryData? memory = null)
         {
             var faction = data.Factions[factionIndex];
             factions.TryGetValue(faction.Id, out var state);
@@ -133,6 +134,7 @@ public static partial class SaveCapture
             }
             WriteMapArea(record, data, at);
             if (package is not null) record.Strings["currentPackage"] = package;
+            NoteMemory(record, memory);
             foreach (var m in members)
             {
                 int f = m.Cold.Faction;
@@ -151,7 +153,7 @@ public static partial class SaveCapture
                 if (alive.Count == 0) continue;
                 var leader = alive.Contains(squad.Leader) ? squad.Leader : alive[0];
                 Write(site, squad.TemplateId, squad.Faction, squad.Money, squad.Ai?.Current?.Id,
-                    [.. alive.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader))]);
+                    [.. alive.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader))], MemoryOf(world)?.Snapshot(squad.Id));
             }
             // Kept while the site is unloaded (the Meitou KeepWild switch): their characters as they were stored.
             foreach (var k in population.KeptWildOf(site.Index))
@@ -159,7 +161,7 @@ public static partial class SaveCapture
                 if (k.Faction < 0 || k.Faction >= data.Factions.Count || k.Stored.Members.Count == 0) continue;
                 bool hasLeader = k.Stored.Members.Any(m => m.Leader);
                 Write(site, k.TemplateId, k.Faction, k.Money, k.Stored.Package,
-                    [.. k.Stored.Members.Select((m, i) => (m.Cold, m.Position, m.Yaw, CharacterId.None, m.Leader || !hasLeader && i == 0))]);
+                    [.. k.Stored.Members.Select((m, i) => (m.Cold, m.Position, m.Yaw, CharacterId.None, m.Leader || !hasLeader && i == 0))], k.Stored.Memory);
             }
         }
     }

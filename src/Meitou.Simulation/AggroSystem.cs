@@ -161,6 +161,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The fights, for <see cref="Ai.AiStance.ProtectSquad"/> (null: that stance joins any fighting enemy, as <see cref="Ai.AiStance.Defensive"/>).</summary>
     public CombatSystem? Combat { get; set; }
 
+    /// <summary>
+    /// The squads' memories (the dialogue system's): a squad's short-term TEMP_ENEMY tag on a character of another faction makes it an enemy of every member whatever the relations say, and
+    /// TEMP_ALLY unmakes an enemy (<c>FUN_14079c950</c>, docs/game/dialogue.md "Squad memory"). Null: relations only.
+    /// </summary>
+    public Dialogue.SquadMemory? Memory { get; set; }
+
     public void Schedule(World world)
     {
         Sync(world.Characters);
@@ -231,6 +237,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         public CharacterTable Table;
         public FactionRelations Relations;
+        public World World;
+        public Dialogue.SquadMemory? Memory;
         public int Self, Faction, Squad;
         /// <summary>The squad fights (<see cref="squadFights"/>; null without a combat system).</summary>
         public HashSet<(int Squad, int Slot)>? SquadFights;
@@ -273,13 +281,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task)) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-            if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet) continue;
+            if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) continue;
             float outdoor = RangeOf(cold, Settings.SightRange);
             if (!(outdoor > 0)) continue;
             float range = world.Sight.MaxRange(i, outdoor);
             var scan = new Scan
             {
-                Table = table, Relations = Relations, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
+                Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
                 Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
@@ -352,6 +360,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
+        // The squads' temporary tags (FUN_14079c950, other faction only): the looker's squad holds TEMP_ENEMY on the target, or, for a player-faction looker, the target's squad on it,
+        // makes an enemy; the looker's squad holding TEMP_ALLY on the target unmakes one.
+        if (s.Stance != Ai.AiStance.Passive && s.Memory is { } memory && c.Faction != s.Faction)
+        {
+            var target = new CharacterId(slot, other.Generation);
+            if (s.Squad >= 0 && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempEnemy)
+                || s.World.Player.Faction == s.Faction && c.SquadId >= 0 && memory.HasShort(s.World, c.SquadId, new CharacterId(s.Self, s.Table.Previous[s.Self].Generation), Dialogue.MemoryTag.TempEnemy)) enemy = true;
+            else if (enemy && s.Squad >= 0 && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempAlly)) enemy = false;
+        }
         if (!enemy) return;
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
@@ -544,6 +561,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 for (int b = 0; b < n; b++) hasher.Add(Relations.Get(a, b));
             for (int a = 0; a < n; a++)
                 if (Relations.Rank(a) is var rank and not 0) { hasher.Add(a); hasher.Add(rank); }
+            for (int a = 0; a < n; a++)
+            {
+                if (Relations.GlobalTrust(a) is var trust and not 0) { hasher.Add(a); hasher.Add(trust); }
+                for (int b = 0; b < n; b++)
+                    if (Relations.AtWar(a, b)) { hasher.Add(a); hasher.Add(b); }
+            }
         }
         hasher.Add(size);
         for (int i = 0; i < size; i++)

@@ -185,7 +185,7 @@ The CAMERA's sky transition is written as finished (`sky updating` false, both t
 | Content | Where | Status |
 | --- | --- | --- |
 | Game time, clock, sky transition, weather and season per region | `quick.save` CAMERA, BIOMES | **Verified** present |
-| Factions: relations, trust, prosperity, rank, war campaigns | `quick.save` | **Verified** (present in the sample); int `rank` on each non-player faction ([faction rank](../game/factions-squads-towns.md#32-faction-rank)); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
+| Factions: relations, trust, prosperity, rank, war campaigns | `quick.save` | **Verified** (present in the sample); Meitou-only `meitou global trust`, `meitou war<k>` ([trust and war](#faction-trust-war-flags-bed-rent-and-turrets)); int `rank` on each non-player faction ([faction rank](../game/factions-squads-towns.md#32-faction-rank)); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
 | Town state (discovery, population, trade goods, artifacts, nests) | `quick.save` | **Verified** (present in the sample); town placements, names and shop lists come from `leveldata.level` |
 | Squads and all character state (stats, wounds, inventory, appearance, AI) | `.platoon` | **Verified** (present in the sample) |
 | Buildings' state, generated interiors, loose items, item placement groups | `.zone` | **Verified** for visited zones |
@@ -435,6 +435,29 @@ never made is written as a PLATOON with content file `platoon/` (no file) so its
 `meitou phase start c<i>`, `meitou fight start c<i>`, `meitou arrived c<i>`, `meitou announced c<i>`, `meitou carry start c<i>` (absolute game hours; absent:
 not started) and reads them back (a missing phase start is the load's hour, as the original). **Observed** (headless, real data): all five come back equal.
 
+### Squad memory
+
+A platoon's memory of characters (`SquadMemory`, [dialogue](../game/dialogue.md#squad-memory)). **Observed** (writer `FUN_1406789e0`, reader `FUN_140678cb0`; the key
+prefix `tags` read from the exe bytes at `1416ffef4`): for entry `i` from 0, the character's handle `tags<i>*`, ints `taglong<i>` / `tagshort<i>` (tag bit sets), float
+`tagtime<i>`; the reader stops at the first missing `taglong<i>`. Meitou (`Saving/MemorySave`) writes the same keys on the PLATOON (time in game hours), plus
+`meitou tags player long` / `short` (int) / `time` (float) for the squad's shared player-faction entry (the original's key for it is **Unknown**) and bool
+`meitou temp ally` (the TEMP ALLY flag for the player, not written by the original). A character the capture wrote no handle for, or a handle that names no character made
+yet, is left out. Round trip checked with a throwaway probe (write, read, clear), not with a game save: **Observed** only.
+
+### Faction trust, war flags, bed rent and turrets
+
+- **Global trust**: the original writes no `+0x18` (the float DC_REPUTATION reads and DA_AFFECT_REPUTATION raises). Its player table writes `global trust` from `+0x14`
+  (`FUN_1406b3c80`, read by `FUN_1406b5190`), whose link to `+0x18` is **Unknown**; the relation table writes `relation`, `trust`, `trustNeg` and `relationSID` per entry and
+  `rank` (`FUN_1406b37b0`, `FUN_1406b3300`, **Observed**). Meitou saves `+0x18` of every faction as `meitou global trust` (float on the GAMESTATE_FACTION, only while not 0).
+- **War flag**: the entry's byte `+2` has no key in the original (**Observed**: the relation writer reads none), so a war declared by a dialogue is forgotten on load. Meitou
+  writes bool `meitou war<k>` beside `relation<k>` of the faction's table, only while set.
+- **Bed rent**: the global map of last payments (`FUN_1403576c0`, [locks](../game/locks.md#beds)) is referenced by no other function (**Verified**: references to its
+  address are the payment function and the static constructor and destructor), so the original forgets it on load. Meitou writes the payments less than 24 game hours old on
+  the CAMERA as `meitou rent bed<i>` (string, the bed's fixture id) and `meitou rent hours<i>` (float, absolute game hour) (`Saving/BedSave`).
+- **Turrets**: a turret building saves the building base, the machine keys (`batterycharge`, `gets battery`, `power on`, `broken`; `FUN_1402a14b0` / `FUN_1402a1750`)
+  and the `mounted` handle (the wall it stands on; `FUN_1402a1c80` / `FUN_1402a1e30`, vtable slots 17 / 18 of `TurretBuilding`). Reload, aim and the rotation error are
+  **not** saved (**Observed**: no other key is written), so a loaded turret starts with fresh reload and aim state and re-acquires its target; Meitou writes none of the turret keys beyond the building's own (the `mounted` link included) and adds no key.
+
 ### Cross-checks against base data (the sample vs `GameDatabase` of the four base files)
 
 | Check | Result |
@@ -474,7 +497,7 @@ not started) and reads them back (a missing phase start is the load's hour, as t
 - Whether `loadGame` rejects or adapts to a `mods` list that differs from the current load order (nothing in the sample: single base-game save).
 - Prisoners, dead characters, bounties, trade and mission state, and player outposts: not present in an early-game sample. Player-built building and outpost keys are known from the code only ([zones](zones.md#placement-keys), [outposts](#player-outposts)).
 - The condition list of the autosave pause, and how `Import Game` selects squads (`FUN_140378a30`, `FUN_140377710`).
-- How relations, trust and `trustNeg` change during play (only the fresh-world values are explained), and what the player faction (no relation table, but a `known` list and `global trust`) uses instead.
+- How relations, trust and `trustNeg` change during play (only the fresh-world values are explained), what the player faction (no relation table, but a `known` list and `global trust`) uses instead, and how the player table's `global trust` (`+0x14`) relates to the `+0x18` dialogue reads ([trust](#faction-trust-war-flags-bed-rent-and-turrets)). Which key the squad memory's shared player entry is saved under ([squad memory](#squad-memory)).
 - Why level buildings have a different target in the save than in the level list (179 of 6743 in four saves; in zone 19.29 two placements have swapped targets, same positions: a random variant pick is a guess).
 - Saves made by other game versions or with mods: layout of `mods` and unknown record types would show.
 

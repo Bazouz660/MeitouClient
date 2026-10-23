@@ -1011,6 +1011,9 @@ public sealed partial class PopulationSystem : IStateHashed
     public Func<World, CharacterId, string, bool>? Announcer { get; set; }
     public Func<CharacterId, bool>? PendingTalk { get; set; }
 
+    /// <summary>The squads' memories (the dialogue system's): a squad that leaves the world hands its memory to its platoon (<see cref="StoredSquad.Memory"/>), and gets it back when it returns; null: none kept.</summary>
+    public Dialogue.SquadMemory? Memory { get; set; }
+
     /// <summary>Game hours an arrived campaign waits for its announcement and negotiation before it goes on (engine choice).</summary>
     public const double AnnouncementPatience = 1;
     /// <summary>The announcement needs the leader within this of the camera and a target-faction member within this of the leader (<b>Verified</b>, task 129).</summary>

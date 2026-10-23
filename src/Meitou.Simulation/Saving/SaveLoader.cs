@@ -56,6 +56,8 @@ public static class SaveLoader
         LoadFactions(save, data, options, loaded);
         loaded.RelationBaseline = Snapshot(data.Relations);
         loaded.RankBaseline = [.. Enumerable.Range(0, data.Relations.Count).Select(data.Relations.Rank)];
+        loaded.TrustBaseline = [.. Enumerable.Range(0, data.Relations.Count).Select(data.Relations.GlobalTrust)];
+        loaded.WarBaseline = [.. Enumerable.Range(0, data.Relations.Count * data.Relations.Count).Select(i => data.Relations.AtWar(i / data.Relations.Count, i % data.Relations.Count))];
 
         // The player.
         var playerFaction = save.PlayerFaction;
@@ -63,6 +65,7 @@ public static class SaveLoader
         world.Player.Faction = playerIndex;
         world.Player.Money = camera.PlayerMoney;
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
+        BedSave.Read(camera.Record, world);
         LoadTownKnowledge(save, data, world.Player);
         LoadUniques(camera.Record, data, world.Uniques);
 
@@ -92,6 +95,7 @@ public static class SaveLoader
             Handles = handles, InstanceOf = instanceOf, Appearances = options.Appearances, Clock = loaded.Clock, PlayerFaction = playerIndex,
         };
         world.Saved = context;
+        context.Memory = world.Systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault()?.Memory;
         ReadNests(save, data, context);
         foreach (var town in save.Towns)
             if (!town.IsNest && town.Instance.Length > 0) context.TownStates.TryAdd(town.Instance, town.Record);
@@ -111,6 +115,9 @@ public static class SaveLoader
                 LoadNpcPlatoon(world, platoon, data, loaded, context, campaignPlatoons.Contains((platoon.Handle.C, platoon.Handle.CS)));
         }
         if (loaded.PlayerPlatoons.Count > 0) world.Player.Squad = loaded.PlayerPlatoons[0].Squad.Id;
+        // What the player's squads remembered (of the characters made so far; an NPC not made yet is not named again).
+        if (context.Memory is { } memory)
+            foreach (var lp in loaded.PlayerPlatoons) memory.Restore(lp.Squad.Id, MemorySave.Read(lp.Platoon.Record, context.CharacterOf));
 
         // The selection.
         var selected = new List<Hand> { camera.SelectedCharacter };
@@ -183,8 +190,13 @@ public static class SaveLoader
             int a = data.FactionIndex(f.Id);
             if (!options.ApplyRelations || a < 0) continue;
             data.Relations.SetRank(a, f.Rank);
+            data.Relations.SetGlobalTrust(a, f.GlobalTrust);
             foreach (var r in f.Relations)
-                if (data.FactionIndex(r.FactionId) is var b and >= 0) data.Relations.Set(a, b, r.Relation);
+                if (data.FactionIndex(r.FactionId) is var b and >= 0)
+                {
+                    data.Relations.Set(a, b, r.Relation);
+                    data.Relations.SetWar(a, b, r.War);
+                }
         }
         foreach (var f in save.Factions)
             if (data.FactionIndex(f.Id) < 0) loaded.Notes.Add($"Faction {f.Id} ({f.Name}) is not in the game data; its state is kept in the save only.");
@@ -219,6 +231,7 @@ public static class SaveLoader
                 data, assembly, context, null, loaded.Notes);
             squad.Members.Add(id);
             bySource[sc] = id;
+            context.Spawned[(sc.Handle.C, sc.Handle.I)] = id;
             loaded.Characters.Add(id);
             loaded.SpawnedSlots.Add((platoon.Name, sc.Handle.I));
             if (sc.IsLeader && squad.Leader.IsNone) squad.Leader = id;

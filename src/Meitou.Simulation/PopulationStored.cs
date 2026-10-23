@@ -152,6 +152,8 @@ public sealed partial class PopulationSystem
         stored.Members.Clear();
         if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
         world.Squads.Add(squad);
+        Memory?.Restore(squad.Id, stored.Memory);
+        stored.Memory = null;
         // A resident in its bed takes it again.
         world.Fixtures.Bind(world);
         return squad;

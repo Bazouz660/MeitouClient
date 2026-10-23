@@ -1,3 +1,4 @@
+using SquadMemoryData = Meitou.Simulation.Dialogue.SquadMemoryData;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Characters;
@@ -77,6 +78,7 @@ public static partial class SaveCapture
         var builder = prepared ?? PrepareBase(data, loaded, options);
         var game = builder.Game;
         var camera = game.Camera;
+        memoryPass = new MemoryPass();
 
         camera.Day = clock.Day;
         camera.Hour = clock.Hour;
@@ -86,6 +88,7 @@ public static partial class SaveCapture
         camera.SetMods(options.DataFiles);
         if (data.PlayerFaction >= 0) camera.PlayerFactionName = data.Factions[data.PlayerFaction].Name;
         SquadAiKeys.Write(camera.Record, world.Player.SquadAi);
+        BedSave.Write(camera.Record, world);
         camera.Record.Strings[SaveLoader.SeedKey] = world.Seed.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (options.View is { } view)
         {
@@ -126,8 +129,33 @@ public static partial class SaveCapture
             WriteWildNpcs(builder, world, data, population, nests, options, clock, buildings, races);
         }
 
+        WriteMemories();
         game.UpdateDerived();
         return game;
+    }
+
+    // ------------------------------------------------------------------ squad memory
+
+    /// <summary>What a capture collects for the squads' memories: the handle every character written got, and the platoon records to put each squad's memory on once all are written.</summary>
+    sealed class MemoryPass
+    {
+        public readonly Dictionary<CharacterId, Hand> Handles = [];
+        public readonly List<(FcsRecord Record, SquadMemoryData? Data)> Targets = [];
+    }
+
+    [ThreadStatic] static MemoryPass? memoryPass;
+
+    static Dialogue.SquadMemory? MemoryOf(World world) => world.Systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault()?.Memory;
+
+    /// <summary>Puts a squad's memory (null: none, which clears the record's) on a platoon record once the capture has written every character (<see cref="MemorySave"/>).</summary>
+    static void NoteMemory(FcsRecord record, SquadMemoryData? data) => memoryPass?.Targets.Add((record, data));
+
+    static void WriteMemories()
+    {
+        if (memoryPass is not { } pass) return;
+        memoryPass = null;
+        foreach (var (record, data) in pass.Targets)
+            MemorySave.Write(record, data, id => pass.Handles.TryGetValue(id, out var hand) ? hand : null);
     }
 
     // ------------------------------------------------------------------ factions and towns
@@ -141,8 +169,8 @@ public static partial class SaveCapture
             var table = new List<SaveRelation>();
             if (!player)
                 for (int b = 0; b < data.Factions.Count; b++)
-                    table.Add(new SaveRelation(data.Factions[b].Id, data.Relations.Get(a, b), 0, 0));
-            builder.AddFaction(f.Id, f.Name, player, 1000, table, rank: data.Relations.Rank(a));
+                    table.Add(new SaveRelation(data.Factions[b].Id, data.Relations.Get(a, b), 0, 0, data.Relations.AtWar(a, b)));
+            builder.AddFaction(f.Id, f.Name, player, 1000, table, rank: data.Relations.Rank(a)).GlobalTrust = data.Relations.GlobalTrust(a);
         }
     }
 
@@ -208,7 +236,9 @@ public static partial class SaveCapture
                 f.Prosperity = state.Prosperity;
                 f.PlatoonCounter = Math.Max(f.PlatoonCounter, state.PlatoonCounter);
             }
-            if (loaded is null || !index.TryGetValue(f.Id, out int a) || f.IsPlayer || loaded.RelationBaseline.Length != index.Count * index.Count) continue;
+            if (loaded is null || !index.TryGetValue(f.Id, out int a) || loaded.RelationBaseline.Length != index.Count * index.Count) continue;
+            if (a < loaded.TrustBaseline.Length && data.Relations.GlobalTrust(a) != loaded.TrustBaseline[a]) f.GlobalTrust = data.Relations.GlobalTrust(a);
+            if (f.IsPlayer) continue;
             if (a < loaded.RankBaseline.Length && data.Relations.Rank(a) != loaded.RankBaseline[a]) f.Rank = data.Relations.Rank(a);
             var table = f.Relations;
             var updated = new List<SaveRelation>(table.Count);
@@ -217,10 +247,14 @@ public static partial class SaveCapture
             {
                 // A value the world changed since loading is written; one it did not touch stays as the save had it.
                 float value = r.Relation;
-                if (index.TryGetValue(r.FactionId, out int b) && data.Relations.Get(a, b) != loaded.RelationBaseline[a * index.Count + b])
-                    value = data.Relations.Get(a, b);
-                changed |= value != r.Relation;
-                updated.Add(r with { Relation = value });
+                bool war = r.War;
+                if (index.TryGetValue(r.FactionId, out int b))
+                {
+                    if (data.Relations.Get(a, b) != loaded.RelationBaseline[a * index.Count + b]) value = data.Relations.Get(a, b);
+                    if (loaded.WarBaseline.Length == loaded.RelationBaseline.Length && data.Relations.AtWar(a, b) != loaded.WarBaseline[a * index.Count + b]) war = data.Relations.AtWar(a, b);
+                }
+                changed |= value != r.Relation || war != r.War;
+                updated.Add(r with { Relation = value, War = war });
             }
             if (changed) f.SetRelations(updated);
         }
@@ -265,6 +299,7 @@ public static partial class SaveCapture
             else
                 platoon.Position = at;
             kept.Add(platoon.Name);
+            NoteMemory(platoon.Record, MemoryOf(world)?.Snapshot(squad.Id));
             if (index >= 0)
             {
                 // The name the tabs show is the record's name; the string id stays the file's (Observed: rename writes the record's name, docs/formats/save.md).
@@ -378,6 +413,7 @@ public static partial class SaveCapture
         if (isNew || cold.LookEdited) WriteAppearance(sc, cold, data.Db, races, replace: !isNew);
         // What it carries and wears, as it is now; items read from a save keep their records' other keys.
         if (cold.Inventory is { } inventory) builder.SetInventory(platoon, sc, SavedKit.FromInventory(inventory));
+        if (!id.IsNone) memoryPass?.Handles[id] = sc.Handle;
         return sc;
     }
 
@@ -428,6 +464,8 @@ public static partial class SaveCapture
             if (p is not null) platoon.Money = (int)Math.Clamp(squad?.Money ?? p.Money, int.MinValue, int.MaxValue);
             ShopSave.Write(platoon.Record, squad is not null ? squad.Shop : sp.Shop, world);
             AiSave.Write(platoon.Record, squad is not null ? AiSave.Of(squad.Ai) ?? squad.SavedAi : sp.Ai);
+            if (squad is not null) NoteMemory(platoon.Record, MemoryOf(world)?.Snapshot(squad.Id));
+            else if (sp.MemorySet) NoteMemory(platoon.Record, sp.Memory);
             foreach (var m in sp.Members)
             {
                 var sc = platoon.Characters.FirstOrDefault(c => c.Handle.I == m.Slot);
@@ -495,7 +533,7 @@ public static partial class SaveCapture
             if (t.Instance.Length > 0 && !t.Handle.IsNull) townHands.TryAdd(t.Instance, t.Handle);
 
         SavePlatoon Write(int town, int factionIndex, string templateId, long money, bool roaming, TownBuilding? homeBuilding, string? package,
-            List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members, Trading.Shop? shop, Vector3 at = default, AiSave? ai = null)
+            List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members, Trading.Shop? shop, Vector3 at = default, AiSave? ai = null, SquadMemoryData? memory = null)
         {
             var faction = data.Factions[factionIndex];
             factions.TryGetValue(faction.Id, out var state);
@@ -523,6 +561,7 @@ public static partial class SaveCapture
             if (package is not null) record.Strings["currentPackage"] = package;
             ShopSave.Write(record, shop, world);
             AiSave.Write(record, ai);
+            NoteMemory(record, memory);
             // Its town and home building by handle, as the original names them (docs/formats/save.md "NPC platoons").
             if (townHands.TryGetValue(site.InstanceId, out var townHand)) townHand.Write(record, "hometown");
             if (homeBuilding is { } home && HomeHandle(game, home) is { } homeHand) homeHand.Write(record, "homebuilding");
@@ -552,7 +591,7 @@ public static partial class SaveCapture
             if (alive.Count == 0) continue;
             var leader = alive.Contains(squad.Leader) ? squad.Leader : alive[0];
             var members = alive.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader)).ToList();
-            var sp = Write(squad.Town, squad.Faction, squad.TemplateId, squad.Money, roamer is { Pinned: false }, squad.HomeBuilding, roamer?.Package ?? squad.Ai?.Current?.Id, members, squad.Shop, ai: AiSave.Of(squad.Ai) ?? squad.SavedAi);
+            var sp = Write(squad.Town, squad.Faction, squad.TemplateId, squad.Money, roamer is { Pinned: false }, squad.HomeBuilding, roamer?.Package ?? squad.Ai?.Current?.Id, members, squad.Shop, ai: AiSave.Of(squad.Ai) ?? squad.SavedAi, memory: MemoryOf(world)?.Snapshot(squad.Id));
             if (roamer is not null) written[roamer.Id] = sp;
         }
         // Squads stored since they left the world: a town's since its town unloaded, a roaming one (Meitou) since it first left.
@@ -560,7 +599,7 @@ public static partial class SaveCapture
         {
             if (p is not { State: PlatoonState.Unloaded, Stored: { Members.Count: > 0 } stored } || !Writable(p.Origin, p.Faction)) continue;
             var members = stored.Members.Select(m => (m.Cold, m.Position, m.Yaw, CharacterId.None, m.Leader)).ToList();
-            written[p.Id] = Write(p.Origin, p.Faction, p.TemplateId, p.Money, !stored.Pinned, stored.HomeBuilding, p.Package ?? stored.Package, members, stored.Shop, ai: stored.Ai);
+            written[p.Id] = Write(p.Origin, p.Faction, p.TemplateId, p.Money, !stored.Pinned, stored.HomeBuilding, p.Package ?? stored.Package, members, stored.Shop, ai: stored.Ai, memory: stored.Memory);
         }
         // A campaign's stand-ins that never had their characters (not a save's: those are in it already).
         foreach (var p in world.Platoons.All)

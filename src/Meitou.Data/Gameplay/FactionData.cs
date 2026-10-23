@@ -145,6 +145,7 @@ public sealed class FactionRelations
     readonly bool[] coexist;
     readonly bool[] war;
     readonly int[] rank;
+    readonly float[] trust;
 
     FactionRelations(IReadOnlyList<FactionData> factions, Dictionary<string, int> index, float[] relation, bool[] coexist)
     {
@@ -154,6 +155,7 @@ public sealed class FactionRelations
         this.coexist = coexist;
         war = new bool[relation.Length];
         rank = new int[factions.Count];
+        trust = new float[factions.Count];
     }
 
     public IReadOnlyList<FactionData> Factions { get; }
@@ -262,11 +264,42 @@ public sealed class FactionRelations
         return (before, Get(a, b));
     }
 
-    /// <summary>The war flag of <paramref name="a"/> towards <paramref name="b"/> (the entry's byte +2; nothing else found reads it; whether it is saved is <b>Unknown</b>, here it is not).</summary>
+    /// <summary>
+    /// The war flag of <paramref name="a"/> towards <paramref name="b"/> (the entry's byte +2; nothing else found reads it). The original's save has no key for it (the relation writer
+    /// <c>FUN_1406b3300</c> keeps <c>relation</c>, <c>trust</c>, <c>trustNeg</c> and <c>relationSID</c> only, <b>Observed</b>); Meitou saves it as <c>meitou war&lt;k&gt;</c> (<see cref="SetWar"/>).
+    /// </summary>
     public bool AtWar(int a, int b)
     {
         if (a == PlayerFaction && a >= 0) (a, b) = (b, a);
         return a != b && Contains(a) && Contains(b) && war[a * Count + b];
+    }
+
+    /// <summary>Sets the war flag of <paramref name="a"/> towards <paramref name="b"/> (a loaded save does this; no relation changes).</summary>
+    public void SetWar(int a, int b, bool value)
+    {
+        if (a != b && Contains(a) && Contains(b)) war[a * Count + b] = value;
+    }
+
+    /// <summary>
+    /// The faction's global trust (FactionRelations +0x18, a float starting 0): what DC_REPUTATION compares (as an int, <c>FUN_140671530</c>) and DA_AFFECT_REPUTATION raises (slot 9,
+    /// <c>FUN_1406b2530</c>, <b>Observed</b>). The original saves no +0x18 (the player table's <c>global trust</c> key reads and writes +0x14, whose link to +0x18 is <b>Unknown</b>);
+    /// Meitou saves it as <c>meitou global trust</c>.
+    /// </summary>
+    public float GlobalTrust(int f) => Contains(f) ? trust[f] : 0;
+
+    /// <summary>DA_AFFECT_REPUTATION: faction <paramref name="f"/>'s global trust += <paramref name="delta"/> (no clamp, as the original's slot 9). Returns the value after.</summary>
+    public float AddGlobalTrust(int f, float delta)
+    {
+        if (!Contains(f)) return 0;
+        trust[f] += delta;
+        if (delta != 0) Changes++;
+        return trust[f];
+    }
+
+    /// <summary>Sets a faction's global trust (a loaded save does this).</summary>
+    public void SetGlobalTrust(int f, float value)
+    {
+        if (Contains(f)) trust[f] = value;
     }
 
     /// <summary>The relation a declaration of war sets, and the one the end of a war lifts a lower relation to (<c>FUN_1406b3000</c>, <c>FUN_1406b2f90</c>).</summary>

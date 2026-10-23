@@ -70,10 +70,17 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     public Carrying.CarrySystem? Carry { get; set; }
 
     readonly List<BedTrip> trips = [];
-    // Bed id -> the game hour the player's faction last paid its rent (the original's map keyed by the bed's handle; not saved, engine).
+    // Bed id -> the game hour the player's faction last paid its rent (the original's global map is keyed by a name string of the argument and is never saved, Verified by references;
+    // Meitou saves it as `meitou rent` keys on the CAMERA, engine choice).
     readonly SortedDictionary<string, double> paid = new(StringComparer.Ordinal);
 
     public IReadOnlyList<BedTrip> Trips => trips;
+
+    /// <summary>The beds whose rent was paid, with the game hour of the payment, in id order (a save keeps them: <see cref="Saving.BedSave"/>).</summary>
+    public IReadOnlyCollection<KeyValuePair<string, double>> RentPaid => paid;
+
+    /// <summary>Sets the game hour a bed's rent was last paid (a loaded save does this).</summary>
+    public void SetRentPaid(string bed, double hours) => paid[bed] = hours;
 
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 

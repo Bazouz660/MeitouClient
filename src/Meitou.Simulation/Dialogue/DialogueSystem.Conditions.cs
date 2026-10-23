@@ -10,7 +10,7 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// One condition (<c>FUN_140676950</c>, docs/game/dialogue.md "Conditions"): <c>who</c> 0 tests the speaker, any other value the target. Yes/no conditions pass when the computed
     /// answer equals value &gt; 0; counts compare by <c>compare by</c> (Num3: 1 &lt;, 2 &gt;, else ==; Num2: 1 &lt;, else &gt;=). Conditions whose inputs Meitou does not have
-    /// (building locks, town walls and levels, faction trust, strength ratings, head counts, illegal items, training) compute "no".
+    /// (building locks, town walls, strength ratings, head counts, illegal items, training equipment) compute "no".
     /// </summary>
     bool Condition(World world, Conversation c, DialogueCondition dc, CharacterId me, CharacterCold mc, CharacterId other)
     {
@@ -31,8 +31,8 @@ public sealed partial class DialogueSystem
             case 6 or 15 or 34 or 51: return true;
             case 1: return Num2(sF == meF ? 100 : relations.Contains(meF) && relations.Contains(sF) ? (int)relations.Get(meF, sF) : 0);
             case 2: return Num2(world.Player.Money);
-            case 3: return Num2(0);   // S's faction's global trust (FactionRelations +0x18, FUN_140671530): Meitou keeps no trust yet
-            case 12: return Num3(0);
+            case 3: return Num2((int)relations.GlobalTrust(sF));   // S's faction's global trust (FactionRelations +0x18, FUN_140671530)
+            case 12: return Num3(world.Research.TechLevel);   // the research manager's tech level (*(*(game + 0x38) + 8), FUN_140676950)
             case 7 or 8:
             {
                 // Caged by the speaker's faction (7) or another (8); when S is the speaker, by the target's faction instead (FUN_140676950).
@@ -96,7 +96,11 @@ public sealed partial class DialogueSystem
                 var looks = SquadOf(world, subjectId).Select(m => Cold(world, m)?.Appearance?.Female).Where(f => f is not null).ToArray();
                 return Bool(looks.Length == 0 || (looks.Contains(true) && looks.Contains(false)));
             }
-            case 74: return Num3(-1);
+            case 73:
+                // The speaker's current town when it is the player's: that town's level (Town +0x388); false otherwise, whatever the value. Engine reading of "current town": the player outpost
+                // whose centre is within the player-town extent of the speaker.
+                return population is not null && Position(world, me) is { } standing && PlayerTownAt(world, standing) is { } ownTown && Num3(population.TownLevel(world, ownTown.Number));
+            case 74: return Num3(PlayersBestTownLevel(world));
             case 75: return Bool(Position(world, subjectId) is { } loc && TownAt(loc) is >= 0 and var ptown && ptown < data.SiteFactions.Count && world.Player.Faction >= 0
                 && data.SiteFactions[ptown] == world.Player.Faction);
             case 78: return Bool(world.Squads.Find(mc.SquadId)?.Ai?.Contract is not null);
@@ -105,6 +109,30 @@ public sealed partial class DialogueSystem
             case 79: return Bool(s.Race?.IsRobot == true || (s.Medical?.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced) ?? false));
             default: return Bool(false);
         }
+    }
+
+    /// <summary>The player's outpost whose centre is within the player-town extent of <paramref name="at"/> (the nearest), or null.</summary>
+    Construction.PlayerTown? PlayerTownAt(World world, Vector3 at)
+    {
+        Construction.PlayerTown? best = null;
+        float bestD = data.PlayerTownExtent * data.PlayerTownExtent;
+        foreach (var town in world.Buildings.Towns)
+        {
+            if (town.Owner != world.Player.Faction) continue;
+            float d = Vector2.DistanceSquared(new(at.X, at.Z), new(town.Position.X, town.Position.Z));
+            if (d <= bestD) (best, bestD) = (town, d);
+        }
+        return best;
+    }
+
+    /// <summary>DC_PLAYERS_BEST_TOWN_LEVEL (<c>FUN_140676950</c>): the highest level over the player faction's towns (Town +0x388, <see cref="PopulationSystem.TownLevel"/>); -1 with none.</summary>
+    int PlayersBestTownLevel(World world)
+    {
+        int best = -1;
+        if (population is null) return best;
+        foreach (var town in world.Buildings.Towns)
+            if (town.Owner == world.Player.Faction) best = Math.Max(best, population.TownLevel(world, town.Number));
+        return best;
     }
 
     /// <summary>DC_IN_MY_BUILDING, engine reading (as the lock rounds'): within the building's farthest node or bed + 10 (at least 30) of its origin, on the ground.</summary>
