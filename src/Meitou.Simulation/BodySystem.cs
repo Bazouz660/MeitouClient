@@ -1,3 +1,4 @@
+using WorldLayout = Meitou.Data.World.WorldLayout;
 using System.Collections.Concurrent;
 using System.Numerics;
 using Meitou.Data;
@@ -253,7 +254,10 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 // A corpse that is carried or held in a bed or cage does not decay: its clock is kept at most 6 hours old, so it lies 6 more hours once let go.
                 if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) cold.DiedTick = Math.Max(cold.DiedTick, world.Tick - HeldCorpseTicks);
-                if (world.Tick - cold.DiedTick <= CorpseTicks) continue;
+                // "corpse unloaded": a corpse in a zone of the map that is not active goes at once, carried or not (FUN_1405ccd90, after the decay test; Verified).
+                bool unloaded = world.ActiveZones is { } active && WorldLayout.ZoneOf(table.Next[i].Position.X, table.Next[i].Position.Z) is { X: >= 0 and < WorldLayout.ZoneCount, Y: >= 0 and < WorldLayout.ZoneCount } zone
+                    && !active.Contains(zone);
+                if (!unloaded && world.Tick - cold.DiedTick <= CorpseTicks) continue;
                 var corpse = new CharacterId(i, table.Next[i].Generation);
                 world.Uniques.Left(corpse);
                 table.Remove(corpse);

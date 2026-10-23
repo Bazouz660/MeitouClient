@@ -25,7 +25,12 @@ sealed partial class PlayerInterface
     Meitou.Data.Save.SaveSlotInfo? slotInfo;
     /// <summary>The load and import windows' ticks (ImportGameMenu flags 0x1, 0x4, 0x8, 0x10, 0x20): reset squad positions, buildings, research, dead NPCs, relations.</summary>
     readonly bool[] slotTicks = new bool[5];
-    static readonly string[] TickBoxes = ["ResetTickBox", "BuildingsTickBox", "ResearchTickBox", "NPCTickBox", "RelationsTickBox"];
+    /// <summary>The import window's ticks as the flag bits of <c>importGame</c> (ticks in the order of <see cref="TickBoxes"/>: 0x1, 0x4, 0x8, 0x10, 0x20).</summary>
+    public Meitou.Simulation.Saving.ImportOptions ImportFlags =>
+        (slotTicks[0] ? Meitou.Simulation.Saving.ImportOptions.ResetPositions : 0) | (slotTicks[1] ? Meitou.Simulation.Saving.ImportOptions.Buildings : 0)
+        | (slotTicks[2] ? Meitou.Simulation.Saving.ImportOptions.Research : 0) | (slotTicks[3] ? Meitou.Simulation.Saving.ImportOptions.DeadNpcs : 0)
+        | (slotTicks[4] ? Meitou.Simulation.Saving.ImportOptions.Relations : 0);
+    static readonly string[] TickBoxes =["ResetTickBox", "BuildingsTickBox", "ResearchTickBox", "NPCTickBox", "RelationsTickBox"];
     /// <summary>The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it).</summary>
     sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null);
     Confirmation? confirmation;
@@ -72,6 +77,13 @@ sealed partial class PlayerInterface
             slotDetails = $"File version: {info.Version}\nFaction name: {info.Faction}\nFunds: c.{info.Funds.ToString("N0", CultureInfo.InvariantCulture)}\nMembers size: {info.Members}\nLocation: {info.Area}";
         }
         catch (Exception e) when (e is IOException or FormatException or ArgumentException) { slotDetails = "Unable to read save:\n" + e.Message; }
+    }
+    /// <summary>The advanced options of the import window take the selected save's difficulty (<c>FUN_140912f80</c>, when the window is opened or a row selected while it is open); the import runs with what the sliders hold.</summary>
+    void ReadSlotDifficulty()
+    {
+        if (selectedSlot is not { } slot) return;
+        try { NewGameOptions = NewGameSettings.Read(new SaveGame(SaveFile.Read(File.ReadAllBytes(Path.Combine(slot.Folder, SaveFolder.QuickSaveName)))).Camera); }
+        catch (Exception e) when (e is IOException or FormatException or ArgumentException or Meitou.Data.Fcs.FcsFormatException) { /* an unreadable save keeps the sliders as they are */ }
     }
     void OpenSlots(string id)
     {
@@ -136,11 +148,17 @@ sealed partial class PlayerInterface
             if (e.Screen == "import" && AdvancedAction(e)) return true;
             if (e.Widget == "CancelButton") { faithfulScreens.Close(e.Screen); advancedOpen = false; }
             else if (Array.IndexOf(TickBoxes, e.Widget) is var tick and >= 0) slotTicks[tick] = !slotTicks[tick];
-            else if (e.Widget == "AdvancedButton") { advancedOpen = !advancedOpen; advancedHelp = -1; }
-            else if (e.Widget == "ImportButton" && selectedSlot is not null) Notice("Importing a save into a new world is not implemented yet", true);
+            else if (e.Widget == "AdvancedButton") { advancedOpen = !advancedOpen; advancedHelp = -1; if (advancedOpen && e.Screen == "import") ReadSlotDifficulty(); }
+            else if (e.Widget == "ImportButton" && selectedSlot is { } importSlot)
+            {
+                void Import() => ScreenAction?.Invoke(new("import", "ImportButton", "import", importSlot.Folder));
+                if (!slotReadable) Notice("This save file is invalid", true);   // the original's message box for a save whose row reads ERROR
+                else if (session.World.Player.Exists) Confirm("IMPORT GAME", "Import this save into a new game? Unsaved progress will be lost.", Import); else Import();
+            }
             else if (e.Widget == "GamesList" && e.Action == "select")
             {
                 selectedSlot = slots.FirstOrDefault(s => s.Folder == e.Text); ReadSlotDetails();
+                if (e.Screen == "import" && advancedOpen) ReadSlotDifficulty();
                 if (e.Screen == "save" && selectedSlot is { } slot) faithfulScreens.SetText("save", "SaveEditBox", slot.Name);
             }
             else if (e.Widget == "LoadButton" && selectedSlot is { } loadSlot)

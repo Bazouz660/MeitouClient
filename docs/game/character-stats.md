@@ -271,8 +271,16 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   (spiders, land bats, skimmers) is read only by the loader here; it concerns eating downed bodies.
 - AI slot 25 (`FUN_140597d30`, the AI's eat desire) is 1 when hungry (hunger <= 2.4), AI +0xb0 and +0xb4 not
   above 0 and no food in the inventory; 0.1 when +0xb4 > 0 and hunger < 1.2. Which goal reads it is **Unknown**.
-- Animals (pickup task `FUN_14034f340`) hold a food item at an attach point (`FUN_1405d0b50`) and eat it
-  15 game minutes (player's) or 45-180 (others, by slot 0x398) later (`FUN_1405dc650`). Not in Meitou.
+- **Mouth** (**Verified**, decompile of `FUN_14034f340`, `FUN_1405d0b50`, `FUN_1405c8240`, `FUN_1405d0d20`, `FUN_1405dc650`; the attach point is the string `mouth`,
+  `FUN_141534950`). Only a **limb** (item function 17, item `+0x124`) picked up by an animal (vfunc 0x248 non-null) goes to the mouth; any other item, and a limb picked up
+  by a person, goes into the inventory (the pickup task, below). Taking it: the limb held before is let go (`FUN_1405c8240`), the new one is flagged held (`+0xd8` = 1), attached to the
+  `mouth` point and the time is stamped (`+0x6e0`). With no `mouth` attach point on the skeleton the limb is bitten on the spot instead (the same function's other branch).
+  While the mouth is full, the character update (`FUN_1405dc650`) does nothing else about food (no auto-eat, no Feed Animals check), and t = game minutes since the stamp, f = slot 0x398
+  (the age, [animals](animals.md#ageing)): an animal with f > 0.9 of the player's faction (`FACTION +0x250`) eats when the stomach (+0x4bc) is empty and hunger (+0x4b8) below 2.6, or at t > 15;
+  any other eats when the stomach is empty and t > 45, or at t > 60 + 120 x (1 - f). Eating clears the mouth, the flag, and bites the limb (whole, 30).
+  Which orders and goals send an animal to a ground limb is **Unknown** (the data's animal goals "eating food on the ground" are typed IDLE, [animals](animals.md#ai-goals)); Meitou reaches the mouth only through the player's pickup order.
+  Meitou (`FeedSystem.HoldInMouth`, `MouthDue`; `CharacterCold.Mouth`): as above. Engine choices: every animal has the `mouth` point; a held
+  limb is neither saved nor carried across a load; it goes with the animal if the animal dies or is removed.
 - Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA
   bools `feed`, `share`, **Verified** reader `FUN_1403ebf50`; default on, **Unknown**).
 
@@ -303,7 +311,11 @@ is skipped while `DAT_142134690` +0x2f0 is set (**Unknown** flag). Meitou: `Medi
 death time is set on the first update as a corpse. A corpse neither carried (+0x3d4) nor in a bed or cage
 (+0x2f8 = 0) is destroyed ("corpse decayed") once more than 12 hours have passed; while held, the death time is
 kept at least now - 6, so it lies 6 more hours once let go. A corpse whose zone is loaded but not active is
-destroyed at once ("corpse unloaded"). Meitou: `BodySystem.SlowWorld` (the unloaded-zone rule is not modelled).
+destroyed at once ("corpse unloaded"), carried or not: the zone is the 64 x 64 grid cell of the corpse's x/z (`FUN_140a08b20`, `FUN_140a08ae0`: ZoneMap record 0x168 bytes from `+200`
+of the zone manager) and "active" is its byte `+0xb1` (`FUN_140a090b0`; `+0xb0` is a second flag, `FUN_140a090d0`). A position outside the grid is never removed. What sets `+0xb1` was not
+traced; it is read as the zone being active round a player character (**Observed**: the callers use it for "zone is live", e.g. the squad-leader pick `FUN_140792b90`).
+Meitou: `BodySystem.SlowWorld`; "active" is `World.ActiveZones`, the population's active set (the box of +-340 round each player character, [game-loop](game-loop.md)), unknown before the
+population's first look (then nothing is removed). Engine choice: the original's active set may differ from that box.
 
 ### What a body part is
 

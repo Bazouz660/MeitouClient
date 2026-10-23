@@ -15,6 +15,9 @@ public sealed class SaveLoadOptions
     /// <summary>Put the save's relation table into <c>PopulationData.Relations</c> (it is one table shared by the data; a loaded game replaces its start values).</summary>
     public bool ApplyRelations { get; init; } = true;
 
+    /// <summary>Set the relation table to the FACTION records' start values first (an import without the save's relations; the table is shared by the data, so the last game's values would stay otherwise).</summary>
+    public bool ResetRelations { get; init; }
+
     /// <summary>
     /// Make the save's other platoons (not the player's) <see cref="Platoon"/> stand-ins in <see cref="World.Platoons"/>, at their saved positions, when they belong to a placed
     /// town: the population makes their saved characters when a zone near them is active (<see cref="SavedPlatoon"/>; town-bound ones are pinned to their town).
@@ -53,6 +56,7 @@ public static class SaveLoader
         foreach (var mod in camera.Record.References.GetValueOrDefault("mods") ?? [])
             if (!running.Contains(mod.TargetStringId)) loaded.MissingMods.Add(mod.TargetStringId);
         if (loaded.MissingMods.Count > 0) loaded.Notes.Add($"Made with data files this game does not load: {string.Join(", ", loaded.MissingMods)}.");
+        if (options.ResetRelations) data.Relations.Reset();
         LoadFactions(save, data, options, loaded);
         loaded.RelationBaseline = Snapshot(data.Relations);
         loaded.RankBaseline = [.. Enumerable.Range(0, data.Relations.Count).Select(data.Relations.Rank)];

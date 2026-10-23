@@ -316,6 +316,13 @@ public sealed class FactionRelations
         for (int i = 0; i < n; i++) index[factions[i].Id] = i;
         var relation = new float[n * n];
         var coexist = new bool[n * n];
+        Defaults(factions, index, relation, coexist);
+        return new FactionRelations(factions, index, relation, coexist);
+    }
+
+    static void Defaults(IReadOnlyList<FactionData> factions, Dictionary<string, int> index, float[] relation, bool[] coexist)
+    {
+        int n = factions.Count;
         for (int a = 0; a < n; a++)
         {
             for (int b = 0; b < n; b++)
@@ -327,7 +334,16 @@ public sealed class FactionRelations
             foreach (string other in factions[a].Coexistence)
                 if (index.TryGetValue(other, out int b)) coexist[a * n + b] = true;
         }
-        return new FactionRelations(factions, index, relation, coexist);
+    }
+
+    /// <summary>Back to the FACTION records' start values: every relation, no war flag, every rank 0 (an imported game that does not take the save's relations, docs/formats/save.md "Importing a game").</summary>
+    public void Reset()
+    {
+        Array.Clear(coexist);
+        Defaults(Factions, index, relation, coexist);
+        Array.Clear(war);
+        Array.Clear(rank);
+        Changes = 0;
     }
 
     public static FactionRelations Build(GameDatabase db) => Build(FactionData.LoadAll(db));

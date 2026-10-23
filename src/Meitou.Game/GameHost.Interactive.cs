@@ -356,6 +356,7 @@ sealed partial class GameHost
         {
             if (e.Action == "save") saveRequestedFolder = Meitou.Data.Save.SaveCatalog.Folder(Meitou.Simulation.Saving.QuickSave.DefaultRoot, e.Text);
             else if (e.Action == "load") loadRequestedFolder = e.Text;
+            else if (e.Action == "import") importRequested = (e.Text, player.ImportFlags);
             else if (e.Action == "new-game") newGameRequested = e.Text;
             else if (e.Action == "main-menu") mainMenuRequested = true;
             else if (e.Widget == "OptionsButton" && panel is not null) panel.Visible = true;
