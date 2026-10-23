@@ -12,6 +12,8 @@ public enum BufferUse
     Vertex = 1, Index = 2, Uniform = 4, Storage = 8, Indirect = 16, TransferSrc = 32, TransferDst = 64,
     /// <summary>Read by acceleration structure builds and by shaders through its device address (needs <see cref="Core.VulkanDevice.HasRayQuery"/>).</summary>
     RayInput = 128,
+    /// <summary>Static GPU-only storage: Metal may choose private storage; Vulkan ignores this hint.</summary>
+    GpuOnly = 256,
 }
 
 /// <summary>A range of a buffer as a draw or a descriptor reads it.</summary>

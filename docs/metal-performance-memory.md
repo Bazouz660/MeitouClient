@@ -310,6 +310,19 @@ The first live GPU-cull capture (2026-10-23, 1600x1200 native) has:
 The main encoder is wide (occupancy/bandwidth/texture work), not a single ALU hotspot. The smaller high-ALU encoders
 are shadow/terrain preparation; inspect them separately before optimising the main terrain shader.
 
+## Metal timestamp limitation and private statics
+
+Apple silicon supports GPU counter sampling only at **stage boundaries**. A mid-encoder
+`sampleCountersInBuffer` is unsupported (the render and blit encoders assert), and configuring the pass descriptor's
+sample-buffer attachments for our render passes also crashed the process in the 2026-10-23 experiment. Do not wire
+per-lap Metal timestamps yet. Use one Xcode frame for the pass breakdown plus `MEITOU_METAL_TRACE` for the steady total;
+do not capture multiple frames (one trace is already about 3 GB).
+
+The static terrain experiment is behind `MEITOU_METAL_PRIVATE_STATIC=1`: it gives the static terrain textures and the
+terrain patch vertex/index buffers private Metal storage (Microsoft's staging uploads stay shared). A 20-second A/B was
+inconclusive: GPU 20.0 vs 20.8 ms, but CPU record 6.2 vs 4.6 ms and a late 950 ms stall in both runs. The default stays
+shared until a cleaner, longer A/B shows a win.
+
 ## Review commands
 
 ```sh

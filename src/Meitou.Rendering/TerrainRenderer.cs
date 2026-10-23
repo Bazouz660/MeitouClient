@@ -60,6 +60,7 @@ public readonly record struct WorldLighting(Vector3 SunDirection, Vector3 SunCol
 /// </summary>
 public sealed unsafe partial class TerrainRenderer : IDisposable
 {
+    static readonly bool PrivateStatics = Environment.GetEnvironmentVariable("MEITOU_METAL_PRIVATE_STATIC") == "1";
     readonly DeviceBuffer gridVertices, gridIndices;
     readonly TerrainTexture coarseTexture;
     TerrainTexture fineTexture;
@@ -135,8 +136,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         }
         // The patch grid as one vertex buffer (location 0: the grid point, two floats) and one index buffer (GL's vertex array, made native).
         var gridIndexData = indices.ToArray();
-        gridVertices = DeviceBuffer.Create(gpu, (ulong)grid.Length * sizeof(float), BufferUse.Vertex, "terrain patches vertices");
-        gridIndices = DeviceBuffer.Create(gpu, (ulong)gridIndexData.Length * sizeof(uint), BufferUse.Index, "terrain patches indices");
+        BufferUse staticUse = PrivateStatics ? BufferUse.GpuOnly : 0;
+        gridVertices = DeviceBuffer.Create(gpu, (ulong)grid.Length * sizeof(float), BufferUse.Vertex | staticUse, "terrain patches vertices");
+        gridIndices = DeviceBuffer.Create(gpu, (ulong)gridIndexData.Length * sizeof(uint), BufferUse.Index | staticUse, "terrain patches indices");
         using (var batch = gpu.Uploads.Begin())
         {
             batch.Write(gridVertices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(grid.AsSpan()));

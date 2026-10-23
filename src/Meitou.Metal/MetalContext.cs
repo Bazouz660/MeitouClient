@@ -493,6 +493,13 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public GpuBuffer CreateBuffer(ulong size, BufferUse use, string name)
     {
+        if (use.HasFlag(BufferUse.GpuOnly))
+        {
+            // A static vertex/index/texture-upload target is written through the staging blit and never mapped on the CPU:
+            // private lets Metal put it in the GPU's own allocation and its compression/cache path.
+            var buffer = Device.NewBuffer(Math.Max(size, 8ul), MTLResourceOptions.ResourceStorageModePrivate);
+            return RegisterBuffer(buffer, name);
+        }
         // Device-local on Apple silicon is the unified memory itself; shared mode makes the CPU's writes (the dummy vertex,
         // the frame's constants ring) the same object the GPU reads.
         var shared = NewSharedBuffer(size, name);

@@ -45,6 +45,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     readonly int maxInFlight = Math.Clamp(Environment.ProcessorCount / 2, 2, 6);
     readonly MapWindows? mapWindows;
     readonly List<int> needed = [];
+    static readonly bool PrivateStatics = Environment.GetEnvironmentVariable("MEITOU_METAL_PRIVATE_STATIC") == "1";
     TerrainTexture? diffuseArray, normalArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture;
     int inFlight, nextFree, printed, stamp;
     long frame;
@@ -283,7 +284,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         TextureWrapMode wrap, string name, float anisotropy = 1, TextureKind kind = TextureKind.Texture2D)
     {
         using var batch = Gpu.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(format, width, height, levels, layers, Kind: kind, Name: name));
+        var t = batch.Create(new TextureDesc(format, width, height, levels, layers, Kind: kind, Name: name, Private: PrivateStatics));
         return new TerrainTexture(Gpu, t, min, mag, wrap, anisotropy);
     }
 
@@ -297,7 +298,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         int levels = mipmaps ? 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(width, height), 1))) : 1;
         using var batch = Gpu.Uploads.Begin();
         var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, width, height, levels,
-            Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name));
+            Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name, Private: PrivateStatics));
         batch.Write(t, 0, 0, Rect(0, 0, width, height), rgba.AsSpan(0, width * height * 4));
         if (mipmaps) batch.Commands.GenerateMips(t);
         return new TerrainTexture(Gpu, t, mipmaps ? TextureMinFilter.LinearMipmapLinear : TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
