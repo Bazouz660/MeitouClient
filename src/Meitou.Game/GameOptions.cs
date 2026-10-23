@@ -32,7 +32,7 @@ sealed class GameOptions
     public (int Count, string Unit)[]? Battle;
     /// <summary><c>--battle-map sandbox</c>: the battle is fought on the sandbox's flat floor instead of the map.</summary>
     public bool BattleFlat;
-    /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the duel's mesa).</summary>
+    /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the plateau, <see cref="GameHost.BattleSpot"/>).</summary>
     public (float X, float Z)? BattleAt;
     /// <summary>The start to play (null = the default); with <c>--move-to</c> the picture shows a selected squad walking.</summary>
     public string? NewGameName;
@@ -61,7 +61,7 @@ sealed class GameOptions
                                      and it restarts when a cinema flight is played or recorded (Backspace restarts it); the time of day is held (22:00, or --time) and the weather clear (or --weather)
           --battle <n> <unit> <m> <unit>  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (1..500 each), in two blocks facing each other;
                                      no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
-          --battle-map <map>         where the battle is fought: mesa (default: the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
+          --battle-map <map>         where the battle is fought: plateau (default), mesa (the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
@@ -124,13 +124,14 @@ sealed class GameOptions
                 case "--battle-map":
                     switch (Next())
                     {
-                        case "mesa": (g.BattleFlat, g.BattleAt) = (false, null); break;
+                        case "plateau": (g.BattleFlat, g.BattleAt) = (false, null); break;
+                        case "mesa": (g.BattleFlat, g.BattleAt) = (false, (GameHost.DuelSpot.X, GameHost.DuelSpot.Y)); break;
                         case "sandbox": (g.BattleFlat, g.BattleAt) = (true, null); break;
                         case var map when map.Split(',') is [var mx, var mz] && float.TryParse(mx, NumberStyles.Float, CultureInfo.InvariantCulture, out float bx)
                             && float.TryParse(mz, NumberStyles.Float, CultureInfo.InvariantCulture, out float bz):
                             (g.BattleFlat, g.BattleAt) = (false, (bx, bz));
                             break;
-                        default: throw new ArgumentException("--battle-map must be mesa, sandbox or x,z");
+                        default: throw new ArgumentException("--battle-map must be plateau, mesa, sandbox or x,z");
                     }
                     break;
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;

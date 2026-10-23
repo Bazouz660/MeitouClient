@@ -102,7 +102,7 @@ static class Program
         if (game.Battle is not null)
         {
             // The battle on the map (docs/simulation.md "Battle"): the world round its spot, with no towns; the camera across the two blocks.
-            var spot = game.BattleAt is { } at ? new Vector2(at.X, at.Z) : GameHost.DuelSpot;
+            var spot = game.BattleAt is { } at ? new Vector2(at.X, at.Z) : GameHost.BattleSpot;
             (world.X, world.Z, world.Town) = (spot.X, spot.Y, null);
             world.Distance ??= 150;
             world.Yaw ??= 90;

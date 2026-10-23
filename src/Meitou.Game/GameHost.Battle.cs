@@ -6,7 +6,7 @@ namespace Meitou.Game;
 
 /// <summary>
 /// The battle (<c>--battle n unit m unit</c>, docs/simulation.md "Battle"): two groups of NPCs, each of one CHARACTER or ANIMAL_CHARACTER record, in two blocks facing
-/// each other on the map (the duel's mesa, or x,z) or the sandbox's floor. No towns and no aggro: the host gives every standing fighter without a target the nearest
+/// each other on the map (the plateau, the duel's mesa or x,z) or the sandbox's floor. No towns and no aggro: the host gives every standing fighter without a target the nearest
 /// standing enemy. Backspace starts the same fight again (a new world made the same way). Nothing here runs in the normal game.
 /// </summary>
 sealed partial class GameHost
@@ -16,6 +16,9 @@ sealed partial class GameHost
     const int BattleRankWidth = 10;
     /// <summary>No orders before this tick: the blocks stand a moment before they charge.</summary>
     const int BattleOrderTick = 30;
+
+    /// <summary>The default spot (the owner's pick, 2026-10-23): a plateau about 3280 high, from camera code 01E66D91C77F164D45EA7C6446E5B9F6BF86EBB13F0000FA44.</summary>
+    public static readonly Vector2 BattleSpot = new(-74460, 14623);
 
     bool IsBattle => g.Battle is not null;
     /// <summary>The floor is the sandbox's: the animation sandbox's, or the battle's with <c>--battle-map sandbox</c>.</summary>
@@ -39,7 +42,7 @@ sealed partial class GameHost
             int faction = popData!.Factions.Select((f, i) => (f, i)).FirstOrDefault(p => p.f.Id == factionId, (null!, -1)).Item2;
             battleSides.Add((record.StringId, record.Name, count, faction >= 0 ? faction : null));
         }
-        var spot = g.BattleFlat ? Vector2.Zero : g.BattleAt is { } at ? new Vector2(at.X, at.Z) : DuelSpot;
+        var spot = g.BattleFlat ? Vector2.Zero : g.BattleAt is { } at ? new Vector2(at.X, at.Z) : BattleSpot;
         battleSpot = new Vector3(spot.X, session.World.Walkability.GroundHeight(spot.X, spot.Y), spot.Y);
         BattleSetup(session.World, population!);
         session.Ticked += _ => BattleTick();
