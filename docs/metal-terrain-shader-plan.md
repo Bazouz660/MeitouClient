@@ -1,8 +1,8 @@
 # Metal terrain shader plan
 
-Status: **phase 0 and items 1–4 measured; normal-map variant kept, default unchanged** (2026-10-23). This is the
-follow-up to the Metal GPU-cull work. The goal is to reduce the terrain pass cost on Metal without changing the
-picture, and keep Vulkan as the reference path.
+Status: **phase 0 and items 1–4 measured; normal-map variant kept; distance material LOD tried and rejected**
+(2026-10-23). This is the follow-up to the Metal GPU-cull work. The goal is to reduce the terrain pass cost on Metal
+without changing the picture, and keep Vulkan as the reference path.
 
 Current evidence:
 
@@ -47,6 +47,22 @@ readable in the trace):
   current wide/ALU-light profile.
 - Matched Vulkan: no-object view terrain 7.83 ms, total 14.62 ms; full scene terrain 11.40 ms, total 22.51 ms.
   The two backends are not uniformly different on terrain; compare the same view and scene.
+
+### Rejected follow-up: distance material LOD
+
+After the first review we tried a distance-based terrain material LOD: a uniform normal-map fade, then a per-patch
+split between the normal-on near program and the no-normal far program.
+
+- Uniform fade alone: no measurable win. The shader still contains the normal-map samples and their register
+  pressure even when the distance branch skips them.
+- Per-patch split, forced `0,1` (all far): ~13.5 ms versus 14.2 baseline and 12.7 with normal maps fully off.
+- Per-patch split at a realistic `500,1500`: ~14.0 ms, noise.
+- The near patches cover enough of the screen that dropping only the far patches cannot remove the main cost. A
+  finer split (smaller patches, a separate near/far material pass, or a baked/virtual material) would be needed to
+  get more, and the shipping normal-map cost is only ~0.2 ms at MetalFX 0.67.
+
+Decision: reverted. Do not keep a per-patch material LOD in the terrain path without a finer material split and a
+new measured gate.
 
 ## Measurement protocol
 
@@ -239,7 +255,8 @@ cleared the noise floor. Revisit only with a matched capture that shows terrain 
 - Record the final measurement in `docs/metal-performance-memory.md` and update `HANDOFF.md`.
 
 Result: the default-path gate was not met. The normal-maps-off variant is ~12% faster and is kept for that quality
-switch; the default normal-on path is unchanged. Build, quick suite and Metal tests pass.
+switch; the default normal-on path is unchanged. The distance material LOD was measured and reverted. Build, quick
+suite and Metal tests pass.
 
 ## Files
 

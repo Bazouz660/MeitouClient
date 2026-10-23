@@ -185,9 +185,11 @@ Verified clean:
 2. Terrain: the phase-0 gate is closed. In the matched no-object view, material-distance 1 saved 17%, anisotropy
    and terrain-error were noise, and the normal-map-off compile variant saved 12% (kept for that quality switch).
    Normal maps on, loaded-branch, early-fragment and half-precision experiments did not clear the noise floor, so
-   the default path is unchanged. See [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md); only
-   revisit direct MSL if a matched shipping capture shows terrain is the bottleneck. Do not remove the
-   terrain/foliage prepasses.
+   the default path is unchanged. A distance material LOD (normal fade plus a per-patch no-normal split) was tried
+   and reverted: the best forced case was ~13.5 ms vs 14.2 baseline, and `500,1500` was noise. See
+   [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md); only revisit direct MSL or a finer
+   material split if a matched shipping capture shows terrain is the bottleneck. Do not remove the terrain/foliage
+   prepasses.
 3. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
    6.51% and 14.29% of the latest 26.84 ms capture.
 4. Remaining polish: HDR/EDR, fog-rate VRS or a non-VRS fallback, particle reactive-mask coverage,

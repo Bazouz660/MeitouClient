@@ -325,6 +325,13 @@ The normal-map-off variant is kept for that quality switch. The normal-on/loaded
 inside the noise floor and are not in the default path. Full scene at MetalFX temporal 0.67 was ~16.5 ms, and
 normal maps off ~16.3 ms, so the terrain shader is a smaller share at the shipping scale.
 
+A distance material LOD was tried after those results: normal maps fade with distance, then far patches switch to
+the no-normal program. It was reverted. The uniform fade did not remove the shader's normal-map code/register
+pressure; the per-patch split only reached ~13.5 ms when forced fully far (14.2 baseline, 12.7 fully no-normal) and
+was ~14.0 ms at `500,1500`. Near patches cover too much of the screen for a coarse patch split, and the shipping
+normal-map cost is only ~0.2 ms. A finer material split or a baked/virtual terrain material would be needed; do not
+re-add this form.
+
 Fast math is already on in Metal's default `MTLCompileOptions`; forcing it off raised the raw view to ~33 ms.
 `MEITOU_METAL_FAST_MATH=0` is only a diagnostic. Half precision is not available through this SPIR-V-Cross version's
 `mediump` (it emits `float`); explicit `float16_t` works but needs a Metal-only terrain program and capability check.
