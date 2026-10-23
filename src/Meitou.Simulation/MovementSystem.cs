@@ -16,8 +16,8 @@ namespace Meitou.Simulation;
 /// 26 neighbours (Observed); R is twice the footprint radius 4 of a human (<see cref="SeparationRadius"/>), and the scale from that
 /// proportionality to a speed is an engine choice (<see cref="SeparationStrength"/>).</item>
 /// <item>Body contact (engine choice; whether the original's characters collide is Unknown): two standing bodies (<see cref="BodyShare"/> of their footprints) do not stay
-/// overlapped. Each takes half of the overlap between its stepped position and where the other's last velocity takes it, so a walker shoves a stander aside; an imprisoned
-/// or bedded one does not give. A sitter is never moved, by contact or separation (the original pushes no sitter, Observed), and is not solid to others.</item>
+/// overlapped. Each takes half of the overlap between its stepped position and the other's last position, averaged over the bodies it overlaps, so a walker shoves a stander
+/// aside; an imprisoned or bedded one does not give. Its own velocity into a body it already touches is dropped, so a crowd pressing on does not squash its front. A sitter is never moved, by contact or separation (the original pushes no sitter, Observed), and is not solid to others.</item>
 /// <item>Paths: a character that wants one is flagged in Think; the Schedule step of the next tick asks the <see cref="PathService"/>;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
@@ -519,7 +519,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             // Closing on its spot it is not held off by those standing round it (they are pushed aside as it arrives); a sitter is not moved at all.
             bool seated = Seated(n, cold);
             if (closing || seated) push.Sum = Vector2.Zero;
-            var step = (dir * speed + push.Sum * SeparationStrength) * dt;
+            var drive = closing || seated ? dir * speed : Blocked(world, cold, ref push, new Vector2(p.Position.X, p.Position.Z), dir * speed);
+            var step = (drive + push.Sum * SeparationStrength) * dt;
             var shove = closing || seated ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
             step += shove;
             float x = p.Position.X + step.X, z = p.Position.Z + step.Y, y = 0;
@@ -589,29 +590,58 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
 
     /// <summary>
     /// How far a character stepped to <paramref name="at"/> is put out of the standing bodies among its separation neighbours (partition-safe: the last tick's state of the
-    /// others): half of each overlap with where the other's velocity takes it this tick, all of it against one held in a bed or cage. Lying, sitting and carried bodies are not in the
-    /// way (a walker only steers past a sitter, so a ring of sitters cannot wall it in), and a carried or bedded one is not moved.
+    /// others): half of each overlap with the other's last position, all of it against one held in a bed or cage, averaged over the bodies it overlaps (a sum overshoots in a
+    /// packed crowd and the whole crowd shakes). Lying, sitting and carried bodies are not in the way (a walker only steers past a sitter, so a ring of sitters cannot wall it in),
+    /// and a carried or bedded one is not moved. Not where the other's velocity takes it: in a jam that is where it wants to go, not where it gets to.
     /// </summary>
     static Vector2 Contact(World world, int self, CharacterCold cold, ref SeparationState near, Vector2 at)
     {
         if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) return Vector2.Zero;
         var table = world.Characters;
         var all = table.Previous;
-        float dt = world.TickSeconds, mine = BodyRadius(cold);
+        float mine = BodyRadius(cold);
         var shove = Vector2.Zero;
+        int contacts = 0;
         for (int k = 0; k < near.Count; k++)
         {
             int other = near.Near[k];
             if (table.Cold(other) is not { } them || them.Medical is { Incapacitated: true }) continue;
             ref readonly var o = ref all[other];
             if (Seated(o, them)) continue;
-            var d = at - new Vector2(o.Position.X + o.Velocity.X * dt, o.Position.Z + o.Velocity.Z * dt);
+            var d = at - new Vector2(o.Position.X, o.Position.Z);
             float len = d.Length(), reach = mine + BodyRadius(them);
             if (len >= reach) continue;
             var normal = len > 1e-4f ? d / len : self < other ? Vector2.UnitX : -Vector2.UnitX;
             shove += normal * ((reach - len) * (them.InSomething != Locks.HeldState.None ? 1 : 0.5f));
+            contacts++;
         }
-        return shove;
+        return contacts > 1 ? shove / contacts : shove;
+    }
+
+    /// <summary>
+    /// The velocity a character steps by without the part of it into a standing body it already touches (engine choice), so the ranks behind a blocked one do not press it
+    /// into those in front and a crowd does not squash; what is left slides it round them. The bodies counted are <see cref="Contact"/>'s.
+    /// </summary>
+    static Vector2 Blocked(World world, CharacterCold cold, ref SeparationState near, Vector2 at, Vector2 drive)
+    {
+        if (drive == Vector2.Zero || !cold.CarriedBy.IsNone) return drive;
+        var table = world.Characters;
+        var all = table.Previous;
+        float mine = BodyRadius(cold);
+        for (int k = 0; k < near.Count; k++)
+        {
+            int other = near.Near[k];
+            if (table.Cold(other) is not { } them || them.Medical is { Incapacitated: true }) continue;
+            ref readonly var o = ref all[other];
+            if (Seated(o, them)) continue;
+            var d = at - new Vector2(o.Position.X, o.Position.Z);
+            float len = d.Length();
+            if (len >= mine + BodyRadius(them) || len < 1e-4f) continue;
+            var normal = d / len;
+            float into = -Vector2.Dot(drive, normal);
+            if (into > 0) drive += normal * into;
+        }
+        return drive;
     }
 
     /// <summary>Sitting (resting, on a chair or the floor, or on a seat it uses) with no path to follow: the original does not push sitters (Observed in play).</summary>
