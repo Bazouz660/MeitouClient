@@ -127,8 +127,8 @@ public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locke
 /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say.</summary>
 public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors);
 
-/// <summary>One door for the panel: open, effectively locked, its lock's level (0..100) and whether the door is broken.</summary>
-public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken);
+/// <summary>One door for the panel: open, effectively locked, its lock's level (0..100), whether the door is broken, and its BUILDING record (its Door Condition row).</summary>
+public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken, string Record = "");
 
 /// <summary>Where the simulation tells navigation that a building's doors are shut for paths (the game host forwards it to the navmesh's door table). Serial phases only.</summary>
 public interface IDoorGate

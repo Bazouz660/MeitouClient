@@ -357,6 +357,7 @@ sealed partial class PlayerInterface
             var (_, _, _, status, _) = BuildingLines(focus);
             if (BuildingStatusTip(status, Machine(focus.SiteId)?.Farm is not null) is { } tip) Add("HealthText", tip);
         }
+        else if (Lead()?.Body is { } body) Add("HealthText", HealthWordTip(body));
     }
 
     // ---- item tooltips (the Item classes' vfunc_79: FUN_1407ae130 and its callees) ----

@@ -73,6 +73,7 @@ sealed partial class PlayerInterface
         if (InventoryWheel(p, steps)) return true;
         if (MapWheel(p, steps)) return true;
         if (SquadsWheel(p, steps)) return true;
+        if (FactionWheel(p, steps)) return true;
         return EditorWheel(p, steps) || faithfulScreens.Wheel(p, steps);
     }
     void FaithfulAction(MyGuiEvent e)
@@ -151,8 +152,7 @@ sealed partial class PlayerInterface
             b.Text["Root"] = "OVERVIEW";
             foreach (string name in new[] { "MapCenterButton", "MapZoomInButton", "MapZoomOutButton" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
             foreach (var tab in layout.Widgets.Where(w => w.Type == "TabItem")) b.Properties[tab.Name] = new Dictionary<string, string> { ["Visible"] = "true" };
-            b.Text["FactionNameText"] = "Player";
-            b.Disabled.Add("FactionNameText");
+            BindFactionTab(b);
             b.Text["MessagesTextBox"] = string.Join('\n', uiMessages);
             b.Properties["MessagesTextBox"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top" };
             BindSquadsTab(b);
@@ -206,7 +206,7 @@ sealed partial class PlayerInterface
         // The bag window has no caption buttons (the vanilla screenshot): OPEN BAG closes it.
         if (id is "bag" or "loot-bag") controls.RemoveAll(c => c.Action.StartsWith("mygui:close", StringComparison.Ordinal) || c.Action.StartsWith("mygui:pin", StringComparison.Ordinal));
         AddMapContent(id, controls);
-        if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); }
+        if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); AddFactionContent(controls); }
         if (id == "trader") { ArrangeTraderWindow(controls); AddTraderContent(controls); return; }
         // The loot windows show the open loot's body as the character windows show the lead.
         if (id is not ("inventory" or "bag" or "limbs" or "loot" or "loot-bag") || (IsLootScreen(id) ? LootBody() : InventoryOwner()) is not { ItemGrid: { } grid } lead) return;
