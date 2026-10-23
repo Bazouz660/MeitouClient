@@ -61,7 +61,7 @@ decoration alone, set ignored, so two sets with the same binding number would la
 `[[buffer(n)]]` (the terrain's set 0 and set 2 both have a binding-0 block; the default block sits
 at set 1). Every resource's binding therefore flattens to base + set × 8 + binding, in both places
 that must agree: the SPIR-V before the translation (`SpirvPatch.RemapBindings`) and the runtime
-binds (`MetalShaders.Flatten`, called by the command list's binds). The vertex stage's base is 15 —
+binds (`MetalShaders.Flatten`, called by the command list's binds). The vertex stage's base is 16 —
 the indices below it are the vertex buffers', at Vulkan's own slot numbers (the pipeline's
 `[[stage_in]]` descriptor) — and the stage's top index, 30, belongs to the push constants (this
 spirv-cross has no option for them, so `MetalShaders` moves the block from the `[[buffer(0)]]` it

@@ -116,7 +116,7 @@ public sealed class MetalShaders : IGpuShaders
     /// index belongs to the push constants (<see cref="MslTranslator.PushConstantBinding"/>).
     /// </summary>
     internal const uint SetStride = 8;
-    internal const uint VertexBlockBase = 15;
+    internal const uint VertexBlockBase = 16;
 
     /// <summary>A slot's index in its stage's MSL table. The bases are per kind (Metal has one table per kind and only the
     /// buffer tables carry the vertex buffers): a vertex module's buffers shift by <see cref="VertexBlockBase"/>, its images
