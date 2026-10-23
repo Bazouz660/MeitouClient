@@ -831,19 +831,22 @@ public sealed unsafe class WaterRenderer : IDisposable
     static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MeitouBody;
 
     /// <summary>
-    /// The Metal body: the two RGBA32F parameter maps become one two-layer array, and the one-sampler ocean keeps
-    /// room for refraction within Metal's 16-sampler stage.
+    /// The Metal body: the two RGBA32F parameter maps become one two-layer array, and refraction is omitted. The
+    /// removed specular declaration leaves a hole at sampler 1, so the highest active sampler must stay at 15.
     /// </summary>
     static readonly string MetalMeitouBody = MeitouBody
         .Replace("uniform sampler2D uParamsA;", "uniform sampler2DArray uParams;")
         .Replace("uniform sampler2D uParamsB;", "")
         .Replace("texture(uParamsA, map)", "texture(uParams, vec3(map, 0.0))")
-        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))");
+        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))")
+        .Replace("uniform sampler2D uRefraction;", "")
+        .Replace("under = texture(uRefraction, gl_FragCoord.xy * uScreen + bend).rgb;", "under = vec3(0.0);");
 
     /// <summary>
     /// Metal's Meitou fragment: the atmosphere's METAL_WATER sections keep the declarations and functions the water
     /// actually reads (irradiance, ambient map, clouds, haze and the reflection), dropping GI, lamps, dust and the
-    /// material lighting used only by other shaders. The packed parameters and one-sampler ocean leave 16 samplers.
+    /// material lighting used only by other shaders. The packed parameter array leaves 15 active samplers; the
+    /// highest is 15 because the removed specular sampler leaves binding 1 empty.
     /// </summary>
     static readonly string MetalMeitouFragment = "#version 330 core\n#define METAL_WATER 1\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody;
 

@@ -845,6 +845,7 @@ static class WorldFrame
             gpu.Water.Meitou = meitouWater;
             step?.Invoke("reflections");
             gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
+            if (context is not GpuContext) gpu.Water.Refraction = false;   // the Metal fragment has no room for the 17th sampler
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }
