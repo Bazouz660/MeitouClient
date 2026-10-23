@@ -87,6 +87,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<int>? AttackSlotsChanged { get; init; }
     /// <summary>Applies the late-dodges setting to the running combat system.</summary>
     public Action<bool>? LateDefencesChanged { get; init; }
+    /// <summary>Applies the turret gunner facing fix to the running combat system.</summary>
+    public Action<bool>? GunnerFacingChanged { get; init; }
     /// <summary>Called when an off-screen switch changes (the config holds the new values).</summary>
     public Action? OffscreenChanged { get; init; }
     /// <summary>The door auto-close switch changed (<see cref="UserConfig.DoorsCloseBehind"/>).</summary>
@@ -224,6 +226,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Load button", "The load window's Load button works only once a save that can be read is selected. "
                 + "The game keeps it live: with nothing selected a click does nothing, and an unreadable save fails to load.",
                 Toggle: new("Load button", () => config.FixLoadButton, v => player.FixLoadButton = config.FixLoadButton = v, Remaster: true, OnOff: true)));
+            result.Add(new("Turret gunners turn", "A turret's gunner turns with the gun, facing where it aims. "
+                + "In the game the gunner keeps facing the turret, so once the gun swings toward a target the gunner looks off to the side.",
+                Toggle: new("Turret gunners turn", () => config.FixGunnerFacing, v => { config.FixGunnerFacing = v; GunnerFacingChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
         }
         if (page == 4)
         {
@@ -492,6 +497,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         DoorsCloseChanged?.Invoke(true);
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
         player.FixLoadButton = config.FixLoadButton = true;
+        config.FixGunnerFacing = true;
+        GunnerFacingChanged?.Invoke(true);
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();

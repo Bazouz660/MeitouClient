@@ -45,6 +45,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Settings = settings ?? new CombatOptions();
         AttackSlots = Math.Max(1, Settings.AttackSlots ?? combat.MaxNumAttackSlots);
         LateDefences = Settings.LateDefences;
+        GunnerFacesBarrel = Settings.GunnerFacesBarrel;
         xp = new XpService(constants, options);
     }
 
@@ -55,6 +56,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
 
     /// <summary>A late but successfully rolled dodge or block still counts (<see cref="CombatOptions.LateDefences"/>); off is the game's rule.</summary>
     public bool LateDefences { get; set; }
+
+    /// <summary>A turret's gunner faces along the barrel as the gun turns (<see cref="CombatOptions.GunnerFacesBarrel"/>); off is the game's facing.</summary>
+    public bool GunnerFacesBarrel { get; set; }
 
     /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
     public Ragdolls.IRagdollEnvironment? Buildings { get; set; }

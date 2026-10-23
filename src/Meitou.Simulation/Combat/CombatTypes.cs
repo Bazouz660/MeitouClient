@@ -42,4 +42,6 @@ public sealed record CombatOptions
     public int? AttackSlots { get; init; }
     /// <summary>A dodge or block that passed its roll but starts too late joins its clip partway so it still counts (Meitou balance choice); false: the game's rule, it fails.</summary>
     public bool LateDefences { get; init; }
+    /// <summary>A turret's gunner faces along the barrel as the gun turns (Meitou fix); false: the game's facing, toward the turret.</summary>
+    public bool GunnerFacesBarrel { get; init; }
 }
