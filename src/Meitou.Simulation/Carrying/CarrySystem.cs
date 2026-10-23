@@ -56,19 +56,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     // ------------------------------------------------------------------ rules
 
     /// <summary>
-    /// Whether the left arm can carry (the original's <c>isCarryingArmOK</c>, the medical object's left-arm byte): no part whose <c>collapse part</c> has the left arm bit (4) is collapsed,
-    /// and the left arm is not a stump (<b>Verified</b>: the bit and the three writers, docs/game/carry-loot.md). The right arm does not matter.
+    /// Whether the left arm can carry (the original's <c>isCarryingArmOK</c>, the medical object's left-arm byte, <see cref="MedicalState.ArmWorks"/>; <b>Verified</b>: the bit and the
+    /// three writers, docs/game/carry-loot.md). The right arm does not matter.
     /// </summary>
-    public static bool LeftArmUsable(MedicalState medical)
-    {
-        foreach (var p in medical.PartSpan)
-        {
-            if ((p.Template.CollapsePart & 4) == 0) continue;
-            if (p.Template.Collapses && p.IsDown) return false;
-            if (p.Template.LimbSlot == 0 && p.Limb == LimbState.Stump) return false;
-        }
-        return true;
-    }
+    public static bool LeftArmUsable(MedicalState medical) => medical.ArmWorks(left: true);
 
     /// <summary>A character that can be given a pick-up: awake, with a body, not fighting, not carrying or carried, with a usable left arm.</summary>
     public static bool CanCarry(CharacterCold cold) =>

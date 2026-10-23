@@ -119,8 +119,10 @@ public sealed partial class AiSystem
                 StateType.atATown => system.TownAt(Me.Position) >= 0,
                 StateType.isLeaderDown => mind.Squad.Leader.IsNone || !world.Characters.IsAlive(mind.Squad.Leader),
                 StateType.isFullyRested => cold.Medical is not { Incapacitated: true },
-                // Held true: moving, standing up, arms, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").
-                StateType.isMovementAllowed or StateType.canGetUp or StateType.hasOneWorkingArm or StateType.hasTwoWorkingArm or StateType.isBuildingComplete
+                StateType.hasOneWorkingArm => cold.Medical is not { } arms || arms.ArmWorks(left: true) || arms.ArmWorks(left: false),
+                StateType.hasTwoWorkingArm => cold.Medical is not { } arms2 || arms2.BothArmsWork,
+                // Held true: moving, standing up, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").
+                StateType.isMovementAllowed or StateType.canGetUp or StateType.isBuildingComplete
                     or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction or StateType.isNoEnemiesInVicinity
                     or StateType.DOOR_IS_OPEN or StateType.DOOR_IS_OPEN_HERE or StateType.AT_LOCATION_BUILDING_DOOR or StateType.AT_CURRENT_LOCATION_BUILDING_DOOR
                     or StateType.AT_LOCATION_BUILDING_DOOR_INSIDE or StateType.AT_LOCATION_BUILDING_DOOR_OUTSIDE or StateType.DESTINATION_IS_ACCESSIBLE

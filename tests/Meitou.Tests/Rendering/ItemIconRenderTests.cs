@@ -25,8 +25,11 @@ public class ItemIconRenderTests
         using var ctx = new GpuContext(device!);
         using var characters = new CharacterRenderer(ctx, install, InstallData.FullLoadOrder!, new AssetLocator(install)) { LoadBudget = 0 };
         var result = new Dictionary<IconKey, (byte[], int, int)>();
-        for (int frame = 0; frame < 40 && result.Count < keys.Count; frame++)
+        // The meshes are read on workers (CharacterContent.IconMeshReady): frames go on until every icon is final, for at most a minute.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (int frame = 0; watch.Elapsed < TimeSpan.FromMinutes(1) && result.Count < keys.Count; frame++)
         {
+            if (frame > 0 && characters.PendingIcons > 0) Thread.Sleep(5);
             ctx.BeginFrame();
             foreach (var key in keys) characters.TryGetIcon(key, out _);
             characters.Update(default);
@@ -75,18 +78,15 @@ public class ItemIconRenderTests
         var install = InstallData.Install;
         Assert.SkipWhen(install is null || InstallData.FullLoadOrder is null, "no Kenshi install");
         var cache = Path.Combine(install!.DataDirectory, "icons");
-        // The first saved picture of each kind: an armour, a weapon, a container (bag) and a plain item, base game and without a colour part.
+        // Saved pictures of vanilla meshes (a modded install's pictures of weapons are often of a mod's mesh): a bag, a hat, three armours, the starter loincloth with its torn
+        // cut-outs, a basket and bolts, each skipped when the install has not saved it.
         var wanted = new List<(IconKey Key, string File)>();
-        foreach (var type in new[] { Meitou.Data.Fcs.FcsRecordType.CONTAINER, Meitou.Data.Fcs.FcsRecordType.WEAPON, Meitou.Data.Fcs.FcsRecordType.ARMOUR, Meitou.Data.Fcs.FcsRecordType.ITEM })
-            foreach (var file in Directory.EnumerateFiles(cache, "*gamedata.base.*gamedata.base.png").OrderBy(f => f, StringComparer.Ordinal))
-            {
-                if (ItemIconCache.Parse(Path.GetFileNameWithoutExtension(file)) is not var (item, material, colour) || colour.Length > 0) continue;
-                if (InstallData.FullLoadOrder!.Find(item) is not { } record || record.Type != type || !ItemIcons.Renders(record)) continue;
-                wanted.Add((new IconKey(item, material), file));
-                if (wanted.Count(w => InstallData.FullLoadOrder.Find(w.Key.Record)!.Type == type) == 2) break;
-            }
-        // Include the actual sandbox starter items: generic opaque samples miss the torn cloth's cut-outs.
-        foreach (var (item, material) in new[] { ("2308-clothes_v1.mod", "2312-clothes_v1.mod"), ("52295-rebirth.mod", "914-gamedata.base") })
+        foreach (var (item, material) in new[]
+        {
+            ("576-gamedata.base", "686-gamedata.base"), ("2149-gamedata.base", "2147-gamedata.base"), ("2156-gamedata.base", "2155-gamedata.base"),
+            ("2167-gamedata.base", "2162-gamedata.base"), ("2194-gamedata.base", "2191-gamedata.base"), ("45554-gamedata.base", "5263-gamedata.base"),
+            ("2308-clothes_v1.mod", "2312-clothes_v1.mod"), ("96014-rebirth.mod", "96015-rebirth.mod"),
+        })
         {
             string file = Path.Combine(cache, $"{item}.{material}.png");
             if (File.Exists(file)) wanted.Add((new IconKey(item, material), file));
@@ -109,7 +109,7 @@ public class ItemIconRenderTests
             double requiredOverlap = key.Record == "2308-clothes_v1.mod" ? 0.99 : 0.9;
             Assert.True(overlap >= requiredOverlap, $"{name}: the drawn icon covers {overlap:0.000} of the saved one's picture (ours {ours.Width}x{ours.Height})");
             double colour = MeanColourDifference(ours.Pixels, theirs.Pixels, ours.Width, ours.Height);
-            Assert.True(colour <= 0.15, $"{name}: the drawn icon's mean colour is {colour:P0} off the saved one's");
+            Assert.True(colour <= 0.06, $"{name}: the drawn icon's mean colour is {colour:P0} off the saved one's");
         }
     }
 }

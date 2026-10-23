@@ -286,9 +286,13 @@ sealed partial class PlayerInterface
                 ReturnHeldItem();
                 return;
             default:
+                // Given to a character: no sound; dropped on the ground: Character_Drop_Ground (FUN_1407136a0).
                 if (PickWhere(p, _ => true) is { } who && h.From != ItemOwner.Of(who)) SayHeld(new GiveHeld(who) { Tick = session.World.Tick });
-                else SayHeld(new DropHeld { Tick = session.World.Tick });
-                Sound("Item_Drop", item: h.Record);
+                else
+                {
+                    SayHeld(new DropHeld { Tick = session.World.Tick });
+                    Sound("Character_Drop_Ground", item: h.Record);
+                }
                 held = null;
                 return;
         }

@@ -285,7 +285,8 @@ public sealed partial class CombatSystem : IProjectileSource
             return;
         }
         bool hasAmmo = x.InfiniteAmmo || Ammunition.Find(cold.Inventory, x.Data.AmmoId) is not null;
-        bool can = s.Loaded > 0 || hasAmmo;
+        // A crossbow (weapon category Bow) needs both arms (FUN_1407f2840, FUN_1409991d0); losing one puts it away (FUN_1405cc230) and the fight goes on in melee.
+        bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false };
         if (s.Dry == can) s.Dry = !can;
         bool want;
         if (!can || MeleeThreat(world, i) || Orders.Has(cold, CharacterOrders.Block)) want = false;   // the Block order shoots no bolts either

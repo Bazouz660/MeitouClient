@@ -7,7 +7,7 @@ Crime prices/ledger: [economy](economy.md); body/load: [stats](character-stats.m
 ## Carry and release
 
 **Verified** carriable race gate (53-race probe), left-arm usable medical+0x166, left shoulder/
-Bip01 L UpperArm attachment. Collapsed/missing left arm prevents carrying; right arm irrelevant.
+Bip01 L UpperArm attachment. A collapsed, missing or crushed left arm prevents carrying ([arms](combat.md#arms)); right arm irrelevant.
 **Observed** target must resolve character and differ from carrier; already-carried targets
 require permitted snatch/partner check. AI down-state gate and player context-menu eligibility
 are different. Race carry-bone affects attachment; exact transform/secondary character type unknown.

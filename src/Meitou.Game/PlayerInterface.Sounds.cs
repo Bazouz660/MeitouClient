@@ -182,6 +182,14 @@ sealed partial class PlayerInterface
         {
             case Meitou.Simulation.Trading.BuyItem buy: Sound("Sell_Item", item: buy.Item.Record); return;
             case Meitou.Simulation.Trading.SellItem sell: Sound("Sell_Item", item: sell.Item.Record); return;
+            // A right-click move (FUN_140713d20) sounds as a lift, not a drop; money turned into cats in the player's own window is silent.
+            case Meitou.Simulation.Items.QuickMoveItem quick:
+                if (itemIcons?.Database.Find(quick.Item.Record)?.GetInt("item function") != PlayerSystem.MoneyFunction) Sound("Item_Lift", item: quick.Item.Record);
+                return;
+            case Meitou.Simulation.Carrying.TakeLootItem take: Sound("Item_Lift", item: take.Item.Record); return;
+            case Meitou.Simulation.Carrying.PutLootItem put: Sound("Item_Lift", item: put.Item.Record); return;
+            case Meitou.Simulation.Production.PutInMachine machine: Sound("Item_Lift", item: machine.Item.Record); return;
+            case Meitou.Simulation.Production.TakeFromMachine: Sound("Item_Lift"); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).
             case Meitou.Simulation.Production.AddJob: Sound("Permanent_Job"); return;
             case Meitou.Simulation.FirstAid.MedicJobCommand { Job: true } or Meitou.Simulation.Carrying.RescueJobCommand { Job: true }: Sound("Permanent_Job"); return;

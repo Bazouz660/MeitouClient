@@ -562,6 +562,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.Dyed && has[CharacterShaders.SlotColourMap]) flags |= CharacterShaders.Dyed;
         if (m.Worn) flags |= CharacterShaders.Worn;
         if (m.Skin && SkinFor(m)) flags |= CharacterShaders.Skin;
+        if (m.VertexColoured) flags |= CharacterShaders.VertexColoured;
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
@@ -579,7 +580,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         r.Flags = flags;
         r.VestCount = vests;
         r.AlphaThreshold = m.AlphaThreshold;
-        r.ShirtColour = new Vector4(m.ShirtColour, 1);
+        r.ShirtColour = new Vector4(m.ShirtColour, m.GlossMult);
         r.SkinTone = new Vector4(m.SkinTone, has[CharacterShaders.SlotBlendNormal] ? m.MuscleBlend : 0);
         r.HairColour = new Vector4(m.HairColour, 1);
         r.HairAlpha = m.HairAlpha; r.HairMult = m.HairMult; r.BeardAlpha = m.BeardAlpha;
