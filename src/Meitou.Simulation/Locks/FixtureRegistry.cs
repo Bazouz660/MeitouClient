@@ -487,7 +487,7 @@ public sealed class FixtureRegistry
 
     /// <summary>Whether nobody is in it: no occupant, or one that is gone or no longer held there.</summary>
     public static bool IsFree(CharacterTable table, Fixture f) =>
-        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s)!.InWhat != f.Id || table.Cold(s)!.InSomething == HeldState.None;
+        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is not { } held || held.InWhat != f.Id || held.InSomething == HeldState.None;
 
     /// <summary>
     /// The cage a carrier of <paramref name="faction"/> at <paramref name="at"/> puts a captive in (the original's finder, economy.md 11.7, <b>Observed</b>): every free cage weighs
