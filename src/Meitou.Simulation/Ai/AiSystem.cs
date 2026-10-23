@@ -452,7 +452,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
                 var (target, home, floor, facing) = SpotFor(mind, board, behaviour, type);
-                if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type == TaskType.RUN_AWAY_HOMETOWN ? SpeedMode.Run : SpeedMode.Walk, height: floor))
+                if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     if (home && board.Gate is { } gate && GateSpot(board, mind, type) is not null) table.Next[slot].Yaw = MathF.Atan2(gate.Out.X, gate.Out.Y);   // looking out
@@ -1043,11 +1043,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         public bool CanStart(Blackboard board, AiPackage package, PackageClass kind) => kind switch
         {
             PackageClass.Retreat => !board.Intact,
-            PackageClass.Patrol or PackageClass.PatrolRunning => board.Town >= 0 && world.GameHours >= board.NextPatrol && world.Characters.IsAlive(squad.Leader),
+            PackageClass.Patrol or PackageClass.PatrolRunning => board.Town >= 0 && world.GameHours >= board.NextPatrol && world.Characters.IsAlive(squad.Leader)
+                && !system.CannibalPatrolHeld(world, squad, board, package),
             // With building data, only where the town has a bar or an outdoor table; without, the package runs and the squad keeps its spots.
             PackageClass.Bar => board.Town < 0 || system.Data.Sites[board.Town].Buildings.Count == 0
                 || system.Places(board.Town) is { } p && (p.Bars.Count > 0 || p.OutdoorTables.Count > 0),
             PackageClass.BarOutdoors => true,
+            PackageClass.CannibalRetreat or PackageClass.CannibalsAtHome or PackageClass.PrisonerGathering or PackageClass.SlaverShipping => system.CaptiveCanStart(world, squad, board, package, kind),
             _ => false,
         };
 
@@ -1055,6 +1057,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         {
             PackageClass.Retreat => board.Intact,
             PackageClass.Patrol or PackageClass.PatrolRunning => board.RouteIndex >= board.Route.Length || world.GameHours >= board.PatrolGiveUp || !world.Characters.IsAlive(squad.Leader),
+            PackageClass.CannibalRetreat or PackageClass.CannibalsAtHome or PackageClass.PrisonerGathering or PackageClass.SlaverShipping => system.CaptiveFinished(world, squad, board, package, kind),
             _ => false,
         };
 
@@ -1071,6 +1074,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     if (board.Town >= 0 && system.PickTable(world, board.Town, squad, outdoors: kind == PackageClass.BarOutdoors) is var (bar, table))
                         (board.Home, board.BarTable) = (bar, table);
                     else if (kind == PackageClass.BarOutdoors) board.Home = null;
+                    break;
+                case PackageClass.CannibalRetreat:
+                case PackageClass.SlaverShipping:
+                    system.CaptiveStarted(world, squad, board, package, kind);
                     break;
             }
         }

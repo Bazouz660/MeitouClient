@@ -146,6 +146,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         CharacterTask.Operate => cold.Operating ? cold.OperateClip is { } clip && SitClipOf(clip) is >= 0 and var used ? used : DismantlingClip : -1,
         // In a bed: the clip its functionality names (Observed, Task_UseBed: sleepinbed, sleeponfloor), else lying on the floor.
         CharacterTask.Sleep => cold.InSomething != Locks.HeldState.Bed ? -1 : cold.OperateClip is { } bed && SitClipOf(bed) is >= 0 and var lain ? lain : LyingClip,
+        // A captor killing, eating or processing a captive (Task_KillPrisoner, Task_EatPrisoner, Task_ProcessNewSlave, Observed).
+        CharacterTask.Idle when cold.ActionClip is { } act && SitClipOf(act) is >= 0 and var acting => acting,
         _ => -1,
     };
     // The combat system asks this system for its hit reaction clips (it owns the stun, this system the clips).

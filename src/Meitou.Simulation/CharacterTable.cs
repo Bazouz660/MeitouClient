@@ -296,6 +296,8 @@ public sealed class CharacterCold
     public string? OperateTool { get; set; }
     /// <summary>The operator did work this tick (it plays <see cref="OperateClip"/>); derived, not hashed.</summary>
     public bool Operating { get; set; }
+    /// <summary>The whole-body clip (an ANIMATION record name) a captor holds while it works a captive standing (<see cref="Kidnap.CaptiveSystem"/>: "chop down static", "eat", "medic"); null: none. Derived, not hashed.</summary>
+    public string? ActionClip { get; set; }
 }
 
 /// <summary>
