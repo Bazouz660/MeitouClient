@@ -1,9 +1,10 @@
 # Metal content testability plan
 
 Status: **Milestones A-E implemented for content testing** (2026-10-23). A is manually accepted and
-B's blood path is validated; the latest effects need a final smoke check. Remaining work is polish and
-optimization: HDR/EDR presentation, fog-rate VRS, particle coverage, minor water shading differences,
-the GI decision, and performance/default cleanup. This plan is about making the game's content and
+B's blood path is validated; a short Metal new-game smoke reached the latest water, particle and
+object-motion/reactive paths without a crash. Full visual acceptance remains. Remaining work is polish
+and optimization: HDR/EDR presentation, fog-rate VRS, particle coverage, minor water shading
+differences, the GI decision, and performance/default cleanup. This plan is about making the game's content and
 systems easy to exercise through the native Metal host. Read it with [metal-backend](metal-backend.md);
 Vulkan remains the reference path.
 
