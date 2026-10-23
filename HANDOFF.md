@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `97fe9d43 metal: A/B private static terrain resources`  
+Last code commit: `a73f21b8 metal: add the terrain normal-map shader variant`  
 Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
