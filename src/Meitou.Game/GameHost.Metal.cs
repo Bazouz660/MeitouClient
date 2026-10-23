@@ -1041,7 +1041,7 @@ sealed partial class GameHost
                 Console.WriteLine($"metal     native {display.NativeWindowState()}");
                 Console.WriteLine($"metal     resources {ctx.ResourceSummary()}");
                 Console.WriteLine($"metal     streaming terrain {streamer?.Pending ?? 0} ({(streamer is null || streamer.Idle ? "idle" : "busy")}), " +
-                    $"objects {objects?.Pending ?? 0}, foliage {foliage?.Pending ?? 0}, cull groups {foliage?.LastCullGroups ?? 0}");
+                    $"objects {objects?.Pending ?? 0}, foliage {foliage?.Pending ?? 0}, cull groups {foliage?.LastCullGroups ?? 0}, cull dispatches {foliage?.GpuCullDispatches ?? 0}");
                 if (streamer is not null) Console.WriteLine($"metal     terrain stream: {streamer.Describe()}");
                 if (memoryGuard is not null) Console.WriteLine($"metal     memory guard {memoryGuard.Status}");
                 if (objects is not null) Console.WriteLine($"metal     objects resident: {objects.ResidentDescription}");

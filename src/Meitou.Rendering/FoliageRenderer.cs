@@ -127,7 +127,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         grassProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassVertexNative(), FoliageShaders.GrassFragmentNative(), "foliage grass");
         grassMotionProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassMotionVertexNative(), FoliageShaders.GrassMotionFragmentNative(), "foliage grass motion");
         textures = new WorldTextureCache(gpu, assets, "foliage textures");
-        gpuCull = gpu is GpuContext vk ? new FoliageGpuCull(vk) : null;   // the Metal backend takes the CPU cull (A1) for now
+        gpuCull = new FoliageGpuCull(gpu);
         InitGrassStore(gpu);
         workers = Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
         var used = catalog.ByBiome.Values.SelectMany(l => l).Distinct().ToList();
@@ -173,6 +173,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public double LastDrawCpuMs { get; private set; }
     /// <summary>The groups the last CPU cull tested (diagnostics for the parallel path).</summary>
     public int LastCullGroups { get; private set; }
+    /// <summary>Views the GPU cull dispatched in all (diagnostic; 0 while the CPU path or the Metal GPU cull is off).</summary>
+    public long GpuCullDispatches => gpuCull?.Dispatched ?? 0;
     /// <summary>With <see cref="WorldFrame.DetailedStats"/>: the last depth draw's and the frame's main draws' CPU time by step (culling, upload, meshes, grass, TERRAIN-mode rocks).</summary>
     internal string DepthDetail = "", MainDetail = "";
     /// <summary>GPU time of the foliage draws of one frame (the main camera's draw, grass included), from timestamp queries a frame or two old.</summary>
@@ -585,7 +587,12 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             pressureSince = guard is { Pressure: true } ? pressureSince ?? watch.Elapsed.TotalSeconds : null;
             if (pressureSince is { } since && watch.Elapsed.TotalSeconds - since > 5) { Console.WriteLine("warning   foliage streaming stopped waiting: memory pressure (VramGuard)"); return; }
             // An impostor bake reads its rows back after the frame they were recorded into, and atlas uploads are spread over frames: end it.
-            if (impostorBake is { NeedsFrame: true } || impostorUploadsWaiting) Gpu.Finish();
+            // A live host owns its open frame (Metal cannot end and reopen it here): leave the remaining bakes to its later frames.
+            if (impostorBake is { NeedsFrame: true } || impostorUploadsWaiting)
+            {
+                if (Gpu.Frame.Open) return;
+                Gpu.Finish();
+            }
             else Thread.Sleep(2);
         }
         Console.WriteLine($"warning   foliage streaming did not finish in {timeoutMs / 1000} s");

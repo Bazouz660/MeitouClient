@@ -792,7 +792,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
 
     public void EnsureFrame()
     {
-        if (slot < 0 || !Frame.Open) throw new InvalidOperationException("no frame is open (BeginFrame first)");
+        if (slot < 0) throw new InvalidOperationException($"no frame slot (slot {slot}, frame {frameNumber}, thread {Environment.CurrentManagedThreadId})");
+        if (!Frame.Open) throw new InvalidOperationException($"frame {Frame.Number} closed (slot {slot}, frame {frameNumber}, thread {Environment.CurrentManagedThreadId})");
     }
 
     // ---- the backend's own lookups (the command list resolves the handles through these) ----
