@@ -52,9 +52,9 @@ sealed class WorldOptions
     /// <summary>`--play-shots`: the viewer starts flying its saved camera keys (the F2 timeline) on a loop.</summary>
     public bool PlayShots;
     /// <summary>The game's <c>texture resolution gimping</c> (0..4; missing key: 1) and <c>water reflection</c> (0..4; missing: 2) settings (docs/formats/settings.md).</summary>
-    // Textures start at High, the game's missing-key default (TextureQuality.Default); water reflection at full (the game's
-    // missing-key default is ReflectionPass.DefaultLevel, 2).
-    public int TextureQuality = Meitou.Data.Textures.TextureQuality.Default, WaterReflection = 4;
+    // The viewer starts at full quality (the old look); the game's missing-key defaults are TextureQuality.Default (1) and
+    // ReflectionPass.DefaultLevel (2): --texture-quality 1 --water-reflection 2.
+    public int TextureQuality = 0, WaterReflection = 4;
     /// <summary>Sun shadows (docs/formats/shadows.md): the game's <c>shadow quality</c> index, <c>Shadow Range</c>, the debug view.</summary>
     public int ShadowQuality = 2, DebugShadows, ShadowFilter = 2;
     /// <summary>The ray-traced global illumination's debug view (0 off; docs/render-gi.md).</summary>
@@ -1133,7 +1133,7 @@ static class WorldFrame
         var side = new List<Slider>
         {
             new(TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, () => Meitou.Data.Textures.TextureQuality.Level,
-                v => Meitou.Data.Textures.TextureQuality.Level = (int)MathF.Round(v), "1",
+                v => Meitou.Data.Textures.TextureQuality.Level = (int)MathF.Round(v), "0",
                 Text: v => (int)MathF.Round(v) is var level && level != terrainLevel
                     ? $"{Meitou.Data.Textures.TextureQuality.Labels[level]} (terrain at start)" : Meitou.Data.Textures.TextureQuality.Labels[level]),
         };
