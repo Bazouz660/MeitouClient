@@ -22,7 +22,6 @@ sealed partial class PlayerInterface
     IDisposable? uiRegistration;
     UiPainter? uiPainter;
     internal UiPainter? SettingsPainter => uiPainter;
-    internal Func<string, string?>? SettingsResolve => uiResolve;
     bool settingsOpen;
     internal void SetSettingsOpen(bool value) { settingsOpen = value; if (value) CancelInventoryDrag(); UpdateMenuPause(); }
     MyGuiScreenHost faithfulScreens = null!;

@@ -73,7 +73,7 @@ sealed partial class SettingsMenu
     {
         if (!Visible || player.SettingsPainter is not { } painter) return;
         AdvanceMotion();
-        art.Ensure(painter, Meitou, player.SettingsResolve);
+        art.Ensure(painter, Meitou, player.UiAtlas);
         scale = Math.Max(0.35f, Math.Min(1.25f, Math.Min(height / 900f, width / 1280f)));
         bounds = new(MathF.Round((width - 1120 * scale) / 2), MathF.Round((height - 720 * scale) / 2), MathF.Round(1120 * scale), MathF.Round(720 * scale));
         bounds = bounds with { Y = bounds.Y + (1 - Ease(menuProgress)) * 8 * scale };

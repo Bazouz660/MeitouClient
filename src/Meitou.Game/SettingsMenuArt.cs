@@ -13,11 +13,10 @@ sealed class SettingsMenuArt
     public const float WindowDensity = 2;
     public const int WindowBorder = (int)((16 + 10) * WindowDensity);
 
-    public void Ensure(UiPainter painter, bool meitou, Func<string, string?>? resolve)
+    public void Ensure(UiPainter painter, bool meitou, Func<RgbaImage?> uiAtlas)
     {
         if (!meitou || painter.HasTexture(SurfacePrefix + "button")) return;
-        string path = resolve?.Invoke("Kenshi_UI.png") ?? throw new FileNotFoundException("Kenshi_UI.png not found.");
-        var atlas = TextureLoader.LoadFile(path, allMips: false).Levels[0];
+        var atlas = uiAtlas() ?? throw new FileNotFoundException("Kenshi_UI.png not found or unreadable.");
         painter.SetImage(SurfacePrefix + "button", MenuArt.Plate(atlas, new(612, 766, 118, 45), 160, 40, 1, 0.7f), srgb: false);
         painter.SetImage(SurfacePrefix + "button-hover", MenuArt.Plate(atlas, new(612, 766, 118, 45), 160, 40, 1, 0.85f), srgb: false);
         painter.SetImage(SurfacePrefix + "button-selected", MenuArt.Plate(atlas, new(741, 766, 118, 45), 160, 40, 1, 0.85f), srgb: false);
