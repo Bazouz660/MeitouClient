@@ -611,7 +611,8 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 3. **The HiZ pyramid and the GPU culls** (`HizPyramid`, `FoliageGpuCull`, `FoliageGrassGpu`): widen them to
    `IGpuContext`, replace `HasPushDescriptor` support checks with argument buffers, give `FrameScratch` a Metal
    variant (a per-frame bump allocator over shared buffers), and drive them with the indirect draws of step 1.
-   This is the performance gap only: the CPU cull and CPU grass already draw the same picture.
+   This is the performance gap only: the CPU cull and CPU grass already draw the same picture. The detailed
+   porting order and Metal indirect-draw constraints are in [metal-gpu-cull-plan](metal-gpu-cull-plan.md).
 
 ### 3. Water (plan step 6)
 

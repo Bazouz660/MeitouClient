@@ -2,8 +2,8 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Current HEAD: `5f79000b metal: feed the water reactive mask to MetalFX`  
-Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Remaining work is polish/optimization.
+Last code commit: `c95a4535 metal: skip redundant encoder state changes`  
+Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, and encoder buffer/viewport/scissor/depth state is cached. Xcode API insights at the save-start view fell from 561 to 261. The next planned work is the Metal GPU cull port.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
@@ -162,14 +162,18 @@ Verified clean:
 
 ## Next work
 
-1. Final manual smoke test of the latest effects: Meitou water refraction/reflection, low-resolution
-   particles and their sliders, object motion, and the MetalFX water reactive mask.
-2. Polish: HDR/EDR presentation, fog-rate VRS (or a documented non-VRS fallback), particle coverage in
-   the reactive mask, and the remaining water foam-shadow/cloud-tile shading differences.
-3. Performance/soak and cleanup; re-run the full feature runs with the slot fence and the interaction
-   acceptance pass (trade, dialogue, build, editor).
-4. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
-5. Make Metal the macOS default once the polish/performance pass is accepted.
+1. Port the existing Vulkan GPU foliage cull/indirect submission to Metal. The complete plan, Metal
+   constraints and validation gates are in [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md).
+   Port mesh/rock culling first; grass second.
+2. Continue the scene shader ALU pass (objects/terrain dominate the save-start frame). The text
+   optimization is the shared `kenshiLight`/`atmoApply` path; test Metal-specific specialisation and,
+   later, a half-precision variant. Do not remove the terrain/foliage prepasses.
+3. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
+   6.51% and 14.29% of the latest 26.84 ms capture.
+4. Remaining polish: HDR/EDR, fog-rate VRS or a non-VRS fallback, particle reactive-mask coverage,
+   water foam-shadow/cloud-tile parity, purgeable/idle texture cleanup.
+5. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
+6. Make Metal the macOS default once the performance/polish pass is accepted.
 
 ## Commands
 
