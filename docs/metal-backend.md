@@ -474,7 +474,7 @@ particles (the low-resolution targets are shared; the near-plane close pass is s
 the hover outline, move marker and navmesh debug overlay (Shift+F11).
 `GameHost.Metal.cs` is now a playable loop: WASD/arrows, Q/E, wheel and middle-drag
 move the strategy camera; edge scrolling, left click/box select, right-click move orders and the HUD keys work;
-F7 hides the interface, F8 saves a screenshot, F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
+F7 hides the interface, F8 saves a screenshot, Ctrl+/ writes one frame's Metal capture (`.gputrace`), F11 lists the frame, F12 the fps line, Alt+Enter is borderless.
 The shared settings menu is now wired on Metal too (F10; Display, Graphics, Interface, Controls, Advanced and Audio),
 including the MetalFX preset and render scale, VSync, frame limit and borderless full screen, persisted in
 `meitou.user.json`. The frontend shell is in: the staged Meitou title (or the faithful title image), New Game with the

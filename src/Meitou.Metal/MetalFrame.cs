@@ -128,6 +128,7 @@ public sealed unsafe class MetalFrame : IGpuFrame
         }
         Number = number;
         Command = command;
+        command.Label = (NSString)$"Meitou frame {number}";
         Commands.Rebind(command);
         Drawable = drawable;
         foreach (var chunk in chunks) chunk.Used = 0;

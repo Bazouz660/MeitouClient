@@ -223,6 +223,27 @@ The 2026-10-21 run met the managed/GPU plateau with 12 s endpoint settles; the 6
 - Release is the performance build; Debug was ~20 fps. The clean Release window is the current reference.
 - No GI on either backend on this Mac (`VK_KHR_ray_query` is unavailable to Vulkan); compare with `--no-gi`.
 
+## GPU frame capture
+
+`Ctrl+/` records one complete frame with `MTLCaptureManager` and writes it to
+`~/Documents/Meitou Captures/meitou-<timestamp>.gputrace`; open that package in Xcode's Metal debugger.
+The capture starts before the frame's command buffer and stops after the present commits, so it contains one frame,
+not the three in flight. The first frame is deliberately rejected: pressing during loading would capture the world's
+resource uploads as well and can produce a multi-gigabyte trace.
+
+Metal capture must be enabled before the process starts:
+
+```sh
+MTL_CAPTURE_ENABLED=1 \
+DYLD_LIBRARY_PATH=/opt/homebrew/lib \
+dotnet run --project src/Meitou.Game --no-build -c Release -- \
+  --renderer metal --windowed --size 800x600
+```
+
+Wait until the world is visible and has rendered a few frames, then press `Ctrl+/`. The trace is a GPU frame, not a
+CPU profile: use `MEITOU_METAL_TRACE=1`, Instruments' Metal System Trace or `dotnet-trace` for CPU work. Do not use the
+capture frame for FPS measurements. A full frame with its resources is large; check free disk space before capturing.
+
 ## Review commands
 
 ```sh

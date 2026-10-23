@@ -746,7 +746,7 @@ sealed partial class GameHost
             hud.ClipboardRead = () => input.Keyboards.Count > 0 ? input.Keyboards[0].ClipboardText : null;
             hud.ClipboardWrite = text => { if (input.Keyboards.Count > 0) input.Keyboards[0].ClipboardText = text; };
         }
-        bool shiftDown = false, statsVisible = false, frameStatsVisible = showFrameStats, screenshotNow = false;
+        bool shiftDown = false, statsVisible = false, frameStatsVisible = showFrameStats, screenshotNow = false, gpuCaptureRequested = false;
         Vector2? lastMouse = null;
         var windowCursor = Silk.NET.Input.CursorMode.Normal;
         Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1),
@@ -771,6 +771,8 @@ sealed partial class GameHost
                     return;
                 }
                 bool ctrl = Ctrl();
+                // Ctrl+/ records one frame for Xcode's Metal debugger; it works over the settings dialog too.
+                if (ctrl && (key is SilkKey.Slash or SilkKey.KeypadDivide)) { gpuCaptureRequested = true; return; }
                 // The full settings dialog (Metal's F10 used to be a preset overlay; the preset now lives in Display).
                 if (settings?.Visible == true)
                 {
@@ -1161,9 +1163,39 @@ sealed partial class GameHost
                 if (stillPanelFrames == 0) ApplyStillPanel(panelName);
                 KeepStillPanel(panelName);
             }
+            // Ctrl+/ records the next complete frame for Xcode. Start before BeginFrame makes the command buffer and stop
+            // after EndFrame commits the present, so the trace holds exactly one frame rather than the three in flight.
+            MetalGpuCapture? gpuCapture = null;
+            if (gpuCaptureRequested)
+            {
+                gpuCaptureRequested = false;
+                // Never start during the loading frames: they create and upload most of the world's resources, and a
+                // capture that spans them can write many gigabytes before the first picture exists.
+                if (frames < 1)
+                {
+                    Console.WriteLine("metal     gpu capture: wait until the world has drawn a frame, then press Ctrl+/ again");
+                }
+                else
+                {
+                    gpuCapture = MetalGpuCapture.TryStart(ctx.Queue, out string? captureError);
+                    Console.WriteLine(gpuCapture is not null
+                        ? $"metal     gpu capture: {gpuCapture.OutputPath}"
+                        : $"metal     gpu capture unavailable: {captureError}");
+                }
+            }
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
-            if (!ctx.BeginFrame()) { Thread.Sleep(1); continue; }
+            if (!ctx.BeginFrame())
+            {
+                if (gpuCapture is not null)
+                {
+                    // No drawable yet: discard the empty capture and ask for the next frame instead.
+                    gpuCapture.Abort();
+                    gpuCaptureRequested = true;
+                }
+                Thread.Sleep(1);
+                continue;
+            }
             if (settleAfterWorldLoad)
             {
                 settleAfterWorldLoad = false;
@@ -1330,6 +1362,11 @@ sealed partial class GameHost
                 }
             }
             ctx.EndFrame();
+            if (gpuCapture is not null)
+            {
+                gpuCapture.Stop();
+                Console.WriteLine($"metal     gpu capture written: {gpuCapture.OutputPath}");
+            }
             // Mark the covered frame: the next one may run the next stage (which can hold the thread).
             if (sceneLoad is { } pendingLoad) pendingLoad.Shown = true;
             lastWait = drawableWait;
