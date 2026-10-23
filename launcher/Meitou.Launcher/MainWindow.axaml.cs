@@ -879,7 +879,9 @@ public sealed partial class MainWindow : Window
                 start.Environment.Remove("DYLD_LIBRARY_PATH");
             else if (!AddMacVulkanEnvironment(start.Environment))
             {
-                Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, or choose Metal, then Play again.");
+                Status(MetalAvailable
+                    ? "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, or choose Metal, then Play again."
+                    : "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
                 return;
             }
         }
