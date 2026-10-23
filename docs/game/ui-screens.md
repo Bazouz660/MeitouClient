@@ -689,8 +689,10 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     fcs.def defaults: zoom 2.7, V -8, yaw 90, the rest 0; WEAPON and CROSSBOW zoom 1.0 and V 0; WEAPON H -4. The material is a clone of `RTTIcons_Coloured` (mesh with vertex colours), `RTTIcons_DXT5N`
     (one item kind, 0x11) or `RTTIcons_Base`, double sided for `material type` 2, textured from the instance's material record. Lighting (rtticons.hlsl, lightingFunctions.hlsl): one white punctual
     light along the view axis, no ambient: colour = albedo x pi x N.L x 0.6 + GGX specular (roughness 1 - 0.99 x gloss, F0 0.4), stored linearly in an 8-bit target; the background is transparent.
-    Gloss is the material's `specular mult` (default 1) x the diffuse alpha. The REFLECTION term is on, and its cube (`cloudy_noon.jpg`) is missing from the install, so it samples
-    black: the albedo is scaled by 1 - gloss^2. The specular view vector is -normalize of the world position, with the normal and light negated too (rtticons.hlsl): it points from the item's origin, not to the camera. A submesh 0 with
+    Gloss is the material's `specular mult` (default 1) x the diffuse alpha. The REFLECTION term is on: the albedo is lerped towards the cube's colour by gloss^2. The cube is the
+    `reflectionMap` texture alias (default `cloudy_noon.jpg`, missing from the install); what the game binds there is **Unknown**. Not black: a black cube leaves every glossy
+    saved picture 3-15 % dark (Tin Can, Drifter's armour 2156, 96014-rebirth.mod), while a constant grey of 0.5 fits them within 3 % and the gloss-0 materials (686, 2191) are
+    unaffected (**Observed**, mean colour in `Icons_drawn_from_the_mesh_cover_the_same_part_of_the_picture_as_the_games_saved_ones`, greys 0.4-0.7 tried). The specular view vector is -normalize of the world position, with the normal and light negated too (rtticons.hlsl): it points from the item's origin, not to the camera. A submesh 0 with
     vertex colours takes `RTTIcons_Coloured`, which multiplies the albedo by them. A missing texture map is white; the dye's alpha is the COLOR_DATA top byte (0 in every record:
     no `paint factor`); the binormal is cross(T, N) x tangent w, stored binormals ignored; the cut-out is the material's `alpha threshold` / 255 (default 128); mip bias -0.5
     (rtticons.hlsl, rtticons.material, FUN_140846060, FUN_140841a50, **Verified** in the source and decompile; fitted against 22 saved pictures with a CPU model, mean error 3.4/255).
@@ -704,11 +706,11 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     The game writes its pictures into the install; Meitou leaves the install alone.
     The `icons` switch (Item icons): Faithful as above; Meitou (default) draws each icon 4 x 4 supersampled into a half-float picture and averages it by coverage into the icon
     (`CharacterRenderer.EnhancedIcons`, the portraits' `PreviewResolve` with no tone curve or grade), shows none of the game's saved pictures and saves its own in `icons\supersampled`.
-    Meitou applies the gloss multiplier (`PartMaterial.GlossMult`, the shader material's `shirtColour.w`), the black reflection, the origin view vector, the vertex colours, white for a
-    missing map, the zero dye alpha and the binormal (`Model.Build` `tangentSign` for icon meshes, kept apart from the characters' as `CharacterContent.IconBones`). Mean colour against saved pictures of vanilla meshes: identical on Small Backpack, Cap and Ninja Pants, within 2/255 on Heart Protector and
-    Rag Loincloth and Tin Can. Samurai Boots (549) is 28/255 brighter than its picture (its
+    Meitou applies the gloss multiplier (`PartMaterial.GlossMult`, the shader material's `shirtColour.w`), the reflection as a 0.5 grey cube, the origin view vector, the vertex colours, white for a
+    missing map, the zero dye alpha and the binormal (`Model.Build` `tangentSign` for icon meshes, kept apart from the characters' as `CharacterContent.IconBones`). Mean colour against saved pictures of vanilla meshes: identical on Small Backpack, Cap and Ninja Pants, within 2/255 on Heart Protector,
+    Rag Loincloth and 2167, within 3 % on Tin Can, 2156 and 96014. Samurai Boots (549) is 28/255 brighter than its picture (its
     record's mesh path is missing; which mesh the game drew is **Unknown**). Not done: generated tangents, the mip bias; Plated Drifter's Leather
-    Pants (`specular mult` 4) fits the picture better without the reflection term (**Unknown**). Many saved weapon pictures in a modded install come from mods' meshes (Iron Stick:
+    Pants (`specular mult` 4) fitted its picture better without the black reflection, not yet checked against the grey cube (**Unknown**). Many saved weapon pictures in a modded install come from mods' meshes (Iron Stick:
     Warrior Moon's `Iron Stick Bare.mesh`), so they are not a reference for the vanilla mesh. An icon is dyed as worn clothing is, by the record's own `color` when the item's `dont colorise`
     is false and the material has a `color map` (`ItemIcons.ColourOf`; the instance's colour is not carried). **Observed**: the game saved Thieves Backpack (rebirth.mod, `color` "black lighter")
     undyed, dyed with that colour (dark grey) and dyed 1297; an armour whose record names a `color` was saved with no colour part.

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -346,11 +346,12 @@ static class CharacterShaders
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient
                 // (CalcPunctualLight: diffuse = pi * N.L * (1 - mean specular colour), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.4). The game stores that linear
                 // result as it is in an 8-bit target, so the icon target is UNORM, not sRGB (the lit values match the saved pictures: backpack mean 133 102 77 computed, 142 114 91 saved).
-                // The game's REFLECTION term samples a cube map the install lacks (black): albedo x (1 - gloss^2) is all that is left of it. rtticons.hlsl negates the
+                // The game's REFLECTION term lerps the albedo towards its cube (the reflectionMap alias) by gloss^2; which cube the game binds is unknown, and a constant mid
+                // grey fits its saved pictures (docs/game/ui-screens.md "Item icons"). rtticons.hlsl negates the
                 // normal, the light and -normalize(world position) together, so with the normal unnegated here the view vector is +normalize of the world position:
                 // from the item's origin, not to the camera.
                 const float PI = 3.14159265;
-                albedo *= 1.0 - gloss * gloss;
+                albedo = mix(albedo, vec3(0.5), gloss * gloss);
                 vec3 l = normalize(view.lightDir);
                 vec3 hv = normalize(normalize(vWorld) + l);
                 float nl = clamp(dot(n, l), 0.0, 1.0), lh = clamp(dot(l, hv), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0);

@@ -20,7 +20,7 @@ sealed partial class GameHost
     /// The version of the icon drawing: it goes up when the drawing changes, and the saved icons of another version are deleted (<see cref="ClearOldIcons"/>), so pictures drawn the old
     /// way are not shown again.
     /// </summary>
-    const int IconVersion = 3;
+    const int IconVersion = 4;
 
     /// <summary>Deletes the saved icons of <paramref name="directory"/> when its <c>version</c> file is not <see cref="IconVersion"/>, then writes it (failures leave the folder as it is).</summary>
     static void ClearOldIcons(string directory)
