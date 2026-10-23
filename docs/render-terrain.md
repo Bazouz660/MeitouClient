@@ -84,8 +84,8 @@ deviation down by about n²), at most 16, and the new points are put on the terr
 ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined.
 
 **Cost** (**Observed**, `meitou-viewer --ab <switch>` at a save's view, RTX 4090, 1080p DLSS 0.83): the terrain stage without
-relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +1.4 ms,
-of it the sun's march about 0.7; displacement +0.9 ms at 25 m, +1.04 at 100 m, +1.16 at 150 m (segments grow with distance, each
+relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +2.3 ms
+(the same at 20 or 40 cm, 25 or 100 m, with or without refinement and centring); displacement +0.9 ms at 25 m, +1.04 at 100 m, +1.16 at 150 m (segments grow with distance, each
 ring adds about the same); refinement +0.38 ms at error 16, +0.24 at 32 (crests as smooth as error 4, which costs +0.48), so error
 32 with it costs less than error 16 without. Drawing the tessellated patches' colour at once instead of prepass then late colour
 cost more (the bumps overdraw themselves).
