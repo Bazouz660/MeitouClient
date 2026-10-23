@@ -19,8 +19,14 @@ public static class GroundRelief
     /// <summary>Whether the ground near the eye is raised for real (tessellated patches, where the device has tessellation shaders); the Tab panel toggles it.</summary>
     public static bool DisplaceActive { get; set; } = true;
 
-    /// <summary>Patches within this horizontal distance of the eye are drawn tessellated: beyond TerrainShaders' DisplaceEnd (250), the end of the raising.</summary>
-    public const float TessellatedRadius = 260;
+    /// <summary>Where the displacement ends (world units from the eye; full to 60% of it); the Tab panel's slider sets it.</summary>
+    public static float DisplaceDistance { get; set; } = 250;
+
+    /// <summary>Where the parallax ends (world units from the eye; full to half of it); the Tab panel's slider sets it.</summary>
+    public static float ParallaxDistance { get; set; } = 600;
+
+    /// <summary>Patches within this horizontal distance of the eye are drawn tessellated: just beyond the end of the displacement.</summary>
+    public static float TessellatedRadius => DisplaceDistance + 10;
 
     /// <summary>
     /// A layer's depth as a multiple of <see cref="Depth"/>, from its normal map's own relief (<see cref="NormalHeight.FromNormals"/>, a fraction of the tile):
