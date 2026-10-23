@@ -221,7 +221,7 @@ The turning parts are the BUILDING_PART records with `rotation function` 5 (ROTA
 ± the turning speed × frame time (efficiency × `aim speed` × (1 + 0.01 × damage), [combat](game/combat.md#turrets)). A shot posts `Attack` on the building's object with the `Weapons` switch `Turret`. **Unknown:** the
 idle behaviour of a manned turret without a target. **Meitou:** the simulation fires turrets and publishes who mans which turret and its aim point (`CharacterSnapshot.Turret`, outside the hash).
 `GameHost.AudioTurrets.cs` keeps a display-only copy of each manned turret's parts within 4000 units, turned toward that aim point by the rule above in game time at efficiency 1 (`TurretSounds`, `TurretRig`),
-and posts the two events on an object of its own at the turret (a start beyond 3000 units from the eye is dropped; **engine choice**). The gun mesh does not turn (the renderer has no rotating parts). A shot
+and posts the two events on an object of its own at the turret (a start beyond 3000 units from the eye is dropped; **engine choice**). The gun mesh turns with the simulation's angles ([render-objects](render-objects.md#turrets)). A shot
 (`SoundKind.TurretShot`) posts `Attack` with `Weapons` = `Turret` on a pooled object at the muzzle (**engine choice**).
 To hear it: a town under attack whose guards man their turrets, or a player character sent to a turret with an enemy in range.
 

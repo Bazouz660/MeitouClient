@@ -46,6 +46,7 @@ sealed partial class GameHost
                     lamps.SetRuntimePower(m.Site, pw.Demand > 0 ? pw.Granted / pw.Demand : 1);
         UpdateGroundItems(snapshot);
         UpdateDoors();
+        UpdateTurretPoses(snapshot);
         UpdateFarms(snapshot);
         if (gpu.Objects is not { } objects) return;
         constructionLook.Clear();

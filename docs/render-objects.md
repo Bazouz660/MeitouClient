@@ -93,6 +93,17 @@ open amounts (`WorldObjectRenderer.Doors`, by placement id and index); `DrawReal
 `xml collision`, PhysX Z-up mapped to the part's Y-up), in world units, when its amount changed. Colour and shadow passes see the moved leaf; the GI acceleration structures take
 the instance transform only when they gather instances (not checked for leaves in motion).
 
+## Turrets
+
+A turret's turning parts (BUILDING_PART `rotation function` ROTATION_TARGET) are joints: the layout (`WorldObjectLayout.AddPart`) gives each part that is or hangs from one
+`PlacedMesh.Joints` (the joints above it and its own, outermost first; `TurnJoint` = part record, pivot = its node's place, axis = its node's Y for a yaw part or X for the
+gun's pitch, both as placed). The host (`GameHost.UpdateTurretPoses`) gives the renderer `WorldObjectRenderer.Turrets` (placement id = turret key → `TurretPose`: the
+simulation's `TurretRig` angles from `MannedTurret.Angles`, interpolated between the last two snapshots by the simulation's alpha, kept after the gunner leaves).
+`DrawReal` poses a part (`PoseTurret`) when the pose's version changed: its placement times, from the innermost joint out, a turn about the joint's pivot and axis by its
+angle. **Verified** by a probe over every turret building of the install (random yaw, position and angles): the posed part's origin and its Z and Y directions equal the
+simulation's `TurretRig.Derived` (30 of 30 parts). **Unknown**: the pose has not been looked at in a rendered frame. Only simulated turrets (the combat system) turn; the
+viewer never does. Parts that are not joints (the six-barrel add-on, the lamp) ride on their joint.
+
 ## Validation
 
 Main, reflection and shadow stages repeat object work; inspect all three. **Observed** swamp

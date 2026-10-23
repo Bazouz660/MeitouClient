@@ -141,8 +141,25 @@ from between `effect strength min/max` is **Unknown** (equal for the base burnin
 **Meitou** (`WeatherSystem`, `MedicalState.Weather.cs`, host `GameHost.Weather.cs`): runs every tick in the slow-world phase;
 the host gives the scheduler's region at each place (the schedule, not a viewer-forced weather) and the live affecting units of the
 particle groups. Engine choices: a race with `no shoes` has no boots slot; "down" is incapacitated or carried; units without
-`effect radius` are left out; unit strength is `effect strength min`; dead characters are skipped. Not modelled: shelters, the
-overlay animation, the smoke effect, the notices, the dialogue events, the vfunc +0x358 and +0x2f0 gates.
+`effect radius` are left out; unit strength is `effect strength min`; dead characters are skipped. Not modelled: the
+overlay animation, the smoke effect, the vfunc +0x358 and +0x2f0 gates.
+
+**Notices and events** (**Verified (decompiled)**, `FUN_1405cf790`, the medical functions of the table above): each medical function returns whether it hurt. Then the
+character fires the dialogue event (61 acid feet, 62 acid rain, 63 acid water, 65 gas, 69 burning; none for dust) and, for a player-faction character only, the function
+writes two strings into the medical object: a short one (Character `+0x548`, cleared at the start of every weather update) and a long one (`+0x570`, kept). Short: "Acid!" (water),
+"Feet Burning!" (ground, long text "The ground here is acidic and burns your feet, find some footwear!"), otherwise "<kind> ({1} protection)" with {1} = "{1,num}%" of 100 P, kind =
+Acid Rain, Dust Storm, Burning, Poison Gas, in the Bad colour tag and the Good one added when P > 0.9; dust needs s(1 − P) > 0. Long, by P: below 0.02 the plain warning ("It is currently
+raining acid, and you aren't wearing anything to protect your skin.  Best to find shelter soon."; dust "...it affects your accuracy in combat."; "You are currently on fire."; "...breathing
+in poison gas."), below 0.99 "...your gear is providing you with {1} protection.", else the total-protection sentence. **Observed**: the short string is the information panel's State
+line and the long one its tooltip (their reader was not traced). The event is refused by `FUN_140684990` while the owner talks ([dialogue](../game/dialogue.md#firing-an-event)).
+Meitou (`WeatherSystem.Hurt`, `PlayerInterface.WeatherText`): the same texts and conditions; the State line shows the notice with the long text as tooltip; the event goes to every hurt
+character at most every 8 s per event (`WeatherSystem.EventPause`, **engine choice**: the original fires every hurt tick and relies on the refusals and the lines' repetition limits).
+
+**Shelter** (`FUN_1405cf790`, **Verified (decompiled)**): a ray 1000 above the character straight down; a hit more than 10 over its feet on a building whose BUILDING record has
+`is shelter` stops acid rain (the holder is still set). **Verified** probe: 3 of 603 buildings in the merged data have the flag, all tents of the mod `small_changes_otto` (`Tente
+Mercenaire`, `Abri Plat`, `Tente de fortune`; no function, 2 parts, no interior mask), so the base game has no shelter. Meitou (`WeatherSystem.Sheltered`, **engine choice**): the
+collision query does not say which building a triangle belongs to, so a complete shelter of the player's within 120 units of the character is assumed to be the one hit, and the ray
+counts when it meets any building's collision more than 10 over the feet; town buildings are not asked.
 
 ### WEATHER (type 80; Verified: fcs.def and the loader FUN_1409de7b0)
 

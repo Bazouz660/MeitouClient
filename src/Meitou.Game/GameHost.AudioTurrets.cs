@@ -9,8 +9,8 @@ namespace Meitou.Game;
 
 /// <summary>
 /// The turrets' movement sounds (docs/audio.md "Other world-side events"): a manned turret (<see cref="CharacterSnapshot.Turret"/>) turns toward the simulation's aim point by the exe's rule in
-/// <see cref="TurretSounds"/>, which posts <c>Turret_Mvt_Start</c> / <c>Turret_Mvt_Stop</c>. Display only (frame time, its own copy of the parts): nothing here is read by the simulation, and nothing
-/// draws the turn (the renderer has no rotating parts). Driven each frame from <see cref="UpdateAudio"/>.
+/// <see cref="TurretSounds"/>, which posts <c>Turret_Mvt_Start</c> / <c>Turret_Mvt_Stop</c>. Display only (frame time, its own copy of the parts): nothing here is read by the simulation; the turn that is drawn is the
+/// simulation's (<see cref="UpdateTurretPoses"/>). Driven each frame from <see cref="UpdateAudio"/>.
 /// </summary>
 sealed partial class GameHost
 {

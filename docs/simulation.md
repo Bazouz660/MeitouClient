@@ -259,7 +259,7 @@ Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile loo
 spot meter fills ([perception](game/perception.md#spotting-a-sneaker)); the exposure feeds stealth XP.
 Ranged (tooltip, **Verified** in `main.pot`, mainbar.cpp:1279: "prioritise ranged attacks, melee will be a last resort"): a
 crossbow carrier takes the crossbow at any distance and melees only when dry or a melee attacker is on it; off, the distance
-rule of `ChooseMode` applies. Taunt (mainbar.cpp:1273: "draw more of the enemy to attack him"): a hostile looker picking a
+rule of `ChooseMode` applies (an engine choice; the original's Ranged flag gates the shooting orders, [combat](game/combat.md#unknowns-of-the-ranged-path)). Taunt (mainbar.cpp:1273: "draw more of the enemy to attack him"): a hostile looker picking a
 new fight prefers a visible taunter over any non-taunter (nearest first); its squad joins as usual. Fights already under way
 are not retargeted; a sneaking taunter does not count. Both rules are engine choices; the original's are **Unknown**.
 New games select the squad's first member. The game host also selects the first member after
@@ -390,7 +390,8 @@ turret guard and retaliation skips a gunner shot at. Turret state (angles, aim, 
 starts empty, the exe saves `current shots`). Engine choices: NPC turrets have efficiency 1 (no NPC power grid); a player turret's efficiency is its machine's power grant
 (0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
 gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
-part's; the turret's own collision is not left out of the line or the flight; the shot sound is a pooled object at the muzzle.
+part's; the turret's own collision is not left out of the line or the flight; the shot sound is a pooled object at the muzzle. The snapshot carries the part angles
+(`MannedTurret.Angles`) and the renderer turns the meshes by them ([render-objects](render-objects.md#turrets)).
 
 ### Animals
 
