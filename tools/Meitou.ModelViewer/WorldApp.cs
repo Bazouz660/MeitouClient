@@ -23,6 +23,7 @@ static partial class WorldApp
     public static int Run(string[] args)
     {
         WorldOptions? options;
+        args = TerrainSandboxArgs(args);
         try { options = WorldOptions.Parse(args); }
         catch (Exception e) when (e is ArgumentException or FormatException or IndexOutOfRangeException)
         {
@@ -161,6 +162,7 @@ static partial class WorldApp
             gpu.Foliage?.Settle(camera.Eye);
         }
 
+        FieldTour(gpu, scene, camera, render, o, w, h, context, target);
         // With --orbit-step and weather particles the frame clock runs at 1/60 s a frame (the draw's time unit is 600 s), so they move as in play.
         int orbitFrames = 0;
         float Clock() => o.OrbitStep != 0 && gpu.Particles is { Groups.Count: > 0 } ? (float)(orbitFrames / 60.0 / 600) : 0;

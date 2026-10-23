@@ -76,6 +76,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     TerrainTextures? textures;
     bool ownsTextures = true;
     internal TerrainTextures? TextureSet => textures;
+
+    /// <summary>The texture field's tile at world (<paramref name="x"/>, <paramref name="z"/>) (<see cref="GroundRelief.FieldCentre"/>): its label, or null.</summary>
+    public string? FieldLabelAt(float x, float z) => textures?.FieldLabel(x, z);
     Frame frame;
 
     const int GridCells = 64;
@@ -113,6 +116,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             patchColourTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(), "terrain relief",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
             patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain relief prepass",
+                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
+            patchColourCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain relief interior cut",
+                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
+            patchPrepassCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain relief prepass interior cut",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
         }
         meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
@@ -295,6 +302,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                     RecordPatches(patchPrepass, "terrain prepass", PatchMode.Prepass, plainCount);
                     if (reliefCount > 0) RecordPatches(patchPrepassTess!, "terrain relief prepass", PatchMode.Prepass, reliefCount, reliefDraws);
                     if (cutCount > 0) RecordPatches(patchPrepassCut, "terrain prepass interior cut", PatchMode.Prepass, cutCount, cutDraws);
+                    if (cutReliefCount > 0) RecordPatches(patchPrepassCutTess!, "terrain relief prepass interior cut", PatchMode.Prepass, cutReliefCount, cutReliefDraws);
                     (latePending, lateFrame) = (true, frame);
                 }
                 else
@@ -302,6 +310,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                     RecordPatches(patchColour, "terrain", PatchMode.Solid, plainCount);
                     if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Solid, reliefCount, reliefDraws);
                     if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
+                    if (cutReliefCount > 0) RecordPatches(patchColourCutTess!, "terrain relief interior cut", PatchMode.Solid, cutReliefCount, cutReliefDraws);
                 }
                 DrawnChunks += nodes.Count;
                 DrawnTriangles += patchTriangles;
@@ -334,6 +343,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         RecordPatches(patchColour, "terrain", PatchMode.Late, plainCount);
         if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Late, reliefCount, reliefDraws);
         if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
+        if (cutReliefCount > 0) RecordPatches(patchColourCutTess!, "terrain relief interior cut", PatchMode.Late, cutReliefCount, cutReliefDraws);
     }
 
     /// <summary>
@@ -373,31 +383,38 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         plainCount = kept;
     }
 
-    PatchDraw[] reliefDraws = new PatchDraw[16];
-    int reliefCount;
+    PatchDraw[] reliefDraws = new PatchDraw[16], cutReliefDraws = new PatchDraw[16];
+    int reliefCount, cutReliefCount;
 
     /// <summary>
-    /// Moves the plain patches whose square comes within <see cref="GroundRelief.TessellatedRadius"/> of the eye (horizontally) out of <see cref="patchDraws"/>
-    /// into <see cref="reliefDraws"/> (<see cref="reliefCount"/>), drawn by the tessellated programs: the main view only, with the displacement on.
+    /// Moves the plain and the cut patches whose square comes within <see cref="GroundRelief.TessellatedRadius"/> of the eye (horizontally) into
+    /// <see cref="reliefDraws"/> and <see cref="cutReliefDraws"/>, drawn by the tessellated programs: the main view only, with the displacement on.
     /// The displacement and the split are nil beyond its end, so these patches meet the plain ones on unraised, unsplit edges.
     /// </summary>
     void SplitRelief(bool secondary, WorldRenderOptions options)
     {
-        reliefCount = 0;
-        if (secondary || patchColourTess is null || !GroundRelief.DisplaceActive || options.Wireframe != 0 || !options.Textures || textures is not { HasBiomes: true }) return;
-        var eye = frame.Eye;
-        float r2 = GroundRelief.TessellatedRadius * GroundRelief.TessellatedRadius;
+        (reliefCount, cutReliefCount) = (0, 0);
+        if (secondary || patchColourTess is null || !GroundRelief.DisplaceActive && GroundRelief.RefinePixels <= 0 || options.Wireframe != 0 || !options.Textures || textures is not { HasBiomes: true }) return;
+        float r2 = GroundRelief.TessellatedRadius >= float.MaxValue ? float.MaxValue : GroundRelief.TessellatedRadius * GroundRelief.TessellatedRadius;
+        plainCount = SplitNear(patchDraws, plainCount, ref reliefDraws, ref reliefCount, frame.Eye, r2);
+        cutCount = SplitNear(cutDraws, cutCount, ref cutReliefDraws, ref cutReliefCount, frame.Eye, r2);
+    }
+
+    /// <summary>Moves the draws of <paramref name="draws"/>[..<paramref name="count"/>] whose square lies within sqrt(<paramref name="r2"/>) of the eye
+    /// (horizontally) to <paramref name="near"/>, both kept in order; returns how many stay.</summary>
+    static int SplitNear(PatchDraw[] draws, int count, ref PatchDraw[] near, ref int nearCount, Vector3 eye, float r2)
+    {
         int kept = 0;
-        for (int i = 0; i < plainCount; i++)
+        for (int i = 0; i < count; i++)
         {
-            var d = patchDraws[i];
+            var d = draws[i];
             float x0 = d.Push.Node.X, z0 = d.Push.Node.Y, s = d.Push.Node.Z;
             float dx = MathF.Max(MathF.Max(x0 - eye.X, eye.X - (x0 + s)), 0), dz = MathF.Max(MathF.Max(z0 - eye.Z, eye.Z - (z0 + s)), 0);
-            if (dx * dx + dz * dz > r2) { patchDraws[kept++] = d; continue; }
-            if (reliefCount == reliefDraws.Length) Array.Resize(ref reliefDraws, reliefDraws.Length * 2);
-            reliefDraws[reliefCount++] = d;
+            if (dx * dx + dz * dz > r2) { draws[kept++] = d; continue; }
+            if (nearCount == near.Length) Array.Resize(ref near, near.Length * 2);
+            near[nearCount++] = d;
         }
-        plainCount = kept;
+        return kept;
     }
 
     double[] nodeKeys = [];
@@ -456,7 +473,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     readonly NativeFrame nativeFrame;
     readonly Silk.NET.Vulkan.DescriptorSetLayout constantsLayout;
     readonly TerrainProgram patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
-    readonly TerrainProgram? patchColourTess, patchPrepassTess, meshColourTess, meshSolidTess, meshDepthTess;   // null without tessellation shaders
+    readonly TerrainProgram? patchColourTess, patchPrepassTess, patchColourCutTess, patchPrepassCutTess, meshColourTess, meshSolidTess, meshDepthTess;   // null without tessellation shaders
 
     /// <summary>A mesh program, or its tessellated twin while the rocks are smoothed (<see cref="RockSmoothing.TessellateActive"/>).</summary>
     TerrainProgram Smoothed(TerrainProgram p, TerrainProgram? tessellated) => RockSmoothing.TessellateActive && tessellated is not null ? tessellated : p;
@@ -564,6 +581,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             HeightFine = Index(fineTexture, BindlessKind.Texture2D, standIn2D),
             Diffuse = standInArray, Normal = standInArray, Height = standInArray, Relief = standIn2D, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
+            TessDetail = GroundRelief.TessDetail, RockRound = RockSmoothing.Roundness,   // the tessellation stages, the casters' too
+            FieldTiles = standInUInt,
         };
         if (material)
         {
@@ -580,7 +599,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             c.Grid = options.Grid ? 1u : 0u;
             if (patches && TerrainLayerSkip.Enabled) c.CliffEps = TerrainLayerSkip.CliffEps;
             // The interior cut: the patches' cut variants, or a mesh draw given one (DrawMeshes, DrawMeshesIndirect).
-            bool cut = patches ? cutCount > 0 : meshCut is { Active: true };
+            bool cut = patches ? cutCount + cutReliefCount > 0 : meshCut is { Active: true };
             c.InteriorMask = !cut ? standIn2D : patches ? cutMask : meshCut!.Index;
             c.InteriorCut = cut ? 1u : 0u;
             if (patches) Decals?.Apply(ref c);
@@ -606,6 +625,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 c.Parallax = textured && GroundRelief.ParallaxActive && set.Height is not null ? GroundRelief.Depth : 0;
                 c.Displace = patches && textured && GroundRelief.DisplaceActive && patchColourTess is not null && set.Height is not null ? GroundRelief.Depth : 0;
                 (c.DisplaceEnd, c.ParallaxEnd) = (GroundRelief.DisplaceDistance, GroundRelief.ParallaxDistance);
+                (c.OverlayRelief, c.SelfShadow, c.TargetSlope) = (GroundRelief.OverlayRelief, GroundRelief.SelfShadow, GroundRelief.TargetSlope);
+                (c.MaxDepth, c.ScaleFollow, c.CliffScale) = (GroundRelief.MaxDepth / GroundRelief.ReferenceDepth, GroundRelief.ScaleFollow, GroundRelief.CliffScale);
+                (c.Refine, c.PixelScale, c.BroadCut) = (patches && patchColourTess is not null ? GroundRelief.RefinePixels : 0, options.TerrainPixelScale, GroundRelief.BroadCut);
+                c.FieldTiles = Index(set.Field, BindlessKind.UTexture2D, standInUInt);
+                if (patches && textured && t.FieldCount > 0) (c.FieldOrigin, c.FieldTile, c.FieldColumns, c.FieldCount) = (t.FieldOrigin, t.FieldTile, t.FieldColumns, t.FieldCount);
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);
                 c.Cells = Index(set.Cells, BindlessKind.UTexture2D, standInUInt);
                 c.BlendMap = Index(set.BlendMap, BindlessKind.Texture2D, standIn2D);
@@ -1253,6 +1277,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         foreach (var p in new[] { patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth }) p.Dispose();
         patchColourTess?.Dispose();
         patchPrepassTess?.Dispose();
+        patchColourCutTess?.Dispose();
+        patchPrepassCutTess?.Dispose();
         meshColourTess?.Dispose();
         meshSolidTess?.Dispose();
         meshDepthTess?.Dispose();

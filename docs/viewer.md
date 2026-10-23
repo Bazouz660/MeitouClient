@@ -1,6 +1,6 @@
 # World viewer
 
-`tools/Meitou.ModelViewer` → meitou-viewer. Current modes: --world and --impostor-preview.
+`tools/Meitou.ModelViewer` → meitou-viewer. Current modes: --world (also --terrain-sandbox and --field-tour, [render-terrain](render-terrain.md#ground-relief)) and --impostor-preview.
 Mesh/character preview commands are retired; [character reference](character-viewer.md) retains
 checks. Full option authority: --world --help, WorldOptions; toggles: AbToggles/Enhancements.
 
