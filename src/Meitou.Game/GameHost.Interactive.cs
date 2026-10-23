@@ -331,7 +331,7 @@ sealed partial class GameHost
                 if (PanelLive() && panel?.MouseMove(Pixels(p)) == true || panelDrag) { lastMouse = p; return; }
                 if (cinema.MouseMove(Pixels(p))) { lastMouse = p; return; }
                 player.MouseMove(Pixels(p));
-                if (player.UiCapturesPointer) { lastMouse = p; return; }
+                if (player.UiCapturesPointer || player.ModalOpen) { lastMouse = p; return; }
                 if (lastMouse is { } last) session.Input.AddMouseDelta(p.X - last.X, p.Y - last.Y);
                 lastMouse = p;
             };
@@ -492,7 +492,7 @@ sealed partial class GameHost
             if (gpu.Objects is { } signObjects) signObjects.HighlightSigns = highlighting;
             player.HighlightFocus = highlighting && !screenshotRequested && takeFile is null ? camera.Target : null;
             bool pointerWorld = pointerMouse is not null && !Covered && !g.NoPopulation && !(PanelLive() && panel?.Visible == true) && !cinema.Contains(pointerAt);
-            bool freeLook = pointerWorld && session.Camera.IsFree;
+            bool freeLook = pointerWorld && session.Camera.IsFree && !player.ModalOpen;
             // Hover outline (Advanced, Meitou only): not in the free camera, with the interface hidden, or in saved pictures.
             bool outlining = config.HoverOutline && !session.Camera.IsFree && !interfaceHidden && !cinema.Clean && !screenshotRequested && takeFile is null;
             if (outlining && highlighting)

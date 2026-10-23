@@ -12,6 +12,8 @@ sealed partial class PlayerInterface
 {
     string selectedStat = ((int)StatsEnumerated.Katanas).ToString(CultureInfo.InvariantCulture);
     public bool UiCapturesPointer => UiVisible && (faithfulScreens.CapturesPointer || mapDrag is not null || liftPress is not null || scrollDrag is not null);
+    /// <summary>A modal screen (the Esc menu, a message box) is up: the pointer is the interface's, even in the free camera.</summary>
+    public bool ModalOpen => UiVisible && faithfulScreens.HasModal;
     /// <summary>Keys the host keeps for itself (the sandbox's letters), so the faithful window shortcuts leave them alone.</summary>
     public HashSet<Key> ReservedKeys { get; } = [];
     void UpdateMenuPause() => session.Simulation.RequestedPause = settingsOpen || faithfulScreens.HasModal;
