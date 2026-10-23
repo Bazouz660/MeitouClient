@@ -690,7 +690,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     (one item kind, 0x11) or `RTTIcons_Base`, double sided for `material type` 2, textured from the instance's material record. Lighting (rtticons.hlsl, lightingFunctions.hlsl): one white punctual
     light along the view axis, no ambient: colour = albedo x pi x N.L x 0.6 + GGX specular (roughness 1 - 0.99 x gloss, F0 0.4), stored linearly in an 8-bit target; the background is transparent.
     Gloss is the material's `specular mult` (default 1) x the diffuse alpha. The REFLECTION term is on, and its cube (`cloudy_noon.jpg`) is missing from the install, so it samples
-    black: the albedo is scaled by 1 - gloss^2. The specular view vector points from the item's origin (-normalize of the camera-relative position), not to the camera. A submesh 0 with
+    black: the albedo is scaled by 1 - gloss^2. The specular view vector is -normalize of the world position, with the normal and light negated too (rtticons.hlsl): it points from the item's origin, not to the camera. A submesh 0 with
     vertex colours takes `RTTIcons_Coloured`, which multiplies the albedo by them. A missing texture map is white; the dye's alpha is the COLOR_DATA top byte (0 in every record:
     no `paint factor`); the binormal is cross(T, N) x tangent w, stored binormals ignored; the cut-out is the material's `alpha threshold` / 255 (default 128); mip bias -0.5
     (rtticons.hlsl, rtticons.material, FUN_140846060, FUN_140841a50, **Verified** in the source and decompile; fitted against 22 saved pictures with a CPU model, mean error 3.4/255).
@@ -699,14 +699,14 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     (below); the other kinds take their static file, else `default_icon.png`; with nothing (or while the picture loads), the cell shows the item's name.
   - **Meitou's drawing** (`CharacterRenderer.Icons.cs`, `ItemIconStyle`): the item's mesh through the character shader's item mode with the lighting above (a negative `FogDistance` in the view
     constants selects it), into its own UNORM texture, drawn each frame until the textures it uses are resident, then kept (rows bottom first like every target: shown with `ImageFlipV`).
-    The mesh is read on a worker with its full level only (`CharacterContent.IconMeshReady`; generating the LOD levels was most of the time, on the render thread); up to 16 icons draw
-    and 8 upload a frame. The final drawing is read back without stalling (`ReadbackBuffer`) and written as a PNG on a worker (`CharacterRenderer.IconSaveDirectory`).
+    The mesh is read on a worker with its full level only (`CharacterContent.IconMeshReady`); up to 16 icons (4 supersampled) draw
+    and 8 upload a frame; one that gives up waiting for its textures is drawn plainly from then on. The final drawing is read back without stalling (`ReadbackBuffer`) and written as a PNG on a worker (`CharacterRenderer.IconSaveDirectory`).
     The game writes its pictures into the install; Meitou leaves the install alone.
     The `icons` switch (Item icons): Faithful as above; Meitou (default) draws each icon 4 x 4 supersampled into a half-float picture and averages it by coverage into the icon
     (`CharacterRenderer.EnhancedIcons`, the portraits' `PreviewResolve` with no tone curve or grade), shows none of the game's saved pictures and saves its own in `icons\supersampled`.
     Meitou applies the gloss multiplier (`PartMaterial.GlossMult`, the shader material's `shirtColour.w`), the black reflection, the origin view vector, the vertex colours, white for a
     missing map, the zero dye alpha and the binormal (`Model.Build` `tangentSign` for icon meshes, kept apart from the characters' as `CharacterContent.IconBones`). Mean colour against saved pictures of vanilla meshes: identical on Small Backpack, Cap and Ninja Pants, within 2/255 on Heart Protector and
-    Rag Loincloth and Tin Can (8/255 dark before the binormal rule: its helmet mesh has 3-component tangents). Samurai Boots (549) is 28/255 brighter than its picture (its
+    Rag Loincloth and Tin Can. Samurai Boots (549) is 28/255 brighter than its picture (its
     record's mesh path is missing; which mesh the game drew is **Unknown**). Not done: generated tangents, the mip bias; Plated Drifter's Leather
     Pants (`specular mult` 4) fits the picture better without the reflection term (**Unknown**). Many saved weapon pictures in a modded install come from mods' meshes (Iron Stick:
     Warrior Moon's `Iron Stick Bare.mesh`), so they are not a reference for the vanilla mesh. An icon is dyed as worn clothing is, by the record's own `color` when the item's `dont colorise`

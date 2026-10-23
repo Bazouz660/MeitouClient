@@ -346,8 +346,9 @@ static class CharacterShaders
                 // An inventory icon (CharacterRenderer.DrawIcon, a negative fog distance): the game's rtticons.hlsl, one white punctual light along the view axis and no ambient
                 // (CalcPunctualLight: diffuse = pi * N.L * (1 - mean specular colour), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.4). The game stores that linear
                 // result as it is in an 8-bit target, so the icon target is UNORM, not sRGB (the lit values match the saved pictures: backpack mean 133 102 77 computed, 142 114 91 saved).
-                // The game's REFLECTION term samples a cube map the install lacks (black): albedo x (1 - gloss^2) is all that is left of it. Its view vector points
-                // from the item's origin (-normalize of the camera-relative position, rtticons.hlsl), not to the camera.
+                // The game's REFLECTION term samples a cube map the install lacks (black): albedo x (1 - gloss^2) is all that is left of it. rtticons.hlsl negates the
+                // normal, the light and -normalize(world position) together, so with the normal unnegated here the view vector is +normalize of the world position:
+                // from the item's origin, not to the camera.
                 const float PI = 3.14159265;
                 albedo *= 1.0 - gloss * gloss;
                 vec3 l = normalize(view.lightDir);
