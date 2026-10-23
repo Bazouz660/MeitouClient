@@ -1330,6 +1330,17 @@ internal sealed class SampledImage : IDisposable
         return new SampledImage(ctx, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat);
     }
 
+    /// <summary>Two RGBA32F layers (the water's biome parameter maps A and B), linear, clamped to the edge.</summary>
+    public static SampledImage Rgba32FArray(IGpuContext ctx, Vector4[] a, Vector4[] b, int width, int height, string name)
+    {
+        using var batch = ctx.Uploads.Begin();
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba32f, width, height, Layers: 2,
+            Kind: TextureKind.Texture2DArray, Name: name));
+        batch.Write(t, 0, 0, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(a.AsSpan(0, width * height)));
+        batch.Write(t, 0, 1, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.AsSpan(0, width * height)));
+        return new SampledImage(ctx, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat);
+    }
+
     /// <summary>
     /// A cube map from a DDS file with all its mips (RGBA8), faces in the DDS order (+X, −X, +Y, −Y, +Z, −Z) as layers 0..5 (Vulkan's and GL's
     /// face order); trilinear, clamped to the edge on S, T and R (Vulkan's cube sampling is always seamless, as GL's was with

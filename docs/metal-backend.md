@@ -4,7 +4,7 @@ A second native path for the renderer, next to Vulkan. Status: **the world draws
 (`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
 uniform block, the scene, shadows, faithful water, skinned characters, the HUD and the faithful panels. The
 interactive camera/selection, title, New Game, save/load, audio and the shared trade/dialogue/build/editor
-interaction layer are in (a new game opens the character editor); the Meitou water/clouds and the free camera remain.
+interaction layer are in (a new game opens the character editor); the Meitou water is in, and the free camera remains.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
 runtime). `Silk.NET.GLFW` has no `glfwGetCocoaWindow`, so the `NSWindow*` comes from the same
@@ -494,8 +494,8 @@ Vulkan secondary-pass staging (`BeginHostPassParallel`, `SetPassStage`, `EndHost
 Metal's scene pass runs through the same `SceneHost` instead of a hand-rolled native segment. `WorldFrame.CreateGpu`
 also takes `IGpuContext`: it builds terrain, textures, streamer, sky/weather, particles, lamps, objects, foliage,
 water, shadows and the memory guard on either backend. The full `PostProcess` and GI are created only when the
-context is Vulkan; the reflection pass is seam-neutral. Metal supplies its allocation sample for `VramGuard`, starts
-water faithful, and uses `MetalPostChain` (`PostComposite`/`PostTaa` behind `IWorldPostChain`).
+context is Vulkan; the reflection pass and Meitou water are seam-neutral. Metal supplies its allocation sample for
+`VramGuard` and uses `MetalPostChain` (`PostComposite`/`PostTaa` behind `IWorldPostChain`).
 
 `WorldFrame.Draw` now runs through that interface and owns the shared frame: weather and sky preparation, streaming,
 shadows, the scene host, the post-chain scene effects (fog volumes, shafts, SSAO), full-size particles, the post chain,
@@ -534,10 +534,9 @@ and the shared trade/dialogue/build/editor interaction layer are wired. The rema
 4. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
    need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
-**After the UI:** the Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`, `ReflectionPass`,
-refraction); the character motion pass and the hover/stage host calls; the Meitou clouds; the remaining post
-(`FogRate`, dynamic motion, GPU culls/grass); resize and HDR/EDR; then the GI decision, parity, memory/tone and the
-macOS default.
+**After the UI:** water refraction and the character motion pass; the remaining post (`FogRate`, dynamic motion,
+GPU culls/grass); resize and HDR/EDR; then the GI decision, parity, memory/tone and the macOS default. The Meitou
+water (waves, shore, foam, reflection) and clouds are in.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
@@ -552,8 +551,7 @@ Vulkan at default settings, the remaining scope is:
    in-game menu render and act; the shared trade/dialogue/build/editor screens and their host callbacks are wired.
    Still missing: the pointer sprite and a runtime pass over the shared screens (including the deterministic
    `--ticks`/`--move-to` stills).
-3. **Rendering parity.** The Meitou water (packed maps + sky/environment, `OceanWaves`, `ShoreField`,
-   `ReflectionPass`, refraction); the Meitou volumetric clouds/fog; post (`FogRate`, full TAA with character/grass
+3. **Rendering parity.** Water refraction; the Meitou volumetric fog; post (`FogRate`, full TAA with character/grass
    motion, MetalFX reactive mask); and the character motion/stage/hover passes.
 4. **GI decision.** On this Mac Vulkan also reports `gi off: the device has no ray queries (VK_KHR_ray_query)`,
    so the local parity shots are no-GI; on a machine where Vulkan traces GI the target includes it. Either port
@@ -567,9 +565,9 @@ Vulkan at default settings, the remaining scope is:
 **Practical order:** the frontend shell (title, New Game, save/load, audio) and the shared trade/dialogue/build/editor
 interaction layer are in; next is its runtime acceptance pass and the remaining effects, then the
 [performance and memory plan](metal-performance-memory.md) (same-window benchmark, present pacing, GPU culls/indirect,
-cache/native lifetime, memory soak), Meitou water, post/GI, parity and default. If no-GI and faithful clouds/water are accepted as the macOS look, the GI and Meitou
-water/clouds items leave the target; the upscaler and timestamps are quality/performance work, not correctness
-blockers.
+cache/native lifetime, memory soak), water refraction, post/GI, parity and default. If no-GI is accepted as the
+macOS look, the GI item leaves the target; the upscaler and timestamps are quality/performance work, not
+correctness blockers.
 
 **The next steps, in order.** Each ends with the gates below (build 0/0 and a Metal shot under
 `MTL_DEBUG_LAYER=1`; tests and a Vulkan comparison only when the step changed shared code).
@@ -617,18 +615,14 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 
 ### 3. Water (plan step 6)
 
-**The faithful surface is on Metal:** `WaterRenderer` takes `IGpuContext`, and the Metal host creates it with
-`meitouWaves: false, shoreField: false` and draws the game's flat water quad in the scene pass. The shared
-`ReflectionPass` now draws the mirrored sky, terrain, objects and foliage through `IGpuContext` on Metal too
-(single-sample there; Vulkan keeps its MSAA resolve), so the faithful surface reflects the scene instead of the
-sky colour alone. It was checked at the real sea, top coast (`--at 44352,-122544 --yaw 0 --distance 800 --pitch 15`):
-Metal and Vulkan with `--faithful water` show the same dark rippled sea and black shadowed shore (the Vulkan shot
-also has the HUD, still missing on Metal). The Hub (`-50979,2932`) and the river view (`-45060,6348`) are inland
-water; the sea is only at the world edge. `OceanWaves` and `ShoreField` are widened to `IGpuContext`, but the
-Meitou fragment still exceeds Metal's 16-sampler stage (its eight maps + the full sky functions + ocean + shore +
-reflection + refraction), so its program is built only when asked and the Metal host asks for the faithful one.
-Remaining: pack the Meitou maps into fewer samplers (or an array), reduce the sky functions, then enable refraction
-(the half-res copy already has a Metal branch). Ends when the coast/river views match Vulkan's water.
+**Meitou water is on Metal:** `WaterRenderer` takes `IGpuContext`; `OceanWaves`, `ShoreField` and the shared
+`ReflectionPass` are seam-neutral. Metal draws the Meitou waves, shore and foam with the `METAL_WATER` fragment:
+the atmosphere's GI, lamp, dust, specular and material-lighting declarations are compiled out, foam uses no sun
+shadow, and the two RGBA32F biome parameter maps are packed into one two-layer array. That leaves exactly Metal's
+16 fragment samplers. The reflection pass draws the mirrored sky, terrain, objects and foliage (single-sample on
+Metal; Vulkan keeps its MSAA resolve). Refraction is still off on Metal because its scene copy is Vulkan-only, so
+the water blends over the scene as the game's water does; the faithful surface remains the fallback when the
+Meitou switch is off. The sea, Hub and river views still need a visual pass against Vulkan.
 
 ### 4. Characters and skinning (plan step 7)
 
@@ -800,10 +794,10 @@ default.
 - Metal screenshots are not byte-comparable run to run: cloud/water time still follows the real frame time, so the
   picture differs even when `--ticks` freezes simulation state. Compare regions / means, or freeze that clock for a
   pixel comparison.
-- Metal's fragment stage allows 16 samplers: the Meitou water's eight maps + sky + ocean + shore + reflection +
-  refraction exceed it. The faithful water builds; the Meitou program is skipped unless the maps are packed or
-  reduced. A Metal Meitou water should put the maps in one array (or an atlas) and reduce the sky declarations
-  rather than add slots. The reflection pass itself now builds and runs on Metal.
+- Metal's fragment stage allows 16 samplers. The Meitou water now builds at exactly 16 with `METAL_WATER`: the
+  unused GI/lamp/dust/specular/material-lighting declarations are compiled out, foam has no sun shadow, the two
+  RGBA32F parameter maps share one two-layer array, and refraction is off. Any further water feature needs a
+  packed atlas or a bindless path rather than another sampler. The reflection pass runs on Metal.
 - The full atmosphere lighting (`kenshiLight`/`atmoApply`) plus a material's diffuse map needs 17 direct samplers in
   a legacy fragment. Debris therefore uses its simple sun/ambient light path on Metal; Vulkan keeps the
   atmosphere-lit and hazed version. Full debris haze parity needs a bindless or atlas path for the diffuse map.

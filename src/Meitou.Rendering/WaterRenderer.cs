@@ -366,7 +366,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         }
         """;
 
-    static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + """
+    const string MeitouBody = """
 
         in vec3 vWorld;
         in vec2 vBase;
@@ -777,7 +777,11 @@ public sealed unsafe class WaterRenderer : IDisposable
             // about uniform per quad: the cascades end well before).
 
             vec3 foamN = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.6));   // up, a little tilted by the waves
+        #ifndef METAL_WATER
             float foamShadow = dist < 8000.0 ? kenshiShadow(vWorld, foamN) : 1.0;
+        #else
+            float foamShadow = 1.0;
+        #endif
             if (foam > 0.004)
             {
                 vec3 dirt = mix(vec3(0.8), hue, 0.5) * mix(0.42, 0.6, smoothstep(0.02, 0.25, wLuma));
@@ -826,6 +830,27 @@ public sealed unsafe class WaterRenderer : IDisposable
         }
         """;
 
+    static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MeitouBody;
+
+    /// <summary>
+    /// The Metal body: the two RGBA32F parameter maps become one two-layer array (the last sampler the Metal
+    /// fragment has room for), and refraction is absent.
+    /// </summary>
+    static readonly string MetalMeitouBody = MeitouBody
+        .Replace("uniform sampler2D uParamsA;", "uniform sampler2DArray uParams;")
+        .Replace("uniform sampler2D uParamsB;", "")
+        .Replace("texture(uParamsA, map)", "texture(uParams, vec3(map, 0.0))")
+        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))")
+        .Replace("uniform sampler2D uRefraction;", "")
+        .Replace("under = texture(uRefraction, gl_FragCoord.xy * uScreen + bend).rgb;", "under = vec3(0.0);");
+
+    /// <summary>
+    /// Metal's Meitou fragment: the atmosphere's METAL_WATER sections keep the declarations and functions the water
+    /// actually reads (irradiance, ambient map, clouds, haze and the reflection), dropping GI, lamps, dust and the
+    /// material lighting used only by other shaders. The packed parameters and no refraction leave 16 samplers.
+    /// </summary>
+    static readonly string MetalMeitouFragment = "#version 330 core\n#define METAL_WATER 1\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody;
+
     /// <summary>The native GPU API (phase 8 stage 2: the water makes no GL call; docs/renderer-native.md 8.6).</summary>
     public IGpuContext Gpu { get; }
     readonly DeviceBuffer quad;
@@ -835,6 +860,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     readonly GpuBufferBinding[] quadVertices, gridVertices;
     readonly uint gridIndexCount;
     readonly SampledImage[] maps;   // colour, flow, normal, parameters A and B, rain ripples, foam (Meitou), in the order of WaterProgram.MapNames
+    readonly SampledImage? packedParams;   // Metal Meitou: A and B as one 2-layer array
     readonly Vector4 seaA, seaB;
     readonly Vector3 seaColour;
     readonly WaterProgram faithful;
@@ -863,7 +889,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             FogColour, FogDistance, Reflect, ReflectionViewProjection, Ocean, ShoreRect, GridStep, Shore, WaveFade, Refract, Screen, Clarity;
         public readonly SkyColourHandles Sky;
         public readonly SamplerSlot[] Maps;
-        public readonly SamplerSlot Reflection, OceanDisp, OceanSlope, ShoreField, Refraction;
+        public readonly SamplerSlot Reflection, OceanDisp, OceanSlope, ShoreField, Refraction, PackedParams;
 
         public WaterProgram(IGpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
         {
@@ -882,6 +908,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             (OceanDisp, OceanSlope, ShoreField) = (P.Sampler("uOceanDisp"), P.Sampler("uOceanSlope"), P.Sampler("uShoreField"));
             Lean = P.Uniform("uLean");
             (Refract, Screen, Refraction) = (P.Uniform("uRefract"), P.Uniform("uScreen"), P.Sampler("uRefraction"));
+            PackedParams = P.Sampler("uParams");
             Clarity = P.Uniform("uClarity");
             Sky = SkyColourHandles.Resolve(P);
             Maps = MapNames.Select(P.Sampler).ToArray();
@@ -892,7 +919,7 @@ public sealed unsafe class WaterRenderer : IDisposable
     }
 
     WaterRenderer(IGpuContext gpu, SampledImage[] maps, Vector4 seaA, Vector4 seaB, Vector3 seaColour, int gridSegments, int oceanSize,
-        bool meitouWaves, bool shoreField)
+        bool meitouWaves, bool shoreField, SampledImage? packedParams)
     {
         // The ocean FFT and the shore field are seam-neutral; the faithful water (the quad) simply does not read them.
         ocean = meitouWaves ? new OceanWaves(gpu, oceanSize) : null;
@@ -902,8 +929,9 @@ public sealed unsafe class WaterRenderer : IDisposable
         (this.seaA, this.seaB, this.seaColour) = (seaA, seaB, seaColour);
         Gpu = gpu;
         this.maps = maps;
+        this.packedParams = packedParams;
         faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", PrimitiveType.TriangleStrip);
-        meitou = meitouWaves ? new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(MeitouFragment, none: true), "water meitou", PrimitiveType.Triangles) : null;
+        meitou = meitouWaves ? new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(gpu is GpuContext ? MeitouFragment : MetalMeitouFragment, none: true), "water meitou", PrimitiveType.Triangles) : null;
         float[] corners = [-1, -1, -1, 1, 1, -1, 1, 1]; // triangle strip, counter-clockwise from above
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");
         using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(corners.AsSpan()));
@@ -1032,13 +1060,16 @@ public sealed unsafe class WaterRenderer : IDisposable
         SampledImage riverMap = s.River is { } river
             ? SampledImage.Rgba8(gpu, s.RiverSize, s.RiverSize, river, repeat: false, mipmaps: false, "water river map")
             : SampledImage.Rgba8(gpu, 1, 1, [128, 128, 0, 0], repeat: false, mipmaps: false, "water river map");
+        var packedParams = gpu is not GpuContext && meitouWaves
+            ? SampledImage.Rgba32FArray(gpu, s.A, s.B, s.BlendWidth, s.BlendHeight, "water parameters")
+            : null;
         return new WaterRenderer(gpu,
             [Rgba(s.Colour, false, [0, 32, 64, 255], "water colour map"), Rgba(s.Flow, false, [128, 128, 0, 255], "water flow map"),
              Rgba(s.Normal, true, [128, 255, 128, 255], "water normal map"),
              SampledImage.Rgba32F(gpu, s.A, s.BlendWidth, s.BlendHeight, "water parameters a"), SampledImage.Rgba32F(gpu, s.B, s.BlendWidth, s.BlendHeight, "water parameters b"),
              Rgba(s.Rain, true, [0, 0, 0, 0], "water rain ripples"),
              SampledImage.Rgba8(gpu, WaterFoam.Size, WaterFoam.Size, s.Foam, repeat: true, mipmaps: true, "water foam"), riverMap],
-            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize, meitouWaves, shoreField);
+            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize, meitouWaves, shoreField, packedParams);
     }
 
     /// <summary>
@@ -1089,6 +1120,15 @@ public sealed unsafe class WaterRenderer : IDisposable
     internal void Track(Vector3 eye, HeightSnapshot heights)
     {
         if (Meitou) shore?.Update(eye, heights);
+    }
+
+    /// <summary>
+    /// Records the Meitou ocean's FFT before the scene host opens (Metal records compute into the same command buffer and
+    /// cannot nest it in a render encoder). The reflection pass has already set <see cref="NearestWater"/>.
+    /// </summary>
+    internal void PrepareFrame()
+    {
+        if (Meitou && OceanInView) ocean?.Record();   // the FFT only while water near enough to show its detail is in view
     }
 
     /// <summary>The Meitou water refracts what lies under it (<see cref="CaptureRefraction"/> before each of its draws); off: it blends over it as
@@ -1186,7 +1226,6 @@ public sealed unsafe class WaterRenderer : IDisposable
     {
         bool meitouWater = Meitou && meitou is not null;
         var p = meitouWater ? meitou! : faithful;
-        if (meitouWater && OceanInView) ocean?.Record();   // the FFT only while water near enough to show its detail is in view
         Prepare(p, viewProjection, eye, light, colours, meitouWater ? waves.NormalTime : time, extent, reflection);
         if (meitouWater) Record(p, gridSource!, gridVertices, gridIndexCount);
         else Record(p, quadSource, quadVertices, 0);
@@ -1236,7 +1275,13 @@ public sealed unsafe class WaterRenderer : IDisposable
         }
         h.Sky.Set(p, colours);
         p.ApplyGlobals();   // the atmosphere's and the heights' uniforms and textures, through the frame globals
-        for (int i = 0; i < maps.Length; i++) p.Bind(h.Maps[i], maps[i].Sampled());
+        if (h.PackedParams.IsValid && packedParams is not null)
+        {
+            for (int i = 0; i < maps.Length; i++)
+                if (i is not (3 or 4)) p.Bind(h.Maps[i], maps[i].Sampled());
+            p.Bind(h.PackedParams, packedParams.Sampled());
+        }
+        else for (int i = 0; i < maps.Length; i++) p.Bind(h.Maps[i], maps[i].Sampled());
         bool reflect = reflection is { Valid: true };
         p.Set(h.Reflect, reflect ? 1f : 0f);
         if (reflect)
@@ -1296,6 +1341,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         grid?.Dispose();
         gridIndices?.Dispose();
         foreach (var t in maps) t.Dispose();
+        packedParams?.Dispose();
         faithful.Dispose();
         meitou?.Dispose();
         ocean?.Dispose();

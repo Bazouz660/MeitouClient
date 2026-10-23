@@ -1,10 +1,10 @@
 # Metal content testability plan
 
 Status: **Milestones A-C implemented** (2026-10-22), with D's settings callbacks and E's water
-reflection in (2026-10-23); A is manually accepted, B's blood path is validated, and the rest still
-awaits manual checks. This plan is about making the game's content and systems easy to exercise
-through the native Metal host. Read it with [metal-backend](metal-backend.md); Vulkan remains the
-reference path.
+reflection and Meitou water in (2026-10-23); A is manually accepted, B's blood path is validated,
+and the rest still awaits manual checks. This plan is about making the game's content and systems
+easy to exercise through the native Metal host. Read it with [metal-backend](metal-backend.md);
+Vulkan remains the reference path.
 
 The content data and simulation are already shared. Metal loads the same world, population,
 towns, items, dialogue, trade, crafting, construction, farming, combat and saves. The gaps below
@@ -40,8 +40,8 @@ picture is not at Vulkan parity yet".
 
 ## Non-goals
 
-- Porting the full Vulkan post chain, Meitou water, GI, HDR/EDR or vendor upscalers. Those are
-  tracked in [metal-backend](metal-backend.md) and item 8.
+- Porting the full Vulkan post chain, GI, HDR/EDR or vendor upscalers. Those are tracked in
+  [metal-backend](metal-backend.md) and item 8.
 - Changing simulation rules or adding new content.
 - Replacing the Metal-specific frame loop with the Vulkan loop. The host may call shared methods,
   but it keeps its Metal display and post chain.
@@ -312,13 +312,8 @@ enabled while nothing changes.
   - **towns keep their schedule** -> include `ResidentSchedule` in the `OffscreenChanged`
     tuple.
 - For controls whose renderer path is absent, hide them on Metal or label them explicitly rather
-  than presenting a no-op:
-  - water reflection (no Metal reflection pass yet);
-  - Meitou water controls until that path exists;
-  - luckyren until item 5 lands;
-  - character flights until item 3 lands.
-- Fix the Metal `HardwareMouse` behaviour: either implement the cursor-mode switch or mark the
-  setting as unsupported on Metal.
+  than presenting a no-op. The water reflection, Meitou water, luckyren, character flights and
+  hardware-mouse controls are now wired.
 - Keep the shared `SettingsMenu` pages (Interface, Controls, Advanced, Audio, Fixes); only the
   values supplied by Metal are reduced today.
 
@@ -345,9 +340,9 @@ out of the P0 content-testing gate.
 
 ### Known gaps
 
-- The shared water reflection pass now runs on Metal; the faithful surface reflects the scene.
-- Meitou water (FFT/shore/refraction path) is not the Metal path yet; its maps still need packing
-  for Metal's 16-sampler stage and refraction is off.
+- The shared water reflection pass now runs on Metal; the scene is mirrored into the water.
+- Meitou water (FFT/shore/foam/reflection) now runs on Metal. Refraction is still Vulkan-only, and
+  Metal omits water foam sun shadows to fit its 16-sampler stage.
 - No low-resolution particle targets.
 - No fog-rate (fog shading-rate) target.
 - No object motion / reactive-mask path for temporal upscalers.

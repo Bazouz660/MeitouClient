@@ -3,7 +3,7 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Base HEAD: `4791a496 metal: share WorldFrame construction and SceneHost on IGpuContext`  
-Workspace: content/testability Milestones A-C implemented, D callbacks and the shared water reflection pass in; A is manually accepted and B's blood path is validated (debris/luckyren, D/E and C stills await manual checks).
+Workspace: content/testability Milestones A-C implemented, D callbacks and E's shared reflection/Meitou water in; A is manually accepted and B's blood path is validated (debris/luckyren, D/E and C stills await manual checks).
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
@@ -47,9 +47,9 @@ The previous safe mode is no longer needed for the black-terrain/water/foliage f
   and `ClearDepth`, so Vulkan keeps its secondary-buffer staging and Metal records inline.
 - Metal's scene pass uses the same `SceneHost` as Vulkan.
 - `WorldFrame.CreateGpu` takes `IGpuContext` and builds terrain, textures, streamer, sky/weather, particles, lamps,
-  objects, foliage, water, shadows and the memory guard on both backends. Vulkan-only `PostProcess`, reflection and
-  GI are created only for a Vulkan context; Metal supplies its allocation sample, faithful water and its own post
-  chain. Metal now shares `WorldFrame.DrawShadows`.
+  objects, foliage, water, shadows and the memory guard on both backends. The full `PostProcess` and GI are
+  Vulkan-only; the reflection pass and Meitou water are shared. Metal supplies its allocation sample and its own
+  post chain, and now shares `WorldFrame.DrawShadows`.
 - `GameHost.Metal` populates the shared `gpu` object, so the shared title/audio/save/editor helpers see the same
   weather, objects, foliage, characters and lamps. The character-editor warm-up path has an explicit Metal guard.
 - The old direct construction was removed from `GameHost.Metal`; `WorldFrame.Gpu.Dispose` now owns those renderers.
@@ -102,8 +102,9 @@ Metal's `MetalPostChain` wraps `PostComposite` + `PostTaa` and supplies the scen
 jitter/temporal choice and the scene effects. Metal's host no longer has its local scene/post loop: it sets up the
 title staging, portrait/hover inputs and UI, then calls `WorldFrame.Draw` (which also draws the shared overlays).
 
-The chain reports what it lacks: Metal has one depth slice, no reflection, no GI and no low-resolution particles;
-the shared draw skips those paths. Vulkan still uses its far/near slices, reflection, GI and low-res particles.
+The chain reports what it lacks: Metal has one depth slice, no GI and no low-resolution particles; the shared draw
+skips those paths. The reflection pass and Meitou water run on both; Vulkan still uses its far/near slices, GI and
+low-res particles.
 
 Verification for this slice: Release build 0 warnings / 0 errors; quick suite 476 passed / 2 skipped.
 The normal Metal `--new-game Wanderer` run was accepted by the user on 2026-10-22; title, editor,

@@ -836,10 +836,10 @@ static class WorldFrame
         {
             var messages = new List<string>();
             step?.Invoke("water");
-            // The Meitou water's FFT and shore field are seam-neutral; its fragment still needs the water maps packed
-            // to fit Metal's 16 sampler stage and refraction needs the Vulkan scene copy, so Metal keeps the faithful
-            // surface for now. The reflection pass itself draws the mirrored scene through IGpuContext on either backend.
-            bool meitouWater = o.MeitouWater && context is GpuContext;
+            // The Meitou water's FFT, shore field and reflection are seam-neutral. Metal packs the two biome
+            // parameter maps into one array and drops refraction (its scene copy is still Vulkan-only), which
+            // leaves the Meitou fragment exactly at Metal's 16-sampler stage limit.
+            bool meitouWater = o.MeitouWater;
             gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
                 Ready(waterSource!), meitouWaves: meitouWater, shoreField: meitouWater);
             gpu.Water.Meitou = meitouWater;
@@ -1369,6 +1369,7 @@ static class WorldFrame
         if (gpu.Probes is not null) gpu.Probes.InReflection = false;
         // What the reflection's rect learnt for the water pass: the nearest water in view, or NaN when no pass ran to find out.
         if (gpu.Water is { } gated) gated.NearestWater = reflecting ? gpu.Reflection!.NearestWater : float.NaN;
+        gpu.Water?.PrepareFrame();   // the FFT before the scene's render pass (Metal records compute in the same command buffer)
         StageClock.Lap(4);
         // The scene's passes are a native host that hands its guests the targets and state (phase 8 stage 3); wave 4 (docs/renderer-native.md 6):
         // its rendering takes secondaries, the guests' segments recorded on the job threads when it ends.
