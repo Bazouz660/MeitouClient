@@ -424,8 +424,10 @@ or population); a failed start retries each run, up to 100 times; a gone target 
 - 2 ended: removed after 3 h (platoons unmapped).
 - Unloaded no fight starts, so an unloaded assault always wins at 4 h: a message and its follow-up, nothing happens to the town (the
   earlier "an empty outpost falls" reading was this).
-- Redirect (`FUN_1409d62f0`): every 0.2 h, a target town gone (or a player town failing slot 70) is replaced by a new target: "{1} has
-  redirected to {2}".
+- Redirect (`FUN_1409d62f0`, **Verified** by decompile; where the update calls it is **Unknown**): when the target town no longer resolves, or its faction is the player's and slot 70 is false (the player has left it),
+  a timer (+0xf0, started the first time this is found, restarted after each look) lets the war manager look for a new target every 0.2 h with the campaign's target rule
+  (`CampaignData::vfunc_0`, [above](#campaigns)); a different town found replaces the target ("{1} has redirected to {2}", {1} from `FUN_1409d3fe0` read as the campaign's name (**Observed**), {2} the town) and the home stays. None found keeps the old one. Meitou:
+  `PopulationCampaigns.Redirect` (no look for a campaign with no target faction, an engine choice).
 - Packages: phase 0 `pt1 AI`, 1 `pt2 AI`, 2 `retreat AI`; the leader platoon uses `... leader`, others `... others` (else the leader's).
   Installed (`FUN_140272570`, **Verified**) at the platoon's next AI update: when the phase's package differs from the blackboard's override
   (+0x210) the old one is torn down (dialogue event 30 on the leader) and the new one built by its `signal func` (0 → 33 Contract_Timed),
