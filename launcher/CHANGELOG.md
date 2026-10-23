@@ -2,6 +2,11 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## Unreleased
+
+- macOS Apple silicon: Settings → Renderer chooses native **Metal** or **Vulkan (MoltenVK)**. Vulkan stays the default;
+  Metal needs no Homebrew Vulkan loader and is started without `DYLD_LIBRARY_PATH`.
+
 ## v1.1.1
 
 - Nightly builds now come twice a day; the afternoon build shows its date in the Versions list like the morning one.

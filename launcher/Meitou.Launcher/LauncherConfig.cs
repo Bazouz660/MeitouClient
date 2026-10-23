@@ -33,6 +33,14 @@ public sealed class LauncherConfig
     public bool FoldersConfirmed { get; set; }
     public string? KenshiPath { get; set; }
     public bool IncludePrereleases { get; set; }
+    /// <summary>macOS only: <c>metal</c> (native) or <c>vulkan</c> (MoltenVK). Vulkan stays the default until Metal is
+    /// accepted as the macOS default; other platforms always use Vulkan.</summary>
+    public string Renderer
+    {
+        get => renderer;
+        set => renderer = value is "metal" or "vulkan" ? value : "vulkan";
+    }
+    string renderer = "vulkan";
     public string? SelectedVersion { get; set; }
     /// <summary>A game release the user chose not to be offered as an update; a newer one is offered again.</summary>
     public string? SkippedVersion { get; set; }

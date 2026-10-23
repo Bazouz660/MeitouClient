@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -31,6 +32,10 @@ public sealed partial class MainWindow : Window
 
     static string LauncherVersion => typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
+    // Metal is native to macOS and does not need the MoltenVK loader. The launcher exposes it on Apple silicon only;
+    // the Intel package keeps Vulkan, which is the tested macOS path there.
+    static bool MetalAvailable => OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
     public MainWindow() : this(LauncherConfig.Load(), GameInstall.Locate()) { }
 
     public MainWindow(LauncherConfig config, GameInstall? found)
@@ -49,6 +54,12 @@ public sealed partial class MainWindow : Window
         ModListBox.AddHandler(PointerReleasedEvent, ModList_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         ModListBox.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
         ArgumentsBox.Text = config.LaunchArguments;
+        RendererRow.IsVisible = MetalAvailable;
+        if (MetalAvailable)
+        {
+            RendererBox.SelectedIndex = config.Renderer == "metal" ? 0 : 1;
+            RendererBox.SelectionChanged += Renderer_Changed;
+        }
         NightlyBox.IsChecked = config.IncludePrereleases;
         AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
         AutoUpdateBox.IsEnabled = updater.IsInstalled;
@@ -155,6 +166,16 @@ public sealed partial class MainWindow : Window
     {
         config.LaunchArguments = ArgumentsBox.Text ?? "";
         config.Save();
+    }
+
+    void Renderer_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "metal" or "vulkan")
+        {
+            config.Renderer = renderer;
+            config.Save();
+            Status($"Renderer: {(renderer == "metal" ? "Metal" : "Vulkan")}; Play starts the game with it.");
+        }
     }
 
     async void Nightly_Click(object? sender, RoutedEventArgs e)
@@ -849,17 +870,31 @@ public sealed partial class MainWindow : Window
             UseShellExecute = false,
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
-        if (OperatingSystem.IsMacOS() && !AddMacVulkanEnvironment(start.Environment))
+        string? renderer = null;
+        if (OperatingSystem.IsMacOS())
         {
-            Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
-            return;
+            // Metal needs neither the Vulkan loader nor Homebrew on the game's dyld path.
+            renderer = MetalAvailable && config.Renderer == "metal" ? "metal" : "vulkan";
+            if (renderer == "metal")
+                start.Environment.Remove("DYLD_LIBRARY_PATH");
+            else if (!AddMacVulkanEnvironment(start.Environment))
+            {
+                Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, or choose Metal, then Play again.");
+                return;
+            }
         }
         foreach (var arg in SplitArguments(config.LaunchArguments)) start.ArgumentList.Add(arg);
+        if (renderer is not null)
+        {
+            // Appended last so the selector wins over a hand-written --renderer in Launch arguments.
+            start.ArgumentList.Add("--renderer");
+            start.ArgumentList.Add(renderer);
+        }
         try
         {
             var game = Process.Start(start);
             running = game;
-            Status($"Meitou {version} started.");
+            Status(renderer is null ? $"Meitou {version} started." : $"Meitou {version} started with {(renderer == "metal" ? "Metal" : "Vulkan")}.");
             if (game is null) return;
             // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
             var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");

@@ -28,8 +28,8 @@ updates the game and manages mods. Download the newest one for
 By hand: [releases](https://github.com/VlcekM/MeitouClient/releases) for Windows, Linux and macOS, unzip and run
 
 the game or meitou-viewer (debug world viewer); prebuilt packages need no separate .NET install.
-Needs a Vulkan1.3 GPU with required descriptor-indexing/indirect-draw features, and Kenshi.
-DLSS and FSR are Windows-only; optional ray-query GI falls back on unsupported GPUs. On Linux (checked on KDE, Wayland and X11, NVIDIA driver) a Steam install is found under ~/.local/share/Steam, ~/.steam/steam or the Flatpak folder; macOS is untested.
+Needs a Vulkan1.3 GPU with required descriptor-indexing/indirect-draw features (Vulkan path) or an Apple-silicon Mac (Metal path), and Kenshi.
+DLSS and FSR are Windows-only; optional ray-query GI falls back on unsupported GPUs. On Linux (checked on KDE, Wayland and X11, NVIDIA driver) a Steam install is found under ~/.local/share/Steam, ~/.steam/steam or the Flatpak folder; macOS runs through Homebrew MoltenVK, or native Metal from the launcher on Apple silicon.
 Building requires the [.NET10 SDK](https://dotnet.microsoft.com/download).
 
 Steam installs, and GOG installs made by GOG Galaxy, Heroic, Lutris or Bottles, are located automatically; otherwise select the Kenshi folder when prompted,

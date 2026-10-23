@@ -89,12 +89,22 @@ Native dependencies off Windows:
 
 The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
-`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets) and is the game's working directory.
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, presets) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
-versions. The game gets the Kenshi folder through `KENSHI_PATH`; on macOS also `DYLD_LIBRARY_PATH` and the MoltenVK setting
-([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
+versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** also gets `DYLD_LIBRARY_PATH` and the MoltenVK
+setting ([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
+**Metal** gets neither and is started with `--renderer metal`.
 Play refuses while the game it started still runs. A game that exits with a non-zero code is reported in the status line with its
 `log.txt` path.
+
+### Renderer on macOS
+
+Settings has a **Renderer** choice on macOS Apple silicon: **Metal (native)** or **Vulkan (MoltenVK)**. The value is stored in
+`launcher.json` and appended to the game's arguments after **Launch arguments**, so it wins over a hand-written `--renderer`.
+Vulkan remains the default and the reference path; Metal is native and still being polished. Metal starts without the Vulkan
+loader and without Homebrew on `DYLD_LIBRARY_PATH`, so `brew install molten-vk vulkan-loader` is only needed for Vulkan. The
+launcher runs installed releases; a release without the Metal backend will report the game's error in the status line rather
+than building a local checkout.
 
 `versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
 is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing

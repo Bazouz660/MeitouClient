@@ -321,6 +321,19 @@
                 <TextBox Grid.Column="1" x:Name="ArgumentsBox" LostFocus="Arguments_LostFocus" />
               </Grid>
             </Border>
+            <!-- macOS Apple silicon only: Metal needs no MoltenVK; Vulkan keeps the Homebrew loader path. -->
+            <Border x:Name="RendererRow" Classes="row" IsVisible="False">
+              <Grid ColumnDefinitions="*,460">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Renderer" />
+                  <TextBlock Classes="desc" Text="Metal is native but still being polished; Vulkan is the reference. This overrides --renderer in Launch arguments." TextWrapping="Wrap" />
+                </StackPanel>
+                <ComboBox Grid.Column="1" x:Name="RendererBox" HorizontalAlignment="Stretch">
+                  <ComboBoxItem Content="Metal (native)" Tag="metal" />
+                  <ComboBoxItem Content="Vulkan (MoltenVK)" Tag="vulkan" />
+                </ComboBox>
+              </Grid>
+            </Border>
             <Border Classes="row">
               <Grid ColumnDefinitions="*,150">
                 <StackPanel VerticalAlignment="Center">
