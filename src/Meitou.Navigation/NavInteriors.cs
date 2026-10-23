@@ -61,6 +61,9 @@ internal static class NavInteriors
         for (int k = 0; k < interiors.Count; k++)
             Join(vertices, polygons, neighbours, areas, kept, links, doorOf, doorIds, exteriorCount, offsets[k], interiors[k].PolygonCount, log);
 
+        var heights = new List<HeightGrid?>();
+        foreach (var m in interiors.Prepend(exterior))
+            for (int p = 0; p < m.PolygonCount; p++) heights.Add(m.Heights?[p]);
         return new ZoneNavMesh
         {
             ZoneX = exterior.ZoneX, ZoneZ = exterior.ZoneZ, Vertices = [.. vertices], Polygons = [.. polygons], Neighbours = [.. neighbours], Areas = [.. areas],
@@ -68,6 +71,7 @@ internal static class NavInteriors
             DoorIds = doorIds.Count > 0 ? [.. doorIds] : null, DoorOf = doorIds.Count > 0 ? [.. doorOf] : null,
             Surfaces = new NavSurfaces([.. (exterior.Surfaces?.Corners ?? []).Concat(interiors.SelectMany(m => m.Surfaces?.Corners ?? []))]),
             Terrain = exterior.Terrain,
+            Heights = ZoneNavMesh.HeightsOf(heights),
         };
     }
 

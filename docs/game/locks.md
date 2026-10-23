@@ -90,7 +90,7 @@ Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values spa
   called on every update of the task, before the roll): a building owned by another faction -> code 2 (Burglary) against the
   owner faction; a cage holding a character, or another character's shackles -> code 7 against the captive's owner faction
   (character `+0x1a0 -> +0xe0`). economy.md lists code 7 as "Terrorism" (from the game's name table); which label the game shows for freeing is **Unknown**.
-- **Success side effects**: the owner squad's "house locked" flag is cleared; a freed character gets relation event 0xd from
+- **Success side effects**: the picker's own squad's "house locked" flag is cleared when the door is of its own home (**Observed**, `FUN_140359160`: a stranger's pick leaves the owners' flag set); a freed character gets relation event 0xd from
   the picker (0xe on failure) (**Observed**).
 
 ## Cutting and breaking (285 / 185 cut, 286 / 186 break)
@@ -156,7 +156,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Owner lock/unlock** (77/79/162/198, 78/80/140; B list `isObjectMine`): progress 0.3 per game second, so 3.3 s; ends with
   `Character_Lock` / `Character_Unlock_Success`. Locking closes the door first. No skill or level involved (**Verified**).
 - **Residents** (`allDoorsLocked` 87, `FUN_140596bd0`): true when the character is in bed, or its squad's "house locked" flag
-  is set (squad AI object +0xe8, set by Task_LockDoor when no door of the home is open, cleared by unlocking, picking or a
+  is set (squad AI object +0xe8, saved `homelok`; set by Task_LockDoor and Task_CloseDoor (a door with a working lock) when no door of the home is open, cleared by unlocking, picking or a
   non-player opening a door), else when the home building has no door that is open, broken or effectively unlocked
   (`FUN_1408cb1c0`, which also returns that door as the next target). Base AI_PACKAGE hours (**Verified** data):
 

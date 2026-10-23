@@ -351,10 +351,12 @@ internal sealed class CharacterContent : IDisposable
     /// </summary>
     public bool IconMeshReady(GameRecord item)
     {
+        // Asked again every frame while it waits: the first answer's reading is kept by item.
+        if (iconReads.TryGetValue(item, out var started)) return started is null || started.IsValueCreated;
         string field = ItemIconStyle.MeshOf(item);
-        if (field.Length == 0 || FindMesh(field) is not { } path) return true;
-        if (meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true))) return true;
+        if (field.Length == 0 || FindMesh(field) is not { } path || meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true))) { iconReads[item] = null; return true; }
         var lazy = Prepare(path, null, 1, false, LodPixelsPerRadian, close: true, icon: true);
+        iconReads[item] = lazy;
         if (lazy.IsValueCreated) return true;
         if (iconFetches.Add(path.ToLowerInvariant()))
             BackgroundWork.RunUrgent(() =>
@@ -368,6 +370,8 @@ internal sealed class CharacterContent : IDisposable
 
     /// <summary>Icon meshes whose reading has been started on a worker (<see cref="IconMeshReady"/>).</summary>
     readonly HashSet<string> iconFetches = [];
+    /// <summary>The reading <see cref="IconMeshReady"/> waits on, by item (null: nothing to wait for).</summary>
+    readonly Dictionary<GameRecord, Lazy<Prepared>?> iconReads = new(ReferenceEqualityComparer.Instance);
 
     readonly Dictionary<CharacterAppearance, Task> fetching = [];
     int fetchesRunning;

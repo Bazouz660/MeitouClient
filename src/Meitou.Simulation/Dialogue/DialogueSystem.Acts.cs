@@ -8,7 +8,6 @@ public sealed partial class DialogueSystem
     // DA_FOLLOW_WHILE_TALKING: who follows whom while its conversation lasts (hashed).
     readonly SortedDictionary<CharacterId, CharacterId> followers = new(Comparer<CharacterId>.Create(CompareIds));
     // The tick the last "Alarm raised" was posted (DA_CRIME_ALARM; at most one per 30 s, FUN_1409335e0); hashed.
-    long alarmPosted = long.MinValue;
 
     /// <summary>The original's <c>Task_Runaway</c> first run (task 280, DA 34): 2000 + 400 x random units away from the threat (as <see cref="FleeSystem.FirstRun"/>).</summary>
     const float RunAwayDistance = FleeSystem.FirstRun, RunAwaySpread = FleeSystem.RunSpread;
@@ -175,28 +174,6 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
-    /// DA_CRIME_ALARM (33, docs/game/dialogue.md "Effects"): the target's pending crime timer becomes 30 s and it is marked recently wanted; in a town whose faction is not hostile to the
-    /// speaker, a target without a pending crime standing inside the speaker's squad's private home is caught trespassing, and a pending crime raises the alarm ("Alarm raised", at most
-    /// every 30 s). Engine: the alarm has no responders yet, and the speaker's perception mark (<c>FUN_140858f40</c>) is not modelled.
-    /// </summary>
-    void CrimeAlarm(World world, CharacterId me, CharacterCold mc, CharacterId target, CharacterCold tc)
-    {
-        if (tc.Medical?.Dead == true) return;
-        if (tc.Pending is { } p) p.Timer = 30;
-        tc.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
-        if (Position(world, me) is not { } here || TownAt(here) is not (>= 0 and var town) || town >= data.SiteFactions.Count) return;
-        int townFaction = data.SiteFactions[town];
-        if (data.Relations.Contains(townFaction) && data.Relations.Contains(mc.Faction) && data.Relations.IsHostile(mc.Faction, townFaction)) return;
-        if (tc.Pending is null && world.Squads.Find(mc.SquadId) is { } squad && (squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home && !(squad.Ai?.HomePublic ?? true)
-            && world.Characters.TryResolveNext(target, out int t) && world.Sight.BuildingOf(t) == home.Key)
-            Arrests?.Crimes.SetPending(world, t, Crime.CrimeCode.Trespassing, mc.Faction, me, 30);
-        if (tc.Pending is null) return;
-        if (alarmPosted != long.MinValue && (world.Tick - alarmPosted) * world.TickSeconds <= 30) return;
-        alarmPosted = world.Tick;
-        world.Post(Loc.Tr("Alarm raised"));
-    }
-
-    /// <summary>
     /// DA_MASSIVE_ALARM (56): when the speaker is in a town, every member of its faction's squads tags the target TEMP_ENEMY, fires event 66 at it and goes for it (task 29 to its
     /// position; Meitou: an attack, as its aggro does not read the tag). Engine: only loaded squads.
     /// </summary>
@@ -251,6 +228,5 @@ public sealed partial class DialogueSystem
     void HashActs(ref StateHasher hasher)
     {
         foreach (var (who, whom) in followers) { hasher.Add(who); hasher.Add(whom); }
-        if (alarmPosted != long.MinValue) hasher.Add(alarmPosted);
     }
 }

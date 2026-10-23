@@ -104,6 +104,8 @@ internal sealed class ZoneGeometry
     public bool InteriorDestroyed { get; init; }
     /// <summary>For a zone's exterior mesh: the terrain height; regions with an edge on the zone's border at ground level are kept (<see cref="SeedPruner"/>).</summary>
     public Func<float, float, float>? TerrainHeight { get; init; }
+    /// <summary>For a zone's exterior mesh: its heightmap samples (safe from the tile threads); walkable spans deep under the terrain are removed.</summary>
+    public HeightWindow? Ground { get; init; }
 
     /// <summary>The range of triangles (in triangle numbers) that came from buildings; for the seed rays.</summary>
     public int BuildingFirstTriangle, BuildingLastTriangle;

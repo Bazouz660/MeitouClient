@@ -471,10 +471,16 @@ Witness sight: the original's sight test with places and light ([perception](gam
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
 meters kept by `CrimeSystem`, not saved).
 Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside
-(`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it
-and does not regard its faction as friendly sets the pending crime when it lives there and the building is not open (template
-`public day`, kept as `Blackboard.HomePublic`; open 7:00-22:59), or when it is police-like and the building is not public and its
-residents' faction is not friendly. The witness rules above then fire event 17 and a police-like witness books 100.
+(`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it and
+regards its faction as neither ally nor enemy sets the pending crime when it lives there, its squad has locked up
+(`LockSystem.IsHouseLocked`, the lock-up round's flag; the original also sets it when a resident closes a lockable door) and the
+building is not open (template `public day`, kept as `Blackboard.HomePublic`; open 7:00-22:59); or when it is police-like, the
+building is not public, its residents' faction is not an ally, and the culprit is a slave or the residents have locked up. The
+witness rules above then fire event 17 and a police-like witness books 100. The MY_INTRUDER memory tag is not kept (nothing reads
+it). DA 33 CRIME_ALARM (`CrimeSystem.Alarm`): the speaker attacks the target, the target's crime timer is 30 and it is recently
+wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, posts "Alarm raised"
+(at most every 30 game seconds) and, engine choice (the original's town-alarm readers are not traced), sends the town's
+police-like characters within twice their sight of the target at it.
 
 ## Cages, beds and locks
 

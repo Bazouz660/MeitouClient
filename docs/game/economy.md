@@ -224,16 +224,20 @@ Per-character hash map keyed by faction (`Character+0xf0`). Entry (`FUN_1405e7ee
 | 5, 10 (Looting), 0xe (14, Crop Theft), others | Assault, Looting, Crop Theft, default | 500 |
 
 - **Trespassing** (perception `FUN_140859680` -> test `FUN_140852350`, **Observed**): an NPC seeing a player character inside a
-  building sets a pending Trespassing (code 11) against **its own** faction (victim: itself), fires dialogue event 17 and calls
-  `FUN_140673a20(self, target, 1)` (its squad tags the target MY_INTRUDER, [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)). Never when the target's location is a code-0xb object, the target is "allowed" by
-  `FUN_14032e1e0` (**Unknown**; Meitou: the witness regards the culprit's faction as friendly), or caged. Two cases:
-  the **resident** case (the target is in the witness's own home): the home is not public (vfunc 82, `public day`) or `+0xc4 != 1`
-  (**Unknown**), or the hour is outside 7..22 (game clock `DAT_1421303d0`+0, the hour int); and the witness's home object has flag
-  `+0xe8` (**Unknown**; Meitou: the building has residents). Same-town targets of NPC class 1, 2, 5 are exempt. The **police**
-  case (a police-like witness, any building): the building's faction is not allied with the target's (`FactionRelationsIsAlly`)
-  and the building is not public and the target has a slave state, unless its residents' leader allows the target; the residents'
-  `+0xe8` makes it trespassing regardless. No hour test. The witness function then books it as any crime (amount 100).
-  `FUN_140852240` fires event 17 without a crime (a squad of the witness's town; NPC side).
+  building sets a pending Trespassing (code 11) against **its own** faction (victim: itself), fires dialogue event 17 and gives its
+  faction's memory of the player (`FUN_140673a20` -> `FUN_140673930`: one entry for the whole player faction, a `SubjectiveTags`
+  stamped with the time) the long-term tag 1 MY_INTRUDER ([dialogue](dialogue.md#enums), DC 23); no base-game line reads that tag
+  (**Verified** by probe). Not tested when the witness regards the target as an enemy (Character `vfunc 125`) or an ally
+  (`vfunc 126`: same faction, else `FactionRelationsIsAlly`), when the target is in a code-0xb place, or is chained to the witness
+  (`FUN_14032e1e0`: target `+0x320` "chained mode" and the chain's hand id = the witness's). Two cases, both needing the residents'
+  **"house locked"** flag (the owner platoon's AI `+0xe8`, saved as `homelok`, [locks](locks.md#doors)) unless noted:
+  the **resident** case (the target is in the witness's own home): flag set, and the home is not public (vfunc 82, `public day`;
+  or `+0xc4 != 1`, **Unknown**) or the hour is outside 7..22 (game clock `DAT_1421303d0`+0, the hour int). Same-town targets of
+  NPC class 1, 2, 5 are exempt. The **police** case (a police-like witness, someone else's building): the building's faction does
+  not regard the target's as an ally, the building is not public, and the target has a slave state or the owner platoon's flag is
+  set; never when that platoon's leader regards the target as an ally. No hour test. The witness function then books it as any
+  crime (amount 100). `FUN_140852240` fires event 17 without a crime (a squad of the witness's town; NPC side). What follows is the
+  event-17 lines' data (**Verified** by probe: "Intruder!" with DA 6, "Leave my abode" with DA 12 then DA 33/34, "/GUARDS/!" with DA 33).
 - **Spawn bounties** (`FUN_14062b210`, **Observed**): CHARACTER `bounty chance` vs an inclusive roll 0..100 (`roll < chance`);
   amount `trunc(bounty amount + 0.5*k)`, `k` an integer in `[0, 2*bounty amount fuzz]` (the fuzz only adds), for each
   `bounty factions` entry (else `defaultEmpireFactionSID`), added without a crime bit (`FUN_140853e20`). fcs.def: "Defaults to the
