@@ -447,7 +447,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     void SetBinding(InputAction action, Binding binding)
     {
         if (binding.IsMouse && binding.Button is MouseButton.Left or MouseButton.Right ||
-            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.F7 or Key.I or Key.C or Key.M or Key.T or Key.Y or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
+            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
         {
             notice = "That key is reserved. Choose another key, or Esc to cancel.";
             return;

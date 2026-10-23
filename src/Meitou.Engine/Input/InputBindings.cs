@@ -27,6 +27,21 @@ public enum InputAction
     FloorUp, FloorDown,
     /// <summary>Held: highlight building signs in yellow.</summary>
     Highlight,
+    /// <summary>The game's <c>toggle_bar</c> (F7, event 8): hides or shows the whole interface.</summary>
+    ToggleInterface,
+    /// <summary>The game's <c>toggle_inventory</c>, <c>toggle_stats</c>, <c>toggle_map</c>, <c>toggle_faction</c>, <c>toggle_research</c> and <c>toggle_crafting</c> (events 1..6): the windows.</summary>
+    ToggleInventory, ToggleCharacterStats, ToggleMap, ToggleFaction, ToggleResearch, ToggleCrafting,
+    /// <summary>The game's <c>change_squad</c> (0x23), <c>select_all</c> (0x22), <c>character_next</c> / <c>character_prev</c> (0x26 / 0x27) and <c>focus_char</c> (0x11).</summary>
+    ChangeSquad, SelectAll, NextCharacter, PreviousCharacter, FocusCharacter,
+    /// <summary>The game's <c>stop_movement</c> (0x16) and <c>toggle_build</c> (10).</summary>
+    StopMovement, ToggleBuild,
+    /// <summary>
+    /// The orders panel's hotkeys (events 0x17..0x21, each the panel button's own handler): <c>toggle_block</c>, <c>toggle_hold</c>, <c>toggle_passive</c>, <c>toggle_jobs</c>,
+    /// <c>toggle_ranged</c>, <c>toggle_sneak</c>, <c>toggle_taunt</c>, <c>cycle_run_speed</c>, <c>medic</c>, <c>rescue</c>, <c>prospect</c>.
+    /// </summary>
+    ToggleBlock, ToggleHold, TogglePassive, ToggleJobs, ToggleRanged, ToggleSneak, ToggleTaunt, CycleRunSpeed, Medic, Rescue, Prospect,
+    /// <summary>Meitou's own: the selection sits down to rest, and the carriers put their bodies down (no binding in the game).</summary>
+    Rest, PutDown,
     Quit,
 }
 
@@ -63,7 +78,8 @@ public sealed class ActionState
 
 /// <summary>
 /// Maps actions to keys and mouse buttons: each action has any number of bindings and counts as held while any is down. The
-/// defaults are an engine choice except the time controls and <c>;</c> for the free camera, which are the game's (docs/game/ui-input.md: pause Space, speed_1..3 F2..F4) and the camera keys (arrows and WASD move, Q / E rotate, , and . tilt).
+/// defaults are an engine choice except the time controls and <c>;</c> for the free camera, which are the game's (docs/game/ui-input.md: pause Space, speed_1..3 F2..F4) and the camera keys (arrows and WASD move, Q / E rotate, , and . tilt),
+/// and the game view's hotkeys (the windows, squad keys and the orders on the numpad), which are the game's too.
 /// A config file can override them through <see cref="Apply"/> with strings such as <c>"W,Up"</c> or <c>"Mouse:Middle"</c>.
 /// </summary>
 public sealed class InputBindings
@@ -95,6 +111,35 @@ public sealed class InputBindings
         Set(InputAction.FloorUp, Key.PageUp);
         Set(InputAction.FloorDown, Key.PageDown);
         Set(InputAction.Highlight, Key.LeftAlt, Key.RightAlt);
+        // The game's interface keys (docs/game/ui-input.md section 4). R and F are also the free camera's up and down keys, which win while it flies.
+        Set(InputAction.ToggleInterface, Key.F7);
+        Set(InputAction.ToggleInventory, Key.I);
+        Set(InputAction.ToggleCharacterStats, Key.C);
+        Set(InputAction.ToggleMap, Key.M);
+        Set(InputAction.ToggleFaction);   // unbound in the game too
+        Set(InputAction.ToggleResearch, Key.T);
+        Set(InputAction.ToggleCrafting, Key.Y);
+        Set(InputAction.ChangeSquad, Key.Tab);
+        Set(InputAction.SelectAll, Key.Grave);
+        Set(InputAction.NextCharacter, Key.RightBracket);
+        Set(InputAction.PreviousCharacter, Key.LeftBracket);
+        Set(InputAction.FocusCharacter, Key.F);
+        Set(InputAction.StopMovement, Key.R);
+        Set(InputAction.ToggleBuild, Key.B);
+        // The orders on the numpad as in the game; Medic and Rescue keep Meitou's H and J besides, Jobs and Prospect are unbound in the game too.
+        Set(InputAction.ToggleBlock, Key.Keypad0);
+        Set(InputAction.ToggleHold, Key.Keypad1);
+        Set(InputAction.TogglePassive, Key.Keypad2);
+        Set(InputAction.ToggleJobs);
+        Set(InputAction.ToggleRanged, Key.Keypad3);
+        Set(InputAction.ToggleSneak, Key.Keypad4);
+        Set(InputAction.ToggleTaunt, Key.Keypad5);
+        Set(InputAction.CycleRunSpeed, Key.Keypad6);
+        Set(InputAction.Medic, Key.Keypad7, Key.H);
+        Set(InputAction.Rescue, Key.Keypad8, Key.J);
+        Set(InputAction.Prospect);
+        Set(InputAction.Rest, Key.L);
+        Set(InputAction.PutDown, Key.K);
         Set(InputAction.Orbit, MouseButton.Middle, Key.LeftControl, Key.RightControl);   // right is the command button (move order)
         Set(InputAction.ToggleFreeCamera, Key.Semicolon);
         Set(InputAction.Pause, Key.Space);

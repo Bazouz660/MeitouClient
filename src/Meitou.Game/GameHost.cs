@@ -225,6 +225,14 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
         player.BuildHost = MakeBuildServices();
         player.FactionName = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
+        // generation template, with the player's relation towards it.
+        player.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
+            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
+            : [];
+        // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
+        player.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
+            ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
         player.SquadLimits = () => popData?.Bodies.Constants;
         player.Rocks = () => popData?.ResourceNodes;
         player.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
