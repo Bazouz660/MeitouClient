@@ -378,6 +378,16 @@ the shooter counted as ground). A building is there once its zone's collision ha
 breaks determinism for those first shots.
 Ranged state is hashed when used. Weapon/turret research: [combat.md](game/combat.md).
 
+Turrets (`CombatSystem.Turrets.cs`, facts: [combat.md](game/combat.md#turrets)): one serial step after the bolts fly finds the gunners and runs each manned turret in key
+order: target choice, reload, aim point while loaded, turning the parts (`TurretRig`), and the fire decision (in range from the gunner, aimed within 1°, steady 0.4 s, line
+along the barrel clear); harpoons are the gunner's bolts (hits, XP, crimes). A gunner is a player character operating its turret (`CharacterTask.Operate`, below) or an NPC
+standing at the turret its squad claimed (AI turret goals); one per turret (lowest slot). `CharacterCold.Gunning` names it (derived); the aggro system starts no fight with a
+turret guard and retaliation skips a gunner shot at. Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; not saved (a loaded game
+starts empty, the exe saves `current shots`). Engine choices: NPC turrets have efficiency 1 (no NPC power grid); a player turret's efficiency is its machine's power grant
+(0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
+gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
+part's; the turret's own collision is not left out of the line or the flight; the shot sound is a pooled object at the muzzle.
+
 ### Animals
 
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
@@ -875,8 +885,9 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
   to the next; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
-  character to the following or wandering it took it from. Meitou runs two types; the others are kept,
+  character to the following or wandering it took it from. Meitou runs three types; the others are kept,
   listed and saved:
+  - 234 Turret guard (Shift + quick right click on a turret: 146 becomes 234): mans the turret as an operator; blocked while someone else mans it.
   - 87 Operating machine: blocked while others hold every operator place or the machine has no work (no power; no queued research or craft; a
     farm with nothing ripe or dead; an empty input the operator cannot fill from its pack or a storage; a full output no storage takes).
   - 124 Hauling to (`CharacterTask.Haul`): the nearest player machine within `HaulRange` of the storage whose output the storage takes is
@@ -892,7 +903,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - 58 Medic and 148 Find and rescue (+ companion 106): the Medic and Rescue buttons (H, J) start one look for a patient or body; with Shift they add
     the job. The first aid and carry passes run them for a character that is idle, on an implicit job or on a list job below them.
   - Engine choices: the check period; kind-2 (turret)
-    jobs are not run; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
+    jobs do not run before urgent tasks; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
   - Saves: GAMESTATE_AI `pjob<i>` / `pjobT<i>` / `jobs` as the original, plus `meitou pjob<i>` (the site id) for a building the handle cannot
     name; the older `meitou jobs enabled` is read, not written. The squad AI options are the CAMERA bools `ditch`, `sleep`, `sit`. A job's
     trip is not saved.
@@ -914,9 +925,10 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - The original's verb names, row widgets and colours are **Unknown**.
 - **Engine gaps:**
   - No rain filling farm water.
-  - Furnaces do not burn and turrets do not fire. A quick right click on the player's furnace walks the selection there and opens its window
-    (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character walks to its gunner spot (146 USE_TURRET,
-    `UseTurretOrder`; the spot as for town turrets below; one gunner, engine choice).
+  - Furnaces do not burn. A quick right click on the player's furnace walks the selection there and opens its window
+    (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character operates it (146 USE_TURRET, `UseTurretOrder`): it
+    walks to its gunner spot (as for town turrets below), stands there facing it holding `combatstance`, counts as its operator (so it draws power) and the
+    combat system fires it ([Ranged](#ranged)); one gunner, engine choice; someone else at it: "is already in use".
   - Plants are not drawn.
 
 ### Prospecting
@@ -1064,9 +1076,10 @@ Turret goals (149, 222, 234, 146) man a turret of the squad's town: a placed BUI
 `BUILDING_FUNCTIONALITY` function 12 (`TownBuilding.Turret`: its `use range` and `gun turret`
 GUN_DATA). In member order each slot claims the nearest free turret and walks to a spot behind its
 gun, facing its way; the home-building goal (222) takes only a turret mounted on its home (the
-state's `mounted` handle). Claim order and gunner spot are engine choices (the game's turret state
-is undecoded); turrets do not fire yet (no power, aiming or damage model,
-[combat.md](game/combat.md) "Ranged and turrets").
+state's `mounted` handle). Claim order and gunner spot are engine choices. The goals are done while
+no enemy is near (list A `isNoEnemiesInVicinity`, [combat.md](game/combat.md#turrets)): the planner holds it false while an enemy
+(the relations) is within `AiSystem.EnemyVicinity` 1000 (engine choice: the original's radius is Unknown), so guards man the turrets only
+while enemies come. A guard at its turret fires it ([Ranged](#ranged)).
 
 ## New-game difficulty
 

@@ -102,6 +102,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration || table.Cold(a) is not { Medical.Incapacitated: false }) continue;
             if (!CanFight(table, t, taken)) continue;
+            // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
+            if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
             var defenders = new List<CharacterId> { new(t, next[t].Generation) };
             taken.Add(t);
             JoinMates(world, table, t, defenders, taken, CanFight);

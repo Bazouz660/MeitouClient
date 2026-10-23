@@ -25,7 +25,7 @@ public enum AiBehaviour : byte
     Patrol = 7,
     /// <summary>Goes back to its home town (its home building, else the town's centre); wanted at 0.5 while away from it and not at all at home (docs/game/perception.md 7.2, Observed).</summary>
     GoHome = 8,
-    /// <summary>Walks to the turret of its town it claimed and stands at its gun (docs/simulation.md "AI"; turret firing is not modelled yet).</summary>
+    /// <summary>Walks to the turret of its town it claimed and stands at its gun (docs/simulation.md "AI"), where the combat system fires it.</summary>
     Turret = 9,
     /// <summary>Walks to a general node of a random building of its town and stands there (WANDER_TOWN, docs/game/ai-tasks.md "Town goals", Observed); PATROL_TOWN too (its <c>Task_PatrolTown</c> is not decoded: engine choice).</summary>
     TownNode = 10,

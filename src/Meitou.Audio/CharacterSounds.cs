@@ -488,6 +488,20 @@ public sealed class CharacterSounds
         if (Post(key, "Attack")) Swings++;
     }
 
+    /// <summary>
+    /// A turret fired, its muzzle at <paramref name="at"/> (<c>FUN_14043a730</c>): <c>Attack</c> with <c>Weapons</c> = <c>Turret</c>. The exe posts it on the building's object; here on a pooled object
+    /// at the muzzle (<b>engine choice</b>).
+    /// </summary>
+    public void TurretShot(Vector3 at)
+    {
+        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        ulong id = pool[poolAt++ % pool.Length];
+        player.SetPosition(id, at);
+        player.SetSwitch("Weapons", "Turret", id);
+        player.Post("Attack", id);
+        Swings++;
+    }
+
     /// <summary>A bolt stuck in the ground at <paramref name="at"/>: <c>Impact</c> on a pooled object there, <c>Impacts</c> = the ground's name (<c>Stone</c> for anything the table lacks).</summary>
     public void BoltStuck(Vector3 at, int surface)
     {

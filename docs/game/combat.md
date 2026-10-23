@@ -91,9 +91,48 @@ branches differ from carried crossbows. Player/NPC targeting and friendly-fire t
 separate eligibility. The retained field/constant tables and expression list specify decoded
 values; trajectory, aim timing and obstruction uncertainties remain labelled.
 
-Turret aim (**Verified**, `TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`): the turning parts are the BUILDING_PART records with `rotation function` 5; each turns toward the aim point by its angular error
-(yaw about Y, or pitch) limited to ±GUN_DATA `aim speed` × efficiency × frame time, one after the other down the part chain. Movement and its sound counter: [audio.md](../audio.md#other-world-side-events).
-**Unknown:** which target a manned turret picks (`FUN_140437f40`), its idle behaviour, and the wall bonus to the turning speed. Meitou turns turrets only for sound (display only, nearest hostile in `range`; no firing or damage model).
+## Turrets
+
+**Observed** (decompile of `kenshi_x64.exe`; functions cited) unless marked. A turret is fired through its gunner's ranged controller (`Character +0x2f0`), the same one a crossbow uses.
+
+- **Building and gun.** `TurretBuilding` constructor `FUN_14043cdb0` builds a `GunClassTurret` from the BUILDING's `gun turret` GUN_DATA ("Error: turret … has no gun data"
+  without one). The shared loader `FUN_14043baa0` reads `range`, `accuracy perfect skill`, `accuracy deviation at 0 skill`, `aim speed`, `shot speed` (≤ 0 → 1), `num shots`,
+  `reload time min/max`, `barrel pos Y/Z`, `live ammo`, `reload anim`; loaded shots start at 0 (saved as `current shots`, slots 20/21). GUN_DATA has no damage and no `ammo`
+  field (fcs.def `[CROSSBOW,GUN_DATA]` vs `[CROSSBOW]`), so a turret never runs dry.
+- **Damage D** = the building's output value `+0x1a4` (**Verified**: loader `FUN_14029e460` = BUILDING `output rate` × functionality `production mult`, ÷ `max operators`
+  when > 1; tooltip `FUN_14030d620` "Default damage:" shows Building slot 120 `FUN_140297b30` = `+0x1a4` × the research multiplier of a player-owned building (`FUN_14082ec70`,
+  owner test `FUN_140546dd0`)). Base data: harpoon turrets 75, auto/multi 50 (`output rate`, **Verified** probe); walls 10–30.
+- **Gun slots of `GunClassTurret`** (vtable `1416d5258`): 6 target weight `FUN_1404348e0`: 1 when dot(turret facing `+0x458`, target − turret) > 0, else 0.1 for a target outdoors,
+  0 / 0.1 for one inside a building (by a handle and level test, **Unknown** detail); 12 aim direction = the barrel node's +Z (`FUN_140434f40`); 13 aim error = building `+0x448`;
+  18 mount factor M = 1 + 0.01 × the output value of the building in `+0x478` (the `mounted` handle: a wall's turret bonus) (`FUN_1404353b0`); 19 power factor P = 0.8 e + 0.2 (`FUN_140435380`),
+  e = building slot 109 `FUN_140296e00` = 0 when not operational, else hp ratio × power grant; 22/23 pierce ends trunc(0.75 D), trunc(1.25 D).
+- **Manning** (`Task_UseTurret`, update `FUN_1403474f0`): the building of the order's target or the character's `+0x258`; it must be a turret (slot 107 = 8) with a free
+  operator place (slot 159); the gunner faces it and holds clip `combatstance`; unless broken (`+0x3b6`) the controller gets the building and stat 11 Turrets
+  (`FUN_140434570`, also sets it active), the controller ticks, and slot 150 `FUN_140434d20` registers the operator and sets the turning speed `+0x464` = e × `aim speed` × (1 + 0.01 D).
+  Start/end (slots 1/3) set the building's in-use flag; the end clears the controller (`FUN_140437470`). Crossbows use the same controller with stat 35 (`Task_RangedAttack` `FUN_14033bfb0`).
+- **Controller tick** (`FUN_140438c70`): sets the trigger flag `+0x34` every tick (so the fire gate `FUN_14043aee0`, run from the character update `FUN_1405cf130`, works every
+  frame); chooses the target; none → state 3. Empty gun → state 2. In range (`FUN_140436860`: squared distance gunner→target < h × range², h the height factor from the gunner):
+  XP perception and the stat (`FUN_1408c7250`: turrets 1.0, perception 3.0 per second), then the fire decision. With a turret it never walks to the target (blocked or out of range: wait).
+- **Fire decision** (`FUN_140437ad0`): aim error ≤ 1°; the steady timer (0.4 s, reset after a shot or reload) counts down only then; a ray from the muzzle along the barrel
+  (`FUN_140435b40`, mask `0x87f9e07`): a non-hostile character → hold; something nearer than the target → blocked; else fire.
+- **Fire gate** each frame: the reload `FUN_140437ce0` (an empty gun reloads clamp(lerp(s, max, min)), s = 0.01 (0.6 skill + 0.4 dex); XP stat and dexterity while it runs;
+  ammo only used when the gun has an ammo record); while loaded the aim point (target `Bip01 Spine2` + lead, `FUN_140436d10`) goes to the building (slot 5 → `+0x4a8`); with the fire flag, the shot.
+- **Turning** (`TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`, **Verified**): `+0x448` = −99, then while `+0x464` > 0 and someone operates, each `rotation function` 5
+  part turns toward `+0x4a8` by its error (yaw about Y or pitch) limited to ± `+0x464` × frame time, down the part chain; `+0x448` = the largest error (degrees,
+  `FUN_1404cc0d0`). So an unpowered turret does not turn and its error −99 passes the 1° test: it fires where it points. Sounds: [audio.md](../audio.md#other-world-side-events).
+- **Shot** (`FUN_14043a730`): muzzle = barrel node + orientation × (0, `barrel pos Y`, `barrel pos Z`); direction = barrel +Z tilted by `randomDeviant(rand × max(0, lerp(0.005 (skill +
+  perception), deviation, 0)))`; harpoon damage = U[min, max] × P × hM, range = P × range × hM, speed = shot speed × (0.8 P hM + 0.2), h = height factor from the muzzle; friendly
+  avoidance min(1, 0.015 FF); `Attack` on the building's object; the target is told it is attacked (`FUN_140999d50`). The harpoon is a bolt of the gunner (hit `FUN_140439c90`, [Bolt visuals](#bolt-visuals)).
+- **Target choice** (`FUN_140437f40`, `FUN_1404374d0`, score `FUN_140435d70`): the preferred/current target is kept if it still scores and equals the order's; else every
+  sensed character (list category 4, mask 0x210) scores s = (f·g)² with g = 1 − d/(k × range) (k 1), f 1 (0.1 for slot 0x360, ×0.1 for slot 0x368; slot 0x368 > 0 is 0 for a gunner not of
+  the player's faction); dead, `+0x2f8` ≠ 0 or `+0x3d4` (carried) → 0; out of range → 0.001; then × weight (slot 6), × 1.5 when `FUN_1405ca6f0`, + 0.1 when it is the
+  current target; × 0.1 when its sense entry is not seen, × 1.5 for the current; best above 1e-6. None: with the player's **Shoot first** option (`DAT_142134690 +0x11a`) a player gunner takes
+  sensed characters of fundamental type 0 or 8 or a default-hostile faction (k 0.6); an NPC gunner takes default-hostile ones it is aware of (`FUN_14099b820`) and those fighting a member
+  of its own group. An unseen chosen target is looked at (slot 0x3b0).
+- **NPC turret goals** 149/222/234 have list A `isNoEnemiesInVicinity` (with the `*` flag): done, so not chosen, while no enemy is near ([ai-tasks](ai-tasks.md#perma-jobs)).
+- **Unknown:** the meaning of target slots 0x360/0x368 and `FUN_1405ca6f0`; the facing `+0x458`'s writer; how far "vicinity" is; whether `+0x464` resets when the gunner leaves.
+
+Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `TurretGun`, `TurretFormulas`.
 
 ## Stealth knock-out
 
@@ -248,9 +287,9 @@ traced.
 
 ### Unknowns of the ranged path
 
-The ranged-or-melee switch; what sets the trigger flag (the time between the decision and the shot); the reload animation against the timer; a character's hit shape
-(capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; turret
-target choice and states; how NPC crossbowmen get their bolts.
+The ranged-or-melee switch; the reload animation against the timer; a character's hit shape
+(capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; how NPC crossbowmen get their bolts.
+(The trigger flag `+0x34` is set by the controller tick itself every tick, so a shot leaves in the frame of its decision: [Turrets](#turrets), **Observed**.)
 
 ## Unknowns
 
@@ -258,7 +297,7 @@ target choice and states; how NPC crossbowmen get their bolts.
 - Attacker-side technique choice (which technique an attacker starts, using min/max skill, encumbrance, distance); whether `140887970` tests min/max skill. Attack-slot AI (`14060a9e0` and neighbours), aggression,
   stance and target selection. The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
-- Turrets (target choice and states; see [Ranged and turrets](#ranged-and-turrets) for what is known and its own unknowns); the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
+- Turrets: see [Turrets](#turrets) for its own unknowns; the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
 - Whether the +20 guarding state of the block chance is the state the HUD's Block stance sets ([ui-screens.md](ui-screens.md#4-hud-mainbargui)).
 - What `anim hesitate point` (stored as a frame fraction, no reader found) and `max encumbrance` do; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.
@@ -271,5 +310,5 @@ target choice and states; how NPC crossbowmen get their bolts.
 
 Evidence scopes below apply only to their named sources/checks.
 
-- Turrets (secondary; **Observed** from `GunClassTurret` and the tooltip `FUN_14030d620`)
+- Turrets (**Observed** from `GunClassTurret`, `TurretBuilding`, `Task_UseTurret` and the ranged controller; damage loader **Verified**; GUN_DATA and turret BUILDING fields **Verified** by a probe of the install)
 - AI (**Observed**)

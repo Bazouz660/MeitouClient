@@ -66,6 +66,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>How near a turret's gunner spot counts as arrived (units): well inside the turret's <c>use range</c>, which is 10 for the base game's turrets.</summary>
     public const float TurretSlack = 3;
+    /// <summary>How near an enemy must be for <c>isNoEnemiesInVicinity</c> to fail (units; <b>engine choice</b>, about a turret's range: the original's radius is <b>Unknown</b>).</summary>
+    public const float EnemyVicinity = 1000;
+    FactionRelations Relations => data.Relations;
 
     static readonly TaskPriority[] Tiers = [TaskPriority.Urgent, TaskPriority.NonUrgent, TaskPriority.Fluff];
 

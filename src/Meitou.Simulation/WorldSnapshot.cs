@@ -174,8 +174,15 @@ public readonly record struct TaskBar(string Text, float Progress);
 
 public readonly record struct PrisonView(bool Locked, float Sentence, double HoursLeft);
 
-/// <summary>A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its <see cref="Meitou.Data.World.TownBuilding"/> key and BUILDING record, where it stands and faces (0 along +Z, turning towards +X) and its GUN_DATA record.</summary>
-public sealed record MannedTurret(string Key, string BuildingId, Vector3 Position, float Yaw, string GunId);
+/// <summary>
+/// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and
+/// faces (0 along +Z, turning towards +X) and its GUN_DATA record. <see cref="Simulated"/>: the combat system runs it, and <see cref="Aim"/> is the point its gun aims at (null: none yet).
+/// </summary>
+public sealed record MannedTurret(string Key, string BuildingId, Vector3 Position, float Yaw, string GunId)
+{
+    public bool Simulated { get; init; }
+    public Vector3? Aim { get; init; }
+}
 
 /// <summary>The trained stats the HUD shows for the selection.</summary>
 public readonly record struct SkillSummary(float Attack, float Defence, float Dodge, float Toughness, float Strength, float Athletics);

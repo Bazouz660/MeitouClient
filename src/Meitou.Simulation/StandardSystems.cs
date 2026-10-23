@@ -154,6 +154,7 @@ public static class StandardSystems
             combat = new CombatSystem(data.Combat.Techniques, data.Combat.Constants, data.Bodies.Constants, data.BodyOptions, o.AnimationLengths ?? new AnimationLengths(), o.Combat);
         if (combat is not null && Has(StandardParts.Aggro)) combat.Relations = data.Relations;
         if (combat is not null) combat.Buildings = o.RagdollEnvironment;
+        if (combat is not null) (combat.TurretGuns, combat.Towns) = (new Meitou.Data.Gameplay.Combat.TurretCatalog(data.Db), data);
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
         if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid));

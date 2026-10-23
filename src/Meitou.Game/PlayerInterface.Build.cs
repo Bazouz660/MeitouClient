@@ -584,9 +584,11 @@ sealed partial class PlayerInterface
     {
         if (sitePending is not { } pending) return;
         sitePending = null;
-        if (SlowModifier && pending.Site.Complete && Machine(pending.Site.Id) is { } job && (job.Operable || job.IsStorage))
+        if (SlowModifier && pending.Site.Complete && Machine(pending.Site.Id) is { } job && (job.Operable || job.IsStorage || job.Function == Meitou.Data.World.ObjectRanges.TurretFunction))
         {
-            var type = job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
+            // A turret: 146 USE_TURRET, which becomes the job 234 Turret guard (PermaJobs).
+            var type = job.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET
+                : job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
             return;
         }
