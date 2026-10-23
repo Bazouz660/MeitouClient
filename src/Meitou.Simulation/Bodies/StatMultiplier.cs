@@ -12,7 +12,7 @@ public enum StatUse
     Pain = 4,
     /// <summary>The fitted limbs' multipliers and the 0.66 for a disabled arm.</summary>
     DamageState = 8,
-    /// <summary>The stun (dizziness) factor on the perception-like stats.</summary>
+    /// <summary>The dust factor on perception and friendly fire (<c>FUN_1406439f0</c>, <see cref="MedicalState.DustStatFactor"/>).</summary>
     Stun = 16,
     /// <summary>The stat bonus factor of the stat's row.</summary>
     LimbItems = 32,
@@ -21,7 +21,7 @@ public enum StatUse
 
 /// <summary>
 /// The extra factors some rows multiply in: the <c>CharStats</c> bonus values at +0x40 (assassination), +0x44 (dexterity), +0x48 (melee weapon skills), +0x50
-/// (crossbows and friendly fire) and the stun factor of <c>FUN_1406439f0</c>, lerp(1, 0.5, v). Their sources are <b>Unknown</b>; all 1 means none.
+/// (crossbows and friendly fire) and the dust factor of <c>FUN_1406439f0</c>, lerp(dust, 1, 0.5) (<see cref="MedicalState.DustStatFactor"/>, the default). The other sources are <b>Unknown</b>; all 1 means none.
 /// </summary>
 public readonly record struct StatFactors(float Assassin, float Dexterity, float Weapons, float Ranged, float Stun)
 {

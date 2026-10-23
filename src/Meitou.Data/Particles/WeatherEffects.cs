@@ -41,6 +41,13 @@ public sealed record EffectRecord(string Name, EffectType Type, string ParticleS
     /// of a building or character, so it never needs power and ignores the efficiency multiplier (<c>FUN_140259a80</c>).
     /// </summary>
     public World.AmbientSound? Sound { get; init; }
+    /// <summary>
+    /// <c>affect type</c>, <c>effect radius</c> and <c>effect strength min</c>: what a unit does to the outdoor characters within the radius (docs/formats/weather.md "Effects on characters").
+    /// The strength a unit gets between min and max was not traced; the base game's affecting effects of the kinds that act (burning, gas) have min = max.
+    /// </summary>
+    public World.WeatherAffecting AffectType { get; init; }
+    public float EffectRadius { get; init; }
+    public float EffectStrength { get; init; }
 
     public static EffectRecord From(GameRecord r, GameDatabase? db = null) => new(r.Name, (EffectType)Math.Clamp(r.GetInt("type"), 0, (int)EffectType.GlobalPoint), r.GetString("particle system"),
         r.GetBool("wind affected"), r.GetBool("wind direction emission"), r.GetFloat("wind speed mult", 1), r.GetFloat("min wind span rate"), r.GetFloat("max wind span rate"),
@@ -50,6 +57,8 @@ public sealed record EffectRecord(string Name, EffectType Type, string ParticleS
         MinAltitude = r.GetFloat("min altitude", 200), MaxAltitude = r.GetFloat("max altitude", 100000),
         MinSlope = r.GetFloat("min slope"), MaxSlope = r.GetFloat("max slope", 1),
         FogFadeIn = r.GetFloat("fog fade in duration"), FogFadeOut = r.GetFloat("fog fade out duration"),
+        AffectType = Enum.IsDefined((World.WeatherAffecting)r.GetInt("affect type")) ? (World.WeatherAffecting)r.GetInt("affect type") : World.WeatherAffecting.None,
+        EffectRadius = r.GetFloat("effect radius"), EffectStrength = r.GetFloat("effect strength min"),
         FogVolumes = db is null ? [] : [.. r.GetReferences("fog volumes").Select(f => db.Find(f.TargetStringId)).Where(f => f is { Type: FcsRecordType.EFFECT_FOG_VOLUME }).Select(f => EffectFogVolume.From(f!))],
         Lights = db is null ? [] : [.. r.GetReferences("lights").Select(l => db.Find(l.TargetStringId)?.Name ?? "?")],
         Sound = db is null ? null : World.AmbientSound.FirstOf(db, r, "sound") is { } sound ? sound with { NeedsPower = false, EfficiencyMultiplier = 0 } : null,

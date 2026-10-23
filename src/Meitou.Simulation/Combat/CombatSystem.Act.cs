@@ -225,7 +225,9 @@ public sealed partial class CombatSystem
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
         s.AttackReach = TechniqueChooser.ReachOf(tech, moving, weaponReach);
-        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0));
+        // Less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
+        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0))
+            - cold.Medical!.DustAttackPenalty;
     }
 
     /// <summary>

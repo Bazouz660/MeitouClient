@@ -113,6 +113,14 @@ public sealed class CharacterCold
     /// <summary>The water state 0..3 (<see cref="Meitou.Simulation.Bodies.Speed.WaterState"/>) <see cref="MovementSystem"/> found at the character's position, and its swim speed (<see cref="Meitou.Simulation.Bodies.Speed.Swim"/>) <see cref="BodySystem"/> keeps up to date. Derived each tick: not hashed, not saved.</summary>
     public byte WaterState { get; set; }
     public float SwimSpeed { get; set; }
+    /// <summary>
+    /// The weather acting on the character (the original's animation holder <c>+0x198</c> / <c>+0x1a0</c>, docs/formats/weather.md "Effects on characters"): its kind, the
+    /// region's strength s and the worn protection from it, set by <see cref="WeatherSystem"/> while it is exposed and not immune; None otherwise. Sight and hearing read them.
+    /// Derived each tick: not hashed, not saved.
+    /// </summary>
+    public Meitou.Data.World.WeatherAffecting Weather { get; set; }
+    public float WeatherStrength { get; set; }
+    public float WeatherProtection { get; set; }
     /// <summary>Where the last blood decal of its trail was left, and the drip build-up while it bleeds being carried (<see cref="BodySystem"/>, docs/game/blood-decals.md). Display only: not hashed, not saved.</summary>
     public System.Numerics.Vector3 BloodMark { get; set; }
     public float BloodDrip { get; set; }

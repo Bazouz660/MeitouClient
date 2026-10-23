@@ -7,7 +7,8 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
 ## Sight
 
 - **Range** (`FUN_140851bc0`, **Verified** literals): 500 inside a building, else 1500 x race `vision range mult`; x
-  lerp(daylight, 0.5, 1); weather (outdoors only): dust x0.4, other affecting weather x0.75, less with protection.
+  lerp(daylight, 0.5, 1); x weather: lerp(s(1-P), 1, 0.4) dust, lerp(.., 1, 0.75) any other affecting weather on the looker
+  ([weather](../formats/weather.md#effects-on-characters), **Verified**; Meitou `AggroSystem.RangeOf`).
 - **Cone**: v = (cos a - 0.2) / 0.8, zero past 78.46 deg. Crawling/ground posture x0.5; sneaking x0.75 (v >= 0.5) or x0.5,
   then x lerp(stealth, 1, 0.6). Stealth scales skill x carry 0.75 x crawl 2 x load/equipment/race/injury, clamped 0..1.
 - **Seen** (`FUN_140852f70`, **Verified** literals): d <= lerp(ambient, F, 1) x contrast x R x v, R x2 when the looker is on
@@ -73,7 +74,8 @@ Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePane
 ## Hearing
 
 Moving-state gate; ordinary noise lerp(speed fraction,350*f,600*f), stealth noise
-lerp(stealth,450*f,80), weather f dust0.25/rain-acid0.75 scaled by strength. Building/floor/squad
+lerp(stealth,450*f,80), f = lerp(s,1,0.25) dust / lerp(s,1,0.75) rain or acid / 1, from the mover's weather (no
+protection term; **Verified**). Building/floor/squad
 branches halve or reject range. Probability ordinary0.75*(1-d²/N²), sneaking0.1 or0.05 times
 (1-stealth)*(1-d²/N²), alert doubles. Re-roll time and1000-unit special predicate unknown.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
@@ -93,7 +95,7 @@ not be equated with the attack planner or discarded immediately after a lost sig
 | Vision range outdoors | 1500 x RACE `vision range mult` (0.5 to 2 in the data; 1 for 41 of 53 races) | **Verified** (literal) | `FUN_140851bc0` |
 | Vision range inside a building | 500 (no race multiplier) | **Verified** (literal) | `FUN_140851bc0`, `FUN_140852f70` |
 | Night | range x lerp(daylight, 0.5, 1): half at night | **Verified** (literals), daylight factor in [game-loop.md](game-loop.md#frame-clocks) | `FUN_140851bc0` |
-| Weather (dust storm / other affecting weather) | range down to x0.4 / x0.75 at full strength, less with protection | **Observed** | `FUN_140851bc0` |
+| Weather (dust storm / other affecting weather) | range x lerp(s(1 - P), 1, 0.4 / 0.75), unclamped | **Verified** (decompile) | `FUN_140851bc0` |
 | View cone | factor v = (cos a - 0.2) / 0.8; nothing beyond a = 78.5 degrees | **Verified** (literals) | `FUN_140852f70` |
 | Seen when | v > 0.01 and d <= lerp(light, 0.2 or 0.4, 1) x contrast x R x v | **Observed** (control flow), constants **Verified** | `FUN_140852f70`, `FUN_140857b10` |
 | Sneaking / crawling target | v x0.5 crawling; x0.75 or x0.5 sneaking; x lerp(stealth, 1, 0.6) | **Verified** (literals) | `FUN_140852f70` |

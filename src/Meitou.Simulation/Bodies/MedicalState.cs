@@ -184,7 +184,7 @@ public sealed partial class MedicalState
 
     /// <summary>The stat multiplier in [0, 1] (<c>FUN_1406457e0</c>); see <see cref="StatMultiplier"/>.</summary>
     public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Pain | StatUse.DamageState, StatFactors? factors = null, bool exemptFromWear = false) =>
-        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? Bodies.StatFactors.None, Aggregates(exemptFromWear), Pain);
+        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? (Bodies.StatFactors.None with { Stun = DustStatFactor }), Aggregates(exemptFromWear), Pain);
 
     /// <summary>The product of the fitted arm prosthetics' multipliers for a stat (1 with none).</summary>
     public float ArmItemFactor(StatsEnumerated stat) => ItemFactor(stat, legs: false);
