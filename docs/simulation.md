@@ -424,7 +424,7 @@ stolen ownership marks. [carry-loot.md](game/carry-loot.md). Loot window (engine
 `OpenLootOrder` walks the looter over, then `PlayerState.OpenLoot` publishes the body's whole inventory
 (`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); items are held across with the mouse ([held item](#items-and-eating)),
 or right-clicked over (`TakeLootItem` / `PutLootItem`, `InventoryCommands.MoveInto`; taking counts as a loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
-body comes round or is lifted. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
+body comes round (another faction's) or is lifted. The same window opens on the player's own standing character (Trade, `CarrySystem.CanBeOpened`); a death item taken butchers only a down body. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
 main grid, weight and burden only, grid size from its `inventory w` / `inventory h`; **Observed** in the original). It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
 

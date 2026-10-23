@@ -86,6 +86,16 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public static bool CanBeLooted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Inventory: not null };
 
     /// <summary>
+    /// A character whose inventory an <see cref="OpenLootOrder"/> may open: a lootable one, or one of the player's own standing (the original's Trade, verb 26, on a player character;
+    /// engine choice: the walk and the window are the loot's).
+    /// </summary>
+    public static bool CanBeOpened(CharacterCold cold) => CanBeLooted(cold) || cold is { IsPlayer: true, Inventory: not null };
+
+    /// <summary>Whether slot <paramref name="i"/>'s loot task is the walk of an <see cref="OpenLootOrder"/> (it opens the window instead of taking all).</summary>
+    static bool Opening(World world, int i) =>
+        world.Player.LootWalker == world.Characters.IdOf(i) && world.Player.OpeningLoot == world.Characters.Cold(i)!.CarryTarget;
+
+    /// <summary>
     /// Whether <paramref name="a"/> regards <paramref name="b"/> as friendly for the put-down KO: the same faction, or allied factions (relation 50 or more) when a table is known
     /// (engine reading of <c>CharacterAnimal::vfunc_126</c>, whose last faction test is <b>Unknown</b>).
     /// </summary>
@@ -123,7 +133,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     }
                     break;
                 case OpenLootOrder open:
-                    if (!table.TryResolveNext(open.Target, out int body2) || !CanBeLooted(table.Cold(body2)!)) break;
+                    if (!table.TryResolveNext(open.Target, out int body2) || !CanBeOpened(table.Cold(body2)!)) break;
                     if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null, InCombat: false } c && c.CarriedBy.IsNone) is int opener)
                     {
                         Begin(table, opener, open.Target, CharacterTask.Loot, CharacterTask.Idle);
@@ -258,7 +268,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var cold = table.Cold(i)!;
             bool lifting = n.Task == (byte)CharacterTask.PickUp;
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
-                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && CanBeLifted(world, table.Cold(t)!)) : !CanBeLooted(table.Cold(t)!)))
+                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && CanBeLifted(world, table.Cold(t)!)) : !(Opening(world, i) ? CanBeOpened(table.Cold(t)!) : CanBeLooted(table.Cold(t)!))))
             {
                 if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
@@ -450,13 +460,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         if (!table.TryResolveNext(cold.CarryTarget, out int t) || Gap(table.Next[i], table.Next[t]) > Settings.Reach) return;   // still walking (Schedule ends a loot whose target went)
         var victim = table.Cold(t)!;
-        if (cold.Inventory is not { } bag || !CanBeLooted(victim))
+        bool opening = Opening(world, i);
+        if (cold.Inventory is not { } bag || !(opening ? CanBeOpened(victim) : CanBeLooted(victim)))
         {
             End(table, i);
             return;
         }
         var player = world.Player;
-        if (player.OpeningLoot == cold.CarryTarget && player.LootWalker == table.IdOf(i))
+        if (opening)
         {
             // An open-loot order: the window opens instead of a take-all.
             (player.OpenLoot, player.LootOpener, player.OpeningLoot) = (player.OpeningLoot, player.LootWalker, CharacterId.None);
@@ -508,7 +519,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var player = world.Player;
         var table = world.Characters;
-        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && CanBeLooted(body) && body.CarriedBy.IsNone
+        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && CanBeOpened(body) && body.CarriedBy.IsNone
             && table.TryResolveNext(player.LootOpener, out int o) && table.Cold(o) is { Medical.Incapacitated: false, Inventory: not null } looter && looter.CarriedBy.IsNone
             && Gap(table.Next[o], table.Next[t]) <= Settings.Reach * 1.5f ? (o, t) : null;
     }
@@ -573,7 +584,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         if (OpenLootPair(world) is not var (i, t)) return;
         var victim = world.Characters.Cold(t)!;
-        if (death && victim.Medical is { Dead: false } medical)
+        if (death && victim.Medical is { Dead: false, Incapacitated: true } medical)
         {
             medical.Butcher();
             world.Post($"{victim.Name} has been butchered");
@@ -597,7 +608,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var table = world.Characters;
         var victim = table.Cold(body)!;
-        if (victim.Medical is not { Dead: false } medical || DeathUnits(victim.Inventory!) >= before) return;
+        if (victim.Medical is not { Dead: false, Incapacitated: true } medical || DeathUnits(victim.Inventory!) >= before) return;
         medical.Butcher();
         if (table.Cold(looter)!.IsPlayer || victim.IsPlayer) world.Post($"{victim.Name} has been butchered");
     }

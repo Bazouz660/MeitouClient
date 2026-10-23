@@ -39,7 +39,7 @@ public sealed class PlayerState
     public CharacterId ContainerOpener { get; set; } = CharacterId.None;
     public string? OpeningContainer { get; set; }
     public CharacterId ContainerWalker { get; set; } = CharacterId.None;
-    /// <summary>The downed character whose inventory window is open and who opened it (<see cref="Carrying.OpenLootOrder"/>), and the one a looter is still walking to. Display only, as the container.</summary>
+    /// <summary>The downed (or the player's own) character whose inventory window is open and who opened it (<see cref="Carrying.OpenLootOrder"/>), and the one a looter is still walking to. Display only, as the container.</summary>
     public CharacterId OpenLoot { get; set; } = CharacterId.None;
     public CharacterId LootOpener { get; set; } = CharacterId.None;
     public CharacterId OpeningLoot { get; set; } = CharacterId.None;
