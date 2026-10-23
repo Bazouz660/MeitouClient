@@ -124,13 +124,15 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// One of the player's own characters: another one than the selection is followed (31), and down it is picked up (225) and its inventory opened beside the selection's (26, labelled
-    /// Trade for the player's own). Not built: Bodyguard (45), Trade with a standing character, Stand Up (28).
+    /// Trade for the player's own). Bodyguard (45) is a stand-in follow; not built: Trade with a standing character, Stand Up (28).
     /// </summary>
     void OwnCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
         var id = target.Id;
         if (selection.Contains(id)) return;
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
+        // Bodyguard (45): Meitou's stand-in order is the follow; with Shift it is the Bodyguard job (PlayerInterface.SquadAi.cs), which follows the same way. Its defending is the AI's.
+        if (!down) verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
         if (!down || !target.CarriedBy.IsNone) return;
         verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
         verbs.Add(("Trade", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));

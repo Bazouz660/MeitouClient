@@ -806,16 +806,30 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
     (vfunc 0x248), not carried, passes a character vfunc 0x3e8 test or has faction flag +0x1d0 (**Unknown**), is in no give-up list, and holds an
     item `FUN_140998950` accepts (inventory, then backpack). Effect 148 → looting.
-  - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building that fails a test
-    against the squad's +0x38 (**Unknown**: read as "not ours"), down (vfunc 0x30), special state 0. 273 Remove Intruder: `FUN_14099c250`: only while
-    the character's own building (vfunc 0x78) passes vfunc 0x2f0 and `FUN_1406211e0`(squad, building); sensed (0x400e, 0x201) in that building, not
-    carried, down, not caged, vfunc 0x118 > 0. Their companions 224 / 274 carry the body outside (`Task_TakeIntruderOutside*`).
+  - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building whose handle equals the home building hand of the character's
+    Ownerships (+0x38; `Hand` vfunc 0x10 is "not equal", so the test `== 0` means equal; for the player faction the Ownerships is one shared object whose home is **Unknown**), down (vfunc 0x30), special state
+    (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250`: only while the character's own building (vfunc 0x78) passes vfunc 0x2f0 (a function) and `FUN_1406211e0`(Ownerships,
+    building) (the home, the +0x80 building, or one of the Ownerships' faction); sensed (0x400e, 0x201) in that building, not carried, down, special state not 2 (not caged), vfunc 0x118 > 0
+    (**Unknown**). Their companions 224 / 274 carry the body outside: `Task_TakeIntruderOutside` (**Verified** by decompile, slots 2/5/7 `FUN_1403355e0`/`FUN_14033da80`/`FUN_1403356e0`) walks
+    to the point beyond the home building's first door (`Building` vfunc 0x3e0 → door +0x3bc, pushed out by a factor 1.1 of a reference vector, **Unknown**); its start (slot 2) ends the task
+    without a home building and drops at once when nothing is carried; its update (slot 7) drops the body (`FUN_1405ce1e0`) once the walk is over or 5 game minutes (elapsed hours x 60 >= 5,
+    **Observed**) have passed. `Task_TakeIntruderOutsideTown` walks to the town's exit point (`Town` vfunc 0x38 `FUN_140927120`, a cached point refreshed on a timer: 200 beyond a door of one of its
+    buildings through vfunc 0x290 `FUN_140929560`, else beyond the door of a building `FUN_1409b2ab0` finds; only partly read, **Observed**) and drops it there.
   - 138 Find corpses: `FUN_1408cfb00`: a building of function 8 (cage) of the character's (`FUN_1408cbea0` mask 0x100) holding a dead,
-    non-robot body not in a give-up list, else `FUN_1408ce170` (the nearest dead uncarried body). 137 Corpse disposal: `FUN_1408d1090` →
-    `FUN_1408d0770`(1, 0xb) (a building finder; target kind **Unknown**).
-  - 45 Bodyguard, 31 Staying close and 97 Training have no finder: they act on the job's own target. 97 is `Task_UseTrainingDummy`
-    (slots 1-3 `FUN_1403513a0`, `FUN_14035c1e0`, `FUN_140345570`): the dummy (function 7) is operated through building vfunc 0x4b0 at rate 1,
-    which holds the XP rule (**Unknown**). Which UI order gives 45 (always added as a job by the dispatcher) is **Unknown**.
+    non-robot body not in a give-up list, else `FUN_1408ce170` (the nearest dead uncarried body: sensed (0x10, 0), down `FUN_1407d1440`, not carried, a flag at +0x5bc, not in a give-up list; for
+    an animal finder only other races). 137 Corpse disposal: `FUN_1408d1090` → `FUN_1408d0770`(1, 0xb): the building of function 11 (BF_CORPSE_DISPOSAL, the Cooking pot / Corpse disposal
+    functionalities of `Four Cadavres` and the rebirth shredder, **Verified** data) among the character's buildings whose `UseableStuff` vfunc 0x4f0 holds, weight clamp(1 - d^2 / 2.097e7, 1e-5, 1) (`FUN_1409b2380`),
+    x100 for the character's faction (else it must pass the ally test `FUN_140621230`), x100 when it stands in the home building, x1e-5 for a player-type squad member when the parent building's vfunc 0x290 is false;
+    the heaviest wins. At the machine `Task_FeedCorpseIntoMachine` (136; slot 3 `FUN_1403567a0`, **Verified**) lets go of the body and kills/removes it ("incinerated or cooked"), plays `Armor_Worn` and
+    `Character_Drop_Person` and floats the functionality's `string` ("Incinération") over the machine.
+  - 45 Bodyguard, 31 Staying close and 97 Training have no finder: they act on the job's own target; 45 and 31 are goals (Task_Blank, rows above) on the job's character, the context menu gives
+    them as "Follow" (31) and "Bodyguard" (45), the dispatcher always adds 45 as a job. 97 is `Task_UseTrainingDummy` (slots 1-3 `FUN_1403513a0`, `FUN_14035c1e0`, `FUN_140345570`; **Verified** by
+    decompile): the dummy (function 7, BF_TRAINING; the animation event `Impact Dummy`, a "Training" progress bar for the player's characters) is operated through `UseableStuff` vfunc 0x4b0: with a
+    positive `stat used` (+0x3f8) it calls the continuous XP entry with a cap, `FUN_1408c64f0`(stats, dt, 2.0, &stat, cap = the float +0x1a4, stat number): nothing once the stat is at the cap, else the
+    same gain as the operating XP (`0.02 x dt x exp gain mult x 2.0 x race[stat]`) through the core curve with that cap, ((cap - stat) / cap)^2, so the stat approaches the cap without reaching it.
+    The cap is **Observed** to be the BUILDING's `output rate` (MkI 6, II 11, III 16; lock 11/21/31; assassin 10/20/30; the descriptions promise levels 5/10/15, the displayed level being the whole part);
+    the field +0x1a4 itself was not traced to the record. The bar shows the stat's fraction (+0x3a4). The row's conditions are 38 `hasOneWorkingArm`, 73, `isAtLocation`.
+    The XP is the user's own stat, not the injured one. Meitou: [simulation](../simulation.md#job-lists).
 - **UI** (strings, `FUN_14072b540` JobsPanel): "No jobs assigned", "To add jobs, hold shift key when giving an order", the Jobs toggle "If this is
   disabled then the character won't do any of the jobs listed."; tutorial: jobs are reordered by dragging and removed with X. Row text: **Unknown**.
 - **Unknown:** what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not

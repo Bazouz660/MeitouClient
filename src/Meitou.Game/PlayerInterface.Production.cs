@@ -192,6 +192,11 @@ sealed partial class PlayerInterface
             verbs.Add(("Use", () => Say(SlowModifier
                 ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, site.Id) { Tick = session.World.Tick }
                 : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
+        // A training dummy: Training (97 USE_TRAINING_DUMMY, UseableStuff slot 131 for function 7), which Shift turns into the Training job.
+        else if (site.Complete && Machine(site.Id) is { Function: Meitou.Data.Gameplay.Construction.MachineData.TrainingFunction })
+            verbs.Add(("Training", () => Say(SlowModifier
+                ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.USE_TRAINING_DUMMY, site.Id) { Tick = session.World.Tick }
+                : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
     }
 
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>

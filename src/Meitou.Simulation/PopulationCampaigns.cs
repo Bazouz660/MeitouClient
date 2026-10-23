@@ -54,6 +54,8 @@ public sealed class CampaignInstance
     public CharacterId Announcer { get; set; } = CharacterId.None;
     public double AnnouncedAt { get; set; } = -1;
     public double ArrivedAt { get; set; } = -1;
+    /// <summary>The redirect timer (the original's +0xf0, started the first time the target is found gone or inactive; -1: not started). Not saved or hashed.</summary>
+    public double RedirectStart { get; set; } = -1;
     /// <summary>The game hour a member of a cannibal assault (Package_WarAssault_Cannibal) was first seen carrying someone (-1: none yet); starts its retreat. Not saved.</summary>
     public double CarryStart { get; set; } = -1;
 }
@@ -688,6 +690,28 @@ public sealed partial class PopulationSystem : IStateHashed
 
     // ---- running campaigns ----
 
+    /// <summary>The redirect timer's period in game hours (<b>Verified</b>, 0.2 in <c>FUN_1409d62f0</c>).</summary>
+    const double RedirectHours = 0.2;
+
+    /// <summary>
+    /// The redirect (<c>FUN_1409d62f0</c>, docs/game/factions-squads-towns.md "Campaigns"): a running campaign whose target town is gone, or is a player town that is not active
+    /// (<see cref="TownActive"/>, Town slot 70: the player has left it), looks for another every 0.2 game hours (the timer starts when it is first found so, and restarts after each look,
+    /// the original's +0xf0); a different target found replaces it with "{1} has redirected to {2}". The home stays. None found keeps the old target.
+    /// </summary>
+    void Redirect(World world, CampaignData c, CampaignInstance inst, double now)
+    {
+        bool lost = inst.Target.IsNone || !Exists(world, inst.Target) || inst.Target.PlayerTown > 0 && !TownActive(world, inst.Target);
+        if (!lost || inst.Enemy < 0) return;   // engine choice: with no target faction there is nothing to look in
+        if (inst.RedirectStart < 0) inst.RedirectStart = now;
+        if (now - inst.RedirectStart < RedirectHours) return;
+        if (FindTarget(world, inst.Faction, c, inst.Enemy, out var target, out _) && target != inst.Target)
+        {
+            inst.Target = target;
+            world.Post(Loc.Tr("{1} has redirected to {2}", c.DisplayName, NameOf(world, target)));
+        }
+        inst.RedirectStart = now;
+    }
+
     /// <summary>
     /// One campaign's update (<c>CampaignInstance::vfunc_10</c>); true when it is to be removed. Phase 0: the leader within 0.8 × the town's radius arrives ("{1} has arrived at {2}"),
     /// then phase 1, or 2 without victory or defeat when there is no <c>pt2</c>. Phase 1: the leader back in its home town wins; else by <c>key</c> (assault 4 h or 0.2 h after its
@@ -712,6 +736,7 @@ public sealed partial class PopulationSystem : IStateHashed
             inst.Platoons.Clear();
             return true;
         }
+        Redirect(world, c, inst, now);
         var leader = inst.Leader >= 0 ? world.Platoons.Find(inst.Leader) : null;
         // Engine choice: a campaign with no platoon left is defeated (the original keeps it waiting for a leader that cannot come).
         if (leader is null)

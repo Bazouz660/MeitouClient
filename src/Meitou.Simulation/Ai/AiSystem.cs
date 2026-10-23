@@ -234,7 +234,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Sit => board.Home is null || board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
             // To the package's mission town while not in it.
-            AiBehaviour.Travel => board.Destination.IsNone || CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
+            AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
             _ => 1,
         };
     }
@@ -752,6 +752,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             ClaimSeats(world, board, squad);
             FindGate(world, board, squad);
         }
+        if (merges.Count > 0) ApplyMerges(world);
     }
 
     /// <summary>
@@ -1073,6 +1074,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             PackageClass.CannibalRetreat or PackageClass.CannibalsAtHome or PackageClass.PrisonerGathering or PackageClass.SlaverShipping => system.CaptiveCanStart(world, squad, board, package, kind),
             PackageClass.WanderingTrader => system.TraderCanStart(world, squad, board),
             PackageClass.PassingAssault => system.AssaultCanStart(world, squad, board),
+            PackageClass.Refugee => RefugeeCanStart(world, squad),
             _ => false,
         };
 
@@ -1107,6 +1109,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             PackageClass.WanderingTrader => board.TraderState == 2,
             PackageClass.PassingAssault => system.AssaultFinished(world, squad, board, package),
             PackageClass.OccupyTown => system.OccupyFinished(world, squad, board),
+            PackageClass.Refugee => system.RefugeeFinished(world, squad, board),
             _ => false,
         };
 
@@ -1147,6 +1150,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     break;
                 case PackageClass.OccupyTown:
                     system.OccupyStarted(world, squad, board);
+                    break;
+                case PackageClass.Refugee:
+                    system.RefugeeStarted(world, squad, board);
                     break;
             }
         }

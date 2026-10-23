@@ -519,6 +519,7 @@ public sealed class FixtureRegistry
         if (table.Cold(slot) is not { } c) return null;
         if (c is { InSomething: HeldState.Bed, InWhat: { } inBed } && Find(inBed) is { } own) return own;
         var at = table.Next[slot].Position;
+        if (!c.IsPlayer) return FindBedNpc(world, slot, c, skip);
         Fixture? best = null;
         float bestWeight = 0, r2 = BedSearchRange * BedSearchRange;
         foreach (var f in all)
@@ -530,6 +531,32 @@ public sealed class FixtureRegistry
             if (f.Bed.Materials > 1) weight *= 3;
             if (f.Indoors) weight *= 2;
             if (weight > bestWeight) (best, bestWeight) = (f, weight);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// The bed search of a character that is not the player's (the other half of <c>FUN_1408cfe00</c>, docs/game/locks.md "Beds", <b>Observed</b>): the first free bed (the give-up list stands in as
+    /// <see cref="Reachable"/>) of its squad's home building; with none there, those of the town's "designated" buildings of two kinds nearest it, then any BF_BED building near it. The original
+    /// takes the first in its building list's order (a set of pointers, or the finder's cell order) and, when the squad's home is not the building the character is in, passes over a bed with a
+    /// cost above 1 (<b>Unknown</b> field); Meitou has no designated buildings, takes the nearest free bed of its town for the last two steps, and has no cost test (engine choices).
+    /// </summary>
+    Fixture? FindBedNpc(World world, int slot, CharacterCold c, Func<Fixture, bool>? skip)
+    {
+        var table = world.Characters;
+        var squad = world.Squads.Find(c.SquadId);
+        var at = table.Next[slot].Position;
+        bool Usable(Fixture f) => f.Kind == FixtureKind.Bed && f.Bed.Function == TownBuildings.BedFunction && IsFree(table, f) && Reachable(world, f, c.Faction) && skip?.Invoke(f) != true;
+        if (squad?.HomeBuilding is { } home)
+            foreach (var f in OfBuilding(home.Key))
+                if (Usable(f)) return f;
+        Fixture? best = null;
+        float bestD = float.MaxValue;
+        foreach (var f in all)
+        {
+            if (!Usable(f) || squad is { Town: >= 0 } && f.Site != squad.Town) continue;
+            float d = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
+            if (d < bestD) (best, bestD) = (f, d);
         }
         return best;
     }

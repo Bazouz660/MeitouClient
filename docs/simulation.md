@@ -199,7 +199,7 @@ the player has one and stands in it; requests (victory/loss chains, ally help) c
   once; Faithful twice, as the original (doubled weights and trigger chances).
 - **War manager** (serial, in faction order at the population look; every rule reads the game clock, so the cadence does not matter): the
   6 h roll, the chance with the linear falloff and `raidFrequencyMult`, targets among `World.Buildings.Towns` (biome groups, no-go zones; only a player town
-  with a player character within 1250, slot 70; none with occupiers for a non-hostile campaign; the town level from its finished buildings), requests with due times, redirects and retries, the
+  with a player character within 1250, slot 70; none with occupiers for a non-hostile campaign; the town level from its finished buildings), requests with due times, redirects (a running campaign too: `Redirect`) and retries, the
   `trigger player ally` help, and DIALOGUE_LINE `trigger campaign` (`TriggerFromDialogue`, keyed off the speaker and tick). Rolls
   are keyed off the world seed, faction and roll hour, so a run repeats. The state hash includes the managers only once one has started or
   queued something, so worlds without a campaign hash as before.
@@ -951,10 +951,17 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
   to the next; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
-  character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork`. The production pick runs
-  four types (below); first aid, carry and aggro passes run others (further below); 45 / 31 Bodyguard / Staying close, 97 Training, 223 / 273
-  intruders and 137 / 138 corpse disposal are kept, listed and saved but never started (no character targets in `PermaJob`, no training dummies,
-  no intruder or corpse-machine handling yet):
+  character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork` or a job follows a character. The production pick runs the
+  jobs below; first aid, carry and aggro passes run others (further below):
+  - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous
+    XP entry (`XpService.Capped`, rate 2, cap = `output rate`; [facts](game/ai-tasks.md#perma-jobs)). Blocked while the dummy has no free place or the character has no working arm.
+  - 45 Bodyguard / 31 Staying close (`PermaJob.Character`; the "Follow" and "Bodyguard" verbs with Shift, `AddOrderJob` with the target): the character follows the job's character with a follow order
+    (`MovementSystem.Follow`); blocked when it is gone, for 31 also while it is down; saved with the target's handle and found again from it after a load. Bodyguard's defending is the AI's own (engine
+    choice: no extra rule). The jobs run with the switch off (`IgnoresSwitch`).
+  - 137 / 138 corpse disposal and 223 / 273 intruders (`ProductionSystem.Errands.cs`, every `ErrandEveryTicks` 15): a free character with 138 and 137 lifts the nearest dead body (a caged one first)
+    when a free corpse-disposal machine (function 11) exists and walks it there; in the machine's reach it lets go and the body is removed (items with it). With 223 and 224 (or 273 and 274) it lifts
+    a knocked-out, alive character of another faction in the player's building (with doors) it stands in and puts it down just outside the door (273: past the town's farthest building). Engine
+    choices: the building test (a footprint round the origin), the friendly exclusion, the reach, 4 walks that end short before the body is given up, and 223's "home" (the building the carrier is in).
   - 234 Turret guard (Shift + quick right click on a turret: 146 becomes 234): mans the turret as an operator; blocked while someone else mans it.
   - 87 Operating machine: blocked while others hold every operator place or the machine has no work (no power; no queued research or craft; a
     farm with nothing ripe or dead; an empty input the operator cannot fill from its pack or a storage; a full output no storage takes).
@@ -1097,8 +1104,8 @@ off screen only come back where their schedule puts them ([off-screen tier](#off
 
 `PackageClasses.Of` maps the `signal func` ([ai.md](game/ai.md#package-classes)); `Blackboard` runs the original's slot walk with the class rules of `AiSystem`
 (`IPackageRules`: start, finished, started, ended, may lead). Built: plain, retreat, patrol (route an engine choice), bar, contracts, and
-(`AiSystem.Packages.cs`) the wandering trader (16), passing-by assault (29) and occupation (30) as decoded. Not built (never start but as a lone slot-0
-package): refugee (22), prisoner and cannibal classes; the war classes (19, 20, 32) and 31 run only in campaigns, which drive their platoons themselves.
+(`AiSystem.Packages.cs`) the wandering trader (16), passing-by assault (29), occupation (30) and refugee (22: a slave-led squad of fewer than 3 flees to the nearest other town of its faction, a broken one joins a healthy squad there, `SquadManagement.Merge`) as decoded. Not built (never start but as a lone slot-0
+package): the war classes (19, 20, 32) and 31, which run only in campaigns; the campaign drives its platoons itself.
 - **Current town** (`Blackboard.InTown`, on the package cadence before the choice): nearest town by X/Z, placed towns by `TownData.Radius`, player towns by the
   template's (1250); entering one fires the leader's ENTER_TOWN; the town a squad starts in counts as entered (engine choice: no line for every squad a town makes).
 - **Trader**: as the original (stay, chooser, states, leave rule); the leader's WANDERING_TRADER goal walks to the town (`AiBehaviour.Travel`, also

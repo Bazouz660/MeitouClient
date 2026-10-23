@@ -52,6 +52,13 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         stats.Gain(stat, ContinuousRate * dtSeconds * constants.ExpGainMultiplier * amount * race.StatMultiplier(stat));
 
     /// <summary>
+    /// The continuous entry with a cap (<c>FUN_1408c64f0</c>, <b>Verified</b> by decompile; the training dummy's): nothing once the stat is at the cap, else the same gain with the core curve
+    /// ((cap - stat) / cap)^2, so the stat only creeps towards the cap and never reaches it.
+    /// </summary>
+    public float Capped(CharacterStats stats, RaceData race, StatsEnumerated stat, float dtSeconds, float amount, float cap) =>
+        stats[stat] < cap ? stats.Gain(stat, ContinuousRate * dtSeconds * constants.ExpGainMultiplier * amount * race.StatMultiplier(stat), cap) : stats[stat];
+
+    /// <summary>
     /// A per-event gain: the core gain of <c>0.075 x factor x race[stat]</c> (<paramref name="factor"/> carries the event's coefficient and the
     /// skill-difference factor).
     /// </summary>

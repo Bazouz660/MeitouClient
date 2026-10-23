@@ -125,9 +125,19 @@ Slot 3 returns 4 in the base class, 1 for signals 1 and 25, 2 for `RetreatAndRef
   (Town +0x118; its count +0x128 is "Hostile Occupiers:" in the town panel, `FUN_140922e60`). End: removed from the set, "{1} squad has been removed from {2}"
   (faction, town). Finished: the town gone (vfunc 0x2f0 false), or no member alive and up in it (`FUN_140289180`) for more than 4 of its timer (`DAT_142133794` per
   call, read as seconds, **Observed**). No ownership change: the town stays the player's. `campaign victory occupy town` sits only in an unread `victory AI leader`.
-- **Package_Refugee** (22, 4 templates): can start when its home town's vfunc 0x288 (TownBase +0xe0 → +8, **Unknown**, read as destroyed) or a squad of fewer than 3 with
-  `FUN_1405c8aa0` > 0; start: not persistent, flag "broken" when not intact, mission town = the own faction's nearest town other than home (`FUN_140927ad0`), re-homed
-  there when home is gone; update: a broken one merges into the target squad within 1000 and disbands; finished when the leader is in a town (**Observed**). Not built.
+- **Package_Refugee** (22, 4 templates: the Bandit Raiders roamers, Black Dragon and the two White Eyebrow camp squads; all list it beside patrol/bar/assault/occupy packages, at slot 0 or 2; goals
+  215 TRAVEL_TO_TARGET_PACKAGE to the mission, 15, 22, 127 RUN_AWAY_HOMETOWN, 36). **Verified** by decompile (vtable `Package_Refugee` 0x1416adf38; the package's +0x88 is its platoon):
+  - Can start (`FUN_140288ed0`): the home town's vfunc 0x288 (`TownBase +0xe0 → +8`, meaning **Unknown**, read as destroyed), or the platoon's leader is a slave
+    (the status object at Character +0x1a0, its first int = `slavestate` 1 slave / 2 escaped, `FUN_1405c8aa0`; [carry-loot](carry-loot.md#unknowns)) and its squad (platoon +0x1d8 → +0x58) has fewer than 3 members.
+  - Start (`FUN_140287760`): platoon +0x115 cleared (not persistent), flag `broken` (+0xb0) = the platoon is not intact (`FUN_1407ac7b0`), mission target cleared, mission town = the nearest town of the platoon's
+    faction other than its home (`FUN_140927ad0`, X/Z), and with the home destroyed the platoon is re-homed there (`FUN_1407ec8d0`).
+  - Update (`FUN_14028d190`; only for a broken one): with no target it takes the nearest other platoon of its faction in its 4608-wide grid cell (`FUN_1408f56b0`/`FUN_1408f60f0`) that is intact and
+    has more than 2 members (`FUN_1407ec0c0`: `FUN_1407ac7b0` and platoon +0xa4 > 2) as mission target (type 1 handle); the travel goal walks there; within 1000 (squared 1e6 `<`) of the target
+    every member of its squad is added to the target's squad (squad vfunc 0x10), a target running the same package id forgets its own mission target, and the platoon is removed from its faction
+    (`FUN_1406ba9d0`). A target that no longer resolves is cleared.
+  - Finished (`FUN_140288f80`): the leader's current town (`+0x1a0 → +0x88`) is the mission town (**Observed**: the second argument of the handle compare `FUN_140594440` is not in the decompile).
+  Meitou (`AiSystem.Packages.cs`, exercised by a throwaway test, not kept): as decoded for AI-run squads (a squad of a roaming platoon is not AI-run), counting living members for both counts, searching the AI-run squads of the
+  faction in the same grid cell; the merge is `SquadManagement.Merge`. Not built: the destroyed-home half (Meitou towns are never destroyed), persistence.
 - **Campaign_DefendPlayerBase** (31): start: the player town nearest its platoon (`FUN_140927f10`) as mission town; finished when its employer turned on it (+0xa8) or the
   blackboard's contract time (+0x218) has passed; sees the town faction as allies (memory 3); its end posts "Contract with {faction} has ended." / "has been
   terminated." when its employer is the player's. Only as a campaign's `pt2` package (the campaign drives it).

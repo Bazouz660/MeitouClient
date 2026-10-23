@@ -82,6 +82,8 @@ public static class TaskBehaviours
         // To the running package's destination (Blackboard.Destination): the trader's next town; under the retreat packages that list it (signals 1 and 25) the squad's home town
         // (AiSystem.Captives.cs, engine reading).
         [TaskType.TRAVEL_TO_TARGET_TOWN_FAST] = (AiBehaviour.Travel, "Travelling quickly"),
+        // Row 215 of the refugee package (and of the campaigns' first phase, whose squads the campaign drives): to its mission, the town or the squad it is to join.
+        [TaskType.TRAVEL_TO_TARGET_PACKAGE] = (AiBehaviour.Travel, "Travelling"),
         // Its Task_PatrolTownViolent is not decoded (engine choice): it roams the town it assaults, as patrolling does without a patrol package.
         [TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE] = (AiBehaviour.Patrol, "Ransacking town"),
     };

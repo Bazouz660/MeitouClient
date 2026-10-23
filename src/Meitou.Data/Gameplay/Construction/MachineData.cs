@@ -17,7 +17,7 @@ public sealed record MachineData
     /// <summary>The game day at speed 1 in seconds, G (<b>Verified</b>, <c>FUN_14066cd50</c>): 24 x 1200/11.</summary>
     public const float DaySeconds = 24 * 1200f / 11f;
 
-    public const int MineFunction = 1, ResourceStorageFunction = 2, GeneralStorageFunction = 13, ResearchFunction = 3, RefineryFunction = 4, GeneratorFunction = 5, ItemFurnaceFunction = 14, BatteryFunction = 23, RainCollectorFunction = 26, NaturalMineFunction = 27;
+    public const int MineFunction = 1, ResourceStorageFunction = 2, GeneralStorageFunction = 13, ResearchFunction = 3, RefineryFunction = 4, GeneratorFunction = 5, ItemFurnaceFunction = 14, BatteryFunction = 23, RainCollectorFunction = 26, NaturalMineFunction = 27, TrainingFunction = 7;
     /// <summary><c>MiningResource</c> WATER and GROUND (<b>Verified</b>, editor enum).</summary>
     public const int WaterResource = 5, GroundResource = 6;
 
@@ -76,6 +76,8 @@ public sealed record MachineData
     public bool IsConsumer => PowerOutput < 0;
 
     public bool IsResearch => Function == ResearchFunction;
+    /// <summary>A training dummy (function 7, BF_TRAINING): its user trains <see cref="Stat"/> up to the cap <see cref="OutputRate"/> (the "Max Skill Level" of its panel is one less, docs/game/ai-tasks.md "Finders of the jobs").</summary>
+    public bool IsTraining => Function == TrainingFunction && Stat > 0;
     /// <summary>A mine, well or refinery: inputs (if any) into one output (functions 1, 4 and 27, <b>Verified</b> enum; the stone and ore processors are 4).</summary>
     public bool IsProducer => Function is MineFunction or RefineryFunction or NaturalMineFunction && Farm is null && Output is not null;
     /// <summary>A crafting bench (function 10): its crafts lists.</summary>

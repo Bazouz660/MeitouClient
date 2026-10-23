@@ -403,7 +403,7 @@ selection's), Pick Up, First Aid, Splint Injuries, Unlock Shackles / Use Tools /
 character (stand-ins for the cage's verbs: cages cannot be pointed at), Inventory / Loot / Pick Lock on containers (Loot uses the Alt path, so a shop's
 stock answers that it is the shop's: stealing it is not built), Open / Close / Lock / Unlock (all the building's doors) / Pick Lock on doors, Build,
 Use, Auto-Haul (storage, as the job), Inventory (storage, furnace), Man Turret, Dismantle. Engine additions: Trade with a trader, Put in Cage, Put on
-Shackles, Cancel Construction, the door buttons, Mine. Not built: Attack All, Bodyguard, Stand Up, Kidnap, Throw out of home / town, Shoot At, Set
+Shackles, Cancel Construction, the door buttons, Mine. Not built: Attack All, Stand Up (Bodyguard is a follow, as a stand-in), Kidnap, Throw out of home / town, Shoot At, Set
 Free, Get in, Put in, Repair / Repairs, Training, Corpse Disposal, Auto-Haul 152, Use Tools / Use Strength / Smash on locks and doors, item menus
 (Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
 

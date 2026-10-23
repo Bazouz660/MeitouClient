@@ -29,8 +29,14 @@ public sealed partial class ProductionSystem
         var ordered = add.Ordered;
         // A first aid on a robot is the original's robot repair order (60), whose job is Robotics.
         if (ordered == TaskType.FIRST_AID_ORDER && table.TryResolveNext(add.Target, out int t) && table.Cold(t)?.Race is { IsRobot: true }) ordered = TaskType.FIRST_AID_ROBOT;
+        // Follow (31) and Bodyguard (45) on a character become the jobs that follow it (docs/game/ai-tasks.md "Finders of the jobs": they act on the job's own target).
+        bool onCharacter = ordered is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET;
         foreach (var id in Who(world, add.Characters))
-            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold) PermaJobs.Add(cold, ordered, PermaJob.Untargeted(ordered));
+        {
+            if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
+            if (!onCharacter) PermaJobs.Add(cold, ordered, PermaJob.Untargeted(ordered));
+            else if (id != add.Target && table.IsAlive(add.Target)) PermaJobs.Add(cold, ordered, PermaJob.OfCharacter(ordered, add.Target));
+        }
     }
 
     void RemoveJobAt(World world, RemoveJob remove)
@@ -142,6 +148,33 @@ public sealed partial class ProductionSystem
         return null;
     }
 
+    // Some player character has a Bodyguard or Staying close job, so the lists are looked at even with no machine (derived, looked for every 30 ticks; not saved or hashed).
+    bool followJobs;
+
+    void ScanFollowJobs(World world)
+    {
+        var table = world.Characters;
+        followJobs = false;
+        for (int i = 0; i < table.HighWater && !followJobs; i++)
+            followJobs = table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, Jobs.Count: > 0 } cold && cold.Jobs.Exists(j => j.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET);
+    }
+
+    /// <summary>The training dummy's gain per second of the continuous entry (<b>Verified</b>, <c>UseableStuff</c> vfunc 0x4b0: <c>FUN_1408c64f0</c> with 2.0).</summary>
+    public const float TrainingRate = 2;
+
+    /// <summary>
+    /// A user at a training dummy (<c>Task_UseTrainingDummy</c> slot 2 and <c>UseableStuff</c> vfunc 0x4b0, <b>Verified</b> by decompile): facing it, the building's <c>stat used</c> rises every
+    /// tick through <see cref="XpService.Capped"/> at <see cref="TrainingRate"/>, up to the building's cap (<c>output rate</c>: MkI 6, MkII 11, MkIII 16, whose descriptions promise levels 5, 10 and 15,
+    /// <b>Observed</b>; the field read as the cap is +0x1a4, not traced to the record). The gain also depends on the raw stat, not the injured one.
+    /// </summary>
+    void Train(ref CharacterHot n, CharacterCold cold, BuildSite site, Machine m, float dt)
+    {
+        if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+        m.Operators++;
+        cold.Operating = true;
+        if (cold.Stats is { } stats && cold.Race is { } race) xp.Capped(stats, race, (Meitou.Data.Gameplay.Bodies.StatsEnumerated)m.Data.Stat, dt, TrainingRate, m.Data.OutputRate);
+    }
+
     /// <summary>BF_CHAIR and BF_THRONE (17, 24; docs/game/ai-tasks.md "Town goals").</summary>
     static bool IsSeat(Machine m) => m.Data.Function is TownBuildings.ChairFunction or ThroneFunction;
 
@@ -208,17 +241,40 @@ public sealed partial class ProductionSystem
     bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
+        if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
         // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle").
         if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is not null;
         return !Blocked(world, cold, job);
     }
 
-    /// <summary>The task the job a character is on runs: building, delivering or fetching for the engineer job, else operating or hauling.</summary>
-    static bool JobTask(CharacterCold cold, CharacterTask task) =>
-        cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count && cold.Jobs[cold.JobIndex].Type == TaskType.JOB_BUILDER
-            ? task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials
-            : task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep;
+    /// <summary>The task the job a character is on runs: building, delivering or fetching for the engineer job, following the job's character for Bodyguard and Staying close, else operating or hauling.</summary>
+    static bool JobTask(CharacterCold cold, CharacterTask task)
+    {
+        var job = cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count ? cold.Jobs[cold.JobIndex] : null;
+        if (job?.Type == TaskType.JOB_BUILDER) return task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials;
+        if (job?.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return task == CharacterTask.Follow && cold.FollowOrder == job.Character;
+        return task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep;
+    }
+
+    /// <summary>
+    /// The character a Bodyguard (45) or Staying close (31) job follows (the row has no finder: it acts on the job's own target, docs/game/ai-tasks.md "Finders of the jobs"): the job's character,
+    /// found again from its saved handle after a load, alive and not the follower itself; for Staying close also standing (the row's state 7, <c>!isTargetDown</c>). Null: the job is blocked.
+    /// </summary>
+    static CharacterId? FollowedBy(World world, int slot, CharacterCold cold, int k)
+    {
+        var table = world.Characters;
+        var job = cold.Jobs[k];
+        var target = job.Character;
+        if (target.IsNone && !job.Saved.IsNull)
+        {
+            for (int s = 0; s < table.HighWater && target.IsNone; s++)
+                if (table.Next[s].Alive && table.Cold(s)?.Save?.Source.Handle == job.Saved) target = table.IdOf(s);
+            if (!target.IsNone) cold.Jobs[k] = job with { Character = target };
+        }
+        if (target.IsNone || target.Slot == slot || !table.TryResolveNext(target, out int t)) return null;
+        return job.Type == TaskType.STAY_CLOSE_TO_TARGET && table.Cold(t) is { Medical.Incapacitated: true } ? null : target;
+    }
 
     /// <summary>
     /// Whether a job cannot run (the original skips such a job: an unmet start condition the planner cannot meet, or the target finder found nothing; docs/game/ai-tasks.md "Perma-jobs").
@@ -238,6 +294,10 @@ public sealed partial class ProductionSystem
                 // Turret guard (234, the job a Shift order to man a turret becomes): the building is a turret no one else mans.
                 if (m.Data.Function != Meitou.Data.World.ObjectRanges.TurretFunction) return true;
                 return OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators;
+            case TaskType.USE_TRAINING_DUMMY:
+                // Training (97): a dummy with a place free for a character with an arm that works (the row's state 38; the rest of its conditions, 73, is Unknown). It goes on at the cap, as the original's has no end.
+                if (!m.Data.IsTraining || OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators) return true;
+                return cold.Medical is null || !(cold.Medical.ArmWorks(left: true) || cold.Medical.ArmWorks(left: false));
             case TaskType.OPERATE_STORAGE:
                 if (!m.Data.IsStorage || m.Storage is null) return true;
                 if (cold.Inventory is { } inv && inv.All().Any(i => Takes(world, m, i))) return false;
@@ -313,9 +373,20 @@ public sealed partial class ProductionSystem
             cold.JobIndex = k;
             return;
         }
+        if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET)
+        {
+            if (FollowedBy(world, slot, cold, k) is not { } target) return;
+            // From operating or hauling the character goes back to what it was doing before the list took it.
+            var back = cold.ResumeTask;
+            End(table, slot);
+            cold.ResumeTask = back;
+            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick });
+            cold.JobIndex = k;
+            return;
+        }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
-        if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB)
+        if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY)
         {
             if (cold.OperateSite != site.Id) Begin(world, slot, site, m);
         }

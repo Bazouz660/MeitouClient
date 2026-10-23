@@ -173,7 +173,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case OperateOrder order:
                 {
                     var site = Site(world, order.Site);
-                    if (site is not { Complete: true } || (Ensure(world, site) is not { Data.Operable: true } machine)) break;
+                    if (site is not { Complete: true } || (Ensure(world, site) is not { } machine) || !(machine.Data.Operable || machine.Data.IsTraining)) break;
                     var table = world.Characters;
                     foreach (var id in Who(world, order.Characters))
                     {
@@ -320,7 +320,10 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        if (n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
+        bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
+            && cold.Jobs[cold.JobIndex].Type is Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD or Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET;
+        if (followJob) cold.FollowOrder = CharacterId.None;   // the job's follow ends with it; the character follows its squad's leader again
+        if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {
             MovementSystem.Stop(table, slot);
             // A job's task goes back to the following or wandering it took the character from.
@@ -340,7 +343,8 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         // Job lists also run for the engineer job while a site is unfinished or damaged, and with no machine they can still send the injured to bed
         // (the "Sleep when injured" option).
-        if (world.Machines.Count == 0 && !sweep && (Construction is null || !world.Buildings.AnyNeedsWork)
+        if (world.Tick % 30 == 0) ScanFollowJobs(world);
+        if (world.Machines.Count == 0 && !sweep && !followJobs && (Construction is null || !world.Buildings.AnyNeedsWork)
             && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
         PickJobs(world);
         var table = world.Characters;
@@ -416,6 +420,7 @@ public sealed partial class ProductionSystem : ITickSystem
     {
         ProspectStep(world);
         Sync(world);
+        Errands(world);
         var research = world.Research;
         research.Rate = 0;
         int bench = 0;
@@ -464,6 +469,8 @@ public sealed partial class ProductionSystem : ITickSystem
                 cold.Operating = true;
                 continue;
             }
+            // A training dummy: the user trains the building's stat (docs/game/ai-tasks.md "Finders of the jobs").
+            if (m.Data.IsTraining) { Train(ref n, cold, site, m, dt); continue; }
             // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
