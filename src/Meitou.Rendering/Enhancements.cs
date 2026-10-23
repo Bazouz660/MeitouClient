@@ -45,9 +45,6 @@ public static class Enhancements
     public const float MeitouObjectDistance = 20000, MeitouLandmarkDistance = 150000, MeitouTerrainPixelError = 16;
     public const float FaithfulObjectDistance = 12000;
 
-    /// <summary>The Meitou <c>voices</c> switch's cap: the most sounds besides the music mixed in a block (<c>WwisePlayer.VoiceCap</c>).</summary>
-    public const int MeitouVoiceCap = 96;
-
     /// <summary>
     /// The switches, in key order (Shift+F1 upwards in the game, the Tab panel's checkboxes in the viewer), over the post-processing options and the haze strength
     /// (docs/formats/post-processing.md and sky.md for what the game does).
@@ -60,7 +57,7 @@ public static class Enhancements
         Func<bool>? cloudFog = null, Action<bool>? setCloudFog = null,
         Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null, Func<bool>? characterLod = null, Action<bool>? setCharacterLod = null,
         Func<bool>? skin = null, Action<bool>? setSkin = null, Func<bool>? interiorLamps = null, Action<bool>? setInteriorLamps = null,
-        Func<bool>? icons = null, Action<bool>? setIcons = null, Func<bool>? voices = null, Action<bool>? setVoices = null) =>
+        Func<bool>? icons = null, Action<bool>? setIcons = null) =>
     [
         new("ao", "Ambient occlusion", "off", "SSAO",
             () => post.Ssao, v => post.Ssao = v, "the game ships SSAO but has it disabled"),
@@ -141,9 +138,6 @@ public static class Enhancements
         new("icons", "Item icons", "the game's", "supersampled",
             icons ?? (() => false), setIcons ?? (_ => { }),
             "the game draws an inventory item's icon from its mesh with one sample a pixel (jagged edges, shimmering fine detail) and shows the pictures it saved before; Meitou draws each one supersampled 4 x 4, as the enhanced portraits, and keeps its own pictures (docs/game/ui-screens.md \"Item icons\")"),
-        new("voices", "Sound voices", "all mixed", $"loudest {MeitouVoiceCap}",
-            voices ?? (() => false), setVoices ?? (_ => { }),
-            "Faithful mixes every sound posted (the game's Wwise limits voices by its banks' settings, which Meitou does not model); a big fight posts hundreds at once, more than the audio thread can decode in time, so the sound stutters. Meitou mixes only the loudest at the listener (the music always), the rest running on silently until they are loud enough again (docs/audio.md \"Voice cap\")"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

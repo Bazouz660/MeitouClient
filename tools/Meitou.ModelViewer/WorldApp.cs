@@ -528,7 +528,7 @@ static partial class WorldApp
             string? takeFile = cinema.TakeFrame();
             if (gpu.Weather is { } clockWeather) clockWeather.Day = day;   // game speed 1, never paused: the viewer's time is the day and the hour set here
             Draw(gpu, scene, camera, render, size.X, size.Y, hour, (float)animSeconds / 600f, o.FogDistance);
-            if (audio is not null) { audio.Player.VoiceCap = o.MeitouVoices ? Enhancements.MeitouVoiceCap : 0; UpdateAudio(audio, gpu, scene, camera, hour, frameDt); }
+            if (audio is not null) UpdateAudio(audio, gpu, scene, camera, hour, frameDt);
             cpuMs += frameWatch.Elapsed.TotalMilliseconds;
             if (timing)
             {

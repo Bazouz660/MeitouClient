@@ -466,8 +466,9 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
 
 ### Voice cap
 
-Meitou's rule, the `voices` switch (Meitou by default; `--faithful voices` mixes every sound). Each block the player works out every sound's gains first
-(`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and the `Enhancements.MeitouVoiceCap` (96) loudest
+Meitou's rule, the Audio settings' Sound voices slider (`AudioSettings.Voices`, kept in meitou.user.json: 16 to 256 in steps of 8, Meitou 96, the top
+"All" mixes every sound; the viewer uses 96). Each block the player works out every sound's gains first
+(`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and that many of the loudest
 other sounds at the listener (dry or sent); a sound mixed in the last block counts 1.5 times as loud, so one at the edge does not flip every block. The rest
 are silent: one heard last block first fades out over a block, then its voice keeps its clock without decoding (`Voice.Skip`); back among the loudest it
 moves its place within the decoded frames, or reopens and seeks (an error ends the voice, never the mix), and fades in over one block; a one-shot that ran out

@@ -80,7 +80,6 @@ sealed partial class SettingsMenu
         "Cloud shadows" => "Let clouds cast shadows across land and water.",
         "Cloud shadows in fog" => "Fade cloud shadows near and inside fog. Without it, places like the swamp or the Deadlands get too dark.",
         "Skin" => "Let sunlight soften and warm under bare skin instead of ending at a hard edge.",
-        "Sound voices" => "Mix only the 96 loudest sounds (music always), so big fights don't stutter. Quieter ones resume when they get loud. Off mixes every sound.",
         "Shadow cascade 5 (Meitou)" => "Add a fifth shadow cascade for distant scenery.",
         _ => $"Enable {Label(label).ToLowerInvariant()}.",
     };

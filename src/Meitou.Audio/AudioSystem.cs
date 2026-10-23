@@ -7,12 +7,19 @@ namespace Meitou.Audio;
 
 /// <summary>
 /// The player's audio options (the original's <c>settings.cfg</c> keys, docs/formats/settings.md#audio): the six category volumes (0..1, the
-/// game sends them as the <c>User_Volume_*</c> parameters × 100) and how often biome music starts (<see cref="MusicFrequency"/>, minutes).
+/// game sends them as the <c>User_Volume_*</c> parameters × 100) and how often biome music starts (<see cref="MusicFrequency"/>, minutes); and Meitou's own
+/// <see cref="Voices"/>, the most sounds mixed at once (not in <c>settings.cfg</c>).
 /// </summary>
 public sealed record AudioSettings(float Music = 0.5f, float Ambient = 0.5f, float Footstep = 0.5f, float Sfx = 0.5f, float Ui = 0.5f, float Vo = 0.5f,
-    float MusicFrequency = 5)
+    float MusicFrequency = 5, int Voices = AudioSettings.MeitouVoices)
 {
     public const float MinFrequency = 1, MaxFrequency = 20;
+
+    /// <summary>The voice cap's range and Meitou's default (docs/audio.md "Voice cap"); <see cref="MaxVoices"/> means every sound is mixed.</summary>
+    public const int MinVoices = 16, MaxVoices = 256, MeitouVoices = 96;
+
+    /// <summary>What <see cref="WwisePlayer.VoiceCap"/> takes: the cap, 0 at <see cref="MaxVoices"/> (no cap).</summary>
+    public int VoiceCap => Voices >= MaxVoices ? 0 : Math.Max(Voices, MinVoices);
 
     /// <summary>The install's <c>settings.cfg</c>; every missing key takes the original's default.</summary>
     public static AudioSettings FromInstall(GameInstall install) => new(
@@ -114,6 +121,7 @@ public sealed class AudioSystem : IDisposable
         Player.SetParameter("User_Volume_UI", Math.Clamp(settings.Ui, 0, 1) * 100);
         Player.SetParameter("User_Volume_VO", Math.Clamp(settings.Vo, 0, 1) * 100);
         Music.SetFrequency(settings.MusicFrequency);
+        Player.VoiceCap = settings.VoiceCap;
     }
 
     /// <summary>

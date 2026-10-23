@@ -37,6 +37,11 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             () => (config.Audio ??= new()).MusicFrequency,
             v => { config.Audio = (config.Audio ?? new()) with { MusicFrequency = MathF.Round(v) }; AudioChanged?.Invoke(); },
             "0", Text: v => $"{v:0} min", Faithful: 5),
+        // Meitou's voice cap (docs/audio.md "Voice cap"): the top of the track mixes every sound.
+        new("Sound voices", AudioSettings.MinVoices, AudioSettings.MaxVoices,
+            () => (config.Audio ??= new()).Voices,
+            v => { config.Audio = (config.Audio ?? new()) with { Voices = (int)MathF.Round(v / 8) * 8 }; AudioChanged?.Invoke(); },
+            "0", Text: v => v >= AudioSettings.MaxVoices ? "All" : $"{v:0}", Faithful: AudioSettings.MaxVoices, Meitou: AudioSettings.MeitouVoices),
     ];
 
     Slider Volume(string label, Func<AudioSettings, float> get, Func<AudioSettings, float, AudioSettings> set) =>
@@ -197,6 +202,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 "Volume of the interface sounds.",
                 "Volume of the voices.",
                 "Average minutes of silence between pieces of biome music.",
+                "The most sounds heard at once: the loudest play, quieter ones wait silently and come back when they are loud enough. Lower it if big fights stutter; All mixes every sound.",
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));
