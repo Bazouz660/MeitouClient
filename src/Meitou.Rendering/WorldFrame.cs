@@ -845,7 +845,6 @@ static class WorldFrame
             gpu.Water.Meitou = meitouWater;
             step?.Invoke("reflections");
             gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
-            if (context is not GpuContext) gpu.Water.Refraction = false;
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }

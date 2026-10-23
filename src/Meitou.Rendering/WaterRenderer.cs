@@ -174,8 +174,7 @@ public sealed unsafe class WaterRenderer : IDisposable
 
         uniform float uWaterHeight;
         uniform float uHalfWorld;
-        uniform sampler2DArray uOceanDisp;  // OceanWaves, per cascade: displacement x, y, z and dDx/dz
-        uniform sampler2DArray uOceanSlope; // dDy/dx, dDy/dz, dDx/dx, dDz/dz
+        uniform sampler2DArray uOceanMaps;  // OceanWaves: layers 0..2 displacement x, y, z and dDx/dz; 3..5 dDy/dx, dDy/dz, dDx/dx, dDz/dz
         uniform vec4 uOcean;                // xyz the cascades' tile sizes, w texels per side (0: no ocean yet)
         uniform sampler2D uShoreField;      // ShoreField: R the signed distance to the waterline (positive over water), G the exposure
         uniform vec4 uShoreRect;            // the field's x0, z0, x1, z1 (x1 <= x0: none yet)
@@ -193,7 +192,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             for (int c = 0; c < 3; c++)
             {
                 float l = uOcean[c];
-                d += textureLod(uOceanDisp, vec3(p / l, float(c)), max(log2(spacing * uOcean.w / l) + 0.5, 0.0));
+                d += textureLod(uOceanMaps, vec3(p / l, float(c)), max(log2(spacing * uOcean.w / l) + 0.5, 0.0));
             }
             return d;
         }
@@ -530,9 +529,8 @@ public sealed unsafe class WaterRenderer : IDisposable
                 for (int c = 0; c < 3; c++)
                 {
                     float tile = uOcean[c];
-                    vec3 uvw = vec3(p / tile, float(c));
-                    oceanSlope += textureGrad(uOceanSlope, uvw, dpx / tile, dpy / tile);
-                    vec4 d = textureGrad(uOceanDisp, uvw, dpx / tile, dpy / tile);
+                    oceanSlope += textureGrad(uOceanMaps, vec3(p / tile, 3.0 + float(c)), dpx / tile, dpy / tile);
+                    vec4 d = textureGrad(uOceanMaps, vec3(p / tile, float(c)), dpx / tile, dpy / tile);
                     oceanHeight += d.y;
                     oceanFoam += d.w * (1.0 - 0.3 * float(c));
                 }
@@ -833,21 +831,19 @@ public sealed unsafe class WaterRenderer : IDisposable
     static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MeitouBody;
 
     /// <summary>
-    /// The Metal body: the two RGBA32F parameter maps become one two-layer array (the last sampler the Metal
-    /// fragment has room for), and refraction is absent.
+    /// The Metal body: the two RGBA32F parameter maps become one two-layer array, and the one-sampler ocean keeps
+    /// room for refraction within Metal's 16-sampler stage.
     /// </summary>
     static readonly string MetalMeitouBody = MeitouBody
         .Replace("uniform sampler2D uParamsA;", "uniform sampler2DArray uParams;")
         .Replace("uniform sampler2D uParamsB;", "")
         .Replace("texture(uParamsA, map)", "texture(uParams, vec3(map, 0.0))")
-        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))")
-        .Replace("uniform sampler2D uRefraction;", "")
-        .Replace("under = texture(uRefraction, gl_FragCoord.xy * uScreen + bend).rgb;", "under = vec3(0.0);");
+        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))");
 
     /// <summary>
     /// Metal's Meitou fragment: the atmosphere's METAL_WATER sections keep the declarations and functions the water
     /// actually reads (irradiance, ambient map, clouds, haze and the reflection), dropping GI, lamps, dust and the
-    /// material lighting used only by other shaders. The packed parameters and no refraction leave 16 samplers.
+    /// material lighting used only by other shaders. The packed parameters and one-sampler ocean leave 16 samplers.
     /// </summary>
     static readonly string MetalMeitouFragment = "#version 330 core\n#define METAL_WATER 1\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody;
 
@@ -889,7 +885,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             FogColour, FogDistance, Reflect, ReflectionViewProjection, Ocean, ShoreRect, GridStep, Shore, WaveFade, Refract, Screen, Clarity;
         public readonly SkyColourHandles Sky;
         public readonly SamplerSlot[] Maps;
-        public readonly SamplerSlot Reflection, OceanDisp, OceanSlope, ShoreField, Refraction, PackedParams;
+        public readonly SamplerSlot Reflection, OceanMaps, ShoreField, Refraction, PackedParams;
 
         public WaterProgram(IGpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
         {
@@ -905,7 +901,7 @@ public sealed unsafe class WaterRenderer : IDisposable
                 P.Uniform("uReflectionViewProjection"));
             (Ocean, ShoreRect, GridStep, Shore, WaveFade) = (P.Uniform("uOcean"), P.Uniform("uShoreRect"), P.Uniform("uGridStep"), P.Uniform("uShore"),
                 P.Uniform("uWaveFade"));
-            (OceanDisp, OceanSlope, ShoreField) = (P.Sampler("uOceanDisp"), P.Sampler("uOceanSlope"), P.Sampler("uShoreField"));
+            (OceanMaps, ShoreField) = (P.Sampler("uOceanMaps"), P.Sampler("uShoreField"));
             Lean = P.Uniform("uLean");
             (Refract, Screen, Refraction) = (P.Uniform("uRefract"), P.Uniform("uScreen"), P.Sampler("uRefraction"));
             PackedParams = P.Sampler("uParams");
@@ -1204,7 +1200,8 @@ public sealed unsafe class WaterRenderer : IDisposable
             refraction?.Dispose();
             refraction = Gpu is GpuContext vk
                 ? vk.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"), ((CommandList)cmd).Handle)
-                : Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h, Name: "water refraction"));
+                : Gpu.CreateTexture(new TextureDesc(sceneColour.Desc.Format, w, h,
+                    Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "water refraction"));
         }
         cmd.Blit(sceneColour, refraction, TextureMinFilter.Linear);
         Gpu.EndNative(cmd);
@@ -1262,7 +1259,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             p.Set(h.Shore, waves.Shore);
             p.Set(h.WaveFade, WaveFadeStart, WaveFadeEnd, ShoreFadeStart, ShoreFadeEnd);
             p.Set(h.Clarity, 1f / Math.Max(Clarity, 0.01f), Math.Clamp(FarClarity, 0f, 1f), Math.Max(ClearDistance, 100f));
-            if (ocean is { Ready: true } readyOcean) { p.Bind(h.OceanDisp, readyOcean.Displacement); p.Bind(h.OceanSlope, readyOcean.Slopes); }
+            if (ocean is { Ready: true } readyOcean) p.Bind(h.OceanMaps, readyOcean.OceanMaps);
             if (shore is { Ready: true } readyShore) p.Bind(h.ShoreField, readyShore.Sampled());
             bool refract = Refraction && refraction is not null && refractionFrame == Gpu.Frame.Number;
             p.Set(h.Refract, refract ? 1f : 0f);

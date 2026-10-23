@@ -341,8 +341,8 @@ out of the P0 content-testing gate.
 ### Known gaps
 
 - The shared water reflection pass now runs on Metal; the scene is mirrored into the water.
-- Meitou water (FFT/shore/foam/reflection) now runs on Metal. Refraction is still Vulkan-only, and
-  Metal omits water foam sun shadows to fit its 16-sampler stage.
+- Meitou water (FFT/shore/foam/reflection/refraction) now runs on Metal. Metal omits water foam sun
+  shadows to fit its 16-sampler stage.
 - No low-resolution particle targets.
 - No fog-rate (fog shading-rate) target.
 - No object motion / reactive-mask path for temporal upscalers.

@@ -534,9 +534,9 @@ and the shared trade/dialogue/build/editor interaction layer are wired. The rema
 4. Acceptance for the UI slice: the Hub's HUD and panels match Vulkan at the same size; every panel that does not
    need a modal simulation state opens; a resize re-lays them out; `MTL_DEBUG_LAYER=1` is clean.
 
-**After the UI:** water refraction and the character motion pass; the remaining post (`FogRate`, dynamic motion,
-GPU culls/grass); resize and HDR/EDR; then the GI decision, parity, memory/tone and the macOS default. The Meitou
-water (waves, shore, foam, reflection) and clouds are in.
+**After the UI:** the character motion pass; the remaining post (`FogRate`, dynamic motion, GPU culls/grass);
+resize and HDR/EDR; then the GI decision, parity, memory/tone and the macOS default. The Meitou water (waves,
+shore, foam, reflection, refraction) and clouds are in.
 
 **What 100% still needs.** Assuming 100% means the full game is playable through `--renderer metal` and matches
 Vulkan at default settings, the remaining scope is:
@@ -551,8 +551,8 @@ Vulkan at default settings, the remaining scope is:
    in-game menu render and act; the shared trade/dialogue/build/editor screens and their host callbacks are wired.
    Still missing: the pointer sprite and a runtime pass over the shared screens (including the deterministic
    `--ticks`/`--move-to` stills).
-3. **Rendering parity.** Water refraction; the Meitou volumetric fog; post (`FogRate`, full TAA with character/grass
-   motion, MetalFX reactive mask); and the character motion/stage/hover passes.
+3. **Rendering parity.** The Meitou volumetric fog; post (`FogRate`, full TAA with character/grass motion, MetalFX
+   reactive mask); and the character motion/stage/hover passes.
 4. **GI decision.** On this Mac Vulkan also reports `gi off: the device has no ray queries (VK_KHR_ray_query)`,
    so the local parity shots are no-GI; on a machine where Vulkan traces GI the target includes it. Either port
    `GiScene`/`GiProbes` to Metal ray tracing or make no-GI the documented macOS baseline.
@@ -620,9 +620,9 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 the atmosphere's GI, lamp, dust, specular and material-lighting declarations are compiled out, foam uses no sun
 shadow, and the two RGBA32F biome parameter maps are packed into one two-layer array. That leaves exactly Metal's
 16 fragment samplers. The reflection pass draws the mirrored sky, terrain, objects and foliage (single-sample on
-Metal; Vulkan keeps its MSAA resolve). Refraction is still off on Metal because its scene copy is Vulkan-only, so
-the water blends over the scene as the game's water does; the faithful surface remains the fallback when the
-Meitou switch is off. The sea, Hub and river views still need a visual pass against Vulkan.
+Metal; Vulkan keeps its MSAA resolve). Refraction uses the shared half-res scene copy into a colour+sampled target;
+the faithful surface remains the fallback when the Meitou switch is off. The sea, Hub and river views still need a
+visual pass against Vulkan.
 
 ### 4. Characters and skinning (plan step 7)
 
@@ -796,8 +796,9 @@ default.
   pixel comparison.
 - Metal's fragment stage allows 16 samplers. The Meitou water now builds at exactly 16 with `METAL_WATER`: the
   unused GI/lamp/dust/specular/material-lighting declarations are compiled out, foam has no sun shadow, the two
-  RGBA32F parameter maps share one two-layer array, and refraction is off. Any further water feature needs a
-  packed atlas or a bindless path rather than another sampler. The reflection pass runs on Metal.
+  RGBA32F parameter maps share one two-layer array, and the displacement and slope cascades share one six-layer
+  array. Any further water feature needs a packed atlas or a bindless path rather than another sampler. The
+  reflection and refraction passes run on Metal.
 - The full atmosphere lighting (`kenshiLight`/`atmoApply`) plus a material's diffuse map needs 17 direct samplers in
   a legacy fragment. Debris therefore uses its simple sun/ambient light path on Metal; Vulkan keeps the
   atmosphere-lit and hazed version. Full debris haze parity needs a bindless or atlas path for the diffuse map.

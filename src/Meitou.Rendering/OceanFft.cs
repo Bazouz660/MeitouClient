@@ -25,8 +25,8 @@ struct OceanPush
 /// The Meitou water's open waves (docs/render-water.md "Meitou water"): Tessendorf's FFT ocean on the GPU. <see cref="OceanSpectrum"/> gives the
 /// initial amplitudes (rebuilt on a worker thread when the wind turns or changes strength, and blended in over <see cref="BlendSeconds"/>);
 /// each frame a compute pass evolves them to the game clock, runs an inverse FFT over rows and then columns (Stockham, radix 2, in shared
-/// memory, four complex fields per texel packing eight real ones) and writes per cascade the displacement and the slopes into two RGBA16F
-/// texture arrays with mips, which the water's shaders sample. Nothing runs while the clock and the spectrum stand still (a paused game).
+/// memory, four complex fields per texel packing eight real ones) and writes the displacement and the slopes into one RGBA16F
+/// texture array with mips (three layers each), which the water's shaders sample. Nothing runs while the clock and the spectrum stand still (a paused game).
 /// Recorded into the frame's pre-frame commands; render thread only.
 /// </summary>
 public sealed unsafe class OceanWaves : IDisposable
@@ -44,7 +44,7 @@ public sealed unsafe class OceanWaves : IDisposable
     readonly GpuProgram evolve, fft, assemble;
     readonly GpuComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
-    readonly GpuTexture displacement, slopes;
+    readonly GpuTexture oceanMaps;   // layers 0..2 displacement, 3..5 slopes
     readonly GpuSampler sampler;
     readonly ulong texels;
 
@@ -81,10 +81,8 @@ public sealed unsafe class OceanWaves : IDisposable
         int levels = 1 + (int)Math.Log2(size);
         using (var batch = ctx.Uploads.Begin())
         {
-            TextureDesc Desc(string name) => new(InternalFormat.Rgba16f, size, size, levels, Cascades, Kind: TextureKind.Texture2DArray,
-                Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name);
-            displacement = batch.Create(Desc("ocean displacement"));
-            slopes = batch.Create(Desc("ocean slopes"));
+            oceanMaps = batch.Create(new TextureDesc(InternalFormat.Rgba16f, size, size, levels, 2 * Cascades,
+                Kind: TextureKind.Texture2DArray, Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "ocean maps"));
         }
         sampler = ctx.Samplers.Get(new SamplerDesc(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, true, TextureWrapMode.Repeat,
             TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Always, false, false, 8, 0));
@@ -96,11 +94,12 @@ public sealed unsafe class OceanWaves : IDisposable
     public float Choppiness { get; set; } = 1.0f;
     /// <summary>The cascades' tile sizes (units), w unused.</summary>
     public Vector4 Lengths => new(OceanSpectrum.Lengths[0], OceanSpectrum.Lengths[1], OceanSpectrum.Lengths[2], 0);
-    /// <summary>Per cascade (layer): displacement x, y, z (units; the horizontal ones times the choppiness) and the foam (0..1): where the crests
-    /// fold it is renewed, elsewhere it fades over <see cref="FoamSeconds"/>, so foam lingers behind a crest.</summary>
-    public SampledTexture Displacement => new(sampler, displacement.View());
-    /// <summary>Per cascade (layer): ∂Dy/∂x, ∂Dy/∂z, ∂Dx/∂x, ∂Dz/∂z (the last two times the choppiness).</summary>
-    public SampledTexture Slopes => new(sampler, slopes.View());
+    /// <summary>
+    /// Layers 0..2: per cascade displacement x, y, z (units; the horizontal ones times the choppiness) and the foam (0..1):
+    /// where the crests fold it is renewed, elsewhere it fades over <see cref="FoamSeconds"/>, so foam lingers behind a crest.
+    /// Layers 3..5: ∂Dy/∂x, ∂Dy/∂z, ∂Dx/∂x, ∂Dz/∂z (the last two times the choppiness).
+    /// </summary>
+    public SampledTexture OceanMaps => new(sampler, oceanMaps.View());
     /// <summary>Compute passes recorded so far (a paused game records none).</summary>
     public long Dispatched { get; private set; }
     /// <summary>GPU time of the timed passes (microseconds, summed) and their count, read a few frames late.</summary>
@@ -194,11 +193,10 @@ public sealed unsafe class OceanWaves : IDisposable
         cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.TransferSrc)]);
         for (int c = 0; c < Cascades; c++)
         {
-            cmd.CopyBufferToImage(output.Handle, (ulong)c * texels * 8, displacement, 0, c);
-            cmd.CopyBufferToImage(output.Handle, (ulong)(Cascades + c) * texels * 8, slopes, 0, c);
+            cmd.CopyBufferToImage(output.Handle, (ulong)c * texels * 8, oceanMaps, 0, c);
+            cmd.CopyBufferToImage(output.Handle, (ulong)(Cascades + c) * texels * 8, oceanMaps, 0, Cascades + c);
         }
-        cmd.GenerateMips(displacement);
-        cmd.GenerateMips(slopes);
+        cmd.GenerateMips(oceanMaps);
         cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.All);
         if (stamps.Item1.IsValid && stamps.Item2.IsValid) pendingTimes.Add(stamps);
         cmd.EndLabel();
@@ -355,8 +353,7 @@ public sealed unsafe class OceanWaves : IDisposable
         fieldsB.Dispose();
         output.Dispose();
         foam.Dispose();
-        displacement.Dispose();
-        slopes.Dispose();
+        oceanMaps.Dispose();
         ctx.Shaders.Dispose(evolve);
         ctx.Shaders.Dispose(fft);
         ctx.Shaders.Dispose(assemble);
