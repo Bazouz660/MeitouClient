@@ -3,6 +3,7 @@ using System.Numerics;
 using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Recast;
+using Meitou.Data.World;
 
 namespace Meitou.Navigation;
 
@@ -70,6 +71,7 @@ internal static partial class ZoneNavMeshBuilder
 
         var ticks = new TileTicks();
         var meshes = new RcPolyMesh?[tilesPerSide * tilesPerSide];
+        var details = new HeightGrid?[]?[meshes.Length];
         var workers = s.Threads > 0 ? s.Threads : Math.Max(1, Environment.ProcessorCount - 1);
         var watch = Stopwatch.StartNew();
         Parallel.For(0, meshes.Length, new ParallelOptions { MaxDegreeOfParallelism = workers }, tile =>
@@ -77,15 +79,16 @@ internal static partial class ZoneNavMeshBuilder
             if (triBuckets[tile].Count == 0) return;
             int tx = tile % tilesPerSide, tz = tile / tilesPerSide;
             meshes[tile] = BuildTile(g, s, verts, indices, areas, triBuckets[tile], carvers[tile], painters[tile], solids[tile], ticks,
-                g.ZoneMin.X + tx * tileWorld, g.ZoneMin.Y + tz * tileWorld, tileWorld);
+                g.ZoneMin.X + tx * tileWorld, g.ZoneMin.Y + tz * tileWorld, tileWorld, out details[tile]);
         });
         times.Tiles = watch.Elapsed.TotalMilliseconds;
         times.TileCount = meshes.Count(m => m is not null);
         double ms = 1000.0 / Stopwatch.Frequency;
-        times.CpuRaster = ticks.Raster * ms; times.CpuCompact = ticks.Compact * ms; times.CpuRegions = ticks.Regions * ms; times.CpuContours = ticks.Contours * ms; times.CpuMesh = ticks.Mesh * ms;
+        times.CpuRaster = ticks.Raster * ms; times.CpuCompact = ticks.Compact * ms; times.CpuRegions = ticks.Regions * ms; times.CpuContours = ticks.Contours * ms; times.CpuMesh = ticks.Mesh * ms; times.CpuDetail = ticks.Detail * ms;
 
         watch.Restart();
         var mesh = Stitch(g, s, meshes, tilesPerSide, tileWorld);
+        AddDetail(mesh, meshes, details, g.Ground);
         AssignDoors(mesh, g, s);
         times.Stitch = watch.Elapsed.TotalMilliseconds;
 
@@ -102,7 +105,7 @@ internal static partial class ZoneNavMeshBuilder
     /// <summary>Stopwatch ticks the tiles of one build spent per phase; the tiles add to it from several threads.</summary>
     sealed class TileTicks
     {
-        public long Raster, Compact, Regions, Contours, Mesh;
+        public long Raster, Compact, Regions, Contours, Mesh, Detail;
     }
 
     static (Vector2 Min, Vector2 Max) Bounds(NavVolume v)
@@ -114,8 +117,9 @@ internal static partial class ZoneNavMeshBuilder
     }
 
     static RcPolyMesh? BuildTile(ZoneGeometry g, NavBuildSettings s, float[] verts, int[] indices, int[] areas, List<int> tris, List<int> carvers, List<int> painters, List<int> solids, TileTicks ticks,
-        float x0, float z0, float tileWorld)
+        float x0, float z0, float tileWorld, out HeightGrid?[]? detail)
     {
+        detail = null;
         var ctx = new RcContext();
         long t0 = Stopwatch.GetTimestamp();
         int walkableHeight = (int)MathF.Ceiling(s.AgentHeight / s.CellHeight);
@@ -166,13 +170,131 @@ internal static partial class ZoneNavMeshBuilder
         long t4 = Stopwatch.GetTimestamp();
         var result = cset.conts.Count == 0 ? null : RcMeshs.BuildPolyMesh(ctx, cset, ZoneNavMesh.MaxVerticesPerPolygon);
         long t5 = Stopwatch.GetTimestamp();
+        detail = result is null ? null : SampleHeights(result, chf, border);
+        long t6 = Stopwatch.GetTimestamp();
         Interlocked.Add(ref ticks.Raster, t1 - t0);
         Interlocked.Add(ref ticks.Compact, t2 - t1);
         Interlocked.Add(ref ticks.Regions, t3 - t2);
         Interlocked.Add(ref ticks.Contours, t4 - t3);
         Interlocked.Add(ref ticks.Mesh, t5 - t4);
+        Interlocked.Add(ref ticks.Detail, t6 - t5);
         return result;
     }
+
+    /// <summary>Cells between two height samples of a polygon (engine choice: 4 units, under a stair tread).</summary>
+    const int HeightSampleCells = 2;
+
+    /// <summary>How far (units) a polygon's samples have to leave its plane for them to be kept (engine choice: most polygons are flat ground).</summary>
+    const float HeightKeep = 2;
+
+    /// <summary>How far (units) from a polygon's plane a span may be and still be its surface when the polygon has no region (engine choice: under half a storey).</summary>
+    const float HeightReach = 25;
+
+    /// <summary>
+    /// The heights of each polygon's own surface (docs/game/pathfinding.md, "Heights"): every <see cref="HeightSampleCells"/> cells over its box, the walkable span
+    /// of the region it was made from, else the walkable span nearest its plane within <see cref="HeightReach"/> (DotRecast leaves the region 0 on some merged
+    /// polygons), NaN where there is none; at the stitched vertices' level (half a cell under the span's top). A polygon is planar only between its corners, so over
+    /// stairs, ramps and humps it lay up to ~40 off the surface. Recast's own detail mesh gives the same heights at a hundred times the cost.
+    /// </summary>
+    static HeightGrid?[] SampleHeights(RcPolyMesh m, RcCompactHeightfield chf, int border)
+    {
+        var grids = new HeightGrid?[m.npolys];
+        int nvp = m.nvp;
+        float step = HeightSampleCells * chf.cs;
+        var corner = new Vector3[nvp];
+        for (int p = 0; p < m.npolys; p++)
+        {
+            int reg = m.regs[p];
+            int x0 = int.MaxValue, x1 = int.MinValue, z0 = int.MaxValue, z1 = int.MinValue;
+            int count = 0;
+            for (int k = 0; k < nvp && m.polys[p * nvp * 2 + k] != RcRecast.RC_MESH_NULL_IDX; k++, count++)
+            {
+                int v = m.polys[p * nvp * 2 + k] * 3;
+                x0 = Math.Min(x0, m.verts[v]); x1 = Math.Max(x1, m.verts[v]);
+                z0 = Math.Min(z0, m.verts[v + 2]); z1 = Math.Max(z1, m.verts[v + 2]);
+                corner[k] = new Vector3(m.verts[v], m.verts[v + 1] - 0.5f, m.verts[v + 2]);
+            }
+            // The plane's height (in cells) at a cell: the fan triangle the point is in, else the one it is nearest to, extended.
+            float Plane(float cx, float cz)
+            {
+                float best = float.MinValue, y = corner[0].Y;
+                for (int k = 1; k + 1 < count; k++)
+                {
+                    if (!NavGeometry.Barycentric(cx, cz, corner[0], corner[k], corner[k + 1], out float u, out float v, out float w)) continue;
+                    float inside = MathF.Min(u, MathF.Min(v, w));
+                    if (inside <= best) continue;
+                    best = inside;
+                    y = u * corner[0].Y + v * corner[k].Y + w * corner[k + 1].Y;
+                }
+                return y;
+            }
+            // Cell centres from the box's first cell, one column past its last cell so the far edge lies between samples.
+            int columns = (x1 - 1 - x0) / HeightSampleCells + 2, rows = (z1 - 1 - z0) / HeightSampleCells + 2;
+            var values = new float[columns * rows];
+            for (int j = 0; j < rows; j++)
+                for (int i = 0; i < columns; i++)
+                {
+                    int cx = x0 + i * HeightSampleCells + border, cz = z0 + j * HeightSampleCells + border;
+                    float y = float.NaN;
+                    if (cx < chf.width && cz < chf.height)
+                    {
+                        var cell = chf.cells[cx + cz * chf.width];
+                        float plane = Plane(cx - border + 0.5f, cz - border + 0.5f), nearest = HeightReach / chf.ch;
+                        for (int s = cell.index, end = cell.index + cell.count; s < end; s++)
+                        {
+                            if (chf.areas[s] == NavArea.Null) continue;
+                            float top = chf.spans[s].y - 0.5f;
+                            if (reg != 0 && chf.spans[s].reg == reg) { y = top; break; }
+                            if (MathF.Abs(top - plane) < nearest) { nearest = MathF.Abs(top - plane); y = top; }
+                        }
+                        if (!float.IsNaN(y)) y = chf.bmin.Y + y * chf.ch;
+                    }
+                    values[j * columns + i] = y;
+                }
+            grids[p] = new HeightGrid(chf.bmin.X + (x0 + border + 0.5f) * chf.cs, chf.bmin.Z + (z0 + border + 0.5f) * chf.cs, step, columns, rows, values);
+        }
+        return grids;
+    }
+
+    /// <summary>
+    /// Gives the polygons whose surface leaves their plane by more than <see cref="HeightKeep"/> their height samples (<see cref="ZoneNavMesh.Heights"/>). The zone's
+    /// polygons are the tiles' in tile order (<see cref="Stitch"/>).
+    /// </summary>
+    static void AddDetail(ZoneNavMesh mesh, RcPolyMesh?[] meshes, HeightGrid?[]?[] details, HeightWindow? ground)
+    {
+        var heights = new HeightGrid?[mesh.PolygonCount];
+        bool any = false;
+        int polygon = 0;
+        for (int tile = 0; tile < meshes.Length; tile++)
+        {
+            if (meshes[tile] is not { } m) continue;
+            for (int p = 0; p < m.npolys; p++, polygon++)
+            {
+                if (details[tile]?[p] is not { } grid) continue;
+                float off = 0;
+                bool onTerrain = ground is not null;
+                for (int j = 0; j < grid.Rows; j++)
+                    for (int i = 0; i < grid.Columns; i++)
+                    {
+                        float y = grid.Values[j * grid.Columns + i];
+                        float x = grid.X0 + i * grid.Step, z = grid.Z0 + j * grid.Step;
+                        if (float.IsNaN(y) || !mesh.Contains(polygon, x, z)) continue;
+                        off = MathF.Max(off, MathF.Abs(y - mesh.HeightAt(polygon, x, z)));
+                        if (onTerrain && !(ground!.TryHeightAt(x, z, out float t) && MathF.Abs(MathF.Max(t, WorldWater.Height) - y) <= TerrainMatch)) onTerrain = false;
+                    }
+                if (off <= HeightKeep) continue;
+                heights[polygon] = onTerrain ? HeightGrid.OnTerrain : grid;
+                any = true;
+            }
+        }
+        if (any) mesh.Heights = heights;
+    }
+
+    /// <summary>
+    /// How near (units) the heightmap every sample of a polygon has to be for the polygon to stand on the terrain (<see cref="HeightGrid.OnTerrain"/>; engine
+    /// choice: the spans come from the terrain's 36-unit triangles, the heightmap's 18-unit samples differ from them by a few units on curved ground).
+    /// </summary>
+    const float TerrainMatch = 3;
 
     /// <summary>
     /// How far below an upward face of a solid a span's floor has to be to count as inside (engine choice: one height cell). Recast rounds a span's top up to the

@@ -172,6 +172,11 @@ seed keeps nothing (no largest-region fallback) and is kept through the closure 
 doors in 20.29; built only in 19.29 they had no door join and their 20.29 half was invisible to point queries. Now a path from the
 street reaches the door and the far end of the Y-House. Doorless interiors on a border (20.32/21.32 `20-`, `26-Newwworld`) lose their
 fallback island.
+**Polygon heights** (engine choice): a polygon's plane can be ~25 off its surface (Recast polygons span ramps and terrain folds), so each tile samples
+its walkable spans every 2 cells (`HeightGrid`, bilinear); a polygon keeps the grid only when a sample leaves its plane by more than 2, and one
+whose samples all lie within 3 of the heightmap (or the water) keeps just a marker and reads the heightmap. **Observed** (headless probe, 20000 random
+points against the nearest walkable collision or terrain): mesh heights more than 5 off went from 14.4 to 2.1 % (24.27), 11 to 0.7 % (20.32) and
+9.3 to 0.5 % (18.35), at 1.5..3.3 MB of samples per zone.
 **Heights**: **Observed** polygons are up to ~15 off over stairs/ramps (Hub gate), so standing
 heights snap to walkable collision (`NavSurfaces`, also its edge within `EdgeReach`: the mesh overhangs raised floors, e.g. the Hub bar landing) or zone terrain (water-surface polygons keep their height); the layer is picked by mesh or real height within
 `StandRise` of the character wins. A layer more than `StandDrop` (12) below the character is not stepped onto (engine choice: the

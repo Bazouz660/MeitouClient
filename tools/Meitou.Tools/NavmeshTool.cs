@@ -112,7 +112,7 @@ static class NavmeshTool
                     mesh = NavMeshPipeline.BuildZone(gatherer, geometry, settings, out var t, out var inner, interiors: !noInteriors, log: verbose ? line => Console.WriteLine(line) : null); interiorMeshes.AddRange(inner);
                     Console.WriteLine($"built {c}: {t.TileCount} tiles in {t.Tiles:0} ms, stitch {t.Stitch:0} ms, prune {t.Prune:0} ms, interiors {t.Interiors:0} ms ({t.InteriorCount}), total {t.Total:0} ms; {t.Polygons} polygons ({t.KeptPolygons} kept), {t.Vertices} vertices");
                     if (dx == 0 && dz == 0)
-                        Console.WriteLine($"  cpu ms summed over tiles: raster {t.CpuRaster:0}, compact+areas {t.CpuCompact:0}, regions {t.CpuRegions:0}, contours {t.CpuContours:0}, polygons {t.CpuMesh:0}");
+                        Console.WriteLine($"  cpu ms summed over tiles: raster {t.CpuRaster:0}, compact+areas {t.CpuCompact:0}, regions {t.CpuRegions:0}, contours {t.CpuContours:0}, polygons {t.CpuMesh:0}, detail {t.CpuDetail:0}");
                 }
                 built.Add((geometry, mesh!));
                 if (dx == 0 && dz == 0 && verbose) foreach (var p in g.Painters) { int n = 0; for (int q = 0; q < mesh!.PolygonCount; q++) { if (mesh.Areas[q] != NavArea.Door) continue; var vv = mesh.Vertices[mesh.Polygons[q][0]]; if (vv.X >= p.Polygon.Min(a => a.X) - 4 && vv.X <= p.Polygon.Max(a => a.X) + 4 && vv.Z >= p.Polygon.Min(a => a.Y) - 4 && vv.Z <= p.Polygon.Max(a => a.Y) + 4) n++; } Console.WriteLine($"  door polygons near painter {p.Polygon.Min(a => a.X):0},{p.Polygon.Min(a => a.Y):0}: {n}"); }

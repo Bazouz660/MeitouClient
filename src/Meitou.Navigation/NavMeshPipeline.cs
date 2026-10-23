@@ -15,6 +15,7 @@ internal static class NavMeshPipeline
         interiorMeshes = [];
         var exterior = ZoneNavMeshBuilder.Build(geometry, settings, out times);
         exterior.Surfaces = new NavSurfaces(NavSurfaces.From(geometry, geometry.ZoneMin, geometry.ZoneMax));
+        exterior.Terrain ??= geometry.Ground;
         if (!interiors) return exterior;
         var watch = Stopwatch.StartNew();
         float tileWorld = settings.TileCells * settings.CellSize;
