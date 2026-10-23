@@ -159,9 +159,11 @@ shows the first failing message in this order (**Verified** unless marked):
 - **Vertical margins** (`FUN_1404d9c00`, `FUN_1404d21e0`): ground height by a ray from 1000 above; nodes marked
   `above ground` must be at or above it, others at or below; both minimum margins must be >= 0. `vertical position
   tolerance` widens this for single-kind buildings (**Observed**).
-- **Indoors** (`FUN_1404d69c0`): `is interior furniture` / `is node` need all node points in one player-owned
-  building; `is exterior furniture` the opposite. `ceiling placement` uses the ceiling ghost (hangs 1 below the hit of an
-  upward ray).
+- **Indoors** (`FUN_1404d69c0`, flags read in `FUN_1404debc0`): an `is interior furniture` or `is node` building
+  is valid with all node points in one player-owned building; otherwise only if it is `is exterior furniture` or
+  `is node` (**Verified** by code). So interior-only furniture must be inside, while interior+exterior items (Campfire,
+  Camp Bed, storage boxes, fish racks) go either way. Without `is interior furniture`
+  the check passes. `ceiling placement` uses the ceiling ghost (hangs 1 below the hit of an upward ray).
 - **Resources** (`FUN_1404d9ea0`): `world resource mining` STONE/WATER/GROUND from a noise field; IRON/COPPER/CARBON
   need the biome's `resources` and a resource node within 1500, falling off from the node radius (>= 25) to 1500.
   Farms: fertility `1 - (1 - v) x fertility effect` (0 at or below `minimum fertility`), yield = biome
