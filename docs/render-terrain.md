@@ -45,6 +45,12 @@ for a soft self-shadow (12 steps, a step's rise over the ray weighted down along
 in `kenshiLight`); darkening the albedo, as first done, also darkened the ambient and gave black spots at 20+ cm. Fading out
 from half the parallax distance to all of it. Where the ground is displaced the view-ray march
 gives way over the displacement's fade; the sun march stays. It is also the fallback without tessellation.
+The cliff layer gets the same march on each of its two vertical projections with a weight over 0.1 (terrain cliffs and the
+TERRAIN-mode rocks, which draw with the terrain material), its depth along the axis the projection faces (sign of the normal's
+x or z), its own `LayerDepth`. The `(x, height)` projection's height is read upside down: the shading turns its normal map
+round in both directions (red always, green by the facing), so its integrated relief runs the other way. The `(z, height)`
+projection's tangent frame is degenerate where the normal faces ±X (the game's `n × (−X)`), so its height matches the shading
+only for some facings. Not in the rock impostor bake (parallax 0 there).
 
 ## Interior cut
 

@@ -590,7 +590,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 c.Normal = Index(set.Normal, BindlessKind.Texture2DArray, standInArray);
                 c.Height = Index(set.Height, BindlessKind.Texture2DArray, standInArray);
                 c.Relief = Index(set.Relief, BindlessKind.Texture2D, standIn2D);
-                c.Parallax = patches && textured && GroundRelief.ParallaxActive && set.Height is not null ? GroundRelief.Depth : 0;
+                c.Parallax = textured && GroundRelief.ParallaxActive && set.Height is not null ? GroundRelief.Depth : 0;
                 c.Displace = patches && textured && GroundRelief.DisplaceActive && patchColourTess is not null && set.Height is not null ? GroundRelief.Depth : 0;
                 (c.DisplaceEnd, c.ParallaxEnd) = (GroundRelief.DisplaceDistance, GroundRelief.ParallaxDistance);
                 c.Params = Index(set.Params, BindlessKind.Texture2D, standIn2D);

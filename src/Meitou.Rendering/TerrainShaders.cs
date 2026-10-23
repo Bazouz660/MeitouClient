@@ -370,6 +370,51 @@ static partial class TerrainShaders
         // layer stops being sampled); eps 0 is the weight unchanged. docs/render-terrain.md, "Layer weight threshold".
         float keepWeight(float x, float eps) { return eps > 0.0 ? x * smoothstep(eps, 2.0 * eps, x) : x; }
 
+        // A layer's relief height at p (GroundRelief; 1 the top): flip reads it the other way up, for a projection whose normal map the shading turns
+        // round in both directions (the cliff's (x, height) one, below). Sampled with the unmoved coordinate's derivatives, so the mip does not jump.
+        float reliefHeight(GradCoord c, vec2 p, float layer, bool flip)
+        {
+            float h = textureGrad(uHeight, vec3(p, layer), c.dx, c.dy).r;
+            return flip ? 1.0 - h : h;
+        }
+
+        // The relief march (GroundRelief, docs/render-terrain.md): the coordinate moved along the view ray to where it meets the height (viewSpan: the
+        // ray's move in the coordinate over the full depth), then a march toward the sun (sunSpan, likewise; lit: the sun is above the surface) for a
+        // soft self-shadow. Flat layers (height 1) stop at once. Returns the shadow on the sun (1 none), as much as strength.
+        float reliefMarch(inout GradCoord c, float layer, vec2 viewSpan, vec2 sunSpan, bool lit, bool flip, float strength)
+        {
+            const int Steps = 16, ShadowSteps = 12;
+            vec2 stepUv = viewSpan / float(Steps);
+            vec2 p = c.p;
+            float rayH = 1.0, prevRay = 1.0;
+            float h = reliefHeight(c, p, layer, flip), prevH = h;
+            for (int i = 0; i < Steps && h < rayH; i++)
+            {
+                prevH = h; prevRay = rayH;
+                p += stepUv; rayH -= 1.0 / float(Steps);
+                h = reliefHeight(c, p, layer, flip);
+            }
+            if (h >= rayH && rayH < 1.0)
+            {
+                // Between the last two steps, where the ray crossed the height.
+                float above = prevRay - prevH, below = h - rayH;
+                p -= stepUv * (below / max(above + below, 1e-5));
+            }
+            c.p = p;
+            if (!lit) return 1.0;
+            float hp = reliefHeight(c, p, layer, flip), occlusion = 0.0;
+            vec2 lightUv = sunSpan / float(ShadowSteps);
+            for (int k = 1; k <= ShadowSteps; k++)
+            {
+                float ray = hp + float(k) / float(ShadowSteps);
+                if (ray >= 1.0) break;
+                // Soft: how far a step's height rises above the ray, less the further along it is (a lone far peak only dims).
+                float above = reliefHeight(c, p + lightUv * float(k), layer, flip) - ray;
+                occlusion = max(occlusion, above * (1.0 - float(k) / float(ShadowSteps + 1)));
+            }
+            return 1.0 - PomShadow * clamp(occlusion * 4.0, 0.0, 1.0) * strength;
+        }
+
         // One biome's surface (the layer model of docs/formats/terrain.md).
         Surface biome(int b, vec3 n, float slope, vec4 map, vec4 colour, float distance)
         {
@@ -399,50 +444,37 @@ static partial class TerrainShaders
             GradCoord cliffX = gradCoord(vec2(uv.y, vert) * sA.zw), cliffZ = gradCoord(vec2(uv.x, vert) * sA.zw);
             float far = clamp(distance * fade.a - 0.3, 0.0, 1.0);
 
-            // Ground parallax (GroundRelief, docs/render-terrain.md): the base layer's coordinate moved along the view ray to where the ray meets the height
-            // (1 the top, uParallax world units down at 0), then a march toward the sun for the self-shadow. Flat layers (height 1) stop at once.
-            // The moved coordinate is sampled with the unmoved one's derivatives, so the mip does not jump where the offset does.
+            // Ground parallax (GroundRelief, docs/render-terrain.md): the base layer's relief, uParallax world units deep (times the layer's own factor), and the
+            // cliff layer's on its two projections, each into the surface along the projection's axis (the cliff's on map features too: the rocks).
             float shade = 1.0;
-            float layerDepth = uParallax > 0.0 ? uParallax * texelFetch(uRelief, ivec2(int(layersA.x), 0), 0).r : 0.0;   // this layer's depth (GroundRelief.LayerDepth)
-            if (layerDepth > 0.0 && distance < uParallaxEnd)
+            if (uParallax > 0.0 && distance < uParallaxEnd)
             {
-                const int Steps = 16, ShadowSteps = 12;
                 float strength = 1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance);
-                // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray is not moved again; the self-shadow stays.
-                float march = uDisplace > 0.0 ? smoothstep(0.6 * uDisplaceEnd, uDisplaceEnd, distance) : 1.0;
-                vec2 toUv = sB.xy * (layerDepth * strength / 5000.0);   // the full depth in world units, in the layer's coordinate
                 vec3 v = normalize(uEye - vWorld);
-                vec2 stepUv = -v.xz / max(v.y, 0.25) * toUv * march / float(Steps);
-                vec2 p = base.p;
-                float rayH = 1.0, prevRay = 1.0;
-                float h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, prevH = h;
-                for (int i = 0; i < Steps && h < rayH; i++)
-                {
-                    prevH = h; prevRay = rayH;
-                    p += stepUv; rayH -= 1.0 / float(Steps);
-                    h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r;
-                }
-                if (h >= rayH && rayH < 1.0)
-                {
-                    // Between the last two steps, where the ray crossed the height.
-                    float above = prevRay - prevH, below = h - rayH;
-                    p -= stepUv * (below / max(above + below, 1e-5));
-                }
-                base.p = p;
                 vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
-                if (sun.y > 0.0)
+                float depth = uParallax * texelFetch(uRelief, ivec2(int(layersA.x), 0), 0).r * strength;   // this layer's depth (GroundRelief.LayerDepth)
+                if (depth > 0.0)
                 {
-                    float hp = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, occlusion = 0.0;
-                    vec2 lightUv = sun.xz / max(sun.y, 0.15) * toUv / float(ShadowSteps);
-                    for (int k = 1; k <= ShadowSteps; k++)
-                    {
-                        float ray = hp + float(k) / float(ShadowSteps);
-                        if (ray >= 1.0) break;
-                        // Soft: how far a step's height rises above the ray, less the further along it is (a lone far peak only dims).
-                        float above = textureGrad(uHeight, vec3(p + lightUv * float(k), layersA.x), base.dx, base.dy).r - ray;
-                        occlusion = max(occlusion, above * (1.0 - float(k) / float(ShadowSteps + 1)));
-                    }
-                    shade = 1.0 - PomShadow * clamp(occlusion * 4.0, 0.0, 1.0) * strength;
+                    // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray is not moved again; the self-shadow stays.
+                    float march = uDisplace > 0.0 ? smoothstep(0.6 * uDisplaceEnd, uDisplaceEnd, distance) : 1.0;
+                    vec2 toUv = sB.xy * (depth / 5000.0);   // the full depth in world units, in the layer's coordinate
+                    shade = reliefMarch(base, layersA.x, -v.xz / max(v.y, 0.25) * toUv * march, sun.xz / max(sun.y, 0.15) * toUv, sun.y > 0.0, false, strength);
+                }
+                float cliffDepth = w.y > 0.0 ? uParallax * texelFetch(uRelief, ivec2(int(layersA.z), 0), 0).r * strength : 0.0;
+                if (cliffDepth > 0.0)
+                {
+                    // A projection's coordinate is (along the surface, vert): vert runs down the world's y. Its depth runs along the axis it faces (sign of the
+                    // normal); the (x, height) one's normal map is turned round in both directions by the shading (below), so its height is read upside down.
+                    vec2 toUv = sA.zw * (cliffDepth / 5000.0);
+                    float sx = n.x >= 0.0 ? 1.0 : -1.0, sz = n.z >= 0.0 ? 1.0 : -1.0;
+                    float shadeX = 1.0, shadeZ = 1.0;
+                    if (cb.x > 0.1)
+                        shadeX = reliefMarch(cliffX, layersA.z, vec2(-v.z, v.y) / max(v.x * sx, 0.25) * toUv, vec2(sun.z, -sun.y) / max(sun.x * sx, 0.15) * toUv,
+                            sun.x * sx > 0.0, false, strength);
+                    if (cb.y > 0.1)
+                        shadeZ = reliefMarch(cliffZ, layersA.z, vec2(-v.x, v.y) / max(v.z * sz, 0.25) * toUv, vec2(sun.x, -sun.y) / max(sun.z * sz, 0.15) * toUv,
+                            sun.z * sz > 0.0, true, strength);
+                    shade = mix(shade, shadeX * cb.x + shadeZ * cb.y, w.y);
                 }
             }
 
