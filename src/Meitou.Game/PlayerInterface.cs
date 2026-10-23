@@ -140,11 +140,12 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
             return ("attk", mark, () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, mark) { Tick = session.World.Tick }));
         // Fighting back at someone attacking the squad is defence, not an assault on its faction.
         if (PickTarget(p) is { } victim && Hostile(victim))
-            return ("attk", victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim)
+            return ("attk", victim, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK, victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim)
             {
                 Tick = session.World.Tick, Defensive = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == victim) is { FightsPlayer: true },
-            }));
-        if (PickHurtAlly(p) is { } patient) return ("med", patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick }));
+            })));
+        if (PickHurtAlly(p) is { } patient)
+            return ("med", patient, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick })));
         if (PickDowned(p, ownOnly: true) is { } ally) return ("lift", ally, () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], ally) { Tick = session.World.Tick }));
         // Anyone else's knocked-out or dead body: the nearest walks over and its inventory opens to take from (Alt + right click takes all at once).
         if (PickDowned(p) is { } body) return ("search", body, () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], body) { Tick = session.World.Tick }));

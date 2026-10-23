@@ -16,7 +16,7 @@ public enum CharacterOrders : ushort
     Block = 1,
     /// <summary>Hold position: answers an attack only within <see cref="Orders.HoldReach"/> and never walks after a target.</summary>
     Hold = 2,
-    /// <summary>Chase mode: kept and saved; no effect yet.</summary>
+    /// <summary>Unused: the original's saved <c>chase mode</c> is the jobs switch (<see cref="Jobs"/>, docs/game/ai-tasks.md "Perma-jobs"); an old Meitou save's value is dropped.</summary>
     Chase = 4,
     /// <summary>Non-combat mode: does not answer attacks by itself (an ordered attack still goes).</summary>
     Passive = 8,
@@ -64,10 +64,13 @@ public static class Orders
     /// <summary>How near an attacker must be for a holding character to answer it (<b>engine choice</b>: about a long weapon's reach; the original's rule is not traced).</summary>
     public const float HoldReach = 40;
 
-    /// <summary>The GAMESTATE_CHARACTER bool of each saved order. Block = defensive and Passive = non combat follow the tooltips; Hold = <c>passive mode</c> is by elimination (<b>Unknown</b>).</summary>
+    /// <summary>
+    /// The GAMESTATE_CHARACTER bool of each saved order. Block = defensive and Passive = non combat follow the tooltips; Hold = <c>passive mode</c> is by elimination (<b>Unknown</b>);
+    /// <c>chase mode</c> is the jobs switch (<b>Verified</b>: the writer <c>FUN_1406280a0</c> stores the orders receiver's switch byte +0x35, the loader passes it back as toggle 15).
+    /// </summary>
     public static readonly (CharacterOrders Order, string Key)[] SaveKeys =
     [
-        (CharacterOrders.Block, "defensive mode"), (CharacterOrders.Chase, "chase mode"), (CharacterOrders.Passive, "non combat mode"),
+        (CharacterOrders.Block, "defensive mode"), (CharacterOrders.Jobs, "chase mode"), (CharacterOrders.Passive, "non combat mode"),
         (CharacterOrders.Hold, "passive mode"), (CharacterOrders.Ranged, "ranged mode"), (CharacterOrders.Taunt, "taunt mode"), (CharacterOrders.Sneak, "stealth"),
     ];
 

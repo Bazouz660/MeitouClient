@@ -753,15 +753,74 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   bed once healed" above 153 "Go home and go to bed", and +0x118 "Sit when idle" → 275 "Sitting around" (its task is built with a float 0.5 where the others pass 1, meaning **Unknown**).
   Tooltips (**Verified**, `FUN_140005e11`): ditch puts excess carried materials into storage when idle; sleep goes to bed when injured and idle;
   sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**. Saved as CAMERA bools ([save](../formats/save.md)).
-  Same panel: +0x110 Heal Allies, +0x111 Help Allies, +0x112 Rescue Allies, +0x114 Feed Animals, +0x115 Share Food, +0x11a Shoot first.
+  The other options of the panel: [Squad AI options](#squad-ai-options).
 - **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
   `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
   through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2
-  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`.
+  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`. The GAMESTATE_CHARACTER bool `chase mode` is the
+  same switch (**Verified**: the writer `FUN_1406280a0` stores the byte +0x35 of the orders receiver at character +0x650 → +0x20; the loader
+  `FUN_140626f50` passes it back as toggle 15); the orders panel's `OrdersChaseButton` (captioned JOBS) is this switch.
+- **Finders of the jobs** (**Verified** registrations in `FUN_140319a60`, finder thunks resolved; readings **Observed**; "sensed" = the
+  character's sensed list `FUN_140853960(include, exclude)`, whose bits are **Unknown**):
+  - 58 Medic / 57 Robotics: `FUN_14099f690` with a flag (58: 0, 57: 1; [Medic jobs](#medic-jobs)). Desire `FUN_140998410` (both, and 250).
+  - 250 Splint Rigging: `FUN_14099e240`: X = min(medic skill, the best splint kit's quality, own inventory or backpack; none: 0); sensed (1, 0x10)
+    of the medic's own faction only, not of a robot race, not in a give-up list, not carried (unless the carrier fails a test); weight =
+    `needsSplint`(X) (`FUN_140646400`, its returned weight **Unknown**) × the nearness of [Medic jobs](#medic-jobs) (that pass's extra flag reads
+    CharStats +0x12b); a patient in the squad's give-up list × 0.05; ≥ 0.95 is taken at once. The medic itself is a candidate.
+  - 16 Attacking enemies: `FUN_14059f3a0` ([Combat goals](#combat-goals)); it searches only while the AI's +0xbc (read as the count of sensed
+    enemies) is nonzero, which is also the condition of the kind-2 job pass above.
+  - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
+    (vfunc 0x248), not carried, passes a character vfunc 0x3e8 test or has faction flag +0x1d0 (**Unknown**), is in no give-up list, and holds an
+    item `FUN_140998950` accepts (inventory, then backpack). Effect 148 → looting.
+  - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building that fails a test
+    against the squad's +0x38 (**Unknown**: read as "not ours"), down (vfunc 0x30), special state 0. 273 Remove Intruder: `FUN_14099c250`: only while
+    the character's own building (vfunc 0x78) passes vfunc 0x2f0 and `FUN_1406211e0`(squad, building); sensed (0x400e, 0x201) in that building, not
+    carried, down, not caged, vfunc 0x118 > 0. Their companions 224 / 274 carry the body outside (`Task_TakeIntruderOutside*`).
+  - 138 Find corpses: `FUN_1408cfb00`: a building of function 8 (cage) of the character's (`FUN_1408cbea0` mask 0x100) holding a dead,
+    non-robot body not in a give-up list, else `FUN_1408ce170` (the nearest dead uncarried body). 137 Corpse disposal: `FUN_1408d1090` →
+    `FUN_1408d0770`(1, 0xb) (a building finder; target kind **Unknown**).
+  - 45 Bodyguard, 31 Staying close and 97 Training have no finder: they act on the job's own target. 97 is `Task_UseTrainingDummy`
+    (slots 1-3 `FUN_1403513a0`, `FUN_14035c1e0`, `FUN_140345570`): the dummy (function 7) is operated through building vfunc 0x4b0 at rate 1,
+    which holds the XP rule (**Unknown**). Which UI order gives 45 (always added as a job by the dispatcher) is **Unknown**.
 - **UI** (strings, `FUN_14072b540` JobsPanel): "No jobs assigned", "To add jobs, hold shift key when giving an order", the Jobs toggle "If this is
   disabled then the character won't do any of the jobs listed."; tutorial: jobs are reordered by dragging and removed with X. Row text: **Unknown**.
-- **Unknown:** what +0xbc of the AI flags is; what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not
+- **Unknown:** what list A/B mean per job type in detail (operating 87: A `IS_WORKING`; B free slot, power, inputs not
   empty, output not full, at the machine); how 124 "Hauling to" gets the items it needs (B 67 `haveSomeResourcesFor`; no row's effect is 67).
+
+### Medic jobs
+
+**Observed** (`FUN_14099f690`, `FUN_140998200`, `FUN_140998b90`, `FUN_1406b2460`, `FUN_140643ca0`; constants **Verified**).
+- Kits: organic (item function 1) and robot (12) in the medic's inventory or its backpack.
+- Candidates: sensed (1, 0x10); with flag 0 (job 58) not of a robot race (RACE byte +0x7c, `is robot`; the splint finder tests the same byte);
+  not in a give-up list; not carried (unless the carrier fails a test); `FUN_140436610`(c, 1, 0) false; and either the medic is of the player
+  faction or the patient is not injured in a way `FUN_140644170` reports and is seen or heard.
+- Need = (organic kit: the medical state's float +0xac) + (robot kit: +0xa8); a dead patient (+0x164) -0.1; an NPC medic counts both without kits
+  for an imprisoned patient or one it owns. Another faction's patient: × 0.8 when vfunc 0x3f0 holds, else × relation / 100 (own faction 100), at least
+  0.05 (0.01 for a player medic under a condition).
+- Nearness = 1 - d² / 3397386.5 (about 1843 units), clamped to at most 1, and at least 0.4 when both stand in the same building.
+- Score = need × nearness. The same faction always counts; another faction only when the score is at least 0.1 **and** the medic is not of the
+  player's faction or Heal Allies is on. A patient in the give-up list scores × 0.05; ≥ 0.001 and on the planner's target list is taken at once.
+  The medic itself scores its plain need. The highest wins; with none, an NPC whose package says `heals strangers` looks again more widely.
+
+## Squad AI options
+
+The overview's AI tab, bytes of `DAT_142134690` (**Verified**: CAMERA writer `FUN_1403eb710` / reader `FUN_1403ebf50`, key per byte): +0x110 `heal`,
++0x111 `help`, +0x112 `rescue`, +0x113 `stay`, +0x114 `feed`, +0x115 `share`, +0x116 `sleep`, +0x117 `ditch`, +0x118 `sit`, +0x119 `eject`, +0x11a
+`shootfirst`. Captions and tooltips **Verified** in the exe. New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
+feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
+- **Heal Allies** (+0x110): the medic finder's other-faction test ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
+- **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a
+  player-faction looker each fighting candidate's threat (`FUN_14099a190`) is × `FUN_1409b2380`(d², 10, 1000, 0.1); one of another faction is
+  skipped with the option off and squared with it on. Result capped at 1.2.
+- **Rescue Allies** (+0x112): the character finder `FUN_1408cd2d0` ([carry-loot](carry-loot.md#32-goals-and-their-target-finders)) requires the
+  rescuer's faction only for a player-faction rescuer with the option off.
+- **Feed Animals** (+0x114): off, the player characters' eating `FUN_1405d29c0` returns for an animal (vfunc 0x248), and desire `FUN_140597cb0`
+  is 0 for an animal (its rows **Unknown**).
+- **Share Food** (+0x115): in `FUN_1405d29c0` (the player characters' eating), with no food in its own inventory or backpack and (`FUN_140856bc0`,
+  floats +0x4bc ≤ 0, +0x4b8 < 2.25, meanings **Unknown**) a character takes food from the backpack of a squad member within 200 units (squared 40000).
+- **Shoot first** (+0x11a): turret target choice `FUN_1404374d0`: enemies (sensed 4, 0x210) weigh `FUN_140435d70`(…, 1), unseen × 0.1, the current
+  target × 1.5; with none, a player gunner with the option takes sensed (2, 0x210) characters whose faction's type (+0x34) is 0 or 8 or whose
+  faction default (+0x60) is below -30, with weight 0.6.
 
 ## Unknowns
 

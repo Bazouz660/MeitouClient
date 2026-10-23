@@ -34,7 +34,8 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that neither faction coexists with; ties go to the lower slot. It emits one
 /// effect at that target.</item>
 /// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
-/// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters never look and never join.</item>
+/// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
+/// the attacking-enemies job (<see cref="HuntsEnemies"/>); they have no leash, and after the fight go back to following or stand idle.</item>
 /// <item><b>Leash and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC that starts fighting (by this system, retaliation or anything else) has its position
 /// kept; beyond <see cref="AggroSettings.LeashRange"/> from it the NPC stops and stays calm (no looking) for <see cref="AggroSettings.CalmSeconds"/>. When its fight is
 /// over (target down, or stopped) it goes back to what it did before (wander or follow; a go-to becomes idle, which the roaming squads order again).</item>
@@ -264,7 +265,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!prev[i].Alive || i >= slots.Length || world.Tick < slots[i].CalmUntil) continue;
             byte task = next[i].Task;
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
-            if (table.Cold(i) is not { IsPlayer: false, InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold || !Relations.Contains(cold.Faction)) continue;
+            if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold
+                || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task)) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
             if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet) continue;
@@ -464,8 +466,17 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (taken.Contains(slot) || !table.Next[slot].Alive) return false;
         byte task = table.Next[slot].Task;
         if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
-        return table.Cold(slot) is { IsPlayer: false, InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true };   // a carrier picks no fight (the original's engagement weight is 0 while carrying)
+        return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold   // a carrier picks no fight (the original's engagement weight is 0 while carrying)
+            && (!cold.IsPlayer || HuntsEnemies(cold, task));
     }
+
+    /// <summary>
+    /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" (Shift with an attack; it runs with the jobs switch off,
+    /// docs/game/ai-tasks.md "Perma-jobs"), is free for it (<see cref="Production.PermaJobs.FreeFor"/>) and not in non-combat mode. The job's finder is the original's attack on sight
+    /// (<c>FUN_14059f3a0</c>, "Combat goals"), which this system's look stands in for.
+    /// </summary>
+    static bool HuntsEnemies(CharacterCold cold, byte task) =>
+        (cold.Orders & CharacterOrders.Passive) == 0 && Production.PermaJobs.FreeFor(cold, (CharacterTask)task, Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES));
 
     // ------------------------------------------------------------------ leash and stand down
 
@@ -481,7 +492,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             ref var n = ref next[i];
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
-            if (cold.IsPlayer) continue;
+            // The player's characters have no leash; one with the attacking-enemies job goes back to following after its fight.
+            bool player = cold.IsPlayer;
+            if (player && Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES) < 0) continue;
             ref var s = ref slots[i];
             var here = new Vector2(n.Position.X, n.Position.Z);
             if (n.Task == (byte)CharacterTask.Attack)
@@ -491,7 +504,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                     s.Tracked = true;
                     s.Origin = here;
                 }
-                else if (Vector2.DistanceSquared(here, s.Origin) > leash2 && world.Tick >= s.CalmUntil)
+                else if (!player && Vector2.DistanceSquared(here, s.Origin) > leash2 && world.Tick >= s.CalmUntil)
                 {
                     world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });
                     s.CalmUntil = world.Tick + calm;
@@ -509,7 +522,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             s.Tracked = false;
             if (cold.Medical is { Incapacitated: true } || cold.InCombat || n.Task != (byte)CharacterTask.Idle) continue;   // down (it wakes into wandering) or busy with something else
             MovementSystem.Stop(table, i);
-            n.Task = s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
+            n.Task = player ? (s.Task == (byte)CharacterTask.Follow ? s.Task : (byte)CharacterTask.Idle)
+                : s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
                 : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander;
             n.TaskTime = 0;
         }

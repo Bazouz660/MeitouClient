@@ -191,7 +191,7 @@ sealed partial class PlayerInterface
             case Meitou.Simulation.Production.PutInMachine machine: Sound("Item_Lift", item: machine.Item.Record); return;
             case Meitou.Simulation.Production.TakeFromMachine: Sound("Item_Lift"); return;
             // The sound the exe posts after giving the selection a job (FUN_1407f5a90).
-            case Meitou.Simulation.Production.AddJob: Sound("Permanent_Job"); return;
+            case Meitou.Simulation.Production.AddJob or Meitou.Simulation.Production.AddOrderJob: Sound("Permanent_Job"); return;
             case Meitou.Simulation.FirstAid.MedicJobCommand { Job: true } or Meitou.Simulation.Carrying.RescueJobCommand { Job: true }: Sound("Permanent_Job"); return;
         }
         string name = command.GetType().Name;

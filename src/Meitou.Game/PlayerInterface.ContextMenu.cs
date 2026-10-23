@@ -74,7 +74,7 @@ sealed partial class PlayerInterface
             verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
             verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
         }
-        return verbs;
+        return [.. verbs.Select(v => (v.Item1, JobOrOrder(v.Item1, id, v.Item2)))];   // Shift turns an order into a job (PlayerInterface.SquadAi.cs)
     }
 
     /// <summary>A right press on a character with verbs starts the hold timer (true); the quick order, if any, waits for the release.</summary>

@@ -246,43 +246,78 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
 }
 
 /// <summary>
-/// The squad AI options that start implicit jobs (docs/game/ai-tasks.md "Perma-jobs"): the original's squad toggles at <c>DAT_142134690</c> +0x117, +0x116 and +0x118, all on in a
-/// new game.
+/// The squad AI options of the overview's AI tab (docs/game/ai-tasks.md "Squad AI options"): the original's bytes at <c>DAT_142134690</c> +0x110 .. +0x11a. Ditch, Sleep and Sit start
+/// implicit jobs (<see cref="Production.ProductionSystem"/>); the others widen what other rules take in.
 /// </summary>
 [Flags]
-public enum SquadAi : byte
+public enum SquadAi : ushort
 {
     None = 0,
-    /// <summary>Ditch items: idle characters put carried materials into storage (job 242).</summary>
+    /// <summary>Ditch items (+0x117): idle characters put carried materials into storage (job 242).</summary>
     Ditch = 1,
-    /// <summary>Sleep when injured: idle injured characters go to bed until healed (jobs 153 and 257).</summary>
+    /// <summary>Sleep when injured (+0x116): idle injured characters go to bed until healed (jobs 153 and 257).</summary>
     Sleep = 2,
-    /// <summary>Sit when idle: idle characters at home sit on a free chair (job 275).</summary>
+    /// <summary>Sit when idle (+0x118): idle characters at home sit on a free chair (job 275).</summary>
     Sit = 4,
-    Defaults = Ditch | Sleep | Sit,
+    /// <summary>Heal Allies (+0x110): the medic and robotics jobs also treat characters of allied factions (<see cref="FirstAid.FirstAidSystem"/>).</summary>
+    Heal = 8,
+    /// <summary>Help Allies (+0x111): idle characters join the defence of characters of allied factions (<see cref="RetaliationSystem"/>).</summary>
+    Help = 16,
+    /// <summary>Rescue Allies (+0x112): the rescue job also picks up downed characters of allied factions (<see cref="Carrying.CarrySystem"/>).</summary>
+    Rescue = 32,
+    /// <summary>Share Food (+0x115): a hungry character with no food of its own eats from a squad mate's backpack within <see cref="SquadAiRules.ShareReach"/> (<see cref="Items.FeedSystem"/>).</summary>
+    Share = 64,
+    /// <summary>Feed Animals (+0x114): off, the player's animals do not eat (<see cref="Items.FeedSystem"/>).</summary>
+    Feed = 128,
+    /// <summary>Shoot first (+0x11a): the player's turret gunners also take dangerous neutrals (<see cref="SquadAiRules.ShootsFirstAt"/>).</summary>
+    ShootFirst = 256,
+    /// <summary>A new game's options (<b>Observed</b>: 511 of the owner's saves; heal and help are on in 4, rescue and shoot first in none).</summary>
+    Defaults = Ditch | Sleep | Sit | Share | Feed,
 }
 
 /// <summary>Turns a squad AI option on or off.</summary>
 public sealed record SquadAiCommand(SquadAi Option, bool On) : SimCommand;
 
-/// <summary>The squad AI options' CAMERA bools (<b>Verified</b>, the camera record writer <c>FUN_1403eb710</c>).</summary>
+/// <summary>The squad AI options' CAMERA bools (<b>Verified</b>, the camera record writer <c>FUN_1403eb710</c> and reader <c>FUN_1403ebf50</c>: the byte each key holds).</summary>
 public static class SquadAiKeys
 {
-    public static readonly (SquadAi Option, string Key)[] Keys = [(SquadAi.Ditch, "ditch"), (SquadAi.Sleep, "sleep"), (SquadAi.Sit, "sit")];
+    public static readonly (SquadAi Option, string Key)[] Keys =
+    [
+        (SquadAi.Ditch, "ditch"), (SquadAi.Sleep, "sleep"), (SquadAi.Sit, "sit"), (SquadAi.Heal, "heal"), (SquadAi.Help, "help"), (SquadAi.Rescue, "rescue"),
+        (SquadAi.Share, "share"), (SquadAi.Feed, "feed"), (SquadAi.ShootFirst, "shootfirst"),
+    ];
 
     public static void Write(Meitou.Data.Fcs.FcsRecord camera, SquadAi options)
     {
         foreach (var (option, key) in Keys) camera.Bools[key] = (options & option) != 0;
     }
 
-    /// <summary>The options a CAMERA record holds; an absent key stays on.</summary>
+    /// <summary>The options a CAMERA record holds; an absent key keeps the option's default (<see cref="SquadAi.Defaults"/>).</summary>
     public static SquadAi Read(Meitou.Data.Fcs.FcsRecord camera)
     {
         var options = SquadAi.Defaults;
         foreach (var (option, key) in Keys)
-            if (camera.Bools.TryGetValue(key, out bool on) && !on) options &= ~option;
+            if (camera.Bools.TryGetValue(key, out bool on)) options = on ? options | option : options & ~option;
         return options;
     }
+}
+
+/// <summary>Rules of the squad AI options that other systems ask (docs/game/ai-tasks.md "Squad AI options").</summary>
+public static class SquadAiRules
+{
+    /// <summary>How far a squad mate's backpack is reached for food with <see cref="SquadAi.Share"/> (<b>Verified</b>: squared distance 40000, <c>FUN_1405d29c0</c>).</summary>
+    public const float ShareReach = 200;
+
+    /// <summary>
+    /// Whether a player turret gunner with <see cref="SquadAi.ShootFirst"/> may take a sensed non-enemy of a faction whose fundamental type is <paramref name="fundamentalType"/> and
+    /// whose own default relation is <paramref name="defaultRelation"/> (<c>FUN_1404374d0</c>, asked only when no enemy is in its sights): type 0 or 8, or a default below -30.
+    /// Such a target weighs <see cref="ShootFirstWeight"/> where an enemy weighs 1. For the turret code; Meitou's turrets do not fire yet.
+    /// </summary>
+    public static bool ShootsFirstAt(SquadAi options, int fundamentalType, float defaultRelation) =>
+        (options & SquadAi.ShootFirst) != 0 && (fundamentalType is 0 or 8 || defaultRelation < -30);
+
+    /// <summary>A shoot-first target's weight against an enemy's 1 (<c>FUN_1404374d0</c>: 0.6).</summary>
+    public const float ShootFirstWeight = 0.6f;
 }
 
 /// <summary>What the player knows of a town (the GAMESTATE_TOWN bools <c>discovered</c>, <c>explored</c>, <c>recently discovered</c>; docs/game/ui-screens.md "Map").</summary>

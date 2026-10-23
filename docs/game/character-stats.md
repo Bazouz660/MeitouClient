@@ -110,8 +110,8 @@ counts as health in the fraction, the down (h-s+rig<0) and sever tests, so a spl
   rig<cap gets rig+=lerp(1,15,t)*medic speed mult*dt, clamped to s+b and cap; so only bandaged or stunned damage can be splinted.
   The kit drains like a medkit only when rig was added; medic XP (stat 9) each update. Ends when no part qualifies.
 - No time decay and hits do not touch rig. **Observed** (`FUN_14064f5c0`): once h-s+rig>50, rig=max(0, 50-(h-s)).
-- Order 249 refuses without a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (target finder `FUN_14099e240`, may pick
-  the medic itself) is not implemented; how it hands off to task 249 is **Unknown**.
+- Order 249 refuses without a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (finder `FUN_14099e240`, may pick the medic
+  itself): [perma-jobs](ai-tasks.md#perma-jobs); Meitou runs it as a splint treatment (`FirstAidSystem.SplintSomeone`).
 - Meitou: `SplintOrder` (the Treat task with `TreatSplint`), `MedicalState.NeedsSplint` / `Splint`; dt in game seconds as for first aid.
 
 ### The stat list

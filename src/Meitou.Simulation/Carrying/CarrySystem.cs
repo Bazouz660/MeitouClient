@@ -304,7 +304,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         }
         LootWindow(world);
         KeepLinks(world);
-        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) Rescue(world, table);
+        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); }
     }
 
     void Lift(World world, CharacterTable table, int i, float dt)
@@ -721,7 +721,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         for (int s = 0; s < table.HighWater; s++)
         {
             if (s == i || !next[s].Alive || taken.Contains(s)) continue;
-            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || other.Faction != cold.Faction || !CanBeLifted(other)) continue;
+            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
