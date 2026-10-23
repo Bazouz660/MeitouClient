@@ -290,9 +290,13 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// <summary>The low-resolution particles' coverage for the upscalers' reactive mask (<see cref="PostProcessShaders.ParticleCoverage"/>).</summary>
     sealed class ParticleCoveragePass : FullscreenProgram
     {
-        public readonly SamplerSlot Accum;
-        public readonly UniformHandle Limit;
-        public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage") => (Accum, Limit) = (P.Sampler("uAccum"), P.Uniform("uLimit"));
+        public readonly SamplerSlot Accum, LowDepth, Depth;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage")
+        {
+            (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
+            (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"), P.Uniform("uFullSize"), P.Uniform("uLimit"));
+        }
     }
 
     float nearPlane = 1, farPlane = 1000, fovY = 0.87f, aspect = 1;
@@ -975,8 +979,9 @@ public sealed unsafe partial class PostProcess : IDisposable
     public PassTargets ParticleTargets(int divisor) => LowFor(divisor).Targets;
 
     /// <summary>
-    /// Prepares one low-resolution particle pass (docs/formats/particle-universe.md "Low-resolution particles"): the target pair at 1/<paramref name="divisor"/>
-    /// of the render size (made or remade when the size changed), the scene's depth reduced to it (farthest of each block, as the depth of a depth-only rendering).
+    /// Prepares one low-resolution particle pass (docs/render-post.md "Colour, night and particles"): the target pair at 1/<paramref name="divisor"/>
+    /// of the render size (made or remade when the size changed), the scene's depth reduced to it (nearest and farthest of each block in a checkerboard, as the
+    /// depth of a depth-only rendering).
     /// Call after <see cref="RunFogVolumes"/> and before opening the host on <see cref="ParticleTargets"/>.
     /// </summary>
     public void BeginParticlesLow(int divisor)
@@ -1179,6 +1184,12 @@ public sealed unsafe partial class PostProcess : IDisposable
             // The low-resolution particles' share: from their accumulation, added to what is there (the full-size ones drew theirs above).
             var c = particleCoveragePass;
             Bind(c.P, c.Accum, low.Accum);
+            Bind(c.P, c.LowDepth, low.Depth);
+            Bind(c.P, c.Depth, sceneDepth);
+            c.P.Set(c.LowSize, (float)low.Accum!.Width, (float)low.Accum.Height);
+            c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
+            c.P.Set(c.Div, (float)low.Divisor);
+            c.P.Set(c.FullSize, (float)width, (float)height);
             c.P.Set(c.Limit, mask == Vk.ColorComponentFlags.ABit ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
                 PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.One), ColourMask = mask });

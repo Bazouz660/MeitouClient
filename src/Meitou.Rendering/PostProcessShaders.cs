@@ -473,50 +473,50 @@ static class PostProcessShaders
         """;
 
     /// <summary>
-    /// The low-resolution particles' depth (Meitou): each texel is the farthest of the <c>uDiv</c> x <c>uDiv</c> block of the scene's depth it covers, written as the
-    /// depth of a depth-only rendering, so the hardware test of the particle draws still rejects the sprite area hidden behind the scene (early-Z) and a
-    /// sprite is visible at a texel when it is in front of any pixel of its block (the upsample then picks, per pixel, the texel that fits its own depth).
+    /// The low-resolution particles' depth (Meitou): each texel is the nearest (texels with x + y even) or the farthest (odd) of the <c>uDiv</c> x <c>uDiv</c>
+    /// block of the scene's depth it covers, written as the depth of a depth-only rendering, so the hardware test of the particle draws still rejects the
+    /// sprite area hidden behind the scene (early-Z). Every 2 x 2 footprint of the upsample holds two of each, so a pixel on a thin near object (a character's
+    /// limb) finds texels tested against it and a pixel of the background behind it finds texels tested against the background.
     /// </summary>
     public const string ParticleDepth = """
         #version 330 core
         in vec2 vUv;
         out vec4 fragColour;
         uniform sampler2D uDepth;
-        uniform sampler2D uMask;            // the scene colour at the render size, whose alpha is 1 on characters (unbound with uCharacterOccluder 1)
-        uniform float uCharacterOccluder;   // how much a character counts as an occluder of what is round it (1: as anything else)
         uniform vec2 uFullSize;
         uniform float uDiv;
         void main()
         {
             vec2 base = floor(gl_FragCoord.xy) * uDiv;
-            float d = 0.0;
+            float near = 1.0, far = 0.0;
             for (int y = 0; y < 4; y++)
                 for (int x = 0; x < 4; x++)
                     if (float(x) < uDiv && float(y) < uDiv)
-                        d = max(d, texelFetch(uDepth, ivec2(min(base + vec2(x, y), uFullSize - 1.0)), 0).r);
-            gl_FragDepth = d;
+                    {
+                        float d = texelFetch(uDepth, ivec2(min(base + vec2(x, y), uFullSize - 1.0)), 0).r;
+                        near = min(near, d);
+                        far = max(far, d);
+                    }
+            ivec2 t = ivec2(gl_FragCoord.xy);
+            gl_FragDepth = ((t.x + t.y) & 1) == 0 ? near : far;
             fragColour = vec4(0.0);
         }
         """;
 
     /// <summary>
-    /// The low-resolution particles' accumulation (rgb = colour added, a = opacity; <see cref="ParticleRenderer"/>) over the scene, as <c>scene * (1 - a) + rgb</c>
-    /// (blend one, one minus source alpha; red, green and blue only). Upsampled from the four nearest texels with their bilinear weights divided by how far
-    /// each one's depth is from this pixel's (relative, in linear depth), so a sprite behind a near edge does not bleed over it. Pixels whose four texels are empty
-    /// skip the depth reads.
+    /// The depth-aware upsample of the low-resolution particles' accumulation, shared by <see cref="ParticleComposite"/> and <see cref="ParticleCoverage"/>:
+    /// the four nearest texels with their bilinear weights (plus a floor) divided by the square of how far each one's depth is from this pixel's (relative, in
+    /// linear depth), so the texels tested against this pixel's own surface (<see cref="ParticleDepth"/>) win and a sprite behind a near edge does not bleed
+    /// over it. Pixels whose four texels are empty skip the depth reads.
     /// </summary>
-    public const string ParticleComposite = """
-        #version 330 core
-        in vec2 vUv;
-        out vec4 fragColour;
+    const string ParticleUpsample = """
         uniform sampler2D uAccum, uLowDepth, uDepth;
         uniform vec2 uLowSize;
         uniform vec2 uNearPlanes;   // near, far of the depth slice the particles were tested against
         uniform float uDiv;
         float linearZ(float d) { float zd = 2.0 * d - 1.0; return uNearPlanes.x * uNearPlanes.y / (uNearPlanes.y - zd * (uNearPlanes.y - uNearPlanes.x)); }
-        void main()
+        vec4 particlesAt(vec2 fc)
         {
-            vec2 fc = gl_FragCoord.xy;
             vec2 lp = fc / uDiv - 0.5;
             vec2 f = lp - floor(lp);
             ivec2 i0 = ivec2(floor(lp));
@@ -530,32 +530,48 @@ static class PostProcessShaders
                 a[i] = texelFetch(uAccum, q[i], 0);
                 total += a[i].a + a[i].r + a[i].g + a[i].b;
             }
-            if (total <= 0.0) { fragColour = vec4(0.0); return; }
+            if (total <= 0.0) return vec4(0.0);
             float z0 = linearZ(texelFetch(uDepth, ivec2(fc), 0).r);
             vec4 sum = vec4(0.0);
             float weights = 0.0;
             for (int i = 0; i < 4; i++)
             {
                 float bw = ((i & 1) == 0 ? 1.0 - f.x : f.x) * ((i >> 1) == 0 ? 1.0 - f.y : f.y);
-                float zl = linearZ(texelFetch(uLowDepth, q[i], 0).r);
-                float w = (bw + 1e-4) / (0.01 + abs(zl - z0) / z0);
+                float e = 0.02 + abs(linearZ(texelFetch(uLowDepth, q[i], 0).r) - z0) / z0;
+                float w = (bw + 0.05) / (e * e);
                 sum += a[i] * w;
                 weights += w;
             }
-            fragColour = sum / weights;
+            return sum / weights;
         }
         """;
 
-    /// <summary>The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel, 30 times, saturating (as <see cref="ParticleRenderer"/>'s own coverage fragment does per particle).</summary>
+    /// <summary>
+    /// The low-resolution particles' accumulation (rgb = colour added, a = opacity; <see cref="ParticleRenderer"/>) over the scene, as <c>scene * (1 - a) + rgb</c>
+    /// (blend one, one minus source alpha; red, green and blue only), upsampled by depth (<see cref="ParticleUpsample"/>).
+    /// </summary>
+    public const string ParticleComposite = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        """ + "\n" + ParticleUpsample + "\n" + """
+        void main() { fragColour = particlesAt(gl_FragCoord.xy); }
+        """;
+
+    /// <summary>
+    /// The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel, 30 times, saturating (as
+    /// <see cref="ParticleRenderer"/>'s own coverage fragment does per particle), upsampled by depth as the composite is so it does not mark a near edge reactive.
+    /// </summary>
     public const string ParticleCoverage = """
         #version 330 core
         in vec2 vUv;
         out vec4 fragColour;
-        uniform sampler2D uAccum;
+        uniform vec2 uFullSize;   // the render size (the target may differ)
         uniform float uLimit;
+        """ + "\n" + ParticleUpsample + "\n" + """
         void main()
         {
-            vec4 a = texture(uAccum, vUv);
+            vec4 a = particlesAt(floor(vUv * uFullSize) + 0.5);
             fragColour = vec4(clamp(max(a.a, max(a.r, max(a.g, a.b))) * 30.0, 0.0, uLimit));
         }
         """;

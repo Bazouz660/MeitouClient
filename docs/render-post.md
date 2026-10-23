@@ -58,8 +58,10 @@ terrain can be original ambient-map colour rather than lamp/emissive input. Haze
 and sun; Meitou default strength0.5, game1, slider0..3.
 
 Weather particle resolution: off/quarter/half/auto/full; density multiplies emission and changes
-appearance/population, not just shading cost. Depth-aware reduced-resolution compositing must
-preserve opaque intersections. Texture anisotropy caps mipmapped samplers, distinct from texture
+appearance/population, not just shading cost. Reduced-resolution particles test against a
+checkerboard of each block's nearest/farthest depth, and both the composite and the reactive mask
+upsample by depth match; a farthest-only reduction let dust behind thin characters bleed onto
+their silhouettes, flickering under jitter. Texture anisotropy caps mipmapped samplers, distinct from texture
 resolution/LOD bias. [Particle simulation](formats/particle-universe.md).
 
 ## SMAA
