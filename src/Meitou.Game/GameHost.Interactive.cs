@@ -189,7 +189,7 @@ sealed partial class GameHost
         player.ClipboardWrite = text => { if (silkInput.Keyboards.Count > 0) silkInput.Keyboards[0].ClipboardText = text; };
         Vector2? lastMouse = null;
         var windowCursor = Silk.NET.Input.CursorMode.Normal;
-        bool panelDrag = false, shiftDown = false;
+        bool panelDrag = false, shiftDown = false, profilerClick = false;
         Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1), window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
         // The settings panel takes the mouse only while it is drawn (F7 and the cinema's clean picture hide it).
         bool PanelLive() => !interfaceHidden && !cinema.Clean;
@@ -311,6 +311,7 @@ sealed partial class GameHost
                 var at = Pixels(m.Position);
                 if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
                 if (PanelLive() && panel?.Contains(at) == true) return;
+                if (b == SilkButton.Left && profiler?.Click(at) == true) { profilerClick = true; return; }   // F12's legend opens and closes rows
                 // The cinema's editor: its clicks never select or move characters.
                 if (b == SilkButton.Left && cinema.MouseDown(at)) return;
                 if (cinema.Contains(at)) return;
@@ -325,7 +326,8 @@ sealed partial class GameHost
             mouse.MouseUp += (m, b) =>
             {
                 bool cinemaDrag = cinema.MouseUp();
-                if (!Covered && !cinemaDrag && !panelDrag && panel?.Visible != true && KeyMap.Map(b) is { } released) player.MouseUp(released, Pixels(m.Position), shiftDown);
+                if (!Covered && !cinemaDrag && !panelDrag && !profilerClick && panel?.Visible != true && KeyMap.Map(b) is { } released) player.MouseUp(released, Pixels(m.Position), shiftDown);
+                profilerClick = false;
                 panel?.MouseUp();
                 panelDrag = false;
                 if (KeyMap.Map(b) is { } button) session.Input.SetMouseButton(button, false);

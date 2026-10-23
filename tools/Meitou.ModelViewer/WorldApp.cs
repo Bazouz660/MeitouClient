@@ -302,6 +302,7 @@ static partial class WorldApp
                 mouse.MouseDown += (m, b) =>
                 {
                     if (b == MouseButton.Left && panel?.MouseDown(Pixels(m.Position)) == true) return;
+                    if (b == MouseButton.Left && profiler?.Click(Pixels(m.Position)) == true) return;
                     if (b == MouseButton.Left && cinema.MouseDown(Pixels(m.Position))) return;
                     if (cinema.Contains(Pixels(m.Position))) return;
                     if (panel?.Contains(Pixels(m.Position)) == true) return;
