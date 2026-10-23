@@ -233,13 +233,14 @@ public sealed partial class DialogueSystem
         }
     }
 
-    /// <summary>A bubble conversation's end (<c>FUN_140674830</c>): the event's counter and time, and the speaker squad's memory of the target.</summary>
+    /// <summary>A bubble conversation's end (<c>FUN_140674830</c>): the event's counter and time; only an event-1 conversation leaves the speaker's squad remembering the target.</summary>
     void EndBubbles(World world, Conversation c)
     {
         var key = (c.Npc, c.Event);
         var (count, _) = counters.GetValueOrDefault(key);
         counters[key] = (count + 1, world.GameHours);
-        if (!c.Player.IsNone && world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc) met[(nc.SquadId, c.Player)] = world.GameHours;
+        if (c.Event == DialogueEvents.PlayerTalkToMe && !c.Player.IsNone && world.Characters.TryResolveNext(c.Npc, out int n) && world.Characters.Cold(n) is { SquadId: >= 0 } nc)
+            Memory.Remember(world, nc.SquadId, c.Player, MemoryTag.None);
     }
 
     /// <summary>Drops the lines whose time is up or whose speaker is gone (serial, each tick).</summary>
