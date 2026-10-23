@@ -9,19 +9,22 @@ public enum StatUse
     None = 0,
     Hunger = 1,
     Limbs = 2,
-    Pain = 4,
+    /// <summary>The light factor: working, looking and shooting in the dark (the rows' floor p0, from the character's light level).</summary>
+    Light = 4,
     /// <summary>The fitted limbs' multipliers and the 0.66 for a disabled arm.</summary>
     DamageState = 8,
-    /// <summary>The stun (dizziness) factor on the perception-like stats.</summary>
+    /// <summary>The dust storm factor on perception and friendly fire (<see cref="StatFactors.Stun"/>).</summary>
     Stun = 16,
-    /// <summary>The stat bonus factor of the stat's row.</summary>
+    /// <summary>The worn gear's bonus factor of the stat's row (<see cref="StatFactors"/>).</summary>
     LimbItems = 32,
-    All = Hunger | Limbs | Pain | DamageState | Stun | LimbItems,
+    All = Hunger | Limbs | Light | DamageState | Stun | LimbItems,
 }
 
 /// <summary>
-/// The extra factors some rows multiply in: the <c>CharStats</c> bonus values at +0x40 (assassination), +0x44 (dexterity), +0x48 (melee weapon skills), +0x50
-/// (crossbows and friendly fire) and the stun factor of <c>FUN_1406439f0</c>, lerp(1, 0.5, v). Their sources are <b>Unknown</b>; all 1 means none.
+/// The extra factors some rows multiply in (docs/game/character-stats.md "Gear factors"): the <c>CharStats</c> values the worn-gear refresh <c>FUN_140887030</c> writes, the products
+/// over the worn armour of <c>asassination mult</c> (+0x40, assassination), <c>dexterity mult</c> (+0x44, dexterity; 1.1 with no armour and no backpack), <c>damage output mult</c>
+/// (+0x48, the five melee weapon skills) and <c>ranged skill mult</c> (+0x50, crossbows and friendly fire); and the dust storm factor of <c>FUN_1406439f0</c>, lerp(1, 0.5, v) with v the
+/// storm's strength past the gear's protection (no weather in Meitou: 1). All 1 means none.
 /// </summary>
 public readonly record struct StatFactors(float Assassin, float Dexterity, float Weapons, float Ranged, float Stun)
 {
@@ -40,8 +43,8 @@ public readonly record struct BodyAggregates(float Arm, float Head, float Torso,
 
 /// <summary>
 /// The multiplier in [0, 1] by which a stat is scaled whenever the game uses the skill (docs/game/character-stats.md "Effective stats: injuries and hunger",
-/// <c>FUN_1406457e0</c>). For every row: H = lerp(h0, 1, clamp(hunger - 1, 0, 1)); L = lerp(l0, 1, limb); m = H x L; with pain m x= lerp(p0, 1, clamp(2.5 P, 0, 1));
-/// result = lerp(f0, 1, m) clamped, times the limb-item factor with <see cref="StatUse.DamageState"/> and the row's bonus factor with <see cref="StatUse.LimbItems"/>.
+/// <c>FUN_1406457e0</c>). For every row: H = lerp(h0, 1, clamp(hunger - 1, 0, 1)); L = lerp(l0, 1, limb); m = H x L; with light m x= lerp(p0, 1, clamp(2.5 P, 0, 1)), P the
+/// character's light level (Character <c>+0xd8</c>, docs/game/perception.md "Sight"), so a light of 0.4 or more costs nothing; result = lerp(f0, 1, m) clamped, times the limb-item factor with <see cref="StatUse.DamageState"/> and the row's bonus factor with <see cref="StatUse.LimbItems"/>.
 /// The rows are the doc's table, <b>Observed</b> (hand-decoded from a switch with fall-through cases).
 /// </summary>
 public static class StatMultiplier
@@ -50,8 +53,8 @@ public static class StatMultiplier
 
     enum Bonus { None, Assassin, Dexterity, Weapons, Ranged, RangedStun, StunOnly }
 
-    /// <summary>A row of the table. <paramref name="PainFloor"/> p0 is 1 for rows without a pain term.</summary>
-    readonly record struct Row(Limb Limb, float H0, float L0, float F0, float PainFloor, Bonus Bonus, bool BothArmsPenalty = false, bool OneUnlessBothArmsDisabled = false, bool Scaled = true);
+    /// <summary>A row of the table. <paramref name="LightFloor"/> p0 is 1 for rows without a light term.</summary>
+    readonly record struct Row(Limb Limb, float H0, float L0, float F0, float LightFloor, Bonus Bonus, bool BothArmsPenalty = false, bool OneUnlessBothArmsDisabled = false, bool Scaled = true);
 
     static Row? RowOf(StatsEnumerated stat) => stat switch
     {
@@ -77,10 +80,10 @@ public static class StatMultiplier
     };
 
     /// <summary>
-    /// The multiplier of <paramref name="stat"/> for a character's body. <paramref name="pain"/> is the value P of the formula as it reads: 1 or at least 0.4 means no
-    /// pain penalty and 0 the full one (its source, Character <c>+0xd8</c>, is <b>Unknown</b>). Stats without a row (toughness...) are 1.
+    /// The multiplier of <paramref name="stat"/> for a character's body. <paramref name="light"/> is the character's light level P: 0.4 or more means no penalty, 0 (dark) the
+    /// full one. Stats without a row (toughness...) are 1.
     /// </summary>
-    public static float Compute(MedicalState medical, StatsEnumerated stat, StatUse use, in StatFactors factors, in BodyAggregates agg, float pain = 1)
+    public static float Compute(MedicalState medical, StatsEnumerated stat, StatUse use, in StatFactors factors, in BodyAggregates agg, float light = 1)
     {
         if (RowOf(stat) is not { } row) return 1;
         float result = 1;
@@ -99,7 +102,7 @@ public static class StatMultiplier
             float h = (use & StatUse.Hunger) != 0 ? Lerp(row.H0, 1, Math.Clamp(medical.Hunger - 1, 0, 1)) : 1;
             float l = (use & StatUse.Limbs) != 0 ? Lerp(row.L0, 1, limb) : 1;
             float m = h * l;
-            if (row.PainFloor < 1 && (use & StatUse.Pain) != 0) m *= Lerp(row.PainFloor, 1, Math.Clamp(2.5f * pain, 0, 1));
+            if (row.LightFloor < 1 && (use & StatUse.Light) != 0) m *= Lerp(row.LightFloor, 1, Math.Clamp(2.5f * light, 0, 1));
             if ((use & StatUse.Stun) != 0 && row.Bonus is Bonus.StunOnly or Bonus.RangedStun) m *= factors.Stun;
             result = Math.Clamp(Lerp(row.F0, 1, m), 0, 1);
             if ((use & StatUse.DamageState) != 0) result *= LimbItemFactor(medical, stat, agg);

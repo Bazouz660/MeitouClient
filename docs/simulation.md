@@ -332,9 +332,10 @@ inventory"). Another order or a stop ends the walk. A picked-up read item keeps 
 ## Items and eating
 
 `Inventory`, `ItemFactory`, `FeedSystem`: grids, stack limits, backpacks, quantities/charges,
-load and food provision. ITEM `stackable` is an integer, not boolean; gear stacks cap at one.
-Transfer/split/top-up through inventory APIs. Food/auto-eat uncertainty and container bonuses:
-[character-stats.md](game/character-stats.md), [economy.md](game/economy.md).
+load and eating. ITEM `stackable` is an integer, not boolean; gear stacks cap at one.
+Transfer/split/top-up through inventory APIs. Eating follows the original's auto-eat (own items, backpack,
+squad mates' backpacks; bites of 50) and NPCs are fed by their hunger floor, not rations:
+[character-stats.md](game/character-stats.md#eating). Container bonuses: [economy.md](game/economy.md).
 
 Inventory moves validate snapshot identity, bounds, occupancy, stack limits and equipment
 type/armour slot. Weapon sections are 10×2 (back) and 7×1 (hip); other equipment slots hold

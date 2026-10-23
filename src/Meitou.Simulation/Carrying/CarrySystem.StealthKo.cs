@@ -55,7 +55,7 @@ public sealed partial class CarrySystem
     public static float StealthKoChance(CharacterCold attacker, CharacterCold target, bool spotted = false)
     {
         if (spotted || attacker.Stats is not { } a || target.Stats is not { } t) return 0;
-        float Skill(CharacterCold c, CharacterStats s, StatsEnumerated stat) => s[stat] * (c.Medical?.StatMultiplier(stat) ?? 1);
+        float Skill(CharacterCold c, CharacterStats s, StatsEnumerated stat) => s[stat] * (c.Medical?.StatMultiplier(stat) ?? 1) * Combat.CombatSystem.GearFactor(c, stat);
         float defence = Skill(target, t, StatsEnumerated.Assassination);
         defence = MathF.Max(defence, Skill(target, t, StatsEnumerated.Thieving) * 0.5f);
         defence = MathF.Max(defence, Orders.Stealth(target) * 100 * 0.5f);

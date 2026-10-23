@@ -644,8 +644,8 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 
 - 16 ATTACK_ENEMIES: effect state 6 `isNoEnemiesInVicinity` (registered without an evaluator). Finder `FUN_14059f3a0` walks the
   looker's sensed characters (sense list kind 4) that are seen or heard (entry +0x38 / +0x39), drops those of a faction
-  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (read as
-  enemy tests, **Unknown** in detail); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
+  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
+  and area tests, [perception](perception.md#the-attack-on-sight-tests)); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
 - 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
   resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
   each squad mate the looker senses by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
@@ -753,7 +753,8 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   bed once healed" above 153 "Go home and go to bed", and +0x118 "Sit when idle" → 275 "Sitting around" (its task is built with a float 0.5 where the others pass 1, meaning **Unknown**).
   Tooltips (**Verified**, `FUN_140005e11`): ditch puts excess carried materials into storage when idle; sleep goes to bed when injured and idle;
   sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**. Saved as CAMERA bools ([save](../formats/save.md)).
-  Same panel: +0x110 Heal Allies, +0x111 Help Allies, +0x112 Rescue Allies, +0x114 Feed Animals, +0x115 Share Food, +0x11a Shoot first.
+  Same panel: +0x110 Heal Allies, +0x111 Help Allies, +0x112 Rescue Allies, +0x114 Feed Animals, +0x115 Share Food, +0x11a Shoot first
+  (CAMERA bools `heal`, `help`, `rescue`, `feed`, `share`, `shootfirst`, reader `FUN_1403ebf50`; feed and share: [eating](character-stats.md#eating)).
 - **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
   `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
   through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2

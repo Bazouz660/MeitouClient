@@ -246,8 +246,8 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
 }
 
 /// <summary>
-/// The squad AI options that start implicit jobs (docs/game/ai-tasks.md "Perma-jobs"): the original's squad toggles at <c>DAT_142134690</c> +0x117, +0x116 and +0x118, all on in a
-/// new game.
+/// The squad AI options (docs/game/ai-tasks.md "Perma-jobs"): the original's squad toggles at <c>DAT_142134690</c> +0x117, +0x116 and +0x118 that start implicit jobs, and +0x114 / +0x115
+/// that the eating reads (docs/game/character-stats.md "Eating"); all on in a new game (Feed and Share: <b>Unknown</b> default, taken as on).
 /// </summary>
 [Flags]
 public enum SquadAi : byte
@@ -259,7 +259,11 @@ public enum SquadAi : byte
     Sleep = 2,
     /// <summary>Sit when idle: idle characters at home sit on a free chair (job 275).</summary>
     Sit = 4,
-    Defaults = Ditch | Sleep | Sit,
+    /// <summary>Feed Animals: the player's animals eat the food they carry (<c>FUN_1405d29c0</c>).</summary>
+    Feed = 8,
+    /// <summary>Share Food: a hungry character eats from a squad mate's backpack within 200 units (<c>FUN_1405d29c0</c>).</summary>
+    Share = 16,
+    Defaults = Ditch | Sleep | Sit | Feed | Share,
 }
 
 /// <summary>Turns a squad AI option on or off.</summary>
@@ -268,7 +272,7 @@ public sealed record SquadAiCommand(SquadAi Option, bool On) : SimCommand;
 /// <summary>The squad AI options' CAMERA bools (<b>Verified</b>, the camera record writer <c>FUN_1403eb710</c>).</summary>
 public static class SquadAiKeys
 {
-    public static readonly (SquadAi Option, string Key)[] Keys = [(SquadAi.Ditch, "ditch"), (SquadAi.Sleep, "sleep"), (SquadAi.Sit, "sit")];
+    public static readonly (SquadAi Option, string Key)[] Keys = [(SquadAi.Ditch, "ditch"), (SquadAi.Sleep, "sleep"), (SquadAi.Sit, "sit"), (SquadAi.Feed, "feed"), (SquadAi.Share, "share")];
 
     public static void Write(Meitou.Data.Fcs.FcsRecord camera, SquadAi options)
     {

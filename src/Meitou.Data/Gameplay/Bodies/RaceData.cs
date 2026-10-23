@@ -77,6 +77,11 @@ public sealed class RaceData
 
     public IReadOnlyList<SlotReference> SeveredLimbs { get; init; } = [];
     public IReadOnlyList<SlotReference> LimbReplacements { get; init; } = [];
+    /// <summary>
+    /// <c>special food</c>: the ITEM records (string ids) of <c>item function</c> 15 ("Possibly Edible", raw meat) this race eats (<c>FUN_14042ee50</c>, docs/game/character-stats.md
+    /// "Eating"); ordinary food (function 3) every race eats.
+    /// </summary>
+    public IReadOnlySet<string> SpecialFood { get; init; } = new HashSet<string>();
 
     public float StatMultiplier(StatsEnumerated stat) => (uint)stat < StatsInfo.Count ? StatMultipliers[(int)stat] : 1;
 
@@ -165,6 +170,7 @@ public sealed class RaceData
             Anatomy = anatomy,
             SeveredLimbs = [.. r.GetReferences("severed limbs").Select(x => new SlotReference(x.Values.Value0, x.TargetStringId))],
             LimbReplacements = [.. r.GetReferences("limb replacement").Select(x => new SlotReference(x.Values.Value0, x.TargetStringId))],
+            SpecialFood = r.GetReferences("special food").Select(x => x.TargetStringId).ToHashSet(StringComparer.Ordinal),
         };
     }
 }

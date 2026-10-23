@@ -120,9 +120,7 @@ public sealed class CharacterCold
     public System.Numerics.Vector2? Burst { get; set; }
     /// <summary>What it carries (null for animals and anything without a race): <see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
     public Meitou.Simulation.Items.Inventory? Inventory { get; set; }
-    /// <summary>The tick from which a hungry NPC without food may be given a ration again.</summary>
-    public long NextProvisionTick { get; set; }
-    /// <summary>The tick it died at (-1: alive); the corpse is removed 12 game hours later.</summary>
+    /// <summary>The tick it died at (-1: alive); the corpse decays 12 game hours later (<see cref="BodySystem.SlowWorld"/>, which holds the clock back while it is carried or held).</summary>
     public long DiedTick { get; set; } = -1;
     /// <summary>Where the character came from in a loaded save, with the saved stats and medical state (null for a character the game made itself); see <c>Meitou.Simulation.Saving</c>.</summary>
     public Saving.SavedCharacterLink? Save { get; set; }
@@ -454,7 +452,6 @@ public sealed class CharacterTable
             hasher.Add((int)k.DrawnWeapon);
             BodyHash.Add(ref hasher, k.Stats, k.Medical);
             if (k.Inventory is null) hasher.Add(-1); else k.Inventory.Hash(ref hasher);
-            hasher.Add(k.NextProvisionTick);
             hasher.Add(k.DiedTick);
             hasher.Add(k.InCombat);
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before

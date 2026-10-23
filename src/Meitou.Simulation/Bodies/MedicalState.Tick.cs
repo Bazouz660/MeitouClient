@@ -7,7 +7,10 @@ public sealed partial class MedicalState
 {
     // ------------------------------------------------------------------ food
 
-    /// <summary>Puts food into the stomach buffer (hunger points; the nutrition of items is <b>Unknown</b>). The buffer digests into the hunger level in <see cref="Tick"/>.</summary>
+    /// <summary>
+    /// Puts food into the stomach buffer, in hunger levels (a bite of n nutrition is n / 100, <see cref="Items.FeedSystem"/>). The buffer digests into the hunger level in
+    /// <see cref="Tick"/>. The original sets the buffer (it eats only with an empty stomach); adding is the same there.
+    /// </summary>
     public void Feed(float amount) => Fed += MathF.Max(0, amount);
 
     // ------------------------------------------------------------------ first aid
@@ -274,25 +277,29 @@ public sealed partial class MedicalState
             Blood = MathF.Min(cap, Blood + c.BloodRecoveryRate * dt * race.HealRate * (ctx.Resting ? c.RestingHealRateMult : 1));
     }
 
-    /// <summary>Hunger by the game clock: <paramref name="hours"/> game hours (<c>FUN_14064da70</c> reads the clock's elapsed time, not the character time).</summary>
+    /// <summary>
+    /// Hunger by the game clock: <paramref name="hours"/> game hours (<c>FUN_14064da70</c> reads the clock's elapsed time, not the character time). First the free food: below the
+    /// <see cref="MedicalContext.HungerFloor"/> with an empty stomach, the stomach gets min(floor - hunger, 0.04). Then with an empty stomach hunger falls by hours / T x race
+    /// <c>hunger rate</c> x the situation factor; with food it rises by what the stomach gives, at most hours / T x <c>fed recovery rate mult</c> x race rate x the slot-0x390 factor.
+    /// </summary>
     void TickHunger(float hours, in MedicalContext ctx)
     {
         var c = ctx.Constants;
+        if (ctx.HungerFloor > Hunger && Fed <= 0) Fed = Math.Clamp(ctx.HungerFloor - Hunger, 0, 0.04f);
+        if (Hunger > MaxHunger) Hunger = MaxHunger;
         float t = c.StarvationTime * ctx.Options.HungerTime;
         if (t <= 0) return;
-        float hungerRate = ctx.Race.HungerRate * ScaleK;
         if (Fed <= 0)
         {
             float situation = HungerSituationFactor(c, ctx.Resting || Unconscious, ctx.UsingMachine, ctx.EncumbranceFactor);
-            Hunger -= hours / t * hungerRate * situation;
+            Hunger -= hours / t * ctx.Race.HungerRate * situation;
         }
         else
         {
-            float moved = MathF.Min(Fed, hours / t * c.FedRecoveryRateMult * hungerRate);
+            float moved = MathF.Min(Fed, hours / t * c.FedRecoveryRateMult * ctx.Race.HungerRate * ScaleK);
             Fed -= moved;
             Hunger += moved;
         }
-        Hunger = Math.Min(Hunger, MaxHunger);
     }
 
 }

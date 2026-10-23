@@ -10,11 +10,23 @@ public sealed partial class CombatSystem
 {
     // ------------------------------------------------------------------ act
 
-    /// <summary>A stat as the combat formulas read it: times the injury and hunger multiplier and the stats' read-time scale (an animal's age, docs/game/animals.md).</summary>
     /// <summary>The guarding state: the fighter's own, or the Block order (its tooltip's +20 melee defence; docs/game/combat.md).</summary>
     static bool Guarding(CharacterCold c) => c.Fighter!.Guarding || Orders.Has(c, CharacterOrders.Block);
 
-    static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat);
+    /// <summary>
+    /// A stat as the combat formulas read it: times the injury, hunger and light multiplier and the stats' read-time scale (an animal's age, docs/game/animals.md); crossbows and
+    /// assassination also times the worn gear's factor (<see cref="Fighter.Factors"/>; the original's stat getter <c>FUN_140884ac0</c> asks for all of them). Dexterity's and the
+    /// weapon skills' gear factors are applied by the formulas themselves (<see cref="Fighter.DexterityMult"/>, <see cref="Fighter.DamageOutput"/>).
+    /// </summary>
+    static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
+
+    /// <summary>The worn gear's factor of a stat that <see cref="Eff"/> applies: <c>ranged skill mult</c> for crossbows, <c>asassination mult</c> for assassination, else 1.</summary>
+    internal static float GearFactor(CharacterCold c, StatsEnumerated stat) => stat switch
+    {
+        StatsEnumerated.Crossbows => c.Fighter?.Factors.Ranged ?? 1,
+        StatsEnumerated.Assassination => c.Fighter?.Factors.Assassin ?? 1,
+        _ => 1,
+    };
 
     int PauseTicks(World world, int slot, int counter)
     {
