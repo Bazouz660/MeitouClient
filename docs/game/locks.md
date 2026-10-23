@@ -231,8 +231,15 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   beds are not searched) in its town, else the nearest town within √1.5625e7 ≈ 3953, plus its home building's town (`FUN_1408cbea0`); each free one not in
   the squad's give-up list weighs 0.5 for the character's faction, 0.01 for a faction that counts it as an ally, else is skipped; x3 when its
   construction needs more than 1 material (Building+0x188), x2 with a parent building, x4 when slot 35 > 0 (**Unknown**). The heaviest wins (first on a
-  tie, `FUN_1408daa90`). Other characters search their town's designated buildings (`BuildingFinderNearestAllies_Designated` 2, 3, then the BF_BED
-  function finder) and take the first free bed (not decoded further).
+  tie, `FUN_1408daa90`). **Other characters** (**Verified** by decompile, order of the steps; what the building lists hold is **Observed**): a target already set is kept. The candidate list
+  is built from the first step that yields a bed: (1) the beds (interior furniture of function 6, `FUN_14054d4f0`) of the home building (the squad's Ownerships +0x38 hand); (2) with the squad type
+  (status +0xdc) not 4, those of the nearest "designated" building (`BuildingFinderNearestAllies_Designated`, kind 2; its per-building test `FUN_1408dac20` reads the building's designation record (vfunc 0x160), its faction, a shop test, a give-up test and an occupancy count `FUN_1403344c0`
+  and is only partly read; the meaning of the designation kinds is **Unknown**); (3) with the squad type not 1, 2, 5 or 6, those of the nearest designated building of kind 3;
+  (4) else the buildings of function mask 0x40 (`BuildingFinderNearestAllies_Function`, the 3 x 3 grid cells of zones round the character, whole list kept in the finder's order). The first bed in
+  the list that is not in the squad's give-up list (`FUN_1402690e0` count below 1) and that `UseableStuff` vfunc 0x4f0 (a place free) accepts is the target, passed over only when the squad's home is
+  not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
+  that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
+  town (engine choices for steps 2 to 4 and the order); nothing in Meitou calls it for an NPC yet (NPC sleepers go to the home spot of their mind).
 - **UI**: a quick right click on a bed (function 6 or 25) gives 258 (UseableStuff slot 131 `FUN_140299230`); the held menu (`FUN_1407a6bc0`) offers
   99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (verb names `FUN_14079b2d0`).
 - Meitou: [simulation](../simulation.md#cages-beds-and-locks).

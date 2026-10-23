@@ -97,7 +97,7 @@ it is not part of target eligibility.
 
 ## Unknowns
 
-1. The bed search (`FUN_1408cfe00`) is decoded for player-faction characters ([locks](locks.md#beds)); the NPC branch's designated-building finders are not.
+1. The bed search (`FUN_1408cfe00`) is decoded for player-faction characters and, in outline, for others ([locks](locks.md#beds)); the meaning of the designated-building kinds is not.
    Where 106 (no target finder) gets its bed is **Unknown**.
 2. The **sensed-list category bits** (`FUN_140853960` masks 1, 0x4010, 0x20, 0x210, 0x4008, 0x811, 0x10): which bit is ally, enemy, dead, slave;
    and the size of the sensed list, which is the search range of every finder.

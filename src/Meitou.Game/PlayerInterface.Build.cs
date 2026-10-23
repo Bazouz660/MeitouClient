@@ -596,10 +596,11 @@ sealed partial class PlayerInterface
     {
         if (sitePending is not { } pending) return;
         sitePending = null;
-        if (SlowModifier && pending.Site.Complete && Machine(pending.Site.Id) is { } job && (job.Operable || job.IsStorage || job.Function == Meitou.Data.World.ObjectRanges.TurretFunction))
+        if (SlowModifier && pending.Site.Complete && Machine(pending.Site.Id) is { } job && (job.Operable || job.IsStorage || job.Function is Meitou.Data.World.ObjectRanges.TurretFunction or MachineData.TrainingFunction))
         {
             // A turret: 146 USE_TURRET, which becomes the job 234 Turret guard (PermaJobs).
             var type = job.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET
+                : job.Function == MachineData.TrainingFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TRAINING_DUMMY
                 : job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
             return;
@@ -608,7 +609,7 @@ sealed partial class PlayerInterface
         if (SlowModifier && !pending.Site.Complete)
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), Meitou.Data.Gameplay.Ai.TaskType.BUILD, pending.Site.Id) { Tick = session.World.Tick });
         else if (!pending.Site.Complete) Say(new BuildOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
-        else if (Machine(pending.Site.Id) is { Operable: true }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
+        else if (Machine(pending.Site.Id) is { Operable: true } or { Function: MachineData.TrainingFunction }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Function: Meitou.Data.World.ObjectRanges.TurretFunction })
             Say(new Meitou.Simulation.Production.UseTurretOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });   // the original's order 146 USE_TURRET
         else if (Machine(pending.Site.Id) is { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction }) OpenStorage(pending.Site);
@@ -677,7 +678,7 @@ sealed partial class PlayerInterface
     /// only for an unfinished building; a finished plain building is the arrow, and its quick order is a move (docs/game/ui-input.md "Building hover and click").
     /// </summary>
     bool SiteIsObject(BuildingSnapshot site) =>
-        !site.Complete || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
+        !site.Complete || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or MachineData.TrainingFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
 
     /// <summary>
     /// The pointer over a site with characters selected: <c>build</c> while unfinished (the original's pointer mode 0xb), <c>search</c> over a storage, else the class's slot 130 pointer

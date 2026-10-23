@@ -157,7 +157,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// <summary>
     /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
     /// </summary>
-    static void Follow(World world, FollowOrder order)
+    internal static void Follow(World world, FollowOrder order)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int led)) return;

@@ -60,6 +60,8 @@ sealed partial class PlayerInterface
         ["First Aid"] = Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER,
         ["Splint Injuries"] = Meitou.Data.Gameplay.Ai.TaskType.SPLINT_ORDER,
         ["Loot"] = Meitou.Data.Gameplay.Ai.TaskType.LOOT_TARGET,
+        ["Follow"] = Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET,
+        ["Bodyguard"] = Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD,
     };
 
     /// <summary>A context-menu verb on <paramref name="target"/> that adds its job with Shift held (<see cref="OrderOrJob"/>); other verbs as they are.</summary>

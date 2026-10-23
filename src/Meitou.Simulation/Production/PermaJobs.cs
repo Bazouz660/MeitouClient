@@ -5,11 +5,18 @@ namespace Meitou.Simulation.Production;
 
 /// <summary>
 /// One entry of a character's job list (Perma-Jobs, docs/game/ai-tasks.md "Perma-jobs"): a task type and its target, a player building (<see cref="Construction.BuildSite.Id"/>) or, for a
-/// job read from a save whose target Meitou cannot name (a character), the saved handle, kept so the job is written back as it was.
+/// job whose target is a character (Bodyguard 45, Staying close 31: <see cref="Character"/>), the saved handle, kept so the job is written back as it was and the character found again
+/// after a load.
 /// </summary>
 public sealed record PermaJob(TaskType Type, string? Site, Hand Saved)
 {
     public PermaJob(TaskType type, string site) : this(type, site, Hand.Null) { }
+
+    /// <summary>The character a Bodyguard or Staying close job follows (<see cref="CharacterId.None"/>: none, or a loaded one not matched to its saved handle yet).</summary>
+    public CharacterId Character { get; init; } = CharacterId.None;
+
+    /// <summary>A job on a character.</summary>
+    public static PermaJob OfCharacter(TaskType type, CharacterId target, Hand? saved = null) => new(type, null, saved ?? Hand.Null) { Character = target };
 
     /// <summary>A job without a target (the medic and rescue jobs).</summary>
     public static PermaJob Untargeted(TaskType type) => new(type, null, Hand.Null);
@@ -67,9 +74,10 @@ public static class PermaJobs
     /// <summary>
     /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Others run elsewhere: medic 58,
     /// robotics 57 and splinting 250 in <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238 in <see cref="Carrying.CarrySystem"/>, attacking enemies 16 in
-    /// <see cref="AggroSystem"/>. The rest are kept, shown and saved but never started.
+    /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31
+    /// (a follow of the job's character) beside the production pick. The rest are kept, shown and saved but never started.
     /// </summary>
-    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB;
+    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
     /// <summary>
     /// Whether the job at <paramref name="k"/> of the list may start for a character on <paramref name="task"/> (the original's keys N+8, N+7, ... in list order, highest first;
@@ -111,7 +119,8 @@ public static class PermaJobs
         return true;
     }
 
-    static bool SameTarget(PermaJob a, PermaJob b) => a.Site is not null || b.Site is not null ? a.Site == b.Site : a.Saved == b.Saved;
+    static bool SameTarget(PermaJob a, PermaJob b) =>
+        !a.Character.IsNone || !b.Character.IsNone ? a.Character == b.Character : a.Site is not null || b.Site is not null ? a.Site == b.Site : a.Saved == b.Saved;
 
     /// <summary>The types that run with the jobs switch off (<b>Verified</b>, <c>FUN_14050c1c0</c>): attacking enemies, staying close, bodyguard, robot repair, medic, splinting.</summary>
     public static bool IgnoresSwitch(TaskType type) =>

@@ -144,16 +144,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case PutDownOrder put:
                     foreach (var id in Who(world, put.Carriers))
-                    {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold) continue;
-                        if (table.Next[slot].Task == (byte)CharacterTask.PutDown) continue;
-                        MovementSystem.Stop(table, slot);
-                        table.Next[slot].Task = (byte)CharacterTask.PutDown;
-                        table.Next[slot].TaskTime = 0;
-                        cold.CarryTarget = cold.Carrying;
-                        cold.LiftTime = 0;
-                        cold.ResumeTask = CharacterTask.Idle;
-                    }
+                        if (table.TryResolveNext(id, out int slot)) BeginPutDown(world, slot);
                     break;
                 case RescueJobCommand job:
                 {
@@ -182,6 +173,20 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var table = world.Characters;
         if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(c) || !CanBeLifted(table.Cold(b)!)) return false;
         Begin(table, carrier, body, CharacterTask.PickUp, resume);
+        return true;
+    }
+
+    /// <summary>Starts the put-down of the body the character in <paramref name="slot"/> carries (the order 'Put Down', and the carrying jobs' drop; serial phases): false when it carries nothing or cannot act, or is putting down already.</summary>
+    public bool BeginPutDown(World world, int slot)
+    {
+        var table = world.Characters;
+        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
+        MovementSystem.Stop(table, slot);
+        table.Next[slot].Task = (byte)CharacterTask.PutDown;
+        table.Next[slot].TaskTime = 0;
+        cold.CarryTarget = cold.Carrying;
+        cold.LiftTime = 0;
+        cold.ResumeTask = CharacterTask.Idle;
         return true;
     }
 

@@ -135,6 +135,7 @@ sealed partial class PlayerInterface
     {
         var id = target.Id;
         if (selection.Contains(id)) return;
+        // Bodyguard (45): follows and defends the target; with Shift it is the Bodyguard job (PlayerInterface.SquadAi.cs).
         verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
         if (!down || !target.CarriedBy.IsNone) return;

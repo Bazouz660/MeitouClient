@@ -67,6 +67,8 @@ public sealed partial class AiSystem
     /// <summary>The centre of the running package's mission town (X/Z); null without one or when that player town is gone.</summary>
     Vector2? DestinationCentre(World world, Blackboard board)
     {
+        // A refugee on its way to a squad walks to that squad's leader.
+        if (board.RefugeeTarget >= 0 && world.Squads.Find(board.RefugeeTarget) is { } other && LeaderPosition(world, other) is { } there) return Flat(there);
         var t = board.Destination;
         if (t.Site >= 0) return Flat(data.Sites[t.Site].Position);
         return t.PlayerTown > 0 && world.Buildings.FindTown(t.PlayerTown) is { } town ? Flat(town.Position) : null;
@@ -98,6 +100,9 @@ public sealed partial class AiSystem
         {
             case PackageClass.WanderingTrader:
                 StepTrader(world, squad, board);
+                break;
+            case PackageClass.Refugee:
+                StepRefugee(world, squad, board);
                 break;
             case PackageClass.PassingAssault:
             case PackageClass.OccupyTown:
@@ -319,6 +324,103 @@ public sealed partial class AiSystem
         if (board.Destination.PlayerTown <= 0 || world.Buildings.FindTown(board.Destination.PlayerTown) is not { } town) return;
         string faction = squad.Faction >= 0 && squad.Faction < data.Factions.Count ? data.Factions[squad.Faction].Name : "";
         world.Post(Loc.Tr("{1} squad has been removed from {2}", faction, town.Name));
+    }
+
+    // ---- the refugee package (Package_Refugee) ----
+
+    /// <summary>A refugee joins the squad it makes for within this (squared 1e6, <b>Verified</b> in its update <c>FUN_14028d190</c>); a squad it joins has more than 2 members (<c>FUN_1407ec0c0</c>).</summary>
+    const float RefugeeJoinRange = 1000;
+    /// <summary>The platoon grid of the original's squad search (<c>FUN_1408f56b0</c>): square cells of 4608, the world offset by 147465, 64 by 64.</summary>
+    const float PlatoonCell = 4608, PlatoonCellOffset = 147465;
+
+    /// <summary>Squads to fold into another once the serial look is done (the registry cannot change while it is walked): (the refugees, the squad they join).</summary>
+    readonly List<(Squad From, Squad Into)> merges = [];
+
+    /// <summary>The members not dead (a body stays on its squad's roll until it decays; the original's count, squad +0x58 and platoon +0xa4, is read as the living ones, <b>Unknown</b>).</summary>
+    static int Living(World world, Squad squad)
+    {
+        int n = 0;
+        foreach (var m in squad.Members)
+            if (world.Characters.TryResolveNext(m, out int s) && world.Characters.Cold(s)!.Medical is not { Dead: true }) n++;
+        return n;
+    }
+
+    /// <summary>
+    /// Whether a refugee package may start (vtable +0x60, <c>FUN_140288ed0</c>): its leader is a slave or an escaped slave (the status object's first int, <c>FUN_1405c8aa0</c>: <see cref="CharacterCold.SlaveState"/> above 0) and the squad has fewer
+    /// than 3 members. The original also starts it when its home town's vfunc 0x288 holds (<c>TownBase +0xe0 → +8</c>, read as "destroyed"); Meitou's towns are never destroyed, so that half is not built.
+    /// </summary>
+    static bool RefugeeCanStart(World world, Squad squad) =>
+        world.Characters.TryResolveNext(squad.Leader, out int leader) && world.Characters.Cold(leader)!.SlaveState > 0 && Living(world, squad) < 3;
+
+    /// <summary>
+    /// The refugee's start (vtable +0x30, <c>FUN_140287760</c>): "broken" when the squad is not intact, no target squad yet, and the nearest town of its faction other than its home as the
+    /// mission town (<c>FUN_140927ad0</c>; nest markers are not left out, as there). The original also makes the platoon not persistent and, with a destroyed home, re-homes it to that town.
+    /// </summary>
+    void RefugeeStarted(World world, Squad squad, Blackboard board)
+    {
+        board.RefugeeBroken = !board.Intact;
+        board.RefugeeTarget = -1;
+        if (LeaderPosition(world, squad) is not { } at) return;
+        int best = -1;
+        float bestD = float.MaxValue;
+        foreach (var site in data.Sites)
+        {
+            if (site.Index == board.Town || site.Index >= data.SiteFactions.Count || data.SiteFactions[site.Index] != squad.Faction) continue;
+            float d = Vector2.DistanceSquared(Flat(at), Flat(site.Position));
+            if (d < bestD) (best, bestD) = (site.Index, d);
+        }
+        board.Destination = best >= 0 ? CampaignTown.OfSite(best) : CampaignTown.None;
+    }
+
+    /// <summary>Whether the refugee is done (vtable +0x68, <c>FUN_140288f80</c>): its leader stands in the mission town.</summary>
+    bool RefugeeFinished(World world, Squad squad, Blackboard board) =>
+        world.Characters.IsAlive(squad.Leader) && !board.InTown.IsNone && board.InTown == board.Destination;
+
+    /// <summary>
+    /// The refugee's update (vtable +0x48, <c>FUN_14028d190</c>): a broken one looks for the squad to join, the nearest of its faction in its grid cell that is intact and has more
+    /// than 2 members (<c>FUN_14028c920</c>; Meitou: among the squads the AI runs, as it cannot hand members to a roaming one); the travel goals walk it there; within 1000 of it every
+    /// member joins that squad and the refugee squad is removed. A target that is itself a refugee of the same package forgets its own target.
+    /// </summary>
+    void StepRefugee(World world, Squad squad, Blackboard board)
+    {
+        if (!board.RefugeeBroken || LeaderPosition(world, squad) is not { } at) return;
+        if (board.RefugeeTarget < 0)
+        {
+            board.RefugeeTarget = RefugeeTargetFor(world, squad, at)?.Id ?? -1;
+            return;
+        }
+        if (world.Squads.Find(board.RefugeeTarget) is not { } target || LeaderPosition(world, target) is not { } there)
+        {
+            board.RefugeeTarget = -1;
+            return;
+        }
+        if (Vector3.DistanceSquared(at, there) >= RefugeeJoinRange * RefugeeJoinRange) return;
+        if (target.Ai is { Current: { } running } theirs && board.Current is { } mine && running.Id == mine.Id) theirs.RefugeeTarget = -1;
+        merges.Add((squad, target));
+    }
+
+    Squad? RefugeeTargetFor(World world, Squad squad, Vector3 at)
+    {
+        Squad? best = null;
+        float bestD = float.MaxValue;
+        foreach (var other in world.Squads.All)
+        {
+            if (other == squad || other.Faction != squad.Faction || other.Ai is not { Intact: true } || Living(world, other) <= 2 || LeaderPosition(world, other) is not { } there) continue;
+            if (PlatoonCellOf(there.X) != PlatoonCellOf(at.X) || PlatoonCellOf(there.Z) != PlatoonCellOf(at.Z)) continue;
+            float d = Vector3.DistanceSquared(at, there);
+            if (d < bestD) (best, bestD) = (other, d);
+        }
+        return best;
+    }
+
+    static int PlatoonCellOf(float v) => Math.Clamp((int)((v + PlatoonCellOffset) / PlatoonCell), 0, 63);
+
+    /// <summary>Folds the squads <see cref="StepRefugee"/> queued into theirs (after the look; a squad that was itself folded away meanwhile waits for the next).</summary>
+    void ApplyMerges(World world)
+    {
+        foreach (var (from, into) in merges)
+            if (world.Squads.Find(from.Id) == from && world.Squads.Find(into.Id) == into) SquadManagement.Merge(world, from, into);
+        merges.Clear();
     }
 
     /// <summary>Whether a town has hostile occupiers (the original's Town +0x128, the count of its occupier set): a squad whose running occupation holds it.</summary>

@@ -26,7 +26,7 @@ public enum PackageClass : byte
     /// <summary>The contract classes (12 to 15, 33): started only as a contract (<see cref="StartContract"/>), finished when its hours are over.</summary>
     Contract = 6,
     /// <summary>
-    /// Wars and campaigns (19, 20, 32, 31: the campaign drives its squads, <see cref="PopulationSystem"/>), prisoner shipping, refugees, cannibal raids: not built; never
+    /// Wars and campaigns (19, 20, 32, 31: the campaign drives its squads, <see cref="PopulationSystem"/>) and the rest of the unread classes: not built; never
     /// start (except as a lone slot-0 package), never finish.
     /// </summary>
     Unbuilt = 7,
@@ -44,6 +44,8 @@ public enum PackageClass : byte
     PassingAssault = 13,
     /// <summary><c>Package_OccupyTown</c> (30): stays in the player town it took (only by <c>Leads to</c>: it can never start of itself).</summary>
     OccupyTown = 14,
+    /// <summary><c>Package_Refugee</c> (22): a broken or tiny squad flees to the nearest other town of its faction and joins a healthy squad there (docs/game/ai.md "Package classes", Verified by code).</summary>
+    Refugee = 15,
 }
 
 public static class PackageClasses
@@ -64,6 +66,7 @@ public static class PackageClasses
         16 => PackageClass.WanderingTrader,
         29 => PackageClass.PassingAssault,
         30 => PackageClass.OccupyTown,
+        22 => PackageClass.Refugee,
         _ => PackageClass.Unbuilt,
     };
 }
@@ -172,6 +175,9 @@ public sealed class Blackboard
     public float AssaultCooldown { get; set; }
     /// <summary>The occupation's clock (<c>Package_OccupyTown</c> +0xc0): game seconds in a row with no able member in the town; past 4 it ends.</summary>
     public float OccupyAway { get; set; }
+    /// <summary>The refugee package (<c>Package_Refugee</c>): the squad was not intact when it started (+0xb0), and the squad it makes for to join (its mission target, +0x28; -1: none yet).</summary>
+    public bool RefugeeBroken { get; set; }
+    public int RefugeeTarget { get; set; } = -1;
 
     /// <summary>
     /// One pass of the original's package choice (docs/game/ai.md "Blackboard update", Verified): a running contract first; then slots from the highest down until
@@ -263,6 +269,8 @@ public sealed class Blackboard
         BarTable = -1;
         MissionTown = -1;
         Destination = CampaignTown.None;
+        RefugeeBroken = false;
+        RefugeeTarget = -1;
         rules?.Started(this, package, PackageClasses.Of(package.Signal));
     }
 
@@ -344,6 +352,7 @@ public sealed class Blackboard
         if (TraderWait > 0) { hasher.Add(TraderState); hasher.Add(TraderWait); hasher.Add(InTown.Site); hasher.Add(InTown.PlayerTown); hasher.Add(InTownSince); }
         if (AssaultEnemy >= 0 || AssaultDone) { hasher.Add(AssaultStart); hasher.Add(AssaultEnemy); hasher.Add(AssaultDone); hasher.Add(AssaultCooldown); }
         if (OccupyAway > 0) hasher.Add(OccupyAway);
+        if (RefugeeBroken || RefugeeTarget >= 0) { hasher.Add(RefugeeBroken); hasher.Add(RefugeeTarget); }
     }
 }
 
