@@ -45,7 +45,7 @@ its own victim/captor ownership checks.
 **Observed** item+0x140=from-owner, +0x160=current holder. Backpack uses its owning character's
 faction. Same faction/lawless holder is not stolen; strict1 can use set/nonmatching original-owner
 handle even if unresolved, strict0 also requires resolution. Dropping ownerless items can set
-dropper as owner. Saved ownedby mapping remains unverified; preserve handles, not a boolean only.
+dropper as owner. The save's `ownedby` is item+0x140 (**Observed**, `Item` vfunc 75/76); preserve handles, not a boolean only.
 
 ### Character fields used here
 
