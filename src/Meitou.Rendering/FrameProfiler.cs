@@ -291,6 +291,24 @@ public sealed class FrameProfiler : IDisposable
         return slices;
     }
 
+    /// <summary>The VRAM pie at the top right is shown (Shift+F12 in the game), with the profiler chart or without it.</summary>
+    public bool ShowVram { get; set; }
+
+    // VRAM is read every 30 frames (a driver call), for the chart's header and the pie; only while either is shown.
+    void RefreshVram()
+    {
+        if (vramAge-- <= 0) { vram = native.Device.VideoMemory(); vramSlices = VramSlices(); vramAge = 30; }
+    }
+
+    /// <summary>The VRAM pie at the top right, while <see cref="ShowVram"/>.</summary>
+    public void DrawVram(DebugOverlay overlay, int width, int height)
+    {
+        if (!ShowVram || width <= 0 || height <= 0) return;
+        RefreshVram();
+        DrawVramPie(overlay, width);
+        overlay.Flush(width, height);
+    }
+
     void DrawVramPie(DebugOverlay overlay, int width)
     {
         if (vramSlices.Count == 0) return;
@@ -481,9 +499,7 @@ public sealed class FrameProfiler : IDisposable
         float panelH = (rowCount + 2.5f) * lh + 2 * pad;
         float x0 = margin, x1 = width - margin, y1 = height - margin, y0 = Math.Max(y1 - panelH, margin);
         overlay.Rect(x0, y0, x1, y1, DebugOverlay.PanelColour);
-        // VRAM is read every 30 frames (a driver call), shown in the header and as the pie at the top right.
-        if (vramAge-- <= 0) { vram = native.Device.VideoMemory(); vramSlices = VramSlices(); vramAge = 30; }
-        DrawVramPie(overlay, width);
+        RefreshVram();
         string header = $"Profiler: {(showGpu ? "GPU" : "render thread (includes driver waits)")} ms per stage, last {History} frames   (F12: {(showGpu ? "cpu" : "off")})   " +
             $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   ";
         overlay.Text(header, x0 + pad, y0 + pad, DebugOverlay.TextColour);

@@ -281,6 +281,7 @@ sealed partial class GameHost
                 {
                     if (shiftDown && key == EngineKey.F1) { Console.WriteLine(meitou.Toggle()); return; }
                     if (shiftDown && key == EngineKey.F11) { ToggleNavOverlay(); return; }
+                    if (shiftDown && key == EngineKey.F12) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F12 alone cycles the profiler)
                     if (player.BuildKey(key, shiftDown)) return;
                     session.Input.SetKey(key, true);
                     player.Key(key, shiftDown);
@@ -563,6 +564,7 @@ sealed partial class GameHost
                     if (statsVisible && stats.Count > 0) panelsBottom = overlay.Panel(size.X, size.Y, "Meitou   (F11 hides this)", stats, panelsBottom);
                     if (debugMenuOpen) DrawDebugMenu(overlay, size.X, size.Y, panelsBottom);
                     profiler?.Draw(overlay, size.X, size.Y);
+                    profiler?.DrawVram(overlay, size.X, size.Y);
                 }
                 if (ui) panel?.Draw(size.X, size.Y);
                 // Over everything: the letterbox and the cinema's editor (F6, also with F7); the game hides its status line.

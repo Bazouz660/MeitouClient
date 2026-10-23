@@ -405,6 +405,7 @@ static partial class WorldApp
                 case Key.F9: fpsVisible = !fpsVisible; break;
                 case Key.F10 when overlay is not null: overlay.Visible = !overlay.Visible; break;
                 case Key.F11 when overlay is not null: statsVisible = !statsVisible; FoliageGpuCull.CountTriangles = statsVisible; break;
+                case Key.F12 when shift && profiler is not null && overlay is not null: profiler.ShowVram = !profiler.ShowVram; break;
                 case Key.F12 when profiler is not null && overlay is not null: profiler.Showing = (FrameProfiler.Mode)(((int)profiler.Showing + 1) % 3); break;
             }
         }
@@ -579,7 +580,7 @@ static partial class WorldApp
                 var lines = keyItems.Select(item => KeyState(item.Split(' ')[0]) is { } state ? item.PadRight(width) + state : item).ToList();
                 overlay.Draw(size.X, size.Y, "Keys   (F10 hides this)", lines, panelsBottom);
             }
-            if (panels && overlay is not null) profiler?.Draw(overlay, size.X, size.Y);
+            if (panels && overlay is not null) { profiler?.Draw(overlay, size.X, size.Y); profiler?.DrawVram(overlay, size.X, size.Y); }
             // Last, over the statistics and the profiler: the settings sit at the top left.
             if (panels) panel?.Draw(size.X, size.Y);
             // Over everything: the letterbox, and the timeline editor (F6) or the cinema status line.
