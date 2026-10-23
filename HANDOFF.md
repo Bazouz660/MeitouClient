@@ -22,6 +22,19 @@ next parity items after the merged build is run on the M1 Pro. Metal still needs
 the previews, skin LUT, terrain height arrays and ground parallax compile but were not exercised on the host after the
 WindowServer crash.
 
+### 2026-10-23 21:32 Metal progress timeout
+
+The first merged full-screen run (`--renderer metal --windowed --size 800x600`, then full screen,
+`MEITOU_METAL_GPU_BUDGET_MB=7168`) produced a `gpuEvent` progress timeout at 21:32:29 and a WindowServer watchdog
+restart at 21:36:46. The game process was left in `?E`/zombie state; the unified log was unavailable (`logd` broken with
+the same opendirectory failure). The new upstream ground relief is the largest renderer change since the last accepted
+run; its height-array/parallax path is Metal-untested. It is now **off by default on Metal**
+(`GroundRelief.Enabled = ParallaxActive = false` before `WorldFrame.CreateGpu`); `MEITOU_METAL_GROUND_RELIEF=1` opts
+back in for a controlled test. The Metal settings hide the ground-relief controls while it is off. The 7168 MB override
+also warns: use the 5120 MB default for normal testing. The next isolated runs are, in order: full shutdown, windowed
+800x600 at 5120 MB with ground relief off; then full screen; then `MEITOU_METAL_GROUND_RELIEF=1`; then
+`MEITOU_METAL_CPU_CULL=1` as the cull A/B. Do not use Xcode replay.
+
 Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
 mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
 Vulkan is ~41-42 fps (GPU 22.3 ms, world draw CPU 6.0 ms). Vulkan's GPU time is dominated by terrain (13.75 ms);
@@ -62,7 +75,9 @@ MEITOU_METAL_SHADOWS=0
 MEITOU_METAL_CLOUD_SHADOWS=0
 MEITOU_METAL_NO_TERRAIN_TEXTURES=1
 MEITOU_METAL_NO_IMPOSTORS=1
+MEITOU_METAL_CPU_CULL=1
 MEITOU_TERRAIN_NO_NORMAL=1
+MEITOU_METAL_GROUND_RELIEF=1   (upstream parallax; off by default after the 21:32 GPU timeout)
 ```
 
 The terrain no-normal switch selects the compile-time variant (the viewer's `N`/`normal-maps` toggle does the same).

@@ -77,6 +77,8 @@ sealed partial class GameHost
         bool guardEnabled = Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0";
         VramGuard? memoryGuard = null;
         if (guardEnabled) Console.WriteLine($"metal     memory guard: {memoryBudget / 1048576} MB of GPU allocation");
+        if (budgetMb > 5120)
+            Console.WriteLine($"warning   metal GPU budget {budgetMb} MB is above the 5120 MB default; full screen and a busy world can exhaust the 16 GB M1 Pro. Use 5120 unless profiling.");
         var window = display.Window;
         // The shared window setting: borderless full screen as the Vulkan path starts; --windowed keeps the window for one run.
         bool fullScreen = config.FullScreen && !o.Windowed;
@@ -262,6 +264,15 @@ sealed partial class GameHost
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
         if (terrainTexturesOff) Console.WriteLine("metal     terrain textures disabled (MEITOU_METAL_NO_TERRAIN_TEXTURES=1)");
         bool metalParticles = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1";
+        // Upstream's ground relief is off on Metal until its height-array sampling is validated on the
+        // M1 Pro: the full-screen/parallax path caused a GPU progress timeout on 2026-10-23. The
+        // Vulkan reference keeps it on. Set MEITOU_METAL_GROUND_RELIEF=1 to opt in for a test.
+        bool metalGroundRelief = Environment.GetEnvironmentVariable("MEITOU_METAL_GROUND_RELIEF") is "1" or "true";
+        GroundRelief.Enabled = metalGroundRelief;
+        GroundRelief.ParallaxActive = metalGroundRelief;
+        Console.WriteLine(metalGroundRelief
+            ? "metal     ground relief on (MEITOU_METAL_GROUND_RELIEF=1)"
+            : "metal     ground relief off (MEITOU_METAL_GROUND_RELIEF=1 enables the upstream parallax path)");
         var worldGpu = WorldFrame.CreateGpu(ctx, install, scene, assets, o, interactive: true,
             terrainTextures: !terrainTexturesOff, particlesEnabled: metalParticles, objectLoadBudget: 0,
             vramSample: guardEnabled ? () => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget) : null);
@@ -685,12 +696,15 @@ sealed partial class GameHost
             }
             toggles.Add(new Toggle("Meitou voices", () => o.MeitouVoices, v => o.MeitouVoices = v));
 
-            // Ground relief (docs/render-terrain.md): the parallax works without tessellation, so it is available on Metal too.
-            sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10,
-                v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
-            sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10,
-                v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
-            toggles.Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
+            // Ground relief (docs/render-terrain.md): opt-in on Metal until its height-array parallax is validated.
+            if (GroundRelief.Enabled)
+            {
+                sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10,
+                    v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
+                sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10,
+                    v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
+                toggles.Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
+            }
 
             // Water reflection: the same game setting and reflection range the Vulkan panel exposes; the reflection pass is seam-neutral.
             if (worldGpu.Reflection is { } reflection)
