@@ -463,7 +463,10 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
 
 `Kenshi_GenericBuildingWindow` (**Verified**, layout read): Window `Kenshi_WindowCX` captioned "BUILDING NAME", layer Window; `CraftingPanel`
 (`CraftingName`, `QueueButton` "QUEUE..."), `TitlesPanel` (INPUTS / OUTPUT), `Input1Panel` / `Input2Panel` (`InputNText`, `InputNStatusText`,
-slot `inN`, `InputNProgressBar`), output (`out` slot, `OutputProgressBar`, `OutputText`, `OutputDataPanel`).
+slot `inN`, `InputNProgressBar`), output (`out` slot, `OutputProgressBar`, `OutputText`, `OutputDataPanel`). The `inN` / `out` inventory
+sections are the recipe item's `inventory footprint width` × `inventory footprint height` cells (**Verified**, `FUN_14029e7b0` code read). Where the
+grid sits in its content panel and whether the progress bar moves for a tall grid is **Unknown**; Meitou keeps the layout's top left and pushes the
+bar under an overlapping grid.
 
 ### Character stats runtime layout
 

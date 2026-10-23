@@ -158,16 +158,27 @@ sealed partial class PlayerInterface
             }
             return;
         }
-        void Slot(string name, MachineSlotView view, int code)
+        void Slot(string name, string bar, MachineSlotView view, int code)
         {
-            if (view.Count <= 0 || controls.FirstOrDefault(c => c.Name == name) is not { } slot || Lifted(ItemOwner.AtSite(m.Site), code)) return;
-            var b = slot.Bounds;
-            // The item at its own footprint, as the original draws it in a slot (a box of building material is 6 x 3 cells), centred in the slot.
-            float cell = InventoryCell, w = view.Width * cell, h = view.Height * cell;
-            AddItemCell(controls, $"machine-{name}", new(b.X + (b.Width - w) / 2, b.Y + (b.Height - h) / 2, w, h), view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
+            int index = controls.FindIndex(c => c.Name == name);
+            if (index < 0) return;
+            // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top left.
+            var slot = controls[index];
+            var b = slot.Bounds with { Width = view.Width * InventoryCell, Height = view.Height * InventoryCell };
+            controls[index] = slot with
+            {
+                Bounds = b,
+                Properties = new Dictionary<string, string>(slot.Properties) { ["TileSize"] = FormattableString.Invariant($"{InventoryCell} {InventoryCell}"), ["State"] = "normal" },
+            };
+            // Engine choice: a grid taller than the room above the progress bar pushes the bar down under it.
+            int barIndex = controls.FindIndex(c => c.Name == bar);
+            if (barIndex >= 0 && controls[barIndex].Bounds is var pb && pb.Y < b.Y + b.Height + 4 * InventoryScale)
+                controls[barIndex] = controls[barIndex] with { Bounds = pb with { Y = b.Y + b.Height + 4 * InventoryScale } };
+            if (view.Count <= 0 || Lifted(ItemOwner.AtSite(m.Site), code)) return;
+            AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
         }
-        for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", m.Inputs[k], 10 + k);
-        if (m.Output is { } output) Slot("out", output, 8);
+        for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", $"Input{k + 1}ProgressBar", m.Inputs[k], 10 + k);
+        if (m.Output is { } output) Slot("out", "OutputProgressBar", output, 8);
         else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && !Lifted(ItemOwner.AtSite(m.Site), 8))
         {
             var ob = outSlot.Bounds;
