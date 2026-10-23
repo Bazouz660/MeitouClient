@@ -74,7 +74,8 @@ public sealed class FrameProfiler : IDisposable
     readonly List<(float Top, int Opens)> rows = [];
     (float X0, float Y0, float X1, float Y1, float LineHeight) legendBox;
     readonly float[][] groupSeries = Groups.Select(_ => new float[History]).ToArray();
-    readonly List<(float[] Series, Vector4 Colour, float Thickness)> plotted = [];
+    readonly List<(float[] Series, Vector4 Colour, float Thickness, int Head, int Count)> plotted = [];
+    static readonly Vector4 FrameColour = new(1.00f, 0.55f, 0.10f, 1);
     int cpuHead, cpuCount, gpuHead, gpuCount;
     readonly double[] gpuFrame = new double[Series];
 
@@ -137,6 +138,9 @@ public sealed class FrameProfiler : IDisposable
         stampCount[slot] = 0;
         preCount[slot] = 0;
         slotTag[slot] = Tag;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        frameMs = lastBegin == 0 ? 0 : (now - lastBegin) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        lastBegin = now;
         StageClock.Start();
         StageClock.Ms[StageClock.Sim] = outsideSim;
         outsideSim = 0;
@@ -145,6 +149,11 @@ public sealed class FrameProfiler : IDisposable
     }
 
     double outsideSim;
+    long lastBegin;
+    double frameMs;
+    // The whole frame's wall time, from one BeginFrame to the next (the simulation, the host, the waits for a free frame and for the GPU included): kept with the render
+    // thread's history, a frame late, and drawn on both charts.
+    readonly float[] frameTime = new float[History];
 
     /// <summary>Render-thread work before <see cref="BeginFrame"/> that belongs to the next frame: the game's simulation ticks (<see cref="StageClock.Sim"/>), the last call's ms.</summary>
     public void Outside(double simMs) => outsideSim = simMs;
@@ -169,6 +178,7 @@ public sealed class FrameProfiler : IDisposable
         for (int p = 0; p < parts.Length; p++) parts[p][cpuHead] = (float)StageClock.PartMs[p];
         cpu[Other][cpuHead] = 0;
         cpu[Total][cpuHead] = (float)sum;
+        frameTime[cpuHead] = (float)frameMs;
         if (SpikeLog.Enabled)
         {
             slotFrame[slot] = ++frameCounter;
@@ -438,15 +448,20 @@ public sealed class FrameProfiler : IDisposable
         // VRAM is read every 30 frames (a driver call), shown in the header and as the pie at the top right.
         if (vramAge-- <= 0) { vram = native.Device.VideoMemory(); vramSlices = VramSlices(); vramAge = 30; }
         DrawVramPie(overlay, width);
-        overlay.Text($"Profiler: {(showGpu ? "GPU" : "render thread (includes driver waits)")} ms per stage, last {History} frames   (F12: {(showGpu ? "cpu" : "off")})   " +
-            $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB", x0 + pad, y0 + pad, DebugOverlay.TextColour);
+        string header = $"Profiler: {(showGpu ? "GPU" : "render thread (includes driver waits)")} ms per stage, last {History} frames   (F12: {(showGpu ? "cpu" : "off")})   " +
+            $"vram {vram.Used / 1073741824.0:0.00} of {vram.Budget / 1073741824.0:0.0} GB   ";
+        overlay.Text(header, x0 + pad, y0 + pad, DebugOverlay.TextColour);
+        // The whole frame (FrameColour line): mean of the last frames, frames a second and the longest kept.
+        double frameMean = Mean(frameTime, cpuHead, cpuCount, meanFrames);
+        overlay.Text(string.Create(CultureInfo.InvariantCulture, $"frame {frameMean:0.00} ms ({(frameMean > 0 ? 1000 / frameMean : 0):0} fps), max {Max(frameTime, cpuHead, cpuCount):0.00}"),
+            x0 + pad + header.Length * cw, y0 + pad, FrameColour);
 
-        // Legend at the right: swatch, row, mean of the last frames on the CPU and the GPU, and the largest frame of the side shown over the whole history (a closed group's
+        // Legend at the right: swatch, row, mean of the last frames on the CPU and the GPU, and on the CPU chart the largest frame over the whole history (a closed group's
         // largest summed frame). A row marked + opens (a click), - closes; a closed group shows its stages' sum and is plotted as one line, an open one plots each stage.
-        float legendW = swatch + 6 + (16 + 10 + 10 + 10) * cw;
+        float legendW = swatch + 6 + (16 + 10 + 10 + (showGpu ? 0 : 10)) * cw;
         float lx = x1 - pad - legendW, ly = y0 + pad + 1.5f * lh;
         var dim = new Vector4(0.7f, 0.7f, 0.68f, 1);
-        overlay.Text($"{"",-16}{"cpu",10}{"gpu",10}{(showGpu ? "gpu max" : "cpu max"),10}", lx + swatch + 6, ly, dim);
+        overlay.Text($"{"",-16}{"cpu",10}{"gpu",10}{(showGpu ? "" : "cpu max"),10}", lx + swatch + 6, ly, dim);
         rows.Clear();
         plotted.Clear();
         string Ms(bool shown, double ms) => shown ? ms.ToString("0.00", CultureInfo.InvariantCulture) : "-";
@@ -462,15 +477,15 @@ public sealed class FrameProfiler : IDisposable
             bool expands = s == StageClock.UpdChars;
             float top = NextRow(expands ? PartsRow : -1);
             overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[s]);
-            if (Plots(s)) plotted.Add((hist[s], Colours[s], s == Total ? 2f : 1.5f));
+            if (Plots(s)) plotted.Add((hist[s], Colours[s], s == Total ? 2f : 1.5f, head, count));
             string label = indent + (expands ? partsOpen ? "- " : "+ " : "  ") + Label(s);
             overlay.Text($"{label,-16}{Ms(OnCpu(s), Mean(cpu[s], cpuHead, cpuCount, meanFrames)),10}{Ms(gpuCount > 0 && OnGpu(s), Mean(gpu[s], gpuHead, gpuCount, meanFrames)),10}" +
-                $"{Ms(count > 0 && Plots(s), Max(hist[s], head, count)),10}", lx + swatch + 6, top, DebugOverlay.TextColour);
+                (showGpu ? "" : $"{Ms(count > 0 && Plots(s), Max(hist[s], head, count)),10}"), lx + swatch + 6, top, DebugOverlay.TextColour);
             if (!expands || !partsOpen) return;
             // Its parts, render thread only (the GPU work they record is in the passes that run it); not plotted.
             for (int p = 0; p < parts.Length; p++)
-                overlay.Text($"{indent + "    " + StageClock.PartNames[p],-16}{Ms(true, Mean(parts[p], cpuHead, cpuCount, meanFrames)),10}{"",10}{Ms(!showGpu, Max(parts[p], cpuHead, cpuCount)),10}",
-                    lx + swatch + 6, NextRow(-1), dim);
+                overlay.Text($"{indent + "    " + StageClock.PartNames[p],-16}{Ms(true, Mean(parts[p], cpuHead, cpuCount, meanFrames)),10}{"",10}" +
+                    (showGpu ? "" : $"{Ms(true, Max(parts[p], cpuHead, cpuCount)),10}"), lx + swatch + 6, NextRow(-1), dim);
         }
         for (int gi = 0; gi < Groups.Length; gi++)
         {
@@ -492,20 +507,22 @@ public sealed class FrameProfiler : IDisposable
             if (!open)
             {
                 overlay.Rect(lx, top + 4, lx + swatch, top + 4 + swatch, Colours[stages[0]]);
-                if (shown) plotted.Add((sum, Colours[stages[0]], 1.5f));
+                if (shown) plotted.Add((sum, Colours[stages[0]], 1.5f, head, count));
             }
-            overlay.Text($"{(open ? "- " : "+ ") + name,-16}{Ms(anyCpu, c),10}{Ms(gpuCount > 0 && anyGpu, g),10}{Ms(count > 0 && shown, Max(sum, head, count)),10}",
+            overlay.Text($"{(open ? "- " : "+ ") + name,-16}{Ms(anyCpu, c),10}{Ms(gpuCount > 0 && anyGpu, g),10}" + (showGpu ? "" : $"{Ms(count > 0 && shown, Max(sum, head, count)),10}"),
                 lx + swatch + 6, top, DebugOverlay.TextColour);
             if (open) foreach (int s in stages) StageRow(s, "  ");
         }
         legendBox = (lx, ly, x1 - pad, ly + (rows.Count + 1) * lh, lh);
+        // The whole frame, on both charts (the render thread's history: a GPU chart's newest frames are a few behind it).
+        plotted.Add((frameTime, FrameColour, 2f, cpuHead, cpuCount));
 
         // The plot: y from 0 to a round number above the largest value shown, with labelled grid lines.
         float px0 = x0 + pad + 7 * cw, px1 = lx - 3 * cw, py0 = y0 + pad + 1.5f * lh + lh * 0.5f, py1 = y1 - pad - lh * 0.5f;
         if (px1 - px0 < 50 || py1 - py0 < 30) { overlay.Flush(width, height); return; }
         float max = 0;
-        foreach (var (series, _, _) in plotted)
-            for (int i = 0; i < count; i++) max = Math.Max(max, series[i]);
+        foreach (var (series, _, _, _, n) in plotted)
+            for (int i = 0; i < n; i++) max = Math.Max(max, series[i]);
         float scale = NiceCeiling(max * 1.05f);
         var grid = new Vector4(1, 1, 1, 0.12f);
         // As many decimals as the grid step needs (10 / 4 = 2.5 needs one), so no label is rounded.
@@ -517,20 +534,20 @@ public sealed class FrameProfiler : IDisposable
             overlay.Rect(px0, y - 0.5f, px1, y + 0.5f, grid);
             overlay.Text(v.ToString(labelFormat, CultureInfo.InvariantCulture).PadLeft(6), x0 + pad, y - lh * 0.5f, dim);
         }
-        if (count >= 2)
         {
             float dx = (px1 - px0) / (History - 1);
             // Oldest at the left; the newest frame at the right edge.
-            foreach (var (series, colour, thickness) in plotted)
+            foreach (var (series, colour, thickness, h, n) in plotted)
             {
+                if (n < 2) continue;
                 // A run of points within a quarter pixel of the height it started at is one segment: most stages lie flat near 0, and the
                 // 300 segments a series would otherwise queue made the plot cost as much as the HUD.
                 float runX = 0, runY = 0, lastX = 0, lastY = 0;
-                for (int i = count - 1; i >= 0; i--)
+                for (int i = n - 1; i >= 0; i--)
                 {
-                    float v = series[(head - 1 - i + History) % History];
+                    float v = series[(h - 1 - i + History) % History];
                     float x = px1 - i * dx, y = py1 - (py1 - py0) * Math.Clamp(v / scale, 0, 1);
-                    if (i == count - 1) (runX, runY) = (x, y);
+                    if (i == n - 1) (runX, runY) = (x, y);
                     else if (MathF.Abs(y - runY) >= 0.25f)
                     {
                         if (lastX > runX) overlay.Line(runX, runY, lastX, lastY, thickness, colour);
