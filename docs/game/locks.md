@@ -224,7 +224,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   resident squad, or its template's `public beds` is false (unless the building's +0xc4 is 3, **Unknown**); else the template's `bed usage cost`,
   x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats).
 - **Payment** (`FUN_1403576c0`, player faction only): -1 → the character says "This isn't mine", refused; > 0 → free when this bed was paid less than
-  24 (game hours, **Observed**) ago (a global map by bed handle), else "Can't afford c.{1} for bed rental." and refused, or paid with
+  24 (game hours, **Observed**) ago (a global map keyed by the name string at `+0x58` of the third argument, the empty string when null, storing the game time as a float; never saved, **Verified** by references, [save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), else "Can't afford c.{1} for bed rental." and refused, or paid with
   "Paid c.{1} for bed rental.".
 - **Bed search** (`FUN_1408cfe00`, target finder of 153 Going to bed (**Verified**: its registration in `FUN_140319a60` stores the thunk at row +0x160)
   and desire of 148): a character in a bed keeps it. For a player-faction character: the complete buildings of function mask 0x40 (BF_BED only; skeleton

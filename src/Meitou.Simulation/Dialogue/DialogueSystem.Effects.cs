@@ -48,6 +48,9 @@ public sealed partial class DialogueSystem
                 case DialogueActions.AffectRelations when mc is not null && tc is not null:
                     ChangeRelation(world, mc.Faction, tc.Faction, effect.Value);
                     break;
+                case DialogueActions.AffectReputation when mc is not null:
+                    data.Relations.AddGlobalTrust(mc.Faction, effect.Value);   // the speaker's faction's global trust (slot 9), whoever the target is
+                    break;
                 case DialogueActions.AttackChaseForever or DialogueActions.AttackStayNearHome:
                     if (mc is not null && tc is not null) FlagFrom(world, mc, me, target, tc, MemoryTag.TempEnemy);
                     Attack(world, me, target);

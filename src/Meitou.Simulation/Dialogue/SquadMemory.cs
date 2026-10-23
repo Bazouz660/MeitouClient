@@ -16,8 +16,8 @@ public static class MemoryTag
 /// <summary>
 /// The squads' memories of characters (the original's <c>platoon+0x98</c>, docs/game/dialogue.md "Squad memory"): per squad and character a time and two tag sets. A player-faction
 /// character's long-term tags and time live in one entry the squad keeps for the whole player faction (<c>FUN_140671840</c>); its short-term tags stay per character, and the squad's
-/// temporary ally flag for the player is one bool (<c>platoon memory +0x28</c>). Times are game hours. Hashed by the dialogue system; not saved yet (the original saves it on the platoon,
-/// <c>taglong</c> / <c>tagshort</c> / <c>tagtime</c>).
+/// temporary ally flag for the player is one bool (<c>platoon memory +0x28</c>). Times are game hours. Hashed by the dialogue system; saved on the squad's platoon (the original's keys,
+/// <c>taglong</c> / <c>tagshort</c> / <c>tagtime</c>; <see cref="Saving.MemorySave"/>) and kept by the platoon while its squad is out of the world (<see cref="Take"/>, <see cref="Restore"/>).
 /// </summary>
 public sealed class SquadMemory
 {
@@ -33,6 +33,8 @@ public sealed class SquadMemory
         a.Item1 != b.Item1 ? a.Item1.CompareTo(b.Item1) : CompareIds(a.Item2, b.Item2)));
     readonly SortedDictionary<int, Entry> player = [];
     readonly SortedSet<int> tempPlayerAlly = [];
+    // Squads holding a TEMP_ENEMY tag on someone: the aggro scan's gate (a derived index, not hashed).
+    readonly SortedSet<int> tempEnemySquads = [];
 
     public bool IsEmpty => entries.Count == 0 && player.Count == 0 && tempPlayerAlly.Count == 0;
 
@@ -67,6 +69,7 @@ public sealed class SquadMemory
         var e = Get(entries, (squad, who));
         e.Short |= 1u << tag;
         e.Time = world.GameHours;
+        if (tag == MemoryTag.TempEnemy) tempEnemySquads.Add(squad);
         if (!PlayerSide(world, c)) return;
         if (tag == MemoryTag.TempAlly) tempPlayerAlly.Add(squad);
         if (player.TryGetValue(squad, out var p)) p.Time = world.GameHours;
@@ -91,6 +94,49 @@ public sealed class SquadMemory
         foreach (var ((squad, who), e) in entries.Where(kv => kv.Key.Squad == from).ToArray()) entries[(to, who)] = new Entry { Time = e.Time, Long = e.Long, Short = e.Short };
         if (player.TryGetValue(from, out var p)) player[to] = new Entry { Time = p.Time, Long = p.Long, Short = p.Short };
         if (tempPlayerAlly.Contains(from)) tempPlayerAlly.Add(to);
+        if (tempEnemySquads.Contains(from)) tempEnemySquads.Add(to);
+    }
+
+    /// <summary>Whether the squad holds a TEMP_ENEMY tag on any character (the aggro scan skips the per-target lookup for squads that do not).</summary>
+    public bool AnyTempEnemy(int squad) => squad >= 0 && tempEnemySquads.Contains(squad);
+
+    /// <summary>
+    /// A squad's memory as plain data (null when it has none): what a platoon keeps while its squad is out of the world and what a save writes (<see cref="Saving.MemorySave"/>).
+    /// </summary>
+    public SquadMemoryData? Snapshot(int squad)
+    {
+        if (squad < 0) return null;
+        SquadMemoryData? data = null;
+        foreach (var ((q, who), e) in entries)
+            if (q == squad) (data ??= new()).Entries.Add(new SquadMemoryData.Item(who, e.Time, e.Long, e.Short));
+        if (player.TryGetValue(squad, out var p)) (data ??= new()).Player = new SquadMemoryData.Item(CharacterId.None, p.Time, p.Long, p.Short);
+        if (tempPlayerAlly.Contains(squad)) (data ??= new()).TempAlly = true;
+        return data;
+    }
+
+    /// <summary><see cref="Snapshot"/> and forget: the squad leaves the world and its platoon keeps the memory.</summary>
+    public SquadMemoryData? Take(int squad)
+    {
+        var data = Snapshot(squad);
+        if (data is null) return null;
+        foreach (var item in data.Entries) entries.Remove((squad, item.Who));
+        player.Remove(squad);
+        tempPlayerAlly.Remove(squad);
+        tempEnemySquads.Remove(squad);
+        return data;
+    }
+
+    /// <summary>Puts a snapshot into the memory of <paramref name="squad"/> (replacing what it holds about the same characters).</summary>
+    public void Restore(int squad, SquadMemoryData? data)
+    {
+        if (squad < 0 || data is null) return;
+        foreach (var item in data.Entries)
+        {
+            entries[(squad, item.Who)] = new Entry { Time = item.Time, Long = item.Long, Short = item.Short };
+            if ((item.Short >> MemoryTag.TempEnemy & 1) != 0) tempEnemySquads.Add(squad);
+        }
+        if (data.Player is { } p) player[squad] = new Entry { Time = p.Time, Long = p.Long, Short = p.Short };
+        if (data.TempAlly) tempPlayerAlly.Add(squad);
     }
 
     static Entry Get<TKey>(SortedDictionary<TKey, Entry> map, TKey key) where TKey : notnull
@@ -107,4 +153,17 @@ public sealed class SquadMemory
         foreach (var (squad, e) in player) { hasher.Add(squad); hasher.Add(e.Time); hasher.Add((ulong)e.Long); hasher.Add((ulong)e.Short); }
         foreach (int squad in tempPlayerAlly) hasher.Add(squad);
     }
+}
+
+/// <summary>
+/// One squad's memory as plain data (<see cref="SquadMemory.Snapshot"/>): an item per remembered character (game hours of the last note, long-term and short-term tag bits), the item the
+/// squad keeps for the whole player faction (<c>Who</c> none) and its TEMP_ALLY flag for the player (docs/game/dialogue.md "Squad memory").
+/// </summary>
+public sealed class SquadMemoryData
+{
+    public readonly record struct Item(CharacterId Who, double Time, uint Long, uint Short);
+
+    public List<Item> Entries { get; } = [];
+    public Item? Player { get; set; }
+    public bool TempAlly { get; set; }
 }

@@ -288,6 +288,13 @@ me, 5 captor, 6 friendly, 7 defeated my squad, 8 I beat his squad, 9 killed my f
   (long & 0xc), DC 53 (long & 0x2b0), "regards as friendly" (`FUN_1407923d0`, Character slot 126: same faction; not with TEMP ENEMY;
   yes with TEMP ALLY or love; else faction ally) and "regards as enemy" (`FUN_14079c950`, slot 125): TEMP ENEMY makes, and TEMP ALLY
   unmakes, an enemy across faction relations; `FUN_140599390` (a grudge: long & 0x7b2 or short & 0xb6).
+- **"Regards as enemy" in order** (`FUN_14079c950(A, B)`, **Observed**): the same faction: no. Otherwise: A's squad holds TEMP ENEMY on B, or A's
+  faction is the player's and B's squad holds TEMP ENEMY on A: yes; A's squad holds TEMP ALLY on B: no; else the faction relation test (hostile
+  A -> B plus extra gates for disguise, coexistence and a flag at faction `+0x1d0`).
+- **Save** (platoon, **Observed**: writer `FUN_1406789e0`, reader `FUN_140678cb0`): per entry `i` from 0 the entry's character handle under
+  `tags<i>`, ints `taglong<i>` and `tagshort<i>`, float `tagtime<i>` (the double time cast to float); the reader stops at the first missing
+  `taglong<i>`. The TEMP ALLY bool (`memory +0x28`) is not written, and where the shared player entry goes is **Unknown**. Meitou's own keys:
+  [save](../formats/save.md#squad-memory).
 
 ## Conditions
 
@@ -300,14 +307,14 @@ nearby player character (and stores it as the target). `B` = value > 0.
 |---|---|---|
 | 1 RELATIONS | Me's faction's relation to S's faction (−100..100) | Num2 |
 | 2 PLAYERMONEY | the player faction's money, any `who` | Num2 |
-| 3 REPUTATION | S's faction's global trust (FactionRelations `+0x18`, the float DA 5 adds to), as an int (`FUN_140671530`) | Num2 |
+| 3 REPUTATION | S's faction's global trust (FactionRelations `+0x18`), as an int (`FUN_140671530`: the faction object `+0x78`, then `+0x18`). **Verified** by reading both functions: DA 5 adds to the **speaker's** faction, DC 3 reads the **subject's**, so they meet only for `who` 0 | Num2 |
 | 4 / 5 CARRYING_BOUNTY_ALIVE / DEAD | S carries a living / dead body with a bounty for Me's faction (or a diplomat of a hostile faction) | Bool |
 | 6, 15, 34, 51 | not evaluated, always pass | - |
 | 7 / 8 IMPRISONED_BY_TARGET / OTHER | S caged (in-something state 2) by Me's faction (7) or another (8); when S is Me, by the target's faction; no target: !B | Bool |
 | 9 IS_A_TRADER | S's squad trades | Bool |
 | 10 FACTION_RANK | the player's rank in Me's faction ([faction rank](factions-squads-towns.md#32-faction-rank)), any `who` | Num3 |
-| 11 BUILDING_IS_CLOSED_AND_SECURED | a bool at `+0xe8` of Me's platoon AI object (`FUN_140791ba0`; its setter **Unknown**) | Bool |
-| 12 PLAYER_TECH_LEVEL | world tech level | Num3 |
+| 11 BUILDING_IS_CLOSED_AND_SECURED | a bool at `+0xe8` of Me's platoon AI object (`FUN_140791ba0`: Character `+0x658` -> `+0x78` -> `+0xf8`; its setter **Unknown**, not built) | Bool |
+| 12 PLAYER_TECH_LEVEL | the research manager's tech level, `*(*(game + 0x38) + 8)` (**Observed**; the manager's level is the one [research](buildings-production.md#research) raises, 1 at the start), any `who` | Num3 |
 | 13 NUM_DIALOG_EVENT_REPEATS | Me's counter for the current event | Num3 |
 | 14 IS_IMPRISONED | S is caged | Bool |
 | 16 TARGET_IN_TALKING_RANGE | same area as Me and within 260 | Bool |
@@ -315,7 +322,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 18 TARGET_LAST_SEEN_X_HOURS_AGO | hours since Me's squad last noted S ([memory](#squad-memory)), 9999.99 never; `who` 0 asks about Me itself | Num2 |
 | 19 IS_LEADER | S leads its squad | Bool |
 | 20 MET_TARGET_BEFORE | Me's squad memory has an entry for S | Bool |
-| 21 / 22 WEAKER / STRONGER_THAN_ME | status float `+0x90`: Me's > S's × 1.5 (21) / S's > Me's × 1.5 (22); what the float rates is **Unknown** | Bool |
+| 21 / 22 WEAKER / STRONGER_THAN_ME | status float `+0x90` (Character `+0x1a0`): 21 is Me's > S's × 1.5, 22 is S's > Me's × 1.5, strict (**Observed**, re-read in `FUN_140676950`); what the float rates and who writes it is **Unknown**, not built | Bool |
 | 24 IS_ALLY / 25 IS_ENEMY | relation ≥ 50 (or allied, or own) / ≤ −30 and not own | Bool |
 | 27 BROKEN_LEG, 28 BROKEN_ARM, 29 DAMAGED_HEAD (< 0.2), 30/42 NEARLY_KO (< 0.1), 41 IS_KO, 44 IS_DEAD | S's body | Bool |
 | 31 IN_A_NON_PLAYER_TOWN | S in a town not owned by the player | Bool |
@@ -324,12 +331,12 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 35 SQUAD_SIZE, 37 NUM_BACKPACKS | S's squad: members / members with a backpack in the backpack slot (`FUN_1405cb320`) | Num3 |
 | 36 IS_PLAYER | S's faction is the player's | Bool |
 | 38 SQUAD_ONLY_ANIMALS, 43 SQUAD_IS_DOWN, 72 MIXED_GENDER_GROUP | S's squad | Bool |
-| 39 IS_OUTNUMBERED | S's perception counters: `+0x94` > `+0x4c` × 1.3 (what they count **Unknown**) | Bool |
+| 39 IS_OUTNUMBERED | S's counters (the object at S's `+0x650` + 0x28, Character slot 13 `FUN_1405c8700`): `+0x94` > `+0x4c` × 1.3, strict (**Observed**; what they count and who writes them **Unknown**, not built) | Bool |
 | 40 / 47 BOUNTY_AMOUNT_PERCEIVED / ACTUAL | S's bounty with Me's faction (perceived: only while recognised) | Num2 |
 | 45 IS_FEMALE | S's race is female | Bool |
 | 46 CARRYING_SOMEONE_TO_ENSLAVE | S carries a living adventurer, bandit, slave or civilian (false for value 0 too) | asymmetric |
 | 48 IM_UNARMED | S has no weapon | Bool |
-| 49 TOWN_HAS_FORTIFICATIONS_WALLS, 57 WITHIN_TOWN_WALLS, 58 TOWN_WALLS_LOCKED_UP | S's current town has a gate near Me (town slot 97) / S slot 35 (`FUN_140792200`, a building's wall test) > 0 / town slot 96; 49 has no use in the data | Bool |
+| 49 TOWN_HAS_FORTIFICATIONS_WALLS, 57 WITHIN_TOWN_WALLS, 58 TOWN_WALLS_LOCKED_UP | S's current town (Character slot 14 `FUN_1405e1ed0` -> `+0x88`) has a building of the gate class near Me: town slot 97 `FUN_140929910` returns the nearest member of the town's building set with a non-null Building slot 123 (49 is true when any exists, wherever it is) / Character slot 35 `FUN_140792200` (a cached wall count of the character's building, refreshed from the building's slots) > 0 / town slot 96 `FUN_140929820`: true when the town has at least one such building and none of them has a null controller or a controller whose state `+0x380` is 1 (what slot 123 and state 1 mean is **Unknown**). 49 has no use in the data; none of the three is built (**Observed**) | Bool |
 | 50 TARGET_IS_MY_MISSION_TARGET | S is Me's squad's mission target (`FUN_140792e00`) | Bool |
 | 52 / 53 I_LOVE / I_HATE_THIS_GUY | Me's squad's long-term tags on S & 0xc / & 0x2b0 (`FUN_140599590`, `FUN_1405995d0`) | Bool |
 | 54 I_SHOULD_SCREW_THIS_GUY_OVER | `FUN_14059a7b0`, each rule overriding the earlier: either is a bandit; no if both share an NPC class; yes if Me is traitorous (personality 2); no if Me regards S as friendly; no if Me is honourable (1); yes if S's faction owns Me as a slave (status `+0xe0`); no if Me loves S; yes if it hates S; yes if S is dead | Bool |
@@ -341,9 +348,9 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 65 IS_SAME_RACE_AS_ME | S's race group = Me's | Bool |
 | 66 CAN_AFFORD_BOUNTY | S is a player character and the player's money ≥ its bounty | Bool |
 | 68 IS_INDOORS | S's building handle is set (slot 59 `FUN_1405ce020`: its carrier's, its bed's or cage's building, else the one it stands in) | Bool |
-| 69 HAS_ILLEGAL_ITEM | members of S's squad that are S or that Me perceives carry an item on the list at `+0x100` of Me's town's faction (else Me's faction); each find posts "{1} has been discovered smuggling {2}" and records the carrier as interjector | Num2 on 0/1 |
-| 70 USING_MY_TRAINING_EQUIPMENT | S's `+0x158` (a faction handle) is Me's faction | Bool |
-| 73 TOWN_LEVEL_CURRENT_LOCATION / 74 PLAYERS_BEST_TOWN_LEVEL | Me's current town, when the player's, `+0x388` of its slot-77 object (73; false otherwise) / the highest over the player's towns, −1 none | Num3 |
+| 69 HAS_ILLEGAL_ITEM | members of S's squad that are S or that Me perceives (`FUN_140855960`) carry an item on the set at `+0x100` of Me's town's faction (else Me's faction) (`FUN_140745f70`: the inventory holds at least the count); each find posts "{1} has been discovered smuggling {2}" and records the carrier as interjector; the result is the 0/1 found. Which FACTION field fills the set is **Unknown** (a trade culture's `illegal goods` is the likely source); not built | Num2 on 0/1 |
+| 70 USING_MY_TRAINING_EQUIPMENT | S's `+0x158` (a faction handle) is Me's faction; who sets it is **Unknown**, not built | Bool |
+| 73 TOWN_LEVEL_CURRENT_LOCATION / 74 PLAYERS_BEST_TOWN_LEVEL | Me's current building (Character slot 15 `+0x78`) has a town (Building slot 77) whose faction is the player's: its `+0x388` ([plevel](factions-squads-towns.md)); otherwise false whatever the value (73) / the highest `+0x388` over the player faction's towns (`FUN_140928cc0`), −1 with none (74) | Num3 |
 | 75 IN_A_PLAYER_TOWN | S in a player-owned town | Bool |
 | 76 TARGET_CHARACTER_EXISTS | there is a subject | Bool |
 | 77 IS_RECRUITABLE | false at a player head cap (**Unknown**), for a quantity ≥ 25 (**Unknown**), for law, trader, diplomat; military → !B; others B | Bool |
@@ -401,7 +408,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 1 TRADE | ends the conversation, opens trade with the speaker |
 | 2 TALK_TO_LEADER | a player target: the speaker's squad leader gets task 102 on the target |
 | 3 / 18 JOIN_SQUAD_WITH_EDIT / FAST | the speaker joins the target's squad (player: recruited, its package becomes `dialogue package player`; 3 opens the editor, [characters](../characters.md)) |
-| 4 AFFECT_RELATIONS, 5 AFFECT_REPUTATION | speaker's faction toward the target's: relation += val0 (clamp ±100) / the speaker's faction's global trust += val0 (slot 9) |
+| 4 AFFECT_RELATIONS, 5 AFFECT_REPUTATION | speaker's faction toward the target's: relation += val0 (clamp ±100) / the speaker's faction's global trust += val0, no clamp, whoever the target is (slot 9, `FUN_1406b2530`) |
 | 6 ATTACK_CHASE_FOREVER, 55 ATTACK_STAY_NEAR_HOME, 57 ATTACK_IF_NO_COEXIST | the speaker perceives the target as an enemy (`FUN_140858f40`), its squad tags it TEMP ENEMY (`FUN_1406744a0`); task 101 (55: 248); 57 only without coexistence |
 | 7 GO_HOME | its tasks cleared, task 19 with the target, the squad tags the target AGGRESSOR |
 | 8 TAKE_MONEY | the target's faction pays val0, no balance check ("Paid c.{1}") |
@@ -460,13 +467,13 @@ counters hold; DA 15's lists, 58's field; the speech timer's unit; the unnamed s
 
 As built: [simulation](../simulation.md#dialogue). Speech bubbles (`DialogueSystem.Ambient`, `PlayerInterface.Speech`): ambient lines are said as bubbles over the speaker's head, 2 + 0.12 x length seconds apart, the chain passing between speakers as in the original (the target's lines said by the target, interjectors by interjectors; a non-monologue root stops after one line). Started by the campaign announcement (event 2), crowd triggers (event 74), a contract's end talk (event 30), `DialogueEvent` commands from other systems, and a sight stand-in (`DialogueSettings.AmbientEvents`, on in the game, which also gates the commands' event lines): every 30 ticks an awake, free NPC within 600 units of a player character says event 66 (its faction hostile to the player's), 67 (ally) or 3 (else) to that player character, or, when it said a line to it in the last half game hour or none passes now, event 3 to the nearest NPC of another squad within 260 (DC 16's talking range); at most 2 per look; a squad's half-hour cooldown per target starts only once a line is said, so a failed `chance temporary` roll is tried again next look, as the original's perception fires the event on every update (the Red Sabres' attack root is 20%) (engine choices: the original's perception tests are only partly read, and NPCs talk only near a player character, where they can be heard).
 
-Engine choices: a crowd trigger leaves out the owner and the speaker and rolls its val0 % per member; items that do not fit are dropped at the target's feet; contracts and `change AI` start on the next tick, and a contract's goals aimed at the squad mission follow the employer as squadmates follow a leader; DA 29 is an arrest without a fine in the speaker's town and an attack elsewhere (`ArrestSystem`); DA 53's "Free!" is a bark, not a green float. Events fired from other systems: 18-22 (first aid), 13 (shackles freed, a cage's lock picked), 41-43, 8, 17, 34, 57, 58 (the first witness of a pending crime, `CrimeSystem`), 70 / 71 (a severed limb), 23 / 24 (seen on the ambient cadence: a character down at the last look and up now; 24 when fighting or a hostile awake character is within sight), 60 (an NPC's leash gives up a chase, at its target), 46 (a jailer's release round), 44 / 45 (the police's spotting; the fine, the bail list and the surgeon's editor are the data's lines, [simulation](../simulation.md#arrest-and-jail)). DA 2: the leader walks up (`DialogueSystem.Approach`) and opens the event-1 conversation within talk range, quietly when it has nothing to say; after 25 game minutes it gives up with event 60. DA 47 compares RACE records only (sub-races not read). DA 24's slave list is the speaker squad's members in slave state; they keep it, owned by the target's faction. DA 41 / 42 end the conversation and open the slave window as it closes ([simulation](../simulation.md#arrest-and-jail), which also fires event 51); DA 48 is not built. Contracts and `change AI` are saved on the PLATOON (`AiSave`, [save](../formats/save.md#npc-platoons-meitou-mapping)); a wild platoon's are not. Squad memory (`SquadMemory`, hashed, not saved yet; [Squad memory](#squad-memory)): written by event-1 ends, DA 19-21, 6/55/57, 7, 29, 34, 47
-(each enslaved one's squad remembers the speaker, tag 0: the decompile hides the tag), read by DC 18, 20, 23, 52-55; Meitou's aggro does not read TEMP ALLY / ENEMY,
+Engine choices: a crowd trigger leaves out the owner and the speaker and rolls its val0 % per member; items that do not fit are dropped at the target's feet; contracts and `change AI` start on the next tick, and a contract's goals aimed at the squad mission follow the employer as squadmates follow a leader; DA 29 is an arrest without a fine in the speaker's town and an attack elsewhere (`ArrestSystem`); DA 53's "Free!" is a bark, not a green float. Events fired from other systems: 18-22 (first aid), 13 (shackles freed, a cage's lock picked), 41-43, 8, 17, 34, 57, 58 (the first witness of a pending crime, `CrimeSystem`), 70 / 71 (a severed limb), 23 / 24 (seen on the ambient cadence: a character down at the last look and up now; 24 when fighting or a hostile awake character is within sight), 60 (an NPC's leash gives up a chase, at its target), 46 (a jailer's release round), 44 / 45 (the police's spotting; the fine, the bail list and the surgeon's editor are the data's lines, [simulation](../simulation.md#arrest-and-jail)). DA 2: the leader walks up (`DialogueSystem.Approach`) and opens the event-1 conversation within talk range, quietly when it has nothing to say; after 25 game minutes it gives up with event 60. DA 47 compares RACE records only (sub-races not read). DA 24's slave list is the speaker squad's members in slave state; they keep it, owned by the target's faction. DA 41 / 42 end the conversation and open the slave window as it closes ([simulation](../simulation.md#arrest-and-jail), which also fires event 51); DA 48 is not built. Contracts and `change AI` are saved on the PLATOON (`AiSave`, [save](../formats/save.md#npc-platoons-meitou-mapping)); a wild platoon's are not. Squad memory (`SquadMemory`, hashed, saved on the platoon, kept by a platoon whose squad leaves the world; [Squad memory](#squad-memory)): written by event-1 ends, DA 19-21, 6/55/57, 7, 29, 34, 47
+(each enslaved one's squad remembers the speaker, tag 0: the decompile hides the tag), read by DC 18, 20, 23, 52-55; `AggroSystem` reads TEMP ENEMY / ALLY as `FUN_14079c950` does (a squad with a TEMP ENEMY tag scans even when its faction has no enemy present, so a tagged character of a friendly or neutral faction is attacked, and a TEMP ALLY one is spared),
 and the deeds and witnesses of factions 3.5 do not write tags yet. DA 34 is one run of 2000 + 400 x random units from the target at full speed, DA 7 a walk to the squad's
 home building, else its town, else its home centre, DA 52 a run to the speaker, DA 16 a walk after the target re-aimed every 15 ticks beyond 40 units while the speaker's
 conversation lasts; then the AI takes over (engine readings of tasks 280, 19, 67, 164). DA 28: a new NPC squad keeps the old one's template and home radius, no town, and gets a
 fresh AI mind. DA 33: the pending crime timer, recently-wanted and the trespass in the speaker's private home are applied and "Alarm raised" is posted (once per 30 s), but the
 alarm has no responders and the perception mark is not modelled. DA 56: loaded squads only, an attack order instead of task 29. DA 54 opens every door of the nearest gate
-building. DA 13 / 14 use `PlayerRelations.DeclareWar` / `EndWar`. "Regards as friendly" leaves out the uniform disguise. Not built: DA 5 / DC 3 (no faction trust), DA 15, 17,
-39, 58; DC 11, 12, 21/22, 39, 49, 57, 58, 69, 70, 73, 74 (inputs Meitou lacks: AI flags, tech level, the strength float, perception counters, wall tests, illegal-item lists,
-training, town levels); event 25, 31 (betrayal), 36 from the witness function, the witness cases' extra tests.
+building. DA 13 / 14 use `PlayerRelations.DeclareWar` / `EndWar`. "Regards as friendly" leaves out the uniform disguise. DA 5 / DC 3 use the faction global trust (`FactionRelations.GlobalTrust`, saved as `meitou global trust`); DC 12 reads `ResearchState.TechLevel`, DC 74 the highest `PopulationSystem.TownLevel` over the player's outposts, DC 73 that of the outpost within the player-town extent of the speaker (engine reading of "current town"). Not built: DA 15, 17,
+39, 58; DC 11, 21/22, 39, 49, 57, 58, 69, 70 (inputs Meitou lacks: AI flags, the strength float, perception counters, wall tests, illegal-item lists, training equipment; the decompile facts are in the table above);
+event 25, 31 (betrayal), 36 from the witness function, the witness cases' extra tests.

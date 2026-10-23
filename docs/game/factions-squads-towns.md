@@ -144,11 +144,13 @@ no path re-running the initial resident placement was found (**Unknown** whether
 | Offset | Type | Meaning |
 | ---: | --- | --- |
 | +0 | byte | "allied" flag: forces `isAlly` true (set for the faction itself; other setters not found) |
-| +2 | byte | at-war flag (set by declare-war, cleared by end-war) |
+| +2 | byte | at-war flag (set by declare-war, cleared by end-war; nothing found reads it, and the save has no key for it, **Observed**) |
 | +3 | byte | coexistence flag (set from the FACTION `coexistence` list) |
 | +4 | float | **relation**, -100 .. +100 |
 | +8 | float | accumulated positive trust |
 | +0xc | float | accumulated negative trust |
+
+On the faction's FactionRelations object itself: +0x10 int rank, +0x18 float **global trust** (starts 0; slot 9 adds, DC_REPUTATION reads it as an int; not saved, **Observed**; the player table's saved `global trust` is read and written at +0x14, relation to +0x18 **Unknown**). Meitou: `FactionRelations.GlobalTrust` / `AddGlobalTrust`.
 
 ### 3.2 Faction rank
 
@@ -188,7 +190,7 @@ post the threshold message of `FUN_1406b28f0` (section 3.3) with the calling fac
 | 6 | `FUN_1406b2560` | a > 0: trust += a x b, else negative trust += a x b |
 | 7 | `FUN_1406b2f90` | end war: clear war flag; if relation <= -25 set it to -25 (just above hostile) |
 | 8 | `FUN_1406b3000` | declare war: only if relation >= -30 (not hostile yet): log "War breaks out between {1} and {2}" (owner, B) if the flag was clear, set the flag, set relation to -35 when it is -35 or more |
-| 9 | `FUN_1406b2530` | global trust += a (`DA_AFFECT_REPUTATION`) |
+| 9 | `FUN_1406b2530` | global trust (+0x18) += a, no clamp (`DA_AFFECT_REPUTATION`, called on the **speaker's** faction) |
 
 Kind rows (the move `FUN_1406b2730`: a fall applies only while relation > floor, a rise only while relation < ceiling, then clamp to [-100, 100]):
 
@@ -486,7 +488,7 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 
 ## Unknowns
 
-- What sets the character status threat float `+0xac` and the killer handle `+0x2c0` (3.5); whether the war flag is saved; what the
+- What sets the character status threat float `+0xac` and the killer handle `+0x2c0` (3.5); what the
   allied byte (+0) and the `trust` floats feed (dialogue conditions, "trustworthy" behaviour).
 - What `building designation` changes beyond the bar (it does not enter the chooser); the town node map bar squads use.
 - Nest respawn delay after "wiped out", the default of `DAT_142133588` (the Number of nests multiplier option; **Unknown**, the exe image holds zeros there), the rule that makes `TownPopulationManager::vfunc_4`

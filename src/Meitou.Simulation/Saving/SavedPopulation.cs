@@ -69,6 +69,9 @@ public sealed class SavedPlatoon
     public AiSave? Ai { get => aiSet ? ai : AiSave.Read(Source.Record); set { ai = value; aiSet = true; } }
     AiSave? ai;
     bool aiSet;
+    /// <summary>What its squad remembered when it last left the world (<see cref="MemorySet"/>; else the record's keys are the memory, read when its squad is made).</summary>
+    public Dialogue.SquadMemoryData? Memory { get; set; }
+    public bool MemorySet { get; set; }
 }
 
 /// <summary>
@@ -86,6 +89,12 @@ public sealed class SavedPopulation
     /// <summary>The save's clock, which is world tick 0 (bounty timers are read against it).</summary>
     public SaveClock Clock { get; init; }
     public int PlayerFaction { get; init; } = -1;
+    /// <summary>The squads' memories (the dialogue system's; null: none), which the platoons' <c>tags</c> keys are restored into when their squads are made.</summary>
+    public Dialogue.SquadMemory? Memory { get; set; }
+    /// <summary>The characters made from the save by their handle's container and slot, for the memory keys that name them.</summary>
+    public Dictionary<(int C, int I), CharacterId> Spawned { get; } = [];
+    /// <summary>The character a handle of the save names, when it is in the world (null otherwise).</summary>
+    public CharacterId? CharacterOf(Hand h) => !h.IsNull && Spawned.TryGetValue((h.C, h.I), out var id) ? id : null;
     public List<SavedPlatoon> Platoons { get; } = [];
     /// <summary>The save's nests in list order: the wild layout takes them before rolling more (empty: none, e.g. a Meitou save from before nests were written).</summary>
     public List<SavedNest> Nests { get; } = [];
@@ -357,6 +366,7 @@ internal static class SavedCharacters
             ref var hot = ref world.Characters.Next[id.Slot];
             hot.TaskTime = 0.5f + Rng.Float(Rng.Hash(world.Seed, (ulong)squad.Id << 8 | (uint)(m.Slot & 0xFF), RngPurpose.Think)) * 3;
             m.Live = id;
+            context.Spawned[(m.Source.Handle.C, m.Source.Handle.I)] = id;
             if (UniqueCharacters.IsUnique(data.Db.Find(p.Source.RecordId))) world.Uniques.Bind(p.Source.RecordId, id);
             squad.Members.Add(id);
             if (leads && squad.Leader.IsNone) squad.Leader = id;
@@ -369,6 +379,12 @@ internal static class SavedCharacters
         squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);
         squad.SavedAi = sp.Ai;
         world.Squads.Add(squad);
+        // What the squad remembered: the save's, else what it kept when it last left the world.
+        if (context.Memory is { } memory)
+        {
+            memory.Restore(squad.Id, sp.MemorySet ? sp.Memory : MemorySave.Read(sp.Source.Record, context.CharacterOf));
+            (sp.Memory, sp.MemorySet) = (null, false);
+        }
         sp.Touched = true;
         context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {world.Characters.Next[squad.Leader.Slot].Position.X:0}, {world.Characters.Next[squad.Leader.Slot].Position.Z:0}");
         return squad;
@@ -378,7 +394,7 @@ internal static class SavedCharacters
     public static void Store(World world, SavedPlatoon sp, Vector2 anchor)
     {
         var table = world.Characters;
-        if (sp.PlatoonId >= 0 && world.Platoons.Find(sp.PlatoonId) is { } platoon && world.Squads.Find(platoon.SquadId) is { } squad) { sp.Shop = squad.Shop; sp.Ai = AiSave.Of(squad.Ai) ?? squad.SavedAi; }
+        if (sp.PlatoonId >= 0 && world.Platoons.Find(sp.PlatoonId) is { } platoon && world.Squads.Find(platoon.SquadId) is { } squad) { sp.Shop = squad.Shop; sp.Ai = AiSave.Of(squad.Ai) ?? squad.SavedAi; if (world.Saved?.Memory is { } memory) (sp.Memory, sp.MemorySet) = (memory.Take(squad.Id), true); }
         foreach (var m in sp.Members)
         {
             if (m.Live.IsNone) continue;

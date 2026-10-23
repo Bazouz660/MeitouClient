@@ -68,6 +68,9 @@ public sealed class LoadedSave
     public float[] RelationBaseline { get; set; } = [];
     /// <summary>Each faction's rank right after loading, kept as <see cref="RelationBaseline"/> is.</summary>
     public int[] RankBaseline { get; set; } = [];
+    /// <summary>Each faction's global trust right after loading, and the war flags of every pair (faction by faction, row by row), kept as <see cref="RelationBaseline"/> is.</summary>
+    public float[] TrustBaseline { get; set; } = [];
+    public bool[] WarBaseline { get; set; } = [];
     /// <summary>The travelling stand-ins made from the save's NPC platoons: the world's platoon id to the save's platoon name.</summary>
     public Dictionary<int, string> RoamingPlatoons { get; } = [];
     /// <summary>NPC platoons that stay in their placed town (residents, bar squads, slaves): pinned stand-ins, made when the town loads, which then makes none of its own.</summary>
