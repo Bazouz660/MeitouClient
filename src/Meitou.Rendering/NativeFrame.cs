@@ -55,7 +55,7 @@ sealed unsafe class NativeFrame : IDisposable
         this.extraStorage = extraStorage;
         push = ctx.Device.HasPushDescriptor;
         align = Math.Max(ctx.Device.Limits.MinUniformBufferOffsetAlignment, 16);
-        var stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
+        var stages = ctx.Shaders.GraphicsStages;
         DescriptorSetLayoutBinding[] bindings =
         [
             .. Enumerable.Range(0, 6).Select(b => new DescriptorSetLayoutBinding((uint)b, DescriptorType.UniformBuffer, 1, stages)),

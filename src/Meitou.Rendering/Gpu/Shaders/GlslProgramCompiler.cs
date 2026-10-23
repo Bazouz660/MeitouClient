@@ -77,6 +77,15 @@ public sealed partial class GlslProgramCompiler
         return CompileNativeStage(glsl, fragment ? ShaderKind.FragmentShader : ShaderKind.VertexShader, fragment ? "fragment" : "vertex", options);
     }
 
+    /// <summary>A GLSL 450 tessellation control or evaluation shader of the native model; the evaluation stage writes <c>gl_Position</c>, so it
+    /// takes the clip depth remap when the options ask for it. Cached under <see cref="NativeCacheVersion"/>.</summary>
+    public byte[] CompileNativeTessellation(string glsl, bool evaluation, ShaderCompileOptions? options = null)
+    {
+        options ??= DefaultOptions;
+        if (evaluation && options.RemapClipDepth) glsl = AppendDepthRemap(glsl);
+        return CompileNativeStage(glsl, evaluation ? ShaderKind.TessEvaluationShader : ShaderKind.TessControlShader, evaluation ? "tess evaluation" : "tess control", options);
+    }
+
     byte[] CompileNativeStage(string glsl, ShaderKind kind, string stage, ShaderCompileOptions? options)
     {
         ArgumentNullException.ThrowIfNull(glsl);

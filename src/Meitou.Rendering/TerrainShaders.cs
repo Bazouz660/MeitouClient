@@ -92,6 +92,151 @@ static partial class TerrainShaders
         """;
 
     /// <summary>
+    /// The ground displacement (GroundRelief, docs/render-terrain.md "Ground relief"): how far the ground is moved at a point, from the biome
+    /// layers the material shows there. Only a layer with a height (its height array slice is not flat, so its last mip, the
+    /// average, is under 1) moves it, by its height about the middle (half up, half down: what stands on the ground sits level with the bumps) times how much of the pixel the base layer covers (not grass, slope, dirt, road or cliff),
+    /// weighted by the biome blend. <c>reliefLift(p, false)</c> is that coverage alone (the control stage's test).
+    /// </summary>
+    const string ReliefFunctions = """
+
+        uniform bool uTextured;
+        uniform bool uHasMaps;
+        uniform int uMapState;
+        uniform sampler2DArray uHeight;
+        uniform sampler2D uParams;
+        uniform usampler2D uCells;
+        uniform sampler2D uBlendMap;
+        uniform sampler2D uOverlay;
+        uniform vec4 uRegion;
+        uniform vec2 uCellGrid;
+        uniform float uHalfWorld;
+        uniform float uDisplace;       // world units from the lowest point to the highest, centred on the ground; 0 off
+        uniform sampler2D uRelief;     // each layer slot's depth factor (GroundRelief.LayerDepth), 0 flat
+        uniform float uDisplaceEnd;    // GroundRelief.DisplaceDistance: moved in full to 60% of it, none from it
+        uniform vec3 uEye;
+
+        // Segments of at least TessMinEdge, or TessPixelAngle times the distance.
+        const float TessMinEdge = 0.6, TessPixelAngle = 0.004, TessMax = 64.0;
+
+        vec4 reliefP(uint b, int k) { return texelFetch(uParams, ivec2(k, int(b)), 0); }
+
+        float reliefLift(vec2 xz, bool height)
+        {
+            if (!uTextured) return 0.0;
+            vec2 world01 = (xz + uHalfWorld) / (2.0 * uHalfWorld);
+            ivec2 cell = clamp(ivec2(floor(world01 * uCellGrid)), ivec2(0), ivec2(uCellGrid) - 1);
+            uvec4 slots = texelFetch(uCells, ivec2(cell.x * 2, cell.y), 0);
+            uint slot4 = texelFetch(uCells, ivec2(cell.x * 2 + 1, cell.y), 0).r;
+            vec4 weights = textureLod(uBlendMap, world01, 0.0);
+            float rest = max(0.0, 1.0 - dot(weights, vec4(1.0)));
+            vec4 map = vec4(0.0);
+            if (uHasMaps && uMapState == 2)
+            {
+                map = textureLod(uOverlay, fract((xz + uHalfWorld) * uRegion.zw), 0.0);
+                map.r = max(map.r, map.g);
+            }
+            float slope = 1.0 - terrainNormal(xz).y;
+            float lift = 0.0, total = 0.0;
+            for (int k = 0; k < 5; k++)
+            {
+                uint b = k < 4 ? slots[k] : slot4;
+                float wk = k < 4 ? weights[k] : rest;
+                if (b >= 254u || wk < 0.004) continue;
+                total += wk;
+                float layer = reliefP(b, 0).x;
+                float depth = texelFetch(uRelief, ivec2(int(layer), 0), 0).r;
+                if (depth <= 0.0) continue;   // flat: no relief (no normal map)
+                vec4 smin = reliefP(b, 5), smax = reliefP(b, 6), sblend = reliefP(b, 7);
+                vec4 w = smoothstep(smin - sblend, smin, vec4(slope)) * smoothstep(smax + sblend, smax, vec4(slope));
+                float cover = (1.0 - map.r) * (1.0 - w.x) * (1.0 - map.b) * (1.0 - map.a) * (1.0 - w.y);
+                if (cover <= 0.0) continue;
+                float h = height ? textureLod(uHeight, vec3(xz / 5000.0 * reliefP(b, 3).xy, layer), 0.0).r : 1.0;
+                lift += wk * cover * (height ? h - 0.5 : 1.0) * depth;
+            }
+            return total > 0.0 ? lift / total : 0.0;
+        }
+        """;
+
+    /// <summary><see cref="PatchVertex"/> for the tessellated patches: the same morphed grid point, to the control stage (no clip position).</summary>
+    public const string PatchVertexTess = "#version 330 core\n" + HeightFunctions + """
+
+        layout(location = 0) in vec2 aGrid;
+        uniform vec3 uEye;
+        uniform vec4 uNode;
+        uniform vec2 uMorph;
+        layout(location = 0) out vec3 vcWorld;
+        void main()
+        {
+            vec2 p = uNode.xy + aGrid * (uNode.z / uNode.w);
+            float d = distance(vec3(p.x, terrainHeight(p), p.y), uEye);
+            float k = uMorph.x >= 1e30 ? 0.0 : clamp((d - uMorph.x) / (uMorph.y - uMorph.x), 0.0, 1.0);
+            vec2 g = aGrid - mod(aGrid, 2.0) * k;
+            p = uNode.xy + g * (uNode.z / uNode.w);
+            vcWorld = vec3(p.x, terrainHeight(p), p.y);
+        }
+        """;
+
+    /// <summary>
+    /// The control stage: each edge's level from the edge alone (its length, its midpoint's distance, whether relief lies at its ends or middle), so
+    /// the two triangles sharing an edge split it alike and nothing cracks; 1 (not split) where there is no relief or beyond the displacement.
+    /// </summary>
+    public const string PatchControl = "#version 330 core\n" + HeightFunctions + ReliefFunctions + """
+
+        layout(vertices = 3) out;
+        layout(location = 0) in vec3 vcWorld[];
+        layout(location = 0) out vec3 teWorld[];
+
+        float edgeLevel(vec3 a, vec3 b)
+        {
+            vec3 m = (a + b) * 0.5;
+            float d = distance(m, uEye);
+            if (uDisplace <= 0.0 || d >= uDisplaceEnd) return 1.0;
+            if (max(reliefLift(m.xz, false), max(reliefLift(a.xz, false), reliefLift(b.xz, false))) <= 0.0) return 1.0;
+            return clamp(round(distance(a, b) / max(TessMinEdge, d * TessPixelAngle)), 1.0, TessMax);
+        }
+
+        void main()
+        {
+            teWorld[gl_InvocationID] = vcWorld[gl_InvocationID];
+            if (gl_InvocationID == 0)
+            {
+                // Outer level i is the edge facing control point i (where its coordinate is 0).
+                float e0 = edgeLevel(vcWorld[1], vcWorld[2]), e1 = edgeLevel(vcWorld[2], vcWorld[0]), e2 = edgeLevel(vcWorld[0], vcWorld[1]);
+                gl_TessLevelOuter[0] = e0;
+                gl_TessLevelOuter[1] = e1;
+                gl_TessLevelOuter[2] = e2;
+                gl_TessLevelInner[0] = max(e0, max(e1, e2));
+            }
+        }
+        """;
+
+    /// <summary>
+    /// The evaluation stage: the point on the flat triangle (the base surface is interpolated, not sampled again, so an unraised split edge is the
+    /// plain patch's edge), moved by the ground's height, fading out from 60% of <c>uDisplaceEnd</c> to it. Its outputs are the patch
+    /// vertex stage's, so the terrain's fragment stage is unchanged.
+    /// </summary>
+    public const string PatchEvaluation = "#version 330 core\n" + HeightFunctions + ReliefFunctions + """
+
+        layout(triangles, equal_spacing, ccw) in;
+        layout(location = 0) in vec3 teWorld[32];   // gl_MaxPatchVertices, written out: InterfaceLocations sizes every array it reads
+        uniform mat4 uViewProjection;
+        out vec3 vWorld;
+        out vec3 vNormal;
+        out vec2 vCliffBlend;
+        invariant gl_Position;
+        void main()
+        {
+            vec3 p = gl_TessCoord.x * teWorld[0] + gl_TessCoord.y * teWorld[1] + gl_TessCoord.z * teWorld[2];
+            float fade = 1.0 - smoothstep(0.6 * uDisplaceEnd, uDisplaceEnd, distance(p, uEye));
+            if (uDisplace > 0.0 && fade > 0.0) p.y += uDisplace * fade * reliefLift(p.xz, true);
+            vWorld = p;
+            vNormal = vec3(0.0, 1.0, 0.0);
+            vCliffBlend = vec2(0.5);
+            gl_Position = uViewProjection * vec4(p, 1.0);
+        }
+        """;
+
+    /// <summary>
     /// Plain meshes drawn with the terrain material (TERRAIN-mode map features, the game's <c>Feature_Terrain_DX11</c>;
     /// docs/formats/foliage.md, "TERRAIN-mode meshes"). The cliff projection weights are made per vertex from the mesh
     /// normal, and a surface facing up (normal.y above 0.9) takes the (z, height) projection alone, as the game's feature
@@ -186,6 +331,14 @@ static partial class TerrainShaders
 
         uniform sampler2DArray uDiffuse;
         uniform sampler2DArray uNormal;
+        uniform sampler2DArray uHeight;   // the base layers' height from their normal maps (GroundRelief), 1 the top; flat 1 without one
+        uniform sampler2D uRelief;     // each layer slot's depth factor (GroundRelief.LayerDepth), 0 flat
+        uniform float uParallax;       // ground parallax: the depth of the height range in world units (1 unit = 10 cm); 0 off
+        uniform float uDisplace;       // ground displacement (tessellated patches near the eye) in world units; 0 off. The parallax gives way to it there.
+        uniform float uDisplaceEnd;    // GroundRelief.DisplaceDistance: displaced in full to 60% of it
+        uniform float uParallaxEnd;    // GroundRelief.ParallaxDistance: the parallax in full to half of it, none from it
+        // Ground parallax: the self-shadow's darkening.
+        const float PomShadow = 0.6;
         uniform sampler2D uParams;     // row = biome, ParamTexels texels
         uniform usampler2D uCells;     // blend cells, two texels each: slots 0..3, slot 4; biome row, 254 = not loaded yet, 255 = unused
         uniform sampler2D uBlendMap;   // whole world: weights of slots 0..3; slot 4 takes the remainder
@@ -203,7 +356,7 @@ static partial class TerrainShaders
 
         vec4 P(int biome, int k) { return texelFetch(uParams, ivec2(k, biome), 0); }
 
-        struct Surface { vec4 albedo; vec4 normal; float absorb; };
+        struct Surface { vec4 albedo; vec4 normal; float absorb; float shade; };   // shade: the relief's own shadow on the sun (1 none)
 
         vec4 tex(sampler2DArray s, vec2 uv, float layer) { return texture(s, vec3(uv, layer)); }
 
@@ -246,8 +399,55 @@ static partial class TerrainShaders
             GradCoord cliffX = gradCoord(vec2(uv.y, vert) * sA.zw), cliffZ = gradCoord(vec2(uv.x, vert) * sA.zw);
             float far = clamp(distance * fade.a - 0.3, 0.0, 1.0);
 
+            // Ground parallax (GroundRelief, docs/render-terrain.md): the base layer's coordinate moved along the view ray to where the ray meets the height
+            // (1 the top, uParallax world units down at 0), then a march toward the sun for the self-shadow. Flat layers (height 1) stop at once.
+            // The moved coordinate is sampled with the unmoved one's derivatives, so the mip does not jump where the offset does.
+            float shade = 1.0;
+            float layerDepth = uParallax > 0.0 ? uParallax * texelFetch(uRelief, ivec2(int(layersA.x), 0), 0).r : 0.0;   // this layer's depth (GroundRelief.LayerDepth)
+            if (layerDepth > 0.0 && distance < uParallaxEnd)
+            {
+                const int Steps = 16, ShadowSteps = 12;
+                float strength = 1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance);
+                // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray is not moved again; the self-shadow stays.
+                float march = uDisplace > 0.0 ? smoothstep(0.6 * uDisplaceEnd, uDisplaceEnd, distance) : 1.0;
+                vec2 toUv = sB.xy * (layerDepth * strength / 5000.0);   // the full depth in world units, in the layer's coordinate
+                vec3 v = normalize(uEye - vWorld);
+                vec2 stepUv = -v.xz / max(v.y, 0.25) * toUv * march / float(Steps);
+                vec2 p = base.p;
+                float rayH = 1.0, prevRay = 1.0;
+                float h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, prevH = h;
+                for (int i = 0; i < Steps && h < rayH; i++)
+                {
+                    prevH = h; prevRay = rayH;
+                    p += stepUv; rayH -= 1.0 / float(Steps);
+                    h = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r;
+                }
+                if (h >= rayH && rayH < 1.0)
+                {
+                    // Between the last two steps, where the ray crossed the height.
+                    float above = prevRay - prevH, below = h - rayH;
+                    p -= stepUv * (below / max(above + below, 1e-5));
+                }
+                base.p = p;
+                vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
+                if (sun.y > 0.0)
+                {
+                    float hp = textureGrad(uHeight, vec3(p, layersA.x), base.dx, base.dy).r, occlusion = 0.0;
+                    vec2 lightUv = sun.xz / max(sun.y, 0.15) * toUv / float(ShadowSteps);
+                    for (int k = 1; k <= ShadowSteps; k++)
+                    {
+                        float ray = hp + float(k) / float(ShadowSteps);
+                        if (ray >= 1.0) break;
+                        // Soft: how far a step's height rises above the ray, less the further along it is (a lone far peak only dims).
+                        float above = textureGrad(uHeight, vec3(p + lightUv * float(k), layersA.x), base.dx, base.dy).r - ray;
+                        occlusion = max(occlusion, above * (1.0 - float(k) / float(ShadowSteps + 1)));
+                    }
+                    shade = 1.0 - PomShadow * clamp(occlusion * 4.0, 0.0, 1.0) * strength;
+                }
+            }
+
             Surface s;
-            s.albedo = tex(uDiffuse, base.p, layersA.x) * colour;
+            s.albedo = (uParallax > 0.0 ? tex(uDiffuse, base, layersA.x) : tex(uDiffuse, base.p, layersA.x)) * colour;
             if (map.r != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, grass, layersA.w) * mix(white, colour, omult.y), map.r);
             if (w.x != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, slopeUv, layersA.y) * colour, w.x);
             if (map.b != 0.0) s.albedo = mix(s.albedo, tex(uDiffuse, dirt, layersB.x) * mix(white, colour, omult.z), map.b);
@@ -259,10 +459,11 @@ static partial class TerrainShaders
                 s.albedo = mix(s.albedo, cCliff, w.y);
             }
             s.albedo.rgb *= layersB.z;
+            s.shade = shade;
 
             if (uNormalMaps)
             {
-                s.normal = tex(uNormal, base.p, layersA.x);
+                s.normal = uParallax > 0.0 ? tex(uNormal, base, layersA.x) : tex(uNormal, base.p, layersA.x);
                 if (map.r != 0.0) s.normal = mix(s.normal, tex(uNormal, grass, layersA.w), map.r);
                 if (w.x != 0.0) s.normal = mix(s.normal, tex(uNormal, slopeUv, layersA.y), w.x);
                 if (map.b != 0.0) s.normal = mix(s.normal, tex(uNormal, dirt, layersB.x), map.b);
@@ -320,6 +521,7 @@ static partial class TerrainShaders
 
             vec4 albedo = vec4(0.0);
             float absorbance = 0.5;   // the layers' rain absorbance; the ground colour (far, untextured) takes the old fixed 0.5
+            float reliefShade = 1.0;   // the relief's own shadow on the sun (GroundRelief), given to the lighting
             vec3 shadingNormal = n;
             if (nearWeight > 0.0)
             {
@@ -341,12 +543,13 @@ static partial class TerrainShaders
                     float rest = max(0.0, 1.0 - dot(weights, vec4(1.0)));
                     vec4 sumA = vec4(0.0), sumN = vec4(0.0);
                     float sumAbsorb = 0.0;
+                    float sumShade = 0.0;
                     float total = 0.0, pending = 0.0;
                     if (uFeatureBiome >= 0)
                     {
                         // A map feature has one biome for its whole surface (the game builds its material for the biome at its origin).
                         Surface s = biome(uFeatureBiome, n, slope, map, colour, distance);
-                        sumA = s.albedo; sumN = s.normal; sumAbsorb = s.absorb; total = 1.0;
+                        sumA = s.albedo; sumN = s.normal; sumAbsorb = s.absorb; sumShade = s.shade; total = 1.0;
                     }
                     else for (int k = 0; k < 5; k++)
                     {
@@ -358,15 +561,16 @@ static partial class TerrainShaders
                         sumA += s.albedo * wk;
                         sumN += s.normal * wk;
                         sumAbsorb += s.absorb * wk;
+                        sumShade += s.shade * wk;
                         total += wk;
                     }
                     uint fallback = slot4 < 254u ? slot4 : slots.x;
                     if (total <= 0.0 && pending <= 0.0 && fallback < 254u)
                     {
                         Surface s = biome(int(fallback), n, slope, map, colour, distance);
-                        sumA = s.albedo; sumN = s.normal; sumAbsorb = s.absorb; total = 1.0;
+                        sumA = s.albedo; sumN = s.normal; sumAbsorb = s.absorb; sumShade = s.shade; total = 1.0;
                     }
-                    if (total > 0.0) { albedo = sumA / total; sumN /= total; absorbance = sumAbsorb / total; }
+                    if (total > 0.0) { albedo = sumA / total; sumN /= total; absorbance = sumAbsorb / total; reliefShade = mix(1.0, sumShade / total, nearWeight); }
                     else { albedo = vec4(0.6, 0.55, 0.45, 0.2); sumN = vec4(0.5, 0.5, 1.0, 1.0); }
                     // Biomes still loading show the ground colour in their share.
                     if (total > 0.0) nearWeight *= total / (total + pending);
@@ -411,8 +615,11 @@ static partial class TerrainShaders
             float wetAmount = uWaterHeight > -1.0e5 ? uWeatherWet.x : 0.0;
             makeWet(albedo, wetAmount, 1.0 - albedo.a + absorbance, uWaterHeight - vWorld.y, 2.0);
 
+            atmoSelfShadow = reliefShade;
+            // A trough displaced below the ground looks up the sun shadow from the ground, where the flat shadow casters are, not from under them.
+            atmoShadowLift = uDisplace > 0.0 && distance < uDisplaceEnd ? max(terrainHeight(vWorld.xz) - vWorld.y, 0.0) : 0.0;
             vec3 l = normalize(uLightDir);
-            float diff = max(dot(shadingNormal, l), 0.0);
+            float diff = max(dot(shadingNormal, l), 0.0) * reliefShade;
             vec3 v = normalize(uEye - vWorld);
             float gloss = clamp(albedo.a, 0.0, 1.0);
             vec3 colourOut;
@@ -521,7 +728,13 @@ static partial class TerrainShaders
             uint blood;
             int bloodCount;
             float bloodCellSize;
+            uint height;
+            float parallax;
             vec4 bloodCells[8];
+            float displace;
+            uint relief;
+            float displaceEnd;
+            float parallaxEnd;
         } terrain;
 
         """;
@@ -555,6 +768,8 @@ static partial class TerrainShaders
         ["uInteriorCut"] = "terrain.interiorCut",   // declared by the cut patch variants and the meshes' colour program (InteriorMaskRenderer.WithCut)
         ["uBlood"] = "textures2DArray[terrain.blood]", ["uBloodCount"] = "terrain.bloodCount", ["uBloodCellSize"] = "terrain.bloodCellSize",
         ["uBloodCells"] = "terrain.bloodCells",
+        ["uHeight"] = "textures2DArray[terrain.height]", ["uParallax"] = "terrain.parallax", ["uDisplace"] = "terrain.displace", ["uRelief"] = "textures2D[terrain.relief]",
+        ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -623,6 +838,10 @@ static partial class TerrainShaders
     public static string RockBakeVertexNative() => Native(MeshVertex, RockBakePushMembers);
 
     public static string PatchVertexNative() => Native(PatchVertex);
+    /// <summary>The ground displacement's stages (GroundRelief): <see cref="PatchVertexTess"/>, <see cref="PatchControl"/>, <see cref="PatchEvaluation"/>.</summary>
+    public static string PatchVertexTessNative() => Native(PatchVertexTess);
+    public static string PatchControlNative() => Native(PatchControl);
+    public static string PatchEvaluationNative() => Native(PatchEvaluation);
     public static string FragmentNative(bool interiorCut = false) => Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Fragment) : Fragment));
     /// <summary>The terrain colour pass's depth-only twin: the same vertex stage (so the depths are the same), a fragment stage that writes nothing (<see cref="TerrainLateColour"/>).</summary>
     public static string PrepassFragmentNative(bool interiorCut = false)
@@ -642,7 +861,7 @@ static partial class TerrainShaders
 
 /// <summary>The C# side of <see cref="TerrainShaders.ConstantsBlock"/> (std140; offsets checked against the reflection by a test). GLSL bools
 /// are 32-bit (0 / 1).</summary>
-[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 384)]
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 400)]
 struct TerrainConstants
 {
     [System.Runtime.InteropServices.FieldOffset(0)] public System.Numerics.Vector4 CoarseRect;
@@ -689,7 +908,13 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(236)] public uint Blood;
     [System.Runtime.InteropServices.FieldOffset(240)] public int BloodCount;
     [System.Runtime.InteropServices.FieldOffset(244)] public float BloodCellSize;
+    [System.Runtime.InteropServices.FieldOffset(248)] public uint Height;
+    [System.Runtime.InteropServices.FieldOffset(252)] public float Parallax;
     [System.Runtime.InteropServices.FieldOffset(256)] public BloodCells BloodCells;
+    [System.Runtime.InteropServices.FieldOffset(384)] public float Displace;
+    [System.Runtime.InteropServices.FieldOffset(388)] public uint Relief;
+    [System.Runtime.InteropServices.FieldOffset(392)] public float DisplaceEnd;
+    [System.Runtime.InteropServices.FieldOffset(396)] public float ParallaxEnd;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[8]</c>).</summary>
