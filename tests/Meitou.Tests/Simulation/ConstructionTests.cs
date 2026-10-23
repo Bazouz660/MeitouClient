@@ -21,6 +21,7 @@ public class ConstructionTests
 {
     const string Plank = "70-t", Iron = "71-t", Hut = "80-t", Shed = "81-t", Outpost = "82-t", Research = "90-t";
     const string WallRecord = "83-t", ShortRecord = "84-t", GateRecord = "85-t", ConnectorRecord = "86-t";
+    const string GateMk1 = "87-t", GateMk2 = "88-t";
     /// <summary>Engineering 41.17647: lerp(0.3, 2, e/100) is 1, the factor the build window's estimate leaves out.</summary>
     const float Unit = 100 * 0.7f / 1.7f;
 
@@ -61,11 +62,17 @@ public class ConstructionTests
         var gate = Wall(GateRecord, "Test Gate", 3, 100, 2);
         gate.Bools["is wall gate"] = true;
         gate.References["wall subsections"] = [new FcsReference(ConnectorRecord, 0, 0, 0)];
+        // A gate chain whose upgrade costs more than the 50 units an upgrade keeps.
+        var mk1 = Wall(GateMk1, "Test Gate Mk1", 3, 100, 55);
+        mk1.Bools["is wall gate"] = true;
+        mk1.References["upgrades to"] = [new FcsReference(GateMk2, 0, 0, 0)];
+        var mk2 = Wall(GateMk2, "Test Gate Mk2", 3, 100, 60);
+        mk2.Bools["is wall gate"] = true;
         research.References["enable buildings"] = [new FcsReference(Hut, 0, 0, 0), new FcsReference(Shed, 0, 0, 0), new FcsReference(Outpost, 0, 0, 0),
-            new FcsReference(WallRecord, 0, 0, 0), new FcsReference(GateRecord, 0, 0, 0)];
+            new FcsReference(WallRecord, 0, 0, 0), new FcsReference(GateRecord, 0, 0, 0), new FcsReference(GateMk1, 0, 0, 0), new FcsReference(GateMk2, 0, 0, 0)];
         var file = new FcsFile();
         file.Records.AddRange([Item(Plank, "Plank"), Item(Iron, "Iron"), Item(BuildingBuildData.BuildingMaterialsItem, "Building Materials"), hut, shed, outpost, research,
-            wall, gate, Wall(ShortRecord, "Test Wall Short", 4, 50, 1), Wall(ConnectorRecord, "Test Wall Connector", 1, 20, 1)]);
+            wall, gate, mk1, mk2, Wall(ShortRecord, "Test Wall Short", 4, 50, 1), Wall(ConnectorRecord, "Test Wall Connector", 1, 20, 1)]);
         var db = new GameDatabase();
         db.Apply(file, "test.mod");
         return db;
@@ -297,6 +304,34 @@ public class ConstructionTests
         {
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
+    }
+
+    // ------------------------------------------------------------------ upgrades
+
+    /// <summary>
+    /// A finished gate upgraded in place (docs/game/buildings-production.md "Upgrades"): same id, the next record's name and materials with the 55 delivered units carried over,
+    /// unfinished with progress capped at 50. Downgrading the unfinished upgrade finishes the lower gate at once, its materials being all delivered.
+    /// </summary>
+    [Fact]
+    public void A_gate_upgrades_in_place_keeping_its_materials_and_a_downgrade_of_the_unfinished_upgrade_finishes_at_once()
+    {
+        using var rig = new Rig();
+        rig.Say(new PlaceBuildings([new PlannedBuilding(GateMk1, HutAt, Quaternion.Identity)]) { Tick = 0 });
+        rig.World.RunTick();
+        var gate = Assert.Single(rig.World.Buildings.All);
+        foreach (var m in gate.Materials) m.Delivered = m.Required;
+        (gate.Progress, gate.Complete) = (gate.Target, true);
+
+        rig.Say(new UpgradeSite(gate.Id) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        Assert.Same(gate, Assert.Single(rig.World.Buildings.All));
+        Assert.Equal((GateMk2, "Test Gate Mk2", 60f, false, ConstructionSystem.UpgradeProgressCap), (gate.Record, gate.Name, gate.Target, gate.Complete, gate.Progress));
+        Assert.Equal(55, Assert.Single(gate.Materials).Delivered);
+        Assert.True(gate.Upgrading);
+
+        rig.Say(new DowngradeSite(gate.Id) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        Assert.Equal((GateMk1, 55f, true, 55f, false), (gate.Record, gate.Target, gate.Complete, gate.Progress, gate.Upgrading));
     }
 }
 
