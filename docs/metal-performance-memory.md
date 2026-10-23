@@ -96,13 +96,15 @@ commitment, not a proven single leak.
 
 Window 800x600 points (1600x1200 pixels), native/no TAA, `--no-gi`, same new game and view, VSync and cap off:
 
-- **Metal:** ~45 fps steady; CPU loop 19-24 ms, record 4.5-5.9 ms, drawable wait 7-10 ms, command-buffer GPU
-  time 25.6 ms.
+- **Metal, GPU mesh/rock cull:** ~46 fps steady; CPU loop ~21 ms, record 4.8 ms, drawable wait 7.5 ms,
+  command-buffer GPU 21.7 ms.
+- **Metal, CPU cull (`MEITOU_METAL_CPU_CULL=1`):** ~44 fps; record 5.2 ms, GPU 22.6 ms. The cull is worth about
+  5% here, not a large share.
 - **Vulkan:** ~41-42 fps steady; world draw CPU 6.0 ms, GPU total 22.3 ms. Passes: terrain 13.75 ms (62%),
   particles 2.05, post 1.44, cull 1.16, shadows 1.09, sky 0.97, shafts 0.72, fog 0.53.
 - At 400x300 points (800x600 pixels), Metal ~89 fps steady and Vulkan ~82 fps; both are much less GPU-bound.
 
-Metal and Vulkan are close at native resolution, with Metal lower on CPU record and Vulkan lower on GPU total.
+Metal and Vulkan are close at native resolution, with Metal lower on CPU record and Vulkan close on GPU total.
 The Metal GPU total is command-buffer time with frames in flight, not the frame interval; per-pass Metal times need a
 frame capture. The `--windowed --size` pair used to maximize Vulkan regardless of the requested size (Metal honoured
 it), which made an early comparison look much worse for Vulkan; that is fixed. Use `--log-spikes` with an interactive
@@ -289,6 +291,10 @@ dotnet run --project src/Meitou.Game --no-build -c Release -- \
 Wait until the world is visible and has rendered a few frames, then press `Ctrl+/`. The trace is a GPU frame, not a
 CPU profile: use `MEITOU_METAL_TRACE=1`, Instruments' Metal System Trace or `dotnet-trace` for CPU work. Do not use the
 capture frame for FPS measurements. A full frame with its resources is large; check free disk space before capturing.
+
+With the GPU foliage cull live, a capture contains two command buffers: the unlabelled pre-frame with the cull's
+compute encoders, then `Meitou frame N` with the render encoders. If Summary says **0 Compute Encoders**, the process
+took the CPU cull (`MEITOU_METAL_CPU_CULL=1`) or is a stale build; the capture then shows only the CPU-submission path.
 
 ## Review commands
 

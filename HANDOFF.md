@@ -2,16 +2,18 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `c1a7560d profile: make matched window sizes and print the spike summary`  
+Last code commit: `b341c392 metal: actually enable the foliage GPU cull`  
 Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
-Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal ~45 fps steady
-(command-buffer GPU 25.6 ms, record ~5 ms) and Vulkan ~41-42 fps steady (GPU 22.3 ms, world draw CPU 6.0 ms).
-Vulkan's GPU time is dominated by terrain (13.75 ms); particles, post, cull and shadows are 1-2 ms each. At
-400x300 points Metal is ~89 fps and Vulkan ~82 fps. Metal's per-pass split still needs an Xcode capture. An early
-comparison was invalid because `--windowed` maximized Vulkan despite `--size`; the window now honours the size, and
-`--log-spikes` prints the Vulkan per-stage run summary at exit.
+Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
+mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
+Vulkan is ~41-42 fps (GPU 22.3 ms, world draw CPU 6.0 ms). Vulkan's GPU time is dominated by terrain (13.75 ms);
+particles, post, cull and shadows are 1-2 ms each. At 400x300 points Metal is ~89 fps and Vulkan ~82 fps. An early
+Metal capture showed zero compute encoders: the live-enable line was missing from the committed renderer, so it was a
+CPU-cull frame. The line is now committed; a fresh capture should contain the pre-frame compute command buffer. An
+early Vulkan comparison was also invalid because `--windowed` maximized it despite `--size`; fixed. `--log-spikes`
+prints the Vulkan per-stage run summary at exit.
 
 ## Deterministic Metal tests
 
