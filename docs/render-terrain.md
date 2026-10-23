@@ -25,7 +25,7 @@ Meitou look, not in the game (`GroundRelief`, on by default; Tab: "Ground parall
 map (`NormalHeight`: FFT, slopes `dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame, below 2 cycles a tile dropped,
 scaled by 1st/99th percentile, so every layer spans the full depth), in an R8 array (≤512², one slice per pair slot; a layer
 without a readable normal map flat 255). Only the base layer has relief, weighted by how much of it shows (not grass, slope,
-dirt, road or cliff). Each layer's depth is the slider's times `LayerDepth` = `clamp(sqrt(relief / 0.0042), 0.3, 2.5)`,
+dirt, road or cliff). Each layer's depth is the slider's times `LayerDepth` = `clamp(sqrt(relief / 0.0042), 0.3, 1.5)`,
 kept per slot in an R32F texture (0: flat); `relief` is the integrated height range as a fraction of the tile. **Observed**
 (76 biomes' base normal maps, decoded at 512²): relief 0.0002 (`SandRippLoop_NML`) to 0.09 (`OrganicRock_NML`), median 0.0042;
 sands 0.0014 (`Sand01bc_n`, `DesertSandLoop03_NML`), gravels about 0.02; times the tile (56 to 2500 units) the implied depths
@@ -35,9 +35,10 @@ ripple bands along u, `DesertSands_NML` to fine wind-aligned grain; the game's t
 **Displacement** (needs `tessellationShader`): main-view patches within 260 units of the eye (horizontally; not interior-cut
 ones) draw with tessellated colour and prepass programs (patch lists of 3, culling off). Edge levels depend on the edge alone
 (length, midpoint distance, relief at ends/middle), so shared edges split alike; the evaluation stage interpolates the flat
-triangle and raises it by `depth × height × base cover`, full to 150 units, none from 250, where edges are unsplit and unraised
-and meet plain patches. Raised upward so the (unraised) shadow casters never shadow the troughs. Shadow casters, reflections
-and the rock bake are not tessellated.
+triangle and moves it by `depth × (height − ½) × base cover`, full to 150 units, none from 250, where edges are unsplit and
+unmoved and meet plain patches. Centred on the ground (raising only, as first done, buried the bases of grass, objects and
+characters); the troughs below the flat shadow casters look up the sun shadow at the ground's height (`atmoShadowLift`).
+Shadow casters, reflections and the rock bake are not tessellated.
 
 **Parallax**: the patch shader marches the base layer's coordinate along the view ray (16 steps) and toward the sun (8 steps)
 for a soft self-shadow (12 steps, a step's rise over the ray weighted down along it) that dims the sun only (`atmoSelfShadow`

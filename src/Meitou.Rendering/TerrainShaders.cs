@@ -92,9 +92,9 @@ static partial class TerrainShaders
         """;
 
     /// <summary>
-    /// The ground displacement (GroundRelief, docs/render-terrain.md "Ground relief"): how far the ground is raised at a point, from the biome
+    /// The ground displacement (GroundRelief, docs/render-terrain.md "Ground relief"): how far the ground is moved at a point, from the biome
     /// layers the material shows there. Only a layer with a height (its height array slice is not flat, so its last mip, the
-    /// average, is under 1) lifts, by its height times how much of the pixel the base layer covers (not grass, slope, dirt, road or cliff),
+    /// average, is under 1) moves it, by its height about the middle (half up, half down: what stands on the ground sits level with the bumps) times how much of the pixel the base layer covers (not grass, slope, dirt, road or cliff),
     /// weighted by the biome blend. <c>reliefLift(p, false)</c> is that coverage alone (the control stage's test).
     /// </summary>
     const string ReliefFunctions = """
@@ -110,7 +110,7 @@ static partial class TerrainShaders
         uniform vec4 uRegion;
         uniform vec2 uCellGrid;
         uniform float uHalfWorld;
-        uniform float uDisplace;       // world units the highest point is raised by; 0 off
+        uniform float uDisplace;       // world units from the lowest point to the highest, centred on the ground; 0 off
         uniform sampler2D uRelief;     // each layer slot's depth factor (GroundRelief.LayerDepth), 0 flat
         uniform vec3 uEye;
 
@@ -150,7 +150,7 @@ static partial class TerrainShaders
                 float cover = (1.0 - map.r) * (1.0 - w.x) * (1.0 - map.b) * (1.0 - map.a) * (1.0 - w.y);
                 if (cover <= 0.0) continue;
                 float h = height ? textureLod(uHeight, vec3(xz / 5000.0 * reliefP(b, 3).xy, layer), 0.0).r : 1.0;
-                lift += wk * cover * h * depth;
+                lift += wk * cover * (height ? h - 0.5 : 1.0) * depth;
             }
             return total > 0.0 ? lift / total : 0.0;
         }
@@ -211,7 +211,7 @@ static partial class TerrainShaders
 
     /// <summary>
     /// The evaluation stage: the point on the flat triangle (the base surface is interpolated, not sampled again, so an unraised split edge is the
-    /// plain patch's edge), raised by the ground's height, fading out from <c>DisplaceFull</c> to <c>DisplaceEnd</c>. Its outputs are the patch
+    /// plain patch's edge), moved by the ground's height, fading out from <c>DisplaceFull</c> to <c>DisplaceEnd</c>. Its outputs are the patch
     /// vertex stage's, so the terrain's fragment stage is unchanged.
     /// </summary>
     public const string PatchEvaluation = "#version 330 core\n" + HeightFunctions + ReliefFunctions + """
@@ -613,6 +613,8 @@ static partial class TerrainShaders
             makeWet(albedo, wetAmount, 1.0 - albedo.a + absorbance, uWaterHeight - vWorld.y, 2.0);
 
             atmoSelfShadow = reliefShade;
+            // A trough displaced below the ground looks up the sun shadow from the ground, where the flat shadow casters are, not from under them.
+            atmoShadowLift = uDisplace > 0.0 && distance < 250.0 ? max(terrainHeight(vWorld.xz) - vWorld.y, 0.0) : 0.0;
             vec3 l = normalize(uLightDir);
             float diff = max(dot(shadingNormal, l), 0.0) * reliefShade;
             vec3 v = normalize(uEye - vWorld);

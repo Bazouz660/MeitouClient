@@ -24,10 +24,10 @@ public static class GroundRelief
 
     /// <summary>
     /// A layer's depth as a multiple of <see cref="Depth"/>, from its normal map's own relief (<see cref="NormalHeight.FromNormals"/>, a fraction of the tile):
-    /// relative to a typical ground's (<see cref="TypicalRelief"/>), square-rooted and clamped to 0.3..2.5, so smooth sand stays shallow and gravel deep,
+    /// relative to a typical ground's (<see cref="TypicalRelief"/>), square-rooted and clamped to 0.3..1.5, so smooth sand stays shallow and gravel deep,
     /// but the game's 450-fold spread (0.0002 to 0.09; docs/render-terrain.md) is not copied: its normal maps' strengths are a look, not a measure.
     /// </summary>
-    public static float LayerDepth(float relief) => Math.Clamp(MathF.Sqrt(relief / TypicalRelief), 0.3f, 2.5f);
+    public static float LayerDepth(float relief) => Math.Clamp(MathF.Sqrt(relief / TypicalRelief), 0.3f, 1.5f);
 
     /// <summary>The median relief of the base layers' normal maps (<b>Observed</b>, 76 biomes, decoded at 512²).</summary>
     public const float TypicalRelief = 0.0042f;
