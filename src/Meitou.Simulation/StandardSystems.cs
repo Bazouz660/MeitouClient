@@ -160,6 +160,7 @@ public static class StandardSystems
         var deeds = Has(StandardParts.Aggro) ? new FactionDeeds(data.Relations, data) : null;
         if (combat is not null && Has(StandardParts.Aggro)) (combat.Relations, combat.Deeds) = (data.Relations, deeds);
         if (combat is not null) combat.Buildings = o.RagdollEnvironment;
+        if (combat is not null) (combat.TurretGuns, combat.Towns) = (new Meitou.Data.Gameplay.Combat.TurretCatalog(data.Db), data);
         if (Has(StandardParts.Pursuit)) systems.Add(new PursuitSystem(combat!));
         if (Has(StandardParts.Movement)) systems.Add(movement = new MovementSystem(new PathService(walkability, o.SynchronousPaths)));
         if (Has(StandardParts.FirstAid)) systems.Add(new FirstAid.FirstAidSystem(data.Bodies.Constants, data.BodyOptions, data.Items, o.FirstAid) { Deeds = deeds });

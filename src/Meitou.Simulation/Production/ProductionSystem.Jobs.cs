@@ -8,7 +8,7 @@ namespace Meitou.Simulation.Production;
 
 // Job lists (Perma-Jobs; docs/simulation.md "Production", the original's rules in docs/game/ai-tasks.md "Perma-jobs"): a player character whose task is idle or came from its list takes the
 // first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs three types: Operating machine (87, the
-// operator below), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul) and Engineer (125: ConstructionSystem builds the site its finder picks). Blocked
+// operator below), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul) and Engineer (125: ConstructionSystem builds the site its finder picks) and Turret guard (234: manning the job's turret as an operator). Blocked
 // uses one test for starting and for going on.
 public sealed partial class ProductionSystem
 {
@@ -224,6 +224,10 @@ public sealed partial class ProductionSystem
                 if (!m.Data.Operable) return true;
                 if (OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators) return true;
                 return !HasWork(world, site, m, cold);
+            case TaskType.MAN_A_TURRET_PLAYER_JOB:
+                // Turret guard (234, the job a Shift order to man a turret becomes): the building is a turret no one else mans.
+                if (m.Data.Function != Meitou.Data.World.ObjectRanges.TurretFunction) return true;
+                return OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators;
             case TaskType.OPERATE_STORAGE:
                 if (!m.Data.IsStorage || m.Storage is null) return true;
                 if (cold.Inventory is { } inv && inv.All().Any(i => Takes(world, m, i))) return false;
@@ -301,7 +305,7 @@ public sealed partial class ProductionSystem
         }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
-        if (job.Type == TaskType.OPERATE_MACHINERY)
+        if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB)
         {
             if (cold.OperateSite != site.Id) Begin(world, slot, site, m);
         }

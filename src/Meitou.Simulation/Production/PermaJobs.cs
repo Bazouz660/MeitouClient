@@ -65,7 +65,7 @@ public static class PermaJobs
     };
 
     /// <summary>The types a Meitou character carries out from its list; the others are kept, shown and saved but never started.</summary>
-    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER;
+    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB;
 
     /// <summary>
     /// The job an order of <paramref name="ordered"/> becomes (<b>Verified</b>: the row's +0xc when it has one), or null when it cannot be a job and the order runs once: the type has no row,

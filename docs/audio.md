@@ -218,11 +218,12 @@ is silent (**Observed**, rendered). **Meitou:** `DoorSounds` posts `Break` when 
 **Turrets** (`TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`). **Verified:** each frame of an active turret with a target the largest angle its turning parts still have to turn (`FUN_1404cc0d0`, degrees) is kept; with the counter at 0 and that angle over 0.1 it posts `Turret_Mvt_Start` and sets
 the counter to 8; the counter counts down every frame and posts `Turret_Mvt_Stop` on reaching 0 (so a turret that keeps turning posts a start and a stop every 8 frames; no fade on either). Both post on the building's object (`+0x208`, registered when the gun first asks for it).
 The turning parts are the BUILDING_PART records with `rotation function` 5 (ROTATION_TARGET): in order, each takes the aim point in its own frame and turns by its error (yaw part, `rotation axis` Y: `atan2(x, z)`; pitch part: `atan2(-y, √(x²+z²))`) limited to
-±`aim speed` (GUN_DATA) × efficiency × frame time. The shot's own sounds (the `Weapons` switch group and `Attack` on the building's object) belong to a turret firing. **Unknown:** the exe's target choice for a manned turret (`FUN_140437f40`, not traced), the
-idle behaviour of a manned turret without a target, and the wall bonus to the turning speed. **Meitou:** the simulation has no turret damage or firing model and does not turn turrets; it publishes only who stands at which turret
-(`CharacterSnapshot.Turret`, read from the AI's turret claims, outside the hash). `GameHost.AudioTurrets.cs` keeps a display-only aim for each manned turret within 4000 units: the nearest living, free hostile in the gun's `range` plus 5 units up (**engine choice**), the parts turned by the
-rule above in game time (`TurretSounds`), and posts the two events on an object of its own at the turret (a start beyond 3000 units from the eye is dropped; **engine choice**). The gun mesh does not turn (the renderer has no rotating parts). **Turret shots: no trigger.**
-To hear it: put a gunner on a town turret with a hostile character in range.
+± the turning speed × frame time (efficiency × `aim speed` × (1 + 0.01 × damage), [combat](game/combat.md#turrets)). A shot posts `Attack` on the building's object with the `Weapons` switch `Turret`. **Unknown:** the
+idle behaviour of a manned turret without a target. **Meitou:** the simulation fires turrets and publishes who mans which turret and its aim point (`CharacterSnapshot.Turret`, outside the hash).
+`GameHost.AudioTurrets.cs` keeps a display-only copy of each manned turret's parts within 4000 units, turned toward that aim point by the rule above in game time at efficiency 1 (`TurretSounds`, `TurretRig`),
+and posts the two events on an object of its own at the turret (a start beyond 3000 units from the eye is dropped; **engine choice**). The gun mesh does not turn (the renderer has no rotating parts). A shot
+(`SoundKind.TurretShot`) posts `Attack` with `Weapons` = `Turret` on a pooled object at the muzzle (**engine choice**).
+To hear it: a town under attack whose guards man their turrets, or a player character sent to a turret with an enemy in range.
 
 ### Weather
 
@@ -477,7 +478,7 @@ Open for the next wave: which event each game action posts and on which object, 
 
 ### Not done
 
-The emitters of foliage and map features, corpse flies, turret shots and wall-break sounds (nothing in Meitou triggers them), the callers that post effects, the task and interface sounds whose trigger Meitou lacks (listed under [Characters](#characters-footsteps-combat-voices) and [Interface](#interface)) (the engine is ready:
+The emitters of foliage and map features, corpse flies and wall-break sounds (nothing in Meitou triggers them), the callers that post effects, the task and interface sounds whose trigger Meitou lacks (listed under [Characters](#characters-footsteps-combat-voices) and [Interface](#interface)) (the engine is ready:
 [API](#api-for-event-sources)), voice limits, obstruction and occlusion (the game uses none), the radio, serial effect slots and the cone as Wwise draws it, and unloading ambience
 banks left behind (they stay loaded: about 5 to 14 MB of Ogg each; the music banks unload as above).
 

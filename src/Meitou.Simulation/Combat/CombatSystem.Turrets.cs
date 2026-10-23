@@ -1,0 +1,357 @@
+using System.Numerics;
+using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Bodies;
+using Meitou.Data.Gameplay.Combat;
+using Meitou.Data.World;
+
+namespace Meitou.Simulation.Combat;
+
+/// <summary>A manned turret as the snapshot shows it: its BUILDING and GUN_DATA records, the point it aims at (null: none yet) and the barrel's turn.</summary>
+public readonly record struct TurretView(string BuildingId, string GunId, Vector3 Position, float Yaw, Vector3? Aim);
+
+/// <summary>
+/// The turrets (docs/game/combat.md "Turrets", docs/simulation.md "Combat", turrets). The original runs a turret through its gunner's ranged controller (<c>Task_UseTurret</c>
+/// <c>FUN_1403474f0</c> hands the controller the building and the Turrets skill, then ticks it): the controller picks the target, reloads, holds the aim and fires the building's
+/// gun, whose shots, turn and loaded harpoons live on the building. Here one serial step of the <see cref="Schedule"/> phase does the same for every manned turret, in key order:
+/// gunners are found (a player character operating its turret, an NPC standing at the turret its squad gave it), then each turret chooses, reloads, turns and fires. Harpoons are
+/// bolts (<see cref="Projectile"/>): they fly, hit and wound as a crossbow's, from the next tick.
+/// </summary>
+public sealed partial class CombatSystem
+{
+    /// <summary>The turret guns by BUILDING id (null: no turret fires).</summary>
+    public TurretCatalog? TurretGuns { get; set; }
+    /// <summary>The towns' buildings, for the wall a town turret is mounted on (null: no mount bonus).</summary>
+    public PopulationData? Towns { get; set; }
+
+    /// <summary>One turret building's gun state (the original's <c>GunClassTurret</c> and <c>TurretBuilding</c> fields, and its gunner's controller fields while one mans it).</summary>
+    sealed class TurretState(string key, TurretGun gun, Vector3 position, float yaw, float mount)
+    {
+        public readonly string Key = key;
+        public readonly TurretGun Gun = gun;
+        public readonly Vector3 Position = position;
+        public readonly float Yaw = yaw;
+        /// <summary>The <see cref="TurretFormulas.MountFactor"/> of the wall it stands on.</summary>
+        public readonly float Mount = mount;
+        public readonly ulong Entity = Rng.StableHash(key) ^ 0x5475727265744755UL;
+        public readonly float[] Angles = new float[gun.Parts.Count];
+        /// <summary>The aim point (gun slot 5, building <c>+0x4a8</c>), set while the gun is loaded and has a target; it stays when the target goes.</summary>
+        public Vector3? Aim;
+        /// <summary>The largest error its parts still had to turn this tick, degrees (<c>+0x448</c>; -99 when it did not turn).</summary>
+        public float Worst = -99;
+        /// <summary>Harpoons loaded (the gun's <c>+0x20</c>, "current shots"; a new gun starts empty) and fired (part of the roll keys).</summary>
+        public int Loaded, Shots;
+        /// <summary>The gunner's controller: reloading, its time left and length, the steady-aim timer.</summary>
+        public bool Reloading;
+        public float ReloadLeft, ReloadTime, Steady = RangedFormulas.SteadyAim;
+        public int Gunner = -1, GunnerGeneration, Target = -1, TargetGeneration;
+        /// <summary>This tick's gunner efficiency e (health x power grant) and research damage multiplier.</summary>
+        public float Efficiency = 1, DamageMult = 1;
+        public bool Manned;
+
+        public void Hash(ref StateHasher h)
+        {
+            h.Add(Rng.StableHash(Key));
+            foreach (var a in Angles) h.Add(a);
+            h.Add(Aim ?? new Vector3(float.NaN));
+            h.Add(Worst);
+            h.Add(Loaded);
+            h.Add(Shots);
+            h.Add(Reloading);
+            h.Add(ReloadLeft);
+            h.Add(ReloadTime);
+            h.Add(Steady);
+            h.Add(Gunner);
+            h.Add(GunnerGeneration);
+            h.Add(Target);
+            h.Add(TargetGeneration);
+        }
+    }
+
+    readonly SortedDictionary<string, TurretState> turrets = new(StringComparer.Ordinal);
+
+    /// <summary>The turret a character mans as of the last tick (its <see cref="CharacterCold.Gunning"/> key), for the snapshot; null when it mans none.</summary>
+    public TurretView? TurretOf(string? key) =>
+        key is not null && turrets.TryGetValue(key, out var t) ? new TurretView(t.Gun.BuildingId, t.Gun.Gun.StringId, t.Position, t.Yaw, t.Aim) : null;
+
+    void HashTurrets(ref StateHasher h)
+    {
+        // Only once a turret has been manned, so worlds without gunners hash as before.
+        if (turrets.Count == 0) return;
+        h.Add(turrets.Count);
+        foreach (var t in turrets.Values) t.Hash(ref h);
+    }
+
+    /// <summary>A gunner's turret this tick: its key, BUILDING, place, facing, mount bonus, efficiency and research damage multiplier.</summary>
+    readonly record struct Post(string Key, string BuildingId, Vector3 Position, float Yaw, float Mount, float Efficiency, float DamageMult);
+
+    /// <summary>
+    /// The turret a character mans now, or null. Any gunner must be awake, free (not fighting, carrying, carried or caged) and have a working arm (task 146's <c>hasOneWorkingArm</c>).
+    /// A player character operates a turret of its own (<see cref="CharacterTask.Operate"/> at the site, <see cref="Production.ProductionSystem"/>); its efficiency is the machine's
+    /// power grant (0 unpowered) and its damage takes the research multiplier of the building. An NPC stands at the turret of its town its squad gave it (the AI's turret goals,
+    /// <see cref="Ai.AiBehaviour.Turret"/>); <b>engine choice</b>: efficiency 1 (NPC towns have no power grid here).
+    /// </summary>
+    Post? Manning(World world, int i, CharacterCold cold)
+    {
+        if (TurretGuns is not { } catalog || cold.Stats is null || cold.Race is null || cold.Medical is not { Incapacitated: false } medical || cold.InCombat || cold.IsImprisoned
+            || !cold.CarriedBy.IsNone || !cold.Carrying.IsNone || !(medical.ArmWorks(left: false) || medical.ArmWorks(left: true))) return null;
+        var n = world.Characters.Next[i];
+        if (cold.IsPlayer)
+        {
+            if (n.Task != (byte)CharacterTask.Operate || !cold.Operating || cold.OperateSite is not { } id || world.Buildings.Find(id) is not { Complete: true } site
+                || catalog.Get(site.Record) is not { } gun) return null;
+            float e = 1;
+            if (gun.IsConsumer) e = world.Machines.Find(id) is { } m ? m.HasPower ? m.Power : 0 : 0;
+            return new Post(site.Id, site.Record, site.Position, TownBuildings.YawOf(site.Rotation), 1, e, world.Research.Upgrade(site.Record).ProductionMult);
+        }
+        if (cold.Ai is not { Behaviour: Ai.AiBehaviour.Turret, Squad.Ai: { } board } || n.Task != (byte)CharacterTask.Idle || !Ai.AiSystem.Holds(n, cold)
+            || !board.TurretClaims.TryGetValue(i, out int claimed) || (uint)claimed >= (uint)board.Turrets.Count || board.Turrets[claimed] is not { Turret: { } post } building) return null;
+        float reach = post.UseRange + Ai.AiSystem.TurretSlack;
+        if (Vector2.DistanceSquared(new(n.Position.X, n.Position.Z), new(post.Position.X, post.Position.Z)) > reach * reach) return null;
+        float mount = 1;
+        if (post.MountedOn is { } on && Towns is { } towns && (uint)board.Town < (uint)towns.Sites.Count)
+            foreach (var b in towns.Sites[board.Town].Buildings)
+                if (b.Key == on) { mount = TurretFormulas.MountFactor(catalog.OutputOf(b.BuildingId)); break; }
+        return new Post(building.Key, building.BuildingId, post.Position, post.Yaw, mount, 1, 1);
+    }
+
+    /// <summary>The serial turret step (after the bolts fly): finds the gunners, then runs every manned turret in key order.</summary>
+    void TickTurrets(World world)
+    {
+        if (TurretGuns is null) return;
+        var table = world.Characters;
+        foreach (var t in turrets.Values) t.Manned = false;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            var cold = table.Cold(i);
+            if (cold is null) continue;
+            cold.Gunning = null;
+            if (!table.Next[i].Alive || Manning(world, i, cold) is not { } post) continue;
+            if (!turrets.TryGetValue(post.Key, out var t))
+            {
+                if (TurretGuns.Get(post.BuildingId) is not { } gun) continue;
+                turrets[post.Key] = t = new TurretState(post.Key, gun, post.Position, post.Yaw, post.Mount);
+            }
+            // One gunner a turret (max operators 1): the lowest slot.
+            if (t.Manned) continue;
+            t.Manned = true;
+            t.Efficiency = post.Efficiency;
+            t.DamageMult = post.DamageMult;
+            cold.Gunning = post.Key;
+            int generation = table.Previous[i].Generation;
+            if (t.Gunner != i || t.GunnerGeneration != generation)
+            {
+                // A new gunner takes over the gun as it is (its loaded harpoons stay); a reload in progress was the last gunner's (the controller's timer).
+                (t.Gunner, t.GunnerGeneration) = (i, generation);
+                t.Reloading = false;
+                t.ReloadLeft = 0;
+                t.Steady = RangedFormulas.SteadyAim;
+                t.Target = -1;
+            }
+        }
+        foreach (var t in turrets.Values)
+        {
+            if (t.Manned) TickTurret(world, t);
+            else if (t.Gunner >= 0)
+            {
+                t.Gunner = -1;
+                t.Target = -1;
+                t.Reloading = false;
+                t.ReloadLeft = 0;
+                t.Worst = -99;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One tick of a manned turret (the controller <c>FUN_140438c70</c> with a turret, its fire gate <c>FUN_14043aee0</c>, which the controller triggers every tick): choose the target, reload when
+    /// empty (no ammunition: GUN_DATA has none), set the aim point while loaded, turn the parts, and with a target in range, the parts within 1 degree, the steady time held and the line along
+    /// the barrel clear, fire. A turret never walks its gunner closer: out of range or blocked it only waits.
+    /// </summary>
+    void TickTurret(World world, TurretState t)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        int g = t.Gunner;
+        var cold = table.Cold(g)!;
+        var gun = t.Gun.Gun;
+        float dt = world.TickSeconds;
+
+        int target = ChooseTurretTarget(world, t, g, cold);
+        (t.Target, t.TargetGeneration) = target >= 0 ? (target, prev[target].Generation) : (-1, 0);
+
+        // The reload (FUN_140437ce0): a skill blend of Turrets and dexterity, XP for both while it runs.
+        bool loaded = TurretReload(t, cold, dt);
+
+        var (muzzle, _) = TurretRig.Barrel(t.Gun, t.Angles, t.Position, t.Yaw);
+        if (loaded && target >= 0) t.Aim = AimPoint(muzzle, prev[target], gun.ShotSpeed);
+        float rate = TurretFormulas.TurnRate(t.Efficiency, gun.AimSpeed, t.Gun.Damage * t.DamageMult);
+        t.Worst = rate > 0 && t.Aim is { } aim && t.Gun.Parts.Count > 0 ? TurretRig.Turn(t.Gun.Parts, t.Angles, t.Position, t.Yaw, t.Gun.Scale, aim, rate * dt) : -99;
+
+        if (target < 0 || !loaded) return;
+        var at = prev[g].Position;
+        float h = RangedFormulas.HeightFactor(at.Y, prev[target].Position.Y);
+        if (!RangedFormulas.InRange(Vector3.DistanceSquared(at, prev[target].Position), gun.Range, h)) return;
+        xp.Continuous(cold.Stats!, cold.Race!, StatsEnumerated.Perception, dt, RangedFormulas.PerceptionXp);
+        xp.Continuous(cold.Stats!, cold.Race!, StatsEnumerated.Turrets, dt, TurretFormulas.TurretXp);
+        // The fire decision (FUN_140437ad0): aimed within a degree, then the steady time, then the line along the barrel.
+        if (t.Worst > TurretFormulas.AimedDegrees) return;
+        t.Steady -= dt;
+        if (t.Steady > 0) return;
+        var (from, forward) = TurretRig.Barrel(t.Gun, t.Angles, t.Position, t.Yaw);
+        float reach = Vector3.Distance(from, t.Aim ?? prev[target].Position);
+        if (LineOfFire(world, g, target, from, from + forward * reach, cold.Faction) != 1) return;
+        FireTurret(world, t, g, cold, target, from, forward);
+        t.Loaded--;
+        t.Shots++;
+        t.Steady = RangedFormulas.SteadyAim;
+    }
+
+    /// <summary>
+    /// The reload (<c>FUN_140437ce0</c>): an empty gun starts one of clamp(lerp(s, reload max, reload min)) seconds, s = 0.01 (0.6 Turrets + 0.4 dexterity) (<see cref="RangedFormulas.SkillBlend"/>);
+    /// while it runs the gunner gains Turrets and dexterity XP; at its end the gun holds <c>num shots</c> and the aim is steadied again. True when the gun is loaded and not reloading.
+    /// </summary>
+    bool TurretReload(TurretState t, CharacterCold cold, float dt)
+    {
+        var gun = t.Gun.Gun;
+        if (!t.Reloading)
+        {
+            if (t.Loaded > 0) return true;
+            float s = RangedFormulas.SkillBlend(Eff(cold, StatsEnumerated.Turrets), Eff(cold, StatsEnumerated.Dexterity), cold.Fighter?.DexterityMult ?? 1);
+            t.ReloadTime = RangedFormulas.ReloadTime(s, gun.ReloadTimeMin, gun.ReloadTimeMax);
+            t.ReloadLeft = t.ReloadTime;
+            t.Reloading = true;
+            return false;
+        }
+        t.ReloadLeft -= dt;
+        if (t.ReloadLeft <= 0)
+        {
+            t.ReloadLeft = 0;
+            t.Reloading = false;
+            t.Loaded = Math.Max(gun.NumShots, 1);
+            t.Steady = RangedFormulas.SteadyAim;
+        }
+        xp.Continuous(cold.Stats!, cold.Race!, StatsEnumerated.Turrets, dt, TurretFormulas.TurretXp);
+        xp.Continuous(cold.Stats!, cold.Race!, StatsEnumerated.Dexterity, dt, RangedFormulas.DexterityReloadXp);
+        return false;
+    }
+
+    struct TurretScan
+    {
+        public CharacterTable Table;
+        public List<int> Found;
+    }
+
+    [ThreadStatic] static List<int>? turretCandidates;
+
+    /// <summary>
+    /// The target choice (<c>FUN_140437f40</c>, <c>FUN_1404374d0</c>, the score <c>FUN_140435d70</c>): every candidate within 1.5 x range of the gunner scores
+    /// <see cref="TurretFormulas.Closeness"/> x <see cref="TurretFormulas.Arc"/>, x 1.5 when it fights the gunner, + 0.1 for the current target, and the current target's score is x 1.5
+    /// again in the pass; the best above 1e-6 wins, else the current one is kept. The first pass takes the gunner's enemies (the faction relations, or anyone fighting it). With none, an NPC
+    /// gunner's turret takes characters of default-hostile factions (own default relation below -30) and anyone fighting a member of the gunner's faction. Not targets: the dead, the carried,
+    /// the caged; a target down scores 0 for an NPC gunner and x 0.01 for the player's. <b>Engine choices</b>: every candidate counts as seen (the original's sense list and its seen flag),
+    /// the 1.5 for "fights the gunner" (<c>FUN_1405ca6f0</c>), the candidate radius; the player's Shoot first pass is not modelled (no such option yet).
+    /// </summary>
+    int ChooseTurretTarget(World world, TurretState t, int g, CharacterCold gc)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        var at = prev[g].Position;
+        float range = t.Gun.Gun.Range;
+        int current = t.Target >= 0 && t.Target < prev.Length && prev[t.Target].Alive && prev[t.Target].Generation == t.TargetGeneration ? t.Target : -1;
+        var found = turretCandidates ??= [];
+        found.Clear();
+        var scan = new TurretScan { Table = table, Found = found };
+        world.Grid.Query(at.X, at.Z, range * 1.5f, ref scan, static (int other, ref TurretScan st) => st.Found.Add(other));
+        found.Sort();
+        var facing = new Vector3(MathF.Sin(t.Yaw), 0, MathF.Cos(t.Yaw));
+        int generation = prev[g].Generation;
+
+        float Score(int o, float rangeFactor)
+        {
+            var oc = table.Cold(o);
+            if (oc?.Medical is not { } med || med.Dead || !oc.CarriedBy.IsNone || oc.IsImprisoned) return 0;
+            bool down = med.Incapacitated;
+            if (down && !gc.IsPlayer) return 0;
+            var there = table.Previous[o].Position;
+            float distance = Vector3.Distance(at, there);
+            float s = TurretFormulas.Closeness(distance, range, rangeFactor, down);
+            if (distance >= rangeFactor * range) return s;
+            s *= TurretFormulas.Arc(facing, there - t.Position);
+            if (s <= 0) return 0;
+            if (read[o].TargetSlot == g && read[o].TargetGeneration == generation) s *= 1.5f;
+            if (o == current) s += 0.1f;
+            return s;
+        }
+
+        // The current target is dropped when it no longer scores.
+        if (current >= 0 && Score(current, TurretFormulas.FullRange) <= 0) current = -1;
+        int best = -1;
+        float bestScore = TurretFormulas.MinScore;
+        foreach (int o in found)
+        {
+            if (o == g || !prev[o].Alive) continue;
+            var oc = table.Cold(o);
+            if (oc is null) continue;
+            bool enemy = read[o].TargetSlot == g && read[o].TargetGeneration == generation
+                || (Relations is not null ? AggroSystem.IsEnemy(Relations, gc.Faction, oc.Faction) : oc.Faction != gc.Faction);
+            if (!enemy) continue;
+            float s = Score(o, TurretFormulas.FullRange);
+            if (o == current) s *= 1.5f;
+            if (s > bestScore) (best, bestScore) = (o, s);
+        }
+        if (best < 0) best = current;
+        if (best >= 0 || gc.IsPlayer || Relations is null) return best;
+        foreach (int o in found)
+        {
+            if (o == g || !prev[o].Alive || table.Cold(o) is not { } oc) continue;
+            bool hostile = Relations.Contains(oc.Faction) && Relations.Factions[oc.Faction].DefaultRelation < FactionRelations.HostileThreshold;
+            int their = read[o].TargetSlot;
+            bool attacksFriend = their >= 0 && their < prev.Length && prev[their].Alive && table.Cold(their) is { } victim && victim.Faction == gc.Faction;
+            if (!hostile && !attacksFriend) continue;
+            float s = Score(o, TurretFormulas.FullRange);
+            if (s > bestScore) (best, bestScore) = (o, s);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// A turret's shot (<c>FUN_14043a730</c> with a <c>GunClassTurret</c>): from the muzzle along the barrel tilted by u x D degrees (D = <see cref="RangedFormulas.Deviation"/> of the gun's
+    /// <c>accuracy deviation at 0 skill</c> with Turrets and perception), a harpoon of <see cref="TurretFormulas.Harpoon"/> with the height factor from the muzzle, the gunner's friendly-fire
+    /// avoidance. The harpoon is the gunner's bolt: its hits, XP and crimes are the gunner's.
+    /// </summary>
+    void FireTurret(World world, TurretState t, int g, CharacterCold cold, int target, Vector3 muzzle, Vector3 forward)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        var gun = t.Gun.Gun;
+        ulong counter = (ulong)(uint)t.Shots << 3;
+        float u = Rng.Float(Rng.Hash(world.Seed, t.Entity, RngPurpose.Ranged, counter));
+        float spin = Rng.Float(Rng.Hash(world.Seed, t.Entity, RngPurpose.Ranged, counter + 1));
+        float w = Rng.Float(Rng.Hash(world.Seed, t.Entity, RngPurpose.Ranged, counter + 2));
+        float deviation = RangedFormulas.Deviation(gun.AccuracyDeviationAtZeroSkill, Eff(cold, StatsEnumerated.Turrets), Eff(cold, StatsEnumerated.Perception));
+        var dir = RangedFormulas.Deviate(forward, u * deviation, spin);
+        float hm = RangedFormulas.HeightFactor(muzzle.Y, prev[target].Position.Y) * t.Mount;
+        var (lo, hi) = TurretFormulas.PierceEnds(t.Gun.Damage * t.DamageMult);
+        var (damage, range, speed) = TurretFormulas.Harpoon(lo, hi, gun.Range, gun.ShotSpeed, TurretFormulas.PowerFactor(t.Efficiency), hm, w);
+        projectiles.Add(new Projectile
+        {
+            Id = nextProjectile++,
+            Shooter = g,
+            ShooterGeneration = prev[g].Generation,
+            Target = target,
+            TargetGeneration = prev[target].Generation,
+            ShooterFaction = cold.Faction,
+            ShooterIsPlayer = cold.IsPlayer,
+            ShooterSkill = Eff(cold, StatsEnumerated.Turrets),
+            Position = muzzle,
+            Direction = dir,
+            Speed = speed,
+            RangeLeft = range,
+            Damage = damage,
+            Avoidance = RangedFormulas.FriendlyAvoidance(Eff(cold, StatsEnumerated.FriendlyFire)),
+            Passed = -1,
+            Mesh = gun.LiveAmmoMesh,
+        });
+        Sound(world, SoundKind.TurretShot, g, -1, muzzle);
+    }
+}

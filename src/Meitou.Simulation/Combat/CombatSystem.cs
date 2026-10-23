@@ -114,6 +114,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         for (int i = 0; i < read.Length; i++) read[i].Hash(ref hasher);
         hasher.Add(log.Count);
         HashRanged(ref hasher);
+        HashTurrets(ref hasher);
     }
 
     // ------------------------------------------------------------------ inputs
@@ -193,6 +194,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Sync(world.Characters);
         Array.Copy(read, write, world.Characters.HighWater);
         FlyProjectiles(world);
+        TickTurrets(world);
     }
 
     public void Move(World world, Partition part)

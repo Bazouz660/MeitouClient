@@ -33,6 +33,8 @@ public enum SoundKind : byte
     BountyPaid,
     /// <summary>A building finished being taken apart: <c>Notifications</c> = <c>Thing_Complete</c>.</summary>
     DismantleDone,
+    /// <summary>A turret fired (<see cref="SoundEvent.Position"/> its muzzle, the subject its gunner): <c>Attack</c> with <c>Weapons</c> = <c>Turret</c> on the turret (<c>FUN_14043a730</c>).</summary>
+    TurretShot,
 }
 
 /// <summary>

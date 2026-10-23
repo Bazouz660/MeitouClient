@@ -121,9 +121,11 @@ public sealed partial class AiSystem
                 StateType.isFullyRested => cold.Medical is not { Incapacitated: true },
                 StateType.hasOneWorkingArm => cold.Medical is not { } arms || arms.ArmWorks(left: true) || arms.ArmWorks(left: false),
                 StateType.hasTwoWorkingArm => cold.Medical is not { } arms2 || arms2.BothArmsWork,
+                // The turret goals' done test (149, 222, 234: list A "6*"): no enemy near, so guards man the turrets only while enemies come (docs/simulation.md "AI", turrets).
+                StateType.isNoEnemiesInVicinity => !EnemyNear(cold),
                 // Held true: moving, standing up, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").
                 StateType.isMovementAllowed or StateType.canGetUp or StateType.isBuildingComplete
-                    or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction or StateType.isNoEnemiesInVicinity
+                    or StateType.BUILDING_HAS_POWER or StateType.machineHasFreeOperatorSlot or StateType.isReadyForAction
                     or StateType.DOOR_IS_OPEN or StateType.DOOR_IS_OPEN_HERE or StateType.AT_LOCATION_BUILDING_DOOR or StateType.AT_CURRENT_LOCATION_BUILDING_DOOR
                     or StateType.AT_LOCATION_BUILDING_DOOR_INSIDE or StateType.AT_LOCATION_BUILDING_DOOR_OUTSIDE or StateType.DESTINATION_IS_ACCESSIBLE
                     or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS or StateType.AT_LOCATION_FORTIFICATION_GATE
@@ -133,6 +135,31 @@ public sealed partial class AiSystem
                 _ => false,
             };
             return value == condition.Holds;
+        }
+
+        struct EnemyScan
+        {
+            public CharacterTable Table;
+            public FactionRelations Relations;
+            public int Self, Faction;
+            public bool Found;
+        }
+
+        /// <summary>
+        /// An enemy is near (the negation of <c>isNoEnemiesInVicinity</c>): a living character up within <see cref="EnemyVicinity"/> whose faction is an enemy of this one's (the relations
+        /// table). <b>Engine choice</b>: the original's test and its radius are <b>Unknown</b>.
+        /// </summary>
+        bool EnemyNear(CharacterCold cold)
+        {
+            if (!system.Relations.Contains(cold.Faction)) return false;
+            var p = Me.Position;
+            var scan = new EnemyScan { Table = world.Characters, Relations = system.Relations, Self = slot, Faction = cold.Faction };
+            world.Grid.Query(p.X, p.Z, EnemyVicinity, ref scan, static (int other, ref EnemyScan st) =>
+            {
+                if (st.Found || other == st.Self || !st.Table.Previous[other].Alive || st.Table.Cold(other) is not { Medical.Incapacitated: false } oc) return;
+                if (AggroSystem.IsEnemy(st.Relations, st.Faction, oc.Faction)) st.Found = true;
+            });
+            return scan.Found;
         }
 
         /// <summary>The target finders of the goals Meitou acts out (the spots, beds, seats, turrets and towns it already picks); none for the rest.</summary>

@@ -101,6 +101,60 @@ public static class RangedFormulas
     }
 }
 
+/// <summary>
+/// The formulas of a turret's gun (<c>GunClassTurret</c>, docs/game/combat.md "Turrets"; <b>Observed</b> in the decompile of <c>kenshi_x64.exe</c>). Pure functions. A crossbow is the same
+/// controller and shot with all the building factors 1 (<see cref="RangedFormulas.Bolt"/>).
+/// </summary>
+public static class TurretFormulas
+{
+    /// <summary>Degrees the turning parts may still be off for the gun to count as aimed (<c>FUN_140437ad0</c>: the turret's largest error at most 1).</summary>
+    public const float AimedDegrees = 1;
+    /// <summary>XP rate of the turret skill (<c>FUN_1408c7250</c>'s per-stat amount, x dt): 1.0; perception 3.0 and dexterity 0.5 as for the crossbow.</summary>
+    public const float TurretXp = 1f;
+    /// <summary>The range factor of a candidate target in the main pass and in the Shoot first pass (<c>FUN_1404374d0</c>: 1.0, 0.6).</summary>
+    public const float FullRange = 1, ShootFirstRange = 0.6f;
+    /// <summary>The smallest target score that counts (<c>FUN_1404374d0</c>).</summary>
+    public const float MinScore = 1e-6f;
+
+    /// <summary>The power factor of a shot (gun slot 19 <c>FUN_140435380</c>): 0.8 e + 0.2, e the building's efficiency (health x power grant, 0 unpowered; <c>FUN_140296e00</c>).</summary>
+    public static float PowerFactor(float efficiency) => efficiency * 0.8f + 0.2f;
+
+    /// <summary>The mount bonus (gun slot 18 <c>FUN_1404353b0</c>): 1 + 0.01 x the output value of the building the turret is mounted on (a wall's 10 to 30); 1 unmounted.</summary>
+    public static float MountFactor(float mountOutput) => mountOutput * 0.01f + 1;
+
+    /// <summary>The pierce ends of a turret of damage <paramref name="damage"/> (gun slots 22 and 23, <c>FUN_140435320</c>, <c>FUN_140435350</c>): trunc(0.75 D), trunc(1.25 D).</summary>
+    public static (int Min, int Max) PierceEnds(float damage) => ((int)(damage * 0.75f), (int)(damage * 1.25f));
+
+    /// <summary>
+    /// The turning speed in radians per second (<c>TurretBuilding</c> slot 150 <c>FUN_140434d20</c>, called by the gunner every frame): efficiency x <c>aim speed</c> x (1 + 0.01 x the turret's own damage).
+    /// A turret with no speed does not turn at all.
+    /// </summary>
+    public static float TurnRate(float efficiency, float aimSpeed, float damage) => efficiency * aimSpeed * (damage * 0.01f + 1);
+
+    /// <summary>
+    /// One harpoon (<c>FUN_14043a730</c>): damage U[min, max] x P x hM, range P x range x hM, speed shotSpeed x (0.8 P hM + 0.2), with P the <see cref="PowerFactor"/> and hM the height factor
+    /// times the <see cref="MountFactor"/>. <paramref name="w"/> is the roll in [0, 1).
+    /// </summary>
+    public static (float Damage, float Range, float Speed) Harpoon(int pierceMin, int pierceMax, float range, float shotSpeed, float power, float heightTimesMount, float w) =>
+        ((pierceMin + w * (pierceMax - pierceMin)) * power * heightTimesMount, power * range * heightTimesMount, shotSpeed * 0.8f * power * heightTimesMount + shotSpeed * 0.2f);
+
+    /// <summary>
+    /// A candidate's score before the turret's own weights (<c>FUN_140435d70</c>): (f x g)², g = 1 - d / (<paramref name="rangeFactor"/> x range), f 1 or 0.1 for a target down; a target out
+    /// of that range scores 0.001 (it may still be chosen, never fired at).
+    /// </summary>
+    public static float Closeness(float distance, float range, float rangeFactor, bool down)
+    {
+        float f = down ? 0.1f : 1;
+        float g = distance < 0 ? 0 : 1 - distance / (rangeFactor * range);
+        if (g <= 0) g = 0;
+        float s = f * g * f * g;
+        return s <= 0 ? 0.001f : s;
+    }
+
+    /// <summary>The turret's own weight of a target (gun slot 6 <c>FUN_1404348e0</c>): 1 in front of it (positive dot product with its facing), 0.1 behind.</summary>
+    public static float Arc(Vector3 facing, Vector3 toTarget) => Vector3.Dot(facing, toTarget) > 0 ? 1 : 0.1f;
+}
+
 /// <summary>Finding and using up a crossbow's ammunition in an inventory: the main inventory first, then the worn backpack (<c>CharacterAnimal</c> slot 47, <c>FUN_1405cb5b0</c>).</summary>
 public static class Ammunition
 {
