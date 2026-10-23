@@ -17,6 +17,8 @@ public enum CombatRoll : ulong
     Stumble = 6,
     /// <summary>Who swings first when two fighters are ready at each other on the same tick (keyed by the pair, so both sides draw the same number).</summary>
     Initiative = 7,
+    /// <summary>The side-step speed of a fighter circling its target (counter: three per target slot).</summary>
+    Circle = 8,
 }
 
 /// <summary>

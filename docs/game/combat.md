@@ -26,7 +26,40 @@ defence/dodge skill includes injuries/equipment. **Observed** outcome: block5 if
 past50% animation; dodge0 within progress0.1..0.98; otherwise hit2. Skill roll r1*A<r2*B,
 A=1+0.05*max(0,s2-s1), B=1+0.05*max(0,s1-s2). Derived chance with k=B/A is1-1/(2k) ifk>=1,
 elsek/2. General skill blend0.01*(0.6*stat+0.4*dexterity*m) feeds dodge/reload, with stat/gear
-and injury variants. Technique power/max-encumbrance and some length/selection details unknown.
+and injury variants.
+
+**Verified** (loader `FUN_140888ca0`, record reader `FUN_1406684c0`): techniques not `disabled` go to an attack
+list unless `is block` or `is dodge` (then the defence list), in data order. Each keeps a per-category table:
+`katanas` 0, `sabre` 1, `blunt` 2, `heavy weapons` 3, `hackers` 4, `unarmed` 5, `bow` 6, `polearm` 8; with
+`animal` > 8 only that category. `1 handed` is not read here (only by `FUN_1405ba280`). `power N` is stored ×0.01.
+
+### Attack technique choice
+
+**Observed** (`FUN_1402b4570` → `FUN_140888030` → `FUN_1408876d0`, limbs `FUN_140886030`):
+
+- Gap = |aim − attacker| − 1.5·r·k − lerp(k, 0.45, 1)·r_t, at least 0. r, r_t: `pathfind footprint radius`; k: slot
+  0x390 (1 for people). Aim: target + velocity × 1.2 s when its movement is plain mode 0, else its position.
+- Pass: category = weapon's (5 for fists), skill = stored category level. If empty and not an animal: category 5 at
+  `FUN_140884e00` = lerp(e, 0.2, 1) × (martial arts + CharStats +0x2c bonus − injury term) × slot 0x398. If still
+  empty: that again, accepting hurt limbs. e = encumbrance factor (CharStats +0x190, 1 unburdened).
+- Filter: category table; `min skill` ≤ skill ≤ `max skill`; (1 − e)·100 ≤ `max encumbrance`; `is prone` = posture ≠ 0;
+  limb factor f > 0, and f ≥ 1 except in the last pass.
+- f = product over blows. `limb` 4 (weapon) 1; 0 left arm, 1 right arm: 0.001 if not working (+0x5be / +0x5bd).
+  Legs 2/3: prone → technique out; flag +0x5b8 or a leg part down → ×0.25. A limb part kind 1
+  (`FUN_140643b30`, **Unknown** meaning) → 0.001. No blow above 0.01 → 0.
+- Reach R = `attack distance` + L/2, L = weapon `length` (CharStats +0x200). Fists never armed: L = 0. The max R of
+  filtered techniques, at least 1, is CharStats +0x150. A technique needs gap ≤ R.
+- Weight: c = min(a, b)/max(a, b), a = gap + 3, b = k·(`attack distance` + L/4) + 3. Multiply by f, by 0.02 under
+  `attack distance min vs static`, by 0.2 for the previous technique unless the target is in state 8, and by `chance`.
+  Pick by cumulative weight (`FUN_1408a8c80`, `FUN_1409b1c80`).
+
+Consequences (base data): "Cut left static" (−999) is never an attack. A never-armed person cannot use
+"ma badpunch" (−4) and has no attack below martial arts 5. An armed fighter beyond every weapon reach may kick
+or punch.
+
+Meitou: `TechniqueChooser.ChooseAttack`. Engine readings: CharStats +0x2c is the gear's unarmed bonus; the injury
+term, +0x5b8 and part kind 1 are not modelled. Leg down means a leg part's flesh − stun + rig < 0. Plain mode means
+a target that is not fighting. Fists keep L = 0 (the original keeps the last weapon's length). The gap is 3D.
 
 ## Hit reactions
 
@@ -45,10 +78,10 @@ A blocked blow neither staggers nor pushes (`FUN_140665540`). **Observed**: a sh
 **Verified**: after an attack (clip ≥98% done) the fighter waits 0.6 s after a hit, 0.3 s blocked, 0.2 s dodged
 (`FUN_14060a2f0`, `FUN_14060d6a0`; flat, no stats). Before swinging, an attacker in reach asks its target
 (`FUN_14060c670` → `FUN_140666a30`): target swinging at it → the attacker blocks; target stumbling or blocking →
-attack; otherwise an initiative roll on both attack skills (`FUN_140665370`, the skill roll above): the winner swings
-and the loser blocks (or circles 1.5–4.5 s at ±25 when the target does not face it, **Observed**). No free attack
-slot (`max num attack slots` + race extra, `FUN_140666310`) → circling. `max simultaneous hits` caps the targets of
-one swing; `power N` multiplies hit N's packet; `limb N` picks the punch/kick sound.
+attack; otherwise an initiative roll on both attack skills (`FUN_140665370`, the skill roll above). If the asker wins,
+the target blocks. If the target wins, the asker is refused; with no free slot it is refused too, and waits
+(see [Attack slots and circling](#attack-slots-and-circling)). `max simultaneous hits` caps one swing's targets;
+`power N` multiplies hit N's packet; `limb N` picks the punch/kick sound.
 
 **Observed** (decompiled, not measured in game), with several attackers: a target answering a request is asked by
 anyone, not only its own target, and the winner of the roll turns to attack the asker (`FUN_140666a30`). Deciding
@@ -58,6 +91,47 @@ to deciding. During its own swing a fighter aborts to defend only while under 50
 frame (`FUN_14060a590`). The defence covers the most advanced incoming blow from anyone; a failed defence roll means
 no defence for 1.2 s (+0x14c). A dodge plays its whole clip at its own speed, then decides at once; a block that
 ends leaves 0.2 s.
+
+### Attack slots and circling
+
+**Observed** (decompiled). CombatClass state +0x1f0: 0 attacking, 1 defending, 3 deciding, 4 re-decide, 5 and 6 below,
+8 stumbling, 9 no target, 10/11 chase. The planned next state is +0x1f4.
+
+- **Engaged list** (+0x1f8, `FUN_140666e20`): an asker joins its target's list while the list holds at most 4,
+  so 5 fighters at most. A refused asker adds to a two-frame overflow counter (+0x210/+0x214, swapped by
+  `FUN_14060cc50`). `FUN_14060c670` joins before it checks reach. An entry is removed when its blow on that
+  target is not a hit (`FUN_14060a2f0` → `FUN_1406657d0`). The list is cleared when the fight ends.
+- **Slots** (+0x8, `FUN_140666310`): count = clamp(`max num attack slots` + RACE `extra attack slots`, 1, 5),
+  `FUN_1406661d0`. It is 1 while the target is attacking (state 0) or when an **Unknown** test (+0x448 → +0x228) fails.
+  The CombatClass constructor also clamps the CONSTANTS value to 1..5.
+- A slot is granted by `FUN_140666a30` and kept until the swing's last blow (`FUN_14060a590` → `FUN_140665910`).
+  Hitting someone removes them from your own slots.
+- **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
+  centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
+  If the ask fails: being attacked → defend; engaged → state 5; else state 6.
+- **State 5** (`CircleStateAI`, update `FUN_1402b3180`): walk to the target until the body gap reaches max'
+  (`FUN_14060cd20` = +0x150 + 1.5rk − L/4, +12 while running, minus 1.5rk; at least 6). Face the target and ask each
+  tick. Then grab a slot and re-decide. A crowd within 1.2 × (r + 2.5) makes it retarget (`FUN_140666ee0`).
+  The attack start uses the same walk while no technique is in reach.
+- **State 6** (`WaitingStateAI`, `FUN_1402b3760` / `FUN_1402b3800`): not engaged. Keep the body gap in
+  [n/4 + 15, 3n + 25], each end minus 1.5rk. n = engaged count + last frame's refusals. Side-step at speed s
+  (steering +0x114). Try to join each tick; re-decide once engaged or attacked.
+- **Side-step speed**: drawn on entry as s = 50u − 25. If |s| is below the steering's least speed c (+0x108,
+  `FUN_1402ae6d0`), s becomes ±12. c = 30 + 3b + 12u′ with b = 3 + 3u″. For a humanoid, c′ = 3(1 − e)c + 1 and
+  b′ = 2(1 − e)b + 1. b′ is kept in 0..20; c′ is at most 90 and at least b′ + 10. So c′ = 11 for an unburdened
+  person, 39 or more for an animal.
+- Both states also start a 1.5–4.5 s timer. State 6 does not use it; state 5 uses it only in a hold stance
+  (CharStats +0x128, standing), clearing its own slots each time it runs out.
+
+Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
+
+- **Slots**: the holders are the fighters whose swing at the target has a blow to come. On the same tick, fighters
+  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units.
+- **Engaged list**: removal after a blocked or dodged blow is not modelled.
+- **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
+- **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point 1 s of
+  side-stepping ahead and face their path; the original faces the target.
+- The crowd test, the hold-stance timer and the +12 while running are not modelled.
 
 
 ## Combat stance
@@ -159,7 +233,7 @@ below is what the engine uses.
 | attack chance factor | 0.05 | hit roll skew |
 | base block chance | 70 | |
 | block chance increase / reduction per 10 levels | 12 / 15 | stored ×0.1, i.e. 1.2 and 1.5 per level |
-| max num attack slots | 1 | enemies that may melee one target (+ RACE `extra attack slots`) |
+| max num attack slots | 1 | clamped to 1..5 (CombatClass constructor `FUN_14060a9e0`); enemies that may swing at one target (+ RACE `extra attack slots`, [slots](#attack-slots-and-circling)) |
 | damage resistance min / max | -0.65 / 0.65 | toughness resistance range |
 | damage resistance randomised | False | present in the file only: the loader never reads it (no such string in the executable) |
 | knockout mult 1 / 99 | 3 / 0.75 | KO time scale by toughness |
@@ -255,12 +329,12 @@ target choice and states; how NPC crossbowmen get their bolts.
 ## Unknowns
 
 - KO wake-up, flags `+0x162`/`+0x163`, and the roles of hunger and "fed" in recovery; (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)); where the KO point (`140643ae0`) is consumed.
-- Attacker-side technique choice (which technique an attacker starts, using min/max skill, encumbrance, distance); whether `140887970` tests min/max skill. Attack-slot AI (`14060a9e0` and neighbours), aggression,
-  stance and target selection. The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
+- Target selection (`FUN_140666ee0`), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
+  min/max gap (the defence pick `140887970` tests no skill, **Observed**). The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
 - Turrets (target choice and states; see [Ranged and turrets](#ranged-and-turrets) for what is known and its own unknowns); the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
 - Whether the +20 guarding state of the block chance is the state the HUD's Block stance sets ([ui-screens.md](ui-screens.md#4-hud-mainbargui)).
-- What `anim hesitate point` (stored as a frame fraction, no reader found) and `max encumbrance` do; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
+- What `anim hesitate point` (stored as a frame fraction, no reader found) does; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.
 
 ## Expression reference

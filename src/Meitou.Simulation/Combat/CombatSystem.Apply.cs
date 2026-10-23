@@ -27,8 +27,8 @@ public sealed partial class CombatSystem
         var prev = table.Previous;
         int direction = tech.DirectionOf(blow);
 
-        // Reach: the blow arrives only if the target is still within the reach the attack started with.
-        float gap = Vector2.Distance(new(prev[a].Position.X, prev[a].Position.Z), new(prev[d].Position.X, prev[d].Position.Z)) - CombatTuning.Footprint(ac) - CombatTuning.Footprint(dc);
+        // Reach: the blow arrives only if the target is still within the reach the attack started with (an engine rule; the gap as the technique was chosen by, without the lead).
+        float gap = CombatTuning.Gap(prev[a].Position, prev[d].Position, ac, dc);
         BlowOutcome outcome;
         float progress = 0;
         if (gap > A.AttackReach + CombatTuning.ReachSlack) outcome = BlowOutcome.Missed;
