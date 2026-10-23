@@ -10,6 +10,9 @@ public static class SandParallax
     /// <summary>Read when the terrain textures are created (the height array is made then or not at all).</summary>
     public static bool Enabled { get; set; } = true;
 
+    /// <summary>Whether the patches march the height (read every frame; the viewer's K toggles it to compare).</summary>
+    public static bool Active { get; set; } = true;
+
     /// <summary>A sand layer by its normal map's name: "sand" in it, not sandstone or rock.</summary>
     public static bool IsSand(string? name)
     {
