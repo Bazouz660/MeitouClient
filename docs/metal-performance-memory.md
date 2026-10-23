@@ -242,8 +242,10 @@ renderer; read them with the frame's pass table and limiter counters.
   state needs a reload policy; it is a memory-budget item, not frame time.
 - **MTLBuffer created during GPU work.** A few frame constants/argument buffers grow or are made during the frame.
   Pool/preallocate them if CPU hitches remain; it is not the main GPU cost.
-- **Redundant buffer bindings.** `MetalCommandList` now caches the vertex and fragment buffer plus offset for the
-  encoder's lifetime and skips an identical rebind. Texture/sampler binds are separate and not covered yet.
+- **Redundant bindings and state.** `MetalCommandList` caches the vertex and fragment buffer plus offset, the
+  viewport, the scissor and the depth-stencil state for the encoder's lifetime and skips an identical rebind. The
+  remaining scene entries are mostly per-draw dynamic buffer offsets and push-constant blocks; texture/sampler
+  binds are separate and not covered yet.
 
 `Group by API Call` is the useful grouping for pass costs; `Group by Pipeline State` is for finding expensive
 shader pipelines.

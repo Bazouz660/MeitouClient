@@ -32,6 +32,8 @@ public sealed class MetalCommandList : IGpuCommandList
     PixelViewport viewport;
     PixelRect scissor;
     bool hasViewport, hasScissor;
+    bool depthStateKnown, depthTest, depthWrite;
+    DepthFunction depthOp;
     long epoch;
     // Metal keeps these bound for the encoder's lifetime. Skip a bind that would write the same buffer and offset
     // again; Xcode's API insights otherwise report dozens of redundant binds in a busy scene encoder.
@@ -110,6 +112,7 @@ public sealed class MetalCommandList : IGpuCommandList
         depthAttachment = !d.Depth.IsNull;
         renderDesc = d;
         hasViewport = hasScissor = false;
+        depthStateKnown = false;
         if (name.Length > 0) render.PushDebugGroup((NSString)name);
     }
 
@@ -134,6 +137,7 @@ public sealed class MetalCommandList : IGpuCommandList
         if (render.NativePtr == IntPtr.Zero) throw new InvalidOperationException("Clear outside a rendering");
         ctx.ClearAttachments(render, renderDesc, colour, colourValue, depth, depthValue, rect);
         lastPipeline = default;
+        depthStateKnown = false;   // ClearAttachments writes a depth state directly
         if (hasViewport) render.SetViewport(new MTLViewport { originX = viewport.X, originY = viewport.Y, width = viewport.Width, height = viewport.Height, znear = viewport.MinDepth, zfar = viewport.MaxDepth });
         if (hasScissor) render.SetScissorRect(new MTLScissorRect { x = (ulong)scissor.X, y = (ulong)scissor.Y, width = scissor.Width, height = scissor.Height });
     }
@@ -164,16 +168,18 @@ public sealed class MetalCommandList : IGpuCommandList
 
     public void SetViewport(in PixelViewport v)
     {
+        bool same = hasViewport && viewport == v;
         viewport = v;
         hasViewport = true;
-        render.SetViewport(new MTLViewport { originX = v.X, originY = v.Y, width = v.Width, height = v.Height, znear = v.MinDepth, zfar = v.MaxDepth });
+        if (!same) render.SetViewport(new MTLViewport { originX = v.X, originY = v.Y, width = v.Width, height = v.Height, znear = v.MinDepth, zfar = v.MaxDepth });
     }
 
     public void SetScissor(in PixelRect r)
     {
+        bool same = hasScissor && scissor == r;
         scissor = r;
         hasScissor = true;
-        render.SetScissorRect(new MTLScissorRect { x = (ulong)r.X, y = (ulong)r.Y, width = r.Width, height = r.Height });
+        if (!same) render.SetScissorRect(new MTLScissorRect { x = (ulong)r.X, y = (ulong)r.Y, width = r.Width, height = r.Height });
     }
 
     public void SetRaster(CullMode cull, FrontFaceDirection front)
@@ -189,7 +195,9 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         // With no depth attachment the state would be read nowhere; Metal's validation objects to setting it.
         if (!depthAttachment) return;
+        if (depthStateKnown && depthTest == test && depthWrite == write && depthOp == op) return;
         render.SetDepthStencilState(ctx.DepthState(test, write, op));
+        (depthStateKnown, depthTest, depthWrite, depthOp) = (true, test, write, op);
     }
 
     public void SetDepthBias(bool enable, float constant, float slope) => render.SetDepthBias(enable ? constant : 0, enable ? slope : 0, 0);
