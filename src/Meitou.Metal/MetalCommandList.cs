@@ -35,6 +35,9 @@ public sealed class MetalCommandList : IGpuCommandList
     bool depthStateKnown, depthTest, depthWrite;
     DepthFunction depthOp;
     long epoch;
+    // The 2026-10-23 redundancy filters are opt-in after the Metal GPU progress timeouts: the plain path
+    // reissues the state, as it did before the optimization. MEITOU_METAL_FAST_STATE=1 restores the cache.
+    static readonly bool CacheEncoderState = Environment.GetEnvironmentVariable("MEITOU_METAL_FAST_STATE") is "1" or "true";
     // Metal keeps these bound for the encoder's lifetime. Skip a bind that would write the same buffer and offset
     // again; Xcode's API insights otherwise report dozens of redundant binds in a busy scene encoder.
     readonly MTLBuffer[] vertexBufferState = new MTLBuffer[64];
@@ -168,7 +171,7 @@ public sealed class MetalCommandList : IGpuCommandList
 
     public void SetViewport(in PixelViewport v)
     {
-        bool same = hasViewport && viewport == v;
+        bool same = CacheEncoderState && hasViewport && viewport == v;
         viewport = v;
         hasViewport = true;
         if (!same) render.SetViewport(new MTLViewport { originX = v.X, originY = v.Y, width = v.Width, height = v.Height, znear = v.MinDepth, zfar = v.MaxDepth });
@@ -176,7 +179,7 @@ public sealed class MetalCommandList : IGpuCommandList
 
     public void SetScissor(in PixelRect r)
     {
-        bool same = hasScissor && scissor == r;
+        bool same = CacheEncoderState && hasScissor && scissor == r;
         scissor = r;
         hasScissor = true;
         if (!same) render.SetScissorRect(new MTLScissorRect { x = (ulong)r.X, y = (ulong)r.Y, width = r.Width, height = r.Height });
@@ -195,7 +198,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         // With no depth attachment the state would be read nowhere; Metal's validation objects to setting it.
         if (!depthAttachment) return;
-        if (depthStateKnown && depthTest == test && depthWrite == write && depthOp == op) return;
+        if (CacheEncoderState && depthStateKnown && depthTest == test && depthWrite == write && depthOp == op) return;
         render.SetDepthStencilState(ctx.DepthState(test, write, op));
         (depthStateKnown, depthTest, depthWrite, depthOp) = (true, test, write, op);
     }
@@ -222,7 +225,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)vertexBufferState.Length)
             throw new NotSupportedException($"vertex buffer index {index} is outside the Metal buffer table");
-        if (vertexBufferState[index].NativePtr == buffer.NativePtr && vertexOffsetState[index] == offset) return;
+        if (CacheEncoderState && vertexBufferState[index].NativePtr == buffer.NativePtr && vertexOffsetState[index] == offset) return;
         render.SetVertexBuffer(buffer, offset, index);
         vertexBufferState[index] = buffer;
         vertexOffsetState[index] = offset;
@@ -232,7 +235,7 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)fragmentBufferState.Length)
             throw new NotSupportedException($"fragment buffer index {index} is outside the Metal buffer table");
-        if (fragmentBufferState[index].NativePtr == buffer.NativePtr && fragmentOffsetState[index] == offset) return;
+        if (CacheEncoderState && fragmentBufferState[index].NativePtr == buffer.NativePtr && fragmentOffsetState[index] == offset) return;
         render.SetFragmentBuffer(buffer, offset, index);
         fragmentBufferState[index] = buffer;
         fragmentOffsetState[index] = offset;

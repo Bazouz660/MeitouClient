@@ -114,6 +114,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly MTLCommandQueue queue;
     readonly MTLPixelFormat presentFormat;
     readonly bool waitForSlot, waitOneFrame;
+    // Lossless target compression / base-view reuse is opt-in after the 2026-10-23 Metal progress timeouts;
+    // MEITOU_METAL_COMPRESSION=1 restores it.
+    static readonly bool LosslessCompression = Environment.GetEnvironmentVariable("MEITOU_METAL_COMPRESSION") is "1" or "true";
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
     readonly MetalBindlessTable bindless;
@@ -307,7 +310,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         if (desc.Use.HasFlag(TextureUse.TransferDst)) usage |= MTLTextureUsage.ShaderWrite;
         // A plain 2D target can be attached and sampled through its base image; only sub-ranges, layers and swizzles
         // need MTLTexture views. Omitting the flag on the plain targets lets Metal use lossless compression.
-        bool needsViews = desc.Use.HasFlag(TextureUse.Sampled) || desc.Use.HasFlag(TextureUse.Storage) ||
+        bool needsViews = !LosslessCompression || desc.Use.HasFlag(TextureUse.Sampled) || desc.Use.HasFlag(TextureUse.Storage) ||
             desc.Levels > 1 || desc.Layers > 1 || desc.Kind != TextureKind.Texture2D;
         if (needsViews) usage |= MTLTextureUsage.PixelFormatView;
         d.Usage = usage;
@@ -337,7 +340,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         // target omit PixelFormatView and stay eligible for Metal's lossless compression; only a real sub-range or
         // swizzled view creates a child texture.
         int totalLayers = of.Desc.Kind == TextureKind.Cube ? 6 * Math.Max(of.Desc.Layers, 1) : of.Desc.Layers;
-        bool baseView = baseLevel == 0 && levels == of.Desc.Levels && baseLayer == 0 && layers == totalLayers &&
+        bool baseView = LosslessCompression && baseLevel == 0 && levels == of.Desc.Levels && baseLayer == 0 && layers == totalLayers &&
             swizzle.Equals(GpuSwizzle.Identity) &&
             viewType == (of.Desc.Kind switch { TextureKind.Cube => MTLTextureType.Cube, TextureKind.Texture2DArray => MTLTextureType.Type2DArray, _ => MTLTextureType.Type2D });
         var view = new MetalTextureView

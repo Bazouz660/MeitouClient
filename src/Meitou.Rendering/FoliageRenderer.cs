@@ -127,7 +127,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         grassProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassVertexNative(), FoliageShaders.GrassFragmentNative(), "foliage grass");
         grassMotionProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassMotionVertexNative(), FoliageShaders.GrassMotionFragmentNative(), "foliage grass motion");
         textures = new WorldTextureCache(gpu, assets, "foliage textures");
-        gpuCull = new FoliageGpuCull(gpu);
+        // Metal's GPU cull and its separate pre-frame command buffer are opt-in after the 2026-10-23 progress
+        // timeouts; the CPU cull is the stable reference. Vulkan keeps the GPU path.
+        bool metalGpuCull = Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_CULL") is "1" or "true";
+        gpuCull = gpu is GpuContext || metalGpuCull ? new FoliageGpuCull(gpu) : null;
         InitGrassStore(gpu);
         workers = Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
         var used = catalog.ByBiome.Values.SelectMany(l => l).Distinct().ToList();

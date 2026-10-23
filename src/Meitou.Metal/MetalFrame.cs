@@ -55,29 +55,32 @@ public sealed unsafe class MetalFrame : IGpuFrame
 
     readonly MetalCommandList preFrame;
     MTLCommandBuffer preCommand;
+    // The separate pre-frame command buffer is part of the opt-in Metal GPU-cull path. With the CPU cull, the
+    // upstream pre-frame work (uploads, the ocean's FFT, impostor bakes) stays in the frame's own command list
+    // as before the 2026-10-23 cull change: the extra command buffer is not needed and is one more ordering
+    // point on a path that has produced GPU progress timeouts.
+    static readonly bool SeparatePreFrame = Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_CULL") is "1" or "true";
 
     /// <summary>
     /// The commands recorded ahead of the frame's passes (the GPU cull's dispatches, the ocean's FFT, the impostor
-    /// bakes). A Metal rendering cannot record a compute encoder, and the cull is dispatched while the scene's
-    /// rendering is open, so these go into a command buffer of their own. It is committed before the frame's; the
-    /// queue runs it first.
+    /// bakes). With the Metal GPU cull they go into a command buffer of their own, committed before the frame's;
+    /// otherwise the frame's own list is used.
     /// </summary>
-    public IGpuCommandList PreFrame
-    {
-        get
-        {
-            if (preCommand.NativePtr == IntPtr.Zero)
-            {
-                preCommand = ctx.Queue.CommandBuffer();
-                Retain_objc_retain(preCommand.NativePtr);
-                preFrame.Rebind(preCommand);
-                preFrame.Invalidate();
-            }
-            return preFrame;
-        }
-    }
+    public IGpuCommandList PreFrame => SeparatePreFrame ? SeparatePreFrameList() : Commands;
 
     IGpuCommandList IGpuFrame.PreFrame => PreFrame;
+
+    IGpuCommandList SeparatePreFrameList()
+    {
+        if (preCommand.NativePtr == IntPtr.Zero)
+        {
+            preCommand = ctx.Queue.CommandBuffer();
+            Retain_objc_retain(preCommand.NativePtr);
+            preFrame.Rebind(preCommand);
+            preFrame.Invalidate();
+        }
+        return preFrame;
+    }
 
     /// <summary>Commits the pre-frame before the frame's own command buffer.</summary>
     internal void CommitPreFrame(bool wait = false)
