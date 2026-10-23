@@ -21,6 +21,8 @@ sealed class WorldOptions
     public float? Yaw, Pitch, Distance;
     public string? Screenshot;
     public int Width = 1280, Height = 960;
+    /// <summary><c>--size</c> was given: an interactive window keeps that size instead of starting maximised.</summary>
+    public bool SizeGiven;
     /// <summary>The size of a bench run (<c>--bench-frames</c> or <c>--ab</c>) without <c>--size</c>: smaller, so the runs are quicker.</summary>
     public static readonly (int Width, int Height) BenchSize = (1280, 720);
     public bool NoTextures, NoObjects, Wireframe;
@@ -190,7 +192,7 @@ sealed class WorldOptions
           --yaw <deg> --pitch <deg> --distance <units>   camera around the point (defaults 30, 35, radius)
           --screenshot <out.png> --size <W>x<H>          render offscreen to a PNG and exit
           --monitor <n>                                  open the window on monitor n (1-based)
-          --windowed                                     a bordered, maximized window (default: borderless full screen; Alt+Enter toggles)
+          --windowed                                     a bordered window: the --size asked, else maximized (default: borderless full screen; Alt+Enter toggles)
           --no-objects             skip buildings and map features
           --no-foliage             no trees, bushes, rocks or grass (F toggles)
           --no-load-cache          do not read or write the load caches (the foliage layout cache)
@@ -281,6 +283,7 @@ sealed class WorldOptions
         if (viewAt >= 0 && viewAt + 1 < args.Length) o.View = args[viewAt + 1];
         args = NamedViews.Expand(args);   // --view <name> becomes its options, in place: the ones after it win
         bool sizeGiven = args.Contains("--size");
+        o.SizeGiven = sizeGiven;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];

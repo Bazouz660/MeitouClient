@@ -92,6 +92,22 @@ commitment, not a proven single leak.
 - Record `MTLDevice.CurrentAllocatedSize` (or the SharpMetal equivalent), resident texture bytes, and process
   `vmmap`/`footprint` categories for the memory track.
 
+### Measured 2026-10-23: matched Metal/Vulkan native run
+
+Window 800x600 points (1600x1200 pixels), native/no TAA, `--no-gi`, same new game and view, VSync and cap off:
+
+- **Metal:** ~45 fps steady; CPU loop 19-24 ms, record 4.5-5.9 ms, drawable wait 7-10 ms, command-buffer GPU
+  time 25.6 ms.
+- **Vulkan:** ~41-42 fps steady; world draw CPU 6.0 ms, GPU total 22.3 ms. Passes: terrain 13.75 ms (62%),
+  particles 2.05, post 1.44, cull 1.16, shadows 1.09, sky 0.97, shafts 0.72, fog 0.53.
+- At 400x300 points (800x600 pixels), Metal ~89 fps steady and Vulkan ~82 fps; both are much less GPU-bound.
+
+Metal and Vulkan are close at native resolution, with Metal lower on CPU record and Vulkan lower on GPU total.
+The Metal GPU total is command-buffer time with frames in flight, not the frame interval; per-pass Metal times need a
+frame capture. The `--windowed --size` pair used to maximize Vulkan regardless of the requested size (Metal honoured
+it), which made an early comparison look much worse for Vulkan; that is fixed. Use `--log-spikes` with an interactive
+`--quit-after` run to get the Vulkan pass summary at exit.
+
 ### A1. Remove the present/drawable stall
 
 The profile's `NextDrawable` wait means the frame is partly serialized on presentation, not shading. Before changing
