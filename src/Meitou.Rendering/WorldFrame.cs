@@ -1226,7 +1226,6 @@ static class WorldFrame
         if (gpu.Foliage is { } lodFoliage) lodFoliage.LodPixelsPerRadian = render.TerrainPixelScale;   // the generated mesh levels measure their deviation in rendered pixels
         gpu.Foliage?.Update(eye);
         StageClock.Lap(2);
-        if (gpu.Characters is { } paced) paced.Focus = camera.Target;   // the pose-rate distances from what the camera looks at
         gpu.Characters?.Update(eye);
         if (gpu.Characters is { } posed && gpu.Debris is { } boltMeshes)
         {
