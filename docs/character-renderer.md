@@ -11,6 +11,9 @@ Instance bones/material offsets index shared storage buffers; group compatible m
 The update places every in-range part once (model and previous matrix relative to the eye, LOD distance at bias 1) inside the
 parallel pose loop; the colour, motion and shadow views from that eye reuse it, cull and pick levels in parallel chunks of 16
 characters, and keep the serial order within each batch. Portraits, icons, hover masks and other eyes place their own.
+Each `PartMaterial` keeps its last record and is written again only in a new epoch (texture cache `Version`: an image loaded, swapped
+or unloaded; LOD bias, stand-in, sampler generation, skin settings) or after its own fields changed (blend, body build). Texture needs
+are offered, and the textures marked used, only on the frame `CharacterTextureBudget` commits (every 500 ms, under the cache's 2 s idle limit).
 CharacterShaders set0 bindings: bones6, materials7, morphs8, previous bones9; material20 texture
 slots. CharacterLayoutTests pins CPU/GLSL layouts. Push depthIndex is near-depth bindless index
 for motion,0 otherwise. Camera-relative transforms preserve precision; previous bone/transform

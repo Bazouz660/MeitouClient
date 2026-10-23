@@ -54,7 +54,7 @@ the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own
 F12's legend groups stages (update, pre-frame, scene, present) into one summed row and line each; a click on a `+` row opens it (plotting
 its stages instead), `-` closes it. `upd-chars` opens to its render-thread parts (`StageClock.Part`; not plotted; the pass meter shows them as subs): `fill` (the host's draw list),
 `textures` (streaming pump), `gather` (characters in range, appearances), `pose` (the parallel posing and part placement), `materials`,
-`bolts`, `portraits`, `hover` (hover masks) and `icons` (item and building icons).
+`bolts`, `portraits`, `hover` (hover masks) and `icons` (item and building icons). The offscreen bench reports them as `upd-chars/<part>`.
 
 ## Geometry and pass diagnostics
 

@@ -211,6 +211,7 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
 
     public int Loaded => zones.Count;
     public IEnumerable<Zone> AllZones => zones.Values;
+    public Zone? ZoneAt(ZoneCoordinate coordinate) => zones.GetValueOrDefault(coordinate);
     /// <summary>Zones in range not laid out yet, and those being laid out.</summary>
     public int Pending => jobs.Count + Wanted + fills.Count;
     public int Wanted { get; private set; }

@@ -132,6 +132,8 @@ public sealed unsafe class WorldTextureCache : IDisposable
     /// <summary>GPU memory of the resident textures (all levels, RGBA8) and how many there are.</summary>
     public long ResidentBytes { get; private set; }
     public int ResidentCount { get; private set; }
+    /// <summary>Changes whenever a texture's image comes or goes (a load, a swap, an unload), so its key and bindless index may differ: what a user that keeps them checks.</summary>
+    public int Version { get; private set; }
     public int Unloads { get; private set; }
     public int Reloads { get; private set; }
     /// <summary>Mip streaming (<see cref="MipStreaming"/>, <see cref="Rebalance"/>): what the owner says about the camera, and the images replaced by
@@ -467,6 +469,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
         t.HasA = t.HasB = false;
         t.Native?.Dispose();
         t.Native = null;
+        Version++;
     }
 
     readonly Queue<Action> steps = new();
@@ -641,6 +644,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
         t.Bytes = bytes;
         t.State = WorldTexture.Residency.Resident;
         t.LastUsed = Environment.TickCount64;
+        Version++;
         ResidentBytes += bytes;
         ResidentCount++;
     }

@@ -62,6 +62,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (skinShading == value) return;
             skinShading = value;
             portraitShown.Clear();
+            materialEpoch++;
         }
     }
     bool skinShading = true;
@@ -74,7 +75,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public IReadOnlyDictionary<string, bool>? SkinRaces
     {
         get => skinRaces;
-        set { skinRaces = value; portraitShown.Clear(); }
+        set { skinRaces = value; portraitShown.Clear(); materialEpoch++; }
     }
     IReadOnlyDictionary<string, bool>? skinRaces;
 
@@ -228,6 +229,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public bool SettleFirst { get; set; }
     float textureBias;
     uint textureStandIn;
+    // What every material record depends on besides its material: the texture cache's version, the bias, the stand-in and the samplers. A change (or a
+    // skin setting's) starts a new epoch, and each record is written again when next used.
+    (int, float, uint, int) materialInputs;
+    int materialEpoch = 1;
 
     public CharacterRenderer(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assetLocator, CharacterRigs? rigs = null)
     {
@@ -487,21 +492,26 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 part.Near = Math.Min(part.Near, Math.Max(distance - live[i].Radius * 0.5f, 0.5f));
             }
         }
-        // Mip streaming: each texture's nearest user over how large a texel of its part is there; textures load at the size that need allows.
-        foreach (var part in slotParts)
-        {
-            float need = part.Near / part.UvScale * budget.NeedScale;
-            foreach (var t in part.Material.Tex) t?.OfferNow(need);
-        }
+        // Mip streaming: each texture's nearest user over how large a texel of its part is there; textures load at the size that need allows. Offered on
+        // the frame the budget commits them (every 500 ms), which also marks the textures used (reading the key), long before the cache's idle limits.
+        if (budget.Due)
+            foreach (var part in slotParts)
+            {
+                float need = part.Near / part.UvScale * budget.NeedScale;
+                foreach (var t in part.Material.Tex)
+                    if (t is not null) { t.OfferNow(need); _ = t.Key; }
+            }
         budget.Update(content.Textures);
+        // A record is written again only when something it reads changed (materialEpoch, or the material's own fields), and copied over whole: the frame's
+        // constants are mapped GPU memory, where building a record field by field (its zeroing, the texture array's stores) cost about 14 µs a record.
+        var inputs = (content.Textures.Version, textureBias, textureStandIn, Gpu.Samplers.Generation);
+        if (inputs != materialInputs) (materialInputs, materialEpoch) = (inputs, materialEpoch + 1);
         materials = Gpu.Frame.Constants.Allocate((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
-        // Each record is built in ordinary memory and copied over whole: the frame's constants are mapped GPU memory, where building a record field by
-        // field (its zeroing, the texture array's stores) cost about 14 µs a record.
-        CharacterMaterialRecord record = default;
         for (int s = 0; s < slotParts.Count; s++)
         {
-            Write(slotParts[s].Material, ref record);
-            *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = record;
+            var m = slotParts[s].Material;
+            if (m.RecordEpoch != materialEpoch) { Write(m, ref m.Record); m.RecordEpoch = materialEpoch; }
+            *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = m.Record;
         }
         StageClock.Part(StageClock.PartMaterials);
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;
@@ -566,6 +576,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 part.Material.Tex[CharacterShaders.SlotNormal] = p.Normal;
                 part.Material.Tex[CharacterShaders.SlotBlendNormal] = p.Blend;
                 part.Material.MuscleBlend = p.Weight;
+                part.Material.RecordEpoch = 0;
             }
 
         // Reading the key asks for the texture; a missing file never becomes resident.

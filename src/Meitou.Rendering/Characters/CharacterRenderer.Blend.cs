@@ -29,6 +29,7 @@ internal sealed unsafe partial class CharacterRenderer
         {
             to.Parts[i].Material.SkinTone = Vector3.Lerp(a.Colours[i].Skin, b.Colours[i].Skin, t);
             to.Parts[i].Material.HairColour = Vector3.Lerp(a.Colours[i].Hair, b.Colours[i].Hair, t);
+            to.Parts[i].Material.RecordEpoch = 0;
         }
         // The poses: the weights mixed (a pose one look does not set is at 0 there), the offsets summed as the asset's own set is.
         if (to.Morph is { } target && from.Morph is { } source && target.Poses == source.Poses && b.MorphBase != 0)
@@ -50,7 +51,10 @@ internal sealed unsafe partial class CharacterRenderer
         asset.GroundOffset = rest.GroundOffset;
         for (int i = 0; i < asset.Fixed.Count; i++) asset.Fixed[i] = rest.Fixed[i];
         for (int i = 0; i < asset.Parts.Count; i++)
-            (asset.Parts[i].Material.SkinTone, asset.Parts[i].Material.HairColour) = rest.Colours[i];
+        {
+            var m = asset.Parts[i].Material;
+            (m.SkinTone, m.HairColour, m.RecordEpoch) = (rest.Colours[i].Skin, rest.Colours[i].Hair, 0);
+        }
         asset.MorphBase = rest.MorphBase;
         asset.Blending = false;
     }

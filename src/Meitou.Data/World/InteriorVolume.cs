@@ -56,16 +56,57 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
     {
         if (p.Y < YMin - margin || p.Y > YMax + margin || Footprint.Length < 3) return false;
         var q = new Vector2(p.X, p.Z);
-        for (int i = 0; i < Footprint.Length; i++)
-        {
-            var a = Footprint[i];
-            var e = Footprint[(i + 1) % Footprint.Length] - a;
-            float len = e.Length();
-            if (len < 1e-4f) continue;
-            // Counter-clockwise: inside is to the left of every edge.
-            if ((e.X * (q.Y - a.Y) - e.Y * (q.X - a.X)) / len < -margin) return false;
-        }
+        var e = edges;
+        float reach = margin > 0 ? margin * e.Reach : 0;
+        if (q.X < e.Min.X - reach || q.X > e.Max.X + reach || q.Y < e.Min.Y - reach || q.Y > e.Max.Y + reach) return false;
+        // Counter-clockwise: inside is to the left of every edge.
+        for (int i = 0; i < e.Points.Length; i++)
+            if (Vector2.Dot(e.Normals[i], q - e.Points[i]) < -margin) return false;
         return true;
+    }
+
+    // Contains's footprint, worked out once: the most asked of it (every character and furniture piece near a building, each frame) are far outside.
+    readonly FootprintEdges edges = FootprintEdges.Of(Footprint);
+
+    /// <summary>
+    /// The footprint's edges that are not degenerate (a point on each and its inward unit normal), their box, and how far past the box the footprint widened
+    /// by a margin reaches, per unit of margin: the most a corner moves (1 / cos of half the turn between the normals; √2 at a right angle).
+    /// </summary>
+    sealed class FootprintEdges
+    {
+        public required Vector2[] Points, Normals;
+        public Vector2 Min, Max;
+        public float Reach;
+
+        public static FootprintEdges Of(Vector2[] footprint)
+        {
+            var points = new List<Vector2>();
+            var normals = new List<Vector2>();
+            for (int i = 0; i < footprint.Length; i++)
+            {
+                var a = footprint[i];
+                var e = footprint[(i + 1) % footprint.Length] - a;
+                float len = e.Length();
+                if (len < 1e-4f) continue;
+                points.Add(a);
+                normals.Add(new Vector2(-e.Y, e.X) / len);
+            }
+            var edges = new FootprintEdges { Points = [.. points], Normals = [.. normals] };
+            // Fewer than three edges bound nothing (every point passes them), so the box may not either.
+            if (points.Count < 3 || footprint.Length < 3) (edges.Min, edges.Max, edges.Reach) = (new(float.NegativeInfinity), new(float.PositiveInfinity), 0);
+            else
+            {
+                (edges.Min, edges.Max) = (footprint[0], footprint[0]);
+                foreach (var v in footprint) (edges.Min, edges.Max) = (Vector2.Min(edges.Min, v), Vector2.Max(edges.Max, v));
+                edges.Reach = 1;
+                for (int i = 0; i < normals.Count; i++)
+                {
+                    float turn = 1 + Vector2.Dot(normals[i], normals[(i + 1) % normals.Count]);
+                    edges.Reach = Math.Max(edges.Reach, turn < 1e-6f ? float.PositiveInfinity : MathF.Sqrt(2 / turn));
+                }
+            }
+            return edges;
+        }
     }
 
     Lazy<FloorSurfaces>? floors;

@@ -753,12 +753,16 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
     public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
     {
-        foreach (var zone in streamer.AllZones)
-        {
-            if (zone.Interiors.Count == 0 || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > 200) continue;   // a building may stand over its zone's edge
-            foreach (var v in zone.Interiors)
-                if (v.Contains(p, margin)) return v;
-        }
+        // The zones within 200 units of the point (a building may stand over its zone's edge): the one it is in and at most three beside it.
+        const float Over = 200;
+        var (lo, hi) = (WorldLayout.ZoneOf(p.X - Over, p.Z - Over), WorldLayout.ZoneOf(p.X + Over, p.Z + Over));
+        for (int x = lo.X; x <= hi.X; x++)
+            for (int y = lo.Y; y <= hi.Y; y++)
+            {
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > Over) continue;
+                foreach (var v in zone.Interiors)
+                    if (v.Contains(p, margin)) return v;
+            }
         return null;
     }
 
