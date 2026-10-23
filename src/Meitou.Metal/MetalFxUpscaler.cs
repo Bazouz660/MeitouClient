@@ -44,6 +44,7 @@ public sealed class MetalFxUpscaler : IUpscaler
         s.DepthTexture = ctx.TextureAt(i.Depth);
         s.MotionTexture = ctx.TextureAt(i.Motion);
         s.OutputTexture = ctx.TextureAt(i.Output);
+        if (i.Reactive is { } reactive) s.ReactiveMaskTexture = ctx.TextureAt(reactive);
         // Our motion is UV from current to previous; MetalFX, like FSR, takes render pixels towards the previous
         // position (the scale's sign is the conversion). Jitter is in render pixels along +row (Metal's row is top-down).
         s.MotionVectorScaleX = -i.RenderWidth;
@@ -95,6 +96,8 @@ public sealed class MetalFxUpscaler : IUpscaler
             ColorTextureFormat = MTLPixelFormat.RGBA16Float,
             DepthTextureFormat = MTLPixelFormat.Depth32Float,
             MotionTextureFormat = MTLPixelFormat.RGBA16Float,
+            IsReactiveMaskTextureEnabled = true,
+            ReactiveMaskTextureFormat = MTLPixelFormat.R32Float,
             OutputTextureFormat = MTLPixelFormat.RGBA16Float,
         };
         try

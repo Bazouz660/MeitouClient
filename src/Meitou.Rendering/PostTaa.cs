@@ -23,7 +23,7 @@ sealed class PostTaa : IDisposable
     readonly Dictionary<(GpuProgram Program, InternalFormat Format), GraphicsPipelineDesc> pipelines = [];
     readonly SampledTexture pointSampler, linearSampler;
 
-    GpuTexture? motion, historyA, historyB, externalOutput;
+    GpuTexture? motion, reactive, historyA, historyB, externalOutput;
     int width, height, displayWidth, displayHeight;
     bool historyValid, previousValid, externalValid;
     IUpscaler? external;
@@ -103,7 +103,7 @@ sealed class PostTaa : IDisposable
     /// <paramref name="jitterPixels"/> is the offset the scene's projection used. Returns the TAA picture (at the scene's size).
     /// </summary>
     public GpuTexture Draw(IGpuCommandList cmd, GpuTexture scene, GpuTexture depth, Vector3 eye, Matrix4x4 view, float fov, float aspect,
-        float near, float far, Vector2 jitterPixels, int outputWidth, int outputHeight, float deltaSeconds = 1f / 60f)
+        float near, float far, Vector2 jitterPixels, int outputWidth, int outputHeight, float deltaSeconds = 1f / 60f, float? waterHeight = null)
     {
         Ensure(scene.Desc.Width, scene.Desc.Height, outputWidth, outputHeight);
         EnsureExternalOutput();
@@ -132,11 +132,18 @@ sealed class PostTaa : IDisposable
         v.Set(up, rotation.M12, rotation.M22, rotation.M32);
         v.Set(back, rotation.M13, rotation.M23, rotation.M33);
         v.Set(eyeY, eye.Y);
-        v.Set(waterY, float.MinValue);
-        v.Set(waterReactive, 0f);
+        v.Set(waterY, waterHeight ?? float.MinValue);
+        v.Set(waterReactive, 0.5f);
         v.Set(sun, 0f, 0f, 0f, 0f);       // the sky's sun motion is off in this slice
         v.Set(sunMotion, 0f, 0f, 0f, 0f);
         Fullscreen(cmd, velocity, motion!, width, height);
+        if (External is not null && reactive is not null)
+        {
+            v.Set(waterY, waterHeight ?? float.MinValue);
+            v.Set(waterReactive, 0.5f);
+            v.Set(mode, 2);
+            Fullscreen(cmd, velocity, reactive, width, height);
+        }
         if (ObjectMotion is { } objectMotion)
         {
             var targets = PassTargets.Of(motion, null);
@@ -159,6 +166,7 @@ sealed class PostTaa : IDisposable
             bool done = upscaler.Dispatch(new UpscaleInputs
             {
                 Colour = scene, Depth = depth, Motion = motion!, Output = externalTarget,
+                Reactive = reactive,
                 RenderWidth = width, RenderHeight = height, DisplayWidth = displayWidth, DisplayHeight = displayHeight,
                 JitterPixels = jitterPixels, Near = near, Far = far, FieldOfView = fov,
                 DeltaSeconds = Math.Clamp(deltaSeconds, 0.001f, 0.25f), Sharpness = 0, Reset = resetExternal,
@@ -221,6 +229,8 @@ sealed class PostTaa : IDisposable
         displayHeight = dh;
         motion = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa motion"));
+        reactive = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, w, h,
+            Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa reactive"));
         historyA = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
         historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
@@ -266,10 +276,11 @@ sealed class PostTaa : IDisposable
     void DisposeTargets()
     {
         motion?.Dispose();
+        reactive?.Dispose();
         historyA?.Dispose();
         historyB?.Dispose();
         externalOutput?.Dispose();
-        motion = historyA = historyB = externalOutput = null;
+        motion = reactive = historyA = historyB = externalOutput = null;
     }
 
     public void Dispose()

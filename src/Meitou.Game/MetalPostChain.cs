@@ -222,7 +222,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         {
             var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
             resolved = taa.Draw(taaCmd, sceneColour, ctx.Depth, eye, view, fov, aspect, nearPlane, farPlane, JitterPixels,
-                displayWidth, displayHeight, DeltaSeconds());
+                displayWidth, displayHeight, DeltaSeconds(), WaterHeight);
             ctx.EndNative(taaCmd);
         }
         var cmd = (MetalCommandList)ctx.BeginNative("post composite");

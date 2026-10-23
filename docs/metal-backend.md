@@ -599,8 +599,8 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
    settings choose it, balanced by default. Object motion (grass and characters) is shared through the post-chain
-   seam. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask, the sun-motion term and the
-   remaining `PostProcess` passes (FogRate, GI resolve).
+   seam. MetalFX gets a reactive mask from the water's analytic coverage. Still to do: the TAA motion-reprojection
+   ghosting, particle coverage, the sun-motion term and the remaining `PostProcess` passes (FogRate, GI resolve).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
    (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
    and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
