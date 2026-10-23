@@ -203,10 +203,22 @@ public sealed class MetalShaders : IGpuShaders
         return glsl;
     }
 
+    // Diagnostic A/B: Metal's fast-math compile option. Unset leaves Metal's default (which is fast math on); 1 and 0
+    // force it on or off. The default must not be changed until the terrain and scene pictures have been compared.
+    static readonly bool? FastMath = Environment.GetEnvironmentVariable("MEITOU_METAL_FAST_MATH") switch
+    {
+        "1" or "true" => true,
+        "0" or "false" => false,
+        _ => null,
+    };
     readonly MTLDevice device;
     readonly List<MetalProgram> programs = [];
 
-    public MetalShaders(MTLDevice device) => this.device = device;
+    public MetalShaders(MTLDevice device)
+    {
+        this.device = device;
+        if (FastMath is { } fast) Console.WriteLine($"metal     shaders fast math {fast.ToString().ToLowerInvariant()} (MEITOU_METAL_FAST_MATH)");
+    }
 
     /// <summary>The compiler the programs go through: Metal's own options (per-stage bindings at 0, no cache shared with Vulkan's).</summary>
     public GlslProgramCompiler Compiler { get; } = new(new ShaderCompileOptions { FragmentBindingBase = 0, UseDiskCache = false });
@@ -360,7 +372,9 @@ public sealed class MetalShaders : IGpuShaders
     MTLLibrary Library(string msl, string name)
     {
         NSError error = default;
-        var library = device.NewLibrary((NSString)msl, new MTLCompileOptions(), ref error);
+        var options = new MTLCompileOptions();
+        if (FastMath is { } fast) options.FastMathEnabled = fast;
+        var library = device.NewLibrary((NSString)msl, options, ref error);
         if (error.NativePtr != IntPtr.Zero)
             throw new InvalidOperationException($"{name}: the MSL did not compile: {error.LocalizedDescription}");
         return library;

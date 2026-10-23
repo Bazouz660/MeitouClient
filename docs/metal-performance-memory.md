@@ -311,6 +311,36 @@ The main encoder is wide (occupancy/bandwidth/texture work), not a single ALU ho
 are shadow/terrain preparation; inspect them separately before optimising the main terrain shader. The measurement
 and shader-experiment order is in [metal-terrain-shader-plan](metal-terrain-shader-plan.md).
 
+### Terrain shader A/Bs (2026-10-23)
+
+Raw Metal view: 800x600 points (1600x1200 pixels), `--view hub`, no population/objects/foliage, native/no-TAA and
+`MEITOU_METAL_SLOT_WAIT=serial` so the completed-frame GPU time is readable:
+
+- baseline **14.2 ms**;
+- `--material-distance 1` **11.8 ms** (−17%): the material path, not geometry;
+- `--anisotropy 1` **14.8 ms** and `--terrain-error 32` **14.2 ms**: noise;
+- normal-maps compile variant (`MEITOU_TERRAIN_NO_NORMAL=1`) **12.3 ms** (−12%).
+
+The normal-map-off variant is kept for that quality switch. The normal-on/loaded/early-fragment variants were all
+inside the noise floor and are not in the default path. Full scene at MetalFX temporal 0.67 was ~16.5 ms, and
+normal maps off ~16.3 ms, so the terrain shader is a smaller share at the shipping scale.
+
+Fast math is already on in Metal's default `MTLCompileOptions`; forcing it off raised the raw view to ~33 ms.
+`MEITOU_METAL_FAST_MATH=0` is only a diagnostic. Half precision is not available through this SPIR-V-Cross version's
+`mediump` (it emits `float`); explicit `float16_t` works but needs a Metal-only terrain program and capability check.
+
+Matched Vulkan: no-object terrain 7.83 ms (total 14.62 ms), full scene terrain 11.40 ms (total 22.51 ms). Compare the
+same view and scene; the earlier full-scene Metal capture already had terrain at 11.3 ms.
+
+The unattended one-frame capture is:
+
+```sh
+MTL_CAPTURE_ENABLED=1 MEITOU_METAL_CAPTURE_AT=12 \
+MEITOU_METAL_CAPTURE_PATH=/tmp/meitou.gputrace ...
+```
+
+It waits for a drawn frame, captures exactly one, and stops; use it instead of a multi-frame trace.
+
 ## Metal timestamp limitation and private statics
 
 Apple silicon supports GPU counter sampling only at **stage boundaries**. A mid-encoder

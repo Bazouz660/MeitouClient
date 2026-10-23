@@ -101,12 +101,18 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
         GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         patchColour = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), "terrain");
+        // The normal-maps-off path is a compile-time variant: the uniform branch still leaves the samples in the program on
+        // Metal (the shader compiler does not fold it), while the variant removes them (~1.8 ms, 12% of the no-object frame).
+        patchColourNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(normalMaps: false), "terrain no normal");
         patchDepth = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain depth");
         patchPrepass = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), "terrain prepass");
         patchColourCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain interior cut");
+        patchColourCutNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true, normalMaps: false), "terrain interior cut no normal");
         patchPrepassCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain prepass interior cut");
         meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
+        meshColourNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(normalMaps: false), "terrain meshes no normal");
         meshSolid = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid");
+        meshSolidNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(normalMaps: false), "terrain meshes solid no normal");
         meshDepth = new TerrainProgram(gpu, sets, TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth");
         // GL's stand-ins for an absent texture, in the array each sampler indexes (the bindless stand-in is the float 2D one only).
         standIn2D = gpu.Bindless.Register(BindlessKind.Texture2D, gpu.Dummy(StandInInfo(false, ScalarKind.Float)));
@@ -278,8 +284,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 }
                 else
                 {
-                    RecordPatches(patchColour, "terrain", PatchMode.Solid, plainCount);
-                    if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
+                    RecordPatches(PatchColour, "terrain", PatchMode.Solid, plainCount);
+                    if (cutCount > 0) RecordPatches(PatchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
                 }
                 DrawnChunks += nodes.Count;
                 DrawnTriangles += patchTriangles;
@@ -289,8 +295,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 // The debug outline (Wireframe 1 and 2): the same patches as lines in a dark grey, pulled towards the eye as GL's polygon offset (-1, -1) did.
                 PrepareConstants(material: true, patches: true);
                 constants.Wireframe = 1;
-                RecordPatches(patchColour, "terrain wireframe", PatchMode.Wireframe, plainCount);
-                RecordPatches(patchColour, "terrain wireframe", PatchMode.Wireframe, cutCount, cutDraws);
+                RecordPatches(PatchColour, "terrain wireframe", PatchMode.Wireframe, plainCount);
+                RecordPatches(PatchColour, "terrain wireframe", PatchMode.Wireframe, cutCount, cutDraws);
             }
         }
     }
@@ -309,8 +315,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         latePending = false;
         frame = lateFrame;
         PrepareConstants(material: true, patches: true);
-        RecordPatches(patchColour, "terrain", PatchMode.Late, plainCount);
-        if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
+        RecordPatches(PatchColour, "terrain", PatchMode.Late, plainCount);
+        if (cutCount > 0) RecordPatches(PatchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
     }
 
     /// <summary>
@@ -405,7 +411,17 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     readonly NativeFrame nativeFrame;
     readonly GpuSetLayout constantsLayout;
-    readonly TerrainProgram patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
+    readonly TerrainProgram patchColour, patchColourNoNormal, patchDepth, patchPrepass, patchColourCut, patchColourCutNoNormal, patchPrepassCut,
+        meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
+
+    /// <summary>Whether the terrain colour programs may sample their normal-map arrays this frame: the option is on and the biome
+    /// layers are resident. The no-normal programs are compile-time variants, so this must select the matching program.</summary>
+    bool NormalMapsOn => frame.Options.Textures && frame.Options.NormalMaps && textures is { HasBiomes: true };
+
+    TerrainProgram PatchColour => NormalMapsOn ? patchColour : patchColourNoNormal;
+    TerrainProgram PatchColourCut => NormalMapsOn ? patchColourCut : patchColourCutNoNormal;
+    TerrainProgram MeshColour => NormalMapsOn ? meshColour : meshColourNoNormal;
+    TerrainProgram MeshSolid => NormalMapsOn ? meshSolid : meshSolidNoNormal;
     readonly ulong uniformAlign;
     readonly uint standIn2D, standInArray, standInUInt;
 
@@ -787,11 +803,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             meshCut = cut;
             try { PrepareConstants(material: true, patches: false); }
             finally { meshCut = null; }
-            return DrawGroups(meshColour, Colour, "terrain meshes interior cut");
+            return DrawGroups(MeshColour, Colour, "terrain meshes interior cut");
         }
         PrepareConstants(material: true, patches: false);
         // No placement of this path fades (row 1's w is 0): the program without the discard, so the depth test runs first (EarlyDepth).
-        return EarlyDepth.Enabled ? DrawGroups(meshSolid, Solid, "terrain meshes solid") : DrawGroups(meshColour, Colour, "terrain meshes");
+        return EarlyDepth.Enabled ? DrawGroups(MeshSolid, Solid, "terrain meshes solid") : DrawGroups(MeshColour, Colour, "terrain meshes");
     }
 
     /// <summary>The interior cut of the mesh draw being prepared (<see cref="DrawMeshes"/>, <see cref="DrawMeshesIndirect"/>; docs/render-interior-cut.md), null otherwise.</summary>
@@ -1105,8 +1121,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         finally { meshCut = null; }
         // solid: none of these placements is mid cross-fade (the caller splits them), so the program without the discard draws them (EarlyDepth).
         return solidDraw
-            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshSolid, Solid, "terrain meshes solid")
-            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, meshColour, Colour, "terrain meshes");
+            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, MeshSolid, Solid, "terrain meshes solid")
+            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, MeshColour, Colour, "terrain meshes");
     }
 
     int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, GpuBuffer rows, ulong rowsOffset, GpuBuffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
@@ -1167,7 +1183,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         fineTexture.Dispose();
         foreach (var r in retired) r.Texture.Dispose();
         if (ownsTextures) textures?.Dispose();
-        foreach (var p in new[] { patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth }) p.Dispose();
+        foreach (var p in new[] { patchColour, patchColourNoNormal, patchDepth, patchPrepass, patchColourCut, patchColourCutNoNormal, patchPrepassCut,
+                     meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal, meshDepth }) p.Dispose();
         rockBake?.Dispose();
         gpu.Bindless.Free(BindlessKind.Texture2D, standIn2D);
         gpu.Bindless.Free(BindlessKind.Texture2DArray, standInArray);

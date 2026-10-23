@@ -46,7 +46,11 @@ MEITOU_METAL_SHADOWS=0
 MEITOU_METAL_CLOUD_SHADOWS=0
 MEITOU_METAL_NO_TERRAIN_TEXTURES=1
 MEITOU_METAL_NO_IMPOSTORS=1
+MEITOU_TERRAIN_NO_NORMAL=1
 ```
+
+The terrain no-normal switch selects the compile-time variant (the viewer's `N`/`normal-maps` toggle does the same).
+`MEITOU_METAL_FAST_MATH=0` is a diagnostic only: Metal's default already has fast math on.
 
 The previous safe mode is no longer needed for the black-terrain/water/foliage failures.
 
@@ -178,10 +182,11 @@ Verified clean:
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
    indirect arguments. `MEITOU_METAL_CPU_CULL=1` restores the CPU reference for A/Bs. Readback copies used only
    for statistics still need a safer post-frame path if they prove unreliable.
-2. Terrain is the largest steady GPU item (11.3 ms of the 22.3 ms main scene in the native capture). Use
-   [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md): isolate sampling/filtering/geometry
-   first, then test Metal compile options, specialised terrain variants, targeted half precision and the
-   solid-pass early-fragment attribute. Direct MSL is a last resort, not the starting point. Do not remove the
+2. Terrain: the phase-0 gate is closed. In the matched no-object view, material-distance 1 saved 17%, anisotropy
+   and terrain-error were noise, and the normal-map-off compile variant saved 12% (kept for that quality switch).
+   Normal maps on, loaded-branch, early-fragment and half-precision experiments did not clear the noise floor, so
+   the default path is unchanged. See [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md); only
+   revisit direct MSL if a matched shipping capture shows terrain is the bottleneck. Do not remove the
    terrain/foliage prepasses.
 3. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
    6.51% and 14.29% of the latest 26.84 ms capture.

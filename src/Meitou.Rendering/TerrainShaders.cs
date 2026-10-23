@@ -152,7 +152,19 @@ static partial class TerrainShaders
         }
         """;
 
-    public static readonly string Fragment = "#version 330 core\n#extension GL_ARB_derivative_control : require\n" + HeightFunctions + AtmosphereShaders.Functions + """
+    /// <summary>
+    /// The runtime default of the terrain's normal-map switch. The no-normal program defines <see cref="TerrainNormalMaps"/>
+    /// before this text, so the compiler removes the samples and the tangent-frame path instead of testing a uniform.
+    /// </summary>
+    const string TerrainNormalMaps = "TERRAIN_NORMAL_MAPS";
+    const string VariantDefaults = """
+        #ifndef TERRAIN_NORMAL_MAPS
+        #define TERRAIN_NORMAL_MAPS uNormalMaps
+        #endif
+
+        """;
+
+    public static readonly string Fragment = "#version 330 core\n#extension GL_ARB_derivative_control : require\n" + VariantDefaults + HeightFunctions + AtmosphereShaders.Functions + """
 
         in vec3 vWorld;
         in vec3 vNormal;
@@ -260,7 +272,7 @@ static partial class TerrainShaders
             }
             s.albedo.rgb *= layersB.z;
 
-            if (uNormalMaps)
+            if (TERRAIN_NORMAL_MAPS)
             {
                 s.normal = tex(uNormal, base.p, layersA.x);
                 if (map.r != 0.0) s.normal = mix(s.normal, tex(uNormal, grass, layersA.w), map.r);
@@ -372,7 +384,7 @@ static partial class TerrainShaders
                     if (total > 0.0) nearWeight *= total / (total + pending);
                     else if (pending > 0.0) nearWeight = 0.0;
                     if (uDebug == 1) albedo = vec4(weights.rgb + weights.a * vec3(1.0, 1.0, 0.0) + rest * vec3(1.0), 1.0);
-                    if (uNormalMaps)
+                    if (TERRAIN_NORMAL_MAPS)
                     {
                         // Tangent frame as the game builds it for terrain: binormal = n x (-1, 0, 0), tangent = binormal x n.
                         vec3 bn = normalize(cross(n, vec3(-1.0, 0.0, 0.0)));
@@ -576,6 +588,19 @@ static partial class TerrainShaders
         return text;
     }
 
+    /// <summary>
+    /// A native terrain text with the normal-map switch fixed. Null leaves the runtime uniform in place; a value emits a
+    /// <c>#define</c> before <see cref="VariantDefaults"/> so the preprocessor takes the literal path. The uniform stays in the
+    /// constants block for the ABI, but the no-normal program no longer samples the normal arrays.
+    /// </summary>
+    static string Variant(string native, bool? normalMaps = null)
+    {
+        if (normalMaps is not { } value) return native;
+        int line = native.IndexOf('\n');
+        if (line < 0) throw new InvalidOperationException("TerrainShaders.Variant: the native text has no version line.");
+        return native.Insert(line + 1, $"#define {TerrainNormalMaps} {(value ? "true" : "false")}\n");
+    }
+
     /// <summary>The rock bake's extra push members (after <see cref="PushMembers"/>; std430 offsets 32, 48, 64, 80; <see cref="TerrainBakePush"/> is the C# side):
     /// the frame's direction (towards the viewer; w the distance the material is shaded at), its image axes and the output pass.</summary>
     public const string RockBakePushMembers = PushMembers + """
@@ -623,7 +648,8 @@ static partial class TerrainShaders
     public static string RockBakeVertexNative() => Native(MeshVertex, RockBakePushMembers);
 
     public static string PatchVertexNative() => Native(PatchVertex);
-    public static string FragmentNative(bool interiorCut = false) => Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Fragment) : Fragment));
+    public static string FragmentNative(bool interiorCut = false, bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(interiorCut ? InteriorMaskRenderer.WithCut(Fragment) : Fragment), normalMaps));
     /// <summary>The terrain colour pass's depth-only twin: the same vertex stage (so the depths are the same), a fragment stage that writes nothing (<see cref="TerrainLateColour"/>).</summary>
     public static string PrepassFragmentNative(bool interiorCut = false)
     {
@@ -632,8 +658,10 @@ static partial class TerrainShaders
     }
     public static string MeshVertexNative() => Native(MeshVertex);
     /// <summary>The TERRAIN-mode meshes' colour program, with the interior cut (on per draw: <see cref="TerrainConstants.InteriorCut"/>; the cross-fade already discards).</summary>
-    public static string MeshFragmentNative() => Gi.GiResolveShaders.WithAlbedo(Native(InteriorMaskRenderer.WithCut(MeshFragment)));
-    public static string MeshFragmentSolidNative() => Gi.GiResolveShaders.WithAlbedo(Native(MeshFragmentSolid));
+    public static string MeshFragmentNative(bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(InteriorMaskRenderer.WithCut(MeshFragment)), normalMaps));
+    public static string MeshFragmentSolidNative(bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(MeshFragmentSolid), normalMaps));
     public static string MeshInstancedDepthVertexNative() => Native(MeshInstancedDepthVertex);
     /// <summary><see cref="ShadowShaders.DepthFragment"/> (the caster block at set 0, binding 2) with the terrain's push block, so both
     /// stages of a depth program declare the same one.</summary>

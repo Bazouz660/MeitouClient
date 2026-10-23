@@ -1,7 +1,8 @@
 # Metal terrain shader plan
 
-Status: **proposed, not implemented** (2026-10-23). This is the follow-up to the Metal GPU-cull work. The goal is to
-reduce the terrain pass cost on Metal without changing the picture, and keep Vulkan as the reference path.
+Status: **phase 0 and items 1–4 measured; normal-map variant kept, default unchanged** (2026-10-23). This is the
+follow-up to the Metal GPU-cull work. The goal is to reduce the terrain pass cost on Metal without changing the
+picture, and keep Vulkan as the reference path.
 
 Current evidence:
 
@@ -17,6 +18,35 @@ Current evidence:
 - Apple silicon supports counter sampling only at stage boundaries; mid-encoder per-stage Metal timestamps are
   not available. Do not build a multi-frame Xcode workflow (one trace is ~3 GB). Use one frame plus
   `MEITOU_METAL_TRACE=1`.
+
+## Results (2026-10-23)
+
+Raw Metal view: 800x600 points (1600x1200 pixels), `--view hub`, no population/objects/foliage, `--no-vsync`,
+`MEITOU_METAL_NO_TAA=1`, `MEITOU_METAL_SLOT_WAIT=serial` (the serial wait is what makes `LastGpuMilliseconds`
+readable in the trace):
+
+| Measurement | GPU ms | Change |
+|---|---:|---:|
+| baseline | ~14.2 | — |
+| `--material-distance 1` | ~11.8 | −17% |
+| `--anisotropy 1` | ~14.8 | noise |
+| `--terrain-error 32` | ~14.2 | noise |
+| no-normal compile variant (`MEITOU_TERRAIN_NO_NORMAL=1`) | ~12.3 | −12% |
+
+- The material path, not geometry or anisotropic filtering, is where the cost is.
+- The normal-map-off path is a real 12% win, but it changes the picture. It is kept as a quality-switch variant;
+  the default normal-on path is unchanged.
+- A loaded variant (fixed map-ready/debug/grid/wireframe branches) was ~13.9 ms and a solid-pass
+  `early_fragment_tests` variant was ~13.8 ms: both inside the noise floor, so they were removed.
+- Full scene at MetalFX temporal 0.67: ~16.5 ms; normal maps off ~16.3 ms. The terrain shader is less of the
+  shipping frame at the upscaled size.
+- Fast math: Metal's default already enables it. Forcing `MEITOU_METAL_FAST_MATH=0` raised the same view to
+  ~33 ms; do not set `FastMathEnabled=false`.
+- Half precision: `mediump` is emitted as `float` by this SPIR-V-Cross version. Explicit `float16_t` does translate
+  to `half`, but the terrain would need a Metal-only program and a device capability check; not justified by the
+  current wide/ALU-light profile.
+- Matched Vulkan: no-object view terrain 7.83 ms, total 14.62 ms; full scene terrain 11.40 ms, total 22.51 ms.
+  The two backends are not uniformly different on terrain; compare the same view and scene.
 
 ## Measurement protocol
 
@@ -86,8 +116,9 @@ MSL rewrite is unlikely to pay.
 
 ## 1. Fast math / Metal compile options
 
-Current state: `MetalShaders.Library` uses `new MTLCompileOptions()`; no explicit fast math or language version.
-`MetalProbeGi` already uses `FastMathEnabled = true`.
+Current state: `MetalShaders.Library` uses `new MTLCompileOptions()`; Metal's default already enables fast math.
+`MEITOU_METAL_FAST_MATH` can force it on or off for an A/B, but leaving the environment unset preserves the
+default. `MEITOU_METAL_FAST_MATH=0` made the raw view ~33 ms, so the diagnostic must not be used as a default.
 
 Plan:
 
@@ -117,6 +148,11 @@ Plan:
    constants; if not, a direct MSL fragment variant is the alternative. Do not add a second shader source just for
    a branch that is already cheap.
 
+Result: the no-normal variant is implemented (`TerrainShaders.FragmentNative(normalMaps: false)`,
+`TerrainRenderer.NormalMapsOn` and the `*NoNormal` programs). The fixed height/feature/loaded branches and the
+normal-on branch were below noise and were not kept. The `MEITOU_TERRAIN_NO_NORMAL` environment is the game A/B;
+the viewer's existing `N`/`normal-maps` toggle selects it too.
+
 Measure pipeline compilation time and the number of variants; shader cache/pipeline creation must not regress load
 time. The default (normal maps on) must remain visually identical.
 
@@ -138,6 +174,10 @@ Plan:
 
 Likely win: uncertain. Revert if the image changes or the frame improvement is below the noise floor.
 
+Result: not implemented. A probe showed `mediump` still translates to `float`; explicit `float16_t`/`f16vec4` does
+translate to `half`, but using it in the terrain needs a Metal-only shader path and a shaderFloat16 capability check.
+Given the wide/ALU-light profile, that does not clear the bar for a direct MSL fallback yet.
+
 ## 4. `[[early_fragment_tests]]`
 
 The solid terrain program has no `discard`, and the renderer already has a depth prepass and late colour. The
@@ -149,6 +189,9 @@ Plan:
   other discard variants) and confirm the generated MSL contains `[[early_fragment_tests]]`.
 - Measure terrain with depth test/write in the late-colour pass. Do not enable it where the shader can discard.
 - If there is no measurable change, remove it; the hardware is already doing the useful early test.
+
+Result: implemented and confirmed in the MSL (`[[ early_fragment_tests ]]`); 13.8 ms no-object and 21.0 ms full scene
+versus 20.8 ms with it off. No measurable change, so it was removed.
 
 ## 5. `constexpr sampler`
 
@@ -164,6 +207,8 @@ Plan:
   `sample(..., level(...))` where necessary.
 - Measure texture-filter counters and image quality. If it requires dropping the upscaler bias or changing terrain
   mip selection, keep the current sampler.
+
+Result: not pursued. The anisotropy A/B was noise, so there is no evidence that sampler filtering is the cost.
 
 ## Direct MSL fallback
 
@@ -182,6 +227,9 @@ Do not start with a full MSL rewrite merely to use "Metal tricks". The current t
 texture arrays, bindless argument buffers, explicit gradients, a depth prepass and late colour. The likely missing
 wins are specialization, sampling and fill, not the language.
 
+Result: not started. The measured no-normal saving is real but is a quality switch, and no default-path variant
+cleared the noise floor. Revisit only with a matched capture that shows terrain is the shipping bottleneck.
+
 ## Acceptance
 
 - Build 0 warnings / 0 errors; quick suite and Metal tests pass.
@@ -189,6 +237,9 @@ wins are specialization, sampling and fill, not the language.
 - User confirms the picture on the normal Metal path; Vulkan remains visually unchanged.
 - Revert or leave off any variant below the noise floor.
 - Record the final measurement in `docs/metal-performance-memory.md` and update `HANDOFF.md`.
+
+Result: the default-path gate was not met. The normal-maps-off variant is ~12% faster and is kept for that quality
+switch; the default normal-on path is unchanged. Build, quick suite and Metal tests pass.
 
 ## Files
 

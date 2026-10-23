@@ -320,6 +320,12 @@ sealed partial class GameHost
         hostGround = heights.HeightAt;
         var (walkability, systems, constants) = BootSimulation(heights, interactive: true);
         (camera, render) = WorldFrame.Setup(scene, o);
+        // Terrain shader A/B: the no-normal program is a compile-time variant, so the option must be fixed before the first draw.
+        if (Environment.GetEnvironmentVariable("MEITOU_TERRAIN_NO_NORMAL") is "1" or "true")
+        {
+            render.NormalMaps = false;
+            Console.WriteLine("metal     terrain normal maps off (MEITOU_TERRAIN_NO_NORMAL=1)");
+        }
         session = new WorldSession(scene.Focus, (scene.X0, scene.Z0, scene.X1, scene.Z1), heights.HeightAt, o.Hour, config.TickRate,
             clock: GameClockFor(constants ??= scene.Database is { } clockDb ? Meitou.Data.Gameplay.GameConstants.FromDatabase(clockDb) : null, o.Hour, o.Day ?? GameClock.DefaultStartDay),
             simulation: worldSettings = new Meitou.Simulation.WorldSettings { Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)) },
@@ -1003,6 +1009,10 @@ sealed partial class GameHost
         double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;
         int frames = 0, fpsFrames = 0;
         string fpsText = "";
+        // Unattended profiling: start one capture after the world has warmed up (the interactive Ctrl+/ path remains).
+        double captureAt = double.TryParse(Environment.GetEnvironmentVariable("MEITOU_METAL_CAPTURE_AT"), NumberStyles.Float,
+            CultureInfo.InvariantCulture, out double captureSeconds) ? captureSeconds : double.NegativeInfinity;
+        string? capturePath = Environment.GetEnvironmentVariable("MEITOU_METAL_CAPTURE_PATH");
         bool trace = Environment.GetEnvironmentVariable("MEITOU_METAL_TRACE") == "1";
         if (trace)
         {
@@ -1168,6 +1178,12 @@ sealed partial class GameHost
             }
             // Ctrl+/ records the next complete frame for Xcode. Start before BeginFrame makes the command buffer and stop
             // after EndFrame commits the present, so the trace holds exactly one frame rather than the three in flight.
+            if (captureAt >= 0 && now >= captureAt && frames > 0)
+            {
+                captureAt = double.NegativeInfinity;
+                gpuCaptureRequested = true;
+                Console.WriteLine($"metal     gpu capture requested at {now:0.0}s");
+            }
             MetalGpuCapture? gpuCapture = null;
             if (gpuCaptureRequested)
             {
@@ -1180,7 +1196,7 @@ sealed partial class GameHost
                 }
                 else
                 {
-                    gpuCapture = MetalGpuCapture.TryStart(ctx.Queue, out string? captureError);
+                    gpuCapture = MetalGpuCapture.TryStart(ctx.Queue, out string? captureError, capturePath);
                     Console.WriteLine(gpuCapture is not null
                         ? $"metal     gpu capture: {gpuCapture.OutputPath}"
                         : $"metal     gpu capture unavailable: {captureError}");
