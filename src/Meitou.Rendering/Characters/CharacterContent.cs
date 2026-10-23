@@ -69,6 +69,8 @@ internal sealed class AssetPart
     public float FileRadius;
     /// <summary>Nearest distance of a user this frame, for the textures' mip streaming.</summary>
     public float Near;
+    /// <summary>The draw batches of its mesh's parts by part, level and sidedness (<see cref="CharacterRenderer"/>'s gather), so the views do not look them up per instance.</summary>
+    public CharacterRenderer.Batch?[]? Batches;
     float uvScale;
     /// <summary>World length of a texture-coordinate unit on the part (the largest of the mesh's parts; infinity: unknown, every mip kept).</summary>
     public float UvScale

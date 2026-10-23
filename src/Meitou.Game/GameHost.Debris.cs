@@ -190,9 +190,16 @@ sealed partial class GameHost
                 if (!now.Any(p => p.Id == id)) boltLaunches.Remove(id);
     }
 
-    /// <summary>A character's stuck bolts for the renderer.</summary>
-    static IReadOnlyList<StuckBoltMesh> BoltsOf(CharacterSnapshot c) =>
-        c.StuckBolts.Count == 0 ? [] : [.. c.StuckBolts.Select(b => new StuckBoltMesh(b.Id, b.Mesh, b.Bone, b.Direction))];
+    /// <summary>A character's stuck bolts for the renderer, in its slot's array (<see cref="boltsBySlot"/>).</summary>
+    IReadOnlyList<StuckBoltMesh> BoltsOf(CharacterSnapshot c)
+    {
+        var stuck = c.StuckBolts;
+        if (stuck.Count == 0) return [];
+        ref var kept = ref Slot(ref boltsBySlot, c.Id.Slot);
+        if (kept is null || kept.Length != stuck.Count) kept = new StuckBoltMesh[stuck.Count];
+        for (int i = 0; i < stuck.Count; i++) kept[i] = new StuckBoltMesh(stuck[i].Id, stuck[i].Mesh, stuck[i].Bone, stuck[i].Direction);
+        return kept;
+    }
 
     void Step(Piece p, float h)
     {

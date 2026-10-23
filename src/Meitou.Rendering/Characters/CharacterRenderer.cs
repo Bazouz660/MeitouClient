@@ -146,6 +146,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public Vector3 Centre;
         public float Radius;
         public int BoneBase, AttachBase, LayerStart, LayerCount;
+        /// <summary>Its parts' first entry in <see cref="partFrames"/> (one per asset part).</summary>
+        public int PartBase;
         public CharState State;
         public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
         public int Shots;
@@ -349,7 +351,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
 
         // 1. Assets and the characters in range, with their layers resolved (the rig's caches are filled here, on this thread).
         liveCount = layerCount = attachCount = 0;
-        int built = 0, boneTotal = 0;
+        int built = 0, boneTotal = 0, partTotal = 0;
         var items = Draws.Items;
         for (int i = 0; i < items.Count; i++)
         {
@@ -385,6 +387,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             boneTotal += asset.Rig.BoneCount;
             l.AttachBase = attachCount;
             attachCount += asset.AttachCount;
+            l.PartBase = partTotal;
+            partTotal += asset.Parts.Count;
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
@@ -420,6 +424,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         previousBones = Motion ? Gpu.Frame.Constants.Allocate((ulong)Math.Max(boneTotal, 1) * 64, 256) : bones;
         nint previousPointer = (nint)previousBones.Pointer;
         bool motion = Motion;
+        if (partFrames.Length < partTotal) partFrames = new PartFrame[Math.Max(partTotal, partFrames.Length * 2)];
         var liveArray = live;
         var layerArray = layers;
         var attachArray = attach;
@@ -454,7 +459,9 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                     (l.Repose ? state.Previous : state.Bones).CopyTo(new Span<Matrix4x4>((byte*)previousPointer + (long)l.BoneBase * 64, rig.BoneCount));
                     if (!l.Repose) state.Attach.CopyTo(state.PreviousAttach, 0);
                 }
+                if (!l.PortraitOnly) PlaceParts(in l, eye, motion);
             });
+        (partStamp, partOrigin, partMotion) = (updateStamp, eye, motion);
         LastPoseMs = poseWatch.Elapsed.TotalMilliseconds;
         PoseIcons();
 

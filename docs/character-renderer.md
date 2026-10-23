@@ -8,6 +8,9 @@ Game assembly rules: [characters](characters.md), [animation](animation.md).
 ## GPU layout and shading
 
 Instance bones/material offsets index shared storage buffers; group compatible mesh parts.
+The update places every in-range part once (model and previous matrix relative to the eye, LOD distance at bias 1) inside the
+parallel pose loop; the colour, motion and shadow views from that eye reuse it, cull and pick levels in parallel chunks of 16
+characters, and keep the serial order within each batch. Portraits, icons, hover masks and other eyes place their own.
 CharacterShaders set0 bindings: bones6, materials7, morphs8, previous bones9; material20 texture
 slots. CharacterLayoutTests pins CPU/GLSL layouts. Push depthIndex is near-depth bindless index
 for motion,0 otherwise. Camera-relative transforms preserve precision; previous bone/transform
