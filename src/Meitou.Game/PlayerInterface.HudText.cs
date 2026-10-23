@@ -183,7 +183,8 @@ sealed partial class PlayerInterface
                 var button = lines[i].Label.Length == 0 ? row : row with { X = row.X + row.Width * 0.5f, Width = row.Width * 0.5f };
                 var buttonProperties = new Dictionary<string, string>(valueProperties) { ["TextAlign"] = "Center", ["TextColour"] = lines[i].ValueColour ?? MyGuiColours.InkText };
                 if (lines[i].Tooltip is { Length: > 0 } buttonTip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(buttonTip), "fixed")) buttonProperties[pair.Key] = pair.Value;
-                controls.Add(new($"{panel}-button-{i}", "Button", button with { Y = button.Y + 1, Height = button.Height - 2 }, Loc.Tr(lines[i].Value), action, "Kenshi_Button2", true,
+                // Kenshi_Button2 is a template (kenshi_templates.xml) whose root widget has the Kenshi_Button1Skin skin.
+                controls.Add(new($"{panel}-button-{i}", "Button", button with { Y = button.Y + 1, Height = button.Height - 2 }, Loc.Tr(lines[i].Value), action, "Kenshi_Button1Skin", true,
                     buttonProperties, Vector4.Zero, Clip: host.Clip));
                 if (lines[i].Label.Length == 0) continue;
             }
@@ -195,7 +196,9 @@ sealed partial class PlayerInterface
                     // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
                     if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
                     // A value beside a label keeps out of the label's column: a long one (a French weather notice) is cut short instead of running over the label.
-                    var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f } : row;
+                    // A label beside a button keeps to the left half: added after the button, a full-row label with a tooltip would take its clicks.
+                    var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f }
+                        : lines[i].Action is not null ? row with { Width = row.Width * 0.5f } : row;
                     controls.Add(new($"{panel}-{part}-{i}", "TextBox", box, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
                         textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
                 }

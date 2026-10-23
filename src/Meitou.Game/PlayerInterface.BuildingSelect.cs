@@ -112,8 +112,10 @@ sealed partial class PlayerInterface
                 stats.Add(new("Open/Close:", door.Broken ? "The door is broken" : door.Open ? "The door is open" : "The door is closed", MainColour,
                     door.Broken || !door.Open && door.Locked ? BadBrightColour : GoodColour, door.Broken ? "It will no longer close and needs to be repaired." : null,
                     player ? "meitou:building-doors" : null));
-                stats.Add(new("Security:", $"{Loc.Tr(door.Locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, door.Locked ? BadBrightColour : GoodColour,
-                    door.Locked ? "The door is locked and will keep out intruders." : "The door is unlocked.", player ? "meitou:building-locks" : null));
+                // Meitou: an open door that wants its lock (the lock button's setting; it locks when it closes) reads Locked, else the button changed nothing visible.
+                bool locked = door.Locked || door.WantsLock && door.Open;
+                stats.Add(new("Security:", $"{Loc.Tr(locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, locked ? BadBrightColour : GoodColour,
+                    door.Locked ? "The door is locked and will keep out intruders." : locked ? "The door will lock when it closes." : "The door is unlocked.", player ? "meitou:building-locks" : null));
             }
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
             if (!own && (focus.PublicDay || focus.PublicNight))

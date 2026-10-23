@@ -432,9 +432,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
   Value colours: open, closed and Unlocked in `#a8b774`, broken, a closed door that is locked, and Locked in BadBright. For the player's own door both
   lines are `Kenshi_Button2` buttons: Open/Close runs `FUN_140546fb0`, Security `FUN_140547060` ([locks](locks.md#doors); **Verified**: the
-  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. Meitou: the same lines, the buttons on the player's own
+  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. `Kenshi_Button2` is a template, not a skin: its root
+  widget has `Kenshi_Button1Skin` (**Verified**, `data/gui/templates/kenshi_templates.xml`). Meitou: the same lines, the buttons on the player's own
   finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), drawn over the right half of the row (engine choice; the original's button width
-  argument, 1.0 here, 0.3 for the public toggle and 0.4 for For sale, is **Unknown** in meaning).
+  argument, 1.0 here, 0.3 for the public toggle and 0.4 for For sale, is **Unknown** in meaning). Meitou engine choices: a moving door reads by where
+  it heads (opening: open, closing: closed), and an open door that wants its lock reads `Locked` with "The door will lock when it closes.".
 - **Beds, cages, containers, lamps** (Useable / Storage / Light slot 40 `FUN_140304e90`): 3 `Town:`, `Training:` (function 7), `Cost to use:`
   `Private` or `Pay c.{1,num}` (beds), `Lock state:` Locked / Unlocked, `Lock complexity:` `Level {1,num}`, `Empty`; 6 `Healing bonus:`
   `x{1,num}` (beds), `Max Skill Level:` (training); 0xf `Money:`. Turrets, machines, generators and batteries have their own lines

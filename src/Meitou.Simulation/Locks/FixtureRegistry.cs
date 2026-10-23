@@ -908,7 +908,7 @@ public sealed class FixtureRegistry
     {
         if (instance is null || !byBuilding.TryGetValue(instance, out var list)) return null;
         var doorList = list.Where(f => f.Kind == FixtureKind.Door).OrderBy(f => f.DoorIndex)
-            .Select(f => new DoorDetail(f.OpenAmount > 0 || f.Motion == DoorMotion.Open, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId)).ToArray();
+            .Select(f => new DoorDetail(f.Motion is DoorMotion.Open or DoorMotion.Opening, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId, f.WantsLock)).ToArray();
         return new BuildingDetail(instance, doorList);
     }
 

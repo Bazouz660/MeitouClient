@@ -50,12 +50,20 @@ public sealed partial class LockSystem
             {
                 var doors = PlayerDoors(world, toggle.Building);
                 if (doors.Count == 0) break;
-                bool anyOpen = doors.Any(d => d.Motion == DoorMotion.Open);
+                // Meitou: a door still moving counts by where it is heading and turns back (the original's open and close act only from closed / open, so a
+                // slow gate ignored the button for seconds).
+                bool anyOpen = doors.Any(d => d.Motion is DoorMotion.Open or DoorMotion.Opening);
                 foreach (var d in doors)
                 {
-                    if (anyOpen) { FixtureRegistry.CloseDoor(d); continue; }
+                    if (anyOpen)
+                    {
+                        if (d.Motion == DoorMotion.Opening) { d.Motion = DoorMotion.Closing; d.AutoOpened = false; }
+                        else FixtureRegistry.CloseDoor(d);
+                        continue;
+                    }
                     if (d.Lock is { EffectivelyLocked: true } l) { l.Locked = false; fixtures.Touch(d); }
-                    FixtureRegistry.OpenDoor(d);
+                    if (d.Motion == DoorMotion.Closing) d.Motion = DoorMotion.Opening;
+                    else FixtureRegistry.OpenDoor(d);
                 }
                 break;
             }

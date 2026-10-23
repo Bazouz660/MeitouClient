@@ -147,7 +147,8 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   the door ([ai-tasks](ai-tasks.md)). Nothing closes a door behind a walker: only the lock tasks list a closed door (`!52`), and no
   AI package lists tasks 73/75 (**Observed**: TaskData and package census). How states 59/60 pick their door is **Unknown**.
 - **Door panel** (player's building, the HUD lines of a selected house: [ui-screens](ui-screens.md#selected-building)): open/close button `FUN_140546fb0`: an open door closes; otherwise an effectively locked
-  one is unlocked first, then opened (**Verified**).
+  one is unlocked first, then opened (**Verified**). Meitou: a door still moving counts by where it heads and turns back (an opening one closes, a
+  closing one reopens); the original's open/close act only from closed / open, so a slow gate ignores the button for seconds.
 - **Player lock toggle** (`FUN_140547060`, **Verified**): flips `wants lock` (sound `Lock_Building` / `Unlock_Building`); locking a
   closed door sets the lock at once, unlocking clears it; an open door locks when it next closes (the update above).
 - **Navigation**: the navmesh treats a door as open once `doa >= 0.6` (`FUN_140298d10` -> `FUN_1403a6070`); closed faces are
