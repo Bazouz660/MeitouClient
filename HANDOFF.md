@@ -2,9 +2,25 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `e54c7864 launcher: put only the Vulkan loader on the dyld path`  
+Last code commit: `963c611b Merge upstream master into metal-spike`  
 Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
-Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
+Build: Release 0 warnings / 0 errors. Quick tests: 406 passed, 2 skipped. The 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still unhealthy after the 19:15 WindowServer GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
+
+## Upstream sync (2026-10-23)
+
+`963c611b` merges upstream `a9970dbc` (177 commits, including the gameplay/UI/audio work) into the Metal branch. The
+new character previews and skin scattering were ported to the `IGpuContext`/`GpuTexture` seam: `CharacterPreview`
+resolves half-float stages and portraits into the 8-bit atlases, `SkinScattering` bakes its LUT through the upload batch,
+and the Metal host now sets `Look`, `SkinShading`, `SkinRaces`, `EnhancedIcons` and the pose clock. The Vulkan
+tessellation path (ground displacement and rock smoothing) is represented in the seam as `GpuProgram.NativeTessellated`
+and patch-list pipelines; Metal reports `HasTessellation == false`, hides both toggles, and keeps the flat/parallax
+fallback. Ground parallax and the new skin/icon/voice settings are exposed in the Metal settings panel.
+
+The upstream Vulkan-only post changes (the SSAO radius fix and the checkerboard low-resolution particle depth) are not
+in Metal's custom post chain yet; nor are upstream's TAA sharpness and other Vulkan composite details. These are the
+next parity items after the merged build is run on the M1 Pro. Metal still needs a real visual pass after the merge:
+the previews, skin LUT, terrain height arrays and ground parallax compile but were not exercised on the host after the
+WindowServer crash.
 
 Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
 mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
@@ -57,10 +73,13 @@ The previous safe mode is no longer needed for the black-terrain/water/foliage f
 ## Launcher (macOS)
 
 `launcher/Meitou.Launcher` is the Avalonia launcher documented in [docs/launcher.md](docs/launcher.md); the release
-workflow already builds `osx-arm64` and `osx-x64` packages (README has the download links). Settings now has a **Renderer**
-choice on macOS Apple silicon: **Vulkan (MoltenVK)** is the default and reference, **Metal** starts the game with
-`--renderer metal`, removes `DYLD_LIBRARY_PATH` and needs no Homebrew Vulkan loader. The choice lives in `launcher.json`
-and is appended after Launch arguments, so it overrides a hand-written `--renderer`. Vulkan now gets a narrow
+workflow already builds `osx-arm64` and `osx-x64` packages (README has the download links). First start and Settings
+offer **Auto**, **Vulkan (MoltenVK)** and **Metal** on macOS; Auto uses Vulkan when its loader is present and Metal
+otherwise, so an Apple-silicon user needs no Homebrew just to start. Metal starts the game with `--renderer metal`,
+removes `DYLD_LIBRARY_PATH` and needs no MoltenVK. The choice lives in `launcher.json` and is appended after Launch
+arguments, so it overrides a hand-written `--renderer`. The launcher reads the release's `settings-schema.json`
+`renderers` list; a Vulkan-only release does not claim Metal support. First start also explains that Kenshi is required
+and links to [docs/kenshi-on-macos.md](docs/kenshi-on-macos.md). Vulkan now gets a narrow
 `~/Library/Application Support/Meitou/vulkan/` loader folder through `DYLD_LIBRARY_PATH` (symlinks to the loader and
 MoltenVK) instead of all of `/opt/homebrew/lib`, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies.
 The launcher runs installed GitHub releases, not a local checkout; a release without the Metal backend reports the
