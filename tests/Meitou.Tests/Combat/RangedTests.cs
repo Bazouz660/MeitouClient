@@ -203,6 +203,7 @@ public class RangedInstallTests(ITestOutputHelper output)
         output.WriteLine($"fired {combat.ProjectilesFired}, bolt hits {combat.Log.Count(e => e.Ranged)}, melee blows {combat.Log.Count(e => !e.Ranged)}, bolts left {Ammunition.Count(world.Characters.Cold(a.Slot)!.Inventory, ranger.AmmoId)}");
         foreach (var e in combat.Log.Where(e => e.Ranged)) output.WriteLine($"  t{e.Tick} part {e.Part} pierce {e.Pierce:0.0} stun {e.Stun:0.0}");
         Assert.True(combat.ProjectilesFired >= 1);
-        Assert.Equal(30 - combat.ProjectilesFired, Ammunition.Count(world.Characters.Cold(a.Slot)!.Inventory, ranger.AmmoId));
+        // Every bolt taken is fired or still loaded (a bolt loaded when the fight turned to melee stays loaded).
+        Assert.Equal(30 - combat.ProjectilesFired - combat.StateOf(a).Loaded, Ammunition.Count(world.Characters.Cold(a.Slot)!.Inventory, ranger.AmmoId));
     }
 }

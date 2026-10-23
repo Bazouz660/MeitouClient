@@ -151,6 +151,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null || tc.Medical is null || cold.Medical.Incapacitated || tc.Medical.Incapacitated) return false;
         if (cold.IsImprisoned) return false;   // a prisoner does not fight (it may still be attacked: engine choice)
         ref var s = ref read[a];
+        if (s.TargetSlot != t || s.TargetGeneration != target.Generation)
+        {
+            s.Engaged = false;
+            s.LastTech = -1;
+        }
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
         s.ReadyTick = now + PauseTicks(world, a, 0);
@@ -167,6 +172,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.TargetSlot = -1;
         s.AttackTech = -1;
         s.NextBlow = 0;
+        s.Engaged = false;
         EndFight(table, slot);
     }
 
@@ -219,14 +225,15 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             bool shooting = s.Ranged && s.RangedState != (byte)RangedStates.Closing;
             bool busy = s.Down || s.AttackTech >= 0 || s.ReactTech >= 0 || now < s.StunUntil || shooting;
             float gap = distance - CombatTuning.Footprint(cold) - CombatTuning.Footprint(table.Cold(t));
-            if (busy || gap <= CombatTuning.CloseInGap)
+            float stand = CombatTuning.StandGap(s.Reach, cold.Fighter?.WeaponLength ?? 0);
+            if (busy || gap <= stand)
             {
                 n.Velocity = default;
                 continue;
             }
             float speed = n.MaxSpeed > 0 ? n.MaxSpeed : Settings.ApproachSpeed;
             if (!cold.CombatRunning) speed = MathF.Min(speed, CombatTuning.FootworkSpeed);
-            float step = MathF.Min(speed * dt, gap - CombatTuning.CloseInGap);
+            float step = MathF.Min(speed * dt, gap - stand);
             float x = prev[i].Position.X + dir.X * step, z = prev[i].Position.Z + dir.Y * step;
             if (world.Walkability.IsWalkable(x, z, prev[i].Position.Y))
             {

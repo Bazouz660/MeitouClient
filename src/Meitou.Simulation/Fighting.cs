@@ -53,7 +53,15 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
             bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
             bool holding = Orders.Has(cold, CharacterOrders.Hold);
-            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= CombatTuning.CloseInGap || holding)
+            // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
+            int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
+            if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
+            {
+                Circle(world, i, ref n, cold, tc, t, d, gap, around);
+                continue;
+            }
+            float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
+            if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= stand || holding)
             {
                 // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
                 if ((n.Flags & Path) != 0)
@@ -73,6 +81,43 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             n.TaskTime = RepathSeconds;
         }
     }
+
+    /// <summary>
+    /// Walks a fighter its target has not let close in round the target (<see cref="CombatTuning.CircleSpeedOf"/>): every <see cref="RepathSeconds"/> a path to the point
+    /// <see cref="CircleLookAhead"/> seconds of side-stepping further round, at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
+    /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces and faces its target while it side-steps; here the walker follows the path and faces its way (engine).
+    /// </summary>
+    static void Circle(World world, int i, ref CharacterHot n, CharacterCold cold, CharacterCold? tc, int t, System.Numerics.Vector3 d, float gap, int around)
+    {
+        const ushort Path = (ushort)MoveFlags.AnyPath;
+        if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
+        float k = cold.Medical?.ScaleK ?? 1;
+        float own = 1.5f * CombatTuning.Footprint(cold) * k;
+        float near = MathF.Max(1, around * 0.25f + CombatTuning.CircleNear - own);
+        float far = MathF.Max(3 * around + CombatTuning.CircleFar - own, near + 5);
+        float bodies = CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc);
+        float radius = Math.Clamp(gap, near, far) + bodies;
+        var table = world.Characters;
+        ulong key = Rng.Key(table.IdOf(i)), counter = (ulong)(uint)t * 3;
+        float speed = CombatTuning.CircleSpeedOf(CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter), CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 1),
+            CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 2), cold.Fighter?.EncumbranceFactor ?? 1, cold.Fighter is not { IsAnimal: true });
+        var target = table.Next[t].Position;
+        float angle = MathF.Atan2(-d.Z, -d.X) + speed * CircleLookAhead / MathF.Max(radius, 1);
+        var goal = new Vector2(target.X + MathF.Cos(angle) * radius, target.Z + MathF.Sin(angle) * radius);
+        if (!world.Walkability.IsWalkable(goal.X, goal.Y, target.Y))
+        {
+            // Off the navmesh: it stands where it is (engine choice).
+            if ((n.Flags & Path) != 0) { n.Flags = (ushort)(n.Flags & ~Path); n.PathCursor = 0; cold.PathRequest = 0; }
+            return;
+        }
+        n.Goal = goal;
+        n.Mode = SpeedMode.Free;
+        n.Flags |= (ushort)MoveFlags.NeedPath;
+        n.TaskTime = RepathSeconds;
+    }
+
+    /// <summary>Seconds of side-stepping the circling walker's path point lies ahead (engine choice: twice the path interval, so the walker never reaches it).</summary>
+    public const float CircleLookAhead = 1;
 }
 
 

@@ -367,8 +367,10 @@ sides agree, and the loser holds off for 1 s; a target that would not swing back
 Passive order) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
 joins its clip partway so the passed roll counts when "Late dodges and blocks" is on (Advanced setting, a balance
 change: Faithful off, Meitou on);
-attack slots go to the nearest fighters at the target (Advanced setting "Attackers per target", 1-5: Faithful 1,
-the CONSTANTS value; Meitou 3), the rest wait instead of circling; the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
+the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
+"Attack slots and circling" with the engine readings listed there (Advanced setting "Attackers per target", 1-5: Faithful 1, the
+CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
+Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle.
 
 ### Ranged
 
