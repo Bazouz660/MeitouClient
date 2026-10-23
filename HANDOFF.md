@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `2ec85b44 metal: remove the unattended GPU capture`  
+Last code commit: `426cb10a launcher: choose Metal or Vulkan on macOS`  
 Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
@@ -53,6 +53,19 @@ The terrain no-normal switch selects the compile-time variant (the viewer's `N`/
 `MEITOU_METAL_FAST_MATH=0` is a diagnostic only: Metal's default already has fast math on.
 
 The previous safe mode is no longer needed for the black-terrain/water/foliage failures.
+
+## Launcher (macOS)
+
+`launcher/Meitou.Launcher` is the Avalonia launcher documented in [docs/launcher.md](docs/launcher.md); the release
+workflow already builds `osx-arm64` and `osx-x64` packages (README has the download links). Settings now has a **Renderer**
+choice on macOS Apple silicon: **Vulkan (MoltenVK)** is the default and reference, **Metal** starts the game with
+`--renderer metal`, removes `DYLD_LIBRARY_PATH` and needs no Homebrew Vulkan loader. The choice lives in `launcher.json`
+and is appended after Launch arguments, so it overrides a hand-written `--renderer`. The launcher runs installed GitHub
+releases, not a local checkout; a release without the Metal backend reports the game's error in the status line.
+
+A debug `dotnet run` from the agent shell on 2026-10-23 failed before showing a window with Avalonia.Native
+`RenderTimer` error `-6661` (no active display/WindowServer session after the crash); the Release build is 0 warnings /
+0 errors. Run it from the user's terminal or the packaged app after a full shutdown.
 
 ## Shared WorldFrame/SceneHost path
 
