@@ -4,7 +4,13 @@ using Meitou.Simulation.Combat;
 
 namespace Meitou.Simulation;
 
-public enum FloaterKind : byte { Damage, Heal }
+public enum FloaterKind : byte
+{
+    Damage,
+    Heal,
+    /// <summary>A line of text (<see cref="Floater.Part"/>), white: "Ate {1}" over a character that ate (<c>FUN_1405d0780</c>).</summary>
+    Text,
+}
 
 /// <summary>
 /// A number to float over a character (docs/game/ui-screens.md "Damage floaters"): the damage a blow did, with the armour's share, or the health a player character got back.
@@ -21,6 +27,9 @@ public readonly record struct Floater(FloaterKind Kind, CharacterId Target, Vect
 
     public static Floater Heal(CharacterId target, Vector3 position, float healed) =>
         new(FloaterKind.Heal, target, position, true, false, "", default, default, healed);
+
+    public static Floater Text(CharacterId target, Vector3 position, string text) =>
+        new(FloaterKind.Text, target, position, false, false, text, default, default, 0);
 }
 
 public sealed partial class World

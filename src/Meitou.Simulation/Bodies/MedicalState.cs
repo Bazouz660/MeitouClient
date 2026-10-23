@@ -81,8 +81,11 @@ public sealed partial class MedicalState
         }
     }
 
-    /// <summary>The pain value P of the stat multiplier (1 = no penalty). Its source in the original is <b>Unknown</b>, so nothing drives it yet.</summary>
-    public float Pain { get; set; } = 1;
+    /// <summary>
+    /// The character's light level P that the stat multiplier's light term reads (<c>FUN_1406457e0</c> reads Character <c>+0xd8</c>, the light level of docs/game/perception.md
+    /// "Sight", <b>Verified</b>): 1 in daylight, 0 in the dark. <see cref="BodySystem"/> copies it from <see cref="SightMap.Light"/> every tick; derived, not saved.
+    /// </summary>
+    public float Light { get; set; } = 1;
 
     /// <summary>The untreated wounds' strengths, in creation order.</summary>
     public IReadOnlyList<float> Wounds => wounds;
@@ -194,8 +197,8 @@ public sealed partial class MedicalState
     }
 
     /// <summary>The stat multiplier in [0, 1] (<c>FUN_1406457e0</c>); see <see cref="StatMultiplier"/>.</summary>
-    public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Pain | StatUse.DamageState, StatFactors? factors = null, bool exemptFromWear = false) =>
-        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? (Bodies.StatFactors.None with { Stun = DustStatFactor }), Aggregates(exemptFromWear), Pain);
+    public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Light | StatUse.DamageState, StatFactors? factors = null, bool exemptFromWear = false) =>
+        Bodies.StatMultiplier.Compute(this, stat, use, factors ?? (Bodies.StatFactors.None with { Stun = DustStatFactor }), Aggregates(exemptFromWear), Light);
 
     /// <summary>The product of the fitted arm prosthetics' multipliers for a stat (1 with none).</summary>
     public float ArmItemFactor(StatsEnumerated stat) => ItemFactor(stat, legs: false);

@@ -11,7 +11,7 @@ namespace Meitou.Simulation;
 /// The bodies of the characters (stage 7, docs/game/character-stats.md): every tick it runs each living character's <see cref="MedicalState.Tick"/> (blood,
 /// bleeding, part healing, hunger, the knock-out timer), sets the top speed from the speed chain (<see cref="Speed.Run"/>: athletics, legs, hunger,
 /// encumbrance) and stops a character that has just been knocked out or has died. It runs in the Act phase, before the animation system, and writes only its own
-/// slots. A corpse is removed <see cref="CorpseHours"/> game hours after it died (an engine choice; the original's rule is <b>Unknown</b>), one luckyren Mode burst at the end of its tick (<see cref="Burst"/>).
+/// slots. A corpse lying free is removed <see cref="CorpseHours"/> game hours after it died (<see cref="SlowWorld"/>), one luckyren Mode burst at the end of its tick (<see cref="Burst"/>).
 /// </summary>
 /// <remarks>
 /// The medical tick takes the tick's seconds of character time (<see cref="World.TickSeconds"/>, character-stats.md "Time"); hunger converts them to game hours.
@@ -22,9 +22,12 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
 {
     /// <summary>Game hours in one tick: 11/36000 h is 1/30 game s at the Verified 1200/11 s per game hour (<c>GameClock</c>).</summary>
     public const float HoursPerTick = 11f / 36000;
-    /// <summary>How long a corpse lies before it is removed, in game hours.</summary>
+    /// <summary>How long a corpse lies before it decays, in game hours (<c>FUN_1405ccd90</c>, <b>Verified</b> literal: "corpse decayed" past 12).</summary>
     public const float CorpseHours = 12;
     public const long CorpseTicks = (long)(CorpseHours / HoursPerTick);
+    /// <summary>While a corpse is carried or held in a bed or cage its clock is kept at most this many game hours old (<c>FUN_1405ccd90</c>, <b>Verified</b> literal).</summary>
+    public const float HeldCorpseHours = 6;
+    public const long HeldCorpseTicks = (long)(HeldCorpseHours / HoursPerTick);
 
     public GameConstants Constants { get; } = constants;
     public BodyOptions Options { get; } = options ?? BodyOptions.Default;
@@ -95,6 +98,8 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             }
             if (medical.Dead) continue;
             if (cold.Animal is { } animal) Age(cold, animal, stats, medical, world.TickSeconds);
+            // The light level the stat multiplier's light term reads (the original's Character +0xd8, kept by the senses).
+            medical.Light = world.Sight.Light(i);
             // The load: the inventory weight, plus carry person weight while carrying someone, against the strength the injuries leave (character-stats.md "Encumbrance and carrying").
             float load = cold.Inventory?.ContentWeight() ?? 0;
             bool carrying = !cold.Carrying.IsNone;
@@ -113,6 +118,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 BedFactor = bedFactor,
                 RepairRate = bed == BedKind.RepairBed ? bedFactor : 0,
                 Resting = bed != BedKind.None,
+                HungerFloor = HungerFloor(world, cold, medical),
                 HealMult = cold.InSomething == Locks.HeldState.Imprisoned ? 2 : 1,
             };
             // The combat system's own context (hits) reads the encumbrance from the fighter, so it matches the one used here.
@@ -210,14 +216,44 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt);
     }
 
+    /// <summary>The <c>malnourished</c> squads' hunger floors (<see cref="HungerFloor"/>), by squad id; filled from the parallel phase.</summary>
+    readonly ConcurrentDictionary<int, float> squadFloors = new();
+
+    /// <summary>
+    /// The hunger level a character is kept at for free (character slot <c>0x348</c>, <c>FUN_1405c9ca0</c>, <b>Verified</b> decompile; docs/game/character-stats.md "Free food"):
+    /// an animal 3; a slave 1; held in a cage or restraint, none when the player's faction holds it, else 2 (1.15 for an escaped slave); the player's faction none (-10); anyone else
+    /// its squad's level, 3, or 1 + 1.2 x a random number once per squad for a SQUAD_TEMPLATE with <c>malnourished</c> (the platoon constructor <c>FUN_1407ee2d0</c>). Without a
+    /// database (tests) only animals, slaves and prisoners are fed.
+    /// </summary>
+    float HungerFloor(World world, CharacterCold cold, MedicalState medical)
+    {
+        const float None = MedicalContext.NoHungerFloor;
+        if (!medical.HasStatsObject) return MedicalState.MaxHunger;
+        if (cold.SlaveState == 1) return 1;
+        if (cold.IsImprisoned)
+        {
+            var holder = cold.InWhat is { } id ? world.Fixtures.Find(id) : null;
+            if (holder is not null && holder.Owner >= 0 && holder.Owner == world.Player.Faction) return None;
+            return cold.SlaveState == 0 ? 2 : 1.15f;
+        }
+        if (cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction) return None;
+        if (db is null) return None;   // a world without data (tests, tools): nobody is fed for free
+        if (cold.SquadId < 0 || world.Squads.Find(cold.SquadId) is not { } squad) return MedicalState.MaxHunger;
+        return squadFloors.GetOrAdd(squad.Id, _ => db.Find(squad.TemplateId)?.GetBool("malnourished") == true
+            ? 1 + 1.2f * Rng.Float(Rng.Hash(world.Seed, (ulong)squad.Id, RngPurpose.Malnourished, 0)) : MedicalState.MaxHunger);
+    }
+
     public void SlowWorld(World world)
     {
         var table = world.Characters;
         for (int i = 0; i < table.HighWater; i++)
         {
             if (table.Next[i].Alive && table.Cold(i) is { Burst: { } blow } burst) Burst(world, i, burst, blow);
-            else if (table.Next[i].Alive && table.Cold(i) is { DiedTick: >= 0 } cold && world.Tick - cold.DiedTick >= CorpseTicks)
+            else if (table.Next[i].Alive && table.Cold(i) is { DiedTick: >= 0 } cold)
             {
+                // A corpse that is carried or held in a bed or cage does not decay: its clock is kept at most 6 hours old, so it lies 6 more hours once let go.
+                if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) cold.DiedTick = Math.Max(cold.DiedTick, world.Tick - HeldCorpseTicks);
+                if (world.Tick - cold.DiedTick <= CorpseTicks) continue;
                 var corpse = new CharacterId(i, table.Next[i].Generation);
                 world.Uniques.Left(corpse);
                 table.Remove(corpse);

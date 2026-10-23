@@ -41,6 +41,15 @@ public readonly struct MedicalContext(GameConstants constants, BodyOptions optio
     /// <summary>Using a machine: the hunger rate factor is 0.8 (probably the BUILDING's <c>hunger rate</c>).</summary>
     public bool UsingMachine { get; init; }
 
+    /// <summary>
+    /// The hunger level the character is kept at for free (character slot <c>0x348</c>, <c>FUN_1405c9ca0</c>, read by the hunger update <c>FUN_14064da70</c>; docs/game/character-stats.md
+    /// "Free food"): below it, with an empty stomach, the stomach gets min(floor - hunger, 0.04). -10 (the default) for the player's characters: they must eat.
+    /// </summary>
+    public float HungerFloor { get; init; } = NoHungerFloor;
+
+    /// <summary>The <see cref="HungerFloor"/> of a character nobody feeds (the player's faction, and prisoners of the player): -10.</summary>
+    public const float NoHungerFloor = -10;
+
     /// <summary>The encumbrance factor e in [0, 1] (<see cref="Encumbrance.Factor"/>).</summary>
     public float EncumbranceFactor { get; init; } = 1;
 

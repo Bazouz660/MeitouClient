@@ -88,6 +88,26 @@ squad Run-Away order have different target/ending rules. Faction ratios tune bre
 normal squad trigger and exact selection remain partly unknown. Leash/home/running state must
 not be equated with the attack planner or discarded immediately after a lost sighting.
 
+### The attack-on-sight tests
+
+**Observed** (decompile; goal 16's finder, [ai-tasks](ai-tasks.md#combat-goals)). A sensed character of a faction that
+is not the looker's ally becomes a target only when both tests pass:
+- **Area** (`FUN_140599f30`): true when the target stands in the looker's own building (character vfunc +0x98's
+  +0x30 equals the target's vfunc +0x78). Else the AI's area test `FUN_140597790`: AI +0x2bc picks the centre
+  and radius: mode 2 the looker itself (AI +0x2c0 set to its position), in when d^2 < 42467328 (about 6517
+  units); mode 0 the point AI +0x2c0 (height from AI +0x18 +0xcc), in when d < R + 40 + R' (R = AI +0x8, R' =
+  AI +0xc) or d^2 < s^4 with s^2 the squared distance from AI +0x18 +0xc8 to that point (as written); mode 1 in
+  when d < R + 200 + R'. A target outside it still counts while it is fighting the looker (its combat object's
+  +0x140 between 0 and 1 for the looker, `FUN_140665420`). Writers: mode 2 by `FUN_1406236d0`, reset in
+  `FUN_1408819e0` / `FUN_140881d90`; who sets modes 0/1 and the radii is **Unknown**.
+- **Post** (`FUN_140598630`): only for a character with an active post (character +0x450, `FUN_1402b2b90`: its
+  byte +299 and not a slave) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
+  +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the post's point
+  (+0x130; 140 when the target is fighting and faces the post) must be within 60 of the looker.
+- So there is no give-up distance measured from where a fight began: the leash is the AI's area. Meitou's
+  `AggroSettings.LeashRange` (3000 from the fight's start) stays an **engine choice**.
+
+
 ### Summary
 
 | Figure | Value | Label | Where |
@@ -107,15 +127,15 @@ not be equated with the attack planner or discarded immediately after a lost sig
 | Update rate | with the AI, in the logic tick: 8 characters per frame in turn | **Observed** | [game-loop.md](game-loop.md#the-character-update-budget) |
 | Run away (Task_Runaway) | 2000 + 400 r away from the threats' centre, then hops of 1000 + 400 r; until no enemy sensed and nobody attacking | **Verified** (literals), flow **Observed** | `FUN_14034b440`, `FUN_140336820` |
 | Squad not intact (retreat package) | 4+ members: fewer than 20% (40% with the leader down) able; under 4: leader down | **Observed** | `FUN_14079acf0` |
-| FACTION `run away ratio of squad size` / `relative to enemy` | loaded, no reader found | **Unknown** | `FUN_1407fe270` |
-| Leash / give-up-chase distance | not found | **Unknown** | - |
+| FACTION `run away ratio of squad size` / `relative to enemy` | loaded into Faction +0xc / +0x10 (base data: 92 factions 0, others 0.2 to 0.5); no reader found | **Unknown** | `FUN_1407fe270` |
+| Attack-on-sight area / post | mode 2: 6517 around the looker; mode 0/1: R + 40 / R + 200 + R' around AI +0x2c0; post: 80 (140) / 60 / 40 | **Verified** (literals), flow **Observed** | `FUN_140597790`, `FUN_140598630` |
 
 ## Unknowns
 
-- The enemy tests of the attack-on-sight finder and its range (goals: [ai-tasks](ai-tasks.md#combat-goals)).
+- Who sets the AI area's modes 0/1 and radii (AI +0x2bc, +0x8, +0xc, +0x2c0) and the post object (+0x450).
 - Slot 14 `+0xb4`, `+0x2f8` = 1, `FUN_140436610`, `FUN_140856bc0`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
-- Whether the run-away ratios are read at all; the leash.
+- Whether the run-away ratios (Faction +0xc / +0x10) are read at all.
 - The writer of a character's location handle `+0x80`; when can-see casts its physics ray; the building rules of can-hear;
   the alertness goal float and the +0x3f0 (green pointer) test of spotting.
 

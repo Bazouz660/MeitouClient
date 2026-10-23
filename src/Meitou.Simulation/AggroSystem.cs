@@ -13,8 +13,9 @@ public sealed record AggroSettings
     /// <summary>How far an NPC sees, in world units (dm), before the race's <c>vision range mult</c>: the original's outdoor range (1500, <c>FUN_140851bc0</c>, Verified),
     /// in full daylight; straight ahead only, the view cone shortens it to the side (<see cref="AggroSystem.Visibility"/>).</summary>
     public float SightRange { get; init; } = AggroSystem.OutdoorSight;
-    /// <summary>An NPC fighting farther than this from where its fight began gives up. Engine choice (the original's rule is <b>Unknown</b>): twice the daylight sight,
-    /// so a fight begun at the edge of sight reaches its target.</summary>
+    /// <summary>An NPC fighting farther than this from where its fight began gives up. Engine choice: twice the daylight sight, so a fight begun at the edge of sight reaches
+    /// its target. The original has no such distance; it keeps targets inside the AI's area (6517 around the looker, or a package's point and radius, docs/game/perception.md
+    /// "The attack-on-sight tests"), whose radii Meitou does not have.</summary>
     public float LeashRange { get; init; } = 3000;
     /// <summary>Game seconds an NPC that gave up does not pick a new fight by itself (it still answers an attack).</summary>
     public float CalmSeconds { get; init; } = 20;
