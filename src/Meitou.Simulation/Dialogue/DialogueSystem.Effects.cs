@@ -65,9 +65,14 @@ public sealed partial class DialogueSystem
                     c.Ended = true;
                     request = new DialogueRequest(++requestId, DialogueRequestKind.CharacterEditor, target, me);
                     return;
-                case DialogueActions.ChooseSlavesSelling or DialogueActions.ChooseSlavesBuying when target != me:
+                case DialogueActions.ChooseSlavesSelling or DialogueActions.ChooseSlavesBuying or DialogueActions.ChooseAnimalsBuying when target != me:
                     // The character trading window opens as the conversation closes (OpenCharacterTrade), a speech bubble's at once; val0 is the price override.
-                    characterTradeAfter = (effect.Action == DialogueActions.ChooseSlavesSelling ? CharacterTradeKind.SlaveSelling : CharacterTradeKind.SlaveBuying, me, target, effect.Value);
+                    characterTradeAfter = (effect.Action switch
+                    {
+                        DialogueActions.ChooseSlavesSelling => CharacterTradeKind.SlaveSelling,
+                        DialogueActions.ChooseSlavesBuying => CharacterTradeKind.SlaveBuying,
+                        _ => CharacterTradeKind.AnimalBuying,
+                    }, me, target, effect.Value);
                     if (!ReferenceEquals(open, c)) { OpenCharacterTrade(world); break; }
                     c.Ended = true;
                     return;

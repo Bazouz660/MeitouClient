@@ -119,11 +119,22 @@ public sealed partial class MedicalState
     /// False for an animal: the character's slot 0x250 (the humanoid stats object) is null for a <c>CharacterAnimal</c> (<b>Observed</b>, docs/game/animals.md), so the blood
     /// capacity takes s = 1 and the hit path cannot sever limbs. Set at creation; ANDed with <see cref="MedicalContext.HasStats"/>.
     /// </summary>
-    public bool HasStatsObject { get; init; } = true;
+    public bool HasStatsObject { get; private set; } = true;
     /// <summary>The character's slot-0x390 factor k (1 for humans; an animal's size, lerp(age, scale min, scale max)): the parts' HP multiplier, the blood capacity and the hunger rate.</summary>
-    public float ScaleK { get; init; } = 1;
+    public float ScaleK { get; private set; } = 1;
     /// <summary>The character's slot-0x238 factor z (1 for humans; an animal's <c>HP mult</c>): the parts' body scale and the blood capacity.</summary>
-    public float ScaleZ { get; init; } = 1;
+    public float ScaleZ { get; private set; } = 1;
+
+    /// <summary>
+    /// Makes this an animal's body (docs/game/animals.md "Body"): no humanoid stats object, size <paramref name="size"/> (slot 0x390) as the parts' HP multiplier and
+    /// <paramref name="hpMult"/> (slot 0x238) as their body scale. A save holds neither, so a loaded animal gets them here; the ageing calls it with the new size every
+    /// tick, as the original reads slot 0x390 into the parts' multiplier every tick.
+    /// </summary>
+    public void SetAnimalBody(float size, float hpMult)
+    {
+        (HasStatsObject, ScaleK, ScaleZ) = (false, size, hpMult);
+        foreach (var p in parts) (p.HpMultiplier, p.BodyScale) = (size, hpMult);
+    }
 
     /// <summary>This character's blood capacity under <paramref name="ctx"/> (its stats object and scale factors applied).</summary>
     public float Capacity(in MedicalContext ctx) => BloodCapacity(ctx.Race, ctx.Strength, ctx.HasStats && HasStatsObject, ScaleK, ScaleZ);

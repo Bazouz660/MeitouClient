@@ -120,15 +120,21 @@ sealed class CharacterAssembly(PopulationData data)
     /// <summary>
     /// <see cref="Attach"/> for a character loaded from a save: the race, stats and medical state are the saved ones (not rolled), the inventory and the fighter are
     /// the saved <paramref name="inventory"/> when there is one, else built from the character's record and look like a new character's; the fighter from the inventory. The top
-    /// speed is the loader's.
+    /// speed is the loader's. An animal takes its saved GAMESTATE_CHARACTER <c>age</c> (<paramref name="age"/>; 1 when the save has none) as its stats multiplier and size
+    /// (docs/game/animals.md "Ageing").
     /// </summary>
-    public void AttachSaved(CharacterCold cold, RaceData race, CharacterStats stats, MedicalState medical, GameRecord? record, Inventory? inventory = null)
+    public void AttachSaved(CharacterCold cold, RaceData race, CharacterStats stats, MedicalState medical, GameRecord? record, Inventory? inventory = null, float age = 1)
     {
         cold.NpcClass = NpcClassFor(cold, record);
         cold.FactionImportance = FactionImportanceOf(record);
         cold.Race = race;
         cold.Stats = stats;
         cold.Medical = medical;
+        if (AnimalData.From(record) is { } animal)
+        {
+            (cold.Animal, cold.ShownAge, stats.Scale) = (animal, age, age);
+            medical.SetAnimalBody(animal.Scale(age), animal.HpMult);
+        }
         cold.Inventory = inventory ?? data.Items.Build(record, cold.Appearance?.Loadout);
         // Fitted prosthetics show in the limbs window: their items sit in the inventory's limb sections (saved apart, SavedLimbs).
         for (int k = 0; k < 4 && cold.Inventory is { } carried; k++)
@@ -173,6 +179,7 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Race = raceData;
         cold.Stats = stats;
         cold.Medical = medical;
+        if (AnimalData.From(record) is { } animal) (cold.Animal, cold.ShownAge) = (animal, age);
         cold.Inventory = data.Items.Build(record, cold.Appearance?.Loadout);
         cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);

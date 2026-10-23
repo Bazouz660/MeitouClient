@@ -96,8 +96,15 @@ public sealed class CharacterCold
     public int CrossbowShots { get; set; }
     /// <summary>The numbers of the HUD's extended lines, refreshed by <see cref="BodySystem"/> every tick (display only: not hashed, not saved).</summary>
     public ExtendedStats Extended { get; set; }
-    /// <summary>The race, stats and medical state (null for animals and anything without a race record): see <see cref="BodySystem"/>.</summary>
+    /// <summary>The race, stats and medical state (null for anything without a race record): see <see cref="BodySystem"/>.</summary>
     public Meitou.Data.Gameplay.Bodies.RaceData? Race { get; set; }
+    /// <summary>
+    /// An animal's ANIMAL_CHARACTER fields (null for people), set with its body. Its age (the original's <c>CharacterAnimal+0x700</c>) is <see cref="Bodies.CharacterStats.Scale"/>;
+    /// <see cref="BodySystem"/> grows it (docs/game/animals.md "Ageing").
+    /// </summary>
+    public Meitou.Data.Gameplay.Bodies.AnimalData? Animal { get; set; }
+    /// <summary>The age an animal's drawn size was last refreshed at (the original's <c>+0x6fc</c>): the size the renderer shows is lerp(this, scale min, scale max). Follows from the age: not hashed.</summary>
+    public float ShownAge { get; set; } = 1;
     /// <summary>
     /// The bolts stuck in the character (docs/game/combat.md "Bolt visuals"): shown on their bones until first aid has nothing left to bandage. A visual: not hashed, not saved
     /// (the original keeps them in its appearance only).
@@ -128,7 +135,7 @@ public sealed class CharacterCold
     public float BloodDrip { get; set; }
     /// <summary>Burst by a fatal hit in luckyren Mode (<see cref="World.Luckyren"/>): the blow's direction (X/Z); <see cref="BodySystem"/> removes it at the end of the tick. Not saved.</summary>
     public System.Numerics.Vector2? Burst { get; set; }
-    /// <summary>What it carries (null for animals and anything without a race): <see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
+    /// <summary>What it carries (null for anything without a race; an animal's grid is its <c>inventory w</c> x <c>inventory h</c>, its luggage on the backpack slot):<see cref="Meitou.Simulation.Items.FeedSystem"/> eats from it, <see cref="BodySystem"/> weighs it.</summary>
     public Meitou.Simulation.Items.Inventory? Inventory { get; set; }
     /// <summary>The tick from which a hungry NPC without food may be given a ration again.</summary>
     public long NextProvisionTick { get; set; }

@@ -170,6 +170,27 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             cold.FollowPathTime = 0;
             table.Next[s].Task = (byte)CharacterTask.Follow;
             table.Next[s].TaskTime = 0;
+            BreakCircle(table, id);
+        }
+    }
+
+    /// <summary>
+    /// The original drops a follow order that would close a circle (<c>FUN_1405c8c10</c>, run by the order giver <c>FUN_1405c8da0</c> for orders 31 and 45, <b>Observed</b>;
+    /// docs/game/animals.md "Following"): walking from whom <paramref name="leader"/> follows, the first character found following <paramref name="leader"/> stops (at most one).
+    /// </summary>
+    static void BreakCircle(CharacterTable table, CharacterId leader)
+    {
+        var at = table.Cold(leader.Slot)!.FollowOrder;
+        for (int guard = 0; guard < 64 && !at.IsNone && table.TryResolveNext(at, out int slot); guard++)
+        {
+            var cold = table.Cold(slot)!;
+            if (cold.FollowOrder == leader)
+            {
+                cold.FollowOrder = CharacterId.None;
+                if (table.Next[slot].Task == (byte)CharacterTask.Follow) Stop(table, slot);
+                return;
+            }
+            at = cold.FollowOrder;
         }
     }
 

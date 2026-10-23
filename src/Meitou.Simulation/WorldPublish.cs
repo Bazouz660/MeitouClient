@@ -103,7 +103,7 @@ public sealed partial class World
                 Orders = cold?.Orders ?? CharacterOrders.None,
                 RunSpeed = cold?.RunSpeed ?? SpeedMode.Free,
                 Jobs = cold is { Jobs.Count: > 0 } ? cold.Jobs.ToArray() : [],
-                Scale = cold is { Fighter.IsAnimal: true, Medical: { } size } ? size.ScaleK : 1,
+                Scale = cold?.Animal is { } animal ? animal.Scale(cold.ShownAge) : 1,   // the size last refreshed (BodySystem.Age)
                 Activity = cold is { Ai.Goal: { } goal } && Ai.AiSystem.Holds(state[i], cold) ? Ai.TaskBehaviours.Text(goal.Task.Type) : null,
                 // The turret the combat system runs with this gunner; else (no combat system) at the gun of the turret its squad gave it: the AI's turret goal, walked to and stood at
                 // (derived from the claims, not hashed).
