@@ -35,7 +35,7 @@ Effects sort by `(target,source,system,sequence)`; spatial-neighbour iteration o
 Commands apply by tick and queue order. In-tick orders use serial `World.Defer`; deferred orders
 precede host orders for their due tick. No concurrent host enqueue may alter that ordering.
 Randomness: stateless `Rng.Hash(seed,entityKey,purpose,counter)`; changing purpose/salt changes rolls.
-Worker partitions are `threads*2`, minimum 16 slots (game 128); one worker means caller execution.
+Worker partitions are `threads*2`, minimum 16 slots (game 32: 128 left a 500-character battle 3 partitions); one worker means caller execution.
 Async paths, navmesh and population results enter at tick boundaries; arrival timing is not
 repeatable in play. Determinism tests use synchronous services.
 

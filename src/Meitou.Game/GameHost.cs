@@ -109,7 +109,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             clock: clock,
             simulation: worldSettings = new Meitou.Simulation.WorldSettings
             {
-                Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
+                Seed = g.Seed, MinPartitionSize = 32, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
                 Sunrise = (float)clock.Sunrise, Sunset = (float)clock.Sunset,
             },
             systems: systems, walkability: walkability);
