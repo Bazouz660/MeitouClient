@@ -156,8 +156,9 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units.
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
-- **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point 1 s of
-  side-stepping ahead and face their path; the original faces the target.
+- **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of
+  side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
+  straight walk keeps to the ring, and face their path; the original faces the target.
 - The crowd test, the hold-stance timer and the +12 while running are not modelled.
 
 
