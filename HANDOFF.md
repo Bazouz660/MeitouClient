@@ -145,7 +145,7 @@ Acceptance after the change: three full-feature spatial-0.4 auto-camera runs: 12
 ### Profiling attempts
 
 - `xcrun xctrace record --template 'Metal System Trace' ... --attach` fails before recording with `Failed starting ktrace session` / `Couriers have returned unexpectedly`, including under `sudo`. The host blocks kernel tracing; no usable `.trace` is produced.
-- In-process `MTLCaptureManager` was wired temporarily with an env-selected `.gputrace`, frame trigger, frame limit and free-space check. Even a one-frame bound produced roughly 14 GB and did not finalize cleanly in the test window, filling the disk. The experiment was removed; do not retry whole-device capture without a hard external file-size/watchdog limit and a single-pass scope.
+- In-process `MTLCaptureManager` is now a permanent one-frame capture behind **Ctrl+/** (`MetalGpuCapture`). It starts only after the first rendered frame and stops after the present, writing a `.gputrace` under `~/Documents/Meitou Captures`. The earlier 14 GB attempt started before the first frame and swallowed the loading uploads; the guard is deliberate. Whole-device captures can still be large, so keep the window small and check free space.
 - Pass labels show every pass completes recording (`scene`, `terrain`, `objects`, foliage, post, UI); the GPU error is reported at frame-slot completion, so pass labels alone cannot identify the hung draw. The remaining useful diagnostic is per-pass command buffers or completion fences.
 - Next diagnostic: encode an `MTLSharedEvent` signal after each named pass and read `SignaledValue` when a command buffer reports a hang/error. The last signaled pass is the last one that completed; the next pass is the suspect. This writes no trace and keeps a deterministic run to one output line.
 
@@ -174,6 +174,11 @@ Verified clean:
    water foam-shadow/cloud-tile parity, purgeable/idle texture cleanup.
 5. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
 6. Make Metal the macOS default once the performance/polish pass is accepted.
+
+Known diagnostic issue: `MTL_DEBUG_LAYER=1` currently reports pre-existing texture-type mismatches at
+`uHeightFine` (Cube bound where 2D is expected) and `uOceanMaps` (2D bound where 2DArray is expected). It
+reproduces without the recent texture-view/compression changes; fix it before treating the validation gate as
+clean.
 
 ## Commands
 
