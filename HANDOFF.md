@@ -1,9 +1,9 @@
-# Metal handoff — 2026-10-22
+# Metal handoff — 2026-10-23
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Base HEAD: `4791a496 metal: share WorldFrame construction and SceneHost on IGpuContext`  
-Workspace: content/testability Milestones A-C implemented, D callbacks and E's shared reflection/Meitou water in; A is manually accepted and B's blood path is validated (debris/luckyren, D/E and C stills await manual checks).
+Current HEAD: `5f79000b metal: feed the water reactive mask to MetalFX`  
+Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted and B's blood path is validated; the latest effects need a final smoke check. Remaining work is polish/optimization.
 Build: Release 0 warnings / 0 errors. Quick tests: 476 passed, 2 skipped.
 
 ## Deterministic Metal tests
@@ -162,15 +162,14 @@ Verified clean:
 
 ## Next work
 
-1. Manual Metal acceptance of Milestones B-C: damage and luckyren blood/debris, save/load decals,
-   `--ticks`/`--move-to` repeatability, and the `--ui-panel`/`--ui-showcase` pictures.
-2. Milestone D: Metal settings values and callbacks with no visible no-ops.
-3. Milestone E/parity: renderer-only effects and the remaining gaps; keep Vulkan as the reference.
-4. Long full-feature Metal soak with the slot fence is clean (120 s serial, 120 s and 180 s reused-slot); the upload-fault class and the `SubmissionsIgnored`/hang class are fixed.
-5. Far impostors are re-enabled by default; verify them interactively. `MEITOU_METAL_NO_IMPOSTORS=1` is the fallback.
-6. Re-run the runtime acceptance pass for the merged interaction layer (trade, dialogue, build, editor).
-7. Performance/shipping per `docs/metal-backend.md`.
-8. GI decision: the Metal ray-tracing probe is in; decide whether to port `GiScene`/`GiProbes` or ship no-GI. The probe trace cost is low; test real scene build/refit and memory before committing.
+1. Final manual smoke test of the latest effects: Meitou water refraction/reflection, low-resolution
+   particles and their sliders, object motion, and the MetalFX water reactive mask.
+2. Polish: HDR/EDR presentation, fog-rate VRS (or a documented non-VRS fallback), particle coverage in
+   the reactive mask, and the remaining water foam-shadow/cloud-tile shading differences.
+3. Performance/soak and cleanup; re-run the full feature runs with the slot fence and the interaction
+   acceptance pass (trade, dialogue, build, editor).
+4. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
+5. Make Metal the macOS default once the polish/performance pass is accepted.
 
 ## Commands
 

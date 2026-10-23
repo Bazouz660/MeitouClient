@@ -1,10 +1,11 @@
 # Metal backend
 
-A second native path for the renderer, next to Vulkan. Status: **the world draws on Metal**
-(`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own
-uniform block, the scene, shadows, faithful water, skinned characters, the HUD and the faithful panels. The
+A second native path for the renderer, next to Vulkan. Status: **content-testing feature-complete**
+(`--renderer metal`, macOS): the game's own GLSL, the engine's own compiler, the engine's own uniform
+block, the scene, shadows, Meitou water, skinned characters, the HUD and the faithful panels. The
 interactive camera/selection, title, New Game, save/load, audio and the shared trade/dialogue/build/editor
-interaction layer are in (a new game opens the character editor); the Meitou water is in, and the free camera remains.
+interaction layer are in (a new game opens the character editor). Remaining work is polish/optimization, not
+content access.
 
 Bindings: `SharpMetal 1.1.0` (IsaacMarovitz; Metal, MetalFX, QuartzCore, the Objective-C
 runtime). `Silk.NET.GLFW` has no `glfwGetCocoaWindow`, so the `NSWindow*` comes from the same
