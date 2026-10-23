@@ -1009,10 +1009,6 @@ sealed partial class GameHost
         double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;
         int frames = 0, fpsFrames = 0;
         string fpsText = "";
-        // Unattended profiling: start one capture after the world has warmed up (the interactive Ctrl+/ path remains).
-        double captureAt = double.TryParse(Environment.GetEnvironmentVariable("MEITOU_METAL_CAPTURE_AT"), NumberStyles.Float,
-            CultureInfo.InvariantCulture, out double captureSeconds) ? captureSeconds : double.NegativeInfinity;
-        string? capturePath = Environment.GetEnvironmentVariable("MEITOU_METAL_CAPTURE_PATH");
         bool trace = Environment.GetEnvironmentVariable("MEITOU_METAL_TRACE") == "1";
         if (trace)
         {
@@ -1178,12 +1174,6 @@ sealed partial class GameHost
             }
             // Ctrl+/ records the next complete frame for Xcode. Start before BeginFrame makes the command buffer and stop
             // after EndFrame commits the present, so the trace holds exactly one frame rather than the three in flight.
-            if (captureAt >= 0 && now >= captureAt && frames > 0)
-            {
-                captureAt = double.NegativeInfinity;
-                gpuCaptureRequested = true;
-                Console.WriteLine($"metal     gpu capture requested at {now:0.0}s");
-            }
             MetalGpuCapture? gpuCapture = null;
             if (gpuCaptureRequested)
             {
@@ -1196,7 +1186,7 @@ sealed partial class GameHost
                 }
                 else
                 {
-                    gpuCapture = MetalGpuCapture.TryStart(ctx.Queue, out string? captureError, capturePath);
+                    gpuCapture = MetalGpuCapture.TryStart(ctx.Queue, out string? captureError);
                     Console.WriteLine(gpuCapture is not null
                         ? $"metal     gpu capture: {gpuCapture.OutputPath}"
                         : $"metal     gpu capture unavailable: {captureError}");

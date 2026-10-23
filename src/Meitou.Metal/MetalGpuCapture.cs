@@ -26,10 +26,10 @@ public sealed class MetalGpuCapture
     /// Starts a capture of the given command queue into a <c>.gputrace</c>. Returns null and a readable reason when the
     /// destination is unavailable (normally because the process was not launched with <c>MTL_CAPTURE_ENABLED=1</c>).
     /// </summary>
-    public static MetalGpuCapture? TryStart(MTLCommandQueue queue, out string? error, string? outputPath = null)
+    public static MetalGpuCapture? TryStart(MTLCommandQueue queue, out string? error)
     {
         error = null;
-        string path = outputPath ?? DefaultPath();
+        string path = DefaultPath();
         if (!path.EndsWith(".gputrace", StringComparison.OrdinalIgnoreCase)) path += ".gputrace";
         path = Path.GetFullPath(path);
         try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); }

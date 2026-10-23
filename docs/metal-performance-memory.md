@@ -339,14 +339,9 @@ Fast math is already on in Metal's default `MTLCompileOptions`; forcing it off r
 Matched Vulkan: no-object terrain 7.83 ms (total 14.62 ms), full scene terrain 11.40 ms (total 22.51 ms). Compare the
 same view and scene; the earlier full-scene Metal capture already had terrain at 11.3 ms.
 
-The unattended one-frame capture is:
-
-```sh
-MTL_CAPTURE_ENABLED=1 MEITOU_METAL_CAPTURE_AT=12 \
-MEITOU_METAL_CAPTURE_PATH=/tmp/meitou.gputrace ...
-```
-
-It waits for a drawn frame, captures exactly one, and stops; use it instead of a multi-frame trace.
+Use the manual `Ctrl+/` capture after the world has warmed up; capture one frame only. Do not automate captures
+from the game loop. The unattended `MEITOU_METAL_CAPTURE_AT`/`MEITOU_METAL_CAPTURE_PATH` trigger was removed after
+a capture-related system restart; do not reintroduce it.
 
 ## Metal timestamp limitation and private statics
 
