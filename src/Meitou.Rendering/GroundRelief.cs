@@ -17,11 +17,12 @@ public static class GroundRelief
     /// <summary>Whether the ground near the eye is moved for real (tessellated patches, where the device has tessellation shaders; the Tab panel's toggle).</summary>
     public static bool DisplaceActive { get; set; } = true;
 
-    /// <summary>The depth scale in world units (1 unit = 10 cm; the Tab panel's slider): each layer's depth (<see cref="LayerDepthCm"/>) times this over <see cref="DefaultDepth"/>.</summary>
-    public static float Depth { get; set; } = DefaultDepth;
+    /// <summary>The depth scale in world units (1 unit = 10 cm; the Tab panel's slider, default 40 cm): each layer's depth (<see cref="LayerDepthCm"/>) times
+    /// this over <see cref="ReferenceDepth"/>.</summary>
+    public static float Depth { get; set; } = 4;
 
-    /// <summary><see cref="Depth"/>'s default.</summary>
-    public const float DefaultDepth = 2;
+    /// <summary>The depth the tuned values are expressed at (20 cm): <see cref="Depth"/> scales every layer's depth, and <see cref="MaxDepth"/>, by itself over this.</summary>
+    public const float ReferenceDepth = 2;
 
     /// <summary>Where the displacement ends (world units from the eye; in full to 60% of it; the Tab panel's slider).</summary>
     public static float DisplaceDistance { get; set; } = 1000;
@@ -43,13 +44,13 @@ public static class GroundRelief
     public static float TargetSlope { get; set; } = 0.2f;
 
     /// <summary>
-    /// How far a layer's depth follows its own scale: the depth <see cref="TargetSlope"/> gives it (as a multiple of <see cref="DefaultDepth"/>) raised to
+    /// How far a layer's depth follows its own scale: the depth <see cref="TargetSlope"/> gives it (as a multiple of <see cref="ReferenceDepth"/>) raised to
     /// this power. 0: every layer as deep; 1: fine textures shallow, coarse ones deep, in proportion; 0.5 the geometric middle.
     /// </summary>
     public static float ScaleFollow { get; set; } = 0.5f;
 
-    /// <summary>The deepest a layer gets, in world units at the default <see cref="Depth"/> (8: 80 cm; the characters walk on the undisplaced ground, so deeper
-    /// relief buries their feet).</summary>
+    /// <summary>The deepest a layer gets, in world units at <see cref="ReferenceDepth"/> (8: 80 cm, 160 cm at the default <see cref="Depth"/>; the characters walk
+    /// on the undisplaced ground, so deeper relief buries their feet).</summary>
     public static float MaxDepth { get; set; } = 8;
 
     /// <summary>The cliff layer's depth (and its cap) as a multiple of the ground's.</summary>
@@ -88,5 +89,5 @@ public static class GroundRelief
     /// factor (1 / (side × its height's steepness), <see cref="NormalHeight.FromNormals"/>; 0 flat) and its tile's side in world units; for labels.
     /// </summary>
     public static float LayerDepthCm(float steep, float tile) =>
-        steep <= 0 ? 0 : MathF.Min(MathF.Pow(TargetSlope * steep * tile / DefaultDepth, ScaleFollow), MaxDepth / DefaultDepth) * Depth * 10;
+        steep <= 0 ? 0 : MathF.Min(MathF.Pow(TargetSlope * steep * tile / ReferenceDepth, ScaleFollow), MaxDepth / ReferenceDepth) * Depth * 10;
 }

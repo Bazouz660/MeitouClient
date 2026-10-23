@@ -95,12 +95,12 @@ static partial class TerrainShaders
     const string ReliefDepth = """
 
         uniform sampler2D uRelief;     // per layer slot: 1 / (side × its height's steepness), 0 flat (TerrainTextures.LoadHeight)
-        uniform float uMaxDepth;       // GroundRelief.MaxDepth over DefaultDepth: the most a layer's depth gives
+        uniform float uMaxDepth;       // GroundRelief.MaxDepth over ReferenceDepth: the most a layer's depth gives
         uniform float uTargetSlope;    // GroundRelief.TargetSlope: the root-mean-square slope a layer is given at its tile's size
         uniform float uScaleFollow;    // GroundRelief.ScaleFollow: the power that depth is raised to (0 every layer as deep, 1 in proportion)
         uniform float uCliffScale;     // GroundRelief.CliffScale: the cliff layer's depth times this (its cap too)
 
-        // A layer's depth as a multiple of the depth slider's default (GroundRelief.DefaultDepth, 2 units; GroundRelief.LayerDepthCm); 0 flat: the depth
+        // A layer's depth as a multiple of the reference depth (GroundRelief.ReferenceDepth, 2 units; GroundRelief.LayerDepthCm); 0 flat: the depth
         // that gives it a root-mean-square slope of uTargetSlope over its tile (5000 / scale units across), raised to uScaleFollow, at most uMaxDepth.
         float reliefDepth(float layer, vec2 scale)
         {

@@ -21,9 +21,10 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 ## Ground relief
 
 Meitou look, not in the game (`GroundRelief`). Tab toggles "Ground parallax", "Ground displacement (tessellation)", "Terrain outline
-refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief depth (cm, typical ground)" (default 20),
+refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief depth (cm, typical ground)" (default 40),
 "Ground displacement distance (m)" (100), "Ground parallax distance (m)" (60); viewer K toggles the parallax. The other values are
-tuned constants, settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm,
+tuned constants, expressed at a 20 cm reference depth and settable for a run with the viewer's `--relief Name=value`: target slope
+0.2, scale follow 0.5, max depth 80 cm (160 at the default 40),
 cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5.
 
 **Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
@@ -43,10 +44,10 @@ own lighting at a median correlation of 0.88. The game's terrain normal maps are
 **Depth.** Each layer is given the depth that makes its root-mean-square slope the target over its tile (5000 / tiling units):
 `slope × tile / (512 × steepness)`, steepness the height's RMS slope per texel over 4-texel blocks (texel noise left out), kept per
 slot as `1 / (512 × steepness)` (R32F). That depth, as a multiple of 20 cm, is raised to the scale-follow power (fine textures not
-flat, coarse ones not metres deep), capped at the max depth, times the depth slider over 20 cm; the cliff's times the cliff
+flat, coarse ones not metres deep), capped at the max depth, times the depth slider over the 20 cm reference; the cliff's times the cliff
 scale. **Observed** (field tour): the integrated range or normal-map strength as the depth made broad noise deep
-(`BurntWoodLike`, `SharpblockLoop`) and fine textures flat or spiky; this rule gives e.g. `WadiGravel` 13–15 cm, `Rocksurface01`
-13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm.
+(`BurntWoodLike`, `SharpblockLoop`) and fine textures flat or spiky; this rule gives at 20 cm e.g. `WadiGravel` 13–15 cm,
+`Rocksurface01` 13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm (twice that at the default 40).
 
 **Composite.** Every ground layer adds relief by how much of the pixel it shows in the material's order (base, grass, slope,
 dirt, road, the cliff over all), from the blend map, overlay window and slope per pixel, not per patch, so neighbouring patches
