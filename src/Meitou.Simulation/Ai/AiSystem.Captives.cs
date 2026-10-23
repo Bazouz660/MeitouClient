@@ -123,6 +123,8 @@ public sealed partial class AiSystem
                 break;
             }
         }
+        // The travel goals (TRAVEL_TO_TARGET_TOWN_FAST) walk to the running package's destination.
+        if (board.MissionTown >= 0) board.Destination = CampaignTown.OfSite(board.MissionTown);
     }
 
     /// <summary><c>GoOutOnPatrol_Cannibal</c> slot 12 (<c>FUN_140289d80</c>): no patrol while every cage of the squad's faction in its town is taken (CAGES_ARE_ALL_FULL).</summary>

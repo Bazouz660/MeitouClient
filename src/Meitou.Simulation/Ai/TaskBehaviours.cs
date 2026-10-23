@@ -35,6 +35,11 @@ public enum AiBehaviour : byte
     Relax = 12,
     /// <summary>Walks to the nearest town; not wanted while in one (WANDERER, docs/game/ai-tasks.md "Town goals", Observed).</summary>
     ToTown = 13,
+    /// <summary>
+    /// The leader walks (runs for the fast one) to the running package's mission town (<see cref="Blackboard.Destination"/>); wanted only while it has one and is not in it
+    /// (WANDERING_TRADER and the travelling rows, whose plan is <c>Task_TravelToTargetTown</c> to <c>atDestinationTown</c>, docs/game/ai-tasks.md).
+    /// </summary>
+    Travel = 14,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -72,8 +77,13 @@ public static class TaskBehaviours
         [TaskType.SIT_AROUND] = (AiBehaviour.Sit, "Sitting around"),
         [TaskType.RETREAT_HOMETOWN] = (AiBehaviour.GoHome, "Retreating"),
         [TaskType.RUN_AWAY_HOMETOWN] = (AiBehaviour.GoHome, "Retreating fast"),
-        // Under the retreat packages that list it (signals 1 and 25) the target town is the squad's home town (AiSystem.Captives.cs): engine reading.
-        [TaskType.TRAVEL_TO_TARGET_TOWN_FAST] = (AiBehaviour.GoHome, "Travelling quickly"),
+        [TaskType.WANDERING_TRADER] = (AiBehaviour.Travel, "Wandering trader"),
+        [TaskType.TRAVEL_TO_TARGET_TOWN] = (AiBehaviour.Travel, "Travelling"),
+        // To the running package's destination (Blackboard.Destination): the trader's next town; under the retreat packages that list it (signals 1 and 25) the squad's home town
+        // (AiSystem.Captives.cs, engine reading).
+        [TaskType.TRAVEL_TO_TARGET_TOWN_FAST] = (AiBehaviour.Travel, "Travelling quickly"),
+        // Its Task_PatrolTownViolent is not decoded (engine choice): it roams the town it assaults, as patrolling does without a patrol package.
+        [TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE] = (AiBehaviour.Patrol, "Ransacking town"),
     };
 
     /// <summary>

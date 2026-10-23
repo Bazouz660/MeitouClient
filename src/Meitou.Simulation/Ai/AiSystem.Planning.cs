@@ -16,10 +16,12 @@ public sealed partial class AiSystem
     const float HomeRadius = 20;
 
     /// <summary>
-    /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), standing at a node,
-    /// shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed. A plan ending in another step fails.
+    /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the mission town (the
+    /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed.
+    /// A plan ending in another step fails.
     /// </summary>
-    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
+    static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
+        or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
         or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED;
 
@@ -114,8 +116,10 @@ public sealed partial class AiSystem
                 StateType.isAtHome => board.Home is not { } home || mind.HomeUnreachable || Vector2.DistanceSquared(Flat(Me.Position), Flat(home.Position)) <= HomeRadius * HomeRadius,
                 // Without a town it is never at its home town; its destination town (patrolling in town) is wherever it is.
                 StateType.isAtHomeTown => board.Town >= 0 && system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
-                StateType.atDestinationTown or StateType.atDestinationTown_94 => system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
-                StateType.hasDestinationTown => board.Town >= 0,
+                // The running package's mission town when it has one (the trader's next town), else the home town.
+                StateType.atDestinationTown or StateType.atDestinationTown_94 => board.Destination.IsNone
+                    ? system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)) : system.CurrentTown(world, Me.Position) == board.Destination,
+                StateType.hasDestinationTown => board.Town >= 0 || !board.Destination.IsNone,
                 StateType.atATown => system.TownAt(Me.Position) >= 0,
                 StateType.isLeaderDown => mind.Squad.Leader.IsNone || !world.Characters.IsAlive(mind.Squad.Leader),
                 StateType.isFullyRested => cold.Medical is not { Incapacitated: true },

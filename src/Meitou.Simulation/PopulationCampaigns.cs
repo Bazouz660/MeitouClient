@@ -111,7 +111,6 @@ public sealed partial class PopulationSystem : IStateHashed
 {
     WarManager[]? wars;
     CampaignDatabase? campaignDb;
-    float playerTownRadius = -1;
 
     /// <summary>Hours between rolls (<b>Verified</b>: +6 in the loader and the update).</summary>
     public const double RollEveryHours = 6;
@@ -176,12 +175,7 @@ public sealed partial class PopulationSystem : IStateHashed
     float RadiusOf(CampaignTown t)
     {
         if (t.Site >= 0) return data.Sites[t.Site].Town.SizeRadius * data.Sites[t.Site].Town.TownRadiusMult;
-        if (playerTownRadius < 0)
-        {
-            var template = data.Db.Find(Construction.PlayerTown.Template) is { Type: FcsRecordType.TOWN } r ? TownData.From(r) : null;
-            playerTownRadius = template is { SizeRadius: > 0 } ? template.SizeRadius * template.TownRadiusMult : 500;
-        }
-        return playerTownRadius;
+        return data.PlayerTownRadius;
     }
 
     int FactionOfTown(World world, CampaignTown t) =>
@@ -224,13 +218,7 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>The BIOME_GROUP id at a point (null without a biome map).</summary>
-    string? BiomeAt(Vector2 at)
-    {
-        if (data.Biomes is not { } biomes) return null;
-        var (cx, cz) = WeatherAreas.CellOf(at.X, at.Y);
-        int g = biomes.GroupOf(cx, cz);
-        return g >= 0 ? biomes.Groups[g].Id : null;
-    }
+    string? BiomeAt(Vector2 at) => data.BiomeGroupAt(at);
 
     // ---- the roll ----
 
@@ -276,14 +264,14 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>
-    /// A roll's chance (<c>CampaignData::vfunc_1</c>), 0 on any failure: the player's living characters ≥ <c>target population min</c>; the town's level (taken as 0, engine
-    /// choice for the <b>Unknown</b> +0x388) ≥ <c>target tech level &gt;=</c>; the <c>repeat limit</c> passed; world states and leader; then the distance falloff from the
+    /// A roll's chance (<c>CampaignData::vfunc_1</c>), 0 on any failure: against a player town, the player's living characters ≥ <c>target population min</c> and the town's
+    /// level (<see cref="TownLevel"/>, Town +0x388) ≥ <c>target tech level &gt;=</c>; the <c>repeat limit</c> passed; world states and leader; then the distance falloff from the
     /// faction's nearest town.
     /// </summary>
     float Chance(World world, WarManager m, CampaignData c, KnownCampaign known, CampaignTown target, double now, int living)
     {
         if (living < c.TargetPopulationMin) return 0;
-        if (c.TargetTechLevel > 0) return 0;
+        if (target.PlayerTown > 0 && TownLevel(world, target.PlayerTown) < c.TargetTechLevel) return 0;
         if (known.LastStart > 0 && now <= known.LastStart + c.RepeatLimitHours) return 0;
         if (!WorldStatesPass(world, c)) return 0;
         var at = CentreOf(world, target);
@@ -305,8 +293,9 @@ public sealed partial class PopulationSystem : IStateHashed
 
     /// <summary>
     /// A target and home (<c>CampaignData::vfunc_0</c>): the towns of <paramref name="enemy"/> (the player's for rolls) in the faction's <c>biomes</c>, else all of them, less those
-    /// in its <c>no-go zones</c> unless the campaign ignores them (TownBase slot 70 and Town +0x128 taken as passing, engine choice for the <b>Unknown</b>); then the first
-    /// source town in site order with one of its 5 nearest candidates within <c>range far</c> is the home, that candidate the target.
+    /// not active (<see cref="TownActive"/>, Town slot 70), those with hostile occupiers when the campaign is not hostile (Town +0x128, <see cref="Ai.AiSystem.Occupied"/>), and
+    /// those in its <c>no-go zones</c> unless the campaign ignores them; then the first source town in site order with one of its 5 nearest candidates within <c>range far</c> is
+    /// the home, that candidate the target.
     /// </summary>
     bool FindTarget(World world, int faction, CampaignData c, int enemy, out CampaignTown target, out CampaignTown home)
     {
@@ -324,6 +313,7 @@ public sealed partial class PopulationSystem : IStateHashed
         if (all.Count == 0) return false;
         var candidates = all.Where(t => BiomeAt(CentreOf(world, t)) is { } b && fd.Biomes.Any(x => x.Id == b)).ToList();
         if (candidates.Count == 0) candidates = all;
+        candidates.RemoveAll(t => !TownActive(world, t) || !c.IsHostile && Ai.AiSystem.Occupied(world, t));
         if (!c.IgnoresNogoZones && fd.NoGoZones.Count > 0)
             candidates.RemoveAll(t => BiomeAt(CentreOf(world, t)) is { } b && fd.NoGoZones.Any(x => x.Id == b));
         if (candidates.Count == 0) return false;
@@ -342,6 +332,45 @@ public sealed partial class PopulationSystem : IStateHashed
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Whether a town is active (Town vtable slot 70, <c>FUN_140929eb0</c>, Observed): a zone of it is loaded, and for a player town one of the player's characters is in it
+    /// (here: within <see cref="PopulationData.PlayerTownExtent"/>, whose zone the character keeps loaded). So raids and redirects aim only at a player town the player is at.
+    /// </summary>
+    bool TownActive(World world, CampaignTown t)
+    {        if (t.Site >= 0) return active.Contains(data.Sites[t.Site].Zone);
+        var at = CentreOf(world, t);
+        float r = data.PlayerTownExtent;
+        var prev = world.Characters.Previous;
+        for (int i = 0; i < prev.Length; i++)
+            if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true } && Vector2.DistanceSquared(new Vector2(prev[i].Position.X, prev[i].Position.Z), at) <= r * r) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// A player town's level (Town +0x388, the save's <c>plevel</c>; <c>FUN_14048c200</c>, Verified by code, recomputed by the original when towns merge and at other
+    /// calls): over its finished buildings, H = those with an interior that are neither a part nor a gate, T = turrets (function 12), G = gates (21), R = the highest research
+    /// <c>tech level</c> (function 3). 1 when R &gt; 1, H &gt; 1, G &gt; 0 or T &gt; 3; with a gate, 2 when R &gt; 3, H &gt; 4 or T &gt; 4, and 3 when R &gt; 3, H &gt; 4 and T &gt; 6.
+    /// Engine readings: "an interior" is the BUILDING's <c>interior</c> list (the original's Building +0x1f0), a part is a site with a parent.
+    /// </summary>
+    internal int TownLevel(World world, int number)
+    {
+        int houses = 0, turrets = 0, gates = 0, research = 0;
+        foreach (var b in world.Buildings.All)
+        {
+            if (b.Town != number || !b.Complete || b.Destroyed || b.Ruined || data.Db.Find(b.Record) is not { } r) continue;
+            var f = r.GetReferences("functionality") is [var link, ..] ? data.Db.Find(link.TargetStringId) : null;
+            int function = f?.GetInt("function") ?? 0;
+            if (function == 12) turrets++;
+            else if (function == 21) gates++;
+            else if (function == 3) research = Math.Max(research, f!.GetInt("tech level"));
+            if (function != 21 && b.Parent is null && r.GetReferences("interior").Count > 0) houses++;
+        }
+        int level = research > 1 || houses > 1 || gates > 0 || turrets > 3 ? 1 : 0;
+        if (gates > 0 && (research > 3 || houses > 4 || turrets > 4)) level = 2;
+        if (gates > 0 && research > 3 && houses > 4 && turrets > 6) level = 3;
+        return level;
     }
 
     // ---- start and squads ----
@@ -701,6 +730,12 @@ public sealed partial class PopulationSystem : IStateHashed
         switch (inst.Phase)
         {
             case 0:
+                // A loaded campaign that is neither hostile nor a defence is defeated at once within 1.8 × the radius of a town with hostile occupiers (Town +0x128).
+                if (leader.State == PlatoonState.Loaded && !c.IsHostile && c.Key != CampaignKey.DefendTown && OccupiedNear(world, leader.Position))
+                {
+                    Defeat(world, m, c, inst, now);
+                    return false;
+                }
                 if (Vector2.Distance(leader.Position, CentreOf(world, inst.Target)) > 0.8f * RadiusOf(inst.Target)) return false;
                 if (inst.ArrivedAt < 0)
                 {
@@ -750,6 +785,18 @@ public sealed partial class PopulationSystem : IStateHashed
                 int intact = inst.Platoons.Count(id => world.Platoons.Find(id) is { } p && Intact(world, p));
                 if (inst.Platoons.Count == 0 || intact < 0.2f * (inst.Platoons.Count + inst.Lost)) Defeat(world, m, c, inst, now);
                 return false;
+        }
+        return false;
+    }
+
+    /// <summary>Whether a point is within 1.8 × the radius of a town with hostile occupiers (only player towns get them, <see cref="Ai.AiSystem.Occupied"/>).</summary>
+    bool OccupiedNear(World world, Vector2 at)
+    {
+        foreach (var town in world.Buildings.Towns)
+        {
+            var t = CampaignTown.OfPlayer(town.Number);
+            float r = 1.8f * RadiusOf(t);
+            if (Vector2.DistanceSquared(at, CentreOf(world, t)) <= r * r && Ai.AiSystem.Occupied(world, t)) return true;
         }
         return false;
     }

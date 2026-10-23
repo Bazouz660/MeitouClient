@@ -192,14 +192,14 @@ Implemented (`PopulationRoaming.cs`):
 
 Implemented (`PopulationCampaigns.cs`; [original rules](game/factions-squads-towns.md#campaigns),
 [save](formats/save.md#war_savestate-type-9-faction-campaigns)). Almost all campaigns aim at player towns (outposts), so nothing rolls until
-the player has one; requests (victory/loss chains, ally help) can follow.
+the player has one and stands in it; requests (victory/loss chains, ally help) can follow.
 
 - **Data** (`Meitou.Data`, `CampaignData` from FACTION_CAMPAIGN, cached per inheritance mode): ranges × 10, `repeat limit` × 24, weighted
   trigger lists, phase packages. Fourth switch, **Raids as written** (`CampaignAncestorsOnce`): Meitou applies each ancestor's list entries
   once; Faithful twice, as the original (doubled weights and trigger chances).
 - **War manager** (serial, in faction order at the population look; every rule reads the game clock, so the cadence does not matter): the
-  6 h roll, the chance with the linear falloff and `raidFrequencyMult`, targets among `World.Buildings.Towns` (biome groups, no-go zones;
-  slot 70 and Town +0x128 taken as passing, tech level as 0: engine choices), requests with due times, redirects and retries, the
+  6 h roll, the chance with the linear falloff and `raidFrequencyMult`, targets among `World.Buildings.Towns` (biome groups, no-go zones; only a player town
+  with a player character within 1250, slot 70; none with occupiers for a non-hostile campaign; the town level from its finished buildings), requests with due times, redirects and retries, the
   `trigger player ally` help, and DIALOGUE_LINE `trigger campaign` (`TriggerFromDialogue`, keyed off the speaker and tick). Rolls
   are keyed off the world seed, faction and roll hour, so a run repeats. The state hash includes the managers only once one has started or
   queued something, so worlds without a campaign hash as before.
@@ -1092,6 +1092,24 @@ to the next tick. A hostile target is attacked instead.
 patrol/bar/shop/sleep/retreat/contracts, combat stances and off-screen roaming jobs. Data and
 TaskData semantics: [ai.md](game/ai.md), [ai-tasks.md](game/ai-tasks.md). Wars and prisoners are incomplete; residents
 off screen only come back where their schedule puts them ([off-screen tier](#off-screen-tier)). Hash blackboards/minds/jobs when present.
+
+### Package classes
+
+`PackageClasses.Of` maps the `signal func` ([ai.md](game/ai.md#package-classes)); `Blackboard` runs the original's slot walk with the class rules of `AiSystem`
+(`IPackageRules`: start, finished, started, ended, may lead). Built: plain, retreat, patrol (route an engine choice), bar, contracts, and
+(`AiSystem.Packages.cs`) the wandering trader (16), passing-by assault (29) and occupation (30) as decoded. Not built (never start but as a lone slot-0
+package): refugee (22), prisoner and cannibal classes; the war classes (19, 20, 32) and 31 run only in campaigns, which drive their platoons themselves.
+- **Current town** (`Blackboard.InTown`, on the package cadence before the choice): nearest town by X/Z, placed towns by `TownData.Radius`, player towns by the
+  template's (1250); entering one fires the leader's ENTER_TOWN; the town a squad starts in counts as entered (engine choice: no line for every squad a town makes).
+- **Trader**: as the original (stay, chooser, states, leave rule); the leader's WANDERING_TRADER goal walks to the town (`AiBehaviour.Travel`, also
+  TRAVEL_TO_TARGET_TOWN and its fast form; `atDestinationTown` is the package's town while it has one), members follow. Engine choices: a town's own squad never
+  starts it (Meitou unloads a town's squads with it); a bar package of a squad that is not a town's own takes the bar of the placed town it is in, none in a player
+  town. **Observed** (headless, Hub area, 150 000 ticks): a slaver squad reaches the Hub, waits 7.5 h until 06:00 and leaves for Skinne.
+- **Assault and occupation**: the squad fights the town's faction (`Squad.War`) and roams the town (its wander centre; RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE acts as
+  patrolling); engine choice: the members' posts move into the town, so idle, node and bed goals stay there. The faction clocks (`AiSystem`, hashed once set) are
+  not saved, as the original's. The occupation's persistence is not built (a wild squad is kept only with `KeepWild`); campaigns read the occupiers
+  (`AiSystem.Occupied`). **Observed** (headless, Stack area, a starving-bandit mob put into an outpost with 3 player characters): the assault starts, the
+  occupation follows 0.1 h after the players are knocked out. No fight started in that run (the aggro's sight of sandbox characters there was not looked into).
 
 ### Planner
 

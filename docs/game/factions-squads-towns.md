@@ -372,13 +372,18 @@ towns, hunts after story kills, visits, ally help; chains via victory/loss trigg
 to now + 6 h and, only if the faction has no active campaign and no pending request, rolls (**Verified** +6; gate **Observed**).
 - Each `territorial triggers` campaign of the list with a target gets chance c; it passes when c > uniform[0,1); one passer is drawn,
   weighted by c (**Verified** by disassembly).
-- c (`CampaignData::vfunc_1`), 0 on any failure: player's living characters ≥ `target population min`; a TOWN target's level (+0x388,
-  **Unknown**) ≥ `target tech level >=`; now > last start + `repeat limit` × 24 h; world states and special leader (below); d = XZ
+- c (`CampaignData::vfunc_1`), 0 on any failure: against a player-faction target, the player's living characters ≥ `target population min` and a Town
+  target's level (+0x388, the save's `plevel`, below) ≥ `target tech level >=` ("-below town level"); now > last start + `repeat limit` × 24 h; world states and special leader (below); d = XZ
   distance from the faction's nearest own town to the target: f = 1 when `range far` ≤ 0 or d ≤ near × 10, 0 beyond far × 10, else
   linear from 1 to 0 between; f × `raidFrequencyMult` unless `ignores chance mults`; c = `chance per day` × 0.25 × f (**Verified**).
 - Target (`CampaignData::vfunc_0`): only towns of the player faction, those in the faction's `biomes` (BIOME_GROUP), else any player town;
-  dropped when TownBase slot 70 is false (terrain/navmesh tile flags, meaning **Unknown**), when Town +0x128 is set (**Unknown**) and the
-  campaign is not hostile, or in the faction's `no-go zones` unless `ignores nogo zones`. Sources: own towns except nests (and, for
+  dropped when Town slot 70 is false, when the town has hostile occupiers (+0x128) and the campaign is not hostile, or in the faction's `no-go zones`
+  unless `ignores nogo zones`. Slot 70 (`FUN_140929eb0`, **Observed**: zone flag `FUN_140a09360` read as loaded): a zone of the town is loaded and, for a
+  player town, a player character's town is it; so rolls (and redirects) only aim at a player town the player is at. +0x128 is the count of the town's
+  occupier set (+0x118, filled by [Package_OccupyTown](ai.md#package-classes); **Verified**: the town panel's "Hostile Occupiers:" line, `FUN_140922e60`).
+- Player town level (+0x388, `FUN_14048c200`, **Verified** by code; 0 for a new outpost; recomputed when towns merge, `FUN_140931840`, and in `FUN_1404d1870`):
+  over the town's player buildings H = with an interior (Building +0x1f0) that are neither parts nor gateways, T = turrets (BF 12), G = gates (BF 21), R = the
+  highest research functionality `tech level` (BF 3). 1 when R > 1, H > 1, G > 0 or T > 3; with G > 0, 2 when R > 3, H > 4 or T > 4, 3 when R > 3, H > 4 and T > 6. Sources: own towns except nests (and, for
   factions with `fundamental type` 1 or `offers bounties`, villages, points of interest, prisons, slave camps); the first source in list
   order with one of its 5 nearest candidates within `range far` is the home (**Observed**).
 - World states (`vfunc_2`): every `world state` query equals its val0, and no `special leader` or one with unique state 1 (**Observed**).
@@ -410,7 +415,7 @@ or population); a failed start retries each run, up to 100 times; a gone target 
 - Any phase but ended: the leader platoon loaded with every member down → defeat.
 - 0 travel: arrived within 0.8 × town radius (XZ) or 400 of a non-town target; then the `dialog announcement` waits, "{1} has arrived at
   {2}", and phase 1, or straight to ended without victory or defeat when there is no `pt2 AI leader`. A loaded, non-hostile, non-DEFEND
-  campaign within 1.8 × radius of a town with +0x128 set is defeated at once (purpose **Unknown**).
+  campaign within 1.8 × radius of a town with hostile occupiers (+0x128) is defeated at once (a trader or ally does not walk into an occupied town).
 - 1 at target: victory when the leader is back in its home town (two null towns compare equal); else by `key`: ASSAULT_TOWN wins after
   4 h, earlier 0.2 h after its first fight once the fight or the standing player characters are gone and the town's buildings test passes;
   while > 2 player characters hold the town, more than half up, nothing else is checked; DEFEND_TOWN after 12 h when no hostile campaign
@@ -486,7 +491,7 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 - What `building designation` changes beyond the bar (it does not enter the chooser); the town node map bar squads use.
 - Nest respawn delay after "wiped out", the default of `DAT_142133588` (the Number of nests multiplier option; **Unknown**, the exe image holds zeros there), the rule that makes `TownPopulationManager::vfunc_4`
   declare a town wiped out (**Observed** gates: roaming pool cap <= 3 and <= 25 roaming members).
-- Campaigns: Town +0x128, Town +0x388 (tech level), TownBase slots 70 / 92 / 96, the disabled-town flag,
+- Campaigns: TownBase slots 92 / 96, the disabled-town flag, what besides the two calls recomputes the town level,
   the "fought a player squad" test, the announcement wait's event-2 state, the follower steering, the A* road cost, `Platoon::vfunc_25` (sends phase 0 to 2), whether spawned campaign squads are `persistent`, DIPLOMATIC_ASSAULTS.
 - `faction gen` at game start, `NEW_GAME_STARTOFF.faction relations`.
 - Unique characters: the `Character +0x279 & 7` gate and the 0.1 roll against a town list at platoon unload, platoon +0xac, the unit of
@@ -515,7 +520,8 @@ Evidence scopes below apply only to their named sources/checks.
 - Campaigns: `FUN_1409cb310` (roll), `CampaignData::vfunc_0/1/2` (`1409c5e80`, `1409c5740`, `1409c4ed0`), loaders `read_chance_per_day_n9`
   `1409c8bd0` / `read_is_hostile_n11` `1409c7e40` / `read_campaigns_n3` `1409cabd0`, start `FUN_1409c9830` with `uses_leader` `1409c5040` and
   `FUN_1409c4150`, requests `FUN_1409c9410` / `FUN_1409d27a0`, instance update `CampaignInstance::vfunc_10` `1409c70f0`, end `vfunc_2` / `vfunc_3`,
-  redirect `FUN_1409d62f0`; enum names from the editor (`WarCampaignEnum`, `MoveSpeed`); data census with a throwaway tool over the merged base files
+  redirect `FUN_1409d62f0`, town gates `FUN_140929eb0` (slot 70), `FUN_14048c200` (level), `FUN_140922e60` (occupiers), Town constructor `FUN_140934ae0`; enum names
+  from the editor (`WarCampaignEnum`, `MoveSpeed`); data census with a throwaway tool over the merged base files
 - Unique characters: manager `FUN_140354560` / `FUN_140349950`, gate `FUN_1405836e0`, transitions `FUN_1407a6200`, `FUN_140330600`, `FUN_140680560`,
   `FUN_1405cf470`, `FUN_1409a8120`, `FUN_1404ff760`, `FUN_1409a8970`, queries `FUN_1409a7e00`, `FUN_1409c4ed0`, `FUN_1409c5040`; special squads
   `FUN_1402ddc90`, `FUN_1402dd680`, `FUN_1402de9b0`, `FUN_14057c6f0`; save `FUN_1409a8660` / `FUN_1409aa270`, `FUN_1402deea0` / `FUN_1402df0c0`;
