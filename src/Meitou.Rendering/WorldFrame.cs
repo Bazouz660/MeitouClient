@@ -1197,11 +1197,16 @@ static class WorldFrame
         gpu.Sky.Draw(vp, colours);
         host.Close();
         // Motion and particle callbacks belong to the world that is being replaced.
-        var motion = gpu.Post?.ObjectMotion;
+        var motion = gpu.PostChain?.ObjectMotion;
         var particles = gpu.Post?.Particles;
-        if (gpu.Post is { } postProcess) (postProcess.ObjectMotion, postProcess.Particles) = (null, null);
+        gpu.PostChain?.ObjectMotion = null;
+        if (gpu.Post is { } postProcess) postProcess.Particles = null;
         try { post.End(); }
-        finally { if (gpu.Post is { } restorePost) (restorePost.ObjectMotion, restorePost.Particles) = (motion, particles); }
+        finally
+        {
+            gpu.PostChain?.ObjectMotion = motion;
+            if (gpu.Post is { } restorePost) restorePost.Particles = particles;
+        }
     }
 
     public static void Draw(Gpu gpu, WorldScene scene, WorldCamera camera, WorldRenderOptions render, int width, int height, float hour, float time, float fogDistance, float? weatherHour = null)
@@ -1413,12 +1418,12 @@ static class WorldFrame
             if (nearSlice) post.SetNearSlice(near, far, camera.FieldOfView, aspect);
             var viewProjection = view * Jitter.Apply(camera.Projection(aspect, near, far), jitter, rw, rh);
             var frustum = WorldCamera.FrustumPlanes(viewProjection);
-            if (nearSlice && post.Temporal && gpu.Post is { } motionPost && gpu.Foliage is { } swaying)
+            if (nearSlice && post.Temporal && gpu.Foliage is { } swaying)
             {
-                motionPost.ObjectMotion ??= swaying.DrawGrassMotion;
+                post.ObjectMotion ??= swaying.DrawGrassMotion;
                 swaying.SetMotionCamera(viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             }
-            if (nearSlice) gpu.Characters?.AttachMotion(gpu.Post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
+            if (nearSlice) gpu.Characters?.AttachMotion(post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             host.Stage(6);
             var fogCull = gpu.FogVolumes;
             gpu.Terrain.FogCull = fogCull;

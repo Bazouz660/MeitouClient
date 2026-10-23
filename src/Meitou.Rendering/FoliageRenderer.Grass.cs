@@ -276,7 +276,7 @@ public sealed unsafe partial class FoliageRenderer
     }
 
     /// <summary><see cref="DrawGrassMotion"/> on the GPU: the same cull for the near slice's camera over the patches that sway, one indirect draw.</summary>
-    void DrawGrassMotionGpu(PostProcess.MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
+    void DrawGrassMotionGpu(MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
     {
         if (grassStore.SlotHigh == 0 || motionFrustum.Length > 8) return;
         if (BuildGrassRows(true, default!, false) == 0) return;

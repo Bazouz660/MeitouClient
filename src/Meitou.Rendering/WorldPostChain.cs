@@ -3,6 +3,10 @@ using Meitou.Rendering.Gpu;
 
 namespace Meitou.Rendering;
 
+/// <summary>What <see cref="IWorldPostChain.ObjectMotion"/> gets: the near slice's depth sampler, its planes, the jitter in NDC,
+/// and the render height over twice the tangent of half the field of view (pixels per unit at distance 1; 0: unknown).</summary>
+public readonly record struct MotionTargets(SampledTexture NearDepth, Vector2 NearPlanes, Vector2 JitterNdc, float FocalPixels = 0);
+
 /// <summary>
 /// The frame's post chain as the shared world draw sees it. <see cref="PostProcess"/> is the Vulkan implementation; a backend
 /// whose post chain is a smaller seam slice (Metal's <c>PostComposite</c> + <c>PostTaa</c>) implements the same surface, so
@@ -58,6 +62,10 @@ interface IWorldPostChain
     float HeatHazeAmount { get; set; }
     double HeatHazeHours { get; set; }
     float HeatHazeFarClip { get; set; }
+
+    /// <summary>Moving geometry's own motion over the camera's (the grass and characters), called after the velocity pass with
+    /// the motion target bound; null when nothing is hooked.</summary>
+    Action<MotionTargets>? ObjectMotion { get; set; }
 
     /// <summary>Whether the chain draws big weather particles into low-resolution targets (Vulkan's Meitou path).</summary>
     bool LowResParticles { get; }

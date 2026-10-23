@@ -345,7 +345,7 @@ out of the P0 content-testing gate.
   shadows to fit its 16-sampler stage.
 - Low-resolution particle targets are shared; the Metal near-plane close pass is still skipped.
 - No fog-rate (fog shading-rate) target.
-- No object motion / reactive-mask path for temporal upscalers.
+- Object motion (grass/characters) is shared; the MetalFX reactive mask and particle coverage remain absent.
 - No HDR/EDR output.
 - The Meitou cloud renderer is seam-neutral; compare its parity views with Vulkan.
 - Metal GI remains experimental and opt-in; do not make it part of content testability.
@@ -355,7 +355,7 @@ out of the P0 content-testing gate.
 1. Water reflection only if a content pass genuinely needs mirrored scenery.
 2. Meitou water and cloud/fog parity once the content gate is closed.
 3. Fog rate as performance/visual parity work.
-4. Object motion/reactive mask with the temporal upscaler work.
+4. MetalFX reactive mask/particle coverage with the temporal upscaler work.
 5. HDR/EDR at presentation time.
 
 ### Acceptance

@@ -23,7 +23,7 @@ internal sealed unsafe partial class CharacterRenderer
     /// The near slice's frame as the post chain's motion pass needs it (a no-op without a temporal upscaler): hooks the characters' motion into
     /// <paramref name="post"/>'s one object-motion callback beside the grass's (once), and gives <see cref="DrawMotion"/> this frame's camera.
     /// </summary>
-    public void AttachMotion(PostProcess? post, FoliageRenderer? foliage, Matrix4x4 viewProjection, Matrix4x4 unjittered, Vector3 eye, Vector4[] frustum)
+    public void AttachMotion(IWorldPostChain? post, FoliageRenderer? foliage, Matrix4x4 viewProjection, Matrix4x4 unjittered, Vector3 eye, Vector4[] frustum)
     {
         if (post is not { Temporal: true }) return;
         if (!motionHooked)
@@ -46,7 +46,7 @@ internal sealed unsafe partial class CharacterRenderer
     /// The characters' own motion over the camera's, for the upscalers: the near slice's characters drawn with this and last frame's palettes and
     /// transforms into the motion target (red and green), where they are what the near depth shows. Called inside the post chain's object-motion pass.
     /// </summary>
-    void DrawMotion(PostProcess.MotionTargets targets)
+    void DrawMotion(MotionTargets targets)
     {
         if (!motionCamera) return;
         motionCamera = false;

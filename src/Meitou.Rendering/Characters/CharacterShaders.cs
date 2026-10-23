@@ -344,7 +344,7 @@ static class CharacterShaders
     public static string DepthVertex() => Vertex();
 
     /// <summary>
-    /// The motion pass (<c>PostProcess.ObjectMotion</c>): the character's own motion, as the grass writes its sway (UV units, this frame minus last, jitter removed), where
+    /// The motion pass (<c>IWorldPostChain.ObjectMotion</c>): the character's own motion, as the grass writes its sway (UV units, this frame minus last, jitter removed), where
     /// the character is what the near depth shows (<c>pc.depthIndex</c> carries the depth texture's bindless index in this pass).
     /// </summary>
     public static string MotionFragment() => "#version 450\n" + NativeShaders.Prelude(PushMembers) + Structs + Lookup + """

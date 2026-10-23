@@ -35,6 +35,9 @@ sealed class PostTaa : IDisposable
     /// An upscaler outside the TAA (the Metal host's MetalFX): when set, the velocity pass still runs and the external
     /// scaler receives the scene, depth and motion in <see cref="UpscaleInputs"/>; TAA runs when it is null or fails.
     /// </summary>
+    /// <summary>Moving geometry's own motion over the camera's, called after the velocity pass.</summary>
+    public Action<MotionTargets>? ObjectMotion { get; set; }
+
     public IUpscaler? External
     {
         get => external;
@@ -134,6 +137,17 @@ sealed class PostTaa : IDisposable
         v.Set(sun, 0f, 0f, 0f, 0f);       // the sky's sun motion is off in this slice
         v.Set(sunMotion, 0f, 0f, 0f, 0f);
         Fullscreen(cmd, velocity, motion!, width, height);
+        if (ObjectMotion is { } objectMotion)
+        {
+            var targets = PassTargets.Of(motion, null);
+            cmd.BeginRendering(targets.Rendering);
+            ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, false, mask: ColorMask.R | ColorMask.G));
+            objectMotion(new MotionTargets(new SampledTexture(pointSampler.Sampler, depth.View()), new Vector2(near, far),
+                new Vector2(2 * jitterPixels.X / width, 2 * jitterPixels.Y / height), height / (2 * MathF.Tan(fov * 0.5f))));
+            ctx.EndHostPass(cmd);
+            cmd.EndRendering();
+            cmd.Order();
+        }
 
         if (External is { } upscaler && externalOutput is { } externalTarget)
         {

@@ -1977,7 +1977,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         return pipeline;
     }
 
-    /// <summary>The scene's near depth (<see cref="PostProcess.MotionTargets.NearDepth"/>) in the bindless 2D float array the shaders index: registered
+    /// <summary>The scene's near depth (<see cref="MotionTargets.NearDepth"/>) in the bindless 2D float array the shaders index: registered
     /// again (the old index freed after the frames in flight) only when the texture or its sampler changed.</summary>
     uint NearDepthIndex(in SampledTexture nearDepth)
     {
@@ -2458,11 +2458,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>
-    /// The swaying grass's own motion over the camera motion, for the upscalers (<see cref="PostProcess.ObjectMotion"/> binds the motion target,
+    /// The swaying grass's own motion over the camera motion, for the upscalers (<see cref="IWorldPostChain.ObjectMotion"/> binds the motion target,
     /// red and green only, without depth test or blending): the near slice's blades of layers with wind, now and with last frame's sway phase
     /// and camera, written where they are what the depth buffer shows. Blades without sway move with the camera and need nothing.
     /// </summary>
-    public void DrawGrassMotion(PostProcess.MotionTargets targets)
+    public void DrawGrassMotion(MotionTargets targets)
     {
         if (!motionCamera) return;
         motionCamera = false;
@@ -2522,7 +2522,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             }
     }
 
-    void RecordMotion(PostProcess.MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
+    void RecordMotion(MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
     {
         var gp = grassMotionProgram;
         var p = gp.P;

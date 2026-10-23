@@ -598,9 +598,9 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    pass, `uBlend` 0.1 and a reset on the first frame/cut. The Metal host now renders the scene jittered and composites
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
-   settings choose it, balanced by default. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask/object motion, the
-   sun-motion term, moving geometry's motion (grass/characters) and the remaining `PostProcess` passes (FogRate,
-   GI resolve).
+   settings choose it, balanced by default. Object motion (grass and characters) is shared through the post-chain
+   seam. Still to do: the TAA motion-reprojection ghosting, MetalFX's reactive mask, the sun-motion term and the
+   remaining `PostProcess` passes (FogRate, GI resolve).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
    (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
    and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
@@ -818,9 +818,9 @@ default.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
   `UpscaleShaders.Taa` (into a display-size RGBA16F history pair); the scene projection is jittered with
   `Jitter.Apply` and `PostTaa.Offset` (the phase count follows render/display scale), the depth target is `DepthTarget
-  | Sampled`. TAA resets on the first frame, a
-  resize and a camera cut (>5000 units). The velocity pass's far-slice inputs are disabled; the sun-motion term is
-  zero (the sky's sun compensation comes with the full chain).
+  | Sampled`. TAA resets on the first frame, a resize and a camera cut (>5000 units). The velocity pass's far-slice
+  inputs are disabled; the sun-motion term is zero (the sky's sun compensation comes with the full chain). The
+  grass and characters write their own motion through `IWorldPostChain.ObjectMotion`.
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`,
   `RenderTargetsBottomUp`.

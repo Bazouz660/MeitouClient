@@ -87,6 +87,12 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     }
     public bool LowResParticles => Options.LowResParticles;
 
+    public Action<MotionTargets>? ObjectMotion
+    {
+        get => taa.ObjectMotion;
+        set => taa.ObjectMotion = value;
+    }
+
     public void Begin(int width, int height)
     {
         displayWidth = Math.Max(width, 1);

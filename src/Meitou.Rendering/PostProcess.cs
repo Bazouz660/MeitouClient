@@ -544,9 +544,6 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     /// <summary>The vendor upscaler for <see cref="UpscalerKind.Fsr"/> / <see cref="UpscalerKind.Dlss"/>; without one (or on failure) TAA runs.</summary>
     public IUpscaler? External { get; set; }
 
-    /// <summary>What <see cref="ObjectMotion"/> gets: the near slice's depth texture (with the sampler the chain reads it with) and planes, the jitter in NDC, and the render height over twice the tangent of half the field of view (pixels per unit at distance 1; 0: unknown).</summary>
-    public readonly record struct MotionTargets(SampledTexture NearDepth, Vector2 NearPlanes, Vector2 JitterNdc, float FocalPixels = 0);
-
     /// <summary>
     /// Draws motion of moving geometry over the camera motion (the swaying grass), called after the velocity pass with the motion target bound,
     /// only red and green written (B and A, depth and reactivity, stay), no depth test, culling or blending.
