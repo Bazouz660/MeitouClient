@@ -65,7 +65,6 @@ public static class StatMultiplier
         StatsEnumerated.Science or StatsEnumerated.Robotics or StatsEnumerated.Cooking => new Row(Limb.Head, 0.6f, 0.4f, 0.25f, 0.25f, Bonus.None),
         StatsEnumerated.Medic or StatsEnumerated.Turrets or StatsEnumerated.HiveMedic or StatsEnumerated.Vet => new Row(Limb.Head, 0.6f, 0.4f, 0.25f, 1, Bonus.None),
         StatsEnumerated.Thieving or StatsEnumerated.Lockpicking => new Row(Limb.Arm, 0.75f, 0.4f, 0.25f, 1, Bonus.None, BothArmsPenalty: true),
-        StatsEnumerated.Stealth => new Row(Limb.Arm, 0.9f, 0.9f, 0.8f, 1, Bonus.None),
         StatsEnumerated.Athletics => new Row(Limb.One, 0.7f, 1, 0.5f, 1, Bonus.None),
         StatsEnumerated.Dexterity => new Row(Limb.ArmTorso, 0.7f, 0, 0.4f, 1, Bonus.Dexterity),
         StatsEnumerated.MeleeDefence => new Row(Limb.ArmHead, 0.75f, 0, 0.8f, 1, Bonus.None),

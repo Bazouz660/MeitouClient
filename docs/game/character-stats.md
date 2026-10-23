@@ -17,7 +17,7 @@ resumes above101 until f>20 (stat >552 or < -350). A NaN stat stays NaN through
 continuous/event gains, race factors, skill difference and moving/carrying gains. Global XP3
 is stored as0.75; continuous base0.02*dt, event base0.075. Caller clamps are not assumed.
 
-**Observed** effective-stat multiplier (`FUN_1406457e0`): H=lerp(h0,1,clamp(hunger-1,0,1)),
+Effective-stat multiplier (`FUN_1406457e0`): H=lerp(h0,1,clamp(hunger-1,0,1)),
 L=lerp(l0,1,limb), m=H*L; optional light factor lerp(p0,1,clamp(2.5*P,0,1)); output
 clamp(lerp(f0,1,m),0,1), then requested limb-item/gear factors. **Verified** (decompile): P is the
 character's light level (Character +0xd8, [perception](perception.md#sight); the multiplier also sets
@@ -25,9 +25,24 @@ character's light level (Character +0xd8, [perception](perception.md#sight); the
 light of 0.4 or more costs nothing. Limb aggregates: A best arm, Hd head, T lowest torso health
 fraction. Perception/friendly-fire add the dust storm factor ([gear factors](#gear-factors)). Table
 preserves each stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
-The general stat getter `FUN_140884ac0` asks for every term; dexterity and strength readers
-(`FUN_140883a80`, `FUN_140883ba0`, ...) for all but light and dust. Meitou: `MedicalState.Light` from
-`SightMap.Light` each tick.
+**Verified** in game (#46: `CharStats::getStat` with and without the multiplier, new games, hunger 3 to 1.0,
+head 0.75, arms 0.5, torso 0.5): H, L, m=H*L, the output lerp, the aggregates and every row's h0/l0/f0 and
+`limb` column except stealth; the stored value never changes. Not tested: p0, the x0.01 and 0.66 arm terms,
+gear factors, hunger below 1. The general stat getter `FUN_140884ac0` asks for every term (but sends stealth
+[elsewhere](#effective-stealth)); dexterity and strength readers (`FUN_140883a80`, `FUN_140883ba0`, ...) for all
+but light and dust. Meitou: `MedicalState.Light` from `SightMap.Light` each tick.
+
+### Effective stealth
+
+**Verified** (decompile; in game "no hunger or arm term", #46): the getter sends stat 16 not to the table but
+to `FUN_140884850`: s = clamp(stored x 0.75 if carrying (Character +0x348) x 2 if the character's vfunc 0x368
+is non-zero (**Unknown**) x encumbrance (CharStats +0x190) x the body term (medical +0xb4) x the gear's stealth
+(CharStats +0x3c) x the fitted limbs' factor `FUN_140644b90(16)` x 0.01, 0, 1); the getter returns s x 100 and
+the sneak speed `FUN_140884920` reads s. Body term (`FUN_140644da0`): clamp(lowest health fraction over TORSO and
+LEG parts, 1 with none, + toughness x scale x 0.01, 0, 1). Its only caller is the sense update `FUN_1408586d0`,
+past an early return on a Character +0xd4 byte, so otherwise it keeps its last value (1 at start; **Observed**,
+fits #46's torso at 0.5 leaving stealth at 1). The table's stealth case (A; 0.9, 0.9, 0.8) exists, but no caller
+found reaches it. Meitou: `Orders.Stealth`, without the gear term and the x2.
 
 ### Gear factors
 
@@ -213,9 +228,9 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 
 ### Effective stats: injuries and hunger
 
-Decoded cases (hex constants converted; **Observed**, individual cells are only as reliable as the hand decoding
-of a Ghidra switch, which has fall-through cases. Every row was re-decoded from the constants; the science/robotics/cooking and
-friendly-fire rows were corrected because their cases fall through into the next case, all other rows agree):
+Decoded cases (hex constants converted). `limb`, h0, l0 and f0 are **Verified** in game for every row (#46,
+[above](#stats-and-xp)); p0, the arm-disabled terms and `extra` stay **Observed** (hand-decoded from a switch with
+fall-through cases):
 
 | Stats | `limb` | h0 | l0 | f0 | p0 | extra |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -225,7 +240,7 @@ friendly-fire rows were corrected because their cases fall through into the next
 | science, robotics, cooking (4,6,13) | Hd (falls through into the medic row) | 0.6 | 0.4 | 0.25 | 0.25 | |
 | medic, turrets, hive medic, vet (9,11,14,15) | Hd | 0.6 | 0.4 | 0.25 | none | |
 | thievery, lockpicking (10,37) | A, x0.01 if both arms disabled | 0.75 | 0.4 | 0.25 | none | |
-| stealth (16) | A | 0.9 | 0.9 | 0.8 | none | |
+| stealth (16) | A (unreached: [effective stealth](#effective-stealth)) | 0.9 | 0.9 | 0.8 | none | |
 | athletics (17) | 1 | 0.7 | 1 | 0.5 | none | |
 | dexterity (18) | A x T | 0.7 | 0 | 0.4 | none | x CharStats+0x44 if requested |
 | defence (19) | A x Hd | 0.75 | 0 | 0.8 | none | |
@@ -514,8 +529,10 @@ read and at least one consumer found through the data cross-references; base val
 ## Unknowns
 
 - What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for.
-- The per-stat floors of `FUN_1406457e0` were re-decoded from the decompile by a second reader (two rows were
-  wrong and are fixed) but still not checked against assembly; the consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
+- The consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
+- In one #46 run (20261021-194120) perception and friendly fire read 0.7414 healthy and 0.6896 with the head at
+  0.75; both fit one extra factor of about 0.614 on m: light (p0 0.25) or dust (`FUN_1406439f0`). Crossbows
+  (light, no dust) would tell them apart.
 - The idle hunger factor CharStats+0x178; whether `food quality mult` scales raw food (function 15).
 - Which callers feed `FUN_1408c7250` / `FUN_1408c7310` for which activity (`DAT_142133794` is the scaled frame time, [game-loop.md](game-loop.md#the-three-time-values)), and the 0.1 floor / 6x cap of the skill-difference factor
   (not in `FUN_1408c5fa0`; maybe clamped by its callers). Meaning of XP event 6.

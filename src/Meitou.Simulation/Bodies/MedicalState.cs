@@ -200,6 +200,18 @@ public sealed partial class MedicalState
     public float StatMultiplier(StatsEnumerated stat, StatUse use = StatUse.Hunger | StatUse.Limbs | StatUse.Light | StatUse.DamageState | StatUse.Stun, StatFactors? factors = null, bool exemptFromWear = false) =>
         Bodies.StatMultiplier.Compute(this, stat, use, factors ?? (Bodies.StatFactors.None with { Stun = DustStatFactor }), Aggregates(exemptFromWear), Light);
 
+    /// <summary>
+    /// The body term of stealth (<c>FUN_140644da0</c>, medical <c>+0xb4</c>): the lowest health fraction over the torso and leg parts (1 with none) plus
+    /// <paramref name="toughness"/> x 0.01, clamped to [0, 1]. Stealth has no hunger or arm term (docs/game/character-stats.md "Effective stealth").
+    /// </summary>
+    public float StealthBodyFactor(float toughness)
+    {
+        float f = 1;
+        foreach (var p in parts)
+            if (p.Template.Type is BodyPartType.Torso or BodyPartType.Leg) f = MathF.Min(f, p.Fraction);
+        return Math.Clamp(f + toughness * 0.01f, 0, 1);
+    }
+
     /// <summary>The product of the fitted arm prosthetics' multipliers for a stat (1 with none).</summary>
     public float ArmItemFactor(StatsEnumerated stat) => ItemFactor(stat, legs: false);
 
