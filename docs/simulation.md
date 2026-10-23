@@ -30,7 +30,9 @@ Tick order: Inputs → Schedule → Think → Move → Act → ordered Apply →
 Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier.
 `CharacterHot.Previous` is read-only; a partition writes only its own `Next` slots. Spawn/remove
 only in serial phases after consumers finish; generation IDs prevent stale slot references.
-Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish.
+Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish. Its checks round a target (who swings at
+it, who yields, attack slots, joining, fighters at it) walk `AttackerIndex`, the per-target attacker lists rebuilt in Pursuit's and Combat's
+Schedule, filtered to the grid cells a search would cover, in the grid's order. Ragdoll physics steps on `Threads` workers (Bepu deterministic mode).
 
 Effects sort by `(target,source,system,sequence)`; spatial-neighbour iteration order is fixed.
 Commands apply by tick and queue order. In-tick orders use serial `World.Defer`; deferred orders
