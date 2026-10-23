@@ -30,6 +30,8 @@ sealed class GameOptions
     public (float X, float Z)? DuelAt;
     /// <summary>The battle (<c>--battle n unit m unit</c>, docs/simulation.md "Battle"): two groups of NPCs, each a count of one CHARACTER or ANIMAL_CHARACTER record (name or id).</summary>
     public (int Count, string Unit)[]? Battle;
+    /// <summary>The optional fifth <c>--battle</c> value: each block in this many rows (the back row takes the rest), or null for rows of 25.</summary>
+    public int? BattleRows;
     /// <summary><c>--battle-map sandbox</c>: the battle is fought on the sandbox's flat floor instead of the map.</summary>
     public bool BattleFlat;
     /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the plateau, <see cref="GameHost.BattleSpot"/>).</summary>
@@ -67,7 +69,8 @@ sealed class GameOptions
           --sandbox-races            the sandbox adds one character of every person race (the first CHARACTER record listing only that race) in rings round the pair, whatever n is; the log lists them
           --duel [x,z]               trailer scene: two helmeted Samurai duel at sunset in the desert dunes (or at x,z), on rails: every lap is the same fight, the clock, weather and clouds start again with it,
                                      and it restarts when a cinema flight is played or recorded (Backspace restarts it); the time of day is held (22:00, or --time) and the weather clear (or --weather)
-          --battle <n> <unit> <m> <unit>  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (at least 1 each), in two blocks facing each other;
+          --battle <n> <unit> <m> <unit> [rows]  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (at least 1 each), in two blocks facing each other
+                                     (rows of 25, or each block in that many rows, the back row taking the rest);
                                      no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
           --battle-map <map>         where the battle is fought: plateau (default), mesa (the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
@@ -133,6 +136,11 @@ sealed class GameOptions
                     break;
                 case "--battle":
                     g.Battle = [.. Enumerable.Range(0, 2).Select(_ => (Math.Max(int.Parse(Next(), CultureInfo.InvariantCulture), 1), Next()))];
+                    if (i + 1 < args.Length && int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out int rows))
+                    {
+                        g.BattleRows = Math.Max(rows, 1);
+                        i++;
+                    }
                     break;
                 case "--battle-map":
                     switch (Next())

@@ -1298,8 +1298,8 @@ and resetting camera evaluation is required for repeatable recording.
 
 ## Battle
 
-`--battle n unit m unit [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs, a squad each (each one CHARACTER or
-ANIMAL_CHARACTER record, its own faction's looks, the first fighter leading) 40 units apart in ranks of 25, 6 units apart, on a plateau (default, -74028, 13428), the duel's mesa, the sandbox floor or a map spot, with no towns
+`--battle n unit m unit [rows] [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs, a squad each (each one CHARACTER or
+ANIMAL_CHARACTER record, its own faction's looks, the first fighter leading) 40 units apart in ranks of 25 (or `rows` ranks of n / rows, the back rank taking the rest), 6 units apart, on a plateau (default, -74028, 13428), the duel's mesa, the sandbox floor or a map spot, with no towns
 and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
 same-faction matchups fight too; the battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
 

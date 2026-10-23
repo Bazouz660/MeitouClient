@@ -63,11 +63,14 @@ sealed partial class GameHost
             var fighters = battleFighters[side];
             fighters.Clear();
             float sign = side == 0 ? -1 : 1;
+            // --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
+            int rows = g.BattleRows is { } r ? Math.Min(r, count) : 0, width = rows > 0 ? count / rows : BattleRankWidth;
             var offsets = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
-                int rank = i / BattleRankWidth, inRank = Math.Min(BattleRankWidth, count - rank * BattleRankWidth);
-                offsets[i] = new Vector2((i % BattleRankWidth - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
+                int rank = rows > 0 ? Math.Min(i / width, rows - 1) : i / width;
+                int first = rank * width, inRank = rows > 0 && rank == rows - 1 ? count - first : Math.Min(width, count - first);
+                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
             }
             // Facing +Z is yaw 0; a look of its own per fighter.
             fighters.AddRange(population.SpawnSandboxSquad(world, record, new Vector2(battleSpot.X, battleSpot.Z), offsets, side == 0 ? 0 : MathF.PI, side * 1000 + 1, faction));
