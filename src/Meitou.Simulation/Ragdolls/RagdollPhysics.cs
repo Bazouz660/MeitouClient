@@ -124,7 +124,8 @@ internal sealed class RagdollPhysics : IDisposable
         Simulation.Deterministic = true;
     }
 
-    public void Step(float dt) => Simulation.Timestep(dt);
+    /// <summary>Steps the bodies, on <paramref name="threads"/> when given (<see cref="BepuPhysics.Simulation.Deterministic"/> is on, so the result does not depend on them).</summary>
+    public void Step(float dt, IThreadDispatcher? threads = null) => Simulation.Timestep(dt, threads);
 
     public ref BodyTag Tag(BodyHandle body) => ref tags[body];
 

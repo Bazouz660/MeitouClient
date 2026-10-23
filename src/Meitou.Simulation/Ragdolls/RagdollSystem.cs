@@ -216,7 +216,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         // 2. The step.
         Moving = 0;
         foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None }) Moving++;
-        if (Moving > 0) physics.Step(dt);
+        // The physics on the world's thread count (its own workers: the world's pool is idle in this serial phase).
+        if (Moving > 0 && threads is null && world.Settings.Threads > 1) threads = new BepuUtilities.ThreadDispatcher(world.Settings.Threads);
+        if (Moving > 0) physics.Step(dt, threads);
         world.Profile.Part("rag step");
 
         // 3. Poses back, the whole body's position, freezing, publishing.
@@ -625,5 +627,11 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         }
     }
 
-    public void Dispose() => physics.Dispose();
+    BepuUtilities.ThreadDispatcher? threads;
+
+    public void Dispose()
+    {
+        physics.Dispose();
+        threads?.Dispose();
+    }
 }
