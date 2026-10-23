@@ -4,12 +4,13 @@ namespace Meitou.Rendering;
 /// A height map recovered from a tiling normal map (docs/render-terrain.md, "Ground relief"): the normal's slopes integrated in the frequency domain
 /// (Frankot–Chellappa), exact for a periodic texture up to a constant. The slopes follow the terrain shader's tangent frame (tangent along world -X,
 /// binormal along +Z, texture u along +X and v along +Z): dh/du = x / z, dh/dv = -y / z. The lowest frequencies (under two cycles a tile) are dropped,
-/// which keeps compression noise from integrating into large bumps. The result is scaled to 0..255, 255 the top.
+/// which keeps compression noise from integrating into large bumps. The result is scaled to 0..255, 255 the top; <c>relief</c> is the
+/// height that range stands for, as a fraction of the tile's width (the normal map's own slopes: the texture's depth, not chosen per layer).
 /// </summary>
 public static class NormalHeight
 {
     /// <summary>An R8 height (rows top first) from an RGBA8 normal map of <paramref name="size"/>² texels (a power of two).</summary>
-    public static byte[] FromNormals(byte[] rgba, int size)
+    public static byte[] FromNormals(byte[] rgba, int size, out float relief)
     {
         int count = size * size;
         float[] pRe = new float[count], pIm = new float[count], qRe = new float[count], qIm = new float[count];
@@ -40,6 +41,7 @@ public static class NormalHeight
         var sorted = (float[])pRe.Clone();
         Array.Sort(sorted);
         float lo = sorted[count / 100], hi = sorted[count - 1 - count / 100], scale = hi > lo ? 255 / (hi - lo) : 0;
+        relief = (hi - lo) / size;   // the slopes are per texel: heights in texels, a tile is size texels wide
         var height = new byte[count];
         for (int i = 0; i < count; i++) height[i] = (byte)Math.Clamp((pRe[i] - lo) * scale, 0, 255);
         return height;

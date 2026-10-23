@@ -50,7 +50,7 @@ public sealed unsafe partial class TerrainRenderer
             CoarseRect = CoarseRect, CoarseCells = new Vector2(coarseSize - 1f, coarseSize - 1f), FineRect = FineRect,
             FineCells = new Vector2(fine.Columns - 1f, fine.Rows - 1f), FineBand = fineBand, HasFine = 1,
             HeightCoarse = Index(coarseTexture, BindlessKind.Texture2D, standIn2D), HeightFine = Index(fineTexture, BindlessKind.Texture2D, standIn2D),
-            Diffuse = standInArray, Normal = standInArray, Height = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
+            Diffuse = standInArray, Normal = standInArray, Height = standInArray, Relief = standIn2D, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
             HeightNormals = 0, Feature = 1, FeatureBiome = row, SunColour = Vector3.One, AmbientSky = Vector3.One, AmbientGround = Vector3.One,
             WaterHeight = -1e6f, HalfWorld = (float)WorldLayout.HalfWorldSize, FarStart = 1e9f, FarEnd = 2e9f,

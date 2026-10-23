@@ -253,13 +253,14 @@ static class AtmosphereShaders
         // x, y the shading normal's octahedral position (16 bits each), z sqrt(albedo) red | green << 8, w blue | 1 << 8 | interior << 9.
         uvec4 giAlbedoOut = uvec4(0u);
         bool giInterior = false;
+        float atmoSelfShadow = 1.0;   // a surface's own shadow on the sun (the terrain's relief, GroundRelief), set before kenshiLight; 1 none
         // A dielectric surface lit as Kenshi's main lighting pass lights it: HDR colour. v: towards the eye.
         // diffuseNl: the sun's diffuse term in place of the clamped N.L (the Meitou skin, CharacterShaders.skinDiffuse); the overload below passes N.L.
         vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world, vec3 diffuseNl)
         {
             vec4 am = atmoAmbientMapAt(world);
             vec3 l = uAtmoLight.xyz;
-            vec3 sun = uAtmoSunLight * am.a * 2.0 * atmoCloudShadow(world) * kenshiShadow(world, n);   // the sun shadow term (deferred.hlsl: lightColor * shadow)
+            vec3 sun = uAtmoSunLight * am.a * 2.0 * atmoCloudShadow(world) * kenshiShadow(world, n) * atmoSelfShadow;   // the sun shadow term (deferred.hlsl: lightColor * shadow)
             gloss = clamp(gloss, 0.0, 1.0);
             float roughness = 1.0 - gloss * 0.99, a = roughness * roughness, a2 = a * a;
             float nl = clamp(dot(n, l), 0.0, 1.0);

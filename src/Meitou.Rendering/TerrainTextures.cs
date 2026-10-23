@@ -45,7 +45,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     readonly int maxInFlight = Math.Clamp(Environment.ProcessorCount / 2, 2, 6);
     readonly MapWindows? mapWindows;
     readonly List<int> needed = [];
-    TerrainTexture? diffuseArray, normalArray, heightArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture;
+    TerrainTexture? diffuseArray, normalArray, heightArray, reliefTexture, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture;
     int inFlight, nextFree, printed, stamp;
     long frame;
     bool cellsDirty = true, capacityWarned;
@@ -67,7 +67,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         public bool Resident;
     }
 
-    sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal, byte[][]? Height);
+    sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal, byte[][]? Height, float Relief = 0);
 
     /// <summary>Side of the height array's layers (<see cref="GroundRelief"/>): the layer size, at most 512.</summary>
     int HeightSize => Math.Min(layerSize, 512);
@@ -257,6 +257,14 @@ public sealed unsafe class TerrainTextures : IDisposable
         if (GroundRelief.Enabled)
             heightArray = Make(GlConventions.VkFormat(InternalFormat.R8), HeightSize, HeightSize, (int)Math.Log2(HeightSize) + 1, Math.Max(Capacity, 1),
                 TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, "terrain textures height", kind: TextureKind.Texture2DArray);
+        // Each slot's relief depth factor (GroundRelief.LayerDepth; 0: flat), read by the slot's index.
+        if (GroundRelief.Enabled)
+        {
+            reliefTexture = Make(GlConventions.VkFormat(InternalFormat.R32f), Math.Max(Capacity, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+                TextureWrapMode.ClampToEdge, "terrain relief depths");
+            using var batch = Gpu.Uploads.Begin();
+            batch.Write(reliefTexture.Texture, 0, 0, Rect(0, 0, Math.Max(Capacity, 1), 1), new byte[Math.Max(Capacity, 1) * 4]);
+        }
 
         // One parameter row per biome; its layer indices are written when the biome becomes resident.
         paramTexture = Make(GlConventions.VkFormat(InternalFormat.Rgba32f), TerrainShaders.ParamTexels, biomes.Count, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
@@ -402,9 +410,10 @@ public sealed unsafe class TerrainTextures : IDisposable
                 var local = new List<string>();
                 var d = LoadLayer(assets, pair.Diffuse, layerSize, true, [128, 128, 128, 60], local);
                 var n = LoadLayer(assets, pair.Normal, layerSize, false, [128, 128, 255, 255], local);
-                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, HeightSize) : null;
+                float relief = 0;
+                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, HeightSize, out relief) : null;
                 foreach (var m in local) problems.Enqueue(m);
-                result = new Decoded(pair, d, n, h);
+                result = new Decoded(pair, d, n, h, relief);
             }
             catch (Exception e)
             {
@@ -461,6 +470,7 @@ public sealed unsafe class TerrainTextures : IDisposable
                     int s = Math.Max(HeightSize >> level, 1);
                     batch.Write(heightArray.Texture, level, slot, Rect(0, 0, s, s), height[level]);
                 }
+                if (reliefTexture is not null) batch.Write(reliefTexture.Texture, 0, 0, Rect(slot, 0, 1, 1), BitConverter.GetBytes(d.Height is null ? 0f : d.Relief));
             }, "height upload");
         }
         uploads.Add(() =>
@@ -611,8 +621,9 @@ public sealed unsafe class TerrainTextures : IDisposable
     /// The height levels of a layer for <see cref="GroundRelief"/>: its normal map decoded at <paramref name="size"/>² and integrated (<see cref="NormalHeight"/>),
     /// R8 with mips; null for a normal map that is missing or cannot be read (the layer stays flat).
     /// </summary>
-    static byte[][]? LoadHeight(AssetLocator assets, string? name, int size)
+    static byte[][]? LoadHeight(AssetLocator assets, string? name, int size, out float relief)
     {
+        relief = 0;
         if (name is null) return null;
         var path = assets.Find(name) ?? assets.Find(Path.GetFileName(name.Replace('\\', '/')));
         if (path is null) return null;
@@ -630,7 +641,8 @@ public sealed unsafe class TerrainTextures : IDisposable
             else image = TextureLoader.LoadImage(bytes);
         }
         catch (Exception e) when (e is DdsFormatException or InvalidOperationException or IOException or ArgumentException) { return null; }
-        var height = NormalHeight.FromNormals(Resize(image, size), size);
+        var height = NormalHeight.FromNormals(Resize(image, size), size, out float range);
+        relief = GroundRelief.LayerDepth(range);
         var levels = new byte[(int)Math.Log2(size) + 1][];
         levels[0] = height;
         for (int l = 1; l < levels.Length; l++)
@@ -881,13 +893,13 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>The terrain material's textures (null where one does not exist yet), for the native draws that read them by bindless index.</summary>
     internal readonly record struct TextureSet(TerrainTexture? Diffuse, TerrainTexture? Normal, TerrainTexture? Params, TerrainTexture? Cells, TerrainTexture? BlendMap,
-        TerrainTexture? Overlay, TerrainTexture? Colour, TerrainTexture? Ground, TerrainTexture? WorldColour, TerrainTexture? Height);
+        TerrainTexture? Overlay, TerrainTexture? Colour, TerrainTexture? Ground, TerrainTexture? WorldColour, TerrainTexture? Height, TerrainTexture? Relief);
 
-    internal TextureSet Textures => new(diffuseArray, normalArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture, heightArray);
+    internal TextureSet Textures => new(diffuseArray, normalArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture, heightArray, reliefTexture);
 
     public void Dispose()
     {
-        foreach (var t in new[] { diffuseArray, normalArray, heightArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture })
+        foreach (var t in new[] { diffuseArray, normalArray, heightArray, reliefTexture, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture })
             t?.Dispose();
     }
 }
