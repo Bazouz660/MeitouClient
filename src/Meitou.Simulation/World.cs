@@ -141,6 +141,8 @@ public sealed partial class World : IDisposable
     public Construction.BuildingRegistry Buildings { get; } = new();
     /// <summary>Loose items lying in the world, so far the severed limbs combat drops (docs/simulation.md "Ground items").</summary>
     public Items.GroundItems GroundItems { get; } = new();
+    /// <summary>The loose-item slots of the towns' interiors (docs/simulation.md "Ground items"); hashed once a town with any registered.</summary>
+    public Items.ItemSlots ItemSlots { get; } = new();
     /// <summary>
     /// Every zone the population has had active in this world (docs/formats/save.md "Zone files": the original writes a file for each zone it loaded): a save writes a zone file for
     /// each that its loaded save has none of. Only read by saves, so not hashed.
@@ -335,6 +337,7 @@ public sealed partial class World : IDisposable
         if (Fixtures.Count > 0) Fixtures.Hash(ref h);   // only once a town with buildings registered, so worlds without them hash as before
         if (Buildings.Count > 0 || Buildings.Towns.Count > 0) Buildings.Hash(ref h);   // only once the player has a site, so worlds without one hash as before
         if (GroundItems.Count > 0) GroundItems.Hash(ref h);   // only once something lies on the ground, so worlds without hash as before
+        if (ItemSlots.Count > 0) ItemSlots.Hash(ref h);   // only once a town with item slots registered
         if (Machines.Count > 0) Machines.Hash(ref h);   // only once the player has a working building
         if (Research.Changed) Research.Hash(ref h);   // only once research changed in play
         foreach (var s in systems) if (s is IStateHashed hashed) hashed.Hash(ref h);

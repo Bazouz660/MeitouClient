@@ -126,7 +126,7 @@ campaigns: [campaigns](#campaigns).
 | `BasePopulationManager` -> `TownPopulationManager`, `NestPopulationManager` | per town: two pools (residents, roaming) with a population budget and a `SpawnInfoList` | section 6.4 |
 | `SpawnInfoList` | the weighted list of squad templates a pool or biome group may spawn | section 6.1 |
 | `AreaSector`, `AreaBiomeGroup` | one cell of a 64 x 64 grid of 4608-unit cells, and the BIOME_GROUP data it belongs to | section 6.2 |
-| `BuildingItemGroup` | an ITEM_PLACEMENT_GROUP placed in a building: one item slot with a respawn timer | section 9 |
+| `BuildingItemGroup` | an ITEM_PLACEMENT_GROUP placed in a building: one item slot with a respawn timer | [loose items](#loose-items-in-buildings) |
 | `FactionWarMgr`, `CampaignData` (always `StartInvasionData`) / `CampaignInstance` (always `GatherAndMove`) | faction campaigns (FACTION_CAMPAIGN) | [campaigns](#campaigns); DIPLOMATIC_ASSAULTS not decoded |
 
 **Persistent platoons** (**Verified** by code): a zone's unload (`ZoneMapContent::deactivate`, `FUN_1409fe980`) touches no platoon; each platoon checks
@@ -254,6 +254,27 @@ Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witn
 | `AI packages`, `blood smell mult`, `patrol approaches towns`, `force speed`, `personality`, `dialog *`, `nest`, ... | copied onto the platoon / its characters (`FUN_14057f4c0`, `read_AI_packages_n4`; the package system is in [ai.md](ai.md#other-records-that-touch-the-ai)) |
 | `building`, `building dislike`, `building designation`, `layout interior/exterior`, `public day/night`, `public beds`, `bed usage cost`, `sell home`, `building ruined`, `initial door state` | how the squad's home building is chosen and set up (resident squads) |
 | `vendors`, `is trader`, `vendor money`, `vendors fill total amount`, `vendors refresh time`, `buy mult`, `buys stolen`, `buys illegal`, `special items`, `special map items`, `*artifacts base value`, `regenerates` | shop and contents (section 8 for loot; the trading economy is in [economy.md](economy.md#shops-and-transactions)) |
+
+### Loose items in buildings
+
+**Verified** by code (`BuildingItemGroup`: constructor `FUN_1405534f0`, timer `vfunc_28` `FUN_140549e60`, spawn `FUN_140547ed0`, pick `FUN_1409540d0`, grade
+`FUN_14063cea0` / `FUN_140952320`, save `vfunc_17` `FUN_1405567b0`) and a census of the merged install data and `interiors.level`:
+
+- Interior layouts (`interiors.level` INSTANCE_COLLECTIONs) place ITEM_PLACEMENT_GROUP records like furniture: 4987 objects in the layouts of 31 associated buildings
+  (15307 slots over 129 towns once the level buildings take their layouts), each with its own state (`floornum`, `respawn time`, `is inside building`, `isInsideBuilding`
+  handle). The 21 groups have a vendor list's lists: `items`, `weapons`, `clothing`, `weapon manufacturers` (v0 the weight, 5..500), plus `random yaw` (true in all),
+  `min respawn time` / `max respawn time` (24 / 48 in 19, 72 / 72 in 2) and `placeholder` "".
+- A placed group is one item slot at its object's position and rotation, with a handle to its item and a respawn deadline in game hours (0 at start). Each update with no
+  item: once the clock reaches the deadline (and a test on the building's town `+0x1d8`, **Unknown**) it makes one. With an item whose handle is still a WEAPON, ARMOUR,
+  ITEM, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW or LIMB_REPLACEMENT that is not taken: nothing. Otherwise the handle clears and the deadline becomes now + an int in
+  [min, max] hours.
+- Making one: a weighted pick over the group's lists (a roll in [0, total weight) against running sums); a WEAPON pick takes a manufacturer from `weapon manufacturers`
+  and the weapon is made by it. Every item gets the quality of a weighted grade (0..5 -> 5, 20, 40, 60, 80, 95); the grade weights' source is **Unknown** (the item-list
+  object is cached per group record and a value of the building, probably its faction). The item gets a value of the group (**Observed**: likely the owner faction) and is put
+  at the slot. BLUEPRINT and MAP_ITEM picks get extra bookkeeping (**Unknown**).
+- Saved per group (in its generated interior): `base data sid`, `floornum`, `isInsideBuilding` handle, `is inside building`, `respawn time`, then its item.
+
+Meitou: [ground items](../simulation.md#items-and-eating).
 
 ### Town residents
 

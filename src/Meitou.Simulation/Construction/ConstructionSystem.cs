@@ -793,7 +793,8 @@ public sealed class ConstructionSystem : ITickSystem
     /// The material finder (<b>Verified</b>, the 115 "Finding building mats" target finder <c>FUN_1405a2a60</c> -> <c>FUN_14059d000</c>; docs/game/buildings-production.md "Material delivery"):
     /// for each material still owed, in the site's order, the first that has a source wins: a loose item of it within <see cref="GroundRadius"/> of the builder, else the nearest player storage
     /// holding it within <see cref="SourceRangeSquared"/>, else the nearest player machine whose output holds it. Engine choices: the nearest loose item (the original takes the first its grid
-    /// search meets), no town filter, no per-material memory of the last source, the exact record (the original also lets any record of the same type stand in for a non-ITEM material).
+    /// search meets), no town filter, no per-material memory of the last source, the exact record (the original also lets any record of the same type stand in for a non-ITEM material);
+    /// a loose item another faction owns (a town interior's, <see cref="Items.ItemSlots"/>) is left, as the original leaves items lying in another faction's building.
     /// </summary>
     MaterialSource? Source(World world, int slot, CharacterCold cold, BuildSite site)
     {
@@ -806,7 +807,7 @@ public sealed class ConstructionSystem : ITickSystem
             float best = GroundRadius * GroundRadius;
             foreach (var g in world.GroundItems.All)
             {
-                if (g.Item.Record != want || g.Item.Quantity <= 0 || g.Item.Contents is not null) continue;
+                if (g.Item.Record != want || g.Item.Quantity <= 0 || g.Item.Contents is not null || g.OwnedBy >= 0 && g.OwnedBy != cold.Faction) continue;
                 float d = Vector3.DistanceSquared(g.Position, at);
                 if (d <= best && (loose is null || d < best)) (loose, best) = (g.Id, d);
             }

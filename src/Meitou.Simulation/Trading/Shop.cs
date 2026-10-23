@@ -120,7 +120,7 @@ public static class ShopFiller
         return vm - spread + rng.NextInt(2 * spread + 1) + cats;
     }
 
-    static VendorEntry Pick(List<VendorEntry> entries, ref RandomStream rng)
+    internal static VendorEntry Pick(IReadOnlyList<VendorEntry> entries, ref RandomStream rng)
     {
         long total = entries.Sum(e => (long)Math.Max(e.Weight, 0));
         if (total <= 0) return entries[0];
@@ -188,7 +188,7 @@ public static class ShopFiller
     }
 
     /// <summary>A grade 0..5 by the faction's <c>armors 0</c> .. <c>armors 5</c> chances (the field names as the doc gives them; the spelling in the data is <b>Unknown</b>).</summary>
-    static int Grade(GameRecord? faction, ref RandomStream rng)
+    internal static int Grade(GameRecord? faction, ref RandomStream rng)
     {
         Span<int> w = stackalloc int[6];
         int total = 0;
@@ -204,7 +204,7 @@ public static class ShopFiller
     }
 
     /// <summary>A manufacturer from the list (v0, 0 counting as 100), then a model from its <c>weapon models</c> (v1, 0 counting as 100) whose v0 is the level.</summary>
-    static (GameRecord Maker, string? Model, int Level)? Maker(VendorList list, GameDatabase db, ref RandomStream rng)
+    internal static (GameRecord Maker, string? Model, int Level)? Maker(VendorList list, GameDatabase db, ref RandomStream rng)
     {
         var makers = list.Manufacturers.Select(m => (Record: db.Find(m.Id), Weight: m.V0 == 0 ? 100 : m.V0)).Where(m => m.Record is not null && m.Weight > 0).ToList();
         if (makers.Count == 0) return null;

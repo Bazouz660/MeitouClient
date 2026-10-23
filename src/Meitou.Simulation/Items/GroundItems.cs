@@ -14,6 +14,8 @@ public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Qua
 {
     /// <summary>Dropped in play (turned about Y only), not put back from the save.</summary>
     public bool Dropped { get; init; }
+    /// <summary>The loose-item slot it fills (<see cref="ItemSlots"/>; null: none). Such items are not counted against <see cref="GroundItems.Limit"/>.</summary>
+    public string? Slot { get; init; }
     /// <summary>
     /// The faction of its saved <c>ownedby</c> owner (-1: none, or a <c>not real</c> faction; <see cref="Saving.GroundItemSave"/>): taking it is stealing for another faction
     /// (label red, pick-up "Steal", the item marked stolen).
@@ -50,7 +52,28 @@ public sealed class GroundItems
     public void Drop(ItemInstance item, Vector3 position, float yaw)
     {
         items.Add(new GroundItem(nextId++, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true });
-        for (int extra = items.Count(i => i.Item.Saved is null) - limit; extra > 0; extra--) items.RemoveAt(items.FindIndex(i => i.Item.Saved is null));
+        for (int extra = items.Count(Capped) - limit; extra > 0; extra--) items.RemoveAt(items.FindIndex(Capped));
+        Revision++;
+    }
+
+    static bool Capped(GroundItem i) => i.Item.Saved is null && i.Slot is null;
+
+    /// <summary>Lays a slot's item (<see cref="ItemSlots"/>) on the ground, turned <paramref name="yaw"/> about Y and laid flat as a dropped one (no limit); returns its id.</summary>
+    public int Place(ItemInstance item, Vector3 position, float yaw, string slot, int owner)
+    {
+        items.Add(new GroundItem(nextId, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true, Slot = slot, OwnedBy = owner });
+        Revision++;
+        return nextId++;
+    }
+
+    /// <summary>Binds a lying item to a slot (a loaded save's item found in its slot): it takes the slot and owner, and a yaw-only one is laid flat again.</summary>
+    public void Claim(int id, string slot, int owner)
+    {
+        int k = items.FindIndex(i => i.Id == id);
+        if (k < 0) return;
+        var g = items[k];
+        bool yawOnly = MathF.Abs(g.Rotation.X) < 1e-4f && MathF.Abs(g.Rotation.Z) < 1e-4f;
+        items[k] = g with { Slot = slot, OwnedBy = owner, Dropped = g.Dropped || yawOnly };
         Revision++;
     }
 
@@ -96,6 +119,7 @@ public sealed class GroundItems
             h.Add(i.Rotation.Y);
             h.Add(i.Rotation.Z);
             h.Add(i.Rotation.W);
+            if (i.Slot is not null) { h.Add(Rng.StableHash(i.Slot)); h.Add(i.OwnedBy); }   // only for a slot's, so other items hash as before
         }
     }
 }

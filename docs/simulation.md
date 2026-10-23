@@ -330,6 +330,14 @@ projected middle, pointer `pick_item`) gives `PickUpItemOrder`: the nearest able
 (`PlayerSystem.PickUpReach`), puts it in its inventory (`Inventory.Add`); what does not fit stays on the ground ("Not enough room in my
 inventory"). Another order or a stop ends the walk. A picked-up read item keeps its ITEM record's keys in its inventory record. Engine choices.
 
+Town interiors' loose items (`Items/ItemSlots`, the original's rules in [loose items](game/factions-squads-towns.md#loose-items-in-buildings)): each ITEM_PLACEMENT_GROUP of a town
+building's interior layout (`TownBuilding.ItemSlots`, id `<building>/item<n>`) is a slot registered with the town's fixtures. A due empty slot in an active zone gets one item
+(weighted pick, a weapon with a manufacturer and model, armour with the grade quality of the owner faction's armour chances: engine reading) laid flat at the slot, turned at
+random for `random yaw`, owned by the building's faction (`GroundItem.OwnedBy`) and not counted against the limit; when it leaves the ground the next is due in an int of
+[min, max] game hours. Builders fetching materials skip items another faction owns; taking one is stealing, as any owned loose item. Engine choices: slot items are saved as plain
+loose items (`ownedby` null) and a reload binds a saved item lying within 2 of a slot (one of its group's records) to it; respawn deadlines are not saved (a taken slot is due at
+once after a reload); upper-floor items are not hidden when a lower floor is viewed. The original, loading such a save, generates the interiors again beside those items.
+
 ## Items and eating
 
 `Inventory`, `ItemFactory`, `FeedSystem`: grids, stack limits, backpacks, quantities/charges,

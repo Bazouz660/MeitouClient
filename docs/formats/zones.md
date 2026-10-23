@@ -106,7 +106,7 @@ their town,80 list none. Keys `zones_count`, `zone_x_<i>`, `zone_y_<i>`, handle 
 x0..1 (**Observed**, purpose Unknown). `5-roadfoliage` target- points use quaternion w as
 size0.1..3590 (**Observed**, likely clearing radius). Furnished interiors use GAMESTATE_BUILDING,
 ITEM_PLACEMENT_GROUP, inventory states and collections, often `<n>-[basedata]-INGAME` IDs;
-`WorldLevelData.Load(includeInteriors:true)` merges them. Inventory/item-group semantics Unknown.
+`WorldLevelData.Load(includeInteriors:true)` merges them. Item groups: [loose items](../game/factions-squads-towns.md#loose-items-in-buildings); inventory semantics Unknown.
 
 ### Files
 
@@ -156,7 +156,7 @@ block:  int32 count, count ×
 - The five-part handle fields (`C`, `CS`, `I`, `S`, `TYPE`): serialized object references (Observed: a
   building's `town*` handle matches a town state's `hand*` by `C` and `CS`, see "Materials" above; the game gives
   a new handle a random serial from `rand()`, FUN_1400d1c20). Why most town handles match no town state.
-- What the INVENTORY_STATE entries in the building list are for; INVENTORY_* and ITEM_PLACEMENT_GROUP
+- What the INVENTORY_STATE entries in the building list are for; INVENTORY_*
   contents; the game's building layout lookup (the 13 unresolved exterior names) and nest debris scatter.
 - ROAD `start`/`end`, the road point x parameter, road foliage w.
 - `fogfeatures.dat`, `globalPathing.path` layouts (`blendinfo.dat`: see terrain.md).

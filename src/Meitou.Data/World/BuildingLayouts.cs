@@ -70,10 +70,18 @@ public sealed class BuildingLayouts
     }
 
     /// <summary>The layout's objects whose target is a BUILDING of the game data, in instance id order.</summary>
-    public IEnumerable<LayoutItem> Items(GameRecord layout)
+    public IEnumerable<LayoutItem> Items(GameRecord layout) => Placed(layout, FcsRecordType.BUILDING);
+
+    /// <summary>
+    /// The layout's loose-item slots: its objects whose target is an ITEM_PLACEMENT_GROUP (<see cref="LayoutItem.Building"/> is then the group; docs/game/factions-squads-towns.md
+    /// "Loose items in buildings"), in instance id order.
+    /// </summary>
+    public IEnumerable<LayoutItem> ItemGroups(GameRecord layout) => Placed(layout, FcsRecordType.ITEM_PLACEMENT_GROUP);
+
+    IEnumerable<LayoutItem> Placed(GameRecord layout, FcsRecordType type)
     {
         foreach (var i in layout.Instances.Values.Where(i => !i.IsCleared).OrderBy(i => i.Id, StringComparer.Ordinal))
-            if (db.Find(i.Target) is { Type: FcsRecordType.BUILDING } b)
+            if (db.Find(i.Target) is { } b && b.Type == type)
                 yield return new LayoutItem(i.Id, b, i.Position, i.Rotation)
                 {
                     Floor = i.States.Count > 0 && interiors?.Find(i.States[0]) is { } state ? Math.Clamp(state.GetInt("floornum"), 0, 3) : 0,
