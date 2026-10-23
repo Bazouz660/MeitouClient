@@ -22,6 +22,22 @@ sealed partial class PlayerInterface
         float w = Math.Min(size.Width, Width), h = Math.Min(size.Height, Height);
         float x = TitleOpen ? Math.Min(Width / 2f, Width - w) : (Width - w) / 2;
         b.Positions[root.Name] = new(x, (Height - h) / 2, w, h);
+        // Meitou: the save list ends above the buttons' row, where the Kenshi saves tick goes (WithSaveFilter).
+        if (id == "load" && UiMode == UiMode.Meitou) b.Positions["GamesList"] = new(x + 0.0102941f * w, (Height - h) / 2 + 0.135385f * h, 0.644118f * w, 0.69f * h);
+    }
+
+    /// <summary>The load window with a Meitou row under its list: a tick that hides the base game's saves, styled as the reset tick (hidden in Faithful).</summary>
+    static MyGuiLayout WithSaveFilter(MyGuiLayout load)
+    {
+        var root = load.Roots[0];
+        MyGuiWidget Row(string type, string name, string skin, UiRect at, Dictionary<string, string> properties) =>
+            new(type, name, skin, "", "Left Bottom", at, true, properties, new Dictionary<string, string>(), []);
+        MyGuiWidget[] row =
+        [
+            Row("TextBox", "lbHideKenshiSaves", "Kenshi_GenericTextBoxFlat", new(0.0102941f, 0.836923f, 0.58f, 0.123077f), new() { ["Caption"] = "Hide Kenshi saves", ["TextAlign"] = "Left VCenter" }),
+            Row("Button", HideKenshiTick, "Kenshi_TickBoxSkin", new(0.6029412f, 0.844615f, 0.0514706f, 0.107692f), []),
+        ];
+        return load with { Roots = [root with { Children = [.. root.Children, .. row] }, .. load.Roots.Skip(1)] };
     }
 
     /// <summary>

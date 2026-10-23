@@ -26,6 +26,11 @@ sealed partial class PlayerInterface
     /// <summary>The load and import windows' ticks (ImportGameMenu flags 0x1, 0x4, 0x8, 0x10, 0x20): reset squad positions, buildings, research, dead NPCs, relations.</summary>
     readonly bool[] slotTicks = new bool[5];
     static readonly string[] TickBoxes = ["ResetTickBox", "BuildingsTickBox", "ResearchTickBox", "NPCTickBox", "RelationsTickBox"];
+    /// <summary>Meitou's load window tick that leaves the base game's saves out of the list (<see cref="WithSaveFilter"/>).</summary>
+    const string HideKenshiTick = "HideKenshiTickBox";
+    bool hideKenshiSaves;
+    /// <summary>The saves the window lists: the save window only Meitou's, the load window without Kenshi's when its tick is set.</summary>
+    SaveSlot[] VisibleSlots(string id) => [.. slots.Where(s => s.Writable || id != "save" && !(id == "load" && hideKenshiSaves && UiMode == UiMode.Meitou))];
     /// <summary>The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it).</summary>
     sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null);
     Confirmation? confirmation;
@@ -79,7 +84,7 @@ sealed partial class PlayerInterface
     void OpenSlots(string id)
     {
         RefreshSlots();
-        if (id == "save") { selectedSlot = slots.FirstOrDefault(s => s.Writable); ReadSlotDetails(); }
+        if (id == "save" || id == "load" && UiMode == UiMode.Meitou) { selectedSlot = VisibleSlots(id).FirstOrDefault(); ReadSlotDetails(); }
         // The original's windows open with nothing selected and the info box empty (LoadSaveWindow, FUN_140480100), the ticks as their layout has them.
         else if (UiMode == UiMode.Faithful) { selectedSlot = null; slotInfo = null; }
         Array.Copy(new[] { false, true, true, true, true }, slotTicks, slotTicks.Length);
@@ -139,6 +144,11 @@ sealed partial class PlayerInterface
             if (e.Screen == "import" && AdvancedAction(e)) return true;
             if (e.Widget == "CancelButton") { faithfulScreens.Close(e.Screen); advancedOpen = false; }
             else if (Array.IndexOf(TickBoxes, e.Widget) is var tick and >= 0) slotTicks[tick] = !slotTicks[tick];
+            else if (e.Widget == HideKenshiTick)
+            {
+                hideKenshiSaves = !hideKenshiSaves;
+                if (selectedSlot is not null && !VisibleSlots(e.Screen).Contains(selectedSlot)) { selectedSlot = null; ReadSlotDetails(); }
+            }
             else if (e.Widget == "AdvancedButton") { advancedOpen = !advancedOpen; advancedHelp = -1; }
             else if (e.Widget == "ImportButton" && selectedSlot is not null) Notice("Importing a save into a new world is not implemented yet", true);
             else if (e.Widget == "GamesList" && e.Action == "select")
@@ -258,7 +268,13 @@ sealed partial class PlayerInterface
                 Enable(TickBoxes[t]);
                 b.Properties[TickBoxes[t]] = new Dictionary<string, string> { ["StateSelected"] = slotTicks[t] ? "true" : "false", ["Checked"] = slotTicks[t] ? "true" : "false" };
             }
-            var visibleSlots = slots.Where(s => id != "save" || s.Writable).ToArray();
+            if (id == "load" && UiMode == UiMode.Meitou)
+            {
+                Enable(HideKenshiTick);
+                b.Properties[HideKenshiTick] = new Dictionary<string, string> { ["StateSelected"] = hideKenshiSaves ? "true" : "false", ["Checked"] = hideKenshiSaves ? "true" : "false" };
+            }
+            else if (id == "load") { b.Hidden.Add(HideKenshiTick); b.Hidden.Add("lbHideKenshiSaves"); }
+            var visibleSlots = VisibleSlots(id);
             // The original's save list (LoadSaveWindow, decompile of FUN_140480100, Observed): two columns, the first filling the width, the second fixed at 180; the captions are localised strings
             // (the pot has "Name" and "Date", Unknown which the window uses). Initially sorted by the second, newest first. Meitou adds the save's origin to the name.
             // addColumn takes screen pixels, not the template's (the date is cut off at 1440 lines in the base game).

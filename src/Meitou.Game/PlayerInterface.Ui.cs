@@ -55,6 +55,7 @@ sealed partial class PlayerInterface
         {
             var layout = MyGuiReader.ReadLayout(resolve(file + ".layout") ?? throw new FileNotFoundException(file));
             if (id is "new-game" or "import") layout = WithAdvancedPanel(layout, MyGuiReader.ReadLayout(resolve("Kenshi_AdvancedOptionsWindow.layout") ?? throw new FileNotFoundException("Kenshi_AdvancedOptionsWindow.layout")));
+            if (id == "load") layout = WithSaveFilter(layout);
             if (id == "editor") (editorLayout, editorRowsShape) = (layout, "");
             if (id == "inventory") characterInventoryLayout = layout;
             faithfulScreens.Register(id, layout, modal, centreRoot: id is "file");
