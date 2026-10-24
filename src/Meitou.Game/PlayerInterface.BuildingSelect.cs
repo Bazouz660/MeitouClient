@@ -123,6 +123,7 @@ sealed partial class PlayerInterface
                 stats.Add(new(mine ? "" : "Security:", $"{Loc.Tr(locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, locked ? BadBrightColour : GoodColour,
                     door.Locked ? "The door is locked and will keep out intruders." : locked ? "The door will lock when it closes." : "The door is unlocked.", mine ? "meitou:building-locks" : null));
             }
+            if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
             if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 })
             {

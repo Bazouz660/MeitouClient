@@ -270,6 +270,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
 
     /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>); null when none is shown or it has no fixtures.</summary>
     public Locks.BuildingDetail? InspectedBuilding { get; init; }
+    /// <summary>The resource richness of the building the HUD shows (a mine or rock); null for others.</summary>
+    public Production.RichnessView? InspectedRichness { get; init; }
     /// <summary>The machines of the player's complete buildings (docs/simulation.md "Production"), in the order they were made.</summary>
     public IReadOnlyList<Production.MachineSnapshot> Machines { get; init; } = [];
     /// <summary>Bumped on every machine change (items, progress, status).</summary>

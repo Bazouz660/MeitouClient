@@ -215,6 +215,23 @@ sealed partial class PlayerInterface
                 : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
     }
 
+    /// <summary>
+    /// The first stats line of a mine, farm, well or rock (<c>ProductionBuilding::getGUIFertility</c>, docs/game/ui-screens.md "Selected building"): the resource's label, the yield as
+    /// a whole percent without the sign, red to green (r = 0.8 - y, g = 0.8 y, b = 0.1), and the tooltip naming the resource in lower case.
+    /// </summary>
+    static void AddRichnessLine(Meitou.Simulation.Production.RichnessView rich, List<HudLine> stats)
+    {
+        (string Label, string Name) = rich.Resource switch
+        {
+            1 => ("Iron Quality:", "Iron"), 2 => ("Stone Richness:", "Stone"), 3 => ("Copper Quality:", "Copper"), 4 => ("Carbon Quality:", "Carbon"),
+            5 => ("Water Available:", "Water"), _ => ("Ground Fertility:", "Fertility"),
+        };
+        static int Byte(float v) => (int)(Math.Clamp(v, 0, 1) * 255 + 0.5f);
+        string colour = $"{Byte(0.8f - rich.Yield):x2}{Byte(0.8f * rich.Yield):x2}{Byte(0.1f):x2}";
+        stats.Add(new(Label, ((int)(rich.Yield * 100)).ToString(CultureInfo.InvariantCulture), MainColour, colour,
+            Loc.Tr("The richness of natural {1} present in this location. Anything over 50% is considered good.", Loc.Tr(Name).ToLower(CultureInfo.CurrentCulture))));
+    }
+
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad)
     {
@@ -226,7 +243,6 @@ sealed partial class PlayerInterface
             bad = f.Status is FarmStatus.NoWater or FarmStatus.OutputFull;
             stats.Add(new("Growth:", P(MathF.Min(f.Growth, 1)), MainColour));
             if (f.Growth >= 1) stats.Add(new("Ripeness:", P(f.Ripeness), MainColour, f.Growth >= 2 ? BadColour : GoodColour));
-            stats.Add(new("Fertility:", P(f.Fertility), MainColour));
             if (f.Death > 0) stats.Add(new("Dying:", P(f.Death), MainColour, BadColour));
         }
         else if (m.Output is { } o)

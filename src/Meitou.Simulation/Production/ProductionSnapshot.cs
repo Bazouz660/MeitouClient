@@ -13,6 +13,12 @@ public readonly record struct FarmView(float Growth, float Death, int Harvested,
     public IReadOnlyList<float> PlantGrowth { get; init; } = [];
 }
 
+/// <summary>
+/// The resource richness of the building the HUD shows (docs/game/ui-screens.md "Selected building"): a mine's or rock's <c>world resource mining</c> and its yield, for the stats
+/// panel's first line. Display only.
+/// </summary>
+public readonly record struct RichnessView(string Instance, int Resource, float Yield);
+
 /// <summary>A crafting bench as the host shows it: the queue (the first is being made), the repeat toggle and the finished items waiting in its output.</summary>
 public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Progress, float Hours)> Queue, bool Repeat, IReadOnlyList<InventoryItemView> Done);
 
