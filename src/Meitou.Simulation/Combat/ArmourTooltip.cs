@@ -35,7 +35,8 @@ public static class ArmourTooltip
     public readonly record struct Line(string Label, string Value, LineKind Kind = LineKind.Plain, int Grade = 0);
 
     static string Number(float v, string format = "0.##") => v.ToString(format, CultureInfo.InvariantCulture);
-    static string Percent(float fraction) => Number(fraction * 100) + "%";
+    /// <summary>A resistance as the original prints it: whole numbers, truncated (<b>Observed</b>: 61.75 % reads 61 %, 73.56 % reads 73 %, 85.5 pts reads 85 pts).</summary>
+    static string Percent(float fraction) => ((int)(fraction * 100 + 0.001f)).ToString(CultureInfo.InvariantCulture) + "%";
 
     /// <summary>
     /// The lines above the weight: grade, class and material, resistances. <paramref name="quality"/> is the item's <c>level</c> (0 to 100), the grade's quality (95 for Masterwork): a saved
@@ -53,7 +54,7 @@ public static class ArmourTooltip
             new("-Blunt resistance", Percent(piece.BluntDefence), LineKind.Stat),
             new("-Cut resistance", Percent(piece.CutDefence), LineKind.Stat),
             new("-Cut resistance efficiency", Percent(1 - piece.CutIntoStun), LineKind.Stat),
-            new("-Harpoon resistance", Number(piece.PierceDefence, "0.#") + " pts", LineKind.Stat),
+            new("-Harpoon resistance", ((int)(piece.PierceDefence + 0.001f)).ToString(CultureInfo.InvariantCulture) + " pts", LineKind.Stat),
         ];
     }
 
