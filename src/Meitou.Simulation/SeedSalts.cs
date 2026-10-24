@@ -10,6 +10,8 @@ internal static class SeedSalts
     public const ulong BarSquad = 0xBA45UL;
     /// <summary>XORed with the hash of the start-off's id into the player's start key.</summary>
     public const ulong PlayerStart = 0x57A27UL;
+    /// <summary>Counter (under <see cref="RngPurpose.Spawn"/>, keyed by the start key) of the roll that picks the start town among the candidates.</summary>
+    public const ulong PlayerStartTown = 0x57A28UL;
     /// <summary>XORed into the tick of a roaming squad's choice of its next town.</summary>
     public const ulong RoamNext = 0x7A6E7UL;
     /// <summary>XORed into the key of a roaming squad a town's pool makes.</summary>

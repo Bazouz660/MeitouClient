@@ -18,7 +18,7 @@ public sealed record NewGameStart
     string? baseName;
     /// <summary><c>money</c>: "Starting cash".</summary>
     public int Money { get; init; }
-    /// <summary><c>start pos X</c> and <c>start pos Z</c>: where the new-game map opens; the player picks a start town from <see cref="Towns"/>. Only <see cref="ForceStartPos"/> makes it the place the squad stands.</summary>
+    /// <summary><c>start pos X</c> and <c>start pos Z</c>: the place the squad stands when <see cref="ForceStartPos"/> is set; otherwise unused (the town is drawn from <see cref="Towns"/>).</summary>
     public Vector2 StartPosition { get; init; }
     public bool ForceStartPos { get; init; }
     public string Description { get; init; } = "";
@@ -26,7 +26,7 @@ public sealed record NewGameStart
     public string Style { get; init; } = "";
     /// <summary><c>squad</c>: SQUAD_TEMPLATE records (a squad each) or CHARACTER records (one character each).</summary>
     public IReadOnlyList<RecordLink> Squad { get; init; } = [];
-    /// <summary><c>town</c>: the towns the start may be in; the first is the default.</summary>
+    /// <summary><c>town</c>: the towns the start may be in; one placement of any of them is drawn.</summary>
     public IReadOnlyList<RecordLink> Towns { get; init; } = [];
     /// <summary><c>faction relations</c>: each sets that faction's relation with the player to v0, both ways.</summary>
     public IReadOnlyList<RecordLink> FactionRelations { get; init; } = [];
