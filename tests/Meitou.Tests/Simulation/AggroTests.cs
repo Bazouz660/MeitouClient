@@ -215,6 +215,36 @@ public class AggroTests
         }
     }
 
+    /// <summary>
+    /// The chase lead with solid bodies (docs/game/combat.md "Combat stance", Meitou): a raider faster than its runner passes it beside its track and lands a blow
+    /// within a few seconds of catching up, instead of pushing it along or stopping beside it out of reach of its led aim point.
+    /// </summary>
+    [Fact]
+    public void A_faster_chaser_passes_its_runner_and_lands_a_blow()
+    {
+        using var a = Make(5, 1);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var raider = a.SquadOf(Raiders, o, true, (o, 0f)).Members[0];
+        var runner = a.PlayerCharacter(o + new Vector2(0, 100));   // dead ahead: the pass must not need a sideways start
+        var table = a.World.Characters;
+        table.Cold(runner.Slot)!.Orders |= CharacterOrders.Passive;
+        table.Cold(runner.Slot)!.SpeedOverride = 55;   // slower than the raider's run
+        a.World.Commands.Enqueue(new AttackOrder([raider], runner) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new MoveOrder([runner], new Vector3(o.X, 150, o.Y + 20000)) { Tick = a.World.Tick });
+        long caught = -1;
+        for (int k = 0; k < (int)(60 / a.World.TickSeconds); k++)
+        {
+            a.World.RunTicks(1);
+            var d = table.Next[runner.Slot].Position - table.Next[raider.Slot].Position;
+            if (caught < 0 && new Vector2(d.X, d.Z).Length() < 20) caught = a.World.Tick;
+            if (a.Combat.StateOf(raider) is { AttackSeq: > 0, LastOutcome: BlowOutcome.Hit }) break;
+        }
+        Assert.True(caught >= 0, "the raider catches up");
+        Assert.True(a.Combat.StateOf(raider) is { AttackSeq: > 0, LastOutcome: BlowOutcome.Hit }, "a blow lands");
+        Assert.InRange((a.World.Tick - caught) * a.World.TickSeconds, 0, 5);
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {
