@@ -97,6 +97,12 @@ sealed partial class PlayerInterface
         if (!shown.SequenceEqual(pinnedSent)) Say(new ShowInventoryCommand(pinnedSent = shown) { Tick = session.World.Tick });
     }
 
+    /// <summary>Closes every inventory window: the character's (bag, limbs, pinned ones), loot and the shown building's. Trade stays (it is the trader's to end).</summary>
+    void CloseInventoryWindows()
+    {
+        foreach (string screen in ItemScreens.Where(s => s != "trader").Concat(pinnedInventories.Keys)) faithfulScreens.Close(screen);
+    }
+
     /// <summary>The first pinned window id not in use, registered with the character window's layout the first time.</summary>
     string FreePinnedSlot()
     {

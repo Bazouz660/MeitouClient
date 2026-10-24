@@ -54,7 +54,7 @@ sealed partial class PlayerInterface
 
     IReadOnlySet<string> Unlocked() => session.CurrentSnapshot.UnlockedBuildings;
 
-    /// <summary>B: opens build mode, or closes it (the queue of unconfirmed ghosts is dropped).</summary>
+    /// <summary>B: opens build mode (pausing the game and closing the inventory windows), or closes it (the queue of unconfirmed ghosts is dropped).</summary>
     public void ToggleBuildMode() => SetBuildMode(!buildMode);
 
     void SetBuildMode(bool on)
@@ -76,8 +76,10 @@ sealed partial class PlayerInterface
             buildCategory = null;
             buildGroup = 0;
             buildMember = null;
+            CloseInventoryWindows();
             faithfulScreens.Open("build");
             CloseContextMenu();
+            if (session.Simulation.Speed != 0) session.Simulation.TogglePause();   // a player pause: the speed buttons resume it
         }
         else
         {

@@ -299,6 +299,8 @@ Stats panel (`FUN_1404df450`): "Materials cost:" (each `construction` item and a
 `build materials`, or "Nothing"), "Estimated build time:" (formula above, whole hours), then power output/consumption,
 `power capacity`, Num People (`max operators`), Produces (`produces`, `output rate`), Efficiency, Damage, Training max
 and Turrets bonus (their formulas **Unknown**).
+Opening the menu pauses the game (a normal pause, the speed buttons resume) and closes the inventory windows
+(**Observed**, in-game).
 
 ## Classes and functions
 
