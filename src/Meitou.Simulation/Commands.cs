@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.World;
 
 namespace Meitou.Simulation;
 
@@ -105,5 +106,9 @@ public sealed record StopCommand(IReadOnlyList<CharacterId> Characters) : SimCom
 /// <summary>
 /// The navmesh changed (a zone became ready, a door moved): characters on the way ask for their path again (those with a go-to in hand).
 /// Paths made while a zone was still building came from the open-ground stand-in and may cross buildings.
+/// With <see cref="Zones"/>, only those whose path still to walk crosses one of them, and those whose answer is on its way; null: all.
 /// </summary>
-public sealed record RepathCommand : SimCommand;
+public sealed record RepathCommand : SimCommand
+{
+    public IReadOnlySet<ZoneCoordinate>? Zones { get; init; }
+}

@@ -79,12 +79,15 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var table = world.Characters;
         foreach (var command in commands)
         {
-            if (command is RepathCommand)
+            if (command is RepathCommand repath)
             {
                 for (int s = 0; s < table.Next.Length; s++)
                 {
                     ref var c = ref table.Next[s];
                     if (!c.Alive || c.Task != (byte)CharacterTask.GoTo || (c.Flags & (ushort)(MoveFlags.Pending | MoveFlags.HasPath)) == 0) continue;
+                    // A walker whose way on does not lead through a changed zone keeps its path (a long walk loads zones ahead all the way, and each would
+                    // otherwise turn every walker about). One waiting for an answer asks again: it may have been made on the old meshes.
+                    if (repath.Zones is { } zones && (c.Flags & (ushort)MoveFlags.Pending) == 0 && !Crosses(c.Position, table.Cold(s)!.Path, c.PathCursor, zones)) continue;
                     c.Flags = (ushort)((c.Flags & ~(ushort)(MoveFlags.Pending | MoveFlags.HasPath)) | (ushort)MoveFlags.NeedPath);
                     c.PathCursor = 0;
                     table.Cold(s)!.PathRequest = 0;
@@ -584,6 +587,28 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || !now && world.Tick < cold.ProvisionalRepathTick) return;
         n.Flags |= (ushort)MoveFlags.NeedPath;
         cold.ProvisionalRepathTick = world.Tick + (long)MathF.Ceiling(ProvisionalRepathSeconds / world.TickSeconds);
+    }
+
+    /// <summary>Spacing (units) of the points a path is tested at for the zones it crosses (<see cref="Crosses"/>; engine choice, well under a zone).</summary>
+    const float ZoneProbeStep = 100;
+
+    /// <summary>Whether the way from <paramref name="at"/> along <paramref name="path"/> from <paramref name="cursor"/> on enters one of <paramref name="zones"/>.</summary>
+    static bool Crosses(Vector3 at, Vector3[] path, int cursor, IReadOnlySet<ZoneCoordinate> zones)
+    {
+        var a = new Vector2(at.X, at.Z);
+        if (zones.Contains(WorldLayout.ZoneOf(a.X, a.Y))) return true;
+        for (int i = cursor; i < path.Length; i++)
+        {
+            var b = new Vector2(path[i].X, path[i].Z);
+            float length = Vector2.Distance(a, b);
+            for (float d = ZoneProbeStep; d < length + ZoneProbeStep; d += ZoneProbeStep)
+            {
+                var p = Vector2.Lerp(a, b, MathF.Min(d, length) / MathF.Max(length, 1e-3f));
+                if (zones.Contains(WorldLayout.ZoneOf(p.X, p.Y))) return true;
+            }
+            a = b;
+        }
+        return false;
     }
 
     /// <summary>The solid radius of a body: <see cref="BodyShare"/> of its footprint (a human's when it has no race data).</summary>

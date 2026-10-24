@@ -870,8 +870,8 @@ when it differs, diffs `Buildings` by id: added → render overlay (and navmesh 
 newly complete → navmesh and lamps (lamps leave when it is no longer complete). Progress does not bump the revision; the scaffold reads `Progress/Target` each frame (rule in
 [construction look](game/buildings-production.md#construction-look)). An event queue would lose changes across dropped
 ticks and loads; the diff does not. Navmesh membership (engine reading of the Observed rebuild on placing):
-`PathMode != 0` and (`Complete` or `BuildThreshold == 0`). After each rebuilt zone publishes, the host enqueues
-`RepathCommand`.
+`PathMode != 0` and (`Complete` or `BuildThreshold == 0`). Rebuilt zones that publish go into the host's next
+`RepathCommand` (with its zones, [long routes](game/pathfinding.md)).
 - Overlay type: the existing `BuildingPlacement` (`StateId` null, `WorldY` = absolute Y, zone of the position).
 - Rendering: `WorldObjects.AddRuntime/RemoveRuntime(BuildingPlacement)` merged into `BuildZone`. Engine choice: a loaded
   zone takes the placement incrementally (no reload); the scaffold is an approximation ([render-objects](render-objects.md#player-buildings-and-the-placement-ghost)).
