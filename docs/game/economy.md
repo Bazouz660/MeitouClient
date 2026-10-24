@@ -361,7 +361,9 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
   129 leads the planner to 203 Arresting (list B: target down, unarmed, carried) and then the cage goals.
 - **Caging** (goals 112 / 281 "Find and put in cage", subtask 108 `PUT_IN_CAGE`): desire `FUN_1405a1140` (0 unless carrying;
   0.1 / 0.5 / 1.4 / 2.0 by status, death and bounty tests in `FUN_1405a0f10`); cage finder `FUN_1408d0770(ai, wantFree 1, function 8)`
-  over the buildings the AI knows (interiors included): usable (`FUN_140621230`), not reserved, free; weight
+  over the buildings the AI knows (interiors included): usable (`FUN_140621230`, `Ownerships::canIUseThisBuilding`; **Verified** by decompile: true when the
+  building's town is the carrier's occupied town or the building is of its faction, else not when the building's faction is hostile, then further tests, last the ally test
+  `FUN_1406b2630`), not reserved, free; weight
   `clamp(1 - d^2 / 4608^2, 1e-5, 1)`, x100 if the cage is of the carrier's faction (otherwise it must be usable), x100 if in the
   carrier's home, x1e-5 for a police carrier when the cage's building fails slot 0x290; the **highest** weight wins (**Observed**).
   No free cage: the finder returns nothing; what the carrier then does is **Unknown**.

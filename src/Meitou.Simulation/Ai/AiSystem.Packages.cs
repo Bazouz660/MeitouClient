@@ -45,7 +45,10 @@ public sealed partial class AiSystem
     /// The town a point is in (the original's <c>FUN_1402688d0</c>: the nearest town of any kind but a nest marker, when the point is within its radius, <c>FUN_140926d50</c>):
     /// placed towns by <see cref="TownData.Radius"/>, the player's by <see cref="Construction.PlayerTown.Radius"/>.
     /// </summary>
-    internal CampaignTown CurrentTown(World world, Vector3 p)
+    internal CampaignTown CurrentTown(World world, Vector3 p) => TownAt(data, world, p);
+
+    /// <summary><see cref="CurrentTown"/> for any system that has the population data.</summary>
+    internal static CampaignTown TownAt(PopulationData data, World world, Vector3 p)
     {
         var at = Flat(p);
         var best = CampaignTown.None;
@@ -318,6 +321,29 @@ public sealed partial class AiSystem
         board.Destination = board.InTown;
         board.AssaultEnemy = town.Owner;
         PostsInto(world, squad, Flat(town.Position), say);
+    }
+
+    /// <summary>The complete buildings of the player town the squad's occupation holds (0 without one): where its town goals walk (<see cref="OccupiedSpot"/>).</summary>
+    static int OccupiedBuildings(World world, Blackboard board)
+    {
+        if (board.CurrentClass != PackageClass.OccupyTown || board.Destination.PlayerTown <= 0) return 0;
+        int n = 0;
+        foreach (var site in world.Buildings.All) if (site.Complete && site.Town == board.Destination.PlayerTown) n++;
+        return n;
+    }
+
+    /// <summary>
+    /// Where a town goal (36 Patrolling town, 37 Wandering town) of an occupier walks: a random complete building of the player town it holds (<b>engine choice</b>: the original's
+    /// <c>Task_PatrolTown</c> target is <b>Unknown</b>, and Meitou reads no nodes in a player town); null without one.
+    /// </summary>
+    static Vector3? OccupiedSpot(World world, Blackboard board, CharacterId self)
+    {
+        int n = OccupiedBuildings(world, board);
+        if (n == 0) return null;
+        int pick = Rng.Int(Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)world.Tick << 8 ^ 0x4F), n);
+        foreach (var site in world.Buildings.All)
+            if (site.Complete && site.Town == board.Destination.PlayerTown && pick-- == 0) return site.Position;
+        return null;
     }
 
     /// <summary>Whether a package is an occupation (<c>Package_OccupyTown</c>, 30), whose platoon the original keeps while it lasts (persistent); false for null or an unknown id.</summary>

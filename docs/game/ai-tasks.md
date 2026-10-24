@@ -846,9 +846,11 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
     item `FUN_140998950` accepts (inventory, then backpack). Effect 148 → looting.
   - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building whose handle equals the home building hand of the character's
     Ownerships (+0x38; `Hand` vfunc 0x10 is "not equal", so the test `== 0` means equal; for the player faction the Ownerships is one shared object whose home is **Unknown**), down (vfunc 0x30), special state
-    (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250`: only while the character's own building (vfunc 0x78) passes vfunc 0x2f0 (a function) and `FUN_1406211e0`(Ownerships,
-    building) (the home, the +0x80 building, or one of the Ownerships' faction); sensed (0x400e, 0x201) in that building, not carried, down, special state not 2 (not caged), vfunc 0x118 > 0
-    (**Unknown**). Their companions 224 / 274 carry the body outside: `Task_TakeIntruderOutside` (**Verified** by decompile, slots 2/5/7 `FUN_1403355e0`/`FUN_14033da80`/`FUN_1403356e0`) walks
+    (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250` (**Verified** by decompile; slot names KenshiLib 1ce4a16, **Observed**): only while the character's current town
+    (vfunc 0x78 `getCurrentTownLocation`) passes town vfunc 0x2f0 (`Town`: +0x3b0 set, meaning **Unknown**; `TownBase`: false) and `FUN_1406211e0` (`Ownerships::isMyTown`: the town is
+    `_homeTown` +0x30, `occupiedTown` +0x80, or of the Ownerships' faction +0x70); sensed (0x400e, 0x201) in the same town, not carried, unconscious (vfunc 0x30), special state not 2 (not
+    caged), `amInsideTownWalls` (vfunc 0x118) > 0 (inside a building: that building's value, a gate by the side it stands; outdoors a cached value whose writer was not traced, **Unknown**).
+    So an occupier removes intruders from the town it holds. Their companions 224 / 274 carry the body outside: `Task_TakeIntruderOutside` (**Verified** by decompile, slots 2/5/7 `FUN_1403355e0`/`FUN_14033da80`/`FUN_1403356e0`) walks
     to the point beyond the home building's first door (`Building` vfunc 0x3e0 → door +0x3bc, pushed out by a factor 1.1 of a reference vector, **Unknown**); its start (slot 2) ends the task
     without a home building and drops at once when nothing is carried; its update (slot 7) drops the body (`FUN_1405ce1e0`) once the walk is over or 5 game minutes (elapsed hours x 60 >= 5,
     **Observed**) have passed. `Task_TakeIntruderOutsideTown` walks to the town's exit point (`Town` vfunc 0x38 `FUN_140927120`, a cached point refreshed on a timer: 200 beyond a door of one of its

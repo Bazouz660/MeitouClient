@@ -181,6 +181,8 @@ public static class StandardSystems
             systems.Add(carry);
             // Raiders lifting the downed and carrying them to a cage of their faction: right after the carry system, whose lift and links it uses; it adds nothing to the hash until one runs.
             if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap) { Deeds = deeds });
+            // Town goals of AI squads outside the act-outs (removing downed intruders, caging them, fetching food): after the kidnapping, with the same lift; nothing in the hash until one runs.
+            if (population is not null && Has(StandardParts.Ai)) systems.Add(new Meitou.Simulation.Kidnap.TownDutySystem(data, population, carry));
         }
         // The captives' fate and the slavers' logistics: right after the kidnapping (serial, like it); nothing in the hash until a job or a town's kill timer exists.
         Meitou.Simulation.Kidnap.CaptiveSystem? captives = null;

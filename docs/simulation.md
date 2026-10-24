@@ -727,6 +727,21 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   cannibal rule sends phase 2 at the third carrier), three are caged at the faction's Skinhouse HQ (it has three cages), the fourth, on the leader, is carried on towards the campaign's far home.
   A save and load keeps the three caged and `Kidnapped`; a second capture writes the same keys. Cannibal AI squads at home lift and cage a downed player character in about two seconds.
 
+### Town duties
+
+`Kidnap/TownDutySystem` (serial `SlowWorld`, after the kidnapping; with the population and the AI): goals of an AI squad's running package that no act-out covers, per member,
+every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.md) "Finders of the jobs", [carry-loot 3.2](game/carry-loot.md#32-goals-and-their-target-finders)).
+- **273 Remove Intruder**: a free member standing in its home town, the town its occupation holds or a town of its faction lifts the nearest knocked-out character in that town's
+  built-up area (engine reading of `amInsideTownWalls`: a placed town's radius, a player town's farthest building from its centre), not carried or caged, not of its faction or an ally.
+  Carrying it: with **112** listed, the best free cage in that town (the occupied town's cages are usable), where it is locked up as `Kidnapped`; else with **274** listed, 200 past the
+  built-up area on its side (farther out until walkable), put down; else put down. A body put down short of its goal is left alone for 2 game hours.
+- **243 Getting food**: a member holding no food walks to the nearest store with food in the town (a player town's complete storage, else an unlocked container) and takes one item.
+  Meitou's NPCs are fed by their hunger floor, so the food is not eaten.
+- Occupiers' **36 / 37** town goals walk to a random complete building of the player town (`AiSystem.OccupiedSpot`; the original's target is **Unknown**).
+- Engine choices: sight `AggroSystem.OutdoorSight`, arrival 40 (a cage: its `use range` + 15), 4 short walks before giving up; nothing is hashed until one runs.
+- **Observed** (headless, an owner save, Starving Bandits occupying an outpost whose buildings reach 253 from its centre): the knocked-out player character lying 566 out is left alone; moved
+  into the base, one bandit lifts it and puts it down 413 out, nobody lifts it again in 6000 ticks; with two food items in a storage, two bandits take one each.
+
 ## Captives
 
 `Kidnap/CaptiveSystem` (serial `SlowWorld`, right after Kidnap; with the population and the AI). Facts: [ai-tasks, prisoner fate and slave rows](game/ai-tasks.md#prisoner-fate-and-slave-rows),
@@ -1214,7 +1229,7 @@ package): the war classes (19, 20, 32) and 31, which run only in campaigns; the 
   its members' minds come after, so each takes its post round the town as its mind is made, not where it was saved);
   **Observed** (headless, an owner save with starving bandits occupying an outpost, Faithful switches): they occupy again on load, unload when the players leave
   and come back occupying;
-  a save's wild platoon is AI-run like the wild sites' own squads. Campaigns read only the loaded occupiers (`AiSystem.Occupied`; they need a player within 1250 of the
+  a save's wild platoon is AI-run like the wild sites' own squads. The occupation's intruder, cage and food goals: [Town duties](#town-duties); its bed goal is not built. Campaigns read only the loaded occupiers (`AiSystem.Occupied`; they need a player within 1250 of the
   town, so it is loaded). **Observed** (headless, Stack area, a starving-bandit mob put into an outpost with 3 player characters): the assault starts, the
   occupation follows 0.1 h after the players are knocked out. No fight started in that run (the aggro's sight of sandbox characters there was not looked into).
 

@@ -229,7 +229,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.GoHome => AtHomeTown(world, squad, board, self) ? 0 : 0.5f,
             // A turret is only wanted by a member its squad gave one (the nearest free one in <see cref="ClaimTurrets"/>).
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
-            AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 ? 1 : 0,
+            AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 || OccupiedBuildings(world, board) > 0 ? 1 : 0,
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
@@ -522,7 +522,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             case AiBehaviour.ToTown:
-                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town);
+                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
                     Become(table, slot, CharacterTask.Idle);

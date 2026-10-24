@@ -239,7 +239,8 @@ public sealed partial class ProductionSystem
     // ---- intruders (223 / 273) ----
 
     /// <summary>
-    /// The finders of jobs 223 (<c>FUN_14099c110</c>) and 273 (<c>FUN_14099c250</c>) for a player character, <b>Observed</b>: a downed character in the building the carrier stands in, not carried,
+    /// The finders of jobs 223 (<c>FUN_14099c110</c>) and 273 (<c>FUN_14099c250</c>, whose own test is the carrier's town, docs/game/ai-tasks.md; the AI's: <see cref="Kidnap.TownDutySystem"/>) for a
+    /// player character, <b>Observed</b>: a downed character in the building the carrier stands in, not carried,
     /// not caged (223: not in a bed either, special state 0). Engine choices: the building is the player's complete building with doors whose footprint holds the carrier (the original's
     /// "home" of 223 is the Ownerships' +0x38, whose value for the player faction is <b>Unknown</b>); an intruder is knocked out, alive, and neither of the carrier's faction nor an ally (the
     /// sensed list's exclude bits 0x201 are <b>Unknown</b>); the extra test of 273 (a character vfunc 0x118 above 0) is taken as true. The goal is outside the door (223 / 224,
