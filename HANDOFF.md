@@ -72,6 +72,14 @@ Post-merge smoke: 120 s `--new-game Wanderer` at 800x600, 8120 MB budget, GPU cu
 GPU timeout. This is not a substitute for the 30-minute acceptance soak; the full Metal test suite is still blocked by
 the host's `MTLCompilerService` XPC.
 
+## Next iteration: Metal Effects Parity I (MEP-I)
+
+The next work is planned in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md): post effects
+(MEP-1), reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief (MEP-4), then water lighting
+(MEP-5). MEP-3 is the preview-test gate; MEP-5 is the full effects-parity gate. Vulkan stays the default/reference, the
+GPU cull stays off, and MEP-I covers visual effects only. The immediate first tasks are particle coverage in the
+temporal reactive mask and the sun-motion term in `PostTaa`.
+
 ## Upstream sync (2026-10-23)
 
 `963c611b` merges upstream `a9970dbc` (177 commits, including the gameplay/UI/audio work) into the Metal branch. The
@@ -326,12 +334,14 @@ Verified clean:
 
 ## Next work
 
-1. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
+1. Complete MEP-I (see the plan above): post effects, reflection quality, debris lighting, tessellation/terrain
+   relief and water lighting. Do not start GPU culling or default-switch work until the MEP-I preview gate is accepted.
+2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
    indirect arguments. `MEITOU_METAL_CPU_CULL=1` restores the CPU reference for A/Bs. Readback copies used only
    for statistics still need a safer post-frame path if they prove unreliable.
-2. Terrain: the phase-0 gate is closed. In the matched no-object view, material-distance 1 saved 17%, anisotropy
+3. Terrain performance: the phase-0 gate is closed. In the matched no-object view, material-distance 1 saved 17%, anisotropy
    and terrain-error were noise, and the normal-map-off compile variant saved 12% (kept for that quality switch).
    Normal maps on, loaded-branch, early-fragment and half-precision experiments did not clear the noise floor, so
    the default path is unchanged. A distance material LOD (normal fade plus a per-patch no-normal split) was tried
@@ -339,12 +349,11 @@ Verified clean:
    [docs/metal-terrain-shader-plan.md](docs/metal-terrain-shader-plan.md); only revisit direct MSL or a finer
    material split if a matched shipping capture shows terrain is the bottleneck. Do not remove the terrain/foliage
    prepasses.
-3. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
+4. Profile and target `post shafts`, `post scene effects` and the shadow cascades; these were 11.27%,
    6.51% and 14.29% of the latest 26.84 ms capture.
-4. Remaining polish: HDR/EDR, fog-rate VRS or a non-VRS fallback, particle reactive-mask coverage,
-   water foam-shadow/cloud-tile parity, purgeable/idle texture cleanup.
-5. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
-6. Make Metal the macOS default once the performance/polish pass is accepted.
+5. Remaining polish outside MEP-I: HDR/EDR, purgeable/idle texture cleanup, and any performance follow-ups.
+6. Decide the GI baseline: Metal GI stays experimental and opt-in; no-GI matches Vulkan on this Mac.
+7. Make Metal the macOS default only after MEP-I and the separate performance/polish pass are accepted.
 
 Known diagnostic issue: `MTL_DEBUG_LAYER=1` currently reports pre-existing texture-type mismatches at
 `uHeightFine` (Cube bound where 2D is expected) and `uOceanMaps` (2D bound where 2DArray is expected). It

@@ -22,6 +22,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
 - [metal-content-testability-plan](metal-content-testability-plan.md): the content/testability gaps and the order to close them
 - [metal-performance-memory](metal-performance-memory.md): the Metal frame-rate and bounded-memory plan (baseline, targets, order)
+- [metal-effects-parity-plan](metal-effects-parity-plan.md): MEP-I, the remaining Metal effect-parity milestones and ship gates
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
 - [render-clouds](render-clouds.md)
