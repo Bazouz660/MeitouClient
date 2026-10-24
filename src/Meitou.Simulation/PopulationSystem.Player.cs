@@ -77,6 +77,10 @@ public sealed partial class PopulationSystem
                 if (world.Walkability.IsWalkable(p.X, p.Y)) { at = p; break; }
             }
 
+        if (data.BiomeGroupAt(centre) is { } group)
+            foreach (var site in data.Sites)
+                if (site.Town.Type == TownType.Town && data.BiomeGroupAt(new Vector2(site.Position.X, site.Position.Z)) == group) world.Player.Know(site.Index, TownKnowledge.Discovered);
+
         // One squad of everything the start lists.
         var members = new List<BuiltMember>();
         var first = new List<MemberPlan>();

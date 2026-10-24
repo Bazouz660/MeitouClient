@@ -145,6 +145,7 @@ A new game is set up by `FUN_14036cb80` and `FUN_140872e00` (`resetGame` and `ne
   (so a record placed many times, like Waystation, gives any of them). A list with no placed town gives the message "Cannot find any towns from the
   game start town list.", then, as an empty list does, a draw among the TOWN and VILLAGE placements whose faction is real, not BANDIT and not hostile
   to the player (-30 or below); with none, (-43500, -6625). Meitou stands the squad on a walkable spot near that place.
+- **Discovered**: every town of type TOWN in the biome group of the start place.
 
 ### Loading screen
 
