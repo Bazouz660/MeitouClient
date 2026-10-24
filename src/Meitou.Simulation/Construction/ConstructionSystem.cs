@@ -356,7 +356,7 @@ public sealed class ConstructionSystem : ITickSystem
     int TownFor(World world, BuildSite site, BuildingBuildData data)
     {
         var reg = world.Buildings;
-        if (site.Parent is { } parent) return reg.Find(parent)?.Town ?? 0;
+        if (site.Parent is { } parent && reg.Find(parent) is { } home) return home.Town;   // a level building's town is not a player town: the rules below
         int faction = world.Player.Faction;
         PlayerTown? nearest = null;
         float best = float.MaxValue;

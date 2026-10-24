@@ -889,12 +889,14 @@ rule, footprint overlap with static buildings, sites and queued ghosts (convex h
 characters within 2.5 of the hull, LAND parts below the water level 98, slope (four rotated bounding-box corners, `max slope`,
 `match slope` tilts fully) and normal.y < 0.2. **Indoors:** the ghost (not walls) stands on the first building floor the
 cursor ray meets before the terrain, using the movement pick up to the viewed floor (the build window's floor arrows), untilted;
-it queues with that building as parent and its floor. The building must be a finished player site (else the original's
-"don't own" / "incomplete" texts); the parent is left out of the overlap tests, the slope test is skipped (floor taken as
+it queues with that building as parent (a site's id, a level building's instance id) and its floor. The building must be
+a finished player site or a level building the player's faction owns (its state's `owner faction ID`, else its town's
+faction; else the original's "don't own" / "incomplete" texts); the parent is left out of the overlap tests, the slope test is skipped (floor taken as
 level), and interior-only furniture is refused only off a floor. Engine stand-in for the original's node boxes against the
 building's walls: the footprint must lie within the building's indoor hull. **Not decided** (never fail, so the ghost may
 show valid where the original refuses): resource/crop yield, snap nodes, usage nodes, blocked use nodes, the floor-number
-check and ceilings, vertical margins, the 5 deg object-surface rule; player-owned level buildings count as not owned. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
+check and ceilings, vertical margins, the 5 deg object-surface rule. A site inside another (its parent) is picked through
+the parent's roof and walls while the interior view shows the parent; a site in a level building takes the usual town rules. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
 
 Build mode (B, `Kenshi_BuildWindow`, Faithful UI only): categories and groups list `WorldSnapshot.UnlockedBuildings` in
 database order (the original's order is **Unknown**); the window estimates hours as materials / (`build speed mult` x 6),

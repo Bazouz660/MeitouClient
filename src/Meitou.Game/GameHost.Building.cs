@@ -156,6 +156,7 @@ sealed partial class GameHost
         foreach (string id in effectBuildings) gpu?.Particles?.RemoveBuildingEffects(id);   // the world's own building effects stay
         effectBuildings.Clear();
         litBuildings.Clear();
+        levelOwners = null;
         ForgetGroundItems();
         ForgetFarms();
         foreach (string id in navBuildings) nav?.RemoveRuntimeBuilding(id);
@@ -204,7 +205,7 @@ sealed partial class GameHost
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
                 // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.
                 FloorAlong = (origin, direction, length) => gpu.Objects?.FloorHit(origin, direction, viewedFloor, length) is { } hit
-                    ? (hit.Position, new Building.GhostFloor(hit.Room.PlacementId, hit.Room.Footprint, hit.Room.FloorAt(hit.Position))) : null,
+                    ? (hit.Position, GhostFloorOf(hit.Room, hit.Room.FloorAt(hit.Position))) : null,
             },
             WorldInfo = placement =>
             {
@@ -239,5 +240,27 @@ sealed partial class GameHost
             PlayerFactionId = () => popData is { } d && d.PlayerFaction is >= 0 and var mine && mine < d.Factions.Count ? d.Factions[mine].Id : "",
             DrawGhosts = draws => gpu.Objects?.SetGhosts(draws),
         };
+    }
+
+    // A level building's instance id and owning faction id (its state's owner, else its town's faction), by placement key; made on first use.
+    Dictionary<string, (string Instance, string? Owner)>? levelOwners;
+
+    /// <summary>The floor a ghost stands on in <paramref name="room"/>: a player site's, else a level building's with whether the player's faction owns it.</summary>
+    Building.GhostFloor GhostFloorOf(InteriorVolume room, int floor)
+    {
+        if (shownBuildings.ContainsKey(room.PlacementId)) return new(room.PlacementId, room.Footprint, floor);
+        if (levelOwners is null && popData is { } d)
+        {
+            levelOwners = new(StringComparer.Ordinal);
+            foreach (var site in d.Sites)
+            {
+                string? townOwner = site.Index < d.SiteFactions.Count && d.SiteFactions[site.Index] is >= 0 and var f && f < d.Factions.Count ? d.Factions[f].Id : null;
+                foreach (var b in site.Buildings) levelOwners[b.Key] = (b.InstanceId, b.OwnerFactionId ?? townOwner);
+            }
+        }
+        string player = popData is { } p && p.PlayerFaction is >= 0 and var mine && mine < p.Factions.Count ? p.Factions[mine].Id : "";
+        return levelOwners?.TryGetValue(room.PlacementId, out var level) == true
+            ? new(room.PlacementId, room.Footprint, floor, level.Instance, player.Length > 0 && level.Owner == player)
+            : new(room.PlacementId, room.Footprint, floor, room.PlacementId);
     }
 }

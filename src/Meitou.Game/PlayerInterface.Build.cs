@@ -352,7 +352,7 @@ sealed partial class PlayerInterface
     {
         if (WallClick()) return;
         if (ghost is not { Failure: PlacementFailure.None } g) return;
-        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, g.On?.Floor ?? 0, g.Hull, g.On?.Building));
+        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, g.On?.Floor ?? 0, g.Hull, g.On?.Parent));
         Sound("Building_Place", "Building_Place", g.On is null ? "Outdoors" : "Indoors");
         ghostLift = 0;
     }
@@ -488,15 +488,21 @@ sealed partial class PlayerInterface
         BuildingSnapshot? best = null;
         // Only what the ray meets before the ground counts, as in PickBuilding and the original's raycast (terrain ends the walk): a building's hull and collision reach below the ground,
         // and the part of the ray that has gone through the ground must not find them (the pointer showed the hammer on bare ground beside a building).
-        float bestT = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : float.MaxValue;
+        float ground = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : float.MaxValue, bestT = ground;
+        var hits = new List<(BuildingSnapshot Site, float T)>();
         foreach (var site in session.CurrentSnapshot.Buildings)
         {
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation));
             float? t = host.Placement.Footprint(site.Record) is { } footprint
                 ? BuildingRayT(ray, footprint.Place(site.Position, yaw), footprint.YMin, footprint.YMax, site.Record, site.Position, site.Position.Y, yaw)
                 : RaySegment(ray.Origin, ray.Direction, site.Position, site.Position + new Vector3(0, 16, 0), 12);
-            if (t is { } hit && hit < bestT) (bestT, best) = (hit, site);
+            if (t is not { } hit || hit >= ground) continue;
+            hits.Add((site, hit));
+            if (hit < bestT) (bestT, best) = (hit, site);
         }
+        // A building placed inside the one hit first (its roof or walls, hidden in the interior view) is what the click means, when the view shows that building's inside there.
+        while (best is not null && hits.Where(h => h.Site.Parent == best.Id && !Hidden(ray, h.T)).OrderBy(h => h.T).FirstOrDefault() is { Site: not null } inside)
+            (best, bestT) = inside;
         return best is null ? null : (WallOf(best), bestT);
     }
 

@@ -10,8 +10,15 @@ namespace Meitou.Game.Building;
 /// <summary>A ghost waiting for Confirm: what it is and where it stands, with its footprint in the world.</summary>
 public sealed record QueuedGhost(BuildingBuildData Building, Vector3 Position, Quaternion Rotation, int Floor, Vector2[]? Hull, string? Parent = null);
 
-/// <summary>A ghost standing on a building's floor: the building (its placement id, a player site's own id), its indoor hull in the world, and the floor (0..3).</summary>
-public sealed record GhostFloor(string Building, Vector2[] Footprint, int Floor);
+/// <summary>
+/// A ghost standing on a building's floor: the building (its placement id, a player site's own id), its indoor hull in the world, and the floor (0..3). A level building's
+/// <paramref name="Level"/> is its instance id (what the placed building names as its parent) and <paramref name="Owned"/> whether the player's faction owns it.
+/// </summary>
+public sealed record GhostFloor(string Building, Vector2[] Footprint, int Floor, string? Level = null, bool Owned = false)
+{
+    /// <summary>The parent the placed building records: the site's id, or the level building's instance id.</summary>
+    public string Parent => Level ?? Building;
+}
 
 /// <summary>What the geometric checks read from the world: the terrain, the water, the footprints (<see cref="BuildingFootprints"/>) and the parts of a building.</summary>
 public sealed class PlacementServices
@@ -68,9 +75,10 @@ public static class PlacementCheck
 
         var turned = Quaternion.CreateFromAxisAngle(Vector3.UnitY, q.Yaw);
         var hull = q.Services.Footprint(b.Id) is { } footprint ? footprint.Place(q.Position, turned) : null;
-        // On a floor: the building must be one of ours (a site) and finished.
+        // On a floor: the building must be ours, a level building the player's faction owns or a finished site.
         string? parent = q.On?.Building;
-        if (parent is not null)
+        if (q.On is { Level: not null, Owned: false }) return PlacementFailure.NotOwnedBuilding;
+        if (q.On is { Level: null })
         {
             if (q.Sites.FirstOrDefault(s => s.Id == parent) is not { } home) return PlacementFailure.NotOwnedBuilding;
             if (!home.Complete) return PlacementFailure.InsideIncomplete;
@@ -81,7 +89,7 @@ public static class PlacementCheck
                 && Contains(siteFootprint.Place(site.Position, site.Rotation), at))
                 return site.Complete ? PlacementFailure.TooCloseToBuilding : PlacementFailure.InsideIncomplete;
         foreach (var other in q.Services.StaticAround(at, 20))
-            if (Contains(other.Hull, at)) return PlacementFailure.NotOwnedBuilding;
+            if (other.Id != parent && Contains(other.Hull, at)) return PlacementFailure.NotOwnedBuilding;
 
         // Interior-only furniture must stand on a building's floor; what may also stand outside (exterior furniture or a node) goes either way.
         if (parent is null && b.IsInteriorFurniture && !b.IsExteriorFurniture && !b.IsNode) return PlacementFailure.MustBeInside;
@@ -92,7 +100,7 @@ public static class PlacementCheck
             if (q.On is { } on && hull.Any(p => Distance(on.Footprint, p) > 0)) return PlacementFailure.TooCloseToBuilding;
             float reach = hull.Max(p => Vector2.Distance(p, at)) + 150;
             foreach (var other in q.Services.StaticAround(at, reach))
-                if (Overlap(hull, other.Hull)) return PlacementFailure.TooCloseToBuilding;
+                if (other.Id != parent && Overlap(hull, other.Hull)) return PlacementFailure.TooCloseToBuilding;
             foreach (var site in q.Sites)
                 if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } f
                     && Overlap(hull, f.Place(site.Position, site.Rotation))) return PlacementFailure.TooCloseToBuilding;
