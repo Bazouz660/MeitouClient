@@ -69,7 +69,7 @@ public sealed partial class DialogueSystem
             Talker.Target => c.Player,
             Talker.TargetIfPlayer => Cold(world, c.Player) is { IsPlayer: true } ? c.Player : CharacterId.None,
             Talker.Interjector1 or Talker.Interjector2 or Talker.Interjector3 => c.Interjectors[node.Speaker - Talker.Interjector1],
-            Talker.TargetWithRace => SquadOf(world, c.Player).FirstOrDefault(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId)),
+            Talker.TargetWithRace => Known(world, c.Npc, c.Player).FirstOrDefault(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId)),
             _ => CharacterId.None,
         };
         return !speaker.IsNone;
@@ -137,14 +137,14 @@ public sealed partial class DialogueSystem
         if (node.TargetFaction.Count > 0 && (tc is null || !node.TargetFaction.Contains(FactionId(tc.Faction)))) return false;
         if (node.HasPackage.Count > 0 && !node.HasPackage.Overlaps(SetOf(world, ms).Packages)) return false;
         if (node.IsCharacter.Count > 0 && !node.IsCharacter.Contains(mc.RecordId)) return false;
-        if (node.TargetCarryingCharacter.Count > 0 && !SquadOf(world, other).Any(m => Cold(world, m) is { Carrying.IsNone: false } carrier
+        if (node.TargetCarryingCharacter.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m) is { Carrying.IsNone: false } carrier
             && Cold(world, carrier.Carrying) is { } body && node.TargetCarryingCharacter.Contains(body.RecordId))) return false;
         var states = population?.States ?? data.States;
         foreach (var (state, value) in node.WorldStates) if (!IWorldStates.Passes(states, data.Db, state, value ? 1 : 0)) return false;
-        if (node.TargetHasItemFunction.Count > 0 && !SquadOf(world, other).Any(m => Cold(world, m)?.Inventory?.All()
+        if (node.TargetHasItemFunction.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All()
             .Any(i => node.TargetHasItemFunction.Contains(data.Db.Find(i.Record)?.GetInt("item function") ?? -1)) == true)) return false;
-        if (node.TargetHasItem.Count > 0 && !SquadOf(world, other).Any(m => Cold(world, m)?.Inventory?.All().Any(i => node.TargetHasItem.Contains(i.Record)) == true)) return false;
-        if (node.TargetRace.Count > 0 && !SquadOf(world, other).Any(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId))) return false;
+        if (node.TargetHasItem.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All().Any(i => node.TargetHasItem.Contains(i.Record)) == true)) return false;
+        if (node.TargetRace.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId))) return false;
         if (node.MyRace.Count > 0 && (mc.Race is null || !node.MyRace.Contains(mc.Race.StringId))) return false;
         if (node.MySubrace.Count > 0 && (mc.Race is null || !node.MySubrace.Contains(mc.Race.StringId))) return false;
         if (node.CooldownHours > 0 && lastUse.TryGetValue(node.StringId, out double last) && world.GameHours - last < node.CooldownHours) return false;
@@ -168,6 +168,20 @@ public sealed partial class DialogueSystem
     /// <summary>The members of <paramref name="id"/>'s squad (itself alone without one).</summary>
     static IReadOnlyList<CharacterId> SquadOf(World world, CharacterId id) =>
         Cold(world, id) is { SquadId: >= 0 } c && world.Squads.Find(c.SquadId) is { } squad ? squad.Members : [id];
+
+    /// <summary>
+    /// The members of <paramref name="target"/>'s squad that <paramref name="me"/> perceives (<c>FUN_140855960</c>): the target itself, and the others within <paramref name="me"/>'s
+    /// sight range (engine stand-in for the original's sensed list).
+    /// </summary>
+    static IEnumerable<CharacterId> Known(World world, CharacterId me, CharacterId target)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(me, out int ms) || table.Cold(ms) is not { } mc) return [];
+        var at = table.Next[ms].Position;
+        float r = AggroSystem.RangeOf(mc, AggroSystem.OutdoorSight);
+        return SquadOf(world, target).Where(m => m == target || m == me
+            || table.TryResolveNext(m, out int s) && Vector3.DistanceSquared(table.Next[s].Position, at) <= r * r);
+    }
 
     string FactionId(int faction) => data.Relations.Contains(faction) ? data.Factions[faction].Id : "";
 

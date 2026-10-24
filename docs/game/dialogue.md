@@ -187,7 +187,8 @@ child's (`FUN_1406ad9d0`).
    packages), `is character` (the speaker's record), `target carrying character` (someone in the target's squad carries a listed
    character; recorded as interjector), `world state` (all equal their bool), `target has item type` / `target has item` (the target's
    squad members' inventories and backpacks), `target race` (the target, else a squad member, recorded as interjector), `my race`,
-   `my subrace`. Each list is OR within itself.
+   `my subrace`. Each list is OR within itself. The four squad tests count only the target and members the speaker perceives
+   (`FUN_140855960`, **Observed** in `FUN_140678f30`); Meitou reads "perceives" as within the speaker's sight range.
 6. `repetition limit`: fails while now − last use is below the cooldown.
 7. `target is type`: the target's NPC class (OT_SLAVE also matches a target in slave state 1/2 and then **skips steps 8-9**).
 8. `chance permanent` below 99: a roll made once per character and line, then cached.
@@ -197,7 +198,8 @@ child's (`FUN_1406ad9d0`).
 
 `FUN_140672bf0`: T_ME and T_WHOLE_SQUAD the owner (how WHOLE_SQUAD fans out is **Unknown**); T_TARGET the target; T_TARGET_IF_PLAYER
 the target if it is a player-faction character, else the line is skipped; T_INTERJECTOR1-3 the stored interjectors; T_TARGET_WITH_RACE
-the first member of the target's squad whose race is in `target race`.
+the first member of the target's squad whose race is in `target race` (the original applies no perception test here; Meitou picks only
+from perceived members, as in the line check).
 
 Interjectors (`FUN_140679bc0`): members of the **owner's own squad**, awake, not the owner, not an animal, not talking, not already an
 interjector, passing the node's check as speaker. A `dumb` character qualifies only when the node's `is character` lists it (fcs.def
