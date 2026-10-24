@@ -366,6 +366,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   it, each player town enters at even odds with weight 1 and each other town at 1 in 4 with weight 0.2, and a drawn town is the target;
   else a placed spot in that sector (`FUN_1408f50d0`); with no neighbour, `FUN_1408fc1a0` picks another sector of the group. Off screen a
   new point is picked within 500 of the last (`FUN_1407ee790`); the loaded re-pick rule is **Unknown** (Meitou uses the same 500).
+  `patrol approaches towns` is set on 933 of 961 squad templates of the merged load order, the Starving Bandit and Dust Bandit roamers
+  among them, so their patrols target NPC towns as above; no other town check was found (**Verified**, record dump).
 - **Traders**: restocked only while active, when the clock passes the platoon's `inventory refresh time`; an unloaded one catches up at
   its first active tick.
 - **Prisoners** (**Observed**): frozen with their platoon; sentences are absolute timestamps and release is a loaded AI task.
