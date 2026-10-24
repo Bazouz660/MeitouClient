@@ -17,13 +17,25 @@ public sealed partial class PopulationSystem
     /// start-off's <c>squad</c> list (a SQUAD_TEMPLATE is planned by the squad factory, a CHARACTER is one member) as one squad of the
     /// player's faction, standing idle, selected for them. Where: <see cref="NewGameStart.ForceStartPos"/> gives the place itself,
     /// otherwise the first listed town that is placed in the world (the new-game map's own choice of start town is not modelled), at a
-    /// seeded spot within a third of its radius. The start research is applied (<see cref="Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch"/>); faction relation overrides and <c>force race</c> are not applied yet (the first
-    /// is <b>Unknown</b> in the original, docs/game/factions-squads-towns.md 3.2). The characters' items are what the generator rolls
-    /// for their look; their inventory is built like everybody's (<see cref="CharacterAssembly"/>).
+    /// seeded spot within a third of its radius. The start research is applied (<see cref="Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch"/>) and the
+    /// start-off's <c>faction relations</c> (docs/game/ui-screens.md "New game"); <c>force race</c> is kept as the races the character creation offers
+    /// (<see cref="PlayerState.CreationRaces"/>). The characters' items are what the generator rolls for their look; their inventory is built like everybody's
+    /// (<see cref="CharacterAssembly"/>).
     /// </summary>
     public Squad StartPlayer(World world, NewGameStart start)
     {
         if (data.PlayerFaction < 0) throw new InvalidOperationException("the game data has no player faction (Nameless)");
+        int playerFaction = data.PlayerFaction;
+
+        // Relations go back to the FACTION records' values, as the original builds every faction anew for a new game.
+        var relations = data.Relations;
+        relations.Reset();
+        foreach (var link in start.FactionRelations)
+        {
+            int other = relations.IndexOf(link.Id);
+            if (other >= 0) relations.Add(other, playerFaction, link.V0 - relations.Get(other, playerFaction));
+        }
+
         var centre = start.StartPosition;
         float radius = 100;
         TownSite? town = null;

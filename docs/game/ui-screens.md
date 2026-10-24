@@ -135,6 +135,13 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
   faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
+### New game
+
+A new game is set up by `FUN_14036cb80` and `FUN_140872e00` (`resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16):
+
+- **Relations**: a new game's relations start from the data's (every faction is made anew, `FUN_1409ef230`); each `faction relations` entry then sets that faction's
+  relation with the player, both ways, to its v0.
+
 ### Loading screen
 
 **Verified** (decompilation: constructor `FUN_14091a280`, show/hide `FUN_140916ca0`, picture `FUN_1409163e0`, tip `FUN_140913640`, per frame `FUN_1409133d0`):

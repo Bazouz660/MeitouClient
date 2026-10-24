@@ -28,7 +28,7 @@ public sealed record NewGameStart
     public IReadOnlyList<RecordLink> Squad { get; init; } = [];
     /// <summary><c>town</c>: the towns the start may be in; the first is the default.</summary>
     public IReadOnlyList<RecordLink> Towns { get; init; } = [];
-    /// <summary><c>faction relations</c>: overrides of the player's relations at the start (v0 = the value; the way they are applied is <b>Unknown</b>, factions-squads-towns.md section 3.2).</summary>
+    /// <summary><c>faction relations</c>: each sets that faction's relation with the player to v0, both ways.</summary>
     public IReadOnlyList<RecordLink> FactionRelations { get; init; } = [];
     public IReadOnlyList<RecordLink> Research { get; init; } = [];
     /// <summary><c>force race</c>: the races the character creation is limited to.</summary>
