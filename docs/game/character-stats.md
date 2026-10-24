@@ -122,6 +122,23 @@ gets wounds that drain nothing). The KO timer +0xa0 falls by dt.
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
 not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death distinctions.
 
+**Observed** (decompile; names KenshiLib 1ce4a16). The KO point (`pointOfNoReturn`, `140643ae0`) is read only by
+`getCollapseStage` (`140644450`), the GUI and `AI::myLegsAreMessedUpButCouldBeFixed`. Knock-out:
+- A combat blow (`applyDamage` `14064f300`, from `addWound`) that leaves a vital (`fatal`, part `+0x32`) part at h - s + rig < 0
+  restarts the KO timer `+0xa0` (`startKnockoutTimer` overwrites it, it does not take the longer) and sets unconscious
+  `+0x161`, on every such blow. Damage through the same function with its 4th argument set (load, weather) skips it for a
+  conscious character. A part going under 0 in the tick starts nothing.
+- `reassessCollapseMode` (`140649320`) rebuilds `+0x161` each update: set by a hunger KO, blood (under 0, or under -25 once
+  `+0x163`), a KO timer > 0, or a vital part at collapse stage 2. So a character wakes once all of those are clear.
+- Stage of a torso/head part, v = h - s + rig: 0 when v >= 0; under the KO point 2, and a vital part sets the coma flag
+  `+0x162`; between the KO point and 0, 2 for a non-vital part, and for a vital one 2 only while `+0x162` is set. `+0x162`
+  clears on an update where no vital part is at stage 2. So a vital part between the KO point and 0 does not keep a
+  character down; one under it does ("Recovery coma") until every vital part is back to 0. Legs use h - s + bandage
+  against the KO point ([ragdolls](ragdolls.md)).
+- Save keys: `coma` = `+0x162`, `unconcious` = `+0x161`, `incapacitated` = `+0x160` (a leg-collapse part at stage > 0).
+- Meitou: `MedicalState.VitalPartsKeepDown`, `RestartKo`. Not yet matched: blood keeps an unconscious character out while
+  blood < 0 (Meitou: until the blood-KO flag clears above 25).
+
 ## Aid, limbs and load
 
 First aid fills bandage; healing consumes it. Medkits, robot repair and beds apply separate

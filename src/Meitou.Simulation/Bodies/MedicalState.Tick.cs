@@ -215,10 +215,14 @@ public sealed partial class MedicalState
             StartKo(ctx, events);
         }
 
+        // A vital part under the KO point puts the character into a coma at once, without a KO timer.
+        bool vitalDown = VitalPartsKeepDown(LegKoPoint);
+        if (vitalDown && !Unconscious) ApplyKo(0, events);
+
         if (Unconscious)
         {
             KoTimer -= dt;
-            if (KoTimer <= 0 && VitalPartsUp() && !BloodKo)
+            if (KoTimer <= 0 && !vitalDown && !BloodKo)
             {
                 Unconscious = false;
                 KoTimer = 0;
@@ -259,7 +263,7 @@ public sealed partial class MedicalState
         Bleeding = 0;
         Blood = MathF.Min(Capacity(ctx), Blood + c.BloodRecoveryRate * seconds * ctx.Race.HealRate * c.RestingHealRateMult);
         if (Blood > 25) BloodKo = false;
-        if (Unconscious && VitalPartsUp() && !BloodKo)
+        if (Unconscious && !VitalPartsKeepDown(KoPoint(c, ctx.Toughness)) && !BloodKo)
         {
             Unconscious = false;
             KoTimer = 0;

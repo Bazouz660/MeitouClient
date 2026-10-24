@@ -53,10 +53,13 @@ public sealed partial class MedicalState
     /// <summary>Set when blood reached 0 (<c>+0x163</c>, "unconscious from blood loss"); clears above 25.</summary>
     public bool BloodKo { get; private set; }
 
-    /// <summary>Save key <c>coma</c>: knocked out with a critical part still down ("Recovery coma").</summary>
-    public bool Coma => Unconscious && !VitalPartsUp();
+    /// <summary>
+    /// Save key <c>coma</c> (medical <c>+0x162</c>, "Recovery coma"): set when a vital part fell under the KO point, cleared once no vital part is under 0
+    /// (<see cref="VitalPartsKeepDown"/>).
+    /// </summary>
+    public bool Coma { get; private set; }
 
-    /// <summary>Save key <c>incapacitated</c>: <b>Unknown</b> meaning; here, knocked out or dead.</summary>
+    /// <summary>Knocked out or dead. Also written as save key <c>incapacitated</c>, which in the original is medical <c>+0x160</c> (a leg-collapse part down, <b>Observed</b>; not matched).</summary>
     public bool Incapacitated => Unconscious || Dead;
 
     /// <summary>
@@ -229,11 +232,23 @@ public sealed partial class MedicalState
         return f;
     }
 
-    bool VitalPartsUp()
+    /// <summary>
+    /// Whether a vital part keeps the character out (<c>reassessCollapseMode</c> through <c>getCollapseStage</c>, docs/game/character-stats.md "Blood and KO"): a vital part with
+    /// h - s + extra under <paramref name="koPoint"/> sets <see cref="Coma"/>; while it is set any vital part under 0 keeps the character out, and it clears once none does.
+    /// A vital part between the KO point and 0 does not keep a character out without it.
+    /// </summary>
+    bool VitalPartsKeepDown(float koPoint)
     {
+        bool down = false;
         foreach (var p in parts)
-            if (p.IsVital && !(p.Fraction > 0)) return false;
-        return true;
+        {
+            if (!p.IsVital) continue;
+            float v = p.Flesh - p.Stun + p.Rig;
+            if (v < koPoint) Coma = down = true;
+            else if (v < 0 && Coma) down = true;
+        }
+        if (!down) Coma = false;
+        return down;
     }
 
     /// <summary>The passing-out point of starvation (<c>FUN_140657620</c>): (100 - K x f) / 100, K = lerp(min, max toughness ko point, toughness / 100), f 1 with an empty stomach and 2 with food.</summary>
