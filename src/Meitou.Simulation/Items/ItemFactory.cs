@@ -28,6 +28,15 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
 
     string? CheapestFoodId() => cheapestFoodId.Value;
 
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, Meitou.Data.Gameplay.Combat.ArmourData?> armourData = new();
+
+    /// <summary>The weight-by-level function of an armour record that lists part coverage (null: it keeps its record weight).</summary>
+    Func<int, float>? ArmourWeight(string recordId)
+    {
+        var data = armourData.GetOrAdd(recordId, id => Db.Find(id) is { Type: FcsRecordType.ARMOUR } r ? Meitou.Data.Gameplay.Combat.ArmourData.From(r) : null);
+        return data is { Coverage.Count: > 0 } ? level => data.WeightAt(level) ?? 0 : null;
+    }
+
     /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
     public ItemInstance? Create(string recordId, int quantity = 1, float quality = 0)
     {
@@ -51,6 +60,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             Width = info.Width,
             Height = info.Height,
             UnitWeight = weapon ? info.Weight * Constants.WeaponInventoryWeightMult : info.Weight,
+            LevelWeight = info.Type == FcsRecordType.ARMOUR ? ArmourWeight(info.Id) : null,
             StackLimit = info.StackLimit,
             IsFood = info.IsFood,
             Contents = info.Type == FcsRecordType.CONTAINER
