@@ -28,6 +28,7 @@ sealed partial class GameHost
         int fpsLimit = g.FpsLimit ?? config.FpsLimit;
         int initialFpsLimit = fpsLimit;
         VulkanDisplay.RayTracing = o.WantsRayTracing;
+        if (!g.NoPrecompile) JitWarmup.Start();   // the game's methods compiled ahead, from now on, behind the loading
         // The world's files are read on a worker from here on: while the window and the device are made, then behind the loading screen.
         var sceneRead = LoadScene is { } readScene ? Task.Run(readScene) : null;
         BeginAudio();
@@ -427,6 +428,7 @@ sealed partial class GameHost
         long statsTicks = 0;
         while (!window.IsClosing && !quit)
         {
+            BenchLap(BenchTail);
             window.DoEvents();
             if (window.IsClosing) break;
             RepeatEditKey();
@@ -458,6 +460,8 @@ sealed partial class GameHost
             DuelFrame(cinema.Playing && !cinemaWasPlaying || cinema.Recording && !cinemaWasRecording);
             BattleFrame();
             (cinemaWasPlaying, cinemaWasRecording) = (cinema.Playing, cinema.Recording);
+            if (!PlayBenchFrame(dt, profiler)) quit = true;
+            BenchLap(0);
             long a0 = Stopwatch.GetTimestamp();
             if (panel?.Visible == true)
             {
@@ -467,12 +471,14 @@ sealed partial class GameHost
             }
             // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
-            session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off };
+            session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off } || g.PlayBench is not null;
             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time
             DuelHoldClock();
             double advanceMs = Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
             advanceTotal += advanceMs;
+            PlayBenchUpdated(advanceMs);   // before SimProfile, which clears the world's tick profile
             if (profiler is not null) SimProfile(profiler, advanceMs);   // F12's sim row and its parts
+            BenchLap(1);
             WorldNews();
             HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
             HandleNewGame();
@@ -483,6 +489,7 @@ sealed partial class GameHost
             UpdateNav();
             UpdateNavOverlay();
             UpdateBuildings();
+            BenchLap(2);
             if (!cinemaHolds) ApplyCamera(session.CameraAt());
             cinema.Advance(cinema.FrameTime(dt));   // a flight through the keys moves the camera (and takes it from the rig)
             if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
@@ -497,7 +504,9 @@ sealed partial class GameHost
             OpenPendingEditor();
             ResumeAfterCreation();
             if (!cinemaHolds) ApplyTitleCamera();
+            BenchLap(3);
             UpdateAudio(dt);
+            BenchLap(4);
             if (TitleVisible && !warming) titleBattle?.Advance(frameDt);
             if (skyArrival is not null)
             {
@@ -514,6 +523,11 @@ sealed partial class GameHost
                 if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
             }
             var size = window.FramebufferSize;
+            // Until the warm-up's frames run smoothly the water reflection draws everything and the sky its cloud volume, so their pipelines are made under the
+            // cover (ReflectionPass.Warm, SkyRenderer.Warm).
+            bool warmPasses = warming && smoothSeconds == 0;
+            if (gpu.Reflection is { } reflection) reflection.Warm = warmPasses;
+            gpu.Sky.Warm = warmPasses;
             UpdateView(size.X, size.Y);
             // What the mouse is over, decided once before the world is drawn: the pointer (drawn last) and the hover outline (drawn with the world) agree.
             var pointerMouse = silkInput.Mice.FirstOrDefault();
@@ -534,8 +548,10 @@ sealed partial class GameHost
                 gpu.HoverKeys = [.. player.HighlightTargets(camera.Target, PlayerInterface.HighlightRadius).Select(t => (DrawKey(t.Id), t.Colour))];
             else
                 gpu.HoverKeys = outlining && pointerWorld && player.HoverTarget is { } hover ? [(DrawKey(hover.Id), hover.Colour)] : [];
+            BenchLap(5);
             if (display.BeginFrame(size.X, size.Y))
             {
+                BenchLap(6);
                 long t0 = Stopwatch.GetTimestamp();
                 // The chain and the panel draw into the window's backbuffer (made again when the size changes).
                 var backbuffer = display.Backbuffer!;
@@ -618,6 +634,8 @@ sealed partial class GameHost
                 }
                 display.Present();
                 profiler?.EndFrame();
+                BenchLap(7);
+                PlayBenchRendered(Stopwatch.GetElapsedTime(t0).TotalMilliseconds, display.Context.Pipelines.LatePipelines);
                 if (display.Context.GpuFrameMs > 0) { gpuSum += display.Context.GpuFrameMs; gpuSamples++; }
                 statsFrames++;
                 if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
@@ -649,6 +667,7 @@ sealed partial class GameHost
                 Console.WriteLine($"smoke     {totalFrames} frames in {now:0.0} s: {totalFrames / now:0} fps on average, {session.Ticks.TotalTicks} control ticks, {session.Simulation.TotalTicks} simulation ticks, game time {session.Clock.TimeText}"); quit = true; }
             if (!display.VSync && fpsLimit > 0) Limit(frame, now, 1.0 / fpsLimit);
         }
+        WritePlayBench(window.FramebufferSize);
         SaveSettings();
         profiler?.Dispose();
         player.DisposeUi();

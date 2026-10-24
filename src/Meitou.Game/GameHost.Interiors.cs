@@ -52,7 +52,7 @@ sealed partial class GameHost
         foreach (var c in characters)
         {
             var at = DrawnPosition(c);
-            if (viewed.Find(b => b.Contains(at, InsideMargin)) is { } inView)
+            if (ViewedAt(at) is { } inView)
             {
                 if (viewedFloor < 3 && inView.FloorAt(at) > viewedFloor) hiddenIndoors.Add(c.Id);
             }
@@ -68,6 +68,13 @@ sealed partial class GameHost
     {
         if (slot >= interiorMemos.Length) Array.Resize(ref interiorMemos, Math.Max(slot + 1, interiorMemos.Length * 2));
         return ref interiorMemos[slot];
+    }
+
+    /// <summary>The viewed building <paramref name="at"/> is in (a loop: a lambda here made a closure and a delegate per character per frame).</summary>
+    InteriorVolume? ViewedAt(System.Numerics.Vector3 at)
+    {
+        foreach (var b in viewed) if (b.Contains(at, InsideMargin)) return b;
+        return null;
     }
 
     /// <summary>

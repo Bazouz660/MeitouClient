@@ -55,6 +55,34 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         public bool Closed;
     }
 
+    /// <summary>A thread's A* state, reused by every search on it.</summary>
+    sealed class SearchScratch
+    {
+        public readonly Dictionary<long, Node> Nodes = [];
+        public readonly PriorityQueue<Node, float> Open = new();
+        readonly List<Node> made = [];
+        int used;
+
+        public void Reset()
+        {
+            // A search that grew the table far (a long route) does not keep it.
+            if (Nodes.Count > 65536) { Nodes.Clear(); Nodes.TrimExcess(); made.Clear(); made.TrimExcess(); }
+            Nodes.Clear();
+            Open.Clear();
+            used = 0;
+        }
+
+        public Node Take(NavRef at, Vector3 position, float g, float f)
+        {
+            if (used == made.Count) made.Add(new Node());
+            var node = made[used++];
+            (node.Ref, node.Position, node.G, node.F, node.Parent, node.Closed) = (at, position, g, f, -1, false);
+            return node;
+        }
+    }
+
+    [ThreadStatic] static SearchScratch? searchScratch;
+
     public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null)
     {
         agent ??= NavAgent.Human;
@@ -84,9 +112,12 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
     /// </summary>
     public Corridor? FindCorridor(NavRef start, Vector3 startPoint, NavRef goal, Vector3 goalPoint, NavAgent agent, bool partial = false)
     {
-        var nodes = new Dictionary<long, Node>();
-        var open = new PriorityQueue<Node, float>();
-        var first = new Node { Ref = start, Position = startPoint, G = 0, F = Vector3.Distance(startPoint, goalPoint) };
+        // The search's table, queue and nodes are the thread's, kept between searches: a fresh set per search was a tenth of the game's garbage (docs/bench.md "Play benchmark").
+        var scratch = searchScratch ??= new SearchScratch();
+        scratch.Reset();
+        var nodes = scratch.Nodes;
+        var open = scratch.Open;
+        var first = scratch.Take(start, startPoint, 0, Vector3.Distance(startPoint, goalPoint));
         nodes[start.Key] = first;
         open.Enqueue(first, first.F);
         int iterations = 0;
@@ -156,7 +187,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             if (area == NavArea.Door) g += OpenDoorCost;
             if (!nodes.TryGetValue(to.Key, out var node))
             {
-                node = new Node { Ref = to, Position = mid, G = float.MaxValue };
+                node = scratch.Take(to, mid, float.MaxValue, 0);
                 nodes[to.Key] = node;
             }
             if (node.Closed || g >= node.G) return;

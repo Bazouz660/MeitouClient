@@ -90,7 +90,14 @@ sealed partial class PlayerInterface
     internal (MyGuiLayout Layout, UiBindings Bindings) FaithfulBindings(string id) =>
         id == "hud" ? (faithfulHud, BindUi()) : (faithfulScreens.Layout(id), BindFaithfulScreen(id));
 
-    public void CreateUiPainter(DebugOverlay overlay, Func<string, string?> resolve) { uiPainter = new(overlay, uiResources, resolve) { Mode = UiMode }; findAsset = resolve; }
+    public void CreateUiPainter(DebugOverlay overlay, Func<string, string?> resolve)
+    {
+        uiPainter = new(overlay, uiResources, resolve) { Mode = UiMode };
+        findAsset = resolve;
+        // The screens' pictures are read ahead (the overview's map is 43 MB), so that opening a screen only uploads them.
+        uiPainter.Prefetch(FaithfulScreenFiles.SelectMany(s => faithfulScreens.Layout(s.Id).Widgets).Concat(faithfulHud.Widgets)
+            .Select(w => w.Properties.GetValueOrDefault("ImageTexture")).OfType<string>());
+    }
     public void DisposeUi() { uiPainter?.Dispose(); uiPainter = null; uiRegistration?.Dispose(); uiRegistration = null; }
     /// <summary>Future code-mod loader entry point; disposal removes the extension's owned registrations.</summary>
     public IDisposable RegisterUiExtension(IUiExtension extension) => uiHost.Register(extension);

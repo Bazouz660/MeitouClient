@@ -69,6 +69,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
     {
         this.rigs = rigs;
         this.environment = environment;
+        RagdollPhysics.WarmUpOnce();
     }
 
     /// <summary>Ragdolls in play (frozen ones included) and how many are moving.</summary>

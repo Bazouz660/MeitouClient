@@ -356,18 +356,18 @@ public sealed partial class UiPainter : IDisposable
             string text = c.Caption.Replace("\\n", "\n", StringComparison.Ordinal);
             // A font resource's long line is cropped by the widget in the Faithful mode, as MyGUI does, never shortened with "...".
             var lines = c.Properties.GetValueOrDefault("WordWrap") == "true" ? font.WrapText(text, textArea.Width, scale)
-                : text.ReplaceLineEndings("\n").Split('\n').Select(line => original ? line : font.FitText(line, textArea.Width, scale)).ToArray();
+                : FitLines(text, original, font, textArea.Width, scale);
             if (focused && c.Properties.GetValueOrDefault("Numeric") == "true") lines = [text];
             string align = c.Properties.GetValueOrDefault("TextAlign") ?? "Left VCenter";
             // An EditBox scrolled by its bar (MyGuiPresentation: TextScroll pixels); the client clips the lines.
             float scrolled = float.TryParse(c.Properties.GetValueOrDefault("TextScroll"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float textScroll) ? textScroll : 0;
-            float y = -scrolled + textArea.Y + (align.Contains("Bottom", StringComparison.Ordinal) ? Math.Max(0, textArea.Height - font.LineHeight * scale * lines.Count) : align.Split(' ').Any(a => a is "Center" or "VCenter") ? Math.Max(0, (textArea.Height - font.LineHeight * scale * lines.Count) / 2) : 0);
+            float y = -scrolled + textArea.Y + (align.Contains("Bottom", StringComparison.Ordinal) ? Math.Max(0, textArea.Height - font.LineHeight * scale * lines.Count) : HasWord(align, "Center", "VCenter") ? Math.Max(0, (textArea.Height - font.LineHeight * scale * lines.Count) / 2) : 0);
             if (focused)
             {
                 int Index(string key) => int.TryParse(c.Properties.GetValueOrDefault(key), out int at) ? Math.Clamp(at, 0, text.Length) : 0;
                 int selection = Index("SelectionStart"), length = Index("SelectionLength"), caret = Index("CaretIndex");
                 float textWidth = font.MeasureText(text, scale);
-                float origin = textArea.X + (align.Contains("Right", StringComparison.Ordinal) ? textArea.Width - textWidth : align.Split(' ').Any(a => a is "Center" or "HCenter") ? (textArea.Width - textWidth) / 2 : 0);
+                float origin = textArea.X + (align.Contains("Right", StringComparison.Ordinal) ? textArea.Width - textWidth : HasWord(align, "Center", "HCenter") ? (textArea.Width - textWidth) / 2 : 0);
                 if (length > 0)
                 {
                     float start = origin + font.MeasureText(text[..selection], scale);
@@ -384,7 +384,7 @@ public sealed partial class UiPainter : IDisposable
             foreach (string line in lines)
             {
                 float textWidth = font.MeasureText(line, scale);
-                float x = textArea.X + (align.Contains("Right", StringComparison.Ordinal) ? textArea.Width - textWidth : align.Split(' ').Any(a => a is "Center" or "HCenter") ? (textArea.Width - textWidth) / 2 : 0);
+                float x = textArea.X + (align.Contains("Right", StringComparison.Ordinal) ? textArea.Width - textWidth : HasWord(align, "Center", "HCenter") ? (textArea.Width - textWidth) / 2 : 0);
                 if (new Meitou.Data.Ui.UiRect(x, y, textWidth, font.LineHeight * scale).Intersect(textClip).Width > 0)
                 {
                     if (c.Properties.GetValueOrDefault("TextShadow") == "true") font.TextScaled(line, x + 1, y + 1, new(0, 0, 0, textColour.W), scale);
@@ -502,6 +502,24 @@ public sealed partial class UiPainter : IDisposable
         }
     }
 
+    // A text's lines and its alignment words, read without the split, query and closure per control per frame they were (docs/bench.md "Play benchmark").
+    static readonly System.Buffers.SearchValues<char> LineEnds = System.Buffers.SearchValues.Create("\r\n\f\u0085\u2028\u2029");   // what ReplaceLineEndings breaks at
+
+    static string[] FitLines(string text, bool original, DebugOverlay font, float width, float scale)
+    {
+        var lines = text.AsSpan().IndexOfAny(LineEnds) >= 0 ? text.ReplaceLineEndings("\n").Split('\n') : [text];
+        if (!original) for (int i = 0; i < lines.Length; i++) lines[i] = font.FitText(lines[i], width, scale);
+        return lines;
+    }
+
+    static bool HasWord(string align, string a, string b)
+    {
+        var text = align.AsSpan();
+        foreach (var range in text.Split(' '))
+            if (text[range] is var word && (word.SequenceEqual(a) || word.SequenceEqual(b))) return true;
+        return false;
+    }
+
     static float Alpha(IReadOnlyDictionary<string, string> properties) => float.TryParse(properties.GetValueOrDefault("Alpha"), System.Globalization.NumberStyles.Float,
         System.Globalization.CultureInfo.InvariantCulture, out float value) ? Math.Clamp(value, 0, 1) : 1;
     static Vector4 Colour(string? value, Vector4 fallback)
@@ -597,26 +615,55 @@ public sealed partial class UiPainter : IDisposable
         if (external.TryGetValue(name, out var given) || textures.TryGetValue(name, out given)) return given;
         if ((name.StartsWith(RenderedIconPrefix, StringComparison.Ordinal) || name.StartsWith(RenderedBuildingIconPrefix, StringComparison.Ordinal)) && RenderedIcons?.Invoke(name) is { } rendered) return rendered;
         string path = resolve(name) ?? throw new FileNotFoundException($"MyGUI texture not found: {name}");
+        if (stored.Remove(name, out var reading) && reading.Result is { } dds) return UploadStored(name, dds);
         return Upload(name, TextureLoader.LoadFile(path, allMips: false).Levels[0]);
+    }
+
+    /// <summary>
+    /// Starts reading the S3TC (BC1-BC3) DDS files among the ImageBox textures <paramref name="names"/> on workers; the first <see cref="Draw"/> that shows one
+    /// uploads its top level as stored, with no CPU decode and no <see cref="OpacityMask"/> (it never counts in <see cref="OpaqueCoverage"/>). The overview's map,
+    /// an 8192 x 8192 BC1 file, decoded to 256 MB of RGBA8 inside the frame that opened the panel: about 400 ms (docs/bench.md "Play benchmark").
+    /// </summary>
+    public void Prefetch(IEnumerable<string> names)
+    {
+        foreach (string name in names.Distinct(StringComparer.Ordinal))
+            if (!textures.ContainsKey(name) && !external.ContainsKey(name) && !stored.ContainsKey(name) && resolve(name) is { } path && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+                stored[name] = Task.Run(() =>
+                {
+                    try { return DdsReader.ReadFile(path) is { Format: DdsFormat.Bc1 or DdsFormat.Bc2 or DdsFormat.Bc3, IsCubemap: false, IsVolume: false, ImageCount: 1, Width: > 0, Height: > 0 } dds ? dds : null; }
+                    catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { return null; }
+                });
+    }
+
+    readonly Dictionary<string, Task<DdsFile?>> stored = new(StringComparer.Ordinal);
+
+    (Texture Texture, SampledTexture Sampled) UploadStored(string name, DdsFile dds)
+    {
+        var format = dds.Format switch { DdsFormat.Bc1 => Format.BC1RgbaUnormBlock, DdsFormat.Bc2 => Format.BC2UnormBlock, _ => Format.BC3UnormBlock };
+        using var upload = overlay.Gpu.Uploads.Begin();
+        var texture = upload.Create(new TextureDesc(format, dds.Width, dds.Height, Name: $"UI {name}"));
+        upload.Write(texture, 0, 0, new Rect2D(default, new Extent2D((uint)dds.Width, (uint)dds.Height)), dds.SurfaceData(dds.Surface(0, 0)));
+        return textures[name] = (texture, Sampled(texture));
     }
 
     (Texture Texture, SampledTexture Sampled) Upload(string name, RgbaImage image, bool srgb = false)
     {
-        var gpu = overlay.Gpu;
-        using var upload = gpu.Uploads.Begin();
+        using var upload = overlay.Gpu.Uploads.Begin();
         var texture = upload.Create(new TextureDesc(srgb ? Format.R8G8B8A8Srgb : Format.R8G8B8A8Unorm, image.Width, image.Height, Name: $"UI {name}"));
-        var sampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), texture.View(), texture.Image);
         upload.Write(texture, 0, 0, new Rect2D(default, new Extent2D((uint)image.Width, (uint)image.Height)), image.Pixels);
         masks[name] = new OpacityMask(image);
-        return textures[name] = (texture, sampled);
+        return textures[name] = (texture, Sampled(texture));
     }
+
+    SampledTexture Sampled(Texture texture) => new(overlay.Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
+        TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), texture.View(), texture.Image);
 
     public void Dispose()
     {
         foreach (var t in textures.Values) t.Texture.Dispose();
         textures.Clear();
         masks.Clear();
+        stored.Clear();
         foreach (var font in uiFonts.Values) font.Dispose();
         uiFonts.Clear();
         standardFont?.Dispose(); paintedFont?.Dispose(); titleFont?.Dispose(); standardLarge?.Dispose(); paintedLarge?.Dispose();

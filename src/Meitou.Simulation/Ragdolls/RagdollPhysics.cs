@@ -133,6 +133,88 @@ internal sealed class RagdollPhysics : IDisposable
     /// <summary>Steps the bodies, on <paramref name="threads"/> when given (<see cref="BepuPhysics.Simulation.Deterministic"/> is on, so the result does not depend on them).</summary>
     public void Step(float dt, IThreadDispatcher? threads = null) => Simulation.Timestep(dt, threads);
 
+    /// <summary>
+    /// Once per process, on a worker: a throwaway scene with every shape, joint and kind of contact the ragdolls use, stepped and frozen as a ragdoll is. The game
+    /// compiles each method once, fully optimised, on its first call (no tiering, DECISIONS 19): without this the tick that first moved a ragdoll compiled Bepu's
+    /// solver and collision code, 200-250 ms, and the next ones 10-60 ms more (docs/bench.md "Play benchmark").
+    /// </summary>
+    public static void WarmUpOnce()
+    {
+        if (Interlocked.Exchange(ref warmed, 1) == 0) Task.Run(WarmUp);
+    }
+
+    static int warmed;
+
+    static void WarmUp()
+    {
+        try
+        {
+            using var physics = new RagdollPhysics();
+            var simulation = physics.Simulation;
+            physics.Cover(new Vector3(16, 0, 16), 20, new WarmUpEnvironment(), 0);
+            Span<Vector3> corners = stackalloc Vector3[8];
+            for (int i = 0; i < 8; i++) corners[i] = new Vector3((i & 1) - 0.5f, ((i >> 1) & 1) - 0.5f, ((i >> 2) & 1) - 0.5f) * 2;
+            var hull = new ConvexHull(corners, physics.Pool, out _);
+            (TypedIndex Shape, BodyInertia Inertia)[] shapes =
+            [
+                (simulation.Shapes.Add(new Sphere(1)), new Sphere(1).ComputeInertia(1)), (simulation.Shapes.Add(new Capsule(0.6f, 2.5f)), new Capsule(0.6f, 2.5f).ComputeInertia(1)),
+                (simulation.Shapes.Add(new Box(2, 1.5f, 2.5f)), new Box(2, 1.5f, 2.5f).ComputeInertia(1)), (simulation.Shapes.Add(hull), hull.ComputeInertia(1)),
+            ];
+            var spring = new SpringSettings(30, 1);
+            var joints = new List<ConstraintHandle>();
+            var bodies = new List<BodyHandle>();
+            // Three chains of five, piled on each other, the ground and the building's corner; the first body of the first is pinned (kinematic, moving).
+            for (int r = 0; r < 3; r++)
+            {
+                var chain = new BodyHandle[5];
+                for (int b = 0; b < chain.Length; b++)
+                {
+                    var (shape, inertia) = shapes[(b + r) % shapes.Length];
+                    var pose = new RigidPose(new Vector3(8 + 3 * r + 1.6f * b, 2 + 2.5f * r, 10 + 0.5f * b), Quaternion.CreateFromYawPitchRoll(r, 0.3f * b, 0.2f));
+                    var activity = new BodyActivityDescription(0.01f);
+                    var description = r == 0 && b == 0
+                        ? BodyDescription.CreateKinematic(pose, new BodyVelocity(new Vector3(6, 0, 0)), Collidable(shape), activity)
+                        : BodyDescription.CreateDynamic(pose, inertia, Collidable(shape), activity);
+                    bodies.Add(chain[b] = physics.AddBody(description, new BodyTag { Ragdoll = r + 1, Index = b, Joined = (b > 0 ? 1UL << (b - 1) : 0) | (b < 4 ? 1UL << (b + 1) : 0) }));
+                }
+                var solver = simulation.Solver;
+                joints.Add(solver.Add(chain[0], chain[1], new Hinge { LocalOffsetA = new(0.8f, 0, 0), LocalHingeAxisA = Vector3.UnitZ, LocalOffsetB = new(-0.8f, 0, 0), LocalHingeAxisB = Vector3.UnitZ, SpringSettings = spring }));
+                joints.Add(solver.Add(chain[0], chain[1], new TwistLimit { LocalBasisA = Quaternion.Identity, LocalBasisB = Quaternion.Identity, MinimumAngle = -0.5f, MaximumAngle = 0.5f, SpringSettings = spring }));
+                joints.Add(solver.Add(chain[1], chain[2], new BallSocket { LocalOffsetA = new(0.8f, 0, 0), LocalOffsetB = new(-0.8f, 0, 0), SpringSettings = spring }));
+                joints.Add(solver.Add(chain[1], chain[2], new SwingLimit { AxisLocalA = Vector3.UnitX, AxisLocalB = Vector3.UnitX, MaximumSwingAngle = 0.6f, SpringSettings = spring }));
+                joints.Add(solver.Add(chain[1], chain[2], new TwistLimit { LocalBasisA = Quaternion.Identity, LocalBasisB = Quaternion.Identity, MinimumAngle = -0.3f, MaximumAngle = 0.3f, SpringSettings = spring }));
+                joints.Add(solver.Add(chain[2], chain[3], new Weld { LocalOffset = new(1.6f, 0, 0), LocalOrientation = Quaternion.Identity, SpringSettings = spring }));
+                joints.Add(solver.Add(chain[3], chain[4], new BallSocket { LocalOffsetA = new(0.8f, 0, 0), LocalOffsetB = new(-0.8f, 0, 0), SpringSettings = spring }));
+            }
+            for (int tick = 0; tick < 90; tick++) physics.Step(1 / 30f);
+            // Frozen as RagdollSystem.Freeze does: the joints go, the bodies stop and turn kinematic; then the tiles are swept away.
+            foreach (var joint in joints) simulation.Solver.Remove(joint);
+            foreach (var handle in bodies)
+            {
+                var body = simulation.Bodies.GetBodyReference(handle);
+                body.Velocity = default;
+                if (!body.Kinematic) body.BecomeKinematic();
+            }
+            for (int tick = 0; tick < 5; tick++) physics.Step(1 / 30f);
+            physics.Sweep(TileLife + 1);
+        }
+        catch (Exception e) { Console.Error.WriteLine($"warning   the ragdoll warm-up failed: {e.Message}"); }
+    }
+
+    /// <summary>The warm-up's ground (gently waved) and building (a box standing on it).</summary>
+    sealed class WarmUpEnvironment : IRagdollEnvironment
+    {
+        public float GroundHeight(float x, float z, float nearY) => 0.3f * MathF.Sin(0.4f * x) * MathF.Cos(0.3f * z);
+
+        public bool Buildings(Vector3 min, Vector3 max, List<Vector3> triangles)
+        {
+            Vector3 P(int i) => new(i & 1, (i >> 1) & 1, (i >> 2) & 1);
+            int[] faces = [0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3];
+            foreach (int i in faces) triangles.Add(new Vector3(14, 0, 14) + P(i) * new Vector3(6, 4, 6));
+            return true;
+        }
+    }
+
     public ref BodyTag Tag(BodyHandle body) => ref tags[body];
 
     public BodyHandle AddBody(in BodyDescription description, BodyTag tag)
