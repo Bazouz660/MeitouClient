@@ -505,6 +505,12 @@ sealed partial class PlayerInterface
             lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && !t.Goods ? "" : suffix, TooltipTone.Bad));
             lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && t.Goods ? "" : suffix, TooltipTone.Bad));
         }
+        else if (GearPricesOf?.Invoke(t.Record, t.Level, t.Company) is { } gear)
+        {
+            // Outside a trade: the plain prices, no trader (the inventory tooltip prints them all the time).
+            lines.Add(new("-Value", "c." + Money(gear.Value), TooltipTone.Ink, TooltipTone.Ink));
+            lines.Add(new("-Sell value", "c." + Money(gear.Sell), TooltipTone.Ink, TooltipTone.Ink));
+        }
         if (armour is not null)
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && function is not (3 or 16))

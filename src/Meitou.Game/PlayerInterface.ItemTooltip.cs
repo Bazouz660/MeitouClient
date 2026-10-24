@@ -8,6 +8,8 @@ sealed partial class PlayerInterface
 {
     /// <summary>The ARMOUR record of an item, null for anything else (the host sets it).</summary>
     public Func<string, ArmourData?>? ArmourOf { get; set; }
+    /// <summary>The Value and Sell value of a piece of gear with no trader (record, level, manufacturer record); the host sets it. Null: none for this item.</summary>
+    public Func<string, float, string, (int Value, int Sell)?>? GearPricesOf { get; set; }
     /// <summary>The name of a record by string id (a body part of an armour's coverage); the host sets it.</summary>
     public Func<string, string?>? RecordName { get; set; }
 
