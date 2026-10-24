@@ -155,9 +155,10 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         this.presentFormat = presentFormat;
         // Metal supports 2x/4x (and 8x on some discrete Macs) for the colour and depth targets the reflection uses. Ask the
         // device rather than assuming 4: the same reflection pass must fall back cleanly on a Mac without MSAA support.
-        for (int count = 8; count >= 2; count /= 2)
-            if (device.SupportsTextureSampleCount((ulong)count)) { maxSampleCount = count; break; }
-        maxSampleCount = Math.Max(maxSampleCount, 1);
+        int supportedSamples = 1;
+        for (int count = 2; count <= 8; count *= 2)
+            if (device.SupportsTextureSampleCount((ulong)count)) supportedSamples = count;
+        maxSampleCount = supportedSamples;
         string slotWait = Environment.GetEnvironmentVariable("MEITOU_METAL_SLOT_WAIT") ?? "";
         // Vulkan waits for the slot's fence before reusing it. That rule is now the Metal default; "0"/"false" restores
         // the old frame-number-only behavior for A/B diagnostics, and "serial" waits for the immediately previous frame.

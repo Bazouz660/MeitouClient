@@ -202,8 +202,9 @@ public sealed class ReflectionPass : IDisposable
         // without it each texel of the half-resolution image is a visible stair step that the wave distortion then smears.
         // The API's sample counts are powers of two; a requested odd count (or one above the device's) takes the next
         // lower supported count rather than making an invalid texture.
+        int maxSamples = Gpu.MaxSampleCount;
         samples = 1;
-        while (samples * 2 <= Samples && samples * 2 <= Gpu.MaxSampleCount) samples *= 2;
+        while (samples * 2 <= Samples && samples * 2 <= maxSamples) samples *= 2;
         if (samples <= 1) samples = 0;
         GpuTexture Target(InternalFormat format, TextureUse use, int count, string name, bool privateMemory) =>
             Gpu.CreateTexture(new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name, Private: privateMemory));
