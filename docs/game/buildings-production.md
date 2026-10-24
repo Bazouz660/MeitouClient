@@ -126,6 +126,12 @@ same build work and ends once complete and `progress / target >= 1` (`FUN_140547
 (`FUN_14054a3f0` tests only incomplete ones), so repairing takes no materials. What lowers a complete building's
 progress (attacks) and whether slot 70 clamps at the target are **Unknown**.
 
+Purchased ruins: **Observed** in the user's original-game comparison: right-clicking a purchased damaged house exposes
+Repair, and selected characters supply building materials and work. This is reconstruction, distinct from the complete-house
+repair above. Meitou uses the destroyed-building transition and material gate already described here, activated by the explicit
+order; the exact original activation timing remains **Unknown**. Implementation and regression coverage:
+[town-house repairs](../simulation.md#buildings).
+
 Dismantle (**Verified**, `Task_Dismantle` `FUN_1403518c0`, Building slot 73 `FUN_1402a2860`): refused with "I have to
 dismantle the furniture first." / "...unmount the buildings first." while those exist; a door redirects to its
 building. Animation `stonemine`, engineering XP as for building. Per update `amount = dt x lerp(0.05, 4, eng/100) x 4`;
