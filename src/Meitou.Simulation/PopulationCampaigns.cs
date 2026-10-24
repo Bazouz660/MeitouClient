@@ -1134,7 +1134,7 @@ public sealed partial class PopulationSystem : IStateHashed
             squad.HomeCentre = SiteCentre(squad.Town);
             squad.HomeRadius = 60;
         }
-        if (table.Next[slot].Task is (byte)CharacterTask.Attack or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown) return;   // a fight or a lift (a kidnapper) is left to itself
+        if (table.Next[slot].Task is (byte)CharacterTask.Attack or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot) return;   // a fight, a lift (a kidnapper) or a loot is left to itself
         bool leads = p.Campaign!.Leader == p.Id;
         float arrive = leads ? settings.RoamArrivalRadius : CampaignFollowDistance;
         ref var n = ref table.Next[slot];

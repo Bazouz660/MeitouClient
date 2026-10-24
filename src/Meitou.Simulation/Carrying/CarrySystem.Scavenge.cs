@@ -130,7 +130,7 @@ public sealed partial class CarrySystem
     }
 
     /// <summary>
-    /// The take (<c>FUN_14034d930</c> / <c>FUN_140342de0</c>): the body's weapons when the looter has none equipped or the body is imprisoned; its food (<c>item function</c> 3, then 15),
+    /// The take (<c>FUN_14034d930</c> / <c>FUN_140342de0</c>): the body's weapons when the looter has none equipped (the original also from an imprisoned body, which the finder never picks here); its food (<c>item function</c> 3, then 15),
     /// then its backpack's food; with <paramref name="everything"/> also every item and armour of it and every item of its backpack. Returns the items moved.
     /// </summary>
     int NpcTake(CharacterCold looter, CharacterCold victim, bool everything)
@@ -138,7 +138,7 @@ public sealed partial class CarrySystem
         var from = victim.Inventory!;
         var bag = from.Backpack?.Contents;
         var items = new List<ItemInstance>();
-        if (!WeaponEquipped(looter) || victim.IsImprisoned) items.AddRange(from.Items.Where(x => x.Type == FcsRecordType.WEAPON));
+        if (!WeaponEquipped(looter)) items.AddRange(from.Items.Where(x => x.Type == FcsRecordType.WEAPON));
         foreach (int function in (ReadOnlySpan<int>)[FeedSystem.FoodFunction, FeedSystem.RawFoodFunction])
             items.AddRange(from.Items.Where(x => x.Type == FcsRecordType.ITEM && x.ItemFunction == function));
         if (bag is not null) items.AddRange(bag.Items.Where(x => x.Type == FcsRecordType.ITEM && x.ItemFunction == FeedSystem.FoodFunction));
