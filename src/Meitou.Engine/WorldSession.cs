@@ -70,7 +70,7 @@ public sealed class WorldSession : IDisposable
     TickRunner? runner;
     bool running;
 
-    /// <summary>The wall time (ms) of the ticks run ahead since the last call, for the profiler; resets it.</summary>
+    /// <summary>The wall time (ms) of the last tick run ahead, 0 once taken (for the profiler).</summary>
     public double TakeAheadMs() { double ms = aheadMs; aheadMs = 0; return ms; }
     double aheadMs;
     /// <summary>Where the frame is between the previous and the current simulation tick (the snapshots' alpha, not the camera's).</summary>
@@ -133,7 +133,7 @@ public sealed class WorldSession : IDisposable
     {
         if (!running) return;
         running = false;
-        aheadMs += runner!.Wait();
+        aheadMs = runner!.Wait();   // one a frame at most: the last one, whether or not the profiler took the one before
         aheadDone = true;
     }
 
