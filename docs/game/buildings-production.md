@@ -177,6 +177,15 @@ shows the first failing message in this order (**Verified** unless marked):
   `public` false, `plevel` 0, added to the player-town list (town manager +0x68) that the save writes
   ([player outposts](../formats/save.md#player-outposts)). On load (`FUN_14092ae80`) a player-faction town within the
   radius of another player town is removed with "Player town '<a>' withing boundaries of <b>".
+- **Centre and radius** (**Verified** by decompile, `Town::reassessTownPosition` `FUN_1405488f0`, via `TownList::reassessTownPositions`
+  `FUN_14054d080`; called on placement commit `FUN_1404d72a0`, dismantle `FUN_1402a2860` / `FUN_14054fea0` and town merge
+  `FUN_140931840`): a player town's centre (+0x48) becomes a weighted mean of its buildings' position markers (two building
+  sets, the first weighted x4; which buildings each holds is **Unknown**), put on the ground and on the navmesh within 500 (kept
+  when no point is found); the radius (+0x51c) becomes the farthest building's X/Z distance from it + 200, at least 1250, clamped
+  to [1000, 20000]. A town with no buildings at all is removed. `Town::getRadius` (`FUN_140926eb0`) returns +0x51c for a player
+  town (2500 while it is at most 1), and `type`-based radii (table above) otherwise; campaigns' arrival and in-town tests
+  (`FUN_140926d50`) use it. So the first building's spot stops being the centre as the base grows. Meitou:
+  `ConstructionSystem.ReassessTown`, a plain mean of the town's outdoor sites (engine choice), also on load.
 - **Slope** (slot 31 `FUN_1404daa20`): ground normal from four rays at the rotated bounding-box corners (outdoors) or
   one ray (indoors); slope = angle from vertical, compared with `max slope` in degrees. With `match slope` (forced for
   interior furniture and nodes) the ghost tilts to the ground and a slope over the limit fails; without it the tilt is

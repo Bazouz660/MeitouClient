@@ -120,7 +120,12 @@ public sealed class PlayerTown
     /// <summary>1, 2, ... in creation (or load) order: what <see cref="BuildSite.Town"/> holds.</summary>
     public required int Number { get; init; }
     public string Name { get; set; } = DefaultName;
-    public Vector3 Position { get; init; }
+    /// <summary>The centre: where it was made, then the mean of its buildings (<see cref="ConstructionSystem.ReassessTown"/>).</summary>
+    public Vector3 Position { get; set; }
+    /// <summary>The reassessed radius (the original's Town +0x51c); 0 until reassessed.</summary>
+    public float Override { get; set; }
+    /// <summary>Its radius (<c>Town::getRadius</c> of a player town, <b>Verified</b>, <c>FUN_140926eb0</c>): <see cref="Override"/>, or 2500 while that is at most 1.</summary>
+    public float Radius => Override > 1 ? Override : 2500;
     /// <summary>The owning faction, a position in the world's faction list.</summary>
     public int Owner { get; init; }
     /// <summary>The save's instance id of its town-list entry (null until a save has named it); bookkeeping for <c>Saving.BuildingSave</c>, not hashed.</summary>
@@ -134,6 +139,7 @@ public sealed class PlayerTown
         h.Add(Rng.StableHash(Name));
         h.Add(Position);
         h.Add(Owner);
+        if (Override != 0) h.Add(Override);
     }
 }
 

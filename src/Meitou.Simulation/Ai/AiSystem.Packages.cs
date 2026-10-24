@@ -43,7 +43,7 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// The town a point is in (the original's <c>FUN_1402688d0</c>: the nearest town of any kind but a nest marker, when the point is within its radius, <c>FUN_140926d50</c>):
-    /// placed towns by <see cref="TownData.Radius"/>, the player's by <see cref="PopulationData.PlayerTownExtent"/>.
+    /// placed towns by <see cref="TownData.Radius"/>, the player's by <see cref="Construction.PlayerTown.Radius"/>.
     /// </summary>
     internal CampaignTown CurrentTown(World world, Vector3 p)
     {
@@ -59,7 +59,7 @@ public sealed partial class AiSystem
         foreach (var town in world.Buildings.Towns)
         {
             float d = Vector2.DistanceSquared(at, Flat(town.Position));
-            if (d < bestD) (best, bestD, bestR) = (CampaignTown.OfPlayer(town.Number), d, data.PlayerTownExtent);
+            if (d < bestD) (best, bestD, bestR) = (CampaignTown.OfPlayer(town.Number), d, town.Radius);
         }
         return bestD <= bestR * bestR ? best : CampaignTown.None;
     }
@@ -111,7 +111,9 @@ public sealed partial class AiSystem
                 if (DestinationCentre(world, board) is { } centre)
                 {
                     squad.HomeCentre = centre;
-                    squad.HomeRadius = MathF.Max(data.PlayerTownRadius * 0.5f, 40);
+                    float radius = board.Destination.Site >= 0 ? data.Sites[board.Destination.Site].Town.SizeRadius * data.Sites[board.Destination.Site].Town.TownRadiusMult
+                        : world.Buildings.FindTown(board.Destination.PlayerTown)?.Radius ?? 0;
+                    squad.HomeRadius = MathF.Max(radius * 0.5f, 40);
                 }
                 break;
             default:

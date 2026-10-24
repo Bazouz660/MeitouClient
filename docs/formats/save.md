@@ -443,7 +443,8 @@ GAMESTATE_TOWN (`Town::vfunc_85` `140376b80` and the TownBase writer) is named `
 towns' keys: `instance` = the entry id, `is nest` false, `building material`, `public` (false for an outpost), `plevel`,
 `replacementTown`, `trade goods`, `faction` = the player faction, `factions here<i>`, `discovered` / `explored` /
 `recently discovered`, `artifacts count`, the handle `hand*` (type 13 TOWN) and the population floats; plus int
-`override` (Town+0x51c, 0 when made, meaning **Unknown**), written only for a town whose faction is the player's.
+`override` (Town+0x51c, the player town's [reassessed radius](../game/buildings-production.md#placement); 0 when made), written only for a town
+whose faction is the player's. How the float is stored under an int key is **Unknown**; Meitou writes 0 and reassesses on load.
 Buildings name it by their `town` handle. Whether the loader takes the name from the record name is **Unknown**.
 
 Meitou writes the level towns' pool keys (`pop`, `popd`, `pop2`, `popd2`, `tod`, `started`, `ded`) for every town it made or loaded pools for, and

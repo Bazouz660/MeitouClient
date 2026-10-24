@@ -157,6 +157,8 @@ public sealed class ConstructionSystem : ITickSystem
                         if (Place(world, plan) is { } site) placed.Add(site);
                     TownForWalls(world, placed);
                     AttachWalls(world.Buildings, Data, placed);
+                    foreach (int number in placed.Select(s => s.Town).Distinct())
+                        if (reg.FindTown(number) is { } town) ReassessTown(world, town);
                     break;
                 }
                 case BuildOrder order:
@@ -432,6 +434,36 @@ public sealed class ConstructionSystem : ITickSystem
         return found;
     }
 
+    /// <summary>A reassessed town's radius: this much beyond its farthest building, at least <see cref="TownRadiusStart"/>, within [1000, 20000] (<b>Verified</b>, <c>FUN_1405488f0</c>).</summary>
+    public const float TownRadiusMargin = 200, TownRadiusStart = 1250, TownRadiusMin = 1000, TownRadiusMax = 20000;
+
+    /// <summary>
+    /// Moves a player town's centre to its buildings and sizes its radius to them (<c>Town::reassessTownPosition</c>, docs/game/buildings-production.md "Outposts"): the mean of its
+    /// outdoor buildings, on walkable ground when some is near, then <see cref="TownRadiusMargin"/> beyond the farthest. Engine choice: a plain mean (the original weighs two building sets,
+    /// <b>Unknown</b> which); a town without buildings keeps its place.
+    /// </summary>
+    public static void ReassessTown(World world, PlayerTown town)
+    {
+        var sum = Vector3.Zero;
+        int count = 0;
+        foreach (var s in world.Buildings.All)
+            if (s.Town == town.Number && s.Parent is null) { sum += s.Position; count++; }
+        if (count == 0) return;
+        var centre = sum / count;
+        if (WalkableSpots.Nearest(world.Walkability, new Vector2(centre.X, centre.Z), out var spot)) centre = new Vector3(spot.X, centre.Y, spot.Y);
+        float radius = TownRadiusStart;
+        foreach (var s in world.Buildings.All)
+            if (s.Town == town.Number) radius = MathF.Max(radius, DistanceXZ(s.Position, centre) + TownRadiusMargin);
+        town.Position = centre;
+        town.Override = Math.Clamp(radius, TownRadiusMin, TownRadiusMax);
+    }
+
+    /// <summary>Reassesses every player town (<see cref="ReassessTown"/>).</summary>
+    public static void ReassessTowns(World world)
+    {
+        foreach (var town in world.Buildings.Towns) ReassessTown(world, town);
+    }
+
     static float DistanceXZ(Vector3 a, Vector3 b)
     {
         float dx = a.X - b.X, dz = a.Z - b.Z;
@@ -445,6 +477,7 @@ public sealed class ConstructionSystem : ITickSystem
         if (IsWall(site))
             foreach (var child in reg.All.Where(s => s.WallParent == site.Id).ToList()) reg.Remove(child);
         reg.Remove(site);
+        if (reg.FindTown(site.Town) is { } town) ReassessTown(world, town);
         sweep = true;
     }
 

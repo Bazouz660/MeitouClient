@@ -454,7 +454,7 @@ or population); a failed start retries each run, up to 100 times; a gone target 
 
 **Phases** (`CampaignInstance::vfunc_10`, every war-manager run, loaded or not; times are game hours since the phase began):
 - Any phase but ended: the leader platoon loaded with every member down → defeat.
-- 0 travel: arrived within 0.8 × town radius (XZ) or 400 of a non-town target; then the `dialog announcement` waits, "{1} has arrived at
+- 0 travel: arrived within 0.8 × town radius (XZ; `Town::getRadius`, a player town's [reassessed radius](buildings-production.md#placement), at least 1250) or 400 of a non-town target; then the `dialog announcement` waits, "{1} has arrived at
   {2}", and phase 1, or straight to ended without victory or defeat when there is no `pt2 AI leader`. A loaded, non-hostile, non-DEFEND
   campaign within 1.8 × radius of a town with hostile occupiers (+0x128) is defeated at once (a trader or ally does not walk into an occupied town).
 - 1 at target: victory when the leader is back in its home town (two null towns compare equal); else by `key`: ASSAULT_TOWN wins after

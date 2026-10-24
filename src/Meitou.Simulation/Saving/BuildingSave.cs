@@ -95,6 +95,8 @@ public static class BuildingSave
         BuildingBuildData? DataOf(string id) =>
             wallData.TryGetValue(id, out var d) ? d : wallData[id] = db.Find(id) is { Type: FcsRecordType.BUILDING } r ? BuildingBuildData.From(r) : null;
         ConstructionSystem.AttachWalls(reg, DataOf, reg.All.ToList());
+        // Engine choice: towns are reassessed on load (a save may hold a centre that was never moved, as Meitou's before it reassessed).
+        ConstructionSystem.ReassessTowns(world);
         return made;
     }
 

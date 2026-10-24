@@ -173,11 +173,11 @@ public sealed partial class PopulationSystem : IStateHashed
         return town is null ? default : new Vector2(town.Position.X, town.Position.Z);
     }
 
-    /// <summary>A town's radius: the TOWN's <c>size radius</c> × its multiplier; a player town's from <c>player_town_template</c> (500 when the data has none, so 0.8 of it is the non-town 400).</summary>
-    float RadiusOf(CampaignTown t)
+    /// <summary>A town's radius: the TOWN's <c>size radius</c> × its multiplier; a player town's own (<see cref="Construction.PlayerTown.Radius"/>, 2500 when it is gone).</summary>
+    float RadiusOf(World world, CampaignTown t)
     {
         if (t.Site >= 0) return data.Sites[t.Site].Town.SizeRadius * data.Sites[t.Site].Town.TownRadiusMult;
-        return data.PlayerTownRadius;
+        return world.Buildings.FindTown(t.PlayerTown)?.Radius ?? 2500;
     }
 
     int FactionOfTown(World world, CampaignTown t) =>
@@ -199,7 +199,7 @@ public sealed partial class PopulationSystem : IStateHashed
         }
         foreach (var town in world.Buildings.Towns)
         {
-            float r = RadiusOf(CampaignTown.OfPlayer(town.Number));
+            float r = RadiusOf(world, CampaignTown.OfPlayer(town.Number));
             if (Vector2.DistanceSquared(at, new Vector2(town.Position.X, town.Position.Z)) <= r * r) return CampaignTown.OfPlayer(town.Number);
         }
         return CampaignTown.None;
@@ -338,12 +338,12 @@ public sealed partial class PopulationSystem : IStateHashed
 
     /// <summary>
     /// Whether a town is active (Town vtable slot 70, <c>FUN_140929eb0</c>, Observed): a zone of it is loaded, and for a player town one of the player's characters is in it
-    /// (here: within <see cref="PopulationData.PlayerTownExtent"/>, whose zone the character keeps loaded). So raids and redirects aim only at a player town the player is at.
+    /// (here: within its radius, whose zone the character keeps loaded). So raids and redirects aim only at a player town the player is at.
     /// </summary>
     bool TownActive(World world, CampaignTown t)
     {        if (t.Site >= 0) return active.Contains(data.Sites[t.Site].Zone);
         var at = CentreOf(world, t);
-        float r = data.PlayerTownExtent;
+        float r = RadiusOf(world, t);
         var prev = world.Characters.Previous;
         for (int i = 0; i < prev.Length; i++)
             if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true } && Vector2.DistanceSquared(new Vector2(prev[i].Position.X, prev[i].Position.Z), at) <= r * r) return true;
@@ -761,7 +761,7 @@ public sealed partial class PopulationSystem : IStateHashed
                     Defeat(world, m, c, inst, now);
                     return false;
                 }
-                if (Vector2.Distance(leader.Position, CentreOf(world, inst.Target)) > 0.8f * RadiusOf(inst.Target)) return false;
+                if (Vector2.Distance(leader.Position, CentreOf(world, inst.Target)) > 0.8f * RadiusOf(world, inst.Target)) return false;
                 if (inst.ArrivedAt < 0)
                 {
                     world.Post(Loc.Tr("{1} has arrived at {2}", c.DisplayName, NameOf(world, inst.Target)));
@@ -820,7 +820,7 @@ public sealed partial class PopulationSystem : IStateHashed
         foreach (var town in world.Buildings.Towns)
         {
             var t = CampaignTown.OfPlayer(town.Number);
-            float r = 1.8f * RadiusOf(t);
+            float r = 1.8f * RadiusOf(world, t);
             if (Vector2.DistanceSquared(at, CentreOf(world, t)) <= r * r && Ai.AiSystem.Occupied(world, t)) return true;
         }
         return false;
@@ -957,7 +957,7 @@ public sealed partial class PopulationSystem : IStateHashed
     (int All, int Up) PlayersIn(World world, CampaignTown t)
     {
         var at = CentreOf(world, t);
-        float r = RadiusOf(t);
+        float r = RadiusOf(world, t);
         int all = 0, up = 0;
         var prev = world.Characters.Previous;
         for (int i = 0; i < prev.Length; i++)
@@ -1032,7 +1032,7 @@ public sealed partial class PopulationSystem : IStateHashed
     {
         if (inst.Phase != 1 || CampaignOf(inst.CampaignId) is not { } c) return WarTargets.None;
         if (c.PackageOf(1, leads) is { } id && data.Ai.Package(id) is { Signal: 20 or 32 })
-            return new WarTargets(-1, true, CentreOf(world, inst.Target), RadiusOf(inst.Target));
+            return new WarTargets(-1, true, CentreOf(world, inst.Target), RadiusOf(world, inst.Target));
         return c.IsHostile && inst.Enemy >= 0 ? new WarTargets(inst.Enemy, false, default, 0) : WarTargets.None;
     }
 
@@ -1148,7 +1148,7 @@ public sealed partial class PopulationSystem : IStateHashed
                 n.TaskTime = 0.5f;
             }
             squad.HomeCentre = goal;
-            squad.HomeRadius = leads && p.Campaign.Phase == 1 ? Math.Max(RadiusOf(p.Campaign.Target) * 0.5f, 40) : 60;
+            squad.HomeRadius = leads && p.Campaign.Phase == 1 ? Math.Max(RadiusOf(world, p.Campaign.Target) * 0.5f, 40) : 60;
             return;
         }
         // The column (task 215, Verified): followers jog to their trail points; the leader marching out keeps its loaded speed while every intact platoon is within

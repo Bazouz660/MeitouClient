@@ -150,34 +150,6 @@ public sealed class PopulationData
         }
     }
 
-    float playerTownRadius = -1, playerTownExtent = -1;
-
-    /// <summary>A player town's radius as the campaigns measure it: the TOWN <c>player_town_template</c>'s <c>size radius</c> × its multiplier (500 when the data has none).</summary>
-    public float PlayerTownRadius
-    {
-        get
-        {
-            if (playerTownRadius < 0) PlayerTemplate();
-            return playerTownRadius;
-        }
-    }
-
-    /// <summary>A player town's radius as the in-town test measures it (<see cref="TownData.Radius"/> of <c>player_town_template</c>, an outpost: 1250 × its multiplier).</summary>
-    public float PlayerTownExtent
-    {
-        get
-        {
-            if (playerTownExtent < 0) PlayerTemplate();
-            return playerTownExtent;
-        }
-    }
-
-    void PlayerTemplate()
-    {
-        var template = Db.Find(Construction.PlayerTown.Template) is { Type: FcsRecordType.TOWN } r ? TownData.From(r) : null;
-        playerTownRadius = template is { SizeRadius: > 0 } ? template.SizeRadius * template.TownRadiusMult : 500;
-        playerTownExtent = template?.Radius ?? 1250;
-    }
 
     /// <summary>The BIOME_GROUP id at a point (null without a biome map or outside every group).</summary>
     public string? BiomeGroupAt(Vector2 at)

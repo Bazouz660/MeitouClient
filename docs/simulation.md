@@ -821,7 +821,9 @@ else the town of the nearest player site within 2500; else a `creates player tow
 position, and every player site whose nearest town (level towns and outposts) within 8000 is it moves in. After the
 batch, `links together` sites still without a town take the batch's last player town, else the nearest town within 16000
 of their mean, else a new outpost there; a level town of another faction leaves them without one (engine:
-`BuildSite.Town` names player towns only). Hashed (towns, and `Town` when set) only once there is one.
+`BuildSite.Town` names player towns only). After each placement, removal and load the town's `Position` and `Override`
+radius are [reassessed](game/buildings-production.md#placement) (`PlayerTown.Radius`, what campaigns, the AI's current town and
+dialogue use). Hashed (towns, and `Town` when set) only once there is one.
 
 **ConstructionSystem** (`StandardParts.Construction`, in `All`; `StandardSystemSet.Construction`) runs after Carry, before
 Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option, 1), `Reach` 20, `SettleReach` 150,
@@ -1192,8 +1194,8 @@ off screen only come back where their schedule puts them ([off-screen tier](#off
 (`IPackageRules`: start, finished, started, ended, may lead). Built: plain, retreat, patrol (route an engine choice), bar, contracts, and
 (`AiSystem.Packages.cs`) the wandering trader (16), passing-by assault (29), occupation (30) and refugee (22: a slave-led squad of fewer than 3 flees to the nearest other town of its faction, a broken one joins a healthy squad there, `SquadManagement.Merge`) as decoded. Not built (never start but as a lone slot-0
 package): the war classes (19, 20, 32) and 31, which run only in campaigns; the campaign drives its platoons itself.
-- **Current town** (`Blackboard.InTown`, on the package cadence before the choice): nearest town by X/Z, placed towns by `TownData.Radius`, player towns by the
-  template's (1250); entering one fires the leader's ENTER_TOWN; the town a squad starts in counts as entered (engine choice: no line for every squad a town makes).
+- **Current town** (`Blackboard.InTown`, on the package cadence before the choice): nearest town by X/Z, placed towns by `TownData.Radius`, player towns by their
+  own (`PlayerTown.Radius`); entering one fires the leader's ENTER_TOWN; the town a squad starts in counts as entered (engine choice: no line for every squad a town makes).
 - **Trader**: as the original (stay, chooser, states, leave rule); the leader's WANDERING_TRADER goal walks to the town (`AiBehaviour.Travel`, also
   TRAVEL_TO_TARGET_TOWN and its fast form; `atDestinationTown` is the package's town while it has one), members follow. Engine choices: a town's own squad never
   starts it (Meitou unloads a town's squads with it); a bar package of a squad that is not a town's own takes the bar of the placed town it is in, none in a player
