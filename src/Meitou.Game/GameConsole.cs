@@ -15,7 +15,8 @@ static partial class GameConsole
     /// <summary>Joins the console of the terminal that started the game, if any. Call before anything is written.</summary>
     public static void AttachToParent()
     {
-        if (!OperatingSystem.IsWindows() || GetConsoleWindow() != 0) return;
+        // The Debug launcher sets this only when it redirects the child streams; direct `dotnet run` still attaches to the terminal.
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("MEITOU_CAPTURE_OUTPUT") == "1" || GetConsoleWindow() != 0) return;
         if (AttachConsole(AttachParentProcess) != 0) Rebind();
     }
 

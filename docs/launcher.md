@@ -96,6 +96,13 @@ versions. The game gets the Kenshi folder through `KENSHI_PATH`; on macOS also `
 Play refuses while the game it started still runs. A game that exits with a non-zero code is reported in the status line with its
 `log.txt` path.
 
+## Steam overlay and play time
+
+- In a Debug launcher run, Play uses `src/Meitou.Game/bin/Debug/net10.0/MeitouClient.exe` when available, so source changes are tested instead of an older downloaded release; Release builds continue using the selected installed version. Debug runs redirect the child's stdout/stderr into the launcher's console and debugger output.
+- On Windows Kenshi installs that include `steam_api64.dll`, Play writes temporary `steam_appid.txt` (`233860`) files in the working directory and beside the Meitou executable, and sets the matching Steam environment variables for the game process. It removes files it created when Meitou exits; existing files are left untouched. The game loads the install-local Steamworks redistributable and calls `SteamAPI_InitFlat` when exported (for a detailed failure reason), else `SteamAPI_Init`, before creating its Vulkan display, then calls `SteamAPI_Shutdown` on exit. Steam integration is optional and Meitou ships no Steamworks binaries. **Verified** ([Steamworks API](https://partner.steamgames.com/doc/sdk/api?l=brazilian), [overlay](https://partner.steamgames.com/doc/features/overlay?language=english)): direct executable/debugger launches can use `steam_appid.txt`, initialization requires a Kenshi license and a running Steam client, and the overlay supports Vulkan; the FPS counter is a Steam overlay setting. **Observed** (implementation): other platforms or installs without the Windows redistributable skip this integration. Play time and overlay behavior need a run against Steam to confirm.
+- If gameplay is still waiting for content, the Debug output and `log.txt` report how many character looks and character assets/textures remain pending.
+- To show FPS, enable Steam's in-game FPS counter under Steam Settings → In Game after the overlay is working.
+
 `versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
 is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing
 the install folder there or in Settings moves the installed versions (copied, then deleted, across drives).
