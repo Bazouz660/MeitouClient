@@ -11,6 +11,8 @@ public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, Character
 {
     /// <summary>A fight the attackers did not pick: an answer to being attacked (<see cref="RetaliationSystem"/>). The player's defence does not count as an assault on the other faction.</summary>
     public bool Defensive { get; init; }
+    /// <summary>The player picked this target (a right click, Attack Target, Attack Unprovoked): the attackers keep it rather than turning on one that lost the initiative roll to them.</summary>
+    public bool Picked { get; init; }
 }
 
 /// <summary>

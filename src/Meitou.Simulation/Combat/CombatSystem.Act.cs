@@ -106,6 +106,7 @@ public sealed partial class CombatSystem
                 s.ReactTech = -1;
                 s.TargetSlot = -1;
                 s.Engaged = false;
+                s.Picked = false;
                 if (cold.InCombat) EndFight(table, i);
                 continue;
             }
@@ -136,6 +137,7 @@ public sealed partial class CombatSystem
                 s.TargetSlot = -1;
                 s.AttackTech = -1;
                 s.NextBlow = 0;
+                s.Picked = false;
                 EndFight(table, i);
             }
 
@@ -156,12 +158,13 @@ public sealed partial class CombatSystem
                 s.ReactTech = -1;
             }
             float incoming = Incoming(world, i, now, out int yielder);
-            // One that lost the initiative roll to it: it turns on that one (FUN_140666a30 sets the winner to attack the asker).
-            if (yielder >= 0 && yielder != s.TargetSlot && !s.Ranged)
+            // One that lost the initiative roll to it: it turns on that one (FUN_140666a30 sets the winner to attack the asker), unless it fights the player's pick.
+            if (yielder >= 0 && yielder != s.TargetSlot && !s.Ranged && !(fighting && s.Picked))
             {
                 s.TargetSlot = yielder;
                 s.TargetGeneration = prev[yielder].Generation;
                 s.Engaged = false;
+                s.Picked = false;
                 fighting = true;
             }
             if (!fighting) s.Engaged = false;

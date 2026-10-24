@@ -144,7 +144,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (PickTarget(p) is { } victim && Hostile(victim))
             return ("attk", victim, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK, victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim)
             {
-                Tick = session.World.Tick, Defensive = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == victim) is { FightsPlayer: true },
+                Tick = session.World.Tick, Picked = true, Defensive = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == victim) is { FightsPlayer: true },
             })));
         if (PickHurtAlly(p) is { } patient)
             return ("med", patient, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick })));
