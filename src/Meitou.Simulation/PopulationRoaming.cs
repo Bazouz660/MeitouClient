@@ -331,8 +331,8 @@ public sealed partial class PopulationSystem
             return;
         }
         if (p.Pinned || p.Wild) return;   // a town's own or a wild one: its AI runs it, it has no trips
-        // A leader in a fight is left to it: an order now would replace the fight's task (the trip goes on when it is over).
-        if (table.Next[squad.Leader.Slot].Task == (byte)CharacterTask.Attack) return;
+        // A leader in a fight or a loot is left to it: an order now would replace that task (the trip goes on when it is over).
+        if (table.Next[squad.Leader.Slot].Task is (byte)CharacterTask.Attack or (byte)CharacterTask.Loot) return;
 
         if (p.WaitLeft > 0)
         {

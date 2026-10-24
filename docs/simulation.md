@@ -224,7 +224,7 @@ the player has one and stands in it; requests (victory/loss chains, ally help) c
   arrival, timers and the 20 % rule run. **Observed** (headless, Dust Bandits, 4 squads of 49 at `raidSizeMult` 4, camera on the leader): the
   followers keep 190, 380 and 470 behind a walking leader (the rule's 187, 375, 562).
 - **Assault**: in phase 1 a loaded campaign squad also fights (`Squad.War`, read by the aggro) everyone not of its faction in the target town when its
-  `pt2` package is a Package_WarAssault (20, 32), else the target faction when the campaign is hostile. Looting is not built. A cannibal assault (class 32) goes to phase 2
+  `pt2` package is a Package_WarAssault (20, 32), else the target faction when the campaign is hostile. Looting is [goal 177](#carrying-rescue-and-looting) where the package lists it. A cannibal assault (class 32) goes to phase 2
   when three of its members carry someone or 15 game minutes after the first did (`CampaignInstance.CarryStart`, not saved); kidnapping: [below](#kidnapping).
 - **Announcement**: a loaded leader in phase 0 says `dialog announcement` once (camera and a target-faction member within 2500): its lines are said as speech bubbles 2 + 0.12 × length seconds apart, or DA 12's wait, and their `interrupt` makes the next talk
   with it the negotiation, also when its faction is hostile. After arriving it waits for the announcement and then while the negotiation is
@@ -443,6 +443,12 @@ or right-clicked over (`TakeLootItem` / `PutLootItem`, `InventoryCommands.MoveIn
 body comes round (another faction's) or is lifted. The same window opens on the player's own standing character (Trade, `CarrySystem.CanBeOpened`); a death item taken butchers only a down body. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
 main grid, weight and burden only, grid size from its `inventory w` / `inventory h`; **Observed** in the original). It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
+- **NPC looting** (`CarrySystem.Scavenge.cs`, facts: [carry-loot 3.3](game/carry-loot.md#33-npc-looting)): every `AutoEveryTicks`, an NPC the AI runs whose package lists goal 177 for its role
+  in the hour (`PopulationSystem.GoalDuty`) loots the nearest dead body (not of its faction), else downed living one of a non-allied faction, within 100: the player's only with
+  `PlayerState.BanditsLoot` (CAMERA `bl`, default on), only whom `shouldIScrewThisGuyOver` allows (classes, love/hate tags), not one its squad tagged short-term 6
+  (`MemoryTag.Looted`). At the body (`Loot` task, `LiftTime` from arrival, `medic` clip) it takes after 8 s (animal 20): weapons when it has none equipped, food (functions 3, 15, the
+  backpack's 3), and for a non-player-side or dead body, unless it is a Bandit or malnourished (floor < 2.8), every item and armour; a weaponless non-bandit grabs one weapon of a
+  living player-side body at 0.8 s instead. Then the tag, and back to its task. Engine choices: nearest per pass, no Looting crime, the tag never expires, law enforcement confiscation not built.
 
 ## Ragdolls
 
@@ -1260,7 +1266,7 @@ Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed wo
 world's options and body factory. Saves carry seven `meitou difficulty <key>` CAMERA floats (hunger, death, damage,
 production, research, building, nests). Missing/nonfinite values use 1; out-of-range values clamp to the slider range.
 These are Meitou extensions; original difficulty save encoding is not implemented here. Saves without the extensions
-use neutral values. Bandit looting and easy prospecting are not exposed.
+use neutral values. Bandit looting (CAMERA `bl`, `PlayerState.BanditsLoot`) is read from and written to saves but has no new-game switch; easy prospecting is not exposed.
 
 ## Saves
 

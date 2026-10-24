@@ -18,7 +18,8 @@ namespace Meitou.Simulation.Carrying;
 /// shoulder (engine choices).</item>
 /// <item><b>Rescue</b>: the rescue job, and NPC squads' knocked-out leaders (<see cref="CarrySettings.RescueNpcLeaders"/>).</item>
 /// <item><b>Loot</b> (<see cref="CharacterTask.Loot"/>): the walk, then everything of the main inventory and the backpack that fits moves to the looter (<see cref="LootOrder"/>), or the body's
-/// inventory opens in a window to take from (<see cref="OpenLootOrder"/>); a member of the victim's faction who sees it makes it a theft.</item>
+/// inventory opens in a window to take from (<see cref="OpenLootOrder"/>); a member of the victim's faction who sees it makes it a theft. NPCs with goal 177 loot by the original's
+/// rules (CarrySystem.Scavenge.cs).</item>
 /// </list>
 /// Everything runs in the serial phases (<c>Inputs</c>, <c>Schedule</c>, <c>SlowWorld</c>), in slot order, so the result does not depend on threads or partitions. Placed after the body system (its
 /// <c>SlowWorld</c> sees this tick's knock-outs and the corpses already removed) and before combat.
@@ -324,13 +325,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             {
                 case CharacterTask.PickUp: Lift(world, table, i, dt); break;
                 case CharacterTask.PutDown: PutDown(world, i, dt); break;
-                case CharacterTask.Loot: Loot(world, table, i); break;
+                case CharacterTask.Loot: Loot(world, table, i, dt); break;
                 case CharacterTask.StealthKo: Swing(world, table, i, dt); break;
             }
         }
         LootWindow(world);
         KeepLinks(world);
-        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); }
+        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); Scavenge(world, table); }
     }
 
     void Lift(World world, CharacterTable table, int i, float dt)
@@ -466,7 +467,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     // ------------------------------------------------------------------ looting
 
-    void Loot(World world, CharacterTable table, int i)
+    void Loot(World world, CharacterTable table, int i, float dt)
     {
         var cold = table.Cold(i)!;
         if (!table.TryResolveNext(cold.CarryTarget, out int t) || Gap(table.Next[i], table.Next[t]) > Settings.Reach) return;   // still walking (Schedule ends a loot whose target went)
@@ -475,6 +476,11 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (cold.Inventory is not { } bag || !(opening ? CanBeOpened(victim) : CanBeLooted(victim)))
         {
             End(table, i);
+            return;
+        }
+        if (!cold.IsPlayer && !opening)
+        {
+            NpcLoot(world, table, i, t, dt);
             return;
         }
         var player = world.Player;

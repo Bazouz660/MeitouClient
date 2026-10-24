@@ -17,7 +17,7 @@ namespace Meitou.Simulation.Crime;
 /// their faction (<see cref="ArrestSystem"/>).</item>
 /// <item><b>Expiry</b>: an entry lasts 0.04 hours per cat since its last raise, for ever from 10000 (<see cref="CrimeTable.LifetimeHours"/>).</item>
 /// </list>
-/// An NPC is a culprit only of an Assault, never booked (engine choice: NPCs loot nothing and carry only their own; their attacks on characters not hostile to them, such as hungry
+/// An NPC is a culprit only of an Assault, never booked (engine choice: an NPC's looting and carrying raise no crime; its attacks on characters not hostile to them, such as hungry
 /// bandits on a town's visitors, are witnessed so the town's police step in).
 /// </summary>
 public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem

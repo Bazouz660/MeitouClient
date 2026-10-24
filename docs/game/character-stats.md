@@ -522,6 +522,7 @@ start, not statically readable (**Unknown**; the sliders' ranges are in the bind
 | Chance of death | 142133578 | 0.5 to 4 | multiplies the bleed rate (`FUN_140646140`) and the wound degeneration (`FUN_14064f5c0`); it does **not** touch starvation: the starvation time reads the *Hunger time* float, which is at +0x1c of this block (**Verified**: addresses of the slider bindings in `FUN_1409151d0` and the writer `FUN_140912f80`) |
 | Global damage multiplier | 142133580 | 0.5 to 4 | multiplies damage and combat XP ([combat.md](combat.md#global-tuning-the-constants-record)) |
 | Building speed / Research speed / Production speed | 142133584 / 14213358c / 142133590 | 0.5 to 2 | construction, research and production rates, [buildings-production.md](buildings-production.md#construction-tick) |
+| Bandits loot the player ("Makes life unfair"; CAMERA `bl`, default on) | 142133598 (byte) | checkbox | NPCs may loot the player's downed characters ([NPC looting](carry-loot.md#33-npc-looting)) |
 | Number of nests multiplier | 142133588 | 0.5 to 4 | scales the nest count of the area spawner, [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) (**Observed**: that doc's "global density float" `DAT_142133588` is this slider; [combat.md](combat.md#global-tuning-the-constants-record) lists the binding) |
 
 ### CONSTANTS used by this subsystem
