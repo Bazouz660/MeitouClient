@@ -9,7 +9,7 @@ namespace Meitou.Game;
 /// <summary>
 /// The Meitou title's main menu, after the Meitou UI kit (docs/meitou-ui.md, "Layout and states"): a stack 320 wide, 56 from the left and 36
 /// from the bottom of a 1600×900 frame, scaled with the height. On top, the save card: worn paper with its dark edge and a drop shadow, the
-/// squad's letter, CONTINUE with an ENTER key badge, and the save's squad, day, place and money. Below it, plate buttons (the game's
+/// CONTINUE with an ENTER key badge, and the save's name, day, place, squad and money. Below it, plate buttons (the game's
 /// Button1Skin at 70% brightness, the pushed skin at 85% under the mouse) with the order-sprite icons. The surfaces are baked once per size
 /// from crops of the game's Kenshi_UI.png (rounded corners, edges and shadow included) and drawn as images; the original title's buttons
 /// stay in place, invisible, as the hit targets, so input is the faithful screen's.
@@ -31,7 +31,7 @@ sealed partial class PlayerInterface
     }
 
     const string MenuCard = "meitou:menu:card", MenuCardHover = "meitou:menu:card-hover", MenuPlate = "meitou:menu:plate", MenuPlateHover = "meitou:menu:plate-hover:v2",
-        MenuChip = "meitou:menu:chip", MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
+        MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
     /// <summary>The kit's numbers at 1600×900.</summary>
     const float MenuLeft = 56, MenuBottom = 36, MenuWidth = 320, MenuButton = 38, MenuGap = 6, MenuExitGap = 4, MenuCardGap = 8, MenuCardHeight = 78, MenuShadow = 22;
     /// <summary>The title's buttons and the catalog messages their captions are (FUN_140918ef0, upper-cased).</summary>
@@ -122,14 +122,12 @@ sealed partial class PlayerInterface
                 art.Add(Image("MeitouMenuCard", cardBounds, MenuCard));
                 if (hoverAmount > 0) art.Add(Image("MeitouMenuCardHover", cardBounds, MenuCardHover,
                     colour: FormattableString.Invariant($"1 1 1 {hoverAmount}")));
-                var (squad, line, meta) = ContinueText();
-                art.Add(Image("MeitouMenuChip", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), MenuChip));
-                art.Add(Text("MeitouMenuChipLetter", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), squad.Length > 0 ? squad[..1].ToUpperInvariant() : "?", 22, InkMain, "Center"));
-                art.Add(Text("MeitouMenuContinue", new(b.X + 76 * s, b.Y + 11 * s, b.Width - 140 * s, 26 * s), UpperTr("CONTINUE"), 22, InkPaper));
+                var (line, meta) = ContinueText();
+                art.Add(Text("MeitouMenuContinue", new(b.X + 16 * s, b.Y + 11 * s, b.Width - 80 * s, 26 * s), UpperTr("CONTINUE"), 22, InkPaper));
                 art.Add(Image("MeitouMenuKey", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), MenuKey));
                 art.Add(Text("MeitouMenuKeyText", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), "ENTER", 10, InkLight, "Center"));
-                art.Add(Text("MeitouMenuSaveLine", new(b.X + 76 * s, b.Y + 37 * s, b.Width - 92 * s, 16 * s), line, 12, InkPaper));
-                art.Add(Text("MeitouMenuSaveMeta", new(b.X + 76 * s, b.Y + 52 * s, b.Width - 92 * s, 16 * s), meta, 12, InkPaper with { W = 0.75f }));
+                art.Add(Text("MeitouMenuSaveLine", new(b.X + 16 * s, b.Y + 37 * s, b.Width - 32 * s, 16 * s), line, 12, InkPaper));
+                art.Add(Text("MeitouMenuSaveMeta", new(b.X + 16 * s, b.Y + 52 * s, b.Width - 32 * s, 16 * s), meta, 12, InkPaper with { W = 0.75f }));
                 controls[i] = Hollow(c) with { Properties = new Dictionary<string, string>(c.Properties) { ["DefaultAction"] = "true" } };
                 continue;
             }
@@ -202,10 +200,10 @@ sealed partial class PlayerInterface
         return new(left + minX, top + minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    /// <summary>The save card's lines, from the newest save: the squad, "Squad · Day N · Place" and "c.N · M members".</summary>
-    (string Squad, string Line, string Meta) ContinueText()
+    /// <summary>The save card's lines, from the newest save: "Save · Day N · Place" and "Squad · c.N · M members" (the squad when it is not the save's name).</summary>
+    (string Line, string Meta) ContinueText()
     {
-        if (slots.FirstOrDefault() is not { } slot) return ("", "", "");
+        if (slots.FirstOrDefault() is not { } slot) return ("", "");
         if (continueInfo.Folder != slot.Folder || continueInfo.Modified != slot.ModifiedUtc)
         {
             SaveSlotInfo? info = null;
@@ -213,11 +211,12 @@ sealed partial class PlayerInterface
             catch (Exception e) when (e is IOException or FormatException or ArgumentException) { }
             continueInfo = (slot.Folder, slot.ModifiedUtc, info);
         }
-        if (continueInfo.Info is not { } i) return (slot.Name, slot.Name, "");
-        string squad = string.IsNullOrWhiteSpace(i.Faction) ? slot.Name : i.Faction;
-        var line = string.Join(" · ", new[] { squad, $"Day {i.Day}", i.Area }.Where(p => !string.IsNullOrWhiteSpace(p)));
-        string meta = $"c.{i.Funds.ToString("N0", CultureInfo.InvariantCulture)} · {i.Members} {(i.Members == 1 ? "member" : "members")}";
-        return (squad, line, meta);
+        if (continueInfo.Info is not { } i) return (slot.Name, "");
+        var line = string.Join(" · ", new[] { slot.Name, $"Day {i.Day}", i.Area }.Where(p => !string.IsNullOrWhiteSpace(p)));
+        string squad = string.Equals(i.Faction, slot.Name, StringComparison.OrdinalIgnoreCase) ? "" : i.Faction;
+        string money = $"c.{i.Funds.ToString("N0", CultureInfo.InvariantCulture)} · {i.Members} {(i.Members == 1 ? "member" : "members")}";
+        string meta = string.IsNullOrWhiteSpace(squad) ? money : $"{squad} · {money}";
+        return (line, meta);
     }
 
     /// <summary>Whether the menu's surfaces are on the GPU at this frame's size; bakes and uploads them when not (the atlas is read once).</summary>
@@ -233,7 +232,6 @@ sealed partial class PlayerInterface
         painter.SetImage(MenuCardHover, MenuArt.Card(uiAtlas, paper, W(MenuWidth), W(MenuCardHeight), s, MenuShadow * s, 1.1f), srgb: false);
         painter.SetImage(MenuPlate, MenuArt.Plate(uiAtlas, new(612, 766, 118, 45), W(MenuWidth), W(MenuButton), s, 0.7f), srgb: false);      // Button1Skin
         painter.SetImage(MenuPlateHover, MenuArt.Plate(uiAtlas, new(612, 766, 118, 45), W(MenuWidth), W(MenuButton), s, 0.85f), srgb: false);
-        painter.SetImage(MenuChip, MenuArt.Chip(W(48), W(48), 4 * s, Hex(20, 8, 6, 0.72f), Hex(175, 166, 139, 0.12f)), srgb: false);
         painter.SetImage(MenuKey, MenuArt.Chip(W(44), W(16), 4 * s, Hex(20, 8, 6, 0.6f), null), srgb: false);
         painter.SetImage(MenuVignette, MenuArt.Vignette(256, 160), srgb: false);
         menuArtScale = s;
@@ -294,7 +292,7 @@ static partial class MenuArt
         return image;
     }
 
-    /// <summary>A flat chip with rounded corners (the save card's letter square, the key badge), with an optional 1px rim.</summary>
+    /// <summary>A flat chip with rounded corners (the save card's key badge), with an optional 1px rim.</summary>
     public static RgbaImage Chip(int width, int height, float radius, Vector4 fill, Vector4? rim)
     {
         var image = new RgbaImage(width, height);

@@ -133,9 +133,9 @@ while the title draws or shows and cleared when it closes; simulation and saves 
   They start three seconds into combat.
 The title menu is the [Meitou UI kit](meitou-ui.md)'s main menu (`MeitouTitleMenu`): its stack, save card and plate buttons at the kit's
 1600×900 sizes scaled with the height, over the kit's vignette. The card (paper, edge, rounded corners, drop shadow), the plates (Button1Skin
-9-slice at 70%, pushed skin at 85% under the mouse) and the chips are baked on the CPU from crops of `Kenshi_UI.png` and uploaded as
-the atlas is (UNORM, so they draw in its colours); icons are atlas rectangles. The card shows the newest save's squad, day, place,
-money and members (play time is not read from saves yet) and is Enter's default. The original buttons stay as invisible hit targets at the
+9-slice at 70%, pushed skin at 85% under the mouse) and the key chip are baked on the CPU from crops of `Kenshi_UI.png` and uploaded as
+the atlas is (UNORM, so they draw in its colours); icons are atlas rectangles. The card shows the newest save's name, day, place,
+squad (when it differs from the name), money and members (play time is not read from saves yet) and is Enter's default. The original buttons stay as invisible hit targets at the
 same bounds, so input is the faithful screen's. Lettering is Exo 2 from the painter's 16 px atlas (ASCII and Latin-1 up to U+00B7),
 or a 48 px bake past 1.25x, so it stays sharp.
 The Meitou wordmark, top right, is `assets/branding/kenshi-logo.png` (Lo-Fi's logo, embedded; see THIRD_PARTY_NOTICES),
