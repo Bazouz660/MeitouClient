@@ -215,8 +215,8 @@ sealed partial class PlayerInterface
         };
     static string ParchmentColour(TooltipTone tone) => tone switch
         {
-            TooltipTone.Main => MainColour, TooltipTone.Ink => TipHex("140806"), TooltipTone.Title => TitleColour, TooltipTone.Bad => BadColour, TooltipTone.BadBright => TipHex("bf4834"),
-            TooltipTone.Good => GoodColour, TooltipTone.Grey => TipHex("444444"), TooltipTone.GreyBright => TipHex("777777"), TooltipTone.Cyan => TipHex("14ffdc"), _ => MyGuiColours.InkText,
+            TooltipTone.Main => MainColour, TooltipTone.Ink => MyGuiColours.InkText, TooltipTone.Title => TitleColour, TooltipTone.Bad => BadColour, TooltipTone.BadBright => BadBrightColour,
+            TooltipTone.Good => GoodColour, TooltipTone.Grey => GreyColour, TooltipTone.GreyBright => TipHex("777777"), TooltipTone.Cyan => TipHex("14ffdc"), _ => MyGuiColours.InkText,
         };
 
     /// <summary>Bakes the Meitou tooltip plate once (rust under the kit's tint, rounded, with its drop shadow; drawn nine-sliced).</summary>
