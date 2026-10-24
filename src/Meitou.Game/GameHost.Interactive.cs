@@ -570,7 +570,7 @@ sealed partial class GameHost
                 else if (!sceneLoading || skyArrival is not null)
                 {
                     // The duel's laps and recorded flights replay exactly, and the play benchmark is deterministic from its save: their ticks stay in step with the frame.
-                    tickAhead = !covered && skyArrival is null && !IsDuel && !cinema.Recording && g.PlayBench is null;
+                    tickAhead = !covered && skyArrival is null && !IsDuel && !cinema.Recording && g.PlayBench is null && TickAheadWanted();
                     DrawWorld(size.X, size.Y);
                     tickAhead = false;
                 }

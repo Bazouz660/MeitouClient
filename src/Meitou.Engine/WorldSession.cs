@@ -73,6 +73,10 @@ public sealed class WorldSession : IDisposable
     /// <summary>The wall time (ms) of the last tick run ahead, 0 once taken (for the profiler).</summary>
     public double TakeAheadMs() { double ms = aheadMs; aheadMs = 0; return ms; }
     double aheadMs;
+
+    /// <summary>A world tick's wall time (ms), smoothed over the last ten or so ticks, whether run in the frame or ahead (the host's dynamic tick ahead reads it).</summary>
+    public double TickMs { get; private set; }
+    void Measure(double ms) => TickMs = TickMs == 0 ? ms : TickMs + (ms - TickMs) * 0.1;
     /// <summary>Where the frame is between the previous and the current simulation tick (the snapshots' alpha, not the camera's).</summary>
     public float SimulationAlpha => Simulation.Alpha;
     public InputState Input { get; } = new();
@@ -134,6 +138,7 @@ public sealed class WorldSession : IDisposable
         if (!running) return;
         running = false;
         aheadMs = runner!.Wait();   // one a frame at most: the last one, whether or not the profiler took the one before
+        Measure(aheadMs);
         aheadDone = true;
     }
 
@@ -207,7 +212,9 @@ public sealed class WorldSession : IDisposable
     void SimulationTick(bool publish)
     {
         World.GameHours = Clock.TotalHours;
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         World.RunTick(publish);
+        Measure(System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds);
         Clock.Advance(Simulation.TickSeconds);
     }
 

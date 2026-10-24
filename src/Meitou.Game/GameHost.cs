@@ -431,4 +431,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     /// <summary>This frame's world draw overlaps the next world tick (set by the interactive loop; never in stills, the duel, recorded flights or the play benchmark).</summary>
     bool tickAhead;
 
+    /// <summary>
+    /// Meitou's dynamic tick ahead (engine choice): on once a world tick takes <see cref="AheadOnMs"/> (smoothed), off again under <see cref="AheadOffMs"/>, so a quiet
+    /// world keeps the game's input delay and a big fight or crowd overlaps; a tick run ahead is slower (it shares the cores with the draw), hence the gap.
+    /// </summary>
+    const double AheadOnMs = 4, AheadOffMs = 2;
+    bool worldBusy;
+
+    bool TickAheadWanted() => config.TickAhead switch
+    {
+        TickAheadMode.Always => true,
+        TickAheadMode.Dynamic => worldBusy = session.TickMs >= (worldBusy ? AheadOffMs : AheadOnMs),
+        _ => false,
+    };
+
 }
