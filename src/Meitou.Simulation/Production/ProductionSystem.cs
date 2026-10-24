@@ -368,6 +368,16 @@ public sealed partial class ProductionSystem : ITickSystem
         return naturalBounds.TryGetValue(site.Id, out var rock) ? MathF.Max(0, Vector2.Distance(new Vector2(from.X, from.Z), rock.Centre) - rock.Radius) : d;
     }
 
+    /// <summary>
+    /// The yaw from <paramref name="n"/> to a site: a rock's bounds centre (engine choice, as <see cref="GapTo"/>: a rock's origin can lie off its pile, so facing it turned miners
+    /// away), else its position.
+    /// </summary>
+    float FacingTo(in CharacterHot n, BuildSite site)
+    {
+        var at = naturalBounds.TryGetValue(site.Id, out var rock) ? rock.Centre : new Vector2(site.Position.X, site.Position.Z);
+        return MathF.Atan2(at.X - n.Position.X, at.Y - n.Position.Z);
+    }
+
     /// <summary>The clip a turret's gunner holds.</summary>
     public const string TurretClip = "combatstance";
 
@@ -545,7 +555,7 @@ public sealed partial class ProductionSystem : ITickSystem
             // A turret: manned, facing it; the combat system fires it (docs/simulation.md "Combat", turrets). Its gunner counts as an operator, so it draws its power.
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {
-                if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+                if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;
                 continue;
@@ -557,11 +567,11 @@ public sealed partial class ProductionSystem : ITickSystem
             // An automatic machine (the 152 job): its hauler fills its inputs and carries its output away; the machine works by itself.
             if (m.Data.IsAutomatic)
             {
-                if (!StartHaul(world, cold, site, m) && n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+                if (!StartHaul(world, cold, site, m) && n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 continue;
             }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
-            if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+            if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
             m.Operators++;
             var stat = (StatsEnumerated)m.Data.Stat;
             float skill = m.Data.Stat > 0 ? Effective(cold, stat) : -1;
