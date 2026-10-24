@@ -27,6 +27,8 @@ public sealed partial class PopulationSystem
     readonly HashSet<int> patrolSeen = [];
     /// <summary>The homeless squads standing in each zone (living leader), counted at the start of each patrol pass for <see cref="SectorWeight"/>.</summary>
     readonly Dictionary<ZoneCoordinate, int> patrolStanding = [];
+    /// <summary>Each homeless squad's home sector, its patrol's tether (<see cref="HomeCell"/>; null: none), by squad id.</summary>
+    readonly Dictionary<int, (int X, int Z)?> homelessHomes = [];
 
     /// <summary>The distance to its point at which a patrol picks the next (<c>FUN_1407ee790</c>, the off-screen step; the loaded rule is taken to match).</summary>
     const float PatrolArrive = 500;
@@ -73,7 +75,7 @@ public sealed partial class PopulationSystem
                 var at = new Vector2(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
                 homelessPatrols.TryGetValue(id, out var patrol);
                 if (patrol.Picks > 0 && Vector2.DistanceSquared(at, patrol.Point) > PatrolArrive * PatrolArrive) continue;
-                if (PatrolPoint(world, squad, site.Group, at, patrol.Picks) is not { } next) continue;
+                if (PatrolPoint(world, squad, site, at, patrol.Picks) is not { } next) continue;
                 homelessPatrols[id] = (next, patrol.Picks + 1);
                 squad.HomeCentre = next;
                 squad.HomeRadius = settings.HomelessHomeRadius;
@@ -84,6 +86,8 @@ public sealed partial class PopulationSystem
             foreach (int id in homelessPatrols.Keys.Where(k => !patrolSeen.Contains(k)).ToList()) homelessPatrols.Remove(id);
         if (outsideSince.Count > 0)
             foreach (int id in outsideSince.Keys.Where(k => !sectorSeen.Contains(k)).ToList()) outsideSince.Remove(id);
+        if (homelessHomes.Count > sectorSeen.Count)
+            foreach (int id in homelessHomes.Keys.Where(k => world.Squads.Find(k) is null).ToList()) homelessHomes.Remove(id);
     }
 
     readonly HashSet<int> sectorSeen = [];
@@ -157,13 +161,15 @@ public sealed partial class PopulationSystem
     /// The next point of a patrol from <paramref name="at"/> (<c>FUN_1408fc730</c>): a neighbouring sector of the group by <see cref="SectorWeight"/>, then in it a town (a player's at even odds with
     /// weight 1, another's at 1 in 4 with weight 0.2) when the template approaches towns, else a placed spot (<c>FUN_1408f50d0</c>); null when none is found.
     /// </summary>
-    Vector2? PatrolPoint(World world, Squad squad, int group, Vector2 at, int picks)
+    Vector2? PatrolPoint(World world, Squad squad, WildSite site, Vector2 at, int picks)
     {
         var biomes = data.Biomes!;
+        int group = site.Group;
         ulong key = Rng.Mix(SeedSalts.HomelessPatrol ^ (ulong)squad.Id << 20 ^ (uint)picks);
         ulong n = 0;
         ulong Roll() => Rng.Hash(world.Seed, key, RngPurpose.Wander, n++);
         var (cx, cz) = WeatherAreas.CellOf(at.X, at.Y);
+        if (!homelessHomes.TryGetValue(squad.Id, out var home)) homelessHomes[squad.Id] = home = HomeCell(squad, site, at);
         Span<(int X, int Z)> near = stackalloc (int, int)[4];
         Span<float> weight = stackalloc float[4];
         bool diagonal = Rng.Float(Roll()) < 0.5f;
@@ -173,14 +179,17 @@ public sealed partial class PopulationSystem
         {
             (int X, int Z) cell = diagonal ? (cx + ((k & 1) == 0 ? 1 : -1), cz + (k < 2 ? 1 : -1)) : k switch { 0 => (cx + 1, cz), 1 => (cx, cz + 1), 2 => (cx - 1, cz), _ => (cx, cz - 1) };
             if (biomes.GroupOf(cell.X, cell.Z) != group) continue;
+            // The tether: a homed squad's sectors are within one of its home's (FUN_1408f5ad0's range factor, near 0 and far 1 from Task_Patrol's start).
+            if (home is { } h && Math.Max(Math.Abs(cell.X - h.X), Math.Abs(cell.Z - h.Z)) > 1) continue;
             weight[count] = SectorWeight(new ZoneCoordinate(cell.X, cell.Z));
             sum += weight[count];
             near[count++] = cell;
         }
         int drawn = 0;
         for (float r = Rng.Float(Roll()) * sum; drawn < count - 1 && r >= weight[drawn]; drawn++) r -= weight[drawn];
-        // No neighbour of the group: a point of its own sector (the original's fallback, FUN_1408fc1a0, picks another sector of the group; Unknown which).
-        var (tx, tz) = count == 0 ? (cx, cz) : near[drawn];
+        // No neighbour: a point of the home's sector, else of its own (engine choice; the original's fallback, FUN_1408fc1a0, takes the first active sector of the
+        // group with no town and fewer than 2 excluded platoons where a spot is found, else any sector of the group).
+        var (tx, tz) = count > 0 ? near[drawn] : home is { } back ? back : (cx, cz);
         if (ApproachesTowns(squad.TemplateId))
         {
             var zone = new ZoneCoordinate(tx, tz);
@@ -206,6 +215,41 @@ public sealed partial class PopulationSystem
     /// 5 for one, 1 for more. The original divides 10 by 0 for an empty one, an infinite weight its pick does not handle; 10 is an engine choice.
     /// </summary>
     float SectorWeight(ZoneCoordinate zone) => !active.Contains(zone) ? 1 : patrolStanding.GetValueOrDefault(zone) switch { 0 => 10, 1 => 5, _ => 1 };
+
+    /// <summary>
+    /// The sector of a homeless squad's home town (<c>FUN_1408f8060</c>, then <c>Ownerships::setHomeTown</c>), measured from <paramref name="at"/>: the town nearest
+    /// its sector's centre when it is of the squad's faction; else the faction's nearest town, or its nearest nest when that is 9216 nearer, none beyond 50000;
+    /// null when none (no faction, or no town of it). Engine choice: decided at its first patrol rather than as it is made, so saved and kept squads get one too.
+    /// </summary>
+    (int X, int Z)? HomeCell(Squad squad, WildSite sector, Vector2 at)
+    {
+        if (squad.Faction < 0) return null;
+        var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(sector.Zone.X, sector.Zone.Y);
+        Vector2? home = null;
+        if (NearestTown(new Vector2((minX + maxX) / 2, (minZ + maxZ) / 2), out _) is { } local && data.SiteFactions[local.Index] == squad.Faction)
+            home = new Vector2(local.Position.X, local.Position.Z);
+        else
+        {
+            float town = float.MaxValue, nest = float.MaxValue;
+            Vector2 townAt = default, nestAt = default;
+            foreach (var s in data.Sites)
+            {
+                if (s.Town.Type is TownType.NestMarker or TownType.PointOfInterest or TownType.Null || data.SiteFactions[s.Index] != squad.Faction) continue;
+                var p = new Vector2(s.Position.X, s.Position.Z);
+                if (Vector2.Distance(at, p) is var d && d < town) (town, townAt) = (d, p);
+            }
+            for (int i = 0; i < wildSites!.Count; i++)
+            {
+                if (wildSites[i] is not { Kind: WildKind.Nest } w || w.Faction != squad.Faction) continue;
+                var p = wildCentres[i] ?? w.Spots[0];
+                if (Vector2.Distance(at, p) is var d && d < nest) (nest, nestAt) = (d, p);
+            }
+            if (town == float.MaxValue) return null;
+            (home, float far) = nest + 9216 < town ? (nestAt, nest) : (townAt, town);
+            if (far > 50000) return null;
+        }
+        return home is { } h ? WeatherAreas.CellOf(h.X, h.Y) : null;
+    }
 
     bool ApproachesTowns(string templateId)
     {

@@ -360,7 +360,7 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   sector's own town when its faction is the squad's, else the faction's nearest town, or its nearest nest when that is 9216 nearer, none
   beyond 50000 (`createRandomUnloadedSquad` → `Ownerships::setHomeTown`, KenshiLib 1ce4a16 names; **Verified** by code). It tethers the
   patrol (below). Saved homeless platoons have no `basetown`/`hometown` ([save.md](../formats/save.md)); whether the home is saved
-  elsewhere is **Unknown**. Meitou gives homeless squads no home town, so no tether.
+  elsewhere is **Unknown**. Meitou decides it at the squad's first patrol, from where it stands (engine choice, so saved squads get one).
 - **Patrol task** (`Task_Patrol`, loaded; **Verified** by code and disassembly unless marked): the platoon's `PatrolInfo` (+0x1e8: biome
   group, has-home flag and home town position, sector range near/far, `patrol approaches towns`, a smell factor) is made once; the
   start sets the range to (1, 2), or (0, 1) when the platoon has a home town, then orders a move whose destination (`CharMovement`
@@ -376,10 +376,12 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   3. With `patrol approaches towns` and towns in the drawn sector (`TownList::getTownsInArea`), each player town enters at even odds
      with weight 1 and each other town at 1 in 4 with weight 0.2; a drawn town's `getPositionForWaypoint` is the target (a cached point:
      in front of a gate near the centre, or the centre; **Observed**). Else a placed spot in that sector (`FUN_1408f50d0`); with no
-     neighbour, `FUN_1408fc1a0` picks another sector of the group.
+     neighbour, `FUN_1408fc1a0` takes the first active sector of the group (not the player's, no town, fewer than 2 excluded platoons)
+     where a spot is placed, else a random sector of the group; it ignores the tether.
   A loaded patrol draws again whenever its move order is re-issued (the task's update, once the move has ended); the order's radius is
   1250 (**Observed**). Off screen a new point is picked within 500 of the last (`FUN_1407ee790`). Meitou: the weights above with n the
-  homeless squads standing in the zone and 10 for an empty active one (engine choice), no tether, re-pick within 500, the town's centre.
+  homeless squads standing in the zone and 10 for an empty active one (engine choice), the tether, re-pick within 500, the town's centre;
+  with no neighbour, a point of the home's sector, else of its own (engine choice).
   `patrol approaches towns` is set on 933 of 961 squad templates of the merged load order, the Starving Bandit and Dust Bandit roamers
   among them, so their patrols target NPC towns as above; no other town check was found (**Verified**, record dump).
 - **Traders**: restocked only while active, when the clock passes the platoon's `inventory refresh time`; an unloaded one catches up at
