@@ -39,8 +39,8 @@ public sealed record BuildingFootprint(Vector2[] Hull, float YMin, float YMax)
 /// <summary>A placed building's footprint in the world.</summary>
 public readonly record struct PlacedFootprint(string Id, Vector2[] Hull);
 
-/// <summary>A level-data building with the footprint of its record (in its own space), for picking.</summary>
-public readonly record struct PlacedBuilding(BuildingPlacement Placement, BuildingFootprint Footprint);
+/// <summary>A level-data building with the footprint of its record (in its own space), for picking; <paramref name="Plot"/> when it is the <see cref="BuildingFootprints.Plot"/> stand-in.</summary>
+public readonly record struct PlacedBuilding(BuildingPlacement Placement, BuildingFootprint Footprint, bool Plot = false);
 
 /// <summary>
 /// Footprints of the BUILDING records (from their collision files, the way the navmesh gatherer places them) and of the level data's placed buildings, for the host's placement
@@ -48,6 +48,7 @@ public readonly record struct PlacedBuilding(BuildingPlacement Placement, Buildi
 /// </summary>
 public sealed class BuildingFootprints
 {
+    readonly GameInstall install;
     readonly GameDatabase db;
     readonly CollisionCache collision;
     readonly Lazy<Dictionary<ZoneCoordinate, List<BuildingPlacement>>> index;
@@ -55,6 +56,7 @@ public sealed class BuildingFootprints
 
     public BuildingFootprints(GameInstall install, GameDatabase db, WorldLevelData? levels)
     {
+        this.install = install;
         this.db = db;
         collision = new CollisionCache(install);
         index = new(() =>
@@ -123,6 +125,30 @@ public sealed class BuildingFootprints
         return result;
     }
 
+    readonly ConcurrentDictionary<string, BuildingFootprint?> plots = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The pick stand-in of a BUILDING without collision (outdoor farms, tents, carpets: docs/formats/collision.md): the hull of its parts' render-mesh bounds boxes, scale and part
+    /// placement applied. Only for picking: placement and the navmesh never see it. Null when the record has collision, or no part's bounds can be read.
+    /// </summary>
+    public BuildingFootprint? Plot(string buildingId) => plots.GetOrAdd(buildingId, id =>
+    {
+        if (Wait(id) is not null || db.Find(id) is not { } building) return null;
+        var points = new List<Vector3>();
+        foreach (var mesh in WorldObjectLayout.Building(db, building, "footprint", Vector3.Zero, Quaternion.Identity, new BuildingState()))
+        {
+            if (Meitou.Data.Physics.CollisionPaths.Resolve(install, mesh.MeshPath) is not { } path || !Meitou.Data.Ogre.OgreMeshReader.TryReadBounds(path, out var b)) continue;
+            for (int corner = 0; corner < 8; corner++)
+                points.Add(Vector3.Transform(new Vector3((corner & 1) == 0 ? b.Min.X : b.Max.X, (corner & 2) == 0 ? b.Min.Y : b.Max.Y, (corner & 4) == 0 ? b.Min.Z : b.Max.Z), mesh.Transform));
+        }
+        if (points.Count < 3) return null;
+        var hull = NavGeometry.Footprint(points, 0, 0, 0).Polygon;
+        return hull.Length < 3 ? null : new BuildingFootprint(hull, points.Min(p => p.Y), points.Max(p => p.Y));
+    });
+
+    /// <summary>Whether a BUILDING is a farm (it names a <c>farm data</c>): the level buildings without collision that a click still selects, by their <see cref="Plot"/>.</summary>
+    bool IsFarm(string buildingId) => db.Find(buildingId)?.GetReferences("farm data") is [_, ..];
+
     Task<BuildingFootprint?> Request(string buildingId) => byRecord.GetOrAdd(buildingId, id => Task.Run(() => Compute(id)));
 
     BuildingFootprint? Compute(string buildingId)
@@ -145,7 +171,7 @@ public sealed class BuildingFootprints
 
     /// <summary>
     /// The level data's buildings whose placement lies within reach of the ray's ground track: the candidates a click picks from. Their footprints are read now (in parallel) if they
-    /// were not yet, so the first click on a building picks it.
+    /// were not yet, so the first click on a building picks it. A farm, which has no collision, comes with its <see cref="Plot"/>.
     /// </summary>
     public IEnumerable<PlacedBuilding> Along(Vector3 origin, Vector3 direction, float maxDistance)
     {
@@ -153,6 +179,7 @@ public sealed class BuildingFootprints
         foreach (var b in near) _ = Request(b.BuildingId);
         foreach (var b in near)
             if (Wait(b.BuildingId) is { } footprint) yield return new PlacedBuilding(b, footprint);
+            else if (IsFarm(b.BuildingId) && Plot(b.BuildingId) is { } plot) yield return new PlacedBuilding(b, plot, Plot: true);
     }
 
     IEnumerable<BuildingPlacement> Near(Vector3 origin, Vector3 direction, float maxDistance)

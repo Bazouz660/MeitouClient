@@ -495,6 +495,7 @@ sealed partial class PlayerInterface
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation));
             float? t = host.Placement.Footprint(site.Record) is { } footprint
                 ? BuildingRayT(ray, footprint.Place(site.Position, yaw), footprint.YMin, footprint.YMax, site.Record, site.Position, site.Position.Y, yaw)
+                : host.Placement.Plot(site.Record) is { } plot ? PlotT(ray, plot.Place(site.Position, yaw), ground < float.MaxValue ? ground : null)
                 : RaySegment(ray.Origin, ray.Direction, site.Position, site.Position + new Vector3(0, 16, 0), 12);
             if (t is not { } hit || hit >= ground) continue;
             hits.Add((site, hit));

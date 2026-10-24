@@ -35,6 +35,8 @@ public sealed class PlacementServices
     public Func<Vector3, Vector3, float, IEnumerable<PlacedBuilding>> StaticAlong { get; init; } = (_, _, _) => [];
     /// <summary>The collision triangles of a building record in its own space (a click on a building is tested against them); empty without level data.</summary>
     public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionMesh { get; init; } = _ => [];
+    /// <summary>A building without collision's pick stand-in (<see cref="BuildingFootprints.Plot"/>): a click on the ground inside it selects the building. Never a placement footprint.</summary>
+    public Func<string, BuildingFootprint?> Plot { get; init; } = _ => null;
     /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>
     public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
 }

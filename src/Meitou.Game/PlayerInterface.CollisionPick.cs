@@ -31,6 +31,27 @@ sealed partial class PlayerInterface
         return mesh.Count == 0 ? prism : RayMesh(ray, mesh, new Vector3(position.X, y, position.Z), rotation);
     }
 
+    /// <summary>
+    /// Where the ray meets a building without collision (a farm) by its plot (<see cref="Building.PlacementServices.Plot"/>, an engine stand-in): just before the ground, when the ground
+    /// the ray meets at <paramref name="ground"/> lies inside the placed hull; null otherwise.
+    /// </summary>
+    static float? PlotT((Vector3 Origin, Vector3 Direction) ray, Vector2[] hull, float? ground)
+    {
+        if (ground is not { } t) return null;
+        var at = ray.Origin + ray.Direction * t;
+        // Inside a convex polygon of either winding: on the same side of every edge.
+        float sign = 0;
+        for (int i = 0; i < hull.Length; i++)
+        {
+            var e = hull[(i + 1) % hull.Length] - hull[i];
+            float side = e.X * (at.Z - hull[i].Y) - e.Y * (at.X - hull[i].X);
+            if (side == 0) continue;
+            if (sign == 0) sign = MathF.Sign(side);
+            else if (MathF.Sign(side) != sign) return null;
+        }
+        return t - 0.01f;
+    }
+
     /// <summary>The nearest hit of the ray on the triangles (double sided), the mesh turned by <paramref name="rotation"/> and put at <paramref name="at"/>; null for none.</summary>
     static float? RayMesh((Vector3 Origin, Vector3 Direction) ray, IReadOnlyList<(Vector3[] Vertices, int[] Indices)> mesh, Vector3 at, Quaternion rotation)
     {

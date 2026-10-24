@@ -299,6 +299,9 @@ interior-mask hulls); the hits are sorted nearest first (**Verified**, comparato
   floor cut the ray passes the hidden roof and floors and reaches what is shown. When the viewed floor (PlayerInterface+0x1e4, PgUp/PgDn) is
   below the hit's floor, the walk skips ahead to the next hit on the same building at or below it.
 - A turret or lamp mounted on the hit building (its slot 135 handle) met within 12 units behind the hit is taken instead (`FUN_1407f2af0`).
+- Outdoor farms have no collision ([collision](../formats/collision.md)), yet the original selects them; how is **Unknown** (not in the
+  `FarmBuilding` constructor). Meitou (engine choice, `BuildingFootprints.Plot`): a building without collision (a player's site of any kind,
+  a level farm) is hit where the ground under the cursor lies inside the hull of its parts' render-mesh bounds, just before the ground.
 
 **Building hover and click** (`FUN_1407fc6e0`, **Observed**). Every frame over a building it sets the pointer; on a command release (a quick
 right click) it gives the order to the selected characters (the shared order dispatch `FUN_1407fa650` / `FUN_1407fae70` / `FUN_1407f9e20`,
