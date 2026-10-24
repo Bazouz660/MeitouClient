@@ -83,6 +83,12 @@ public sealed class Market
     }
 
     /// <summary>
+    /// The <c>Avg. Price</c> an ITEM's tooltip prints when it is a <c>trade item</c> (<c>FUN_1407ae130</c>, <b>Observed</b> in the disassembly): <c>ItemValue</c> at the item's level (the
+    /// item's slot 87, 0 for a plain item, so quality plays no part) with the category rows and no manufacturer, i.e. the base value with no town or trader factor. Null otherwise.
+    /// </summary>
+    public int? AveragePrice(ItemInstance item) => item.Type == FcsRecordType.ITEM && Items.Info(item.Record) is { TradeItem: true } ? BaseValue(item) : null;
+
+    /// <summary>
     /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>): the trader's town culture if it has one and names the item, else the faction's, else 1.
     /// </summary>
     public float CulturePrice(string record, Trader trader)

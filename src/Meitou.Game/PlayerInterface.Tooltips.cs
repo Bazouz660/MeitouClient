@@ -510,12 +510,15 @@ sealed partial class PlayerInterface
             lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && !t.Goods ? "" : suffix, TooltipTone.Bad));
             lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && t.Goods ? "" : suffix, TooltipTone.Bad));
         }
-        else if (GearPricesOf?.Invoke(t.Record, t.Level, t.Company) is { } gear)
+        else if (PricesOf?.Invoke(t) is { } prices)
         {
             // Outside a trade: the plain prices, no trader (the inventory tooltip prints them all the time).
-            lines.Add(new("-Value", "c." + Money(gear.Value), TooltipTone.Ink, TooltipTone.Ink));
-            lines.Add(new("-Sell value", "c." + Money(gear.Sell), TooltipTone.Ink, TooltipTone.Ink));
+            lines.Add(new("-Value", "c." + Money(prices.Value), TooltipTone.Ink, TooltipTone.Ink));
+            lines.Add(new("-Sell value", "c." + Money(prices.Sell), TooltipTone.Ink, TooltipTone.Ink));
         }
+        // A trade item's average price follows the prices, in and out of a trade.
+        if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && PricesOf?.Invoke(t) is { Average: { } average })
+            lines.Add(new("-Avg. Price", "c." + Money(average), TooltipTone.Ink, TooltipTone.Ink));
         if (armour is not null)
         {
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
@@ -542,6 +545,9 @@ sealed partial class PlayerInterface
         }
         if (t.MapNote is { Length: > 0 } note)
             foreach (string row in note.Split('\n')) lines.Add(new(row, "", row.StartsWith("[Right", StringComparison.Ordinal) || row.StartsWith("[Location", StringComparison.Ordinal) ? TooltipTone.Cyan : TooltipTone.Ink));
+        // The record's description closes every other item's tooltip, with no blank row before it (the second tooltip function, FUN_14079f4d0 and its overrides).
+        if (armour is null && record?.GetString("description") is { Length: > 0 } text)
+            lines.Add(new(text, "", TooltipTone.Title, Paragraph: true));
         return lines;
     }
 }

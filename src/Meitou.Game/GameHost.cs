@@ -261,7 +261,23 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.RecordName = id => popData?.Db.Find(id)?.Name;
         player.PlayerFactionName = () => player.FactionName?.Invoke(session.World.Player.Faction) ?? "";
         Meitou.Data.Gameplay.Economy.PriceConstants? priceConstants = null;
-        player.GearPricesOf = (record, level, company) => popData is { } d ? Meitou.Simulation.Trading.Market.GearPrices(d.Db, priceConstants ??= Meitou.Data.Gameplay.Economy.PriceConstants.FromDatabase(d.Db), record, level, company) : null;
+        Meitou.Simulation.Trading.Market? shelf = null;
+        player.PricesOf = tip =>
+        {
+            if (popData is not { } d || d.Db.Find(tip.Record) is not { } r) return null;
+            if (r.Type is Meitou.Data.Fcs.FcsRecordType.ARMOUR or Meitou.Data.Fcs.FcsRecordType.WEAPON or Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
+                return Meitou.Simulation.Trading.Market.GearPrices(d.Db, priceConstants ??= Meitou.Data.Gameplay.Economy.PriceConstants.FromDatabase(d.Db), tip.Record, tip.Level, tip.Company) is { } gear
+                    ? (gear.Value, gear.Sell, null) : null;
+            // No trader, so no town or culture factor (the seed only rolls those). StolenFrom is set only when the item is stolen for its holder; holder -1 keeps that.
+            var m = shelf ??= new Meitou.Simulation.Trading.Market(d, 0);
+            var item = new Meitou.Simulation.Items.ItemInstance
+            {
+                Record = tip.Record, Type = r.Type, Quality = tip.Quality, Level = tip.Level, CompanyId = tip.Company, Charges = tip.Charges, MaxCharges = tip.MaxCharges,
+                Quantity = tip.Quantity, StolenFrom = tip.StolenFrom,
+            };
+            var none = Meitou.Simulation.Trading.Trader.None;
+            return (m.UnitPrice(item, false, none, -1), m.UnitPrice(item, true, none, -1), m.AveragePrice(item));
+        };
         player.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
         player.ItemRecordOf = id => popData?.Db.Find(id);
         player.CombatOf = () => popData?.Combat;
