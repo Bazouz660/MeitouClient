@@ -29,7 +29,7 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
-    /// The NPC approaches (serial): it walks to the target and, within <see cref="DialogueSettings.TalkRange"/> while no conversation is open, fires event 1 at it (the player's
+    /// The NPC approaches (serial): it walks to the target and, in talk range (<see cref="InTalkRange"/>) while no conversation is open, fires event 1 at it (the player's
     /// conversation window opens with it); it gives up after 25 game minutes with event 60 at the target; a target or NPC gone or down ends it.
     /// </summary>
     void StepApproaches(World world)
@@ -40,7 +40,7 @@ public sealed partial class DialogueSystem
             var a = approaches[k];
             int n = -1, t = -1;
             bool done = !table.TryResolveNext(a.Npc, out n) || !Awake(table, n) || !table.TryResolveNext(a.Target, out t) || !Awake(table, t);
-            if (!done && open is null && Vector3.Distance(table.Next[n].Position, table.Next[t].Position) <= Settings.TalkRange)
+            if (!done && open is null && InTalkRange(table, n, t))
             {
                 MovementSystem.Stop(table, n);
                 approaches.RemoveAt(k--);
@@ -63,7 +63,7 @@ public sealed partial class DialogueSystem
             var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
             ref var nh = ref table.Next[n];
             table.Cold(n)!.Engaged = true;
-            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > Settings.TalkRange / 2) MovementSystem.GoTo(table, n, to, SpeedMode.Free);
+            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) MovementSystem.GoTo(table, n, to, SpeedMode.Free);
         }
     }
 
