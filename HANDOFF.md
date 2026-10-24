@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code/plan commit: `30ff1694 polish: cache the reflection sample-count decision`  
+Last code/plan commit: `b2988b66 feat: light Metal debris through the shared atmosphere`  
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 and MEP-2 are accepted** (2026-10-24:
 MetalFX temporal dust/desert/LOD flicker fixed; reflection MSAA/characters validated) and **MEP-3 debris lighting is
 implemented, awaiting in-game validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with
