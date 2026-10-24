@@ -3,8 +3,15 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code commit: `f7afda30 Merge upstream master 57a7968a into metal-spike`  
-Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
-Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure); the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still unhealthy after the 19:15 WindowServer GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
+Current docs/plan: `7eb04a96 docs: plan Metal Effects Parity I (MEP-I) milestones`  
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Next iteration is
+[MEP-I](docs/metal-effects-parity-plan.md): post effects -> reflection quality -> debris lighting ->
+tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
+
+Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
+the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
+unhealthy after the 19:15 WindowServer GPU timeout; they passed on 2026-10-23 before that crash and need a full
+shutdown, not a code change.
 
 ## Upstream sync (2026-10-24, `57a7968a`)
 

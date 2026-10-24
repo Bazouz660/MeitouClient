@@ -2,9 +2,9 @@
 
 Status: **planned, not started** (2026-10-24).
 
-Starting point: `metal-spike` at `84193e4a` (`docs: record the Metal effect-parity audit and test recommendation`),
-after the upstream `57a7968a` merge. Read [the effect-parity audit](../HANDOFF.md#effect-parity-audit-2026-10-24)
-for the measured/known gaps.
+Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
+effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
+[the effect-parity audit](../HANDOFF.md#effect-parity-audit-2026-10-24) for the measured/known gaps.
 
 **Goal:** close the remaining visual effect gaps between the Vulkan reference and Metal so Metal can move from an
 opt-in preview to a parity/default candidate. This iteration is about **visual effects**, not GPU culling, Hi-Z,
