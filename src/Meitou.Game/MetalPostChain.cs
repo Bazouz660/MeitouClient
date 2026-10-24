@@ -18,6 +18,10 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     /// color draw in place but stops it invalidating the temporal history.</summary>
     static readonly bool ParticleCoverageEnabled =
         Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_COVERAGE") is not ("1" or "true");
+    /// <summary>Diagnostic A/B for the low-resolution particle share of the MetalFX reactive mask: the large soft
+    /// sprites (dust) are the ones that overlap LOD boundaries most.</summary>
+    static readonly bool LowResParticleCoverageEnabled =
+        Environment.GetEnvironmentVariable("MEITOU_METAL_NO_LOWRES_PARTICLE_COVERAGE") is not ("1" or "true");
 
     readonly MetalContext ctx;
     readonly PostComposite composite;
@@ -262,6 +266,9 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         cmd.EndRendering();
         ctx.EndHostPass(cmd);
         cmd.Order();
+        // A MetalFX reactive-mask diagnostic: the large soft particles (dust) can be left out of history rejection
+        // while TAA keeps them in its motion alpha.
+        if (!LowResParticleCoverageEnabled && mask == ColorMask.R) return;
         foreach (var low in lowTargets)
         {
             if (!low.Drawn || low.Accum is null || low.Depth is null) continue;

@@ -622,7 +622,12 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 {
                     Cull = CullMode.None, DepthTest = hasDepth && m.DepthCheck && !close, DepthWrite = false, ColourMask = rgb,
                     Blend = kind == Kind.Low ? new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha)
-                        : coverage != 0 ? new BlendState(true, BlendingFactor.One, BlendingFactor.One) : hasColour ? BlendFor(m.Blend) : BlendState.Off,
+                        // The reactive mask is a per-pixel confidence in [0, 1]: overlapping particles must not add past 1.
+                        // (TAA's motion alpha keeps the additive 2 = all-current-frame convention.)
+                        : coverage != 0 ? rgb == ColorMask.R
+                            ? new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Max, BlendOperation.Max)
+                            : new BlendState(true, BlendingFactor.One, BlendingFactor.One)
+                        : hasColour ? BlendFor(m.Blend) : BlendState.Off,
                 };
                 program.Set(coverageMode, kind == Kind.Low ? (m.Blend == ParticleBlend.Alpha ? 3 : 4) : coverage == 0 ? 0 : m.Blend == ParticleBlend.Alpha ? 1 : 2);
                 program.Set(coverageLimit, rgb == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"

@@ -1206,7 +1206,14 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
             c.P.Set(c.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
             c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
-                PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = mask });
+                PassState with
+                {
+                    // The FSR/MetalFX reactive mask is a confidence in [0, 1]; overlap must not add past 1.
+                    Blend = mask == ColorMask.R
+                        ? new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Max, BlendOperation.Max)
+                        : new BlendState(true, BlendingFactor.One, BlendingFactor.One),
+                    ColourMask = mask,
+                });
         }
         CloseSegment();
     }

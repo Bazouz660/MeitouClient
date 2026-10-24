@@ -269,11 +269,12 @@ sealed class PostComposite : IDisposable
         c.P.Set(c.ClipDepthZeroToOne, ctx.ClipDepthZeroToOne ? 1 : 0);
         c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
         var formats = new AttachmentFormats(target.Desc.Format, InternalFormat.None);
-        var state = DrawState.For(formats, false) with
-        {
-            Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One),
-            ColourMask = mask,
-        };
+        // The MetalFX reactive mask must stay in [0, 1]; several particle accumulations/overlaps must not add past
+        // that. TAA's motion alpha keeps the additive 2 = all-current-frame convention.
+        var blend = mask == ColorMask.R
+            ? new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Max, BlendOperation.Max)
+            : new BlendState(true, BlendingFactor.One, BlendingFactor.One);
+        var state = DrawState.For(formats, false) with { Blend = blend, ColourMask = mask };
         Fullscreen(cmd, c.P, target, target.Desc.Width, target.Desc.Height, state, LoadOp.Load);
     }
 
