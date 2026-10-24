@@ -215,8 +215,37 @@ public sealed class FixtureRegistry
             foreach (var r in building.GetReferences(list))
                 if (db.Find(r.TargetStringId) is { Type: FcsRecordType.BUILDING_FUNCTIONALITY } f && f.GetInt("function") is TownBuildings.BedFunction or TownBuildings.SkeletonBedFunction)
                     return new BedData(f.GetInt("function"), f.GetReferences("animation").Select(a => db.Find(a.TargetStringId)?.Name).FirstOrDefault(n => n is not null),
-                        Meitou.Data.Gameplay.Construction.BuildingBuildData.From(building).Target);
+                        Meitou.Data.Gameplay.Construction.BuildingBuildData.From(building).Target, UseNodes(db, building));
         return null;
+    }
+
+    /// <summary>A bed's NODE_USE instances (<see cref="BedNode"/>) in instance id order; null with fewer than 2 (the original then uses the bed's own origin).</summary>
+    static BedNode[]? UseNodes(GameDatabase db, GameRecord building)
+    {
+        BedNode[] nodes = [.. building.Instances.Values.Where(i => !i.IsCleared && db.Find(i.Target) is { } n && n.GetBool("is node") && n.GetInt("node type") == UseNodeType)
+            .OrderBy(i => i.Id, StringComparer.Ordinal).Select(i => new BedNode(i.Position, TownBuildings.YawOf(i.Rotation) - MathF.PI / 2))];
+        return nodes.Length >= 2 ? nodes : null;
+    }
+
+    const int UseNodeType = 4;
+
+    /// <summary>
+    /// Where a sleeper is put in a bed and the way it faces (<c>Building::getPositionMarker</c> / <c>getDirectionMarkerQuat</c>, docs/game/locks.md "Beds"): the bed's use node
+    /// nearest <paramref name="from"/>, else the bed's own origin and facing.
+    /// </summary>
+    public static (Vector3 At, float Yaw) LieSpot(Fixture bed, Vector3 from)
+    {
+        if (bed.Bed.Nodes is not { } nodes) return (bed.Position, bed.Yaw);
+        var turn = Matrix4x4.CreateRotationY(bed.Yaw);
+        var best = (At: bed.Position, Yaw: bed.Yaw);
+        float bestD = float.MaxValue;
+        foreach (var n in nodes)
+        {
+            var at = bed.Position + Vector3.Transform(n.At, turn);
+            float d = Vector3.DistanceSquared(at, from);
+            if (d < bestD) (best, bestD) = ((at, MathF.IEEERemainder(bed.Yaw + n.Yaw, MathF.Tau)), d);
+        }
+        return best;
     }
 
     /// <summary>Forgets a building's fixtures (a player building dismantled); its doors are opened in the navmesh.</summary>
@@ -597,7 +626,7 @@ public sealed class FixtureRegistry
         c.Escaped = false;
         cage.Occupant = prisoner;
         if (cage.Lock is { } l) { l.Locked = true; l.PickTime = 0; l.NextRoll = LockState.FirstRoll; }
-        Hold(table, s, c, cage);
+        Hold(table, s, c, cage.Position, cage.Yaw);
         if (c.Bounties?.Of(cage.Owner) is { Amount: > 0 } entry)
         {
             c.SentenceStart = world.GameHours;
@@ -647,9 +676,9 @@ public sealed class FixtureRegistry
         return true;
     }
 
-    static void Hold(CharacterTable table, int slot, CharacterCold c, Fixture f)
+    static void Hold(CharacterTable table, int slot, CharacterCold c, Vector3 at, float yaw)
     {
-        table.Place(slot, f.Position, f.Yaw);
+        table.Place(slot, at, yaw);
         c.Path = [];
         c.OrderQueue.Clear();
     }
@@ -703,7 +732,7 @@ public sealed class FixtureRegistry
     }
 
     /// <summary>
-    /// Lies a character down in a free bed (state 1, held at the bed's spot facing its way; beds have no lock; the original's <c>FUN_14032e2f0</c>): its task becomes
+    /// Lies a character down in a free bed (state 1, held at its <see cref="LieSpot"/>; beds have no lock; the original's <c>FUN_14032e2f0</c>): its task becomes
     /// <see cref="CharacterTask.Sleep"/> with the bed's clip (<see cref="CharacterCold.OperateClip"/>), its orders and path dropped. True when it lies there already. False when the bed is
     /// taken or the character is held elsewhere, carried or carrying.
     /// </summary>
@@ -718,7 +747,8 @@ public sealed class FixtureRegistry
         c.InWhat = bed.Id;
         bed.Occupant = sleeper;
         MovementSystem.Stop(table, s);
-        Hold(table, s, c, bed);
+        var (at, yaw) = LieSpot(bed, table.Next[s].Position);
+        Hold(table, s, c, at, yaw);
         table.Next[s].Task = (byte)CharacterTask.Sleep;
         table.Next[s].Velocity = Vector3.Zero;
         c.OperateClip = bed.Bed.Clip;

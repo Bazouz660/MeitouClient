@@ -24,9 +24,16 @@ public sealed record BedSpot(string Id, string Record, Vector3 Position, int Own
 
 /// <summary>
 /// What a bed's BUILDING says (docs/game/locks.md "Beds"): its functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED), the clip it is lain in (the functionality's <c>animation</c>:
-/// <c>sleepinbed</c>, <c>sleeponfloor</c>) and the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times).
+/// <c>sleepinbed</c>, <c>sleeponfloor</c>), the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times) and its use nodes
+/// (null with fewer than 2: it is lain in at its own origin and facing).
 /// </summary>
-public readonly record struct BedData(int Function, string? Clip, float Materials);
+public readonly record struct BedData(int Function, string? Clip, float Materials, BedNode[]? Nodes = null);
+
+/// <summary>
+/// A <c>node type</c> 4 (NODE_USE) instance of a bed's BUILDING, in the bed's own space: where a sleeper is put and the way it faces (the node's yaw - 90°; a node looks
+/// along its local -X). <c>sleepinbed</c> holds <c>Bip01</c> about 12 units to the character's side, on the mattress (docs/game/locks.md "Beds").
+/// </summary>
+public readonly record struct BedNode(Vector3 At, float Yaw);
 
 /// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
 public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
