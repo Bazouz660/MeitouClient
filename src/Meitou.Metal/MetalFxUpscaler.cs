@@ -45,10 +45,12 @@ public sealed class MetalFxUpscaler : IUpscaler
         s.MotionTexture = ctx.TextureAt(i.Motion);
         s.OutputTexture = ctx.TextureAt(i.Output);
         if (i.Reactive is { } reactive) s.ReactiveMaskTexture = ctx.TextureAt(reactive);
-        // Our motion is UV from current to previous; MetalFX, like FSR, takes render pixels towards the previous
-        // position (the scale's sign is the conversion). Jitter is in render pixels along +row (Metal's row is top-down).
+        // Our motion is UV from current to previous; MetalFX takes render pixels towards the previous position.
+        // MetalFX's motion space is y-down (the standard Metal framebuffer), while the velocity shader's NDC is y-up,
+        // so X flips and Y does not. (Apple's example: a +1 NDC step uses motion scale (-width, +height).)
+        // Jitter is in render pixels along +row (Metal's row is top-down).
         s.MotionVectorScaleX = -i.RenderWidth;
-        s.MotionVectorScaleY = -i.RenderHeight;
+        s.MotionVectorScaleY = i.RenderHeight;
         s.JitterOffsetX = i.JitterPixels.X;
         s.JitterOffsetY = -i.JitterPixels.Y;
         s.PreExposure = 1;
