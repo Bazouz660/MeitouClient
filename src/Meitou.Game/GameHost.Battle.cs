@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Rendering;
 using Meitou.Simulation;
 using Meitou.Simulation.Combat;
 
@@ -153,6 +154,46 @@ sealed partial class GameHost
                 at[foe.Slot] = at.GetValueOrDefault(foe.Slot) + 1;
                 world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
             }
+    }
+
+    // The counter's numbers per side (standing, alive), counted again when the world ticks.
+    readonly (int Standing, int Alive)[] battleCounts = new (int, int)[2];
+    long battleCountedAt = -1;
+    World? battleCountedIn;
+
+    /// <summary>
+    /// The live counter at the top middle: each side's fighters still standing (the battle's own test: not incapacitated) and still alive (down but not dead count),
+    /// of how many it started with. Interface pass only (after the world draw's tick has joined).
+    /// </summary>
+    void DrawBattleCounter(DebugOverlay o, int width, int height)
+    {
+        var world = session.World;
+        if (battleCountedAt != world.Tick || battleCountedIn != world)
+        {
+            (battleCountedAt, battleCountedIn) = (world.Tick, world);
+            var table = world.Characters;
+            for (int side = 0; side < 2; side++)
+            {
+                int standing = 0, alive = 0;
+                foreach (var id in battleFighters[side])
+                {
+                    if (!table.TryResolveNext(id, out int slot) || table.Cold(slot)?.Medical is not { } medical || medical.Dead) continue;
+                    alive++;
+                    if (!medical.Incapacitated) standing++;
+                }
+                battleCounts[side] = (standing, alive);
+            }
+        }
+        string Line(int side) => $"{battleSides[side].Name}: {battleCounts[side].Standing} standing, {battleCounts[side].Alive} alive of {battleSides[side].Count}";
+        string a = Line(0), b = Line(1);
+        var colourA = new Vector4(0.55f, 0.8f, 1f, 1);
+        var colourB = new Vector4(1f, 0.6f, 0.5f, 1);
+        float pad = 8, w = Math.Max(a.Length, b.Length) * o.CharWidth + 2 * pad, h = 2 * o.LineHeight + 2 * pad;
+        float x0 = (width - w) / 2, y0 = 10;   // top middle: the HUD holds the corners
+        o.Rect(x0, y0, x0 + w, y0 + h, DebugOverlay.PanelColour);
+        o.Text(a, x0 + pad, y0 + pad, colourA);
+        o.Text(b, x0 + pad, y0 + pad + o.LineHeight, colourB);
+        o.Flush(width, height);
     }
 
     /// <summary>Once per frame, between ticks: Backspace starts the battle again in a new world made the same way.</summary>

@@ -591,6 +591,7 @@ sealed partial class GameHost
                     player.Draw(overlay, size.X, size.Y);
                 }
                 if (ui && overlay is not null && IsSandbox) DrawSandbox(overlay, size.X, size.Y);
+                if (ui && overlay is not null && IsBattle) DrawBattleCounter(overlay, size.X, size.Y);
                 // The debug overlays are left out of saved pictures: the statistics at the top left, the key list below them, the profiler.
                 if (ui && overlay is not null && !shot)
                 {

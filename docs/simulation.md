@@ -1349,6 +1349,7 @@ each side's rank length instead, one value for both), 6 units apart
 and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
 same-faction matchups fight too. Once a second a fighter left out of a target with more than 5 after it (circling) turns on the nearest standing
 enemy with room, as the original's target score counts a candidate's engaged fighters against it ([combat](game/combat.md#attack-slots-and-circling)). `--battle-no-fear` leaves out the flee system, so no squad breaks and runs. The battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
+A counter at the top middle (with the interface, stills too) gives each side's fighters standing (not incapacitated) and alive (not dead) of how many it started with.
 
 ## The game host
 
