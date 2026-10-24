@@ -672,8 +672,10 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     enabled only for a stump or a replaced limb, else drawn with the skin's `disabled` tile and taking no drop (MyGUI gives it no focus, **Observed**). A fitted prosthetic shows its
     icon; a stump's race item never sits in the slot. Labels `-ARMS-` / `-LEGS-`; `figure.png` never changes. The slots are built on open (a limb lost meanwhile shows on reopening,
     **Observed**; Meitou refreshes live).
-  The pin button (`Kenshi_PinButtonSkin` in the `Kenshi_WindowCXP` caption, drawn "O") keeps the inventory window, its bag and limbs on the character shown when it was pressed,
-  whoever is selected after; closing the window lets the pin go. Engine choice: the original's pin rule (one window, or a new one for the next selection) is **Unknown**.
+  The pin button (`Kenshi_PinButtonSkin` in the `Kenshi_WindowCXP` caption, drawn "O"; the skin's `*_checked` states while pinned) keeps the inventory window on the character shown
+  when it was pressed, and another squad member's inventory opens in a second window, so several show at once (**Observed** by the owner in the original). Engine choices: selecting
+  someone else after pinning opens their inventory left of the pinned one; I on a pinned character raises their window; unpinning gives the window back to the selection (closes it when
+  the inventory is already open); a pinned window cannot be dragged and has no bag or limbs window. The snapshot carries every pinned character's grid (`ShowInventoryCommand`).
   Esc while trading closes the trader and the character's windows in one press, whichever was clicked last (engine choice, as for loot).
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.

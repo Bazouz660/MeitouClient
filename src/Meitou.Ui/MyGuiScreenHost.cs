@@ -46,6 +46,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public bool IsOpen(string id) => open.Contains(id);
     /// <summary>Whether the open window's pin button is down (closing the window lets it go).</summary>
     public bool IsPinned(string id) => open.Contains(id) && screens[id].Pinned;
+    public void SetPinned(string id, bool pinned) => screens[id].Pinned = pinned;
+    public bool IsRegistered(string id) => screens.ContainsKey(id);
     public void Open(string id)
     {
         if (!screens.ContainsKey(id)) throw new KeyNotFoundException(id);
@@ -112,6 +114,11 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
             }
             PlaceRoots(s, b, width, height);
             var controls = MyGuiPresentation.Arrange(s.Layout, width, height, b, resources.Layers).ToList();
+            // A pinned window's pin button stays down (the skin's checked state, else pushed).
+            if (s.Pinned)
+                for (int i = 0; i < controls.Count; i++)
+                    if (controls[i].Action.StartsWith("mygui:pin", StringComparison.Ordinal))
+                        controls[i] = controls[i] with { Properties = new Dictionary<string, string>(controls[i].Properties) { ["Checked"] = "true", ["StateSelected"] = "true" } };
             decorate?.Invoke(id, controls);
             ArrangeKeyboard(id, controls);
             result.Add(new(id, controls));

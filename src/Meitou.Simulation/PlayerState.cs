@@ -32,8 +32,8 @@ public sealed class PlayerState
     public CharacterId Inspected { get; set; } = CharacterId.None;
     /// <summary>The instance id of the building the HUD shows (<see cref="InspectBuildingCommand"/>), or null. Display only: not hashed and not saved.</summary>
     public string? InspectedBuilding { get; set; }
-    /// <summary>The character a pinned inventory window shows (<see cref="ShowInventoryCommand"/>), or <see cref="CharacterId.None"/>. Display only: not hashed and not saved.</summary>
-    public CharacterId InventoryShown { get; set; } = CharacterId.None;
+    /// <summary>The characters the pinned inventory windows show (<see cref="ShowInventoryCommand"/>). Display only: not hashed and not saved.</summary>
+    public List<CharacterId> InventoryShown { get; } = [];
     /// <summary>The container (<see cref="Locks.Fixture.Id"/>) whose window is open and the character who opened it (<see cref="Items.OpenContainerOrder"/>), and the one a character is still walking to. Display only: not hashed and not saved.</summary>
     public string? OpenContainer { get; set; }
     public CharacterId ContainerOpener { get; set; } = CharacterId.None;
@@ -116,7 +116,7 @@ public sealed class PlayerState
                     break;
                 }
         if (!Inspected.IsNone && !table.TryResolveNext(Inspected, out _)) Inspected = CharacterId.None;
-        if (!InventoryShown.IsNone && !table.TryResolveNext(InventoryShown, out _)) InventoryShown = CharacterId.None;
+        InventoryShown.RemoveAll(c => !table.TryResolveNext(c, out _));
     }
 
     internal void Hash(ref StateHasher h)
@@ -200,7 +200,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     player.Inspected = inspect.Target;
                     break;
                 case ShowInventoryCommand show:
-                    player.InventoryShown = show.Target;
+                    player.InventoryShown.Clear(); player.InventoryShown.AddRange(show.Targets);
                     break;
                 case Items.OpenContainerOrder open:
                     OpenContainerInput(world, open);

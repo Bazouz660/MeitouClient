@@ -269,7 +269,7 @@ sealed partial class PlayerInterface
             return true;
         }
         if (trade is null && WindowRightClick(picked.Screen, picked.Control, shift)) return true;
-        if (IsLootScreen(picked.Screen) || !picked.Control.Properties.TryGetValue("InventoryItem", out var index) || InventoryOwner() is not { ItemGrid: { } grid } lead) return false;
+        if (IsLootScreen(picked.Screen) || !picked.Control.Properties.TryGetValue("InventoryItem", out var index) || WindowCharacter(picked.Screen) is not { ItemGrid: { } grid } lead) return false;
         var item = grid.Items.FirstOrDefault(i => i.Index == int.Parse(index, CultureInfo.InvariantCulture));
         if (item is null) return false;
         var token = new InventoryItemToken(item.Index, item.Record, item.Section, item.X, item.Y, item.Quantity, item.Quality);
@@ -279,7 +279,7 @@ sealed partial class PlayerInterface
             return true;
         }
         if (MapItemTowns?.Invoke(item.Record) is not null) Say(new ReadMapItem(lead.Id, token) { Tick = session.World.Tick });
-        else Say(new QuickMoveItem(lead.Id, token, shift, faithfulScreens.IsOpen("bag")) { Tick = session.World.Tick });
+        else Say(new QuickMoveItem(lead.Id, token, shift, faithfulScreens.IsOpen("bag") && !IsPinnedInventory(picked.Screen)) { Tick = session.World.Tick });
         return true;
     }
 

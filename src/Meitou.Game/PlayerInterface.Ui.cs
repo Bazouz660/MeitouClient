@@ -198,6 +198,7 @@ sealed partial class PlayerInterface
         SyncTradeScreens();
         SyncMachineScreens();
         SyncLootScreen();
+        SyncPinnedInventories();
         SyncInventoryLayouts();
         SyncLimbsScreen();
         SyncDialogueScreen();
@@ -282,6 +283,8 @@ sealed partial class PlayerInterface
                 faithfulScreens.Close(action);
                 if (action == "inventory") { faithfulScreens.Close("bag"); faithfulScreens.Close("limbs"); }
             }
+            // The lead's pinned window comes to the front instead of a second window on them.
+            else if (action == "inventory" && InventoryOwner() is { } lead && pinnedInventories.FirstOrDefault(p => p.Value == lead.Id).Key is { } slot) faithfulScreens.Open(slot);
             else faithfulScreens.Open(action);
         }
         else if (action == "extendedstats") infoExpanded = !infoExpanded;
