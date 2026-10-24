@@ -100,7 +100,7 @@ sealed partial class PlayerInterface
         // The original's windows open with nothing selected and the info box empty (LoadSaveWindow, FUN_140480100), the ticks as their layout has them.
         else if (UiMode == UiMode.Faithful) { selectedSlot = null; slotInfo = null; }
         Array.Copy(new[] { false, true, true, true, true }, slotTicks, slotTicks.Length);
-        faithfulScreens.Open(id); if (id == "save") faithfulScreens.SetText(id, "SaveEditBox", "");
+        faithfulScreens.Open(id); if (id == "save") faithfulScreens.SetText(id, "SaveEditBox", selectedSlot?.Name ?? "");   // the selected save's name, ready to overwrite
     }
     bool HandleFrontendAction(MyGuiEvent e)
     {
