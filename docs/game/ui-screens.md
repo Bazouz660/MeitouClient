@@ -146,6 +146,8 @@ A new game is set up by `FUN_14036cb80` and `FUN_140872e00` (`resetGame` and `ne
   game start town list.", then, as an empty list does, a draw among the TOWN and VILLAGE placements whose faction is real, not BANDIT and not hostile
   to the player (-30 or below); with none, (-43500, -6625). Meitou stands the squad on a walkable spot near that place.
 - **Discovered**: every town of type TOWN in the biome group of the start place.
+- **Squad**: a SQUAD_TEMPLATE entry makes its squad; a CHARACTER entry makes v0 characters (0 counts as 1), joining the player's current squad.
+  Nobody made: the Wanderer squad `45550-gamedata.base`.
 
 ### Loading screen
 

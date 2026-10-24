@@ -12,6 +12,8 @@ namespace Meitou.Simulation;
 
 public sealed partial class PopulationSystem
 {
+    /// <summary>The squad a new game starts with when its start-off makes nobody: the SQUAD_TEMPLATE "startoff- Wanderer squad", whose id is a constant of the executable.</summary>
+    public const string WandererSquadId = "45550-gamedata.base";
     /// <summary>
     /// Where a new game of <paramref name="start"/> with <paramref name="seed"/> stands its squad (docs/game/ui-screens.md "New game"): <see cref="NewGameStart.ForceStartPos"/>'s
     /// place, else a placement drawn among the start's towns, else among the fallback towns, else (-43500, -6625); <c>Town</c> is the drawn placement. <c>Missing</c>: the start
@@ -54,7 +56,7 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// Starts the player (a new game, before the first tick) as docs/game/ui-screens.md "New game" describes: their faction, their money and their squad,
-    /// made from the start-off's <c>squad</c> list (a SQUAD_TEMPLATE is planned by the squad factory, a CHARACTER is one member) as one squad of the
+    /// made from the start-off's <c>squad</c> list (a SQUAD_TEMPLATE is planned by the squad factory, a CHARACTER makes v0 members) as one squad of the
     /// player's faction, standing idle, selected for them, at <see cref="NewGameStart.ForceStartPos"/>'s place or a town drawn from the start's list (<see cref="StartPlace"/>). The start
     /// research is applied (<see cref="Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch"/>) and the start-off's <c>faction relations</c>; <c>force race</c>
     /// is kept as the races the character creation offers (<see cref="PlayerState.CreationRaces"/>). The characters' items are what the generator rolls for their
@@ -85,21 +87,20 @@ public sealed partial class PopulationSystem
         var members = new List<BuiltMember>();
         var first = new List<MemberPlan>();
         SquadTemplate? template = null;
+        void AddTemplate(GameRecord record)
+        {
+            var t = SquadTemplate.From(record);
+            template ??= t;
+            first.AddRange(SquadFactory.Plan(data.Db, t, settings.SquadSizeMultiplier, world.Seed, Rng.Mix(key ^ (uint)first.Count), States).Members);
+        }
         foreach (var link in start.Squad)
         {
             var record = data.Db.Find(link.Id);
             if (record is null) continue;
-            if (SquadFactory.IsTemplate(record))
-            {
-                var t = SquadTemplate.From(record);
-                template ??= t;
-                first.AddRange(SquadFactory.Plan(data.Db, t, settings.SquadSizeMultiplier, world.Seed, Rng.Mix(key ^ (uint)first.Count), States).Members);
-            }
-            else
-            {
-                first.Add(new MemberPlan(link.Id, SquadRole.Squad1, first.Count, default, false, 1));
-            }
+            if (SquadFactory.IsTemplate(record)) AddTemplate(record);
+            else for (int n = 0; n < Math.Max(1, link.V0); n++) first.Add(new MemberPlan(link.Id, SquadRole.Squad1, first.Count, default, false, 1));
         }
+        if (first.Count == 0 && data.Db.Find(WandererSquadId) is { } wanderer && SquadFactory.IsTemplate(wanderer)) AddTemplate(wanderer);
         // Renumber in creation order (the layout counts every member) and make the first the leader when none is.
         bool hasLeader = first.Any(m => m.Role == SquadRole.Leader);
         for (int i = 0; i < first.Count; i++)
