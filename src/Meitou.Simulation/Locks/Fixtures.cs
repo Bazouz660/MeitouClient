@@ -20,7 +20,7 @@ public enum FixtureKind : byte
 }
 
 /// <summary>A bed as the host picks it (<see cref="WorldSnapshot.Beds"/>): its fixture id, BUILDING record, where it is and its owner faction (-1: none).</summary>
-public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1);
+public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1, float Yaw = 0);
 
 /// <summary>
 /// What a bed's BUILDING says (docs/game/locks.md "Beds"): its functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED), the clip it is lain in (the functionality's <c>animation</c>:

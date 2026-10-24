@@ -60,7 +60,7 @@ public sealed class FixtureRegistry
     IReadOnlyList<BedSpot>? bedSpots;
 
     /// <summary>Every bed, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<BedSpot> BedSpots => bedSpots ??= [.. all.Where(f => f.Kind == FixtureKind.Bed).Select(f => new BedSpot(f.Id, f.RecordId, f.Position, f.Owner))];
+    public IReadOnlyList<BedSpot> BedSpots => bedSpots ??= [.. all.Where(f => f.Kind == FixtureKind.Bed).Select(f => new BedSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Yaw))];
 
     IReadOnlyList<DoorPick>? doorPicks;
 
