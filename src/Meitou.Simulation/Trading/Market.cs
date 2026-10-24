@@ -70,6 +70,19 @@ public sealed class Market
     }, this);
 
     /// <summary>
+    /// The Value and Sell value an inventory tooltip prints for one piece of gear with no trader (<b>Observed</b>: the Samurai Legplates at level 95 print c.16,262 and c.4,065, the numbers
+    /// the wiki lists for a Masterwork one): the base value at the item's level (a weapon's, crossbow's and armour's grade quality), and that x <c>loot price mult GEAR</c> truncated.
+    /// Null for anything but armour, a weapon or a crossbow (their prices need the charges and the category rows, not done).
+    /// </summary>
+    public static (int Value, int Sell)? GearPrices(GameDatabase db, PriceConstants k, string record, float level, string company)
+    {
+        if (db.Find(record) is not { Type: FcsRecordType.ARMOUR or FcsRecordType.WEAPON or FcsRecordType.CROSSBOW } r) return null;
+        var maker = company.Length > 0 ? db.Find(company) : null;
+        int value = ItemValue.Of(db, r, level, true, k, maker is { Type: FcsRecordType.WEAPON_MANUFACTURER } ? maker : null);
+        return (value, (int)(value * k.LootPriceMultGear));
+    }
+
+    /// <summary>
     /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>): the trader's town culture if it has one and names the item, else the faction's, else 1.
     /// </summary>
     public float CulturePrice(string record, Trader trader)

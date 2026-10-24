@@ -239,8 +239,8 @@ sealed partial class PlayerInterface
     /// <summary>The data panel's lines; an animal's window shows only the weight and burden rows (the original's animal inventory, observed).</summary>
     void AddInventorySummary(List<UiControl> controls, CharacterSnapshot lead, bool animal = false)
     {
-        string weight = lead.ItemGrid?.TotalWeight.ToString("0", CultureInfo.InvariantCulture) ?? "0";
-        if (lead.ItemGrid?.CarryCapacity is { } capacity) weight += "/" + capacity.ToString("0", CultureInfo.InvariantCulture);
+        string weight = ((int)(lead.ItemGrid?.TotalWeight ?? 0)).ToString(CultureInfo.InvariantCulture);   // truncated, as the original prints it
+        if (lead.ItemGrid?.CarryCapacity is { } capacity) weight += "/" + ((int)capacity).ToString(CultureInfo.InvariantCulture);
         var (burdenWord, burdenColour) = BurdenText(lead.Hud?.Encumbrance ?? 1);
         const string muted = "0.3 0.28 0.25";
         AddLines(controls, "datapanel", animal ? [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour)]

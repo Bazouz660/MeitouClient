@@ -54,6 +54,7 @@ public static class SavedKit
         item.Level = s.Level;
         item.MaterialId = s.MaterialId;
         item.CompanyId = s.CompanyId;
+        item.Crafter = s.Crafter;
         item.Charges = s.Charges;
         item.Death = s.Death;
         (item.LimbDamage, item.LimbWear, item.LimbStun) = (s.Damage, s.Wear, s.Stun);
@@ -73,7 +74,7 @@ public static class SavedKit
 
     internal static SaveItem FromItem(ItemInstance i) => new()
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
         Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,

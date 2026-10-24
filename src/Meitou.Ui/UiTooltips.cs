@@ -9,8 +9,9 @@ public enum TooltipTone { Default, Main, Ink, Title, Bad, BadBright, Good, Grey,
 
 /// <summary>One tooltip row: a key (left) and an optional value (right), each with the tone of its leading <c>#rrggbb</c> tag.</summary>
 public readonly record struct TooltipLine(string Key, string Value = "", TooltipTone KeyTone = TooltipTone.Default, TooltipTone ValueTone = TooltipTone.Default,
-    string Suffix = "", TooltipTone SuffixTone = TooltipTone.Default)
+    string Suffix = "", TooltipTone SuffixTone = TooltipTone.Default, bool Paragraph = false)
 {
+    // A paragraph (Paragraph true) is wrapped at the width the other rows give the tooltip: it does not widen it.
     /// <summary>The value and the suffix (the price mark-up after a price) as one text.</summary>
     public string Whole => Value + Suffix;
 }
@@ -113,7 +114,7 @@ public static class UiTooltips
         float widest = 0;
         for (int i = 0; i < lines.Count; i++)
         {
-            sizes[i] = (measure(lines[i].Key, wrap), lines[i].Whole.Length > 0 ? measure(lines[i].Whole, wrap) : default);
+            sizes[i] = lines[i].Paragraph ? default : (measure(lines[i].Key, wrap), lines[i].Whole.Length > 0 ? measure(lines[i].Whole, wrap) : default);
             widest = Math.Max(widest, sizes[i].Key.X + sizes[i].Value.X + 2 * offset);
         }
         float width = kind switch
