@@ -309,7 +309,8 @@ shape/skinning belongs to the character renderer. [animation.md](animation.md).
 `PursuitSystem` sets `CharacterCold.CombatRunning` by the original's rule (body gap over `CombatTuning.RunGap` 90, off under
 `FootworkGap` 70, on while the target flees; footprints stand in for the radii, the navmesh-blocked chase is not modelled). Running, a
 fighter keeps the plain walk/run clips, full speed and the drawn weapon; otherwise it takes the combat clips and the signed speed, capped
-at `FootworkSpeed` 18 ([combat](game/combat.md#combat-stance)).
+at `FootworkSpeed` 18 ([combat](game/combat.md#combat-stance)). A move or follow order ends the character's fight (`CombatSystem.Inputs`:
+target, stance and drawn weapon dropped), as the original's new task and movement goal do; it fights again only when attacked once idle.
 
 ## Bodies
 
