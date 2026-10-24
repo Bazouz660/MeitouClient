@@ -341,10 +341,19 @@ public sealed partial class ProductionSystem : ITickSystem
             float off = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), spot);
             return off <= Ai.AiSystem.TurretSlack || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && off <= Ai.AiSystem.TurretSlack + Settings.SettleReach);
         }
-        // The machine's use range (UseableStuff::getReachRange); a rock is also reached from within its bounds (the original's 1.2 x bounds box of a foliage building).
-        // A rock's BUILDING footprint is not scaled like the rock, so a rock is measured from its position.
-        if (naturalBounds.TryGetValue(site.Id, out var rock) && Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), rock.Centre) < rock.Radius) return true;
-        return SiteReach.Within(n, SiteReach.Gap(IsNatural(site.Id) ? null : Settings.EdgeGap, site, n.Position), m.Data.UseRange);
+        // The machine's use range (UseableStuff::getReachRange).
+        return SiteReach.Within(n, GapTo(site, n.Position), m.Data.UseRange);
+    }
+
+    /// <summary>
+    /// The X/Z gap from <paramref name="from"/> to a site (<see cref="SiteReach.Gap"/>). A rock's BUILDING footprint is not scaled like the rock, so a rock is measured to its bounds
+    /// circle (engine choice for the original's 1.2 x bounds box of a foliage building), else to its position.
+    /// </summary>
+    float GapTo(BuildSite site, Vector3 from)
+    {
+        if (!IsNatural(site.Id)) return SiteReach.Gap(Settings.EdgeGap, site, from);
+        float d = SiteReach.Gap(null, site, from);
+        return naturalBounds.TryGetValue(site.Id, out var rock) ? MathF.Max(0, Vector2.Distance(new Vector2(from.X, from.Z), rock.Centre) - rock.Radius) : d;
     }
 
     /// <summary>The clip a turret's gunner holds.</summary>
@@ -884,7 +893,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var table = world.Characters;
         if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true } c || c.Inventory is null) return false;
         cold = c;
-        if (SiteReach.Gap(Settings.EdgeGap, site, table.Next[slot].Position) <= Settings.TransferReach) return true;
+        if (GapTo(site, table.Next[slot].Position) <= Settings.TransferReach) return true;
         world.Post("Out of trading range.");
         return false;
     }

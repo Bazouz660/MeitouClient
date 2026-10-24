@@ -140,7 +140,7 @@ the goal conditions (the call is virtual).
 
 Meitou (`SiteReach`): builders 40 (walls 60), operators and storage fetches the `use range`, doubled once stopped, measured
 to the building's footprint hull (engine choice standing in for touching; a building without collision uses its parts' bounds
-hull) or, unknown, its position. A rock is also reached inside its bounds radius. No height test.
+hull) or, unknown, its position. A rock is measured to its bounds circle, for working and for taking its ore (40). No height test.
 
 Repair (**Verified**, Building slot 0x328 `FUN_1400f6b70`, `Task_Build` `FUN_14034a440`): a building needs repair when
 `progress < target`; building health is construction progress. Orders 2 and 95 are both `Task_Build`, which pushes the
