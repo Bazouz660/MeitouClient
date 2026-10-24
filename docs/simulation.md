@@ -437,6 +437,7 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
 relations, shared targets, idle-player self-defence, chase give-up and return to routine.
+Free squad mates within `JoinRange` join an attacked member's defence each check even while it is already fighting or down (engine rule).
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):

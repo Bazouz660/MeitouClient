@@ -155,7 +155,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <summary>
 /// A minimal answer to being attacked (an <b>engine rule</b>, the original's AI is stage 9): every <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
-/// free too. An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
+/// free too, whether or not the attacked one is free itself (never against a mate of the same squad). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed; the original's Passive toggle (non-combat mode) would turn it off and is not modelled (its default is off).
 /// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
 /// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
@@ -197,8 +197,9 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             {
                 defenders.Add(new(t, next[t].Generation));
                 taken.Add(t);
-                JoinMates(world, table, t, defenders, taken, CanFight);
             }
+            // Free squad mates come to an attacked character that is already fighting (or down) too, not only to one that answers now.
+            if (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId) JoinMates(world, table, t, defenders, taken, CanFight);
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.
