@@ -279,14 +279,12 @@ public sealed partial class CombatSystem
         bool atMe = target.TargetSlot == i && target.TargetGeneration == prev[i].Generation;
         if (target.YieldTo == i && now < target.YieldUntil) return true;
         if (target.AttackTech >= 0 && atMe) return false;   // it is swinging at me: I defend (FUN_140666a30)
-        // One that would not swing back (not fighting, the Block or Passive order) cannot take the initiative.
-        if (now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
-            || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive)) return true;
+        if (Open(t, tc, now)) return true;
         if (s.YieldTo == t && now < s.YieldUntil) return false;
         // The target is free (deciding or in its pause): one draw for the pair and tick, the lower slot's view.
         int lo = Math.Min(i, t), hi = Math.Max(i, t);
         float skillI = Eff(cold, cold.Fighter!.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
-        float skillT = Eff(tc, tc.Fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
+        float skillT = Eff(tc, tc.Fighter!.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
         float lowSkill = lo == i ? skillI : skillT, highSkill = lo == i ? skillT : skillI;
         float a = 1 + combat.AttackChanceFactor * MathF.Max(0, highSkill - lowSkill), b = 1 + combat.AttackChanceFactor * MathF.Max(0, lowSkill - highSkill);
         float k = b / a, lowWins = k >= 1 ? 1 - 1 / (2 * k) : k / 2;
@@ -296,6 +294,14 @@ public sealed partial class CombatSystem
         s.YieldTo = t;
         s.YieldUntil = now + Math.Max(1, (int)MathF.Ceiling(CombatTuning.YieldSeconds / world.TickSeconds));
         return false;
+    }
+
+    /// <summary>Whether <paramref name="t"/> would not swing back (staggered, defending, down, not fighting, the Block or Passive order), so it cannot take the initiative.</summary>
+    bool Open(int t, CharacterCold tc, int now)
+    {
+        ref readonly var target = ref read[t];
+        return now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
+            || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive);
     }
 
     /// <summary>
@@ -337,7 +343,8 @@ public sealed partial class CombatSystem
     /// Whether <paramref name="i"/> gets one of its target's attack slots for this swing (docs/game/combat.md "Attack slots and circling", <c>FUN_140666310</c> / <c>FUN_1406661d0</c>):
     /// <see cref="AttackSlots"/> plus the target race's <c>extra attack slots</c> (1 to 5), only 1 while the target swings itself. A slot is held from the grant to the swing's last
     /// blow (<c>FUN_14060a590</c> gives it back), so the holders are the fighters at the target whose swing has a blow to come. The original grants in its update order; here
-    /// the other fighters that may ask on the same tick (engaged, free, within their reach) and have a lower slot go first (engine choice).
+    /// the other fighters that may ask on the same tick and have a lower slot go first (engine choice). Their asks are foreseen from the last tick's state only, as Act gates
+    /// them (engaged, deciding now, out of the pause or attacked, within their reach), erring towards counting one that then does not ask, so the count is never exceeded.
     /// </summary>
     bool HasSlot(World world, int i, int t, CharacterCold tc, int now)
     {
@@ -348,20 +355,36 @@ public sealed partial class CombatSystem
         var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
         int generation = prev[t].Generation, holders = 0, ahead = 0;
         var at = prev[t].Position;
+        bool open = Open(t, tc, now);
         foreach (var (_, x, z, other) in index.AttackersOf(t))
         {
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if (o.AttackTech >= 0)
+            if (o.AttackTech >= 0 && o.NextBlow > 0)
             {
-                if (o.NextBlow > 0) holders++;
+                holders++;
                 continue;
             }
-            if (other > i || !o.Engaged || o.ReactTech >= 0 || now < o.StunUntil || now < o.ReadyTick && !(read[t].YieldTo == other && now < read[t].YieldUntil)) continue;
-            if (o.YieldTo == t && now < o.YieldUntil) continue;
+            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t)) continue;
+            // It decides this tick when its swing or reaction ends now (Act's steps 4 and 5): a block's end and a swing's end start a pause (cut short by a blow at it).
+            int ready = o.ReadyTick;
+            if (o.AttackTech >= 0)
+            {
+                if (now < o.AttackEnd) continue;
+                ready = int.MaxValue;
+            }
+            else if (o.ReactTech >= 0)
+            {
+                if (now < o.ReactStart + o.ReactTicks) continue;
+                if (!techniques[o.ReactTech].IsDodge) ready = Math.Max(ready, now + (int)MathF.Ceiling(CombatTuning.AfterBlockPause / world.TickSeconds));
+            }
+            if (now < ready && !(read[t].YieldTo == other && now < read[t].YieldUntil) && Incoming(world, other, now, out _) < 0) continue;
+            // A yielder asks in vain unless the target is open (HasInitiative).
+            if (o.YieldTo == t && now < o.YieldUntil && !open) continue;
+            // Its reach is known from its last ask (StartAttack); one that has never asked counts.
             var c = table.Cold(other);
-            if (c is null || o.Reach <= 0 || CombatTuning.Gap(prev[other].Position, at, c, tc) > o.Reach) continue;
+            if (c is null || o.Reach > 0 && CombatTuning.Gap(prev[other].Position, at, c, tc) > o.Reach) continue;
             ahead++;
         }
         return holders + ahead < slots;

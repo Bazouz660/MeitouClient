@@ -37,6 +37,38 @@ public class DuelTests(ITestOutputHelper output)
         Assert.Contains(combat.Log, e => e.Outcome == BlowOutcome.Blocked || e.Outcome == BlowOutcome.Dodged);
     }
 
+    /// <summary>The most attackers holding a slot at the target at once (a swing with a blow to come), over <paramref name="ticks"/> or until it is down.</summary>
+    static int MostAtOnce(SimWorld world, CombatSystem combat, CharacterId target, CharacterId[] attackers, int ticks)
+    {
+        int most = 0;
+        for (int i = 0; i < ticks && !Down(world, target); i++)
+        {
+            world.RunTick();
+            most = Math.Max(most, attackers.Count(a => combat.StateOf(a) is { AttackTech: >= 0, NextBlow: > 0 }));
+        }
+        return most;
+    }
+
+    [Fact]
+    public void The_attack_slot_setting_caps_how_many_swing_at_one_target_and_applies_live()
+    {
+        foreach (int slots in new[] { 1, 2 })
+        {
+            using var world = NewWorld(5, 1, out var combat, new CombatOptions { AttackSlots = slots });
+            var target = Spawn(world, new Combatant { Name = "target", Toughness = 100, Defence = 90 }, new Vector3(1000, 150, 1000));
+            var attackers = Enumerable.Range(0, 5).Select(k => Spawn(world, new Combatant { Attack = 20, WeaponSkill = 20 },
+                new Vector3(1000 + 12 * MathF.Cos(k * MathF.Tau / 5), 150, 1000 + 12 * MathF.Sin(k * MathF.Tau / 5)))).ToArray();
+            world.Commands.Enqueue(new AttackOrder(attackers, target) { Tick = 0 });
+            // It fights back: blocks and lost initiative rolls are where same-tick asks used to slip past the count.
+            world.Commands.Enqueue(new AttackOrder([target], attackers[0]) { Tick = 0 });
+            Assert.Equal(slots, MostAtOnce(world, combat, target, attackers, 300));
+            if (slots != 1) continue;
+            // The settings slider sets the running system's count.
+            combat.AttackSlots = 3;
+            Assert.Equal(3, MostAtOnce(world, combat, target, attackers, 900));
+        }
+    }
+
     // ------------------------------------------------------------------ determinism
 
     /// <summary>40 duels and 20 two-on-one scuffles in a grid: enough characters for the world to cut the slots into several partitions.</summary>

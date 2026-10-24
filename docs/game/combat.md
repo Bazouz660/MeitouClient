@@ -153,7 +153,10 @@ ends leaves 0.2 s.
 Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 
 - **Slots**: the holders are the fighters whose swing at the target has a blow to come. On the same tick, fighters
-  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units.
+  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units. Those
+  lower asks are foreseen from the last tick's state (threads run the fighters apart), counting any that may ask
+  (rejoining, pause cut short by a blow at it, swing or block ending now, never asked yet), so the count is never
+  exceeded. **Verified** by `DuelTests` (5 attackers, target fighting back, 1-3 slots).
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of
