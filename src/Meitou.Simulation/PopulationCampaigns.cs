@@ -848,7 +848,11 @@ public sealed partial class PopulationSystem : IStateHashed
     /// Whether the members of a squad run the "find, kidnap and put in a cage" goal now (task 254, <see cref="Meitou.Data.Gameplay.Ai.TaskType.FINAL_KIDNAPPER_CAGE_JOB"/>): the goals of
     /// <paramref name="role"/> in the package their campaign is in the phase of (a loaded campaign squad is driven by the campaign, not the AI), or in the squad's running AI package, in the hour's window.
     /// </summary>
-    public bool KidnapDuty(World world, Squad squad, Meitou.Data.Gameplay.Ai.AiRole role)
+    public bool KidnapDuty(World world, Squad squad, Meitou.Data.Gameplay.Ai.AiRole role) =>
+        GoalDuty(world, squad, role, Meitou.Data.Gameplay.Ai.TaskType.FINAL_KIDNAPPER_CAGE_JOB);
+
+    /// <summary>As <see cref="KidnapDuty"/> for any goal type: whether <paramref name="role"/>'s goals in the package the squad runs now hold <paramref name="type"/> in the hour's window.</summary>
+    public bool GoalDuty(World world, Squad squad, Meitou.Data.Gameplay.Ai.AiRole role, Meitou.Data.Gameplay.Ai.TaskType type)
     {
         IReadOnlyList<Meitou.Data.Gameplay.Ai.AiGoal>? goals = null;
         if (squad.PlatoonId >= 0 && world.Platoons.Find(squad.PlatoonId) is { Campaign: { } inst } p)
@@ -860,7 +864,7 @@ public sealed partial class PopulationSystem : IStateHashed
         if (goals is null) return false;
         int hour = world.Hour;
         for (int k = 0; k < goals.Count; k++)
-            if (goals[k].Task.Type == Meitou.Data.Gameplay.Ai.TaskType.FINAL_KIDNAPPER_CAGE_JOB && goals[k].InWindow(hour)) return true;
+            if (goals[k].Task.Type == type && goals[k].InWindow(hour)) return true;
         return false;
     }
 

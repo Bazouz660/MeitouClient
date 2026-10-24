@@ -80,7 +80,8 @@ finders resolved from the thunks in the exe's bytes):
 | `CARRY_WOUNDED_SLAVES` 168 | - | `FUN_1408cdf50` | - |
 | `FIND_AND_KIDNAP` 132 | - | `FUN_1408cd5c0` (the character finder below, masks 0x4008 / 0x811, beds allowed) | - |
 | `FIND_A_DEAD_GUY` 138 / 230 | - | `FUN_1408cfb00` / `FUN_1408ce170` (the nearest dead, ragdolled, uncarried body; `carriable` when asked) | - |
-| `LOOT_THE_DEAD` 177 | - | `FUN_14099e680` (via `FUN_14099ae10`) | - |
+| `LOOT_THE_DEAD` 177 | AI slot 62: 1, 0 while character vfunc `0x368` (crawling or ragdolled) | `FUN_14099e680` (`FUN_14099ae10(ai, 0)`, [NPC looting](#33-npc-looting)) | - |
+| `LOOT_FOOD_AND_STUFF` 131, `AQUIRE_FOOD_AT_HOMEBASE` 243 | - | `FUN_1408cb650`: a building, `BuildingFinder_LootFoodAndStuff` over the character's town (no characters) | - |
 | `LOOT_STOLEN_GOODS` 212 | - | `FUN_1408cf6a0` (calls the stolen predicate) | - |
 | `PICKUP_INTRUDERS` 223 / 273 | - | `FUN_14099c110` / `FUN_14099c250` | - |
 
@@ -94,6 +95,35 @@ planner goal (A: 153 got a victim, B: not carrying, effect 48 carrying); 254 has
 carried one in. What sets `Status+0xe9` ("innocent victim") was not found: it is saved with the slave state (`FUN_140626580` / `FUN_140626830`), cleared by the per-update
 `FUN_140852a30` (not carried and in its town's bed, or carried by a friend) and read at the lift's release (`FUN_1405ce1e0`) and by `FUN_1406cc470` / `FUN_1407211b0`;
 it is not part of target eligibility.
+
+### 3.3 NPC looting
+
+**Observed** (decompile of `FUN_14099ae10`, `FUN_14059a7b0`, `Task_Loot_AI` start `FUN_140355ad0` and update `FUN_14034d930`, the take `FUN_140342de0`; registrations in
+`FUN_140319a60`). The goal that loots downed characters is **177** "Looting the dead": the data's goal "Looting corpses and food" (`5196-gamedata.base`, enum 177) in
+"Patrol map (short range) LOOTING" and the Starving Bandits' packages that inherit it. 131 "Looting food" and 243 "Getting food" find buildings, not bodies. 177's effect is
+`isSubjectInInventory` (3), provided by row 3 `PICKUP` "Collecting item" (`Task_Loot_AI`, B list `isItemLootable`, `isAtLocation`): the plan walks to the target, then loots it.
+
+- **Finder** (`FUN_14099ae10(ai, animalsOnly)`; 177 passes 0). Two passes over the sensed list, each target within 100 units (squared 10000), not carried (`+0x3d4`),
+  reachable (`AI::isDestinationAccessible`, `destinationNotBlockedByFortifications`), not in the squad's give-up list, and not short-term tagged 6 by the looter's squad
+  (`FUN_140678960(c, target, 6)`, [squad memory](dialogue.md#squad-memory)); the first match wins (sensed-list order, **Unknown**). Pass 1: mask 0x10 / 0 (read as the dead). Pass 2: masks 0x4008 / 0x11 (the kidnap finder's,
+  read as other factions' downed) and also: the target's faction is not the player's (`FACTION +0x250`) unless the global **Bandits loot the player** (`142133598`) is set, and
+  `shouldIScrewThisGuyOver(looter, target)` (`FUN_14059a7b0`).
+- **shouldIScrewThisGuyOver**, in order (later lines override): true when either is of NPC class 8 (Bandit; status `+0xdc`); false when both have the same class; true when the
+  looter is class 2 (Military); false when looter vfunc `0x3f0`(target, 1) holds (**Unknown**); false when the looter is class 1 (Law enforcement); true when the looter's status
+  `+0xe0` (a slave's owner faction) is the target's faction; false when the looter's squad has a love tag on it (long & 0xc), true with a hate tag (& 0x2b0); true when the target is dead.
+- **Start**: flags `animal` (target vfunc `0x248`), `notPlayerSide` (target's faction is not the player's, or the target is dead; cleared when looter vfunc `0x68` `+0x90` > 0,
+  **Unknown**), `foodOnly` (looter of NPC class 8, or its hunger floor, slot 0x348 ([free food](character-stats.md#free-food)), below 2.8), `wantsWeapon` (the looter has no weapon,
+  `AI::hasWeapon`, and the target has one). A law-enforcement looter (`isLawEnforcement`) confiscates stolen goods instead (not decoded further). An animal target posts
+  "{1} is butchering {2} for meat!!" when the target's faction is the player's.
+- **Update**: plays `medic` (start: `squat T`, `medic`); a timer adds the frame time. With neither `foodOnly` nor `notPlayerSide`, past 0.8 s: a `wantsWeapon` looter takes one
+  weapon of the target's hip and back sections and is done. Otherwise the take comes past 8 s (an animal target: 20 s):
+  1. Weapons (item type 2) of the target's inventory, when the looter has no weapon equipped (`Inventory::hasWeaponEquipped`) or the target is imprisoned; a weapon whose
+     slots the looter has all filled is left.
+  2. Food: items of type 4 with `item function` 3, then 15, repeated until none moves; then the same from the target's worn backpack (function 3).
+  3. With `notPlayerSide` and not `foodOnly`: every item (type 4) and armour (type 3), and every item of the backpack.
+  An item goes into the looter's inventory, else its worn backpack, else back. Then the looter's squad tags the target short-term 6 (`FUN_1406744a0`) and the task ends.
+- **Bandits loot the player** is the new-game option at block `+0x20`, saved as CAMERA bool `bl` (**Verified**: the reader `FUN_1403eef20` reads key `bl` into `+0x20`, the writer
+  `FUN_140912f80` copies `+0x20` to `142133598`; the reader's default is 1, and `bl` is true in the owner's three readable original saves).
 
 ## Unknowns
 

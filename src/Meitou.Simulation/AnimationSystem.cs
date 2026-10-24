@@ -140,6 +140,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     int HeldClip(CharacterTask task, CharacterCold cold) => task switch
     {
         CharacterTask.Treat or CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.Prospect => TreatingClip,
+        // An NPC looting a body it has reached (Observed, Task_Loot_AI; the player's take is instant).
+        CharacterTask.Loot when !cold.IsPlayer && cold.LiftTime >= 0 => TreatingClip,
         CharacterTask.Rest => cold.Ai?.SitClip is { } sit && SitClipOf(sit) is >= 0 and var chair ? chair : RestingClip,
         CharacterTask.Dismantle => DismantlingClip,
         // An operator at work plays its functionality's clip (Observed, Task_OperateMachine; stonemine without one).

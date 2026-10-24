@@ -226,7 +226,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// its squad's level, 3, or 1 + 1.2 x a random number once per squad for a SQUAD_TEMPLATE with <c>malnourished</c> (the platoon constructor <c>FUN_1407ee2d0</c>). Without a
     /// database (tests) only animals, slaves and prisoners are fed.
     /// </summary>
-    float HungerFloor(World world, CharacterCold cold, MedicalState medical)
+    internal float HungerFloor(World world, CharacterCold cold, MedicalState medical)
     {
         const float None = MedicalContext.NoHungerFloor;
         if (!medical.HasStatsObject) return MedicalState.MaxHunger;

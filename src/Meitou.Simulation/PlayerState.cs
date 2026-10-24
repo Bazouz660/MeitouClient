@@ -55,6 +55,11 @@ public sealed class PlayerState
     /// <summary>The squad AI options of the overview's AI tab that Meitou runs (<see cref="Simulation.SquadAi"/>); saved as CAMERA bools (<see cref="SquadAiKeys"/>).</summary>
     public SquadAi SquadAi { get; set; } = SquadAi.Defaults;
     /// <summary>
+    /// The new-game option "Bandits loot the player" (global <c>142133598</c>, CAMERA bool <c>bl</c>, default on; docs/game/carry-loot.md "NPC looting"): off, NPCs loot none of the player's
+    /// downed living characters. Not hashed: it changes only with a load.
+    /// </summary>
+    public bool BanditsLoot { get; set; } = true;
+    /// <summary>
     /// The item on the mouse (<see cref="Items.HeldItem"/>, Items/HeldItems.cs), or null. Hashed; not saved: a save puts it back where it came from first (<see cref="World.ReturnHeldItem"/>).
     /// </summary>
     public Items.HeldItem? Held { get; set; }

@@ -9,6 +9,8 @@ public static class MemoryTag
     public const int None = 0, Intruder = 1, Lifesaver = 2, FreedMe = 3, StoleFromMe = 4, Captor = 5, Friendly = 6, DefeatedMySquad = 7, SquadLostToMe = 8,
         KilledMyFriend = 9, ScrewedThisGuy = 10;
     public const int Aggressor = 2, TempAlly = 3, TempEnemy = 4, Criminal = 7;
+    /// <summary>Short-term tag 6 (unnamed in the dump): the squad looted or stripped the character; its NPC looting finder skips it (docs/game/carry-loot.md "NPC looting").</summary>
+    public const int Looted = 6;
     /// <summary>DC 52 I_LOVE_THIS_GUY's long-term mask (lifesaver, freed me) and DC 53 I_HATE_THIS_GUY's (stole from me, captor, defeated my squad, killed my friend).</summary>
     public const uint LoveMask = 0xc, HateMask = 0x2b0;
 }
