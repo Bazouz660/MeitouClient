@@ -259,7 +259,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         };
         player.ArmourOf = record => popData?.Combat.Armour(record);
         player.RecordName = id => popData?.Db.Find(id)?.Name;
-        player.PlayerFactionName = () => popData is { } pd && session.World.Player.Faction is (>= 0 and var pf) && pf < pd.Factions.Count ? pd.Factions[pf].Name : "";
+        player.PlayerFactionName = () => player.FactionName?.Invoke(session.World.Player.Faction) ?? "";
         Meitou.Data.Gameplay.Economy.PriceConstants? priceConstants = null;
         player.GearPricesOf = (record, level, company) => popData is { } d ? Meitou.Simulation.Trading.Market.GearPrices(d.Db, priceConstants ??= Meitou.Data.Gameplay.Economy.PriceConstants.FromDatabase(d.Db), record, level, company) : null;
         player.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
