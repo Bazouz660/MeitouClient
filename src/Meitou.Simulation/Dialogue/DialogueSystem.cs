@@ -50,7 +50,10 @@ public sealed class DialogueSettings
     /// (docs/game/dialogue.md "Ambient conversations"): off by default (the pinned scenarios), the game turns it on.
     /// </summary>
     public bool AmbientEvents { get; init; }
-    /// <summary>How near a player character must be to be seen, how often (ticks) the NPCs look, how many speak per look and the game hours before a squad reacts to the same character again (engine choices).</summary>
+    /// <summary>
+    /// How near a player character NPCs must be for their exchanges with each other to be run (a player character is seen by the sight test instead), how often (ticks) the NPCs look,
+    /// how many speak per look and the game hours before a squad reacts to the same character again (engine choices).
+    /// </summary>
     public float AmbientRange { get; init; } = 600;
     public int AmbientEveryTicks { get; init; } = 30;
     public int AmbientPerScan { get; init; } = 2;
