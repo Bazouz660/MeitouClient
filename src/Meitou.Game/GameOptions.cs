@@ -40,6 +40,8 @@ sealed class GameOptions
     public (int Count, string Unit)[]? Battle;
     /// <summary>The optional fifth <c>--battle</c> value: each block in this many rows (the back row takes the rest), or null for rows of 25.</summary>
     public int? BattleRows;
+    /// <summary><c>--battle-width a[,b]</c>: fighters per row of each side (one value: both), over <see cref="BattleRows"/>; null for a side that keeps its rows.</summary>
+    public int?[] BattleWidth = [null, null];
     /// <summary><c>--battle-map sandbox</c>: the battle is fought on the sandbox's flat floor instead of the map.</summary>
     public bool BattleFlat;
     /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the plateau, <see cref="GameHost.BattleSpot"/>).</summary>
@@ -86,6 +88,7 @@ sealed class GameOptions
                                      (rows of 25, or each block in that many rows, the back row taking the rest; bigger races stand further apart);
                                      no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
           --battle-map <map>         where the battle is fought: plateau (default), mesa (the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
+          --battle-width <a>[,<b>]   fighters per row of the first side and of the second (one value: both), instead of the rows
           --battle-no-fear           nobody in the battle runs away: every fighter fights until it is down
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
@@ -180,6 +183,10 @@ sealed class GameOptions
                     }
                     break;
                 case "--battle-no-fear": g.BattleNoFear = true; break;
+                case "--battle-width":
+                    var widths = Next().Split(',').Select(w => (int?)Math.Max(int.Parse(w, CultureInfo.InvariantCulture), 1)).ToArray();
+                    g.BattleWidth = widths switch { [var both] => [both, both], [var first, var second] => [first, second], _ => throw new ArgumentException("--battle-width takes one or two counts, a,b") };
+                    break;
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--load": g.Load = Next(); break;

@@ -68,8 +68,8 @@ sealed partial class GameHost
             var race = db.Find(record)?.GetReferences("race").FirstOrDefault(r => r.Values.Value0 > 0) is { } raceRef ? db.Find(raceRef.TargetStringId) : null;
             float footprint = race?.GetFloat("pathfind footprint radius", CombatTuning.DefaultFootprint) ?? CombatTuning.DefaultFootprint;
             float spacing = Math.Max(BattleSpacing, BattleSpacing * footprint / CombatTuning.DefaultFootprint), front = Math.Max(BattleGap / 2, spacing);
-            // --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
-            int rows = g.BattleRows is { } r ? Math.Min(r, count) : 0, width = rows > 0 ? count / rows : BattleRankWidth;
+            // --battle-width: rows of that many; else --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
+            int rows = g.BattleWidth[side] is null && g.BattleRows is { } r ? Math.Min(r, count) : 0, width = g.BattleWidth[side] ?? (rows > 0 ? count / rows : BattleRankWidth);
             var offsets = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
