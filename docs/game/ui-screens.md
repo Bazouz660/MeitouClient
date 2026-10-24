@@ -748,11 +748,15 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   quality, charges, damage, nutrition and kind lines (`FUN_1407ae130`); armour classes and resistances (`FUN_1407a1650`); `Stolen` / `Stolen from:` (`FUN_1407a0ea0`); `Buyback` (`FUN_1407a13a0`).
   Meitou: the rows listed under Tooltips ("Meitou item rows"); armour also gets (`ArmourTooltip`): the grade name in its `ItemGrade` colour (a crossbow only that, from its `level`),
   `[Heavy Armour Class]` / `[Metal Plate]`, Blunt resistance, Cut resistance, Cut resistance efficiency (1 - cut into stun), Harpoon resistance (flat pierce, `pts`), `-Weight` (two decimals), a
-  `[Coverage]` list (Chest, Stomach, Right Arm, Left Arm; percentages) and a `[Skills]` list of the effects that are not neutral: Crossbows and Precision shooting (both the record's `ranged skill mult`), Dodge
-  skill, Attack damage (`damage output mult`), Assassination skill, Melee attack bonus (`combat attk bonus`), Martial arts bonus (`unarmed bonus`). **Observed** on a screenshot of the Samurai Armour at all six
-  grades (5, 20, 40, 60, 80, 95): the resistances equal `ArmourPiece.Create` to the printed digit at every grade. **Unknown**, so not shown: the Stealth effect and Combat speed effect lines (they grow with the
-  grade: stealth 0.00, 0.02, 0.06, 0.12, 0.21, 0.29x and combat speed 0.85, 0.86, 0.88, 0.90, 0.92, 0.94x on that armour, whose records say stealth mult 1 and combat speed mult 0.94), the labels and rules
-  for dexterity, athletics, defence, perception and ranged bonuses, the cut-offs between grades for other qualities, and weapons, food and tools (no stat lines yet).
+  `[Coverage]` list (Head, Chest, Stomach, Right Arm, Left Arm, Right Leg, Left Leg; percentages) and a `[Skills]` list of the effects that are not neutral, the value in the bad colour below 1 (or a negative bonus) and the good colour above:
+  Stealth (the piece's stealth factor, `ArmourPiece.StealthOf`), Crossbows and Precision shooting (both the record's `ranged skill mult`), Dodge skill, Combat speed, Attack damage (`damage output mult`), Assassination skill, Melee attack bonus
+  (`combat attk bonus`), Martial arts bonus (`unarmed bonus`). The stats are those of the item's `level` (the grade's quality, 95 for Masterwork), not its saved `quality`, which is 100 for the saved armour of the player's characters
+  (**Observed** 2026-10-24: the Samurai Legplates, level 95, quality 100, shown by the original as 61 % blunt, 73 % cut, 85 pts, which are the 0.95 values; the 1.0 values are 65 %, 76.9 %, 90 pts).
+  **Observed** on a screenshot of the Samurai Armour at all six grades (5, 20, 40, 60, 80, 95): the resistances equal `ArmourPiece.Create` to the printed digit at every grade, the Stealth effect is the stealth factor
+  (0.00, 0.02, 0.06, 0.12, 0.21, 0.29x with `stealth mult` 1), and the Combat speed effect is `combat speed mult` x lerp(t, 0.9, 1) (0.85, 0.86, 0.88, 0.90, 0.92, 0.94x with the record's 0.94); the Samurai Legplates (stealth mult 0.5,
+  combat speed mult 0.98, level 95) print 0.15x and 0.98x. That scaling is known for the Heavy class only, so the other classes show no Combat speed line. **Unknown**, so not shown: the Athletics effect (the Legplates, whose record says 1,
+  print 0.94x at 0.95), the labels and rules for dexterity, defence, perception and ranged bonuses, the cut-offs between grades for other qualities, the weight (the Legplates weigh 20 kg in the record and print 12 kg at level 95; Meitou
+  prints the record's), and weapons, food and tools (no stat lines yet).
 - **Fencing prompt** (**Observed**, `FUN_140712920`), shown for a stolen item over the trader: stolen from the trader's own faction, `Fencing chance:` and `N%` (`FUN_140793490`) in Bad;
   stolen from others and the trader buys stolen goods, `Stolen goods?` / `No problem!` in Good; otherwise nothing. Stealing from a stock shows `Stealing chance:`; illegal goods
   `Illegal goods?` / `ILLEGAL GOODS!` (smuggling, not built).
