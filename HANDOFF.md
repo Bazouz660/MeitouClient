@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code/plan commit: `45eacbc9 feat: bring Metal reflection MSAA and characters to parity`  
+Last code/plan commit: `30ff1694 polish: cache the reflection sample-count decision`  
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 is accepted** (2026-10-24:
 MetalFX temporal dust/desert/LOD flicker fixed) and **MEP-2 reflection quality is implemented, awaiting in-game
 validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with debris lighting -> tessellation/terrain
