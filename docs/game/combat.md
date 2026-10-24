@@ -112,9 +112,13 @@ ends leaves 0.2 s.
   `FUN_140665420` (its +0x140 value, read only when the asker's hand passes a test) is strictly between 0 and 1 → 1; no free slot
   (`FUN_140666310`) → 5; target stumbling (state 8, or deciding with plan 8) or `FUN_140435570` true (its animation object's +0x228 test) →
   **mass combat XP** to the target, take the slot again, +0x120 = 1 → 0; target without a target (+0x2a0 = 0xb) → plan 2, slot → 0 / 5;
-  target AI object (+0x298) vfunc 0x10 true (**Unknown**) with +0x144 clear: target defending → XP, slot → 0 / 5; target attacking → XP, then
+  target AI object (+0x298) vfunc 0x10 true (**Unknown**) with +0x144 clear (+0x144 is set when the defence update `FUN_14060a190` →
+  `FUN_140609c70` plays its block or dodge, and at a swing's last blow while attacked; cleared by the pause after an attack `FUN_14060d6a0`
+  and the stumble; so a fighter already blocking or dodging falls through to the roll below): target defending → XP, slot → 0 / 5; target attacking → XP, then
   a random contest `FUN_140665370` of the two fighting stats (each side's factor 1 + |difference| × a constant for the lower one, two uniform
-  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases make the target plan its own next state (not decoded further).
+  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases: +0x240 set → target plans defence, → 0; hold stance
+  (`FUN_1402b2b50`) → 0; else the same contest: asker wins with a free slot → target plans defence, → 0; target wins → it plans to attack
+  and turns on the asker (`FUN_140665650`, state 3 unless `FUN_1405b34b0`), → 1 when the asker is its target, else 5.
 - **Mass combat XP** (`FUN_1408c5e80`) therefore fires on the *target's* stats, once per ask answered in those three cases: being hit at while
   stumbling or already fighting someone. It adds exp gain multiplier × 0.05 to the save-only stat (no consumer found), so it changes nothing
   visible; Meitou does not call `XpService.MassCombat` (the stat is not read anywhere).
@@ -157,6 +161,9 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   lower asks are foreseen from the last tick's state (threads run the fighters apart), counting any that may ask
   (rejoining, pause cut short by a blow at it, swing or block ending now, never asked yet), so the count is never
   exceeded. **Verified** by `DuelTests` (5 attackers, target fighting back, 1-3 slots).
+- **Ask while defending**: a blocking or dodging target gets the initiative roll (the +0x144 path); one that wins while still in its
+  defence leaves the loser yielding from the defence's end (engine choice; the original's `FUN_1405b34b0` test, which may cut the defence, is
+  not decoded).
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of

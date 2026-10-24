@@ -268,8 +268,8 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// Whether <paramref name="i"/> may swing at <paramref name="t"/> now, asking the target first (<b>Verified</b>, FUN_14060c670 / FUN_140666a30, docs/game/combat.md
-    /// "Pacing"): yes when the target lost the initiative to it; not while the target is swinging at it (it defends instead); yes while the target is staggered,
-    /// defending or not fighting it; otherwise an initiative roll on both attack skills (the skill roll with <c>attack chance factor</c>, 50/50 at equal skill),
+    /// "Pacing"): yes when the target lost the initiative to it; not while the target is swinging at it (it defends instead); yes while the target is staggered
+    /// or not fighting it; otherwise an initiative roll on both attack skills (the skill roll with <c>attack chance factor</c>, 50/50 at equal skill),
     /// drawn from the pair and tick so both sides agree. The loser yields: the winner may swing at it at once (the original sets the winner to attack).
     /// </summary>
     bool HasInitiative(World world, int i, ref CombatSlot s, int t, CharacterCold cold, CharacterCold tc, int now)
@@ -291,16 +291,21 @@ public sealed partial class CombatSystem
         ulong pair = ((ulong)(uint)lo << 32) | (uint)hi;
         float roll = CombatRolls.Float(world.Seed, pair, CombatRoll.Initiative, (ulong)(uint)now);
         if ((roll < lowWins) == (i == lo)) return true;
+        // A winner still blocking or dodging can turn on it only when that ends, so the yield runs from there (engine choice).
+        int from = target.ReactTech >= 0 ? Math.Max(now, target.ReactStart + target.ReactTicks) : now;
         s.YieldTo = t;
-        s.YieldUntil = now + Math.Max(1, (int)MathF.Ceiling(CombatTuning.YieldSeconds / world.TickSeconds));
+        s.YieldUntil = from + Math.Max(1, (int)MathF.Ceiling(CombatTuning.YieldSeconds / world.TickSeconds));
         return false;
     }
 
-    /// <summary>Whether <paramref name="t"/> would not swing back (staggered, defending, down, not fighting, the Block or Passive order), so it cannot take the initiative.</summary>
+    /// <summary>
+    /// Whether <paramref name="t"/> would not swing back (staggered, down, not fighting, the Block or Passive order), so it cannot take the initiative. A fighter that is
+    /// blocking or dodging is not open: once its defence has started (+0x144) the original's answer rolls the initiative (FUN_140666a30).
+    /// </summary>
     bool Open(int t, CharacterCold tc, int now)
     {
         ref readonly var target = ref read[t];
-        return now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
+        return now < target.StunUntil || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
             || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive);
     }
 
