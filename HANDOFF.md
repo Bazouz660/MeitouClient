@@ -60,7 +60,7 @@ Metal-specific fallbacks or absent paths:
 | Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3 accepted) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
 | Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
-| Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **not present**; FogRate is a performance/quality path, not a missing pass; particle/sun terms affect temporal stability |
+| Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **SMAA, sun-motion reprojection and full-size particle coverage present**; FogRate/VRS is absent (performance-only); low-resolution dust remains TAA-only; TAA is experimental |
 | GI | `GiScene`/`GiProbes` when Vulkan ray queries exist | **no default path**; `MetalProbeGi` is experimental and opt-in; macOS Vulkan reports no ray queries, so local no-GI parity holds |
 | Temporal | Full TAA including character/grass motion and far-slice velocity | MetalFX is the default; TAA is exposed as experimental and still ghosts; no far slice |
 | Occlusion | Hi-Z foliage occlusion culling | **not implemented**; CPU cull remains correct but slower |
