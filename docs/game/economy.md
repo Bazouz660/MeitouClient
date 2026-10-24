@@ -34,6 +34,9 @@ uses unit directly. The trade-window's split of exchanged-stock units remains **
 **Verified** buyMult comes from trader squad template and applies both directions. Town culture
 wins over faction, default1; duplicate culture entries last-win. Trade-price percentage=v0/100,
 zero means100%. Culture also defines illegal/forbidden goods and buildings.
+**Verified** (probe of the merged base data, 2026-10-24): no UC town has a culture, so UC traders use FACTION United Cities' `empire`
+(also Traders Guild, Empire Peasants): Hashish 1200%, Bloodrum/Hemp 400%, Sake 150%, the first three illegal. Hashish elsewhere:
+holy 400, slavers 600, shek 350, `empire SW override` towns 500, swamper 100.
 **Observed** town market factor starts uniform[1-m,1+m), m0.3, then clamps against global-town
 factors/default1 within distance/1e6*m*10. Actual setup-list membership/order remains unknown;
 save factors span0.7..1.3. Only generic items use market factors; save v0=trunc(factor*10000),
