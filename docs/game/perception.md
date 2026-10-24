@@ -92,6 +92,27 @@ squad Run-Away order have different target/ending rules. Faction ratios tune bre
 normal squad trigger and exact selection remain partly unknown. Leash/home/running state must
 not be equated with the attack planner or discarded immediately after a lost sighting.
 
+### Sense tags: who is an enemy
+
+**Observed** (decompile of the perception update `FUN_1408580d0`; bit names from the senses debug panel `FUN_1407981b0`). Each sensed
+entry has a tag word (entry +0x30 → +0x30): bit 0 SENSE_ALLY, 1 SENSE_NEUTRAL, 2 SENSE_ENEMY, 3 SENSE_KO, 14 SENSE_CRAWLING; others
+(5, 6, 7, 9, 10, 11, 12, 13, 15) are set from slave state, prisoner, own faction and carrying tests. The combat finders read it ([ai-tasks](ai-tasks.md#combat-goals)).
+- Not the looker's enemy (Character slot 125, `vfunc_125` at 0x3e8): ALLY when slot 126 (0x3f0) says ally, else NEUTRAL.
+- Enemy: NEUTRAL when `FUN_140796240` holds (**Unknown**), else ENEMY (unless the looker's platoon object lacks a sensor that accepts it).
+- **Slot 125** (`CharacterAnimal::vfunc_125`, shared by all characters): never the same faction. Across platoons the looker's squad's
+  TEMP_ENEMY tag (or, for a looker whose faction has +0x250, the target's tag on it) makes an enemy and TEMP_ALLY prevents one. A disguise
+  (uniform faction at +0x108 while +0x100 > 0.6 and +0x110 <= 0) stands in for the target's faction. A slave target: not when its owner
+  is the looker's, and only when the looker is hostile to the owner's faction. A slave looker: never its owner's faction. A target of the
+  faction the looker's platoon object +0x80 names (**Unknown** role) is an enemy. Otherwise hostile(looker faction → target faction),
+  relation <= -30, when `FUN_1408569a0` fails and the looker's +0xea flag is clear (and the target's is clear, or the looker's faction is
+  not real or default-hostile).
+- So attack on sight is relations only: no fundamental-type BANDIT rule (**Observed**). In the base data the Shek Kingdom, Holy Nation and
+  United Cities start at -100 only with Bloodraiders, Cannibals, Rebel Farmers, Grass Pirates, Gorillo Bandits and Yabuta Outlaws (Holy
+  Nation also Holy Nation Outlaws); at -10 with Starving and Dust Bandits; at 0 with the other bandit factions (**Verified** by probe of
+  the merged data). Fights lower relations ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)), so a
+  bandit faction a town keeps fighting can drop to hostile. The only BANDIT-type target rule found is the player's Shoot first gunners
+  ([squad AI options](ai-tasks.md#squad-ai-options)).
+
 ### The attack-on-sight tests
 
 **Observed** (decompile; goal 16's finder, [ai-tasks](ai-tasks.md#combat-goals)). A sensed character of a faction that
