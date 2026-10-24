@@ -115,12 +115,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public HudView? Hud { get; init; }
     public InventoryView? ItemGrid { get; init; }
     /// <summary>
-    /// The character carrying this one (none when not carried). A carried body has its carrier's position and facing; the renderer should hang it from the carrier's
-    /// <see cref="AttachBone"/> (the original attaches it there) with the <c>carry me</c> pose.
+    /// The character carrying this one (none when not carried). A carried body has its carrier's position and facing; it is drawn at <see cref="Carry"/> from them,
+    /// with the <c>carry me</c> pose.
     /// </summary>
     public CharacterId CarriedBy { get; init; } = CharacterId.None;
-    /// <summary>The carrier's bone a carried body hangs from (<c>Bip01 L UpperArm</c>), null when not carried.</summary>
-    public string? AttachBone { get; init; }
+    /// <summary>Where a carried body hangs, in its carrier's frame (on the carrier's <c>Bip01 L UpperArm</c>); null when not carried.</summary>
+    public Carrying.CarryAttach? Carry { get; init; }
     /// <summary>The ITEM (string id) held in the <c>hands</c> point while operating: the functionality's <c>special tool</c> (docs/game/buildings-production.md "Production"); null for none.</summary>
     public string? HeldTool { get; init; }
     /// <summary>The size the body is drawn at: an animal's lerp(age, <c>scale min</c>, <c>scale max</c>) (its <c>MedicalState.ScaleK</c>), 1 for people.</summary>
@@ -159,6 +159,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     /// <see cref="StealthExposure.Noticed"/> almost seen, anything lower hidden; null when not a sneaking player character.
     /// </summary>
     public StealthExposure? Stealth { get; init; }
+    /// <summary>A sneaking player character's light level (<see cref="SightMap.Light"/>) for its tag's light icon; 1 otherwise.</summary>
+    public float Light { get; init; } = 1;
     /// <summary>The floating progress bar over a player character picking a lock (docs/game/locks.md "Lockpicking"); null when none.</summary>
     public TaskBar? Bar { get; init; }
     /// <summary>
@@ -174,7 +176,7 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<WatcherView> Watchers { get; init; } = [];
     /// <summary>
     /// The bones the character's ragdoll sets (<see cref="Ragdolls.RagdollSystem"/>), in the model space of its drawn placement (position, minus the shape's ground offset, a
-    /// carried body's <see cref="Carrying.CarryPose"/> offset, facing, size: <see cref="CharacterRigs.Placement"/>), to pose over the animation; null without a ragdoll. Immutable.
+    /// carried body's <see cref="Carry"/>, facing, size: <see cref="CharacterRigs.Placement"/>), to pose over the animation; null without a ragdoll. Immutable.
     /// </summary>
     public BonePose? Ragdoll { get; init; }
 }
@@ -239,7 +241,7 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<SquadView> PlayerSquads { get; init; } = [];
     /// <summary>The active squad's id (<see cref="PlayerState.Squad"/>; -1 none): the squad bar shows it.</summary>
     public int ActiveSquad { get; init; } = -1;
-    /// <summary>The downed character whose inventory window is open (<see cref="PlayerState.OpenLoot"/>; its snapshot has the <see cref="CharacterSnapshot.ItemGrid"/>), and who opened it.</summary>
+    /// <summary>The downed (or the player's own) character whose inventory window is open (<see cref="PlayerState.OpenLoot"/>; its snapshot has the <see cref="CharacterSnapshot.ItemGrid"/>), and who opened it.</summary>
     public CharacterId OpenLoot { get; init; } = CharacterId.None;
     public CharacterId LootOpener { get; init; } = CharacterId.None;
     /// <summary>The item on the mouse (<see cref="PlayerState.Held"/>), null for none, and the serial of the last held-item command applied (<see cref="PlayerState.HeldSerial"/>).</summary>
@@ -268,6 +270,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
 
     /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>); null when none is shown or it has no fixtures.</summary>
     public Locks.BuildingDetail? InspectedBuilding { get; init; }
+    /// <summary>The resource richness of the building the HUD shows (a mine or rock); null for others.</summary>
+    public Production.RichnessView? InspectedRichness { get; init; }
     /// <summary>The machines of the player's complete buildings (docs/simulation.md "Production"), in the order they were made.</summary>
     public IReadOnlyList<Production.MachineSnapshot> Machines { get; init; } = [];
     /// <summary>Bumped on every machine change (items, progress, status).</summary>

@@ -415,7 +415,7 @@ sealed partial class GameHost
         // work with the session the loop has. Only the panels' pointer/keyboard controls are wired here so far.
         PlayerInterface? hud = null;
         HoverOutlineRenderer? hoverOutline = null;
-        MoveMarkerRenderer? moveMarker = null;
+        MarkerRenderer? moveMarker = null;
         NavmeshOverlayRenderer? navOverlay = null;
         if (overlay is not null)
         {
@@ -462,12 +462,12 @@ sealed partial class GameHost
             hud.SurfaceMoveHit = SurfaceMoveHit;
             hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
             hoverOutline = new HoverOutlineRenderer(ctx);
-            moveMarker = MoveMarkerRenderer.Create(ctx, assets.Find);
-            hud.MoveMarker = moveMarker;
+            moveMarker = MarkerRenderer.Create(ctx, assets.Find);
+            hud.Markers = moveMarker;
             navOverlay = new NavmeshOverlayRenderer(ctx);
             navOverlayRenderer = navOverlay;
             // The shared frame draw owns the overlays after the post chain now.
-            worldGpu.MoveMarker = moveMarker;
+            worldGpu.Markers = moveMarker;
             worldGpu.NavmeshOverlay = navOverlay;
             worldGpu.HoverOutline = hoverOutline;
             Console.WriteLine($"metal     HUD ready ({hud.UiMode})");
@@ -698,8 +698,6 @@ sealed partial class GameHost
                 toggles.Add(new Toggle("Skin scattering", () => characters.SkinShading, v => characters.SkinShading = v));
                 toggles.Add(new Toggle("Enhanced item icons", () => characters.EnhancedIcons, v => characters.EnhancedIcons = v));
             }
-            toggles.Add(new Toggle("Meitou voices", () => o.MeitouVoices, v => o.MeitouVoices = v));
-
             // Ground relief (docs/render-terrain.md): opt-in on Metal until its height-array parallax is validated.
             if (GroundRelief.Enabled)
             {
@@ -991,9 +989,9 @@ sealed partial class GameHost
             }
             if (streamer is { } flown) Console.WriteLine($"metal     fly-to settled: {flown.Describe()}");
         }
-        // The still's selection, --move-to walk and --ticks happen before the loop; the loop then only lets the picture warm up.
-        if (o.Screenshot is not null) PrepareStill(ctx);
-        bool still = o.Screenshot is not null;
+        // The still's selection, --move-to walk and --ticks happen on the first frame: its Settle calls upload textures through
+        // the open frame (Metal cannot open one before a drawable exists), and the loop then only lets the picture warm up.
+        bool still = o.Screenshot is not null, stillPrepared = false;
         string?[] stillPanels = hud is not null && still ? StillPanels() : new string?[] { null };
         int stillPanel = 0, stillPanelFrames = 0;
         // A run can still open one shared layout by name for manual review; the still loop owns its panels.
@@ -1237,6 +1235,11 @@ sealed partial class GameHost
                 }
                 Thread.Sleep(1);
                 continue;
+            }
+            if (still && !stillPrepared)
+            {
+                PrepareStill(ctx, finish: false);
+                stillPrepared = true;
             }
             if (settleAfterWorldLoad)
             {

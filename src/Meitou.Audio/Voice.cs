@@ -1,7 +1,7 @@
 namespace Meitou.Audio;
 
 /// <summary>
-/// One playing WEM: decodes its Ogg Vorbis stream as it goes (NVorbis), loops it, resamples it to the output rate with the pitch, runs it
+/// One playing WEM: reads a short clip's samples decoded once and shared (<see cref="PcmCache"/>), a long one's Ogg Vorbis stream as it goes (NVorbis); loops it, resamples it to the output rate with the pitch, runs it
 /// through a one-pole low-pass and adds it to the mix with a gain per side, ramped across the block so changes do not click.
 /// </summary>
 sealed class Voice : IDisposable
@@ -9,7 +9,10 @@ sealed class Voice : IDisposable
     readonly MediaClip clip;
 
     public MediaClip Clip => clip;
-    NVorbis.VorbisReader reader;
+    // The source: the shared decoded samples (pcm, read from pcmRead, interleaved), else the stream.
+    NVorbis.VorbisReader? reader;
+    readonly float[]? pcm;
+    long pcmRead;
     readonly float[] decoded;
     int decodedFrames;
     double position;
@@ -32,20 +35,44 @@ sealed class Voice : IDisposable
     /// start and, when <paramref name="limitFrames"/> is not negative, only that many are played after them (music clips' trims).
     /// <paramref name="startPhase"/>: how far into the first source frame (in source frames) the first output frame lies, for a start between two output frames.
     /// </summary>
-    public Voice(MediaClip clip, int plays, long skipFrames = 0, long limitFrames = -1, double startPhase = 0)
+    public Voice(MediaClip clip, int plays, long skipFrames = 0, long limitFrames = -1, double startPhase = 0, float[]? pcm = null)
     {
         this.clip = clip;
         playsLeft = this.plays = plays;
         toSkip = skipFrames;
         limit = limitFrames;
         position = startPhase;
-        reader = Open();
-        try { framesPerPlay = reader.TotalSamples; } catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException) { framesPerPlay = 0; }
-        if (framesPerPlay <= 0) framesPerPlay = clip.Frames;
+        this.pcm = pcm;
+        if (pcm is not null) framesPerPlay = pcm.Length / clip.Channels;
+        else
+        {
+            reader = Open();
+            try { framesPerPlay = reader.TotalSamples; } catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException) { framesPerPlay = 0; }
+            if (framesPerPlay <= 0) framesPerPlay = clip.Frames;
+        }
         decoded = new float[4096 * clip.Channels];
     }
 
     NVorbis.VorbisReader Open() => new(new MemoryStream(clip.Ogg, writable: false), closeOnDispose: true);
+
+    /// <summary>Up to <paramref name="count"/> samples (interleaved) from the source into <paramref name="buffer"/>; 0 at the end of a play.</summary>
+    int ReadSamples(float[] buffer, int offset, int count)
+    {
+        if (pcm is null) return reader!.ReadSamples(buffer, offset, count);
+        int n = (int)Math.Min(count, pcm.Length - pcmRead);
+        Array.Copy(pcm, pcmRead, buffer, offset, n);
+        pcmRead += n;
+        return n;
+    }
+
+    /// <summary>The source back at <paramref name="frame"/> of the clip (0: the start of the next play).</summary>
+    void Rewind(long frame = 0)
+    {
+        if (pcm is not null) { pcmRead = frame * clip.Channels; return; }
+        reader!.Dispose();
+        reader = Open();
+        if (frame > 0) reader.SeekTo(frame);
+    }
 
     public bool Ended => ended;
 
@@ -86,12 +113,7 @@ sealed class Voice : IDisposable
         long done = (long)(cursor / framesPerPlay);
         if (plays > 0 && done >= plays) { ended = true; return; }
         long within = Math.Clamp((long)(cursor - (double)done * framesPerPlay), 0, framesPerPlay - 1);
-        try
-        {
-            reader.Dispose();
-            reader = Open();
-            reader.SeekTo(within);
-        }
+        try { Rewind(within); }
         catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException or IOException)
         {
             // A seek the stream does not allow ends the voice, never the mix.
@@ -177,7 +199,7 @@ sealed class Voice : IDisposable
         decodedFrames = keep;
         while (decodedFrames < decoded.Length / channels)
         {
-            int n = reader.ReadSamples(decoded, decodedFrames * channels, decoded.Length - decodedFrames * channels);
+            int n = ReadSamples(decoded, decodedFrames * channels, decoded.Length - decodedFrames * channels);
             if (n > 0)
             {
                 int got = n / channels;
@@ -207,14 +229,13 @@ sealed class Voice : IDisposable
                 break;
             }
             if (playsLeft > 1) playsLeft--;
-            reader.Dispose();
-            reader = Open();
+            Rewind();
         }
         // At the end the clip fades into silence over its last frame, so a clip that follows it sample for sample leaves no gap.
         return position + 1 < decodedFrames || (final && position < decodedFrames);
     }
 
-    public void Dispose() => reader.Dispose();
+    public void Dispose() => reader?.Dispose();
 }
 
 /// <summary>One auxiliary send of a voice: the bus's stereo input buffer and the gains the voice adds to it.</summary>
@@ -222,3 +243,50 @@ readonly record struct VoiceSend(float[] Buffer, float Left, float Right);
 
 /// <summary>A WEM converted to Ogg Vorbis, ready to play.</summary>
 sealed record MediaClip(uint Id, byte[] Ogg, int Channels, int SampleRate, int Frames);
+
+/// <summary>
+/// Short clips decoded once, their samples shared by every voice that plays them (docs/audio.md "Voice cap"): opening a Vorbis stream (its codebooks) costs
+/// about 1.7 ms and decoding it again more, per sound, which a big fight's hundreds of footsteps, swings and hits a second cannot afford on the audio thread.
+/// A clip longer than <see cref="MaxSeconds"/> (beds, music) or past <see cref="BudgetBytes"/> streams instead. The audio thread only.
+/// </summary>
+sealed class PcmCache
+{
+    public const double MaxSeconds = 20;
+    public const long BudgetBytes = 256L << 20;
+    readonly Dictionary<uint, float[]?> clips = [];
+    long bytes;
+
+    /// <summary>The clip's samples (interleaved), decoded the first time; null when it streams.</summary>
+    public float[]? Get(MediaClip clip)
+    {
+        if (clips.TryGetValue(clip.Id, out var known)) return known;
+        float[]? pcm = null;
+        long estimate = (long)clip.Frames * clip.Channels * sizeof(float);
+        if (clip.Frames > 0 && clip.Frames <= MaxSeconds * clip.SampleRate && bytes + estimate <= BudgetBytes) pcm = Decode(clip);
+        if (pcm is not null) bytes += (long)pcm.Length * sizeof(float);
+        clips[clip.Id] = pcm;
+        return pcm;
+    }
+
+    static float[]? Decode(MediaClip clip)
+    {
+        try
+        {
+            using var reader = new NVorbis.VorbisReader(new MemoryStream(clip.Ogg, writable: false), closeOnDispose: true);
+            var all = new float[Math.Max(clip.Frames, 1) * clip.Channels];
+            int filled = 0;
+            while (true)
+            {
+                if (filled == all.Length) Array.Resize(ref all, all.Length * 2);
+                int n = reader.ReadSamples(all, filled, all.Length - filled);
+                if (n <= 0) break;
+                filled += n;
+            }
+            return filled == all.Length ? all : all[..filled];
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or ArgumentException or IOException)
+        {
+            return null;   // streamed as before, which reports nothing either
+        }
+    }
+}

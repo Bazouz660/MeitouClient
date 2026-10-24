@@ -30,6 +30,27 @@ public sealed unsafe class Uploader : IGpuUploads
         if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Name, data.Length);
     }
 
+    /// <summary>Writes <paramref name="data"/>'s <paramref name="stride"/>-byte records each to its own offset of <paramref name="offsets"/> (in order): one staging copy and one copy command.</summary>
+    public void WriteScattered(DeviceBuffer target, ReadOnlySpan<byte> data, int stride, ReadOnlySpan<ulong> offsets)
+    {
+        if (offsets.IsEmpty) return;
+        if (target.UsedFrame == ctx.Frame.Number)
+            throw new InvalidOperationException("the frame already drew from this buffer: per-frame data belongs in a Transient (docs/renderer-native.md 2.3)");
+        if (data.Length != stride * offsets.Length) throw new ArgumentException("one record per offset", nameof(data));
+        var staging = ctx.Frame.Staging.Write(data);
+        var copies = new BufferCopy[offsets.Length];
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            if (offsets[i] + (ulong)stride > target.Size) throw new ArgumentOutOfRangeException(nameof(offsets), "write past the end of the buffer");
+            copies[i] = new BufferCopy(staging.Offset + (ulong)(i * stride), offsets[i], (ulong)stride);
+        }
+        var cmd = Cmd;
+        fixed (BufferCopy* p = copies) ctx.Device.Vk.CmdCopyBuffer(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.BufferAt(target.Handle.Index), (uint)copies.Length, p);
+        TransferBarrier(cmd);
+        ctx.Frame.Stats.UploadBytes += data.Length;
+        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Name, data.Length);
+    }
+
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
     public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {

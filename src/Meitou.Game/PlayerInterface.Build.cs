@@ -34,8 +34,8 @@ sealed partial class PlayerInterface
     BuildingBuildData? buildMember;
     readonly List<QueuedGhost> buildQueue = [];
     float ghostYaw, ghostLift, ghostTilt = DefaultTilt;
-    // The ghost now: where the cursor meets the ground, its rotation (tilt included), the first failure.
-    (Vector3 Position, Quaternion Rotation, PlacementFailure Failure, BuildingBuildData Building, Vector2[]? Hull)? ghost;
+    // The ghost now: where the cursor meets the ground or a building's floor (On), its rotation (tilt included), the first failure.
+    (Vector3 Position, Quaternion Rotation, PlacementFailure Failure, BuildingBuildData Building, Vector2[]? Hull, GhostFloor? On)? ghost;
     readonly HashSet<Key> buildHeld = [];
     long buildClock;
     bool ghostsDrawn;
@@ -54,7 +54,7 @@ sealed partial class PlayerInterface
 
     IReadOnlySet<string> Unlocked() => session.CurrentSnapshot.UnlockedBuildings;
 
-    /// <summary>B: opens build mode, or closes it (the queue of unconfirmed ghosts is dropped).</summary>
+    /// <summary>B: opens build mode (pausing the game and closing the inventory windows), or closes it (the queue of unconfirmed ghosts is dropped).</summary>
     public void ToggleBuildMode() => SetBuildMode(!buildMode);
 
     void SetBuildMode(bool on)
@@ -76,8 +76,10 @@ sealed partial class PlayerInterface
             buildCategory = null;
             buildGroup = 0;
             buildMember = null;
+            CloseInventoryWindows();
             faithfulScreens.Open("build");
             CloseContextMenu();
+            if (session.Simulation.Speed != 0) session.Simulation.TogglePause();   // a player pause: the speed buttons resume it
         }
         else
         {
@@ -170,14 +172,18 @@ sealed partial class PlayerInterface
         if (wallLine is { } line && line.Master != CurrentBuilding()) wallLine = null;
         if (wallLine is { } active && !pointerOverUi && Ray(mouse) is { } lineRay && GroundHit(lineRay.Origin, lineRay.Direction) is { } lineEnd)
             LayWall(host, active, lineEnd);
-        else if (wallLine is null && CurrentBuilding() is { } building && !pointerOverUi && Ray(mouse) is { } ray && GroundHit(ray.Origin, ray.Direction) is { } hit)
+        else if (wallLine is null && CurrentBuilding() is { } building && !pointerOverUi && Ray(mouse) is { } ray && GroundHit(ray.Origin, ray.Direction) is { } terrainHit)
         {
+            // A building's floor before the terrain: the ghost stands on it, level.
+            var floorHit = building.LinksTogether ? null : host.Placement.FloorAlong(ray.Origin, ray.Direction, Vector3.Distance(ray.Origin, terrainHit));
+            var on = floorHit?.Floor;
+            var hit = floorHit?.Position ?? terrainHit;
             var parts = host.Parts(building.Id);
             var footprint = host.Placement.Footprint(building.Id);
             var at = new Vector2(hit.X, hit.Z);
             var box = footprint?.Bounds ?? (new Vector2(-4), new Vector2(4));
             // The ghost tilts to the ground: all the way for a building that matches the slope, else by the player's tilt factor, never more than its slope limit.
-            var normal = PlacementCheck.GroundNormal(host.Placement.Ground, at, ghostYaw, box);
+            var normal = on is not null ? Vector3.UnitY : PlacementCheck.GroundNormal(host.Placement.Ground, at, ghostYaw, box);
             float angle = MathF.Acos(Math.Clamp(normal.Y, -1, 1)) * (building.MatchSlope ? 1 : ghostTilt);
             if (building.MaxSlope > 0) angle = MathF.Min(angle, building.MaxSlope * MathF.PI / 180);
             var axis = Vector3.Cross(Vector3.UnitY, normal);
@@ -196,9 +202,9 @@ sealed partial class PlayerInterface
                 ignore = WallIgnore(new WallPiece(building, position, rotation), [snap.Point]);
             }
             var snapshot = session.CurrentSnapshot;
-            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(new PlacementQuery(building, position, rotation, yaw, 0, parts, buildQueue,
-                snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore });
-            ghost = (position, rotation, failure, building, footprint?.Place(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)));
+            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(new PlacementQuery(building, position, rotation, yaw, on?.Floor ?? 0, parts,
+                buildQueue, snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore, On = on });
+            ghost = (position, rotation, failure, building, footprint?.Place(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)), on);
         }
         buildMessage = ghost is { Failure: not PlacementFailure.None } g ? PlacementCheck.Message(g.Failure)
             : wallPieces.FirstOrDefault(p => p.Failure != PlacementFailure.None) is { Piece.Data: not null } bad ? PlacementCheck.Message(bad.Failure) : null;
@@ -346,8 +352,8 @@ sealed partial class PlayerInterface
     {
         if (WallClick()) return;
         if (ghost is not { Failure: PlacementFailure.None } g) return;
-        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, 0, g.Hull));
-        Sound("Building_Place", "Building_Place", "Outdoors");   // Indoors for a ghost with a parent building: Unknown here, see docs/audio.md "Interface"
+        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, g.On?.Floor ?? 0, g.Hull, g.On?.Parent));
+        Sound("Building_Place", "Building_Place", g.On is null ? "Outdoors" : "Indoors");
         ghostLift = 0;
     }
 
@@ -361,7 +367,7 @@ sealed partial class PlayerInterface
     {
         if (buildQueue.Count == 0) return;
         Sound("Building_Confirm");
-        Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, null))]) { Tick = session.World.Tick });
+        Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, q.Parent))]) { Tick = session.World.Tick });
         buildQueue.Clear();
     }
 
@@ -482,15 +488,21 @@ sealed partial class PlayerInterface
         BuildingSnapshot? best = null;
         // Only what the ray meets before the ground counts, as in PickBuilding and the original's raycast (terrain ends the walk): a building's hull and collision reach below the ground,
         // and the part of the ray that has gone through the ground must not find them (the pointer showed the hammer on bare ground beside a building).
-        float bestT = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : float.MaxValue;
+        float ground = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : float.MaxValue, bestT = ground;
+        var hits = new List<(BuildingSnapshot Site, float T)>();
         foreach (var site in session.CurrentSnapshot.Buildings)
         {
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation));
             float? t = host.Placement.Footprint(site.Record) is { } footprint
                 ? BuildingRayT(ray, footprint.Place(site.Position, yaw), footprint.YMin, footprint.YMax, site.Record, site.Position, site.Position.Y, yaw)
                 : RaySegment(ray.Origin, ray.Direction, site.Position, site.Position + new Vector3(0, 16, 0), 12);
-            if (t is { } hit && hit < bestT) (bestT, best) = (hit, site);
+            if (t is not { } hit || hit >= ground) continue;
+            hits.Add((site, hit));
+            if (hit < bestT) (bestT, best) = (hit, site);
         }
+        // A building placed inside the one hit first (its roof or walls, hidden in the interior view) is what the click means, when the view shows that building's inside there.
+        while (best is not null && hits.Where(h => h.Site.Parent == best.Id && !Hidden(ray, h.T)).OrderBy(h => h.T).FirstOrDefault() is { Site: not null } inside)
+            (best, bestT) = inside;
         return best is null ? null : (WallOf(best), bestT);
     }
 
@@ -617,8 +629,10 @@ sealed partial class PlayerInterface
         {
             // A finished plain building's quick right click is a move to the point under the cursor (the original: order 29 MOVE_CUS_ORDERED). The original's target is the building
             // hit's x, z at the terrain height, which the path's goal snap puts on the floor inside or the ground outside; a pick that went on through the roof or wall to the
-            // terrain beyond (a site has no room pick) takes that point instead, so the character goes in rather than to the ground behind.
-            if (PickSiteAt(pending.At) is { } at && at.Site.Id == pending.Site.Id && at.T + 1 < Vector3.Distance(ray.Origin, hit))
+            // terrain beyond takes that point instead, so the character goes in rather than to the ground behind. A building floor the pick found (a site with an interior,
+            // the hidden roof above it nearer) stays: the terrain under the roof hit lay below the floor.
+            float distance = Vector3.Distance(ray.Origin, hit);
+            if (BuildingMoveHit?.Invoke(ray.Origin, ray.Direction, distance + 1) is null && PickSiteAt(pending.At) is { } at && at.Site.Id == pending.Site.Id && at.T + 1 < distance)
             {
                 var p = ray.Origin + ray.Direction * at.T;
                 hit = new Vector3(p.X, ground(p.X, p.Z), p.Z);

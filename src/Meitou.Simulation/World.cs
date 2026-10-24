@@ -141,6 +141,8 @@ public sealed partial class World : IDisposable
     public Construction.BuildingRegistry Buildings { get; } = new();
     /// <summary>Loose items lying in the world, so far the severed limbs combat drops (docs/simulation.md "Ground items").</summary>
     public Items.GroundItems GroundItems { get; } = new();
+    /// <summary>The loose-item slots of the towns' interiors (docs/simulation.md "Ground items"); hashed once a town with any registered.</summary>
+    public Items.ItemSlots ItemSlots { get; } = new();
     /// <summary>
     /// Every zone the population has had active in this world (docs/formats/save.md "Zone files": the original writes a file for each zone it loaded): a save writes a zone file for
     /// each that its loaded save has none of. Only read by saves, so not hashed.
@@ -194,35 +196,68 @@ public sealed partial class World : IDisposable
     /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
     public bool CanTalk(CharacterId id, CharacterId? talker = null) => dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);
 
-    /// <summary>Runs one simulation tick.</summary>
-    public void RunTick()
+    // The profiled parallel phase (RunParallel): the body run, a timed wrapper made once, and each partition's Stopwatch ticks (a partition is one job, written by one thread).
+    Action<int>? timedBody;
+    Action<int>? timedRun;
+    long[] jobTicks = [];
+
+    /// <summary>One system's parallel phase over the partitions; profiled, it also sums its jobs' time and notes the slowest (<see cref="TickProfile.Jobs"/>).</summary>
+    void RunParallel(Action<int> body, TickProfile? prof, int phase, int system)
+    {
+        if (prof is null) { pool.ForEach(partitions.Length, body); return; }
+        int n = partitions.Length;
+        if (jobTicks.Length < n) jobTicks = new long[n];
+        Array.Clear(jobTicks, 0, n);
+        timedBody = body;
+        timedRun ??= i =>
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            timedBody!(i);
+            jobTicks[i] = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        };
+        pool.ForEach(n, timedRun);
+        long sum = 0, max = 0;
+        for (int i = 0; i < n; i++) { sum += jobTicks[i]; max = Math.Max(max, jobTicks[i]); }
+        prof.Jobs(phase, sum, max);
+        prof.Lap(phase, system);
+    }
+
+    /// <summary>Runs one simulation tick; <paramref name="publish"/> false skips its snapshot (a tick the host will not draw: not one of a frame's last two).</summary>
+    public void RunTick(bool publish = true)
     {
         var table = Characters;
+        var prof = Profile.Enabled ? Profile : null;
+        prof?.Begin(systems.Count);
         table.BeginTick();
 
         // 1. Inputs (serial).
         table.Phase = TablePhase.Inputs;
         var due = TakeDue();
-        foreach (var s in systems) s.Inputs(this, due);
+        prof?.Lap(TickProfile.Inputs);
+        for (int k = 0; k < systems.Count; k++) { systems[k].Inputs(this, due); prof?.Lap(TickProfile.Inputs, k); }
 
         // 2. Schedule (serial): the grid of the last tick's positions, then the systems.
         table.Phase = TablePhase.Schedule;
         Grid.Build(table.Previous);
+        prof?.Lap(TickProfile.Grid);
         Sight.Update(this);
+        prof?.Lap(TickProfile.Sight);
         MakePartitions();
-        foreach (var s in systems) s.Schedule(this);
+        prof?.Lap(TickProfile.Schedule);
+        for (int k = 0; k < systems.Count; k++) { systems[k].Schedule(this); prof?.Lap(TickProfile.Schedule, k); }
 
         // 3-5. Think, move, act (parallel; each system's phase is a barrier).
         table.Phase = TablePhase.Parallel;
         // A system that leaves a phase at its empty default is skipped there: a barrier costs more than the nothing it would wait for.
-        foreach (var p in phases) if (p.Think is { } think) pool.ForEach(partitions.Length, think);
-        foreach (var p in phases) if (p.Move is { } move) pool.ForEach(partitions.Length, move);
+        foreach (var p in phases) if (p.Think is { } think) RunParallel(think, prof, TickProfile.Think, p.Index);
+        foreach (var p in phases) if (p.Move is { } move) RunParallel(move, prof, TickProfile.Move, p.Index);
         foreach (var b in buffers) b.Reset();
+        prof?.Lap(TickProfile.Act);
         foreach (var p in phases)
         {
             if (p.Act is not { } act) continue;
             foreach (var b in buffers) b.BeginSystem(p.Index);   // Effect.System is the system's real index, so the commit order does not depend on which systems act
-            pool.ForEach(partitions.Length, act);
+            RunParallel(act, prof, TickProfile.Act, p.Index);
         }
 
         table.Phase = TablePhase.Commit;
@@ -230,12 +265,14 @@ public sealed partial class World : IDisposable
         effects.Clear();
         for (int i = 0; i < partitions.Length; i++) effects.AddRange(buffers[i].Items);
         effects.Sort(EffectBuffer.Order);
-        foreach (var e in effects) systems[e.System].Apply(this, e);
+        prof?.Lap(TickProfile.Commit);
+        foreach (var e in effects) { systems[e.System].Apply(this, e); prof?.Lap(TickProfile.Commit, e.System); }
 
         Squads.Refresh(table);
+        prof?.Lap(TickProfile.Commit);
         table.Phase = TablePhase.SlowWorld;
         // 7. Slow world (serial).
-        foreach (var s in systems) s.SlowWorld(this);
+        for (int k = 0; k < systems.Count; k++) { systems[k].SlowWorld(this); prof?.Lap(TickProfile.SlowWorld, k); }
 
         // 8. Publish.
         Squads.Refresh(table);
@@ -244,8 +281,12 @@ public sealed partial class World : IDisposable
         table.EndTick();
         Tick++;
         GameHours += TickSeconds / SecondsPerGameHour;
-        if (Settings.PublishSnapshots) Publish();
+        if (publish && Settings.PublishSnapshots) Publish();
+        prof?.Lap(TickProfile.Publish);
     }
+
+    /// <summary>The ticks' time per phase and system (off unless the host turns it on; F12's sim rows).</summary>
+    public TickProfile Profile { get; } = new();
 
     /// <summary>
     /// Queues a command a system decided on inside the tick (retaliation, auto-aggro) for the tick it is stamped with (at least the next one).
@@ -335,6 +376,7 @@ public sealed partial class World : IDisposable
         if (Fixtures.Count > 0) Fixtures.Hash(ref h);   // only once a town with buildings registered, so worlds without them hash as before
         if (Buildings.Count > 0 || Buildings.Towns.Count > 0) Buildings.Hash(ref h);   // only once the player has a site, so worlds without one hash as before
         if (GroundItems.Count > 0) GroundItems.Hash(ref h);   // only once something lies on the ground, so worlds without hash as before
+        if (ItemSlots.Count > 0) ItemSlots.Hash(ref h);   // only once a town with item slots registered
         if (Machines.Count > 0) Machines.Hash(ref h);   // only once the player has a working building
         if (Research.Changed) Research.Hash(ref h);   // only once research changed in play
         foreach (var s in systems) if (s is IStateHashed hashed) hashed.Hash(ref h);

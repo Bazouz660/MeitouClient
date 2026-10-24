@@ -55,6 +55,9 @@ static class ParticleSurvey
             var def = library.FindSystem(system);
             Console.WriteLine($"{e.Name,-40} type {e.GetInt("type"),2} system {system,-34} {(def is null ? "MISSING" : $"extent {def.LargestEmitterExtent:0.#} radius {def.BoundingRadius:0} quota {def.Techniques.Where(t => t.Enabled && t.Emitters.Count > 0).Sum(t => t.VisualQuota)} scale {def.Scale}")}  colour {e.GetInt("colour multiplier"):X6} wind {e.GetBool("wind affected")} x{e.GetFloat("wind speed mult"):0.##} span {e.GetFloat("min wind span rate"):0.#}-{e.GetFloat("max wind span rate"):0.#} view {e.GetFloat("maximum view distance"):0} life {e.GetFloat("min time to live"):0}-{e.GetFloat("max time to live"):0} alt {e.GetFloat("min altitude"):0}-{e.GetFloat("max altitude"):0} slope {e.GetFloat("min slope"):0.##}-{e.GetFloat("max slope"):0.##} fade-out {e.GetFloat("particle fade out delay"):0.#} dir {e.GetBool("wind direction emission")} ground {e.GetBool("ground colour")} sky {e.GetFloat("sky colour multiplier"):0.##}");
         }
+        foreach (var r in db.OfType(FcsRecordType.BUILDING).Concat(db.OfType(FcsRecordType.BUILDING_PART)).OrderBy(r => r.Name))
+            foreach (var g in r.Instances.Values.Where(i => !i.IsCleared &&db.Find(i.Target) is { Type: FcsRecordType.EFFECT }).GroupBy(i => i.Target))
+                Console.WriteLine($"building effect: {r.Type} {r.Name} -> {db.Find(g.Key)!.Name} x{g.Count()} sounds {db.Find(g.Key)!.GetReferences("sound").Count}");
         return 0;
     }
 

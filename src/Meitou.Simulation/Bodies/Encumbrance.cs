@@ -3,7 +3,7 @@ using Meitou.Data.Gameplay.Bodies;
 
 namespace Meitou.Simulation.Bodies;
 
-/// <summary>Carrying capacity and the encumbrance factor (docs/game/character-stats.md "Encumbrance and carrying", <b>Observed</b>, <c>FUN_140884780</c>).</summary>
+/// <summary>Carrying capacity and the encumbrance factor (docs/game/character-stats.md "Encumbrance and carrying", <b>Verified</b> in game, <c>FUN_1408838b0</c>, <c>FUN_140884780</c>).</summary>
 public static class Encumbrance
 {
     /// <summary>

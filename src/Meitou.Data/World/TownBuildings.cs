@@ -53,6 +53,8 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     public string? OwnerFactionId { get; init; }
     /// <summary>The cages, lockable containers and containers with an inventory of its interior layout (docs/game/locks.md "Data"), in layout order.</summary>
     public IReadOnlyList<TownFixture> Fixtures { get; init; } = [];
+    /// <summary>The loose-item slots of its interior layout (docs/game/factions-squads-towns.md "Loose items in buildings"), in layout order.</summary>
+    public IReadOnlyList<TownItemSlot> ItemSlots { get; init; } = [];
     /// <summary>The zone whose building list places it (instance ids repeat between zones).</summary>
     public ZoneCoordinate Zone { get; init; }
     /// <summary>Its run-time name (<see cref="BuildingKey"/>): what fixtures, doors and the renderer's placements know it by.</summary>
@@ -112,6 +114,12 @@ public sealed record TownFixture(string Id, string RecordId, bool IsCage, Vector
 }
 
 /// <summary>
+/// A loose-item slot of a building's interior layout: an ITEM_PLACEMENT_GROUP placed at a world position and rotation, on its object's floor. <paramref name="Id"/> is the parent's
+/// <see cref="BuildingKey"/>, "/item", and the slot's index among the layout's groups (an <b>engine</b> name).
+/// </summary>
+public sealed record TownItemSlot(string Id, string GroupId, Vector3 Position, Quaternion Rotation, int Floor);
+
+/// <summary>
 /// The buildings of each placed town, for the AI's homes, beds and nodes (docs/simulation.md "AI", Homes). A placed building belongs to a town as the game's import decides
 /// (<see cref="MemberOf"/>, docs/formats/zones.md "Town membership"). Buildings the level data marks destroyed are kept (the game rebuilds a non-player building on import: <c>FUN_140552b70</c> keeps <c>destroyed</c> only for the player's; the Hub's ruins house its squatters); node markers and resource buildings
 /// (<c>is foliage</c>) are left out. Turrets stay, with their gun and the building they are mounted on (<see cref="TownBuilding.Turret"/>), the AI's turret posts. Beds are interior-layout objects with a BED or SKELETON_BED functionality (docs/game/buildings-production.md, BuildingFunction 6
@@ -145,6 +153,7 @@ public static class TownBuildings
                 instances[(state.GetInt("handleC"), state.GetInt("handleI"))] = b.Key;
         var names = new Dictionary<(string, bool), IReadOnlySet<string>>();
         List<TownFixture>? fixtures = null;
+        List<TownItemSlot>? itemSlots = null;
         List<Vector3>? tables = null;
         var result = new Dictionary<string, List<TownBuilding>>(StringComparer.Ordinal);
         foreach (var b in levels.Buildings())
@@ -206,6 +215,12 @@ public static class TownBuildings
                         }
                         index++;
                     }
+                    int slot = 0;
+                    foreach (var group in layouts.ItemGroups(interior))
+                    {
+                        var (at, rotation) = BuildingLayouts.Place(resolved.Position, b.Rotation, group);
+                        (itemSlots ??= []).Add(new TownItemSlot($"{b.Key}/item{slot++}", group.Building.StringId, at, rotation, group.Floor));
+                    }
                     if (seats is not null && faced is not null)
                         foreach (var (s, flags) in seats) spots[s] = spots[s] with { Yaw = SeatYaw(spots[s], flags, faced) };
                     tables = faced;
@@ -215,7 +230,7 @@ public static class TownBuildings
             string? owner = state?.GetString("owner faction ID") is { Length: > 0 } o ? o : null;
             list.Add(new TownBuilding(b.InstanceId, record.StringId, record.Name, resolved.Position, YawOf(b.Rotation), shop, bar, spots)
             {
-                OwnerFactionId = owner, Fixtures = fixtures ?? [], Zone = b.Zone, Resolved = resolved,
+                OwnerFactionId = owner, Fixtures = fixtures ?? [], ItemSlots = itemSlots ?? [], Zone = b.Zone, Resolved = resolved,
                 CanHouse = record.GetBool("is wall gate") || record.GetReferences("interior").Count > 0 && !record.GetBool("links together"),
                 IsGate = record.GetBool("is wall gate"),
                 Destroyed = resolved.Destroyed,
@@ -231,6 +246,7 @@ public static class TownBuildings
                 Function = functionality?.GetInt("function") ?? -1,
             });
             fixtures = null;
+            itemSlots = null;
             tables = null;
         }
         return result;

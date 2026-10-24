@@ -22,9 +22,10 @@ public sealed class MaterialSlot(string item, float required)
 public sealed class BuildSite
 {
     public required string Id { get; init; }
-    public required string Record { get; init; }
+    /// <summary>The BUILDING record; an upgrade or downgrade swaps it in place (<see cref="ConstructionSystem"/> "Upgrades").</summary>
+    public required string Record { get; set; }
     /// <summary>The BUILDING's name (messages only; not hashed).</summary>
-    public string Name { get; init; } = "";
+    public string Name { get; set; } = "";
     public Vector3 Position { get; init; }
     public Quaternion Rotation { get; init; } = Quaternion.Identity;
     public int Floor { get; init; }
@@ -39,13 +40,17 @@ public sealed class BuildSite
     public int Town { get; set; }
     /// <summary>The owning faction, a position in the world's faction list.</summary>
     public int Owner { get; init; }
-    public required MaterialSlot[] Materials { get; init; }
+    public required MaterialSlot[] Materials { get; set; }
     public float Progress { get; set; }
     public float Target { get; set; }
     /// <summary>Progress per game second of one unit of build work: <c>build speed mult</c> / (1200/11).</summary>
-    public float Rate { get; init; }
+    public float Rate { get; set; }
     public bool Complete { get; set; }
     public bool Paused { get; set; }
+    /// <summary>Open to the public (the original's Building+0xc8, saved as <c>is public day</c>; the stats panel's toggle).</summary>
+    public bool Public { get; set; } = true;
+    /// <summary>Being built up to a new record by an upgrade or downgrade: its doors stay meanwhile (the original keeps the door objects). Engine state, not saved; hashed while set.</summary>
+    public bool Upgrading { get; set; }
     /// <summary>The save's <c>destroyed</c> flag; the first tick on it turns the building back into a half-built site (<see cref="ConstructionSystem"/>).</summary>
     public bool Destroyed { get; set; }
     /// <summary>The destroyed flag has been acted on (the building is a ruin being rebuilt).</summary>
@@ -89,6 +94,8 @@ public sealed class BuildSite
         h.Add(Paused);
         if (Destroyed || Ruined) { h.Add(0x44657374); h.Add(Destroyed); h.Add(Ruined); }
         if (Town != 0) { h.Add(0x546F776E); h.Add(Town); }
+        if (!Public) h.Add(0x50726976);
+        if (Upgrading) h.Add(0x55706772);
         h.Add(Materials.Length);
         foreach (var m in Materials)
         {
@@ -262,7 +269,7 @@ public sealed partial class BuildingRegistry
         {
             var materials = new MaterialView[s.Materials.Length];
             for (int i = 0; i < materials.Length; i++) materials[i] = new MaterialView(s.Materials[i].Item, s.Materials[i].Required, s.Materials[i].Delivered);
-            list.Add(new BuildingSnapshot(s.Id, s.Record, s.Position, s.Rotation, s.Floor, s.Parent, s.Owner, s.Progress, s.Target, materials, s.Complete, s.Paused) { Dismantling = s.Dismantling, WallParent = s.WallParent });
+            list.Add(new BuildingSnapshot(s.Id, s.Record, s.Position, s.Rotation, s.Floor, s.Parent, s.Owner, s.Progress, s.Target, materials, s.Complete, s.Paused) { Dismantling = s.Dismantling, WallParent = s.WallParent, Public = s.Public, TownName = FindTown(s.Town)?.Name });
         }
         publishedVersion = Version;
         return published = list;

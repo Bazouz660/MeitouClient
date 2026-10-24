@@ -114,6 +114,7 @@ sealed partial class PlayerInterface
             b.Actions["QueueButton"] = "QueueButton";
         }
         else b.Hidden.Add("CraftingPanel");
+        b.TemplateScale = InventoryScale;
         if (m is null) return;
         for (int k = 0; k < 2; k++)
         {
@@ -158,16 +159,31 @@ sealed partial class PlayerInterface
             }
             return;
         }
-        void Slot(string name, MachineSlotView view, int code)
+        void Slot(string name, string bar, MachineSlotView view, int code)
         {
-            if (view.Count <= 0 || controls.FirstOrDefault(c => c.Name == name) is not { } slot || Lifted(ItemOwner.AtSite(m.Site), code)) return;
-            var b = slot.Bounds;
-            // The item at its own footprint, as the original draws it in a slot (a box of building material is 6 x 3 cells), centred in the slot.
-            float cell = InventoryCell, w = view.Width * cell, h = view.Height * cell;
-            AddItemCell(controls, $"machine-{name}", new(b.X + (b.Width - w) / 2, b.Y + (b.Height - h) / 2, w, h), view.Item, "", view.Name, view.Count, null, "MachineItem", code, slot.Clip);
+            int index = controls.FindIndex(c => c.Name == name);
+            if (index < 0) return;
+            // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top left.
+            var slot = controls[index];
+            var b = slot.Bounds with { Width = view.Width * InventoryCell, Height = view.Height * InventoryCell };
+            // The grid and a moved bar may leave their content panel, so they clip to the window instead.
+            var clip = controls.FirstOrDefault(c => c.Type == "Window")?.Bounds ?? slot.Clip;
+            controls[index] = slot with
+            {
+                Bounds = b,
+                Clip = clip,
+                Properties = new Dictionary<string, string>(slot.Properties) { ["TileSize"] = FormattableString.Invariant($"{InventoryCell} {InventoryCell}"), ["State"] = "normal" },
+            };
+            // Engine choice: a grid taller than the room above the progress bar pushes the bar down under it.
+            if (controls.FirstOrDefault(c => c.Name == bar) is { } root && b.Y + b.Height + 4 * InventoryScale - root.Bounds.Y is var dy and > 0)
+                for (int i = 0; i < controls.Count; i++)
+                    if (controls[i].Name == bar || controls[i].Name == bar + "@track" || controls[i].Properties.GetValueOrDefault("TemplateOwner") == bar)
+                        controls[i] = controls[i] with { Bounds = controls[i].Bounds with { Y = controls[i].Bounds.Y + dy }, Clip = clip };
+            if (view.Count <= 0 || Lifted(ItemOwner.AtSite(m.Site), code)) return;
+            AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, clip);
         }
-        for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", m.Inputs[k], 10 + k);
-        if (m.Output is { } output) Slot("out", output, 8);
+        for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", $"Input{k + 1}ProgressBar", m.Inputs[k], 10 + k);
+        if (m.Output is { } output) Slot("out", "OutputProgressBar", output, 8);
         else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && !Lifted(ItemOwner.AtSite(m.Site), 8))
         {
             var ob = outSlot.Bounds;
@@ -199,6 +215,23 @@ sealed partial class PlayerInterface
                 : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
     }
 
+    /// <summary>
+    /// The first stats line of a mine, farm, well or rock (<c>ProductionBuilding::getGUIFertility</c>, docs/game/ui-screens.md "Selected building"): the resource's label, the yield as
+    /// a whole percent without the sign, red to green (r = 0.8 - y, g = 0.8 y, b = 0.1), and the tooltip naming the resource in lower case.
+    /// </summary>
+    static void AddRichnessLine(Meitou.Simulation.Production.RichnessView rich, List<HudLine> stats)
+    {
+        (string Label, string Name) = rich.Resource switch
+        {
+            1 => ("Iron Quality:", "Iron"), 2 => ("Stone Richness:", "Stone"), 3 => ("Copper Quality:", "Copper"), 4 => ("Carbon Quality:", "Carbon"),
+            5 => ("Water Available:", "Water"), _ => ("Ground Fertility:", "Fertility"),
+        };
+        static int Byte(float v) => (int)(Math.Clamp(v, 0, 1) * 255 + 0.5f);
+        string colour = $"{Byte(0.8f - rich.Yield):x2}{Byte(0.8f * rich.Yield):x2}{Byte(0.1f):x2}";
+        stats.Add(new(Label, ((int)(rich.Yield * 100)).ToString(CultureInfo.InvariantCulture), MainColour, colour,
+            Loc.Tr("The richness of natural {1} present in this location. Anything over 50% is considered good.", Loc.Tr(Name).ToLower(CultureInfo.CurrentCulture))));
+    }
+
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad)
     {
@@ -210,7 +243,6 @@ sealed partial class PlayerInterface
             bad = f.Status is FarmStatus.NoWater or FarmStatus.OutputFull;
             stats.Add(new("Growth:", P(MathF.Min(f.Growth, 1)), MainColour));
             if (f.Growth >= 1) stats.Add(new("Ripeness:", P(f.Ripeness), MainColour, f.Growth >= 2 ? BadColour : GoodColour));
-            stats.Add(new("Fertility:", P(f.Fertility), MainColour));
             if (f.Death > 0) stats.Add(new("Dying:", P(f.Death), MainColour, BadColour));
         }
         else if (m.Output is { } o)

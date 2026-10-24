@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay.Construction;
 using Meitou.Simulation.Construction;
 
 namespace Meitou.Simulation.Production;
@@ -48,5 +49,21 @@ public sealed partial class ProductionSystem
             }
         }
         return naturalSites[id] = site;
+    }
+
+    readonly Dictionary<string, float> naturalYields = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The richness line of the building <paramref name="instance"/> names (<c>ProductionBuilding::getGUIFertility</c>, function 1 or 27 with a resource): a machine's yield, or a rock's
+    /// before it has been mined (no machine yet); null for anything else.
+    /// </summary>
+    public RichnessView? RichnessOf(World world, string? instance)
+    {
+        if (instance is null) return null;
+        if (world.Machines.Find(instance) is { } m)
+            return m.Data is { Function: MachineData.MineFunction or MachineData.NaturalMineFunction, Resource: not 0 and var r } ? new(instance, r, m.Yield) : null;
+        if (Natural(instance) is not { } site || Data(site.Record) is not { Resource: not 0 and var resource }) return null;
+        if (!naturalYields.TryGetValue(instance, out float y)) naturalYields[instance] = y = resources.NodeYield(resource, site.Position);
+        return new(instance, resource, y);
     }
 }

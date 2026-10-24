@@ -140,6 +140,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     int HeldClip(CharacterTask task, CharacterCold cold) => task switch
     {
         CharacterTask.Treat or CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.Prospect => TreatingClip,
+        // An NPC looting a body it has reached (Observed, Task_Loot_AI; the player's take is instant).
+        CharacterTask.Loot when !cold.IsPlayer && cold.LiftTime >= 0 => TreatingClip,
         CharacterTask.Rest => cold.Ai?.SitClip is { } sit && SitClipOf(sit) is >= 0 and var chair ? chair : RestingClip,
         CharacterTask.Dismantle => DismantlingClip,
         // An operator at work plays its functionality's clip (Observed, Task_OperateMachine; stonemine without one).
@@ -303,10 +305,12 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         bool crawling = !carried && cold.Medical is { Crawling: true };
         if (HoldsForRagdoll(a, down, carried, ragdoll)) return Vector2.Zero;
 
-        if (down && !a.WasDown && !carried && !ragdoll.Has) StartAction(a, fall, false);   // a ragdoll falls instead
+        bool inBed = cold.InSomething == Locks.HeldState.Bed;
+        if (down && !a.WasDown && !carried && !ragdoll.Has && !inBed) StartAction(a, fall, false);   // a ragdoll falls instead; one in a bed lies on
         if (carried) a.Action = -1;   // held on the shoulder: no falling or getting up
         // Waking with a leg down there is nothing to get up on: the original's get-up plays the crawl idle and ends at once (docs/game/ragdolls.md "Getting up").
-        else if (!down && a.WasDown && crawling) a.Action = -1;
+        // Waking in a bed it lies on (engine choice).
+        else if (!down && a.WasDown && (crawling || inBed)) a.Action = -1;
         else if (!down && a.WasDown)
         {
             StartAction(a, getUp, false);
@@ -338,6 +342,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         else if (down)
         {
             if (carried && CarriedClip >= 0) wanted.Add((CarriedClip, 1));
+            // Down in a bed: its clip (the sleeper's), so it lies where a sleeper lies.
+            else if (inBed && HeldClip(CharacterTask.Sleep, cold) is >= 0 and var lain) wanted.Add((lain, 1));
             else if (LyingClip >= 0) wanted.Add((LyingClip, 1));
             a.Idle = -1;
         }

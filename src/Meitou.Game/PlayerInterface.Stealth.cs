@@ -6,51 +6,53 @@ using Meitou.Simulation;
 namespace Meitou.Game;
 
 /// <summary>
-/// The stealth indicators of a sneaking player character (docs/game/perception.md "Spotting a sneaker"): a short pointer towards each hostile NPC noticing (yellow) or
+/// The stealth indicators of a sneaking player character (docs/game/perception.md "Spotting a sneaker"): a 3D arrow towards each hostile NPC noticing (yellow) or
 /// detecting (red) it, and a tag over its head tinted by its state, the original's name-tag colours (hidden blue, almost seen yellow, seen red).
 /// </summary>
 sealed partial class PlayerInterface
 {
-    // The original's pointer colours (FUN_1408586d0) and name-tag fallback colours (NameTagStealthHidden / AlmostSeen / Seen).
-    static readonly Vector4 PointerNoticed = new(1, 0xdd / 255f, 0, 1), PointerDetected = new(0xdd / 255f, 0, 0, 1);
+    // The original's arrow colours (FUN_1408586d0) and name-tag fallback colours (NameTagStealthHidden / AlmostSeen / Seen).
+    static readonly Vector3 ArrowNoticed = new(1, 0xdd / 255f, 0), ArrowDetected = new(0xdd / 255f, 0, 0);
     static readonly Vector4 TagHidden = new(0.25f, 0.521f, 0.745f, 1), TagAlmostSeen = new(0.745f, 0.721f, 0.25f, 1), TagSeen = new(0.745f, 0.25f, 0.29f, 1);
 
     /// <summary>The original's name-tag range: 1.2e8 squared (about 10954 units) from the camera.</summary>
     const float NameTagRangeSquared = 1.2e8f;
+    /// <summary>The frames of the <c>LightLevel</c> icon in <c>Kenshi_CharacterNameTags</c> (Verified, kenshi_images.xml).</summary>
+    const int LightLevelFrames = 7;
 
-    void DrawStealth(DebugOverlay o)
+    readonly List<MarkerRenderer.Arrow> arrows = [];
+
+    /// <summary>
+    /// Hands the world renderer this frame's stealth arrows (the original's <c>FUN_1408586d0</c>): per watcher of a sneaking player character an
+    /// <c>arrow.mesh</c> pointing from it at the looker, its tail 12 up and min(d - 7, 15) out towards the looker (d the 3D distance; negative puts it
+    /// on the far side, as in the original).
+    /// </summary>
+    void UpdateStealthArrows()
     {
+        if (Markers is not { } markers) return;
+        arrows.Clear();
         foreach (var c in session.CurrentSnapshot.Characters)
         {
             if (c.Stealth is null) continue;
             var feet = where(c);
-            // Pointers 12 units up, out towards the looker by min(d - 7, 15) (the original's figures).
-            var up = feet + new Vector3(0, 12, 0);
             foreach (var w in c.Watchers)
             {
-                var d = new Vector3(w.Position.X - feet.X, 0, w.Position.Z - feet.Z);
+                var d = w.Position - feet;
                 float dist = d.Length();
                 if (dist < 1e-3f) continue;
                 d /= dist;
-                float len = MathF.Min(dist - 7, 15);
-                if (len <= 2) continue;
-                var colour = w.Level == StealthExposure.Detected ? PointerDetected : PointerNoticed;
-                if (Project(up + d * (len * 0.35f)) is not { } a || Project(up + d * len) is not { } b) continue;
-                o.Line(a.X, a.Y, b.X, b.Y, 3, colour);
-                var along = b - a;
-                if (along.LengthSquared() < 1) continue;
-                along = Vector2.Normalize(along);
-                var side = new Vector2(-along.Y, along.X) * 6;
-                o.Triangle(b + along * 8, b + side, b - side, colour);
+                var colour = w.Level == StealthExposure.Detected ? ArrowDetected : ArrowNoticed;
+                arrows.Add(new(feet + new Vector3(0, 12, 0) + d * MathF.Min(dist - 7, 15), d, colour));
             }
         }
+        markers.Arrows = arrows.Count == 0 ? [] : [.. arrows];
     }
 
     /// <summary>
     /// The name tag over each of the player's characters within the original's range: the <c>Kenshi_CharacterNamePanel</c> layout (<b>Verified</b>), 0.1057 x 0.0296 of the
     /// screen, the name centred in <c>Kenshi_StandardFont_Large</c> with a shadow in the middle 0.655, and while the character sneaks the <c>Stealth</c> icon on the left in
     /// the state's tag colour. The name is white and in square brackets when the character is selected, grey and bare otherwise (<c>NameTagSelected</c> / <c>NameTagUnselected</c>, the brackets from a screenshot of the original; <b>Observed</b>);
-    /// the light level icon is not drawn (no light model). The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
+    /// while it sneaks, also the <c>LightLevel</c> icon on the right from its light level. The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
     /// </summary>
     void AddNameTags(List<UiControl> controls)
     {
@@ -58,7 +60,7 @@ sealed partial class PlayerInterface
         int n = 0;
         foreach (var c in session.CurrentSnapshot.Characters)
         {
-            if (!c.IsPlayer || c.Name.Length == 0 || EditorOpen || c.CarriedBy != CharacterId.None) continue;
+            if (!c.IsPlayer || c.Name.Length == 0 || EditorOpen || c.CarriedBy != CharacterId.None || !c.Selected && HiddenInWorld?.Invoke(c.Id) == true) continue;
             var feet = where(c);
             if (Vector3.DistanceSquared(Eye, feet) >= NameTagRangeSquared) continue;
             if (Project(feet + new Vector3(0, CharacterHeight + 4, 0)) is not { } head) continue;
@@ -77,10 +79,21 @@ sealed partial class PlayerInterface
                         ["ImageResource"] = "Kenshi_CharacterNameTags", ["ImageGroup"] = "Stealth", ["ImageName"] = "Stealth",
                         ["Colour"] = FormattableString.Invariant($"{tint.X} {tint.Y} {tint.Z} 1"),
                     }, default, Pickable: false));
+                // The LightLevel icon on the right in the layout's colour: frame round((1 - light) x 6) of its 7, the sun at full light (FUN_1406e8100).
+                int frame = (int)MathF.Round((1 - Math.Clamp(c.Light, 0, 1)) * (LightLevelFrames - 1));
+                controls.Add(new($"nametag-light-{n}", "ImageBox", new(x + width * 0.842365f, y, width * 0.157635f, height), "", "", "", true,
+                    new Dictionary<string, string>
+                    {
+                        ["ImageResource"] = "Kenshi_CharacterNameTags", ["ImageGroup"] = "LightLevel", ["ImageName"] = "LightLevel",
+                        ["ImageFrame"] = frame.ToString(System.Globalization.CultureInfo.InvariantCulture), ["Colour"] = "0.94152 0.805549 0.34137 1",
+                    }, default, Pickable: false));
             }
             n++;
         }
     }
+
+    /// <summary>Whether the world leaves a character undrawn (above the viewed floor, or inside a closed building): its tag shows only while it is selected.</summary>
+    public Func<CharacterId, bool>? HiddenInWorld { get; set; }
 
     MyGuiLayout? taskBarLayout;
 

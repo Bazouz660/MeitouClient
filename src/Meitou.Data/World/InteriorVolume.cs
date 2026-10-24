@@ -56,16 +56,66 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
     {
         if (p.Y < YMin - margin || p.Y > YMax + margin || Footprint.Length < 3) return false;
         var q = new Vector2(p.X, p.Z);
-        for (int i = 0; i < Footprint.Length; i++)
-        {
-            var a = Footprint[i];
-            var e = Footprint[(i + 1) % Footprint.Length] - a;
-            float len = e.Length();
-            if (len < 1e-4f) continue;
-            // Counter-clockwise: inside is to the left of every edge.
-            if ((e.X * (q.Y - a.Y) - e.Y * (q.X - a.X)) / len < -margin) return false;
-        }
+        var e = edges;
+        float reach = margin > 0 ? margin * e.Reach : 0;
+        if (q.X < e.Min.X - reach || q.X > e.Max.X + reach || q.Y < e.Min.Y - reach || q.Y > e.Max.Y + reach) return false;
+        // Counter-clockwise: inside is to the left of every edge.
+        for (int i = 0; i < e.Points.Length; i++)
+            if (Vector2.Dot(e.Normals[i], q - e.Points[i]) < -margin) return false;
         return true;
+    }
+
+    /// <summary>How far <paramref name="p"/> is from the volume's box (footprint box by height range): a point nearer than that to it is still outside (<see cref="Contains"/>, no margin).</summary>
+    public float Distance(Vector3 p)
+    {
+        var e = edges;
+        float dx = MathF.Max(MathF.Max(e.Min.X - p.X, p.X - e.Max.X), 0), dz = MathF.Max(MathF.Max(e.Min.Y - p.Z, p.Z - e.Max.Y), 0);
+        float dy = MathF.Max(MathF.Max(YMin - p.Y, p.Y - YMax), 0);
+        return MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    // Contains's footprint, worked out once: the most asked of it (every character and furniture piece near a building, each frame) are far outside.
+    readonly FootprintEdges edges = FootprintEdges.Of(Footprint);
+
+    /// <summary>
+    /// The footprint's edges that are not degenerate (a point on each and its inward unit normal), their box, and how far past the box the footprint widened
+    /// by a margin reaches, per unit of margin: the most a corner moves (1 / cos of half the turn between the normals; √2 at a right angle).
+    /// </summary>
+    sealed class FootprintEdges
+    {
+        public required Vector2[] Points, Normals;
+        public Vector2 Min, Max;
+        public float Reach;
+
+        public static FootprintEdges Of(Vector2[] footprint)
+        {
+            var points = new List<Vector2>();
+            var normals = new List<Vector2>();
+            for (int i = 0; i < footprint.Length; i++)
+            {
+                var a = footprint[i];
+                var e = footprint[(i + 1) % footprint.Length] - a;
+                float len = e.Length();
+                if (len < 1e-4f) continue;
+                points.Add(a);
+                normals.Add(new Vector2(-e.Y, e.X) / len);
+            }
+            var edges = new FootprintEdges { Points = [.. points], Normals = [.. normals] };
+            // Fewer than three edges bound nothing (every point passes them), so the box may not either.
+            if (points.Count < 3 || footprint.Length < 3) (edges.Min, edges.Max, edges.Reach) = (new(float.NegativeInfinity), new(float.PositiveInfinity), 0);
+            else
+            {
+                (edges.Min, edges.Max) = (footprint[0], footprint[0]);
+                foreach (var v in footprint) (edges.Min, edges.Max) = (Vector2.Min(edges.Min, v), Vector2.Max(edges.Max, v));
+                edges.Reach = 1;
+                for (int i = 0; i < normals.Count; i++)
+                {
+                    float turn = 1 + Vector2.Dot(normals[i], normals[(i + 1) % normals.Count]);
+                    edges.Reach = Math.Max(edges.Reach, turn < 1e-6f ? float.PositiveInfinity : MathF.Sqrt(2 / turn));
+                }
+            }
+            return edges;
+        }
     }
 
     Lazy<FloorSurfaces>? floors;
@@ -218,12 +268,23 @@ public sealed partial class FloorSurfaces
             var part = p.Source;
             if (p.Owner != building || part.GetBool("passable") || !seen.Add(part.StringId)) continue;
             if (collision.Mesh(part.GetPath("xml collision")) is not { } mesh) continue;
-            var corners = new Vector3[mesh.Indices.Length];
-            for (int i = 0; i < corners.Length; i++) corners[i] = Vector3.Transform(mesh.Vertices[mesh.Indices[i]], node);
+            // A solid's flat underside (outward and facing down: a slab's or steps' bottom) is no floor; a wall hit dropped onto it put the goal under the building.
+            bool roof = part.GetBool("is unwalkable roof");
+            var kept = new List<Vector3>(mesh.Indices.Length);
+            for (int t = 0; t + 2 < mesh.Indices.Length; t += 3)
+            {
+                var a = Vector3.Transform(mesh.Vertices[mesh.Indices[t]], node);
+                var b = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 1]], node);
+                var c = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 2]], node);
+                var normal = Vector3.Cross(b - a, c - a);
+                if (!roof && mesh.Outward[t / 3] && normal.Y < 0 && -normal.Y >= normal.Length() * MathF.Cos(40 * MathF.PI / 180)) continue;
+                kept.Add(a); kept.Add(b); kept.Add(c);
+            }
+            var corners = kept.ToArray();
             if (corners.Length == 0) continue;
             var min = new Vector2(corners.Min(c => c.X), corners.Min(c => c.Z));
             var max = new Vector2(corners.Max(c => c.X), corners.Max(c => c.Z));
-            (part.GetBool("is unwalkable roof") ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
+            (roof ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
                 corners.Min(c => c.Y), corners.Max(c => c.Y), min, max));
         }
         return result;
@@ -267,8 +328,11 @@ public sealed partial class FloorSurfaces
     }
 }
 
-/// <summary>A collision file's shapes triangulated in Kenshi's Y-up building space: vertices and three indices per triangle.</summary>
-public sealed record CollisionMesh(Vector3[] Vertices, int[] Indices);
+/// <summary>
+/// A collision file's shapes triangulated in Kenshi's Y-up building space: vertices and three indices per triangle. <paramref name="Outward"/> per triangle: wound
+/// outward (a box, capsule or convex hull, <see cref="CollisionTriangulator"/>); a triangle mesh's keeps the file's winding and is false.
+/// </summary>
+public sealed record CollisionMesh(Vector3[] Vertices, int[] Indices, bool[] Outward);
 
 /// <summary>The collision files that building parts name (the <c>interior mask</c> hulls, the floor parts), read and triangulated once each; safe from several threads.</summary>
 public sealed class InteriorCollisions(GameInstall install)
@@ -290,15 +354,17 @@ public sealed class InteriorCollisions(GameInstall install)
         catch (Exception e) when (e is InvalidDataException or IOException or System.Xml.XmlException or FormatException) { return null; }
         var vertices = new List<Vector3>();
         var indices = new List<int>();
+        var outward = new List<bool>();
         foreach (var s in file.Shapes)
         {
             var v = new List<Vector3>();
             var i = new List<int>();
-            CollisionTriangulator.Triangulate(s, v, i);
+            int added = CollisionTriangulator.Triangulate(s, v, i);
             int offset = vertices.Count;
             vertices.AddRange(v.Select(CollisionTriangulator.ToWorldAxes));
             indices.AddRange(i.Select(x => x + offset));
+            outward.AddRange(Enumerable.Repeat(s.Kind != CollisionShapeKind.TriangleMesh, added));
         }
-        return vertices.Count == 0 ? null : new CollisionMesh([.. vertices], [.. indices]);
+        return vertices.Count == 0 ? null : new CollisionMesh([.. vertices], [.. indices], [.. outward]);
     }
 }

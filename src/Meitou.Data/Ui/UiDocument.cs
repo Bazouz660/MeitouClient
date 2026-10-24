@@ -63,7 +63,10 @@ public static partial class MyGuiPresentation
                     ? new UiRect(w.Position.X * bindings.TemplateScale, w.Position.Y * bindings.TemplateScale, w.Position.Width * bindings.TemplateScale, w.Position.Height * bindings.TemplateScale)
                         .AlignTo(parent, float.Parse(rw, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, float.Parse(rh, System.Globalization.CultureInfo.InvariantCulture) * bindings.TemplateScale, w.Align)
                     : w.Position.RelativeTo(parent, false);
-            if (bindings.Progress.TryGetValue(w.Name, out float fraction)) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
+            // A ProgressBar template (TrackSkin) keeps its frame; its fill is added in TrackPlace below. Any other bound widget is cut to the fraction.
+            bool progress = bindings.Progress.TryGetValue(w.Name, out float fraction);
+            string? trackSkin = progress ? w.UserStrings.GetValueOrDefault("TrackSkin") : null;
+            if (progress && trackSkin is null) bounds = bounds with { Width = bounds.Width * Math.Clamp(fraction, 0, 1) };
             string caption = bindings.Coded(w.Name) ?? PartText(bindings, props) ?? props.GetValueOrDefault("Caption") ?? "";
             if (props.TryGetValue("CaptionOwner", out string? owner))
             {
@@ -76,7 +79,8 @@ public static partial class MyGuiPresentation
                     && layout.Find(owner)?.Type == "EditBox")
                     props["TextAlign"] = textAlign;
             }
-            if (props.GetValueOrDefault("SkipCaption") == "true") caption = "";
+            // A TabItem's caption is its tab button's, never drawn on the page.
+            if (props.GetValueOrDefault("SkipCaption") == "true" || w.Type == "TabItem") caption = "";
             string action = bindings.Actions.GetValueOrDefault(w.Name) ?? "";
             if (props.TryGetValue("TemplateEvent", out string? ev) && props.TryGetValue("TemplateOwner", out var target))
                 action = bindings.Actions.GetValueOrDefault(target + "@" + ev) ?? $"mygui:{ev}:{target}";
@@ -97,14 +101,22 @@ public static partial class MyGuiPresentation
                     ?? new UiRect(bounds.X, bounds.Y, bounds.Width, 30);
                 float tabWidth = buttons == 0 ? 0 : props.GetValueOrDefault("ButtonAutoWidth") == "false" && float.TryParse(props.GetValueOrDefault("ButtonWidth"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fixedWidth)
                     ? Math.Min(fixedWidth, header.Width / buttons) : header.Width / buttons;
+                // The selected tab is Checked, not a fixed State, so the painter shows the skin's hover and pushed states (amber caption under the mouse).
                 for (int i = 0; i < buttons; i++)
                     result.Add(new(w.Name + "@tab" + i, "Button", new(header.X + i * tabWidth, header.Y, tabWidth, header.Height),
                         captions?[i] ?? bindings.Coded(w.Name + "@tab" + i) ?? pages[i].Properties.GetValueOrDefault("Caption") ?? pages[i].Name, $"mygui:tab:{w.Name}:{i}", "Kenshi_SquadTabButton1Skin", enabled,
-                        new Dictionary<string, string> { ["State"] = i == selected ? "normal_checked" : "normal", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, Clip: clip));
+                        new Dictionary<string, string> { ["Checked"] = i == selected ? "true" : "false", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, Clip: clip));
                 if (pages.Length > 0) Visit(pages[captions is null ? selected : 0], bounds, childClip, enabled, alpha);
             }
             else if (w.Type == "ScrollView") VisitScrollView(result, bindings, w, props, bounds, childClip, enabled, alpha, Visit);
             else foreach (var child in w.Children) Visit(child, ChildParent(props, bounds), childClip, enabled, alpha);
+            if (trackSkin is not null && result.FindLastIndex(c => c.Properties.GetValueOrDefault("TemplateOwner") == w.Name && c.Properties.GetValueOrDefault("TemplatePart") == "TrackPlace") is var place and >= 0)
+            {
+                // TrackFill (MyGUI ProgressBar): the track runs from the start of TrackPlace to the position, under the frame that follows it.
+                var track = result[place].Bounds;
+                result.Insert(place + 1, new(w.Name + "@track", "Widget", track with { Width = MathF.Round(track.Width * Math.Clamp(fraction, 0, 1)) }, "", "", trackSkin, enabled,
+                    new Dictionary<string, string>(StringComparer.Ordinal), default, Pickable: false, Clip: result[place].Clip));
+            }
             AddWidgetContent(result, bindings, w, props, bounds, clip, enabled, alpha, new(0, 0, width, height), Visit, deferred);
         }
         foreach (var root in layout.Roots.OrderBy(w => { int i = layers.IndexOfLayer(w.Layer); return i < 0 ? 0 : i; }))

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Fcs;
 using Meitou.Data.Ui;
 
 namespace Meitou.Game;
@@ -43,18 +44,23 @@ sealed partial class PlayerInterface
         return best;
     }
 
-    /// <summary>A right click on a ground item: the pick-up order (true), with a selection.</summary>
+    /// <summary>
+    /// A right click on a ground item, with a selection (true): the pick-up order, or held its menu with the one verb, "Steal" for another faction's item else "Pick Up"
+    /// (<c>FUN_14079b2d0</c>; docs/game/ui-input.md "Ground item labels").
+    /// </summary>
     bool GroundItemClick(Vector2 p)
     {
         if (SelectedIds().Count == 0 || PickGroundItem(p) is not { } item) return false;
-        Say(new Meitou.Simulation.Items.PickUpItemOrder([], item) { Tick = session.World.Tick });
+        void Quick() => Say(new Meitou.Simulation.Items.PickUpItemOrder([], item) { Tick = session.World.Tick });
+        if (session.CurrentSnapshot.GroundItems.FirstOrDefault(g => g.Id == item) is not { Name: { } name } g
+            || !ContextPressOn(p, at => Menu(name, at, [(Stealing(g) ? "Steal" : "Pick Up", Quick)]), Quick)) Quick();
         return true;
     }
 
     /// <summary>
     /// The name label over each ground item within <see cref="HighlightRadius"/> of the focus while the Highlight key is held: the original's <c>Kenshi_ItemDropLabel</c>
-    /// (<b>Verified</b>), a <c>Kenshi_GenericTextBoxFlatSmallSkin</c> 0.0259 of the screen high and fitted to the name, centred in Kenshi_StandardFont_Medium; white
-    /// (<c>DropItemLabelBackDefault</c> / <c>TextDefault</c>), green (<c>...Selected</c>, #66ff66) for the one the pointer picks. Labels that would overlap the nearer
+    /// (<b>Verified</b>), a <c>Kenshi_GenericTextBoxFlatSmallSkin</c> 0.0259 of the screen high and fitted to the name, centred in Kenshi_StandardFont_Medium; plate and text
+    /// in the item's <see cref="ItemLabelColour"/>, both green (<c>...Selected</c>, #66ff66) for the one the pointer picks, the plate red for a stolen one. Labels that would overlap the nearer
     /// one's are lifted above it, and hidden ones are skipped (engine choices).
     /// </summary>
     void AddItemLabels(List<UiControl> controls)
@@ -91,11 +97,35 @@ sealed partial class PlayerInterface
         for (int i = placed.Count - 1; i >= 0; i--)
         {
             var (id, rect) = placed[i];
-            string colour = id == hovered ? "0.4 1 0.4" : "1 1 1";
+            bool stealing = Stealing(near[i].Item);
+            string item = ItemLabelColour(near[i].Item), selected = stealing ? "1 0.4 0.4" : "0.4 1 0.4";
+            string back = stealing ? "1 0.4 0.4" : id == hovered ? selected : item, text = id == hovered ? selected : item;
             controls.Add(new($"itemlabel-{i}", "Widget", rect, "", "", "Kenshi_GenericTextBoxFlatSmallSkin", true,
-                new Dictionary<string, string> { ["Colour"] = colour }, Vector4.Zero, Pickable: false));
+                new Dictionary<string, string> { ["Colour"] = back }, Vector4.Zero, Pickable: false));
             controls.Add(new($"itemlabel-text-{i}", "TextBox", rect, near[i].Item.Name, "", "", true,
-                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Center", ["TextColour"] = colour }, Vector4.Zero, Pickable: false, TextScale: 1));
+                new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Center", ["TextColour"] = text }, Vector4.Zero, Pickable: false, TextScale: 1));
         }
+    }
+
+    /// <summary>Picking the item up would be stealing it: its owner's faction (<see cref="Meitou.Simulation.Items.GroundItem.OwnedBy"/>) is not the player's.</summary>
+    bool Stealing(Meitou.Simulation.Items.GroundItemSnapshot g) => g.OwnedBy >= 0 && g.OwnedBy != session.World.Player.Faction;
+
+    /// <summary>Whether an ITEM record is an artifact (its <c>artifact</c> field); the host sets it.</summary>
+    public Func<string, bool>? ArtifactOf { get; set; }
+
+    /// <summary>
+    /// A label's own colour (docs/game/ui-input.md "Ground item labels"): a plain ITEM's <c>ItemArtifact</c> or <c>ItemStandard</c>; a weapon, armour, backpack, nest item, map item,
+    /// crossbow or limb its <c>ItemGrade</c> by level (armour by its quality) below 16/36/51/66/81 (grades 4 and 5 share the yellow); anything else <c>DropItemLabelBackDefault</c>.
+    /// </summary>
+    string ItemLabelColour(Meitou.Simulation.Items.GroundItemSnapshot g)
+    {
+        int level = g.Type == FcsRecordType.ARMOUR ? (int)g.Quality : g.Level;
+        return g.Type switch
+        {
+            FcsRecordType.ITEM => TipHex(ArtifactOf?.Invoke(g.Record) == true ? "0dfceb" : "e0cccc"),
+            FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.NEST_ITEM or FcsRecordType.MAP_ITEM or FcsRecordType.CROSSBOW
+                or FcsRecordType.LIMB_REPLACEMENT => TipHex(level < 16 ? "666666" : level < 36 ? "d9ccbf" : level < 51 ? "4099b3" : level < 66 ? "66fc80" : "fceb0d"),
+            _ => "1 1 1",
+        };
     }
 }

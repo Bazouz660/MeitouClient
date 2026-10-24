@@ -8,7 +8,17 @@ using Meitou.Simulation.Construction;
 namespace Meitou.Game.Building;
 
 /// <summary>A ghost waiting for Confirm: what it is and where it stands, with its footprint in the world.</summary>
-public sealed record QueuedGhost(BuildingBuildData Building, Vector3 Position, Quaternion Rotation, int Floor, Vector2[]? Hull);
+public sealed record QueuedGhost(BuildingBuildData Building, Vector3 Position, Quaternion Rotation, int Floor, Vector2[]? Hull, string? Parent = null);
+
+/// <summary>
+/// A ghost standing on a building's floor: the building (its placement id, a player site's own id), its indoor hull in the world, and the floor (0..3). A level building's
+/// <paramref name="Level"/> is its instance id (what the placed building names as its parent) and <paramref name="Owned"/> whether the player's faction owns it.
+/// </summary>
+public sealed record GhostFloor(string Building, Vector2[] Footprint, int Floor, string? Level = null, bool Owned = false)
+{
+    /// <summary>The parent the placed building records: the site's id, or the level building's instance id.</summary>
+    public string Parent => Level ?? Building;
+}
 
 /// <summary>What the geometric checks read from the world: the terrain, the water, the footprints (<see cref="BuildingFootprints"/>) and the parts of a building.</summary>
 public sealed class PlacementServices
@@ -25,6 +35,8 @@ public sealed class PlacementServices
     public Func<Vector3, Vector3, float, IEnumerable<PlacedBuilding>> StaticAlong { get; init; } = (_, _, _) => [];
     /// <summary>The collision triangles of a building record in its own space (a click on a building is tested against them); empty without level data.</summary>
     public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionMesh { get; init; } = _ => [];
+    /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>
+    public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>
@@ -37,12 +49,15 @@ public sealed record PlacementQuery(BuildingBuildData Building, Vector3 Position
     public bool WallPiece { get; init; }
     /// <summary>Sites and queued ghosts (record, position, rotation) that never block this one: the walls at a snapped joint, connectors and wedges.</summary>
     public Func<string, Vector3, Quaternion, bool>? Ignore { get; init; }
+    /// <summary>The building floor the ghost stands on; null on the terrain.</summary>
+    public GhostFloor? On { get; init; }
 }
 
 /// <summary>
 /// The host's half of the placement checks (docs/simulation.md "Buildings", "Placement validation"; the messages and their order are docs/game/buildings-production.md
 /// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> first and returns the first failure in the original's order.
-/// Not decided (so never failed): resource and crop yield, snap nodes, usage nodes, indoor floors and ceilings: Meitou's ghost stands on the terrain only.
+/// Not decided (so never failed): resource and crop yield, snap nodes, usage nodes, the floor number and ceilings. The ghost stands on the terrain or on a building's floor
+/// (<see cref="PlacementQuery.On"/>).
 /// </summary>
 public static class PlacementCheck
 {
@@ -60,24 +75,34 @@ public static class PlacementCheck
 
         var turned = Quaternion.CreateFromAxisAngle(Vector3.UnitY, q.Yaw);
         var hull = q.Services.Footprint(b.Id) is { } footprint ? footprint.Place(q.Position, turned) : null;
-        // A building under the ghost's centre: another town's or the level's (not ours), or an unfinished site of ours.
+        // On a floor: the building must be ours, a level building the player's faction owns or a finished site.
+        string? parent = q.On?.Building;
+        if (q.On is { Level: not null, Owned: false }) return PlacementFailure.NotOwnedBuilding;
+        if (q.On is { Level: null })
+        {
+            if (q.Sites.FirstOrDefault(s => s.Id == parent) is not { } home) return PlacementFailure.NotOwnedBuilding;
+            if (!home.Complete) return PlacementFailure.InsideIncomplete;
+        }
+        // A building under the ghost's centre (the one it stands in aside): another town's or the level's (not ours), or an unfinished site of ours.
         foreach (var site in q.Sites)
-            if (q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } siteFootprint
+            if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } siteFootprint
                 && Contains(siteFootprint.Place(site.Position, site.Rotation), at))
                 return site.Complete ? PlacementFailure.TooCloseToBuilding : PlacementFailure.InsideIncomplete;
         foreach (var other in q.Services.StaticAround(at, 20))
-            if (Contains(other.Hull, at)) return PlacementFailure.NotOwnedBuilding;
+            if (other.Id != parent && Contains(other.Hull, at)) return PlacementFailure.NotOwnedBuilding;
 
-        // Meitou's ghost stands on the terrain, never inside a building: interior furniture is refused unless it may also stand outside (exterior furniture or a node).
-        if (b.IsInteriorFurniture && !b.IsExteriorFurniture && !b.IsNode) return PlacementFailure.MustBeInside;
+        // Interior-only furniture must stand on a building's floor; what may also stand outside (exterior furniture or a node) goes either way.
+        if (parent is null && b.IsInteriorFurniture && !b.IsExteriorFurniture && !b.IsNode) return PlacementFailure.MustBeInside;
 
         if (hull is not null)
         {
+            // Engine stand-in for the original's node boxes against the building's walls: on a floor the footprint stays within the building's indoor hull.
+            if (q.On is { } on && hull.Any(p => Distance(on.Footprint, p) > 0)) return PlacementFailure.TooCloseToBuilding;
             float reach = hull.Max(p => Vector2.Distance(p, at)) + 150;
             foreach (var other in q.Services.StaticAround(at, reach))
-                if (Overlap(hull, other.Hull)) return PlacementFailure.TooCloseToBuilding;
+                if (other.Id != parent && Overlap(hull, other.Hull)) return PlacementFailure.TooCloseToBuilding;
             foreach (var site in q.Sites)
-                if (q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } f
+                if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } f
                     && Overlap(hull, f.Place(site.Position, site.Rotation))) return PlacementFailure.TooCloseToBuilding;
             foreach (var queued in q.Queued)
                 if (queued.Hull is not null && q.Ignore?.Invoke(queued.Building.Id, queued.Position, queued.Rotation) != true && Overlap(hull, queued.Hull))
@@ -102,6 +127,8 @@ public static class PlacementCheck
         // A wall piece pitches with the ground: its own up axis must be within `max slope` of the vertical (Verified, FUN_140429510).
         if (q.WallPiece)
             return b.MaxSlope > 0 && Vector3.Transform(Vector3.UnitY, Normalised(q.Rotation)).Y < MathF.Cos(b.MaxSlope * MathF.PI / 180) ? PlacementFailure.NotLevel : PlacementFailure.None;
+        // A building's floor is taken as level (the original's one indoor ray and its 5 degree surface test are not read).
+        if (parent is not null) return PlacementFailure.None;
         var bounds = q.Services.Footprint(b.Id)?.Bounds ?? (new Vector2(-4), new Vector2(4));
         float slope = SlopeDegrees(q.Services.Ground, at, q.Yaw, bounds, out float normalY);
         if (normalY < SteepestNormalY || b.MaxSlope > 0 && slope > b.MaxSlope) return PlacementFailure.NotLevel;

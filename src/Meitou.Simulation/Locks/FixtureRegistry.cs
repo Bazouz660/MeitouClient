@@ -36,6 +36,8 @@ public sealed class FixtureRegistry
     readonly List<string> buildings = [];
     readonly HashSet<int> sites = [];
     readonly HashSet<string> initialApplied = new(StringComparer.Ordinal);
+    // The Open to public flag of the player's town buildings (the original's Building+0xc8, saved as `is public day`): set by the panel or read from a save.
+    readonly Dictionary<string, bool> publicFlags = new(StringComparer.Ordinal);
     readonly Dictionary<string, GameRecord?> functions = new(StringComparer.Ordinal);
     // (cage id, faction) -> the game hour until which a walk there is known to fail (engine: the "no path" memo of FindCage). Sorted, so it hashes in a fixed order.
     readonly SortedDictionary<(string Cage, int Faction), double> unreachable = new(Comparer<(string Cage, int Faction)>.Create((a, b) =>
@@ -58,7 +60,7 @@ public sealed class FixtureRegistry
     IReadOnlyList<BedSpot>? bedSpots;
 
     /// <summary>Every bed, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<BedSpot> BedSpots => bedSpots ??= [.. all.Where(f => f.Kind == FixtureKind.Bed).Select(f => new BedSpot(f.Id, f.RecordId, f.Position, f.Owner))];
+    public IReadOnlyList<BedSpot> BedSpots => bedSpots ??= [.. all.Where(f => f.Kind == FixtureKind.Bed).Select(f => new BedSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Yaw))];
 
     IReadOnlyList<DoorPick>? doorPicks;
 
@@ -145,7 +147,11 @@ public sealed class FixtureRegistry
         containerSpots = null;
         doorPicks = null;
         bedSpots = null; cageList = null;
-        if (Saved?.GetValueOrDefault(b.Key) is { } state) Restore(StateKeys.Of(state), b.Key, list, level: false);
+        if (Saved?.GetValueOrDefault(b.Key) is { } state)
+        {
+            Restore(StateKeys.Of(state), b.Key, list, level: false);
+            if (owner >= 0 && owner == world.Player.Faction && state.Bools.TryGetValue("is public day", out bool open)) publicFlags[b.Key] = open;
+        }
         else if (b.LevelState is { } levelState) Restore(StateKeys.Of(levelState), b.Key, list, level: true);
         SyncDoors(b.Key);
     }
@@ -186,7 +192,7 @@ public sealed class FixtureRegistry
             list.Add(new Fixture
             {
                 Id = site.Id + "@bed0", Building = site.Id, Kind = FixtureKind.Bed, Site = -1, Owner = site.Owner, Position = site.Position, Yaw = yaw,
-                UseRange = 15, RecordId = record.StringId, Bed = b,
+                UseRange = 15, RecordId = record.StringId, HostRecordId = record.StringId, Bed = b,
             });
         byBuilding[site.Id] = list;
         buildings.Add(site.Id);
@@ -209,8 +215,37 @@ public sealed class FixtureRegistry
             foreach (var r in building.GetReferences(list))
                 if (db.Find(r.TargetStringId) is { Type: FcsRecordType.BUILDING_FUNCTIONALITY } f && f.GetInt("function") is TownBuildings.BedFunction or TownBuildings.SkeletonBedFunction)
                     return new BedData(f.GetInt("function"), f.GetReferences("animation").Select(a => db.Find(a.TargetStringId)?.Name).FirstOrDefault(n => n is not null),
-                        Meitou.Data.Gameplay.Construction.BuildingBuildData.From(building).Target);
+                        Meitou.Data.Gameplay.Construction.BuildingBuildData.From(building).Target, UseNodes(db, building));
         return null;
+    }
+
+    /// <summary>A bed's NODE_USE instances (<see cref="BedNode"/>) in instance id order; null with fewer than 2 (the original then uses the bed's own origin).</summary>
+    static BedNode[]? UseNodes(GameDatabase db, GameRecord building)
+    {
+        BedNode[] nodes = [.. building.Instances.Values.Where(i => !i.IsCleared && db.Find(i.Target) is { } n && n.GetBool("is node") && n.GetInt("node type") == UseNodeType)
+            .OrderBy(i => i.Id, StringComparer.Ordinal).Select(i => new BedNode(i.Position, TownBuildings.YawOf(i.Rotation) - MathF.PI / 2))];
+        return nodes.Length >= 2 ? nodes : null;
+    }
+
+    const int UseNodeType = 4;
+
+    /// <summary>
+    /// Where a sleeper is put in a bed and the way it faces (<c>Building::getPositionMarker</c> / <c>getDirectionMarkerQuat</c>, docs/game/locks.md "Beds"): the bed's use node
+    /// nearest <paramref name="from"/>, else the bed's own origin and facing.
+    /// </summary>
+    public static (Vector3 At, float Yaw) LieSpot(Fixture bed, Vector3 from)
+    {
+        if (bed.Bed.Nodes is not { } nodes) return (bed.Position, bed.Yaw);
+        var turn = Matrix4x4.CreateRotationY(bed.Yaw);
+        var best = (At: bed.Position, Yaw: bed.Yaw);
+        float bestD = float.MaxValue;
+        foreach (var n in nodes)
+        {
+            var at = bed.Position + Vector3.Transform(n.At, turn);
+            float d = Vector3.DistanceSquared(at, from);
+            if (d < bestD) (best, bestD) = ((at, MathF.IEEERemainder(bed.Yaw + n.Yaw, MathF.Tau)), d);
+        }
+        return best;
     }
 
     /// <summary>Forgets a building's fixtures (a player building dismantled); its doors are opened in the navmesh.</summary>
@@ -274,6 +309,8 @@ public sealed class FixtureRegistry
             if (!IsFree(table, f)) continue;
             f.Occupant = new CharacterId(s, next[s].Generation);
             c.InWhat = f.Id;
+            // A loaded sleeper is put at its lie spot again (engine choice: a save from before LieSpot holds it at the bed's origin, half off the mattress).
+            if (c.InSomething == HeldState.Bed) { var (at, yaw) = LieSpot(f, next[s].Position); table.Place(s, at, yaw); }
         }
     }
 
@@ -591,7 +628,7 @@ public sealed class FixtureRegistry
         c.Escaped = false;
         cage.Occupant = prisoner;
         if (cage.Lock is { } l) { l.Locked = true; l.PickTime = 0; l.NextRoll = LockState.FirstRoll; }
-        Hold(table, s, c, cage);
+        Hold(table, s, c, cage.Position, cage.Yaw);
         if (c.Bounties?.Of(cage.Owner) is { Amount: > 0 } entry)
         {
             c.SentenceStart = world.GameHours;
@@ -641,9 +678,9 @@ public sealed class FixtureRegistry
         return true;
     }
 
-    static void Hold(CharacterTable table, int slot, CharacterCold c, Fixture f)
+    static void Hold(CharacterTable table, int slot, CharacterCold c, Vector3 at, float yaw)
     {
-        table.Place(slot, f.Position, f.Yaw);
+        table.Place(slot, at, yaw);
         c.Path = [];
         c.OrderQueue.Clear();
     }
@@ -697,7 +734,7 @@ public sealed class FixtureRegistry
     }
 
     /// <summary>
-    /// Lies a character down in a free bed (state 1, held at the bed's spot facing its way; beds have no lock; the original's <c>FUN_14032e2f0</c>): its task becomes
+    /// Lies a character down in a free bed (state 1, held at its <see cref="LieSpot"/>; beds have no lock; the original's <c>FUN_14032e2f0</c>): its task becomes
     /// <see cref="CharacterTask.Sleep"/> with the bed's clip (<see cref="CharacterCold.OperateClip"/>), its orders and path dropped. True when it lies there already. False when the bed is
     /// taken or the character is held elsewhere, carried or carrying.
     /// </summary>
@@ -712,7 +749,8 @@ public sealed class FixtureRegistry
         c.InWhat = bed.Id;
         bed.Occupant = sleeper;
         MovementSystem.Stop(table, s);
-        Hold(table, s, c, bed);
+        var (at, yaw) = LieSpot(bed, table.Next[s].Position);
+        Hold(table, s, c, at, yaw);
         table.Next[s].Task = (byte)CharacterTask.Sleep;
         table.Next[s].Velocity = Vector3.Zero;
         c.OperateClip = bed.Bed.Clip;
@@ -842,6 +880,7 @@ public sealed class FixtureRegistry
     public bool WriteBuilding(string buildingInstance, FcsRecord state)
     {
         if (!byBuilding.TryGetValue(buildingInstance, out var list)) return false;
+        if (publicFlags.TryGetValue(buildingInstance, out bool open)) state.Bools["is public day"] = open;
         foreach (var f in list)
         {
             if (f.Contents is { } grid && ContainerSave.KeyOf(f, buildingInstance) is { } contentsKey)
@@ -904,13 +943,40 @@ public sealed class FixtureRegistry
     }
 
     /// <summary>The panel's view of a building's doors (null for no building, or one without fixtures).</summary>
-    internal BuildingDetail? DetailOf(string? instance)
+    internal BuildingDetail? DetailOf(string? instance, int faction)
     {
         if (instance is null || !byBuilding.TryGetValue(instance, out var list)) return null;
         var doorList = list.Where(f => f.Kind == FixtureKind.Door).OrderBy(f => f.DoorIndex)
-            .Select(f => new DoorDetail(f.OpenAmount > 0 || f.Motion == DoorMotion.Open, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId)).ToArray();
-        return new BuildingDetail(instance, doorList);
+            .Select(f => new DoorDetail(f.Motion is DoorMotion.Open or DoorMotion.Opening, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId, f.WantsLock)).ToArray();
+        return new BuildingDetail(instance, doorList, faction >= 0 && list.Exists(f => f.Owner == faction), PublicOf(instance));
     }
+
+    /// <summary>
+    /// Gives a re-registered building's doors the state its old doors had, by door index (an upgraded or downgraded building: the original keeps its door objects and only swaps their
+    /// records). The new lock keeps its own level and hardness; whether it is locked carries over.
+    /// </summary>
+    public void CarryDoors(string building, IReadOnlyList<Fixture> old)
+    {
+        if (!byBuilding.TryGetValue(building, out var list)) return;
+        foreach (var d in list)
+        {
+            if (d.Kind != FixtureKind.Door || old.FirstOrDefault(o => o.Kind == FixtureKind.Door && o.DoorIndex == d.DoorIndex) is not { } was) continue;
+            d.Motion = was.Motion;
+            d.OpenAmount = was.OpenAmount;
+            d.DoorBroken = was.DoorBroken;
+            d.WantsLock = was.WantsLock;
+            d.GateCode = was.GateCode;
+            if (d.Lock is { } l && was.Lock is { } wl) l.Locked = wl.Locked;
+        }
+        doorPicks = null;
+        SyncDoors(building);
+    }
+
+    /// <summary>A town building's Open to public flag as the player set it (or a save read it), null when never set.</summary>
+    public bool? PublicOf(string building) => publicFlags.TryGetValue(building, out bool open) ? open : null;
+
+    /// <summary>Sets a registered building's Open to public flag (the panel's toggle on a town building the player owns).</summary>
+    public void SetPublic(string building, bool open) => publicFlags[building] = open;
 
     /// <summary>The registered buildings, in registration order.</summary>
     public IReadOnlyList<string> Buildings => buildings;
@@ -921,6 +987,8 @@ public sealed class FixtureRegistry
         h.Add(all.Count);
         foreach (var f in all) f.Hash(ref h);
         h.Add(initialApplied.Count);
+        if (publicFlags.Count > 0)
+            foreach (var (b, open) in publicFlags.OrderBy(p => p.Key, StringComparer.Ordinal)) { h.Add(Rng.StableHash(b)); h.Add(open); }
         if (unreachable.Count == 0) return;   // only once a walk failed, so worlds without one hash as before
         h.Add(unreachable.Count);
         foreach (var ((cage, faction), until) in unreachable) { h.Add(Rng.StableHash(cage)); h.Add(faction); h.Add(until); }

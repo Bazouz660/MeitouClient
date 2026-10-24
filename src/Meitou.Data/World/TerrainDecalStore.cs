@@ -8,6 +8,10 @@ namespace Meitou.Data.World;
 /// character that stands still, and the ageing. The renderer draws the cells near the camera from <see cref="In"/>; <see cref="CellVersion"/> tells it
 /// when a cell changed. Not thread-safe: the host owns it on one thread.
 /// </summary>
+/// <remarks>
+/// Inside the store a decal's <see cref="TerrainDecal.Life"/> is the <see cref="Clock"/> time it runs out at, so ageing touches only the cells where one has
+/// (<see cref="LifeLeft"/> gives the seconds left); <see cref="All"/> and <see cref="Load"/> use seconds left, as a save holds them.
+/// </remarks>
 public sealed class TerrainDecalStore
 {
     /// <summary>The life a decal is made with, in seconds of game time.</summary>
@@ -18,8 +22,44 @@ public sealed class TerrainDecalStore
     /// <summary>A bleeding character's pool: where it lies and how big it has grown (the game's <c>BleedToken</c>).</summary>
     record struct BleedToken(Vector2 At, float Size);
 
+    /// <summary>A cell's decals, where in the list the first pool at each place is (pools are found by place every tick) and the soonest any runs out.</summary>
+    sealed class Cell
+    {
+        public readonly List<TerrainDecal> Decals = [];
+        public readonly Dictionary<int, int> Pools = [];
+        public float Soonest = float.PositiveInfinity;
+
+        public void Add(in TerrainDecal d)
+        {
+            if (d.Type == TerrainDecalType.Pool) Pools.TryAdd(Place(d.LocalX, d.LocalZ), Decals.Count);
+            Soonest = MathF.Min(Soonest, d.Life);
+            Decals.Add(d);
+        }
+
+        /// <summary>The index of the first pool at the cell place (<paramref name="x"/>, <paramref name="z"/>), or −1.</summary>
+        public int PoolAt(short x, short z) => Pools.TryGetValue(Place(x, z), out int i) ? i : -1;
+
+        /// <summary>Removes the decals that ran out by <paramref name="clock"/>; whether any did.</summary>
+        public bool Expire(float clock)
+        {
+            int removed = Decals.RemoveAll(d => d.Life <= clock);
+            if (removed == 0) return false;
+            Pools.Clear();
+            Soonest = float.PositiveInfinity;
+            for (int i = 0; i < Decals.Count; i++)
+            {
+                var d = Decals[i];
+                if (d.Type == TerrainDecalType.Pool) Pools.TryAdd(Place(d.LocalX, d.LocalZ), i);
+                Soonest = MathF.Min(Soonest, d.Life);
+            }
+            return true;
+        }
+
+        static int Place(short x, short z) => (ushort)x | (ushort)z << 16;
+    }
+
     readonly (int Width, int Height)[][] sizes;
-    readonly Dictionary<uint, List<TerrainDecal>> cells = [];
+    readonly Dictionary<uint, Cell> cells = [];
     readonly Dictionary<uint, int> versions = [], rewrites = [];
     // Per cell, the decals placed or grown since its last rewrite, in that order.
     readonly Dictionary<uint, List<TerrainDecal>> appended = [];
@@ -27,6 +67,7 @@ public sealed class TerrainDecalStore
     readonly List<uint> touched = [];
     readonly List<uint> emptied = [];
     int nextVersion;
+    float clock;
 
     /// <param name="sizes">For each <see cref="TerrainDecalType"/>, the sizes in texels of its folder's textures (the variants); a type without any makes no decals.</param>
     public TerrainDecalStore(IReadOnlyList<IReadOnlyList<(int Width, int Height)>> sizes)
@@ -43,8 +84,14 @@ public sealed class TerrainDecalStore
 
     public int Count { get; private set; }
 
-    /// <summary>The decals of a cell (empty when it has none).</summary>
-    public ReadOnlySpan<TerrainDecal> In(uint key) => cells.TryGetValue(key, out var list) ? CollectionsMarshal.AsSpan(list) : default;
+    /// <summary>The game seconds the store has aged by (<see cref="Age"/>): the clock the stored decals' lives run out on.</summary>
+    public float Clock => clock;
+
+    /// <summary>The seconds of game time <paramref name="d"/> (one of <see cref="In"/> or <see cref="Appended"/>) has left; negative past its end.</summary>
+    public float LifeLeft(in TerrainDecal d) => d.Life - clock;
+
+    /// <summary>The decals of a cell (empty when it has none); their <see cref="TerrainDecal.Life"/> is on <see cref="Clock"/> (<see cref="LifeLeft"/>).</summary>
+    public ReadOnlySpan<TerrainDecal> In(uint key) => cells.TryGetValue(key, out var cell) ? CollectionsMarshal.AsSpan(cell.Decals) : default;
 
     /// <summary>A number that changes whenever <paramref name="key"/>'s decals change (0 for a cell that never had any).</summary>
     public int CellVersion(uint key) => versions.GetValueOrDefault(key);
@@ -67,10 +114,11 @@ public sealed class TerrainDecalStore
         appended.Clear();
         bleeds.Clear();
         Count = 0;
+        clock = 0;
     }
 
-    /// <summary>Every cell's copy of every decal, cell by cell (what a save holds).</summary>
-    public IEnumerable<TerrainDecal> All => cells.Values.SelectMany(list => list);
+    /// <summary>Every cell's copy of every decal, cell by cell, its life in seconds left (what a save holds).</summary>
+    public IEnumerable<TerrainDecal> All => cells.Values.SelectMany(cell => cell.Decals).Select(d => d with { Life = d.Life - clock });
 
     /// <summary>Decals as a save holds them, each into its own cell as it is (no placing again); one of no known type is skipped.</summary>
     public void Load(IEnumerable<TerrainDecal> decals)
@@ -78,10 +126,10 @@ public sealed class TerrainDecalStore
         foreach (var d in decals)
         {
             if ((int)d.Type >= sizes.Length) continue;
-            if (!cells.TryGetValue(d.Key, out var list)) cells[d.Key] = list = [];
-            list.Add(d);
+            var stored = d with { Life = clock + d.Life };
+            CellOf(d.Key).Add(stored);
             Count++;
-            Append(d.Key, d);
+            Append(d.Key, stored);
         }
     }
 
@@ -95,7 +143,7 @@ public sealed class TerrainDecalStore
         var variants = sizes[(int)type];
         if (variants.Length == 0 || !(life > 0)) return;
         float angle = MathF.Atan2(direction.X, direction.Y);
-        Place(new TerrainDecal(0, type, (byte)random.Next(variants.Length), 0, 0, 0, 0, (short)(int)(angle * 1000), abgr, life), new Vector2(at.X, at.Z), size);
+        Place(new TerrainDecal(0, type, (byte)random.Next(variants.Length), 0, 0, 0, 0, (short)(int)(angle * 1000), abgr, clock + life), new Vector2(at.X, at.Z), size);
     }
 
     /// <summary>
@@ -114,19 +162,17 @@ public sealed class TerrainDecalStore
 
         uint key = TerrainDecalCells.Key(token.At.X, token.At.Y);
         var (lx, lz) = Local(key, token.At);
-        if (cells.TryGetValue(key, out var list))
-            for (int i = 0; i < list.Count; i++)
-            {
-                var d = list[i];
-                if (d.Type != TerrainDecalType.Pool || d.LocalX != lx || d.LocalZ != lz) continue;
-                var (w, h) = Texels(d);
-                int half = (short)(int)(w * token.Size * 10);
-                if (half == d.HalfWidth && (short)(int)(h * token.Size * 10) == d.HalfHeight) return;
-                // Meitou: grown in steps of a 25th of its size (and at the cap), not at every texel, so a battle's pools do not redraw their cells every tick.
-                if (token.Size < PoolMax && Math.Abs(half - d.HalfWidth) * 25 < d.HalfWidth) return;
-                Regrow(d, token.At, token.Size);
-                return;
-            }
+        if (cells.TryGetValue(key, out var cell) && cell.PoolAt(lx, lz) is int i and >= 0)
+        {
+            var d = cell.Decals[i];
+            var (w, h) = Texels(d);
+            int half = (short)(int)(w * token.Size * 10);
+            if (half == d.HalfWidth && (short)(int)(h * token.Size * 10) == d.HalfHeight) return;
+            // Meitou: grown in steps of a 25th of its size (and at the cap), not at every texel, so a battle's pools do not redraw their cells every tick.
+            if (token.Size < PoolMax && Math.Abs(half - d.HalfWidth) * 25 < d.HalfWidth) return;
+            Regrow(d, token.At, token.Size);
+            return;
+        }
         Add(TerrainDecalType.Pool, new Vector3(token.At.X, at.Y, token.At.Y), new Vector2(random.NextSingle() - 0.5f, random.NextSingle() - 0.5f), token.Size, abgr, NewLife, random);
     }
 
@@ -140,28 +186,26 @@ public sealed class TerrainDecalStore
     public void Age(float dt, Func<uint, bool> drawn)
     {
         if (dt <= 0 || Count == 0) return;
+        clock += dt;
         emptied.Clear();
-        foreach (var (key, list) in cells)
+        foreach (var (key, cell) in cells)
         {
-            bool keep = drawn(key);
-            int before = list.Count;
-            for (int i = list.Count - 1; i >= 0; i--)
-            {
-                var d = list[i];
-                d.Life -= dt;
-                if (d.Life > 0 || keep) list[i] = d;
-                else list.RemoveAt(i);
-            }
-            if (list.Count != before)
-            {
-                Count -= before - list.Count;
-                touched.Add(key);
-            }
-            if (list.Count == 0) emptied.Add(key);
+            if (cell.Soonest > clock || drawn(key)) continue;
+            int before = cell.Decals.Count;
+            if (!cell.Expire(clock)) continue;
+            Count -= before - cell.Decals.Count;
+            touched.Add(key);
+            if (cell.Decals.Count == 0) emptied.Add(key);
         }
         foreach (var key in emptied) { cells.Remove(key); appended.Remove(key); }
         foreach (var key in touched) Rewrite(key);
         touched.Clear();
+    }
+
+    Cell CellOf(uint key)
+    {
+        if (!cells.TryGetValue(key, out var cell)) cells[key] = cell = new Cell();
+        return cell;
     }
 
     (int Width, int Height) Texels(in TerrainDecal d)
@@ -205,9 +249,8 @@ public sealed class TerrainDecalStore
             if (keys[..n].Contains(key)) continue;
             keys[n++] = key;
             var (lx, lz) = Local(key, at);
-            if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
             var copy = d with { Key = key, LocalX = lx, LocalZ = lz };
-            list.Add(copy);
+            CellOf(key).Add(copy);
             Count++;
             Append(key, copy);
         }
@@ -233,13 +276,17 @@ public sealed class TerrainDecalStore
             if (keys[..n].Contains(key)) continue;
             keys[n++] = key;
             var (lx, lz) = Local(key, at);
-            if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
+            var cell = CellOf(key);
             var copy = d with { Key = key, LocalX = lx, LocalZ = lz };
-            int at0 = list.FindIndex(x => x.Type == old.Type && x.Variant == old.Variant && x.Rotation == old.Rotation && x.LocalX == lx && x.LocalZ == lz);
-            if (at0 >= 0) list[at0] = copy = copy with { Life = list[at0].Life };
-            else { list.Add(copy); Count++; }
+            // The first pool at the place is the copy when it is this one (the same texture and turn); otherwise the list is searched.
+            int at0 = cell.PoolAt(lx, lz);
+            if (at0 >= 0 && !Same(cell.Decals[at0], old)) at0 = cell.Decals.FindIndex(x => x.Type == old.Type && Same(x, old) && x.LocalX == lx && x.LocalZ == lz);
+            if (at0 >= 0) cell.Decals[at0] = copy = copy with { Life = cell.Decals[at0].Life };
+            else { cell.Add(copy); Count++; }
             Append(key, copy);
         }
+
+        static bool Same(in TerrainDecal x, in TerrainDecal old) => x.Variant == old.Variant && x.Rotation == old.Rotation;
     }
 
     void Touch(uint key)
@@ -253,7 +300,7 @@ public sealed class TerrainDecalStore
     {
         if (!appended.TryGetValue(key, out var log)) appended[key] = log = [];
         log.Add(d);
-        if (log.Count > 2 * (cells.TryGetValue(key, out var list) ? list.Count : 0) + 64) Rewrite(key);
+        if (log.Count > 2 * (cells.TryGetValue(key, out var cell) ? cell.Decals.Count : 0) + 64) Rewrite(key);
         else Touch(key);
     }
 

@@ -30,6 +30,24 @@ sealed partial class PlayerInterface
     string PortraitRect(int cell) => FormattableString.Invariant(
         $"{cell % CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {cell / CharacterRenderer.PortraitColumns * CharacterRenderer.PortraitCell} {PortraitSize} {PortraitSize}");
 
+    /// <summary>How many of the player's characters are posed every frame however far from the eye (<see cref="FullRateCharacters"/>).</summary>
+    const int FullRateCount = 10;
+
+    /// <summary>
+    /// The player's characters posed every frame however far (<see cref="CharacterInstance.FullRateAnimation"/>) into <paramref name="into"/>: the first
+    /// <see cref="FullRateCount"/> of the squad bar and then the other squads in order, and the first selected one.
+    /// </summary>
+    public void FullRateCharacters(HashSet<CharacterId> into)
+    {
+        into.Clear();
+        foreach (var c in SquadBarMembers())
+            if (into.Count < FullRateCount) into.Add(c.Id);
+        foreach (var squad in session.CurrentSnapshot.PlayerSquads)
+            foreach (var id in squad.Members)
+                if (into.Count < FullRateCount) into.Add(id);
+        if (Selected().FirstOrDefault() is { } first) into.Add(first.Id);
+    }
+
     /// <summary>The characters the squad bar shows, the active squad's in order: the first atlas cells (<see cref="PortraitMembers"/>).</summary>
     public IReadOnlyList<CharacterSnapshot> SquadBarMembers()
     {
@@ -73,33 +91,53 @@ sealed partial class PlayerInterface
     /// <summary>Gives the interface a texture drawn at run time (the portrait atlas) under <paramref name="name"/>.</summary>
     public void SetUiTexture(string name, GpuTexture texture, SampledTexture sampled) => uiPainter?.SetTexture(name, texture, sampled);
 
+    /// <summary>The squad bar's page, its row height and how far its rows are scrolled (the ItemBox scrolls a row per wheel notch).</summary>
+    UiRect squadBarPage;
+    float squadBarRow, squadBarScroll;
+
+    /// <summary>The wheel over the squad bar scrolls its rows; clamped when the bar is laid out.</summary>
+    bool SquadBarWheel(Vector2 p, float steps)
+    {
+        if (squadBarRow <= 0 || !squadBarPage.Contains(p.X, p.Y)) return false;
+        squadBarScroll -= MathF.Sign(steps) * squadBarRow;
+        return true;
+    }
+
     void AddSquadPortraits(List<UiControl> controls, UiRect panel)
     {
         var members = SquadBarMembers();
         if (members.Count == 0) return;
         // The tab's page (the layout's TabItem rectangle inside SquadPanel).
         var page = new UiRect(panel.X + panel.Width * 0.0183727f, panel.Y + panel.Height * 0.206897f, panel.Width * 0.965879f, panel.Height * 0.737069f);
-        // The original leaves space below portraits instead of filling the tab page (docs/game/ui-screens.md); 0.76 matches its frame size (Observed).
-        float size = Math.Min(page.Height * 0.76f, page.Width / members.Count), k = size / PortraitLayoutSize;
+        // The page's ItemBox (docs/game/ui-screens.md "Squad bar"): square cells 0.9 of its height, or of its width over the members (counted up to 10), 60 to
+        // 128 px at 1080p and even, filled left to right in rows; rows past the page are cut off.
+        float scale = InventoryScale;
+        float fit = Math.Min(page.Height * 0.9f, page.Width * 0.9f / Math.Min(members.Count, 10)) / scale;
+        float size = MathF.Floor(Math.Clamp(fit, 60, 128) / 2) * 2 * scale, k = size / PortraitLayoutSize;
+        int columns = Math.Max(1, (int)(page.Width / size)), rows = (members.Count + columns - 1) / columns;
+        squadBarPage = page;
+        squadBarRow = size;
+        squadBarScroll = Math.Clamp(squadBarScroll, 0, Math.Max(0, rows * size - page.Height));
         var camera = session.Camera.Current;
         PrunePortraitFlashes(members);
         for (int i = 0; i < members.Count; i++)
         {
             var m = members[i];
-            float left = page.X + i * size, top = page.Y;
+            float left = page.X + i % columns * size, top = page.Y + i / columns * size - squadBarScroll;
+            if (top + size <= page.Y || top >= page.Y + page.Height) continue;
             UiRect At(float x, float y, float w, float h) => new(left + x * k, top + y * k, w * k, h * k);
             // The layout's depths, back to front: background, back overlay, portrait, front overlay, name, frame.
             var state = PortraitStateOf(m, camera.Eye, camera.Target);
-            controls.Add(PortraitImage($"portrait-back-{i}", At(0, 0, 135, 135), "Background", (state & PortraitState.Hurt) != 0 ? "Hurt" : "Normal", PortraitFlash(m.Id, state)));
-            if (BackOverlayName(state) is { Length: > 0 } back) controls.Add(PortraitImage($"portrait-back-overlay-{i}", At(6, 5, 124, 124), "BackOverlay", back));
+            controls.Add(PortraitImage($"portrait-back-{i}", At(0, 0, 135, 135), "Background", (state & PortraitState.Hurt) != 0 ? "Hurt" : "Normal", PortraitFlash(m.Id, state)) with { Clip = page });
+            if (BackOverlayName(state) is { Length: > 0 } back) controls.Add(PortraitImage($"portrait-back-overlay-{i}", At(6, 5, 124, 124), "BackOverlay", back) with { Clip = page });
             var portrait = new Dictionary<string, string> { ["ImageTexture"] = PortraitTexture, ["ImageFlipV"] = "true", ["ImageRect"] = PortraitRect(i) };
             if ((state & PortraitState.Faded) != 0) portrait["Alpha"] = "0.25";
-            controls.Add(new($"portrait-{i}", "ImageBox", At(6, 6, 124, 123), "", "", "", true, portrait, Vector4.Zero));
-            if (FrontOverlayName(state) is { Length: > 0 } front) controls.Add(PortraitImage($"portrait-front-overlay-{i}", At(6, 6, 124, 123), "FrontOverlay", front));
+            controls.Add(new($"portrait-{i}", "ImageBox", At(6, 6, 124, 123), "", "", "", true, portrait, Vector4.Zero, Clip: page));
+            if (FrontOverlayName(state) is { Length: > 0 } front) controls.Add(PortraitImage($"portrait-front-overlay-{i}", At(6, 6, 124, 123), "FrontOverlay", front) with { Clip = page });
             controls.Add(new($"portrait-name-{i}", "TextBox", At(4, 4, 128, 126), m.Name, "", "Kenshi_TextboxStandardText", true,
-                new Dictionary<string, string> { ["TextAlign"] = "HCenter Bottom", ["TextColour"] = "1 1 1", ["TextShadow"] = "true" }, Vector4.Zero, Pickable: false));
+                new Dictionary<string, string> { ["TextAlign"] = "HCenter Bottom", ["TextColour"] = "1 1 1", ["TextShadow"] = "true" }, Vector4.Zero, Pickable: false, Clip: page));
             controls.Add(new($"member-{i}", "Button", At(0, 0, 136, 136), "", "meitou:member", "Kenshi_PortraitFrameSkin", true,
-                new Dictionary<string, string> { ["Checked"] = m.Selected ? "true" : "false" }, Vector4.Zero, Argument: i.ToString(CultureInfo.InvariantCulture)));
+                new Dictionary<string, string> { ["Checked"] = m.Selected ? "true" : "false" }, Vector4.Zero, Argument: i.ToString(CultureInfo.InvariantCulture), Clip: page));
         }
     }
 }

@@ -77,7 +77,8 @@ public sealed partial class MedicalState
         if (p.IsRobotic(race) && !ctx.ExemptFromWear)
             p.Wear += (hit.Cut + hit.Pierce + hit.Blunt) * 0.04f * c.RobotWearRate;
         // The wound (FUN_1406508d0): strength max(cut, pierce) x bleed rate x scale, losing `bleeding clot rate` a second (TickBlood).
-        if (MathF.Max(hit.Cut, hit.Pierce) > 0 && race.BleedRate > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
+        // Opened whatever the race's bleed rate; a bloodless race's wounds drain nothing but still need first aid.
+        if (MathF.Max(hit.Cut, hit.Pierce) > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
 
         p.HitMult = p.IsDestroyed ? 0 : p.Fraction < 0 ? MathF.Min(p.HitMult + 1, 2) : MathF.Min(p.HitMult + 1, 4);
 
@@ -90,11 +91,9 @@ public sealed partial class MedicalState
         if (Dead) return;
         var p = Parts[index];
         bool down = p.IsDown;
-        if (down && !p.WasDown)
-        {
-            events?.Add(new MedicalEvent(MedicalEventKind.PartDown, index));
-            if (p.IsVital) StartKo(ctx, events);
-        }
+        if (down && !p.WasDown) events?.Add(new MedicalEvent(MedicalEventKind.PartDown, index));
+        // Every blow that leaves a vital part under 0 restarts the KO timer (FUN_14064f300); a part going under 0 in the tick does not (the KO point rule does, VitalPartsKeepDown).
+        if (down && inHitPath && p.IsVital) RestartKo(KoTime(ctx), events);
         p.WasDown = down;
         bool destroyed = inHitPath ? p.IsDestroyed : p.Flesh - p.Stun < -p.MaxHp;
         if (!destroyed) return;
@@ -220,6 +219,14 @@ public sealed partial class MedicalState
             events?.Add(new MedicalEvent(MedicalEventKind.KnockedOut));
         }
         else KoTimer = MathF.Max(KoTimer, seconds);
+    }
+
+    /// <summary>Starts the KO timer over at <paramref name="seconds"/>, also when a longer KO is running (<c>startKnockoutTimer</c> overwrites it).</summary>
+    void RestartKo(float seconds, List<MedicalEvent>? events)
+    {
+        if (Dead) return;
+        ApplyKo(seconds, events);
+        KoTimer = seconds;
     }
 
     /// <summary>Kills the character because one of its death items was taken while it was down (docs/game/animals.md "Death items").</summary>

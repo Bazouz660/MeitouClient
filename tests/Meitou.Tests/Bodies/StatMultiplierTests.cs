@@ -24,9 +24,8 @@ public class StatMultiplierTests
         Assert.Equal(0.55f * 0.66f, m.StatMultiplier(StatsEnumerated.Thieving), 5);
         // assassin: limb = A x 0.01 = 0 -> L = 0 -> f0 0.5, x0.66
         Assert.Equal(0.5f * 0.66f, m.StatMultiplier(StatsEnumerated.Assassination), 5);
-        // stealth keeps its A term but not the 0.66: L = lerp(0.9, 1, 0) = 0.9 -> lerp(0.8, 1, 0.9) = 0.98
-        Assert.Equal(0.98f, m.StatMultiplier(StatsEnumerated.Stealth), 5);
-        // athletics does not look at the arms at all
+        // stealth and athletics do not look at the arms at all (the game never sends stealth through the table, #46)
+        Assert.Equal(1f, m.StatMultiplier(StatsEnumerated.Stealth));
         Assert.Equal(1f, m.StatMultiplier(StatsEnumerated.Athletics));
     }
 }

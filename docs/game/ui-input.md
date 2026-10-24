@@ -157,7 +157,9 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 
 **Observed** (owner's base-game example): right-clicking a building targets its floor rather than terrain behind it.
 Meitou movement picks loaded buildings' floor/stair collision up to the viewed floor before terrain; wall hits drop to the floor below
-(up to 4 units across wall thickness). Clicks, queued moves and held-button steering share this destination and marker.
+(up to 4 units across wall thickness). The flat downward faces of box/capsule/convex shapes (wound outward) are no floor: **Verified** (scratch ray probe,
+Stationhouse `Storm_House_08_BASE_COL.xml` / `_Exterior_COL_Steps.xml`) rays clipping the foundation's or steps' sloped side dropped onto their undersides
+(Y −60 / −74, floor top 15.5); triangle-mesh faces keep the file's winding (unknown, 82 of 435 building collision files), so either side counts there. Clicks, queued moves and held-button steering share this destination and marker.
 Buildings without a readable interior mask/floor collision still use terrain; the original's pick filters: [building picking](#building-picking-and-selection).
 Outside the rooms, the ray's first descent onto a kept navmesh surface more than 5 units above the terrain (a wall top, ramp, deck) wins
 over the terrain, and its height is the goal's floor (engine choice). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
@@ -172,7 +174,7 @@ t ≤ 0. Shown only with `Movement marker` ([settings.md](../formats/settings.md
 **Verified** against `data/materials/debug.material` and `materials/forward/basic.program` / `basic.hlsl`: `debug_marker` pass 0 is
 `depth_func less_equal`, pass 1 `depth_write off`, `depth_func greater`, `alpha_blend` (the part behind the scene); both `Basic_Lit_VP`
 (`NORMALS`: `rgb *= saturate(N·sun) * contrast + 1 - contrast`, contrast 0.5) and `Basic_FP` (`colour × vertex colour`).
-Meitou (`MoveMarkerRenderer`) draws both passes after the tone map, so the colours show as given whatever the exposure, sorting fragments by
+Meitou (`MarkerRenderer`) draws both passes after the tone map, so the colours show as given whatever the exposure, sorting fragments by
 the near slice's scene depth, multisampled (up to 8×) and resolved over the picture: the mesh's rough band at the cone's widest part
 and the notch on the stem are in `position.mesh` itself; on every ground move, following the cursor each frame while the button steers, always on (settings.cfg is not read yet).
 
@@ -225,12 +227,31 @@ Rendering details: [objects](../render-objects.md#building-sign-highlight).
 pointer `pick`; `ItemNameText` (`Kenshi_TextboxStandardText`, Kenshi_StandardFont_Medium) centred. Colours: `DropItemLabelBack/TextDefault` #ffffff,
 `...Selected` #66ff66, `...SelectedStealing` #ff6666.
 **Observed** (`ItemManager::ItemLabel`, `FUN_1401649e0` / `FUN_140162950`): the root's width is fitted to the text; a quantity above 1 is appended
-(exact text **Unknown**); the label widget takes a mouse click; hovered labels turn Selected, or SelectedStealing when the item counts as stolen
-(owner-faction test, **Unknown** detail). Weapons, armour and some other item types take their text colour from the item's grade
-(`ItemGrade0`–`5` by thresholds 16/36/51/66/81, `ItemArtifact`, else `ItemStandard`). Range and anchor **Unknown**.
+(exact text **Unknown**); the label widget takes a mouse click. Range and anchor **Unknown**.
+**Observed** (decompile: ctor `FUN_1401649e0`, hover `FUN_140162950`, colour `FUN_1401628e0` / `FUN_1401625c0`, colour load `FUN_140162e60`) colours, plate = root tint, text = `ItemNameText`:
+
+| state | plate | text |
+|---|---|---|
+| stealing, hovered | BackSelectedStealing | TextSelectedStealing |
+| stealing | BackSelectedStealing | item colour |
+| hovered | BackSelected | TextSelected |
+| otherwise | item colour | item colour |
+
+Item colour: types WEAPON, ARMOUR, ITEM, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW, LIMB_REPLACEMENT only, else BackDefault. A plain ITEM:
+`ItemArtifact` when item byte +0x180 is set (taken as the record's `artifact`, **Unknown**), else `ItemStandard`; the others by level (vfunc 0x2b8;
+Meitou uses armour's quality) <16 Grade0, <36 1, <51 2, <66 3, ≤80 4, else 5. `ItemGrade5` and `TextDefault` are not in kenshi_colours.xml (exe defaults #fceb0d,
+#ffffff); `ItemGrade4` #fceb0d there overrides the exe's #de9c00, `ItemStandard` #e0cccc, `ItemArtifact` #0dfceb. Stealing: the item's owner (vfunc 0x2a8 hand
+unless NULL_ITEM, resolved by `FUN_14079d410`, else vfunc 0x1d8 via `FUN_140792910`) has a faction with +0x250 (player's) and +0x1d0 (`not real`) both clear.
+**Observed** (`Item` vfuncs 75/76 save/load, slots 85/59): vfunc 0x2a8 is item+0x140, the save's `ownedby`; vfunc 0x1d8 is item+0x80, `insideBuilding` (only a
+BUILDING handle resolves there). So an item with a null `ownedby` is never stolen, wherever it lies; the building only stands in for an owner that no longer
+exists. The pick-up verb (`FUN_14079b2d0` case 3) tests `ownedby` alone: Steal when it resolves to such a faction, else Pick Up.
+**Observed** (saves "Beep Fan Club 1", METARU, survey of their `1-itemlist`): 332 / 62 items have only `insideBuilding` (town interiors), 99 / 0 a CHARACTER `ownedby`,
+of which 84 name a character the save no longer holds (one of them inside a building); no other `ownedby` type.
 Meitou (`PlayerInterface.GroundItems.cs`): with the Highlight gating above, every item within 500 units of the camera's focus not hidden by a
-building, name only, white, green under the pointer; a label picks like its item (pointer `pick_item`, right click picks it up). Overlapping
-labels are stacked above the nearer one. No quantity, grade or stealing colours yet (ground items have no owner).
+building, name only, coloured as above; a label picks like its item (pointer `pick_item`, right click picks it up, held a menu with Steal or Pick Up). Overlapping
+labels are stacked above the nearer one. No quantity. The owner (`GroundItem.OwnedBy`, `Saving/GroundItemSave`) is read once at load: the `ownedby` character's
+platoon faction, else the `insideBuilding` building's `owner faction ID` (also for the verb, engine choice), none for a `not real` faction; items dropped or
+placed in play have none. Picking up another faction's item marks it stolen from that faction (`StolenFrom`); no witness or crime yet.
 
 ### Hover outline
 
@@ -347,7 +368,7 @@ first door's lines before the house's, as the door's panel does ([ui-screens](ui
 world buildings, the For sale line, hover pointers over world buildings, and quick right-click orders on them, except doors: a door (picked within 40 px of its leaf
 centre where it has slid to, `DoorSpot.Slide` × open amount, `PlayerInterface.Doors.cs`) shows `door` / `lock` / `lockpick` as in the table and a quick right click gives `DoorOrder` (the nearest selected
 walks to the door's near side and opens or closes it, "It's locked." at a locked one; another faction's locked door: Alt picks the lock, else the hint
-and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level building with an interior is picked by its floors instead (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
+and a walk there). The right button's target, for the pointer and the click alike, is the nearest along the ray of: a character with a quick order or a menu, a ground item, a container, a door (these three picked by a pixel magnet round their middle, their distance to it), a bed (its record's collision, as a building; a pixel magnet without one), a rock and a site that is an object; a plain building takes it only when none is there (`PlayerInterface.PickAt`, as the original walks its hits nearest first; what a building seen from outside hides is left out, Meitou's stand-in for the floor rule). Ctrl or Alt over a downed character comes first. Sites of the player's get the `build` pointer only when unfinished; finished ones the class pointer of the table (`mine` for a machine of function 1 or 27, `use` for other machines, furnaces and turrets, `search` for a storage, none for a plain building, as in the original; a quick right click on a furnace walks there and opens its window, on a turret it mans it, [simulation](../simulation.md#production)); a right click on a finished plain building gives way to a container, a ground item, a door or a character under the cursor, so a chest inside a house can be targeted (the building's menu, with Dismantle, opens on a right click held on the building itself; a quick right click on a finished plain building is a move to the hit point's x, z at the terrain height, as the original's target (the goal then takes the walkable surface nearest that height, its floor inside, `Walkability.GroundHeight`; the original's goal snap is about 30, [pathfinding](pathfinding.md)); a level or player building with an interior is picked by its floors instead, even when the hidden roof above is nearer (`FloorSurfaces.MoveHit`: a wall or roof hit drops onto the floor below, upper floors above the viewed one are passed through); on a finished storage of the player's it walks the selection there and, once one of them is within 120, opens the storage window with the character's inventory beside it, with the `search` pointer; a left click on a storage shows its window alone).
 
 ### Context menu verbs
 
@@ -403,8 +424,8 @@ that 28 Stand Up answers to ([ragdolls](ragdolls.md#forced-crawl): the legs' for
 Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
 the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job.
 Containers and doors open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
-Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's downed character: its inventory beside the
-selection's), Pick Up and Kidnap (the same pick-up order; Kidnap when the target is not an ally or is a trader, shown with 100%; the kidnapping is a crime only when witnessed,
+Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's own character, standing or down: the nearest selected walks over and its inventory opens beside the
+selection's, as the loot window), Pick Up and Kidnap (the same pick-up order; Kidnap when the target is not an ally or is a trader, shown with 100%; the kidnapping is a crime only when witnessed,
 [carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
 character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
 Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Use, Auto-Haul (storage, as the job),
@@ -412,7 +433,7 @@ Inventory (storage, furnace), Man Turret, Dismantle. **Bodyguard** (45, `FollowO
 attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
 (`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied.
 Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Not built: Stand Up, Throw out of home / town (the jobs 223 / 273 run), Repair / Repairs,
-Corpse Disposal (the jobs 137 / 138 run), Auto-Haul 152, Lock / Unlock of a cage (Pick Lock stands in), item menus (Meitou's ground items carry no inventory or owner), the occupant's second menu and the unconscious message.
+Corpse Disposal (the jobs 137 / 138 run), Auto-Haul 152, Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 
@@ -443,7 +464,7 @@ The settings panel and the native Meitou UI have their own keyboard focus ([nati
 Meitou only (no original counterpart). F10 (`ToggleDebugMenu`, rebindable) opens a cheat list; while open it takes every key (Up/Down, typing, Enter, Esc).
 Rows send `DebugCommand`s, applied in the next tick's Inputs phase: teleport the selection to the camera target, spawn a character record there
 (own squad, first faction hostile to the player), give an item record (`name x5 q80`; quality 0-100: armour's quality, crossbows' and limbs' level, a weapon the `PLAYER_WEAPONS` model of the highest level at or below it (else the lowest) and that level; what does not fit drops at their feet) to the first selected, add or remove money (signed number),
-heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage. Heal, stats and damage fall back to the inspected character. Names match a record's string id,
+heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage, finish every RESEARCH record and repetition (queue emptied). Heal, stats and damage fall back to the inspected character. Names match a record's string id,
 its exact name, else the shortest name containing the text. Replaces the game's F10 key list (the viewer keeps its own).
 
 ## Unknowns

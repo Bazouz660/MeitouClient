@@ -153,7 +153,10 @@ ends leaves 0.2 s.
 Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 
 - **Slots**: the holders are the fighters whose swing at the target has a blow to come. On the same tick, fighters
-  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units.
+  with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units. Those
+  lower asks are foreseen from the last tick's state (threads run the fighters apart), counting any that may ask
+  (rejoining, pause cut short by a blow at it, swing or block ending now, never asked yet), so the count is never
+  exceeded. **Verified** by `DuelTests` (5 attackers, target fighting back, 1-3 slots).
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of
@@ -170,11 +173,51 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 
 **Observed** (static reading, `FUN_1402af1e0` → `FUN_1404354d0`; the stat from `FUN_1408866b0` → `FUN_140883a80`): the lead point is the target's position + its velocity (Character vfuncs 9 speed × 10 heading, movement +0xb8 and +0xd0) × `(1 − r) × 2 + 1.2` seconds, recomputed every tick, with r the chaser's CharStats +0x188: its attack play rate (lerp(0.01 (0.6 dex + 0.4 attack), 0.8, 1.2) × G, capped at 1.2, the rate attack clips play at; × 0.8 when `FUN_1405c7fd0(character) == 3`, condition not decoded). So 0.8 s ahead at r = 1.2, 1.6 s at 0.8, more for a slowed attacker; a faster chaser aims past the runner, and since the lead follows the velocity it swings to the new side when the runner turns, and drops as soon as the runner slows under 9 or leaves plain movement (the 1.5 s timer restarts). The steering faces its movement while leading. A second override (`CharMovement::vfunc_28` sets movement +0x168 and a point at +0x16c, the steering's +0x50/+0x54): the chaser heads for that point instead at most 55 u/s, the lead is off, and it clears within 10 units; `CombatClassAI::vfunc_9` skips its chase while it is set. Its caller is **Unknown**.
 
-Meitou (`PursuitSystem`, engine rules): the lead is a path goal, re-pathed when it moves over 12 units (at most every 0.5 s, so a turn can overshoot by ~12 units at a run), and used only while the chaser is behind the target (target velocity · (target − chaser) > 0); level or ahead it goes for the target and stops within reach, so the runner comes into it. A lead off the navmesh falls back to the target. The +0x168 override is not modelled.
+Meitou (`PursuitSystem`, engine rules): the lead is a path goal, re-pathed when it moves over 12 units (at most every 0.5 s, so a turn can overshoot by ~12 units at a run), put a further 0.5 s of the runner's way ahead (a path ends in a stop and a fighter's speed ramps back slowly) and `PassWidth` 1.25 × the two footprints (clear of the separation radius) beside the runner's track on the chaser's side (bodies are solid, so the chaser passes the runner instead of pushing it along; the original's runs through it). It is used only while the chaser is behind the nearer of the lead point and the swing's aim point (target + velocity × `AimLeadSeconds` 1.2); level with it, it goes for the target and stands once the aim point is within reach, so the runner comes into its swing. Standing is measured to that aim point, as the swing is (stood within reach of the runner itself, the aim point would be out of reach and the chaser idle). A fighter at its path's end asks for the next one after `RepathSeconds` 0.5 (not the wanderer's 3 to 10 s wait). A lead off the navmesh falls back to the target. The +0x168 override is not modelled.
 
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
 **Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
+
+## Leaving a fight
+
+How an attacker stops when its target runs. **Observed** (static reading of `Task_MeleeAttack` update `14034ca40`
+(thunk `14001681f`), `ChaseMode` vfuncs 0/1 via thunks `140016243`/`140020d1a`, `CombatClassAI::vfunc_9`); literals
+**Verified** (decompile). There is no distance leash: the exits are the target going down, nothing left to fight,
+and the give-up test of a path chase. Ending the task means `FUN_1400522c0`: it sets the AI task system's `+0x26c`,
+which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping the current task and clearing its targets.
+
+- **Target down or held**: each tick, a fight target that is down or dead (`FUN_1407d1440`) or imprisoned (`+0x2f8` 2)
+  is dropped and the fight goes to state 4 (re-decide); when it was also the task's target the task ends.
+- **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
+  the senses object's (Character vfunc `0x68`) int `+0x94` is 0 and float `+0x8c` ≤ 0 (meanings **Unknown**; the
+  `+0x94`/`+0x98` enemy counters of `Task_GetUp` look alike), nobody is engaged on the character (engaged list + overflow 0),
+  the fight has no target (`+0x2a0` none), and the task's own target is gone or fails its vfunc `0x30` test.
+- **Path chase give-up** (`ChaseMode`, a base of `Task_MeleeAttack` at task `+0x78`): checked only while the fight is in
+  state 11, the path chase that `CombatClassAI::vfunc_9` enters from state 10 when the navmesh line to the target is
+  blocked, the two are in different places, or the 2 s chase timer runs ([Combat stance](#combat-stance)). Any other
+  state clears the test's cached gate, so it restarts with each path chase. The gate (`vfunc_0`, computed once on entry,
+  which also stamps the start time) passes when the chaser's faction is **not the player's** (Faction `+0x250` null),
+  the target is alive (vfunc `0x30`), not in a bed or cage (`+0x2f8` 0), the chaser's Dialogue passes `FUN_140671c60`
+  (**Unknown**), and either the target flees (its current task is 35 Running away or 127 Retreating fast, or 29 Move order
+  to a point farther from the chaser than the target is: `FUN_140331ee0`), or the chaser counts it an enemy (Character
+  slot 125), or two floats of the chaser's status object (`+0x1a0`: `+0xa0` + `+0xac` > 0) or the target's `+0x148` are set.
+  Then each tick (`vfunc_1`, never when Character slot 126 calls the target friendly):
+  - nothing before 5 game minutes since the chase began; after 1.1 game hours (sense-age unit > 60, below) the AI's plan is
+    reset (`FUN_1405074a0`) each tick, the chase continues;
+  - the chaser has no sense entry for the target → give up;
+  - the target is neither seen nor heard (entry `+0x38`/`+0x39`) and its last sighting is older than 12 units, or the chaser
+    stands within 60 of where it was last sensed (squared 3600) → give up.
+  - Giving up ends the task, fires dialogue event 60 GIVE_UP_CHASE from the chaser at the target and resets the AI's plan.
+- Time: the world clock is in game hours; the sense-age unit is hours × 3600 / 33 × 0.5 (`FUN_140852150`, `FUN_14033a170`),
+  so 12 = 13.2 game minutes, about 24 s real at 1x ([game loop](game-loop.md#the-three-time-values)).
+- So a player's character never gives up a path chase by this rule, and an NPC on open ground (no path chase) keeps
+  running at the target with the footwork lead while it has a fight target. When that pick (`FUN_140666ee0`) and the attack
+  goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) let go of a runner on open ground is **Unknown**:
+  how long a lost sense entry keeps counting as a candidate was not traced. The runner's side: [perception](perception.md#retreat-and-memory).
+
+Meitou (`AggroSystem.Chase` / `SenseQuarry`): this give-up (9.1 s gate, 24 s unsensed, 60 units; NPCs only, event 60), tested in every
+running chase, not only a path chase (engine choice), but never while a target not sneaking is within 60 of the chaser itself (engine choice: one running past its runner has it at its back); the chaser senses only its own target, a sneaker by sight without the spot meter.
 
 ## Armour and medical hit
 
@@ -407,7 +450,7 @@ orders of the player's characters). The flag's default for NPCs and whether the 
 
 ## Unknowns
 
-- KO wake-up, flags `+0x162`/`+0x163`, and the roles of hunger and "fed" in recovery; (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)); where the KO point (`140643ae0`) is consumed.
+- The roles of hunger and "fed" in recovery (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)). KO wake-up and the KO point: [character-stats.md](character-stats.md#blood-and-ko).
 - Target selection weights and predicates ([Attack slots](#attack-slots-and-circling)), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
   min/max gap (the defence pick `140887970` tests no skill, **Observed**). The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.

@@ -53,6 +53,9 @@ public sealed record DebugGiveItem(CharacterId Character, string Record, int Qua
         [FcsRecordType.WEAPON, FcsRecordType.ARMOUR, FcsRecordType.ITEM, FcsRecordType.CONTAINER, FcsRecordType.BLUEPRINT, FcsRecordType.MAP_ITEM, FcsRecordType.CROSSBOW, FcsRecordType.LIMB_REPLACEMENT];
 }
 
+/// <summary>Finishes every research and repetition (<see cref="Construction.ResearchState.CompleteAll"/>).</summary>
+public sealed record DebugUnlockResearch : DebugCommand;
+
 /// <summary>Spawns a character of record <see cref="Record"/> at <see cref="At"/>, alone in a squad of the first faction hostile to the player (<see cref="PopulationSystem"/> applies it).</summary>
 public sealed record DebugSpawn(string Record, Vector2 At) : DebugCommand;
 
@@ -100,6 +103,9 @@ static class DebugCheats
                         else if (e.Kind == MedicalEventKind.PartSevered) table.LimbsChanged.Enqueue((slot, medical.Parts[e.Part].Template.LimbSlot));
                     }
                 }
+                break;
+            case DebugUnlockResearch when data is not null:
+                world.Post($"Research unlocked: {world.Research.CompleteAll(data.Db)} finished.");
                 break;
             case DebugGiveItem give when data is not null:
                 if (!table.TryResolveNext(give.Character, out int owner) || table.Cold(owner)?.Inventory is not { } inventory) break;

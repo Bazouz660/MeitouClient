@@ -13,7 +13,9 @@ public static class MyGuiImages
         if (!properties.TryGetValue("ImageResource", out var name) || !resources.Resources.TryGetValue(name, out var resource)) return null;
         var group = resource.Elements("Group").FirstOrDefault(g => (string?)g.Attribute("name") == properties.GetValueOrDefault("ImageGroup"));
         var index = group?.Elements("Index").FirstOrDefault(i => (string?)i.Attribute("name") == properties.GetValueOrDefault("ImageName"));
-        var frame = index?.Elements("Frame").FirstOrDefault();
+        // ImageFrame (Meitou's): the index's frame to show, as the game picks one with ImageBox::setItemFrame; the first by default.
+        int at = int.TryParse(properties.GetValueOrDefault("ImageFrame"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int f) ? f : 0;
+        var frame = index?.Elements("Frame").ElementAtOrDefault(at) ?? index?.Elements("Frame").FirstOrDefault();
         if (group is null || frame is null) return null;
         float[] Pair(string? s) => (s ?? "0 0").Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToArray();
         var size = Pair((string?)group.Attribute("size")); var point = Pair((string?)frame.Attribute("point"));

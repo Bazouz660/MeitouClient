@@ -117,6 +117,21 @@ public sealed class ResearchState
         return true;
     }
 
+    /// <summary>Finishes every RESEARCH record and every repetition left (the debug menu's cheat); the queue empties. Returns how many were finished.</summary>
+    public int CompleteAll(GameDatabase db)
+    {
+        int n = 0;
+        foreach (var record in db.Records.Values)
+            if (record.Type == FcsRecordType.RESEARCH)
+                for (int repeats = RepeatsOf(db, record.StringId); Times(record.StringId) <= repeats; n++) completed.Add(record.StringId);
+        if (n == 0) return 0;
+        queue.Clear();
+        partial.Clear();
+        Refresh(db);
+        Touch();
+        return n;
+    }
+
     public bool IsUnlocked(string building) => Unlocked.Contains(building);
     public bool IsDone(string id) => completed.Contains(id, StringComparer.Ordinal);
     /// <summary>How many times a research was finished.</summary>

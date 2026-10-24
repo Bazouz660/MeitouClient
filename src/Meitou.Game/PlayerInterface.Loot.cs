@@ -38,7 +38,7 @@ sealed partial class PlayerInterface
     void SyncInventoryLayouts()
     {
         if (faithfulScreens is null || characterInventoryLayout is null || animalInventoryLayout is null) return;
-        foreach (var (id, owner) in new[] { ("inventory", InventoryOwner()), ("loot", LootBody()) })
+        foreach (var (id, owner) in pinnedInventories.Keys.Select(slot => (slot, WindowCharacter(slot))).Prepend(("inventory", InventoryOwner())).Append(("loot", LootBody())))
         {
             bool animal = owner?.Appearance?.Animal is not null;
             if (animalWindow.GetValueOrDefault(id) == animal) continue;

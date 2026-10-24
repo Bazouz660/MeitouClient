@@ -45,8 +45,11 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         public InteriorAnswer? Interior;
     }
 
-    /// <summary>An interior test's answer: for the interiors of <see cref="InteriorVersion"/> <paramref name="Version"/>, at <paramref name="At"/>.</summary>
-    public sealed record InteriorAnswer(int Version, Vector3 At, bool Inside);
+    /// <summary>
+    /// An interior test's answer: for the interiors of <see cref="InteriorVersion"/> <paramref name="Version"/>, at <paramref name="At"/>. <paramref name="Building"/> is the
+    /// building whose hull holds it (with a small margin) and <paramref name="Floor"/> the floor of that hull it stands on (<c>WorldObjectRenderer.StandsAbove</c>).
+    /// </summary>
+    public sealed record InteriorAnswer(int Version, Vector3 At, bool Inside, string? Building, int Floor);
 
     /// <summary>Changes whenever the loaded interiors do: a zone with interiors comes or goes, or a zone's interiors change (an answer of an older version is asked again).</summary>
     public int InteriorVersion { get; private set; }
@@ -208,6 +211,7 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
 
     public int Loaded => zones.Count;
     public IEnumerable<Zone> AllZones => zones.Values;
+    public Zone? ZoneAt(ZoneCoordinate coordinate) => zones.GetValueOrDefault(coordinate);
     /// <summary>Zones in range not laid out yet, and those being laid out.</summary>
     public int Pending => jobs.Count + Wanted + fills.Count;
     public int Wanted { get; private set; }

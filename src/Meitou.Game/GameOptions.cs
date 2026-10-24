@@ -26,12 +26,22 @@ sealed class GameOptions
     public string? SandboxMode;
     /// <summary><c>--sandbox-races</c>: one character of every person race (a CHARACTER record listing only that race) in rings round the pair, whatever n is.</summary>
     public bool SandboxRaces;
+    /// <summary><c>--terrain-sandbox [x,z]</c>: the empty world round a flat spot whose ground is a field of tiles, one per ground texture (GroundRelief.FieldCentre).</summary>
+    public (float X, float Z)? TerrainSandbox;
+    /// <summary>The terrain sandbox's default spot: the flattest 2000-unit square of the heightmap found (16 cm of relief, 0.25% slope; docs/render-terrain.md "Ground relief").</summary>
+    public static readonly (float X, float Z) TerrainSandboxSpot = (38376, -8280);
+    /// <summary><c>--terrain-sandbox cliffs</c>: the field of cliff textures on a steep face instead.</summary>
+    public bool TerrainSandboxCliffs;
+    /// <summary>The cliff field's default spot: an even 45-degree face about 1 km across facing −Z, the steadiest found (plane-fit residual 2.7 units over 800).</summary>
+    public static readonly (float X, float Z) CliffSandboxSpot = (92164, 123124);
     /// <summary>The looping duel for trailers (<c>--duel [x,z]</c>, docs/simulation.md "Duel"): two Samurai Heavy fight on rails at sunset, the same fight every lap.</summary>
     public bool Duel;
     /// <summary>Where the duel is fought (null: the built-in dune crest).</summary>
     public (float X, float Z)? DuelAt;
     /// <summary>The battle (<c>--battle n unit m unit</c>, docs/simulation.md "Battle"): two groups of NPCs, each a count of one CHARACTER or ANIMAL_CHARACTER record (name or id).</summary>
     public (int Count, string Unit)[]? Battle;
+    /// <summary>The optional fifth <c>--battle</c> value: each block in this many rows (the back row takes the rest), or null for rows of 25.</summary>
+    public int? BattleRows;
     /// <summary><c>--battle-map sandbox</c>: the battle is fought on the sandbox's flat floor instead of the map.</summary>
     public bool BattleFlat;
     /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the plateau, <see cref="GameHost.BattleSpot"/>).</summary>
@@ -70,9 +80,13 @@ sealed class GameOptions
           --sandbox-character <name> the CHARACTER or ANIMAL_CHARACTER record the sandbox spawns (default: the first member of the default new-game start)
           --sandbox-mode <list>      the sandbox hero's start, comma-separated: walk, run or free, a fixed speed in u/s, patrol (the 400-unit patrol), fight (the G key, with --sandbox 2), e.g. run,patrol (with --move-to or --screenshot)
           --sandbox-races            the sandbox adds one character of every person race (the first CHARACTER record listing only that race) in rings round the pair, whatever n is; the log lists them
+          --terrain-sandbox [cliffs] [x,z]  the empty world round a flat spot (default the flattest found) whose ground is a field of 200-unit tiles, one per ground texture
+                                     (cliffs: 100-unit tiles of every cliff texture on a 45-degree face),
+                                     drawn with the whole ground relief (Tab sliders live); the tile under the camera is named at the top left
           --duel [x,z]               trailer scene: two helmeted Samurai duel at sunset in the desert dunes (or at x,z), on rails: every lap is the same fight, the clock, weather and clouds start again with it,
                                      and it restarts when a cinema flight is played or recorded (Backspace restarts it); the time of day is held (22:00, or --time) and the weather clear (or --weather)
-          --battle <n> <unit> <m> <unit>  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (1..500 each), in two blocks facing each other;
+          --battle <n> <unit> <m> <unit> [rows]  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (at least 1 each), in two blocks facing each other
+                                     (rows of 25, or each block in that many rows, the back row taking the rest);
                                      no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
           --battle-map <map>         where the battle is fought: plateau (default), mesa (the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
@@ -130,6 +144,16 @@ sealed class GameOptions
                 case "--sandbox-character": g.SandboxCharacter = Next(); break;
                 case "--sandbox-mode": g.SandboxMode = Next(); break;
                 case "--sandbox-races": g.SandboxRaces = true; break;
+                case "--terrain-sandbox":
+                    g.TerrainSandbox = TerrainSandboxSpot;
+                    if (i + 1 < args.Length && args[i + 1] == "cliffs") (g.TerrainSandbox, g.TerrainSandboxCliffs, i) = (CliffSandboxSpot, true, i + 1);
+                    if (i + 1 < args.Length && args[i + 1].Split(',') is [var tx, var tz] && float.TryParse(tx, NumberStyles.Float, CultureInfo.InvariantCulture, out float fx)
+                        && float.TryParse(tz, NumberStyles.Float, CultureInfo.InvariantCulture, out float fz))
+                    {
+                        g.TerrainSandbox = (fx, fz);
+                        i++;
+                    }
+                    break;
                 case "--duel":
                     g.Duel = true;
                     if (i + 1 < args.Length && args[i + 1].Split(',') is [var dx, var dz] && float.TryParse(dx, NumberStyles.Float, CultureInfo.InvariantCulture, out float x) && float.TryParse(dz, NumberStyles.Float, CultureInfo.InvariantCulture, out float z))
@@ -139,7 +163,12 @@ sealed class GameOptions
                     }
                     break;
                 case "--battle":
-                    g.Battle = [.. Enumerable.Range(0, 2).Select(_ => (Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 1, 500), Next()))];
+                    g.Battle = [.. Enumerable.Range(0, 2).Select(_ => (Math.Max(int.Parse(Next(), CultureInfo.InvariantCulture), 1), Next()))];
+                    if (i + 1 < args.Length && int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out int rows))
+                    {
+                        g.BattleRows = Math.Max(rows, 1);
+                        i++;
+                    }
                     break;
                 case "--battle-map":
                     switch (Next())

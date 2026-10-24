@@ -102,8 +102,8 @@ sealed class WorldOptions
     public bool InteriorLamps = true;
     /// <summary>Supersampled item icons (the <c>icons</c> switch's Meitou side, <c>CharacterRenderer.EnhancedIcons</c>); false: drawn as the game draws them.</summary>
     public bool MeitouIcons = true;
-    /// <summary>The voice cap (the <c>voices</c> switch's Meitou side, <c>WwisePlayer.VoiceCap</c> = <see cref="Enhancements.MeitouVoiceCap"/>); false: every sound is mixed.</summary>
-    public bool MeitouVoices = true;
+    /// <summary>The <c>blood</c> switch's Meitou side: every blood cell within Decal Range drawn, up to <c>TerrainDecalRenderer.MaxSlots</c>; false: the game's 8 nearest.</summary>
+    public bool MeitouBlood = true;
     public float? ImpostorDistance, LargeImpostorDistance;
     public double? ImpostorBudgetMb;
     public float HazeStrength = Enhancements.MeitouHazeStrength; // the Meitou haze switch (default); 1 = the game's haze
@@ -252,6 +252,9 @@ sealed class WorldOptions
           --bench-compare <a.json> <b.json>   print two bench results side by side and exit
           --crowd <n>              place n generated characters of the start town round the start point (the character renderer's test; stills pose them at 0.35 s)
           --orbit-step <degrees>   with --screenshot: the camera orbits this much every frame (checks the upscaler's motion vectors)
+          --terrain-sandbox [cliffs] [x,z]   the empty world round a flat spot whose ground is a field of tiles, one per terrain texture (cliffs: on a steep face)
+          --field-tour <dir>       with --terrain-sandbox: a picture of every tile and an index.html (--tour-distance <u>, --tour-pitch <deg>)
+          --relief <Name=value>    a GroundRelief or RockSmoothing setting for the run (repeatable), e.g. --relief TargetSlope=0.3
           --sway-step <seconds>    with --screenshot or a bench run: the grass sway advances this much every frame (checks the grass motion; 0.006 is about a frame at 165 fps)
           --fog <u>                distance where the haze is complete (default 250000; the far plane follows it)
           --material-distance <u>  beyond it the terrain shows the biomes' ground colour (default 30000, as the game)
@@ -286,7 +289,7 @@ sealed class WorldOptions
         () => o.SkinShading, v => o.SkinShading = v,
         () => o.InteriorLamps, v => o.InteriorLamps = v,
         () => o.MeitouIcons, v => o.MeitouIcons = v,
-        () => o.MeitouVoices, v => o.MeitouVoices = v);
+        () => o.MeitouBlood, v => o.MeitouBlood = v);
 
     public static WorldOptions? Parse(string[] args)
     {
@@ -616,7 +619,7 @@ static class WorldFrame
         /// <summary>The weather's particle effects (null while there are none: a clear weather, or <c>--no-particles</c>); <see cref="EnsureParticles"/> makes it.</summary>
         public ParticleRenderer? Particles;
         /// <summary>The movement marker the game interface shows after a ground move order (null in the viewer, or without <c>position.mesh</c>).</summary>
-        public MoveMarkerRenderer? MoveMarker;
+        public MarkerRenderer? Markers;
         /// <summary>The blood decals on the ground (null in the viewer, or with the game's <c>Blood</c> setting off) and the host's decals they draw (docs/game/blood-decals.md).</summary>
         public TerrainDecalRenderer? Decals;
         public TerrainDecalStore? DecalStore;
@@ -650,6 +653,8 @@ static class WorldFrame
         /// <summary>A backend-owned probe GI (Metal's native ray tracing); Vulkan uses <see cref="Gi"/> and <see cref="Probes"/> instead.</summary>
         internal Gi.IProbeGi? ProbeGi;
         internal WorldLamps? Lamps;
+        /// <summary>The placed buildings' effects (campfires, torches, smoke; docs/formats/lights.md "Effects on buildings"), read on a worker, handed to the particles once read.</summary>
+        internal Task<List<PlacedEffect>>? BuildingEffects;
         public int GiDebug;
         /// <summary>Whether the traced scene is updated (and the debug view drawn) this frame: the bench's gi-scene switch.</summary>
         public bool GiActive = true;
@@ -694,7 +699,7 @@ static class WorldFrame
             Characters?.Dispose();
             Objects?.Dispose();
             Particles?.Dispose();
-            MoveMarker?.Dispose();
+            Markers?.Dispose();
             Decals?.Dispose();
             Debris?.Dispose();
             InteriorMask?.Dispose();
@@ -841,12 +846,16 @@ static class WorldFrame
         }
         if (scene.Database is { } lampDb && scene.Heightmap is { } lampMap)
         {
-            // The lamps (docs/render-lights.md), including room lights, read on a worker.
-            gpu.Lamps = new WorldLamps(context, () =>
+            // The lamps (docs/render-lights.md), including room lights, and the buildings' effects, read on workers from one level load.
+            var levels = new Lazy<(WorldLevelData Levels, BuildingLayouts Layouts)>(() =>
             {
-                var levels = WorldLevelData.Load(install, includeInteriors: true);
-                return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
-            }) { InteriorAllDay = o.InteriorLamps };
+                var l = WorldLevelData.Load(install, includeInteriors: true);
+                return (l, new BuildingLayouts(lampDb, l.Interiors));
+            });
+            gpu.Lamps = new WorldLamps(context, () => WorldLights.ForWorld(lampDb, levels.Value.Levels, lampMap.HeightAt, levels.Value.Layouts))
+                { InteriorAllDay = o.InteriorLamps };
+            if (gpu.MakeParticles is not null)
+                gpu.BuildingEffects = Task.Run(() => BuildingEffects.ForWorld(lampDb, levels.Value.Levels, lampMap.HeightAt, levels.Value.Layouts));
         }
         if (scene.Heightmap is not null) gpu.Streamer = new TerrainStreamer(install, terrain, textures, scene.Window.Step) { MaterialDistance = o.MaterialDistance };
         if (!o.NoWater && scene.Database is not null)
@@ -1016,7 +1025,7 @@ static class WorldFrame
             () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; },
             () => gpu()?.Lamps?.InteriorAllDay ?? o.InteriorLamps, v => { o.InteriorLamps = v; if (gpu()?.Lamps is { } l) l.InteriorAllDay = v; },
             () => gpu()?.Characters?.EnhancedIcons ?? o.MeitouIcons, v => { o.MeitouIcons = v; if (gpu()?.Characters is { } c) c.EnhancedIcons = v; },
-            () => o.MeitouVoices, v => o.MeitouVoices = v);   // the hosts hand it to the audio each frame
+            () => gpu()?.Decals?.Meitou ?? o.MeitouBlood, v => { o.MeitouBlood = v; if (gpu()?.Decals is { } d) d.Meitou = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
         Func<bool>? getVSync = null, Action<bool>? setVSync = null, IReadOnlyList<Enhancement>? switches = null,
@@ -1078,11 +1087,12 @@ static class WorldFrame
             sliders.Add(new Slider("Water see-through distance (Meitou, game 4000)", 1000, 100000, () => water.ClearDistance,
                 v => water.ClearDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
         }
-        sliders.Add(new Slider("Terrain detail: error px (less = finer)", 1, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
+        sliders.Add(new Slider("Terrain detail: error px (less = finer)", 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
-        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief, parallax and displacement, 0 off.
-        sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
-        sliders.Add(new Slider("Ground displacement distance (m)", 5, 60, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
+        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief (parallax and displacement; 0 off) and where each ends.
+        sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 80, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
+        if (g.Sky.Gpu.HasTessellation)
+            sliders.Add(new Slider("Ground displacement distance (m)", 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
         sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10, v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
         // The game's `Shadow Range` slider goes 1000 to 9000; the viewer allows more (the cascades stretch over it), and its left end (0) turns the
         // shadows off (low-end GPUs).
@@ -1153,8 +1163,12 @@ static class WorldFrame
         var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
         (toggles ??= []).Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
-        if (g.Sky.Gpu.HasTessellation) toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
-        if (g.Sky.Gpu.HasTessellation) toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
+        if (g.Sky.Gpu.HasTessellation)
+        {
+            toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
+            toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
+            toggles.Add(new Toggle("Terrain outline refinement (tessellation)", () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
+        }
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)
@@ -1269,17 +1283,20 @@ static class WorldFrame
         if (gpu.Foliage is { } lodFoliage) lodFoliage.LodPixelsPerRadian = render.TerrainPixelScale;   // the generated mesh levels measure their deviation in rendered pixels
         gpu.Foliage?.Update(eye);
         StageClock.Lap(2);
-        if (gpu.Characters is { } paced) paced.Focus = camera.Target;   // the pose-rate distances from what the camera looks at
         gpu.Characters?.Update(eye);
         if (gpu.Characters is { } posed && gpu.Debris is { } boltMeshes)
         {
             posed.CollectBolts(gpu.BoltPieces);
             foreach (var bolt in gpu.BoltPieces) boltMeshes.Extent(bolt.Mesh);   // loads a mesh the first time
         }
+        StageClock.Part(StageClock.PartBolts);
         gpu.Characters?.DrawPortraits();   // the squad portraits, from this update's poses
+        StageClock.Part(StageClock.PartPortraits);
         gpu.Characters?.DrawHoverMasks(gpu.HoverOutline is null ? [] : gpu.HoverKeys, width, height, camera.View, camera.FieldOfView, eye);   // before the colour pass, whose statistics stand
+        StageClock.Part(StageClock.PartHover);
         gpu.Characters?.DrawIcons();   // the item icons being made, from the same update
         gpu.Objects?.DrawBuildingIcons();   // the build window's pictures being made
+        StageClock.Part(StageClock.PartIcons);
         StageClock.Lap(StageClock.UpdChars);
         float floor = gpu.Terrain.HeightAt(eye.X, eye.Z);
         if (render.Water) floor = Math.Max(floor, WorldWater.Height);
@@ -1323,6 +1340,17 @@ static class WorldFrame
         // The weather's camera particles step on the caller's time (1/600 s units; the game's clock, so still while paused; constant, so still, in pictures).
         // They count as their own stage (the profiler's "particles", with their draw below).
         UpdateParticles(gpu, camera);
+        if (gpu.BuildingEffects is { IsCompleted: true } effectsLoad)
+        {
+            gpu.BuildingEffects = null;
+            if (!effectsLoad.IsCompletedSuccessfully) Console.WriteLine($"building effects not read: {effectsLoad.Exception?.InnerException?.Message}");
+            else if (gpu.Particles is { } buildingParticles)
+            {
+                foreach (var byBuilding in effectsLoad.Result.GroupBy(e => e.PlacementId)) buildingParticles.SetBuildingEffects(byBuilding.Key, byBuilding.ToList());
+                var (buildings, groups) = buildingParticles.BuildingEffectCount;
+                Console.WriteLine($"particles {effectsLoad.Result.Count} building effects on {buildings} buildings in {groups} groups");
+            }
+        }
         if (gpu.Particles is { } updated)
         {
             (updated.WeatherParticles, updated.World.Density) = (gpu.WeatherParticles, gpu.ParticleDensity);
@@ -1558,8 +1586,8 @@ static class WorldFrame
         if (gpu.Post is { } coverageTarget) coverageTarget.Particles = gpu.Particles;
         post.End(); // SSAO, upscaler, exposure, tone map, FXAA into the chain's target
         var slices = SceneSlices(post, camera).ToList();
-        // The movement marker over the finished picture, in the material's own colours, sorted against the near slice's depth like the game's debug_marker.
-        if (gpu.MoveMarker is { Strength: > 0 } marker && particleNear > 0 && post.Target is { } picture)
+        // The movement marker and stealth arrows over the finished picture, in their materials' colours, sorted against the near slice's depth like the game's debug_marker.
+        if (gpu.Markers is { Active: true } marker && particleNear > 0 && post.Target is { } picture)
         {
             var (markerNear, markerFar) = slices[^1];
             marker.Record(picture, width, height, post.SceneDepth, post.RenderWidth, post.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);
@@ -1651,9 +1679,13 @@ static class WorldFrame
         post.HeatHazeFarClip = KenshiHaze.FarDistance(Meitou.Data.World.HeatHaze.ViewDistanceSetting);   // the heat haze's D follows the install's `view distance`, not the sky haze's constant
     }
 
+    // DrawShadows's cascades for the characters (render thread).
+    static readonly (int, Vector4[], float, float)[] CasterSpecs = new (int, Vector4[], float, float)[ShadowSettings.MaxCascades];
+
     /// <summary>
     /// The sun's shadow cascades (ShadowPass, docs/formats/shadows.md): fitted to this camera, their casters drawn by the renderers'
     /// depth-only paths (terrain, objects, foliage meshes; detail chosen from the camera's eye), before the reflection and the main pass.
+    /// The characters of all the cascades drawn are gathered first, in one walk.
     /// </summary>
     /// <param name="sunHeight">The real sun's height: the map is drawn along the lighting direction while the sun still has a colour (as the game).</param>
     public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null,
@@ -1667,6 +1699,28 @@ static class WorldFrame
         int objects = 0, foliage = 0;
         gpu.Terrain.DepthTriangles = 0;
         var cascades = DetailedStats ? new System.Text.StringBuilder() : null;
+        // Characters take the far cascades' floor in both shadow modes: their levels are Meitou's own, and every character is in every cascade that holds the crowd.
+        // In Meitou's coarse cascades a part under a texel across casts nothing (ShadowPass.MinCharacterCasterTexels).
+        (float LodFloor, float MinRadius) CharacterCasting(ShadowCascade cascade)
+        {
+            float coarse = shadow.Meitou && ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0;
+            return (ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale),
+                ShadowPass.CharacterCasterCull ? coarse * ShadowPass.MinCharacterCasterTexels * 0.5f : 0);
+        }
+        // The characters of every cascade drawn this frame, gathered in one walk before the first (CharacterRenderer.PrepareDepth).
+        void PrepareCasters(ReadOnlySpan<ShadowPass.CasterView> views)
+        {
+            if (gpu.Characters is not { } characters || views.IsEmpty) return;
+            var specs = CasterSpecs.AsSpan(0, views.Length);
+            for (int k = 0; k < views.Length; k++)
+            {
+                var (floor, minRadius) = CharacterCasting(views[k].Cascade);
+                specs[k] = (views[k].Cascade.Index, views[k].Planes, floor, minRadius);
+            }
+            characters.PrepareDepth(views[0].LodEye, specs);
+            specs.Clear();
+            StageClock.Sub("characters");
+        }
         shadow.Render(view, light.SunDirection, (cascade, worldToClip, planes, lodEye) =>
         {
             long t0 = Stopwatch.GetTimestamp();
@@ -1678,10 +1732,9 @@ static class WorldFrame
             int oi = 0, oc = 0, fi = 0, fc = 0;
             if (render.Objects && gpu.Objects is { } o) { o.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, coarse); objects += o.DrawnInstances; (oi, oc) = (o.DrawnInstances, o.DrawCalls); }
             StageClock.Sub("objects");
-            // Characters take the far cascades' floor in both shadow modes: their levels are Meitou's own, and every character is in every cascade that holds the crowd.
-            // In Meitou's coarse cascades a part under a texel across casts nothing (ShadowPass.MinCharacterCasterTexels).
-            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, ShadowLod.ObjectLodFloor(ShadowLod.Applies(cascade.Index) ? (float)cascade.Texel : 0, render.TerrainPixelScale),
-                ShadowPass.CharacterCasterCull ? coarse * ShadowPass.MinCharacterCasterTexels * 0.5f : 0);
+            var (characterFloor, characterMinRadius) = CharacterCasting(cascade);
+            gpu.Characters?.DrawDepth(worldToClip, lodEye, planes, characterFloor, characterMinRadius, cascade.Index);
+            StageClock.Sub("characters");
             long t2 = Stopwatch.GetTimestamp();
             if (gpu.Foliage is { } f) { f.DrawDepth(worldToClip, lodEye, planes, render, gpu.Terrain, maxRange: shadow.EffectiveRange * 1.2f, minSize: shadow.MinFoliageCaster(cascade), texel: (float)cascade.Texel, coarse: coarse > 0); foliage += f.DrawnInstances; (fi, fc) = (f.DrawnInstances, f.DrawCalls); }
             StageClock.Phase(CascadeLabels[cascade.Index]);
@@ -1694,7 +1747,7 @@ static class WorldFrame
         }, sunHeight, render.Objects && gpu.Objects is { HasLandmarks: true } lo
             ? new ShadowPass.LandmarkCasters(spheres => lo.LandmarkCasters(camera.Eye, spheres),
                 (_, worldToClip, planes, lodEye) => lo.DrawLandmarksDepth(worldToClip, lodEye, planes, render, gpu.Terrain))
-            : null);
+            : null, PrepareCasters);
         shadow.CasterStats = $"{gpu.Terrain.DepthTriangles:N0} terrain triangles, {objects} objects, {foliage} foliage meshes (over the cascades); cpu terrain {shadow.PhaseMs[0]:0.00}, objects {shadow.PhaseMs[1]:0.00}, foliage {shadow.PhaseMs[2]:0.00} ms;{cascades}"
             + (shadow.Meitou ? $"; meitou: {shadow.DescribeMeitou()}" : "");
     }

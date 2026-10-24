@@ -10,7 +10,8 @@ Control: 30 Hz real time, input/UI/camera continue while paused. Simulation: 1/3
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
-clocks, input and camera, and disposes systems/services.
+clocks, input and camera, and disposes systems/services. Of a frame's ticks only the last two publish
+a snapshot (`RunTick(publish)`), the pair the host interpolates between.
 
 At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
 and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
@@ -29,15 +30,18 @@ Tick order: Inputs → Schedule → Think → Move → Act → ordered Apply →
 Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier.
 `CharacterHot.Previous` is read-only; a partition writes only its own `Next` slots. Spawn/remove
 only in serial phases after consumers finish; generation IDs prevent stale slot references.
-Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish.
+Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish. Its checks round a target (who swings at
+it, who yields, attack slots, joining, fighters at it) walk `AttackerIndex`, the per-target attacker lists rebuilt in Pursuit's and Combat's
+Schedule, filtered to the grid cells a search would cover, in the grid's order. Ragdoll physics steps on `Threads` workers (Bepu deterministic mode).
 
 Effects sort by `(target,source,system,sequence)`; spatial-neighbour iteration order is fixed.
 Commands apply by tick and queue order. In-tick orders use serial `World.Defer`; deferred orders
 precede host orders for their due tick. No concurrent host enqueue may alter that ordering.
 Randomness: stateless `Rng.Hash(seed,entityKey,purpose,counter)`; changing purpose/salt changes rolls.
-Worker partitions are `threads*2`, minimum 16 slots (game 128); one worker means caller execution.
+Worker partitions are `threads*2`, minimum 16 slots (game 32: 128 left a 500-character battle 3 partitions); one worker means caller execution.
 Async paths, navmesh and population results enter at tick boundaries; arrival timing is not
-repeatable in play. Determinism tests use synchronous services.
+repeatable in play. Determinism tests use synchronous services. `PathService` runs 2-4 threads (a quarter of the cores) and drops a
+request its character replaced before a thread took it up; F12's sim rows show the requests waiting.
 
 `StateHash` is ordered, includes slot/generation/free-list and hashed subsystem state, normalizes
 negative zero, and is a diagnostic rather than gameplay work. Golden scenarios must agree at
@@ -184,7 +188,8 @@ Implemented (`PopulationRoaming.cs`):
     (N 20, pool 14) refills an 8-duck squad after its two squads die; drained to 1 with all dead it is wiped out and saved with `ded`, `tod`,
     `pop2` 1.008, `popd2` 20.
   - **Homeless squads** (`PopulationHomeless.cs`; [original rules](game/factions-squads-towns.md#off-screen-world)): every 2 s a squad whose
-    leader patrols (a PATROL goal outside a patrol-class package) walks to its patrol point (its home centre, homeless radius) and picks the
+    leader patrols (a PATROL goal, outside a patrol-class package's town route; a homeless squad has no town, so its patrol package walks here too: the
+    Border Zone's starving bandits) walks to its patrol point (its home centre, homeless radius) and picks the
     next within 500. A squad belongs to the sector it stands in: one that walks into an unloaded sector leaves the world (after the roaming
     10 s grace outside the active zones, ≥ 1382.4 from every player character), kept there with
     `KeepWild` up to that sector's count, else dropped. The area tick refills the loaded sectors, all taken as one island (engine choice).
@@ -219,7 +224,7 @@ the player has one and stands in it; requests (victory/loss chains, ally help) c
   arrival, timers and the 20 % rule run. **Observed** (headless, Dust Bandits, 4 squads of 49 at `raidSizeMult` 4, camera on the leader): the
   followers keep 190, 380 and 470 behind a walking leader (the rule's 187, 375, 562).
 - **Assault**: in phase 1 a loaded campaign squad also fights (`Squad.War`, read by the aggro) everyone not of its faction in the target town when its
-  `pt2` package is a Package_WarAssault (20, 32), else the target faction when the campaign is hostile. Looting is not built. A cannibal assault (class 32) goes to phase 2
+  `pt2` package is a Package_WarAssault (20, 32), else the target faction when the campaign is hostile. Looting is [goal 177](#carrying-rescue-and-looting) where the package lists it. A cannibal assault (class 32) goes to phase 2
   when three of its members carry someone or 15 game minutes after the first did (`CampaignInstance.CarryStart`, not saved); kidnapping: [below](#kidnapping).
 - **Announcement**: a loaded leader in phase 0 says `dialog announcement` once (camera and a target-faction member within 2500): its lines are said as speech bubbles 2 + 0.12 × length seconds apart, or DA 12's wait, and their `interrupt` makes the next talk
   with it the negotiation, also when its faction is hostile. After arriving it waits for the announcement and then while the negotiation is
@@ -278,7 +283,7 @@ heading, about as wide as deep, by rank among the other members. Within `CatchUp
 plus the gap x `FollowGain` 2, a speed mode up while behind); farther off, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
 A `FollowOrder` (the context menu's Follow, order 31) makes a character follow another the same way (`CharacterCold.FollowOrder` replaces the leader, the slot by its own squad's ranks) until a move order replaces it or the target is gone (then Idle); engine choices, not saved.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
-character takes half the overlap with each separation neighbour's predicted position (last position + last velocity × dt), so a walker
+character takes half the overlap with each separation neighbour's last position (not one predicted from its velocity, which in a jam is wanted, not achieved), averaged over those it overlaps (a sum shakes a packed crowd); its own velocity into a body it already touches is dropped (pressing ranks would squash the front). A walker
 shoves a stander aside; one in a bed or cage does not give; a sitter (resting or on a used seat, no path) is
 never moved, by contact or separation (**Observed**: the original pushes no sitter), and is not solid (walkers steer past), lying and carried bodies are not in the way, a character closing on its spot
 is not stopped, and an unwalkable result falls back to its own step.
@@ -304,7 +309,8 @@ shape/skinning belongs to the character renderer. [animation.md](animation.md).
 `PursuitSystem` sets `CharacterCold.CombatRunning` by the original's rule (body gap over `CombatTuning.RunGap` 90, off under
 `FootworkGap` 70, on while the target flees; footprints stand in for the radii, the navmesh-blocked chase is not modelled). Running, a
 fighter keeps the plain walk/run clips, full speed and the drawn weapon; otherwise it takes the combat clips and the signed speed, capped
-at `FootworkSpeed` 18 ([combat](game/combat.md#combat-stance)).
+at `FootworkSpeed` 18 ([combat](game/combat.md#combat-stance)). A move or follow order ends the character's fight (`CombatSystem.Inputs`:
+target, stance and drawn weapon dropped), as the original's new task and movement goal do; it fights again only when attacked once idle.
 
 ## Bodies
 
@@ -329,6 +335,14 @@ placement of its record's `ground mesh` / `mesh` (`GameHost.GroundItems`, `World
 projected middle, pointer `pick_item`) gives `PickUpItemOrder`: the nearest able selected character walks to it and, within 15 units
 (`PlayerSystem.PickUpReach`), puts it in its inventory (`Inventory.Add`); what does not fit stays on the ground ("Not enough room in my
 inventory"). Another order or a stop ends the walk. A picked-up read item keeps its ITEM record's keys in its inventory record. Engine choices.
+
+Town interiors' loose items (`Items/ItemSlots`, the original's rules in [loose items](game/factions-squads-towns.md#loose-items-in-buildings)): each ITEM_PLACEMENT_GROUP of a town
+building's interior layout (`TownBuilding.ItemSlots`, id `<building>/item<n>`) is a slot registered with the town's fixtures. A due empty slot in an active zone gets one item
+(weighted pick, a weapon with a manufacturer and model, armour with the grade quality of the owner faction's armour chances: engine reading) laid flat at the slot, turned at
+random for `random yaw`, owned by the building's faction (`GroundItem.OwnedBy`) and not counted against the limit; when it leaves the ground the next is due in an int of
+[min, max] game hours. Builders fetching materials skip items another faction owns; taking one is stealing, as any owned loose item. Engine choices: slot items are saved as plain
+loose items (`ownedby` null) and a reload binds a saved item lying within 2 of a slot (one of its group's records) to it; respawn deadlines are not saved (a taken slot is due at
+once after a reload); upper-floor items are not hidden when a lower floor is viewed. The original, loading such a save, generates the interiors again beside those items.
 
 ## Items and eating
 
@@ -371,7 +385,8 @@ change: Faithful off, Meitou on);
 the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
 "Attack slots and circling" with the engine readings listed there (Advanced setting "Attackers per target", 1-5: Faithful 1, the
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
-Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle.
+Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A blow on
+the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so the circling fighters get their turn.
 
 ### Ranged
 
@@ -391,7 +406,8 @@ starts empty, the exe saves `current shots`). Engine choices: NPC turrets have e
 (0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
 gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
 part's; the turret's own collision is not left out of the line or the flight; the shot sound is a pooled object at the muzzle. The snapshot carries the part angles
-(`MannedTurret.Angles`) and the renderer turns the meshes by them ([render-objects](render-objects.md#turrets)).
+(`MannedTurret.Angles`) and the renderer turns the meshes by them ([render-objects](render-objects.md#turrets)). Meitou fix (Fixes page `Turret gunners turn`, on by
+default): the turret step sets the gunner's yaw along the barrel every tick; off, it faces the turret as `Task_UseTurret` does (player: the building's place; NPC: its yaw).
 
 ### Animals
 
@@ -404,7 +420,7 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, idle-player self-defence, pursuit leash and return to routine.
+relations, shared targets, idle-player self-defence, chase give-up and return to routine.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
@@ -421,19 +437,26 @@ witness that regards the culprit as friendly takes 20 off on every sweep (`Crime
 `CarrySystem`: serial links, pickup/put-down, dropping on KO/death/attack, rescue jobs and inventory
 looting. Carried bodies follow the carrier and affect load. Loot can raise witnessed theft and
 stolen ownership marks. [carry-loot.md](game/carry-loot.md). Loot window (engine choice):
-`OpenLootOrder` walks the looter over, then `PlayerState.OpenLoot` publishes the body's whole inventory
+`OpenLootOrder` walks the looter over (one ordered mid-fight leaves the fight, as with `LootOrder`), then `PlayerState.OpenLoot` publishes the body's whole inventory
 (`WorldSnapshot.OpenLoot`, the body's `ItemGrid`: grids, bag and worn gear); items are held across with the mouse ([held item](#items-and-eating)),
 or right-clicked over (`TakeLootItem` / `PutLootItem`, `InventoryCommands.MoveInto`; taking counts as a loot for theft, locked-on items stay, moved gear re-dresses both); it closes as a container does, or when the
-body comes round or is lifted. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
+body comes round (another faction's) or is lifted. The same window opens on the player's own standing character (Trade, `CarrySystem.CanBeOpened`); a death item taken butchers only a down body. An animal's inventory and loot windows use `Kenshi_InventoryAnimalWindow` (backpack slot,
 main grid, weight and burden only, grid size from its `inventory w` / `inventory h`; **Observed** in the original). It also runs the stealth knock-out
 (`StealthKo` task, reusing `CarryTarget`/`LiftTime`): [combat](game/combat.md#stealth-knock-out).
+- **NPC looting** (`CarrySystem.Scavenge.cs`, facts: [carry-loot 3.3](game/carry-loot.md#33-npc-looting)): every `AutoEveryTicks`, an NPC the AI runs whose package lists goal 177 for its role
+  in the hour (`PopulationSystem.GoalDuty`) loots the nearest dead body (not of its faction), else downed living one of a non-allied faction, within 100: the player's only with
+  `PlayerState.BanditsLoot` (CAMERA `bl`, default on), only whom `shouldIScrewThisGuyOver` allows (classes, love/hate tags), not one its squad tagged short-term 6
+  (`MemoryTag.Looted`). At the body (`Loot` task, `LiftTime` from arrival, `medic` clip) it takes after 8 s (animal 20): weapons when it has none equipped, food (functions 3, 15, the
+  backpack's 3), and for a non-player-side or dead body, unless it is a Bandit or malnourished (floor < 2.8), every item and armour; a weaponless non-bandit grabs one weapon of a
+  living player-side body at 0.8 s instead. Then the tag, and back to its task. Engine choices: nearest per pass, no Looting crime, the tag never expires, law enforcement confiscation not built.
 
 ## Ragdolls
 
 `Ragdolls/RagdollSystem` (game behaviour: [ragdolls](game/ragdolls.md)) runs serially after animation
 when the host passes `CharacterRigs` (the game does; tests and goldens do not). Engine choices:
 - **Physics**: BepuPhysics2, one scene stepped on the calling thread (deterministic, 2 solver
-  iterations, 4 substeps per tick). Bodies and joints come from the race's ragdoll `.phs`
+  iterations, 4 substeps per tick, fallback batch threshold 1024: Bepu 2.4.0's fallback batch throws
+  when its last contact on a dynamic body is removed with one on a kinematic body, which big battles hit at the default 64). Bodies and joints come from the race's ragdoll `.phs`
   (`RagdollDefinition`, scaled by the animal size); revolute → hinge + twist limit, spherical →
   ball socket + swing + twist limits, fixed → weld. Joined pairs do not collide.
 - **Parts**: `Whole` when incapacitated, `CarryMode` when carried, a human's downed limbs by their
@@ -470,6 +493,10 @@ remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while i
 Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
 meters kept by `CrimeSystem`, not saved).
+NPC culprits (engine choices): an NPC's non-defensive attack order, and each of its landed blows, sets a pending Assault (not an
+animal's; the victim may be a player character), never booked. A police-like witness not fighting re-fires event 41 at it every
+sweep, since the guards' lines (e.g. "Shek guard witness crime": DA 29, 33, 6) need it within 260 and not running. So a town's
+guards turn on hungry bandits (Starving Bandits, -10 to all: not hostile, so no aggro target) attacking someone there.
 Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside
 (`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it and
 regards its faction as neither ally nor enemy sets the pending crime when it lives there, its squad has locked up
@@ -534,6 +561,9 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   follows the original's weights over beds within `BedSearchRange` 3953 (engine, for the town). Job 106 (in the list with the rescue job): an idle carrier of
   a non-hostile body lays it in the searched bed. Lifting a sleeper takes it out. Engine differences: no power test; the rescue job (148) still runs without a free bed.
   Saves: `HeldSave` (a player-built bed also writes the original's `in what` = its building's handle; read back through `Bind`); a loaded sleeper's task is Sleep.
+- **AI sleepers** (going to bed, 153/239, which plan into 98 Sleeping, `Task_UseBed`): arrived at their home's bed spot, the serial step (`AiSystem.LieDown`) lies
+  them in that bed, else in the nearest free bed of the building within 30 (engine choice); with none free they rest on the floor there. A goal of any other
+  behaviour gets them out (`LeaveBed`, in the think).
   `CharacterCold.InSomething`/`InWhat` name the fixture; an imprisoned character is skipped by AI, movement (held still),
   aggro, answering, `CombatSystem.Engage` as attacker (it can still be attacked) and carrying. Sentence: `SentenceStart`
   (`World.GameHours`) + `SentenceLength`; served when start + length <= now; no bounty with the cage owner: none (served).
@@ -750,10 +780,12 @@ that damages a complete building. Production, power and research: [Production](#
   docs, `NotAvailable` is the engine's "That building is not available yet.").
 - `Meitou.Simulation/Construction/ConstructionCommands.cs`: `PlannedBuilding(Record, Position, Rotation, Floor, Parent)`;
   `PlaceBuildings(Plans)` (Confirm), `BuildOrder(Characters, Site, Repair)` (orders 2/95), `DismantleOrder(Characters, Site)`
-  (96), `CancelSite(Site)` (engine: only a site with nothing delivered), `PauseSite(Site, Paused)`. Sites are named by instance id.
+  (96), `CancelSite(Site)` (engine: only a site with nothing delivered), `PauseSite(Site, Paused)`, `UpgradeSite(Site)` / `DowngradeSite(Site)`
+  ([upgrades](game/buildings-production.md#upgrades)), `SetBuildingPublic(Building, Public)` (a site's `Public`, else an owned town building's
+  flag in `World.Fixtures`). Sites are named by instance id.
 - `.../ConstructionSnapshot.cs` + `WorldSnapshot`: `Buildings` (`BuildingSnapshot`: `Id`, `Record`, `Position` absolute,
   `Rotation`, `Floor`, `Parent`, `Owner` faction index, `Progress`/`Target` in material units, `Materials` (item,
-  required, delivered), `Complete`, `Paused`, `Dismantling`), `BuildingsRevision`, `UnlockedBuildings`.
+  required, delivered), `Complete`, `Paused`, `Dismantling`, `Public`, `TownName`), `BuildingsRevision`, `UnlockedBuildings`.
 
 **Simulation state.** `World.Buildings` (`Construction.BuildingRegistry`, sites as `BuildSite`): player-built sites in
 creation order, by id, holding the snapshot's fields plus rate, builder counter and the destroyed flags. Base-game
@@ -855,9 +887,16 @@ re-checks only the data half. Ghost controls, tilt and the unconfirmed ghost que
 Implemented host-side, in the original's order: town block, site under the ghost, static building under it, interior
 rule, footprint overlap with static buildings, sites and queued ghosts (convex hulls of the collision shape, SAT),
 characters within 2.5 of the hull, LAND parts below the water level 98, slope (four rotated bounding-box corners, `max slope`,
-`match slope` tilts fully) and normal.y < 0.2. **Not decided** (never fail, so the ghost may show valid where the original
-refuses): resource/crop yield, snap nodes, usage nodes, blocked use nodes, indoor floors and ceilings, vertical margins,
-the 5 deg object-surface rule. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
+`match slope` tilts fully) and normal.y < 0.2. **Indoors:** the ghost (not walls) stands on the first building floor the
+cursor ray meets before the terrain, using the movement pick up to the viewed floor (the build window's floor arrows), untilted;
+it queues with that building as parent (a site's id, a level building's instance id) and its floor. The building must be
+a finished player site or a level building the player's faction owns (its state's `owner faction ID`, else its town's
+faction; else the original's "don't own" / "incomplete" texts); the parent is left out of the overlap tests, the slope test is skipped (floor taken as
+level), and interior-only furniture is refused only off a floor. Engine stand-in for the original's node boxes against the
+building's walls: the footprint must lie within the building's indoor hull. **Not decided** (never fail, so the ghost may
+show valid where the original refuses): resource/crop yield, snap nodes, usage nodes, blocked use nodes, the floor-number
+check and ceilings, vertical margins, the 5 deg object-surface rule. A site inside another (its parent) is picked through
+the parent's roof and walls while the interior view shows the parent; a site in a level building takes the usual town rules. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
 
 Build mode (B, `Kenshi_BuildWindow`, Faithful UI only): categories and groups list `WorldSnapshot.UnlockedBuildings` in
 database order (the original's order is **Unknown**); the window estimates hours as materials / (`build speed mult` x 6),
@@ -1016,7 +1055,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     - 148 rescue: the carry pass (its own faction; with Rescue Allies also allied factions, `CarrySystem.Rescues`).
     - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).
-    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); no leash; after the
+    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); never gives up a chase; after the
       fight it goes back to following or stands idle.
   - Engine choices: the check period; kind-2 (turret)
     jobs do not run before urgent tasks; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
@@ -1234,7 +1273,7 @@ Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed wo
 world's options and body factory. Saves carry seven `meitou difficulty <key>` CAMERA floats (hunger, death, damage,
 production, research, building, nests). Missing/nonfinite values use 1; out-of-range values clamp to the slider range.
 These are Meitou extensions; original difficulty save encoding is not implemented here. Saves without the extensions
-use neutral values. Bandit looting and easy prospecting are not exposed.
+use neutral values. Bandit looting (CAMERA `bl`, `PlayerState.BanditsLoot`) is read from and written to saves but has no new-game switch; easy prospecting is not exposed.
 
 ## Saves
 
@@ -1286,10 +1325,11 @@ and resetting camera evaluation is required for repeatable recording.
 
 ## Battle
 
-`--battle n unit m unit [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs (each one CHARACTER or
-ANIMAL_CHARACTER record, its own faction's looks) 40 units apart, on a plateau (default, -74460, 14623), the duel's mesa, the sandbox floor or a map spot, with no towns
+`--battle n unit m unit [rows] [--battle-map plateau|mesa|sandbox|x,z]` (`GameHost.Battle.cs`): two blocks of NPCs, a squad each (each one CHARACTER or
+ANIMAL_CHARACTER record, its own faction's looks, the first fighter leading) 40 units apart in ranks of 25 (or `rows` ranks of n / rows, the back rank taking the rest), 6 units apart, on a plateau (default, -74028, 13428), the duel's mesa, the sandbox floor or a map spot, with no towns
 and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
-same-faction matchups fight too; the battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
+same-faction matchups fight too. Once a second a fighter left out of a target with more than 5 after it (circling) turns on the nearest standing
+enemy with room, as the original's target score counts a candidate's engaged fighters against it ([combat](game/combat.md#attack-slots-and-circling)). The battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
 
 ## The game host
 

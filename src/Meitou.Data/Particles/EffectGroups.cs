@@ -701,11 +701,17 @@ public sealed class GlobalPointEffectGroup : EffectGroup
 /// </summary>
 public sealed class PlacerEffectGroup : EffectGroup
 {
-    public PlacerEffectGroup(EffectRecord effect, PuSystemDef system, IEnumerable<Vector3> positions, int seed, EffectWorld world) : base(effect, null, system, seed, world)
+    public PlacerEffectGroup(EffectRecord effect, PuSystemDef system, IEnumerable<Vector3> positions, int seed, EffectWorld world)
+        : this(effect, system, positions.Select(p => (p, Quaternion.Identity)), seed, world) { }
+
+    /// <summary>A unit at every position, turned by its orientation (the effects on buildings).</summary>
+    public PlacerEffectGroup(EffectRecord effect, PuSystemDef system, IEnumerable<(Vector3 Position, Quaternion Orientation)> placements, int seed, EffectWorld world)
+        : base(effect, null, system, seed, world)
     {
-        foreach (var p in positions)
+        foreach (var (p, orientation) in placements)
         {
             var u = NewUnit(p);
+            u.Orientation = orientation;
             u.Life = float.PositiveInfinity;
         }
     }

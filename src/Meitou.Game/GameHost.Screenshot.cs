@@ -105,7 +105,7 @@ sealed partial class GameHost
     /// and their simulation time, the duel/title per-tick work, the camera on where the leader got to, and the streamers settled.
     /// Vulkan and Metal both call this after their world and interface are up.
     /// </summary>
-    void PrepareStill(IGpuContext context)
+    void PrepareStill(IGpuContext context, bool finish = true)
     {
         if (o.Screenshot is null) return;
         if (g.TitlePreview && player is not null) ApplyTitleCamera();
@@ -143,7 +143,7 @@ sealed partial class GameHost
         gpu.Objects?.Settle(camera.Eye);
         gpu.Foliage?.Settle(camera.Eye);
         gpu.Characters?.Settle(camera.Eye);
-        WorldFrame.FinishLoading(context);
+        if (finish) WorldFrame.FinishLoading(context);
     }
 
     unsafe int Screenshot()

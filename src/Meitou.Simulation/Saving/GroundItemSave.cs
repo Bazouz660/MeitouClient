@@ -13,17 +13,34 @@ namespace Meitou.Simulation.Saving;
 /// </summary>
 public static class GroundItemSave
 {
-    /// <summary>Puts the save's loose items on the ground, in zone and list order; returns how many the data could not make.</summary>
-    public static int Load(SaveGame save, World world, ItemFactory factory)
+    /// <summary>
+    /// Puts the save's loose items on the ground, in zone and list order; returns how many the data could not make. <paramref name="factionOf"/> gives a faction id's index for
+    /// <see cref="GroundItem.OwnedBy"/>, -1 for one that does not count (unknown, or <c>not real</c>).
+    /// </summary>
+    public static int Load(SaveGame save, World world, ItemFactory factory, Func<string, int>? factionOf = null)
     {
         int missing = 0;
+        var handles = factionOf is null ? null : save.BuildHandles();
         foreach (var zone in save.Zones.Values)
             foreach (var g in SaveGroundItems.Read(zone))
             {
-                if (SavedKit.ItemOf(g.Item, factory) is { } item) world.GroundItems.Load(item, g.Instance.Position, g.Instance.Rotation);
+                if (SavedKit.ItemOf(g.Item, factory) is { } item)
+                    world.GroundItems.Load(item, g.Instance.Position, g.Instance.Rotation, handles is null || g.Item.Source is not { } r ? -1 : OwnerOf(r, handles, factionOf!));
                 else missing++;
             }
         return missing;
+    }
+
+    /// <summary>
+    /// The faction an item's <c>ownedby</c> handle names (docs/game/ui-input.md "Ground item labels"): the owning character's platoon's; a set handle whose character the save no
+    /// longer holds falls back to the <c>insideBuilding</c> building's <c>owner faction ID</c> (the label's fallback, used for the pick-up too: engine choice). -1: none.
+    /// </summary>
+    static int OwnerOf(Meitou.Data.Fcs.FcsRecord item, SaveHandles handles, Func<string, int> factionOf)
+    {
+        var owner = Hand.Read(item, "ownedby");
+        if (owner.IsNull) return -1;
+        if (handles.Character(owner) is { } c) return factionOf(c.Platoon.FactionId);
+        return handles.Building(Hand.Read(item, "insideBuilding"))?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } f ? factionOf(f) : -1;
     }
 
     /// <summary>

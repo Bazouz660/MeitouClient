@@ -34,8 +34,10 @@ public sealed class VertexLayout : IEquatable<VertexLayout>
 /// docs/render-gi.md), written only by programs whose fragment shader declares that output.</summary>
 public readonly record struct AttachmentFormats(InternalFormat Colour, InternalFormat Depth, int Samples = 1, bool ShadingRate = false, InternalFormat Extra = InternalFormat.None);
 
-/// <summary>GL's blend: one factor pair for colour and alpha, add (or <paramref name="ColourOp"/> / <paramref name="AlphaOp"/>, e.g. min and max).</summary>
-public readonly record struct BlendState(bool Enable, BlendingFactor Src = BlendingFactor.One, BlendingFactor Dst = BlendingFactor.Zero, BlendOperation ColourOp = BlendOperation.Add, BlendOperation AlphaOp = BlendOperation.Add)
+/// <summary>GL's blend: one factor pair for colour and alpha, add (or <paramref name="ColourOp"/> / <paramref name="AlphaOp"/>, e.g. min and max); <paramref name="AlphaSrc"/> /
+/// <paramref name="AlphaDst"/>: alpha's own pair (GL's separate blend).</summary>
+public readonly record struct BlendState(bool Enable, BlendingFactor Src = BlendingFactor.One, BlendingFactor Dst = BlendingFactor.Zero, BlendOperation ColourOp = BlendOperation.Add, BlendOperation AlphaOp = BlendOperation.Add,
+    BlendingFactor? AlphaSrc = null, BlendingFactor? AlphaDst = null)
 {
     public static readonly BlendState Off = new(false);
 }
@@ -118,7 +120,7 @@ public static unsafe class PipelineFactory
         {
             BlendEnable = blendState.Enable,
             SrcColorBlendFactor = GlConventions.BlendFactor(blendState.Src), DstColorBlendFactor = GlConventions.BlendFactor(blendState.Dst), ColorBlendOp = GlConventions.VkBlendOp(blendState.ColourOp),
-            SrcAlphaBlendFactor = GlConventions.BlendFactor(blendState.Src), DstAlphaBlendFactor = GlConventions.BlendFactor(blendState.Dst), AlphaBlendOp = GlConventions.VkBlendOp(blendState.AlphaOp),
+            SrcAlphaBlendFactor = GlConventions.BlendFactor(blendState.AlphaSrc ?? blendState.Src), DstAlphaBlendFactor = GlConventions.BlendFactor(blendState.AlphaDst ?? blendState.Dst), AlphaBlendOp = GlConventions.VkBlendOp(blendState.AlphaOp),
             ColorWriteMask = GlConventions.VkColorMask(colourMask),
         };
         // The extra attachment (location 1) is never blended: written by the programs that declare it (extraMask), else left as it is.

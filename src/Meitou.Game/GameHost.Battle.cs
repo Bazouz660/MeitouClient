@@ -13,12 +13,12 @@ sealed partial class GameHost
 {
     /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart.</summary>
     const float BattleGap = 40, BattleSpacing = 6;
-    const int BattleRankWidth = 10;
+    const int BattleRankWidth = 25;
     /// <summary>No orders before this tick: the blocks stand a moment before they charge.</summary>
     const int BattleOrderTick = 30;
 
-    /// <summary>The default spot (the owner's pick, 2026-10-23): a plateau about 3280 high, from camera code 01E66D91C77F164D45EA7C6446E5B9F6BF86EBB13F0000FA44.</summary>
-    public static readonly Vector2 BattleSpot = new(-74460, 14623);
+    /// <summary>The default spot (the owner's pick, 2026-10-23): a plateau about 1380 high, from camera code 01C69590C7EAFBAB44A4CE5146EAC4B2BFD203D43E755F7D44.</summary>
+    public static readonly Vector2 BattleSpot = new(-74028, 13428);
 
     bool IsBattle => g.Battle is not null;
     /// <summary>The floor is the sandbox's: the animation sandbox's, or the battle's with <c>--battle-map sandbox</c>.</summary>
@@ -54,7 +54,7 @@ sealed partial class GameHost
 
     string BattleSide(int side) => $"{battleSides[side].Count} x {battleSides[side].Name}";
 
-    /// <summary>Fills a new world with the two blocks: side 0 south (−Z) facing +Z, side 1 north facing −Z, each centred on the spot's X.</summary>
+    /// <summary>Fills a new world with the two blocks, a squad each (its first fighter leads): side 0 south (−Z) facing +Z, side 1 north facing −Z, each centred on the spot's X.</summary>
     void BattleSetup(World world, PopulationSystem population)
     {
         for (int side = 0; side < 2; side++)
@@ -63,14 +63,17 @@ sealed partial class GameHost
             var fighters = battleFighters[side];
             fighters.Clear();
             float sign = side == 0 ? -1 : 1;
+            // --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
+            int rows = g.BattleRows is { } r ? Math.Min(r, count) : 0, width = rows > 0 ? count / rows : BattleRankWidth;
+            var offsets = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
-                int rank = i / BattleRankWidth, inRank = Math.Min(BattleRankWidth, count - rank * BattleRankWidth);
-                float x = (i % BattleRankWidth - (inRank - 1) / 2f) * BattleSpacing, z = sign * (BattleGap / 2 + rank * BattleSpacing);
-                // Facing +Z is yaw 0; a look of its own per fighter.
-                fighters.Add(population.SpawnSandbox(world, record, new Vector2(battleSpot.X + x, battleSpot.Z + z), player: false,
-                    yaw: side == 0 ? 0 : MathF.PI, variant: side * 1000 + i + 1, faction: faction));
+                int rank = rows > 0 ? Math.Min(i / width, rows - 1) : i / width;
+                int first = rank * width, inRank = rows > 0 && rank == rows - 1 ? count - first : Math.Min(width, count - first);
+                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
             }
+            // Facing +Z is yaw 0; a look of its own per fighter.
+            fighters.AddRange(population.SpawnSandboxSquad(world, record, new Vector2(battleSpot.X, battleSpot.Z), offsets, side == 0 ? 0 : MathF.PI, side * 1000 + 1, faction));
         }
         battleOrderedAt = -1;
         battleOver = false;
@@ -106,6 +109,43 @@ sealed partial class GameHost
                 if (combat.StateOf(id).TargetSlot >= 0) continue;
                 var at = At(id);
                 var foe = standing[1 - side].MinBy(e => Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(At(e).X, At(e).Z)));
+                world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
+            }
+        if (world.Tick % BattleRetargetTicks == 0) BattleRetarget(world, combat, standing);
+    }
+
+    /// <summary>How often a fighter left out of a crowded target looks for another (engine choice: a second).</summary>
+    const int BattleRetargetTicks = 30;
+
+    /// <summary>
+    /// A fighter its target left out (more than <see cref="CombatSystem.MaxEngaged"/> fighters after it, so it circles) turns on the nearest standing enemy with room
+    /// for it, if any: otherwise every fighter keeps the enemy nearest at its order and the crowd round a few targets circles them in rings while others stand free.
+    /// </summary>
+    void BattleRetarget(World world, CombatSystem combat, List<CharacterId>[] standing)
+    {
+        var table = world.Characters;
+        var at = new Dictionary<int, int>();   // the melee fighters after each slot
+        foreach (var side in standing)
+            foreach (var id in side)
+                if (combat.StateOf(id) is { TargetSlot: >= 0 and var t, Down: false, Ranged: false }) at[t] = at.GetValueOrDefault(t) + 1;
+        Vector2 Ground(CharacterId id) => new(table.Previous[id.Slot].Position.X, table.Previous[id.Slot].Position.Z);
+        for (int side = 0; side < 2; side++)
+            foreach (var id in standing[side])
+            {
+                var st = combat.StateOf(id);
+                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
+                var here = Ground(id);
+                CharacterId? best = null;
+                float bestDistance = float.MaxValue;
+                foreach (var e in standing[1 - side])
+                {
+                    if (e.Slot == st.TargetSlot || at.GetValueOrDefault(e.Slot) >= CombatSystem.MaxEngaged) continue;
+                    float distance = Vector2.DistanceSquared(here, Ground(e));
+                    if (distance < bestDistance) { bestDistance = distance; best = e; }
+                }
+                if (best is not { } foe) continue;
+                at[st.TargetSlot]--;
+                at[foe.Slot] = at.GetValueOrDefault(foe.Slot) + 1;
                 world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
             }
     }

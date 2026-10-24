@@ -223,9 +223,53 @@ public sealed unsafe class ParticleRenderer : IDisposable
         placerGroups.AddRange(MapEffectPlacers.Groups(placements, Library, World, Seed));
         toWarm.AddRange(placerGroups);
         placerGroups.AddRange(bursts.Values);
+        foreach (var groups in buildingEffects.Values) placerGroups.AddRange(groups);
     }
 
     readonly Dictionary<string, BurstEffectGroup> bursts = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, List<EffectGroup>> buildingEffects = new(StringComparer.Ordinal);
+    readonly Dictionary<Meitou.Data.GameRecord, EffectRecord> effectRecords = [];
+
+    /// <summary>The keys with building effects (<see cref="SetBuildingEffects"/>) and their groups, one group per effect of a key.</summary>
+    public (int Buildings, int Groups) BuildingEffectCount => (buildingEffects.Count, buildingEffects.Values.Sum(g => g.Count));
+
+    /// <summary>
+    /// The EFFECT instances of a building (docs/formats/lights.md, "Effects on buildings") under <paramref name="key"/>, replacing what the key had;
+    /// drawn with the map's placers, whatever the weather switch. The records' sounds are left out: the buildings' own emitters play their fire.
+    /// </summary>
+    public void SetBuildingEffects(string key, IReadOnlyList<Meitou.Data.World.PlacedEffect> effects)
+    {
+        Sync();
+        RemoveBuildingEffectsInner(key);
+        if (effects.Count == 0) return;
+        var groups = new List<EffectGroup>();
+        int seed = Seed + 7000 + (int)(Meitou.Data.World.WorldObjectLayout.Seed(key) & 0xFFFFFF);
+        foreach (var byEffect in effects.GroupBy(e => e.Effect))
+        {
+            if (!effectRecords.TryGetValue(byEffect.Key, out var record)) effectRecords[byEffect.Key] = record = EffectRecord.From(byEffect.Key);
+            if (Library.FindSystem(record.ParticleSystem) is not { } system) continue;
+            groups.Add(new PlacerEffectGroup(record, system, byEffect.Select(e => (e.Position, e.Orientation)), seed + groups.Count, World));
+        }
+        if (groups.Count == 0) return;
+        buildingEffects[key] = groups;
+        placerGroups.AddRange(groups);
+        toWarm.AddRange(groups);
+        PreloadTextures(groups);
+    }
+
+    /// <summary>Drops the building effects of <paramref name="key"/> (<see cref="SetBuildingEffects"/>).</summary>
+    public void RemoveBuildingEffects(string key)
+    {
+        Sync();
+        RemoveBuildingEffectsInner(key);
+    }
+
+    void RemoveBuildingEffectsInner(string key)
+    {
+        if (!buildingEffects.Remove(key, out var old)) return;
+        placerGroups.RemoveAll(old.Contains);
+        toWarm.RemoveAll(old.Contains);
+    }
 
     /// <summary>
     /// Fires the particle system <paramref name="system"/> once at <paramref name="position"/>, its emitters turned by <paramref name="orientation"/>, emitting for

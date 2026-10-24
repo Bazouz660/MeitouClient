@@ -8,6 +8,10 @@ static partial class WorldApp
     static void RegisterTerrainAb()
     {
         AbToggles.Register("terrain-layer-skip", () => TerrainLayerSkip.Enabled, v => TerrainLayerSkip.Enabled = v, "terrain cliff layer not sampled at small weights, the weight ramped in smoothly (B: every nonzero weight)");
+        AbToggles.Register("ground-displacement", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, "the ground near the eye tessellated and raised by its relief (B: flat, the parallax alone)");
+        AbToggles.Register("ground-parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, "the terrain fragment's relief march and self-shadow (B: none)");
+        AbToggles.Register("terrain-refine", () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? 0.5f : 0, "every main-view patch tessellated, edges split where the terrain leaves them by over half a pixel (B: the plain patches)");
+        AbToggles.Register("rock-smoothing", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, "TERRAIN-mode rocks Phong-tessellated (B: their flat triangles)");
         AbToggles.Register("terrain-late-colour", () => TerrainLateColour.Enabled, v => TerrainLateColour.Enabled = v, "main view: the terrain colour drawn after the objects and foliage over a depth-only terrain pass, so it is shaded only where it is seen (B: the colour first, as before)");
     }
 }

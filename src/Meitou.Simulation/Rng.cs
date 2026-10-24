@@ -45,6 +45,8 @@ public enum RngPurpose : uint
     Luckyren = 22,
     /// <summary>A <c>malnourished</c> squad's hunger floor (<see cref="BodySystem"/>), keyed by the squad id.</summary>
     Malnourished = 23,
+    /// <summary>A chaser's hearing roll on its fleeing target (<see cref="AggroSystem"/>, the chase give-up).</summary>
+    ChaseSense = 24,
 }
 
 /// <summary>

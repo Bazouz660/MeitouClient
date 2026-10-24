@@ -22,7 +22,6 @@ sealed partial class PlayerInterface
     IDisposable? uiRegistration;
     UiPainter? uiPainter;
     internal UiPainter? SettingsPainter => uiPainter;
-    internal Func<string, string?>? SettingsResolve => uiResolve;
     bool settingsOpen;
     internal void SetSettingsOpen(bool value) { settingsOpen = value; if (value) CancelInventoryDrag(); UpdateMenuPause(); }
     MyGuiScreenHost faithfulScreens = null!;
@@ -199,6 +198,7 @@ sealed partial class PlayerInterface
         SyncTradeScreens();
         SyncMachineScreens();
         SyncLootScreen();
+        SyncPinnedInventories();
         SyncInventoryLayouts();
         SyncLimbsScreen();
         SyncDialogueScreen();
@@ -217,6 +217,7 @@ sealed partial class PlayerInterface
             [UiSlots.Squad] = FaithfulSlot("SquadPanel"),
         };
         if (hud) controls.AddRange(uiHost.Arrange(UiMode, Width, Height, b, slots));
+        squadBarRow = 0;   // no bar, no scrolling
         if (controls.FirstOrDefault(c => c.Name == "SquadPanel") is { } squadPanel) AddSquadPortraits(controls, squadPanel.Bounds);
         AddHudText(controls);
         AddJobRemoveButtons(controls);
@@ -282,6 +283,8 @@ sealed partial class PlayerInterface
                 faithfulScreens.Close(action);
                 if (action == "inventory") { faithfulScreens.Close("bag"); faithfulScreens.Close("limbs"); }
             }
+            // The lead's pinned window comes to the front instead of a second window on them.
+            else if (action == "inventory" && InventoryOwner() is { } lead && pinnedInventories.FirstOrDefault(p => p.Value == lead.Id).Key is { } slot) faithfulScreens.Open(slot);
             else faithfulScreens.Open(action);
         }
         else if (action == "extendedstats") infoExpanded = !infoExpanded;

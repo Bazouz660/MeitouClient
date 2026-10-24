@@ -235,7 +235,7 @@ The CAMERA's sky transition is written as finished (`sky updating` false, both t
 | Factions: relations, trust, prosperity, rank, war campaigns | `quick.save` | **Verified** (present in the sample); Meitou-only `meitou global trust`, `meitou war<k>` ([trust and war](#faction-trust-war-flags-bed-rent-and-turrets)); int `rank` on each non-player faction ([faction rank](../game/factions-squads-towns.md#32-faction-rank)); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
 | Town state (discovery, population, trade goods, artifacts, nests) | `quick.save` | **Verified** (present in the sample); town placements, names and shop lists come from `leveldata.level` |
 | Squads and all character state (stats, wounds, inventory, appearance, AI) | `.platoon` | **Verified** (present in the sample) |
-| Buildings' state, generated interiors, loose items, item placement groups | `.zone` | **Verified** for visited zones |
+| Buildings' state, generated interiors, loose items, item placement groups ([keys](../game/factions-squads-towns.md#loose-items-in-buildings)) | `.zone` | **Verified** for visited zones |
 | Locks and doors (`lock lvl`, `locked`, `state<i>`, `wants lock<i>`, ...), cage/bed occupancy (`in something`, `in what`) | `.zone`, `.platoon` | **Verified** keys: [locks](../game/locks.md#save-keys) |
 | Research, unique characters, selection, camera | `quick.save` | **Verified** (present in the sample) |
 | Terrain, heightmap, foliage, grass, roads, base building placements, map textures, building and character definitions | data files | **Not in the save** (**Verified**: no such record types; foliage and terrain are rebuilt from the world data, see [foliage.md](foliage.md)) |
@@ -481,6 +481,12 @@ world writes its war managers over the loaded state (unknown keys kept, numbered
 never made is written as a PLATOON with content file `platoon/` (no file) so its `p<i>` handle resolves. Meitou also writes floats
 `meitou phase start c<i>`, `meitou fight start c<i>`, `meitou arrived c<i>`, `meitou announced c<i>`, `meitou carry start c<i>` (absolute game hours; absent:
 not started) and reads them back (a missing phase start is the load's hour, as the original). **Observed** (headless, real data): all five come back equal.
+
+Campaign platoons in a game save need not have a placed `basetown`: in the owner's modded day-397 save, a cannibal raid's platoon has a nest `hometown`
+and no file, and a nomad trader's has an empty `basetown` and one character (**Observed**). Meitou loads every platoon a `p<i>` names as its campaign's travelling
+stand-in, homed at the campaign's `home c<i>` town when its `basetown` is no placed town, never as a [wild platoon](#wild-and-nest-platoons-meitou-mapping); a
+campaign left without platoons is defeated at once ([campaigns](../game/factions-squads-towns.md#campaigns)). **Observed** (headless, that save): all 5 resolving
+campaigns keep their platoon after 600 ticks; before, the two on the wild path were defeated on the first update.
 
 ### Squad memory
 

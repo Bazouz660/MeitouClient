@@ -1,10 +1,44 @@
-# Metal handoff — 2026-10-23
+# Metal handoff — 2026-10-24
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `963c611b Merge upstream master into metal-spike`  
+Last code commit: pending the 2026-10-24 merge commit  
 Workspace: content/testability Milestones A-E are implemented for content testing. A is manually accepted, B's blood path is validated, and the user confirmed the latest normal Metal run on 2026-10-23 (Meitou water, low-res particles, object motion and reactive-mask paths). Optimization is under way: grass haze coefficients are evaluated once per vertex, plain render targets use base views for lossless compression, encoder buffer/viewport/scissor/depth state is cached, and the Vulkan GPU foliage cull now runs on Metal for meshes and TERRAIN-mode rocks. Xcode API insights at the save-start view fell from 561 to 261. Metal grass still uses the CPU path.
-Build: Release 0 warnings / 0 errors. Quick tests: 406 passed, 2 skipped. The 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still unhealthy after the 19:15 WindowServer GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
+Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure); the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still unhealthy after the 19:15 WindowServer GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
+
+## Upstream sync (2026-10-24, `57a7968a`)
+
+`metal-spike` now merges upstream `57a7968a` (131 commits since `a9970dbc`), including player-built buildings and
+their interior/floor rules, patrols, campfires/torches/smoke, the construction and building panels, item-icon lighting
+and caching, the new audio voice setting, and the terrain cut/outline work. The simulation and shared UI are unchanged
+in structure; the renderer-side adaptations are:
+
+- `MarkerRenderer` replaces `MoveMarkerRenderer`: the movement marker keeps its old path and the new stealth arrows use a
+  rotation uniform. Both the Vulkan HUD and the Metal HUD now set `Markers`, and the shared frame draws `gpu.Markers`.
+- `CharacterMaterialTable` is adapted to `IGpuContext` (the same records for both backends; Metal and Vulkan upload the
+  dirty records in an upload batch). `CharacterRenderer.Draw` still uses the seam's `GpuProgram`/`GpuBufferBinding` and the
+  preallocated per-view instance rows, so Metal does not need the Vulkan descriptor layout.
+- Terrain decals now use the upstream instanced `DecalInstance` path and separate colour/alpha blending.
+  `MetalPipelines` honours `BlendState.AlphaSrc`/`AlphaDst`, so Metal gets the game's additive alpha without the old
+  two-pass workaround.
+- Terrain cut relief and the terrain-outline refinement remain tessellation-only; Metal reports
+  `HasTessellation == false` and keeps the flat/parallax path. The new `TerrainShaders.ReliefDepth` text is in the
+  shared fragment source but is not selected on Metal.
+- Upstream's Audio settings now own the voice cap (`Sound voices` -> `AudioSettings.Voices`). The earlier Metal-only
+  `MeitouVoices` toggle was removed so there is one setting; the shared `SettingsMenu` exposes it on both backends.
+- `FillWorldDrawList` (the Metal no-interface path) now passes the reusable ragdoll buffer to `Blend`, as the shared
+  draw list does.
+- Metal stills no longer call `PrepareStill` before a frame exists: texture settling needs an open Metal frame, so it
+  runs on the first frame and skips `WorldFrame.FinishLoading` (which calls `Finish` and closes that frame). This fixes
+  `no frame slot` / `frame closed` crashes in `--screenshot --ui-panel ...` after upstream queued more object textures.
+
+Validation on 2026-10-24: Release build 0 warnings / 0 errors. Quick non-Metal suite: 543 passed, 24 skipped, 1 known
+upstream failure (`ItemIconRenderTests` reports 0.964 clothing overlap against its 0.99 threshold; clean
+`origin/master` reports 0.964 too), and the Metal upload tests remain excluded while `MTLCompilerService` is unhealthy.
+Metal smoke runs at the Hub and in the duel completed without a GPU timeout; the `--ui-panel inventory` screenshot was
+written at 1600x1200. The frame rate in these runs was below the earlier clean-machine acceptance run, so re-measure
+after a reboot and with the launcher's 8120 MB preset. Visual acceptance of the new arrows, blood decals, icons,
+building effects and construction panels is still manual.
 
 ## Upstream sync (2026-10-23)
 

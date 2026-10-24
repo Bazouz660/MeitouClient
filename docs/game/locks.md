@@ -147,7 +147,8 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   the door ([ai-tasks](ai-tasks.md)). Nothing closes a door behind a walker: only the lock tasks list a closed door (`!52`), and no
   AI package lists tasks 73/75 (**Observed**: TaskData and package census). How states 59/60 pick their door is **Unknown**.
 - **Door panel** (player's building, the HUD lines of a selected house: [ui-screens](ui-screens.md#selected-building)): open/close button `FUN_140546fb0`: an open door closes; otherwise an effectively locked
-  one is unlocked first, then opened (**Verified**).
+  one is unlocked first, then opened (**Verified**). Meitou: a door still moving counts by where it heads and turns back (an opening one closes, a
+  closing one reopens); the original's open/close act only from closed / open, so a slow gate ignores the button for seconds.
 - **Player lock toggle** (`FUN_140547060`, **Verified**): flips `wants lock` (sound `Lock_Building` / `Unlock_Building`); locking a
   closed door sets the lock at once, unlocking clears it; an open door locks when it next closes (the update above).
 - **Navigation**: the navmesh treats a door as open once `doa >= 0.6` (`FUN_140298d10` -> `FUN_1403a6070`); closed faces are
@@ -208,7 +209,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   set (UseableStuff slot 159 `FUN_1400f8030`, refused once the set holds `max operators`); leaving (`FUN_140345620`) removes it and clears both.
   "Free for X" (slot 158 `FUN_1400f7bf0`): X is in the set or the set is below `max operators`.
 - **Task_UseBed** (98 USE_BED, 100 GET_PUT_IN_BED, 258 USE_BED_ORDER; slots 1 `FUN_140357d00`, 2 `FUN_140351770`, 5 `FUN_140347950`, 6 `FUN_140347ba0`):
-  the character is put at the bed's position and orientation and plays its clip; with the task's flag +0xa0 (set by which callers is **Unknown**) it first
+  the character is put at the bed's position marker and plays its clip (below, "Lie spot"); with the task's flag +0xa0 (set by which callers is **Unknown**) it first
   checks power ("This bed needs power to operate.", `FUN_140299370`) and rent (`FUN_140357ad0`: a negative cost is passed on to the payment only when
   the bed has a parent building, slot 59); sound `Character_Bed` / `Get_In`; then enters. Row 258 has no done-list (it runs until replaced), row 98's is
   `isFullyRested`, `isInBed` ([ai-tasks](ai-tasks.md)).
@@ -218,11 +219,21 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   cost, or the body's when that is non-negative and lower (a refusal fails the task). Once the put-down clip is below 0.2 and the bed is free for the
   body, both are unlinked and the body enters the bed, then is placed at the bed's nearest type-4 node (`FUN_14038ab50`). A relation event follows
   (faction vfunc 5 with the task's +0x7c; amount **Unknown**).
+- **Lie spot** (**Verified** by decompile: `FUN_140357d00` calls vfuncs 0x470 / 0x480, `Building::getPositionMarker` `FUN_14054b850` and
+  `getDirectionMarkerQuat` `FUN_140549720`, names from KenshiLib 1ce4a16): with fewer than 2 usage nodes (Building+0x2f0) the position is the marker
+  +0x26c (the construction position, set in the constructor `FUN_14055ca90`) and the orientation the building's; else the usage node nearest the
+  character (squared 3D distance; nodes in the bad-node map +0x300 skipped), turned by Quaternion(w -0.707107, y 0.707107): the node's yaw - 90°, as for
+  town nodes ([ai-tasks](ai-tasks.md#town-goals)). Data (**Verified**, base game probe): `Bed` and `Skeleton Repair Bed` hold two `Node Use` (node type 4)
+  instances at local Z +11.18 / -11.05 (+12.18 / -12.05), the second turned 180°; Old, Camp and Fish Bed have none. `sleepinbed` holds `Bip01` at about
+  (-11.8, 6.7, -1.5) in model space (`gotobed` moves it there from the origin), so from a node the pelvis lands on the mattress centre. Meitou:
+  `FixtureRegistry.LieSpot`, also applied to a sleeper bound on load (engine choice); bad nodes are not modelled.
 - **Rent cost** (UseableStuff slot 152 `FUN_140330ab0(bed, character)`): 0 with no bed faction, when the faction's flag +0x1d0 is set (**Unknown**),
   when ally(bed faction, character's) ([factions](factions-squads-towns.md) 3.3), for a `fundamental type` 8 (bandit) owner, or when the parent
   building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when a further test `FUN_140621230` fails (**Unknown**) or the house has no
-  resident squad, or its template's `public beds` is false (unless the building's +0xc4 is 3, **Unknown**); else the template's `bed usage cost`,
-  x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats).
+  resident squad, or its template's `public beds` is false, unless the building's designation (+0xc4, set from the `building designation` of the
+  first squad to take it as home: `FUN_140553210`, `FUN_14057f1f0`) is 3 BD_BAR; else the template's `bed usage cost`,
+  x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats);
+  40 have designation 3, 20 of them with `public beds` false (Shop bar holy / old / black desert, Smugglers Bar, bakeries, bounty hunters, 100 cats).
 - **Payment** (`FUN_1403576c0`, player faction only): -1 → the character says "This isn't mine", refused; > 0 → free when this bed was paid less than
   24 (game hours, **Observed**) ago (a global map keyed by the name string at `+0x58` of the third argument, the empty string when null, storing the game time as a float; never saved, **Verified** by references, [save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), else "Can't afford c.{1} for bed rental." and refused, or paid with
   "Paid c.{1} for bed rental.".

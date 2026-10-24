@@ -40,12 +40,15 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     readonly HashSet<int> attacked = [];
     readonly HashSet<int> seen = [];
     readonly List<int> standing = [];
+    // The factions standing this check and, per faction asked, whether any of them is its enemy (a battle of one faction, or of factions at peace, needs no scans).
+    readonly HashSet<int> standingFactions = [];
+    readonly Dictionary<int, bool> enemyMemo = [];
 
     public void SlowWorld(World world)
     {
         var table = world.Characters;
         bool check = world.Tick % CheckEveryTicks == 0;
-        if (check) Attacked(table);
+        if (check) { Attacked(table); StandingFactions(table); }
         // Characters already running: the next hop, or the end when it is safe.
         for (int i = 0; i < table.HighWater; i++)
         {
@@ -92,9 +95,17 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
             if (c.InCombat || table.Next[s].Task == (byte)CharacterTask.Attack) fighting = true;
         }
         if (!fighting || standing.Count == 0) return;
-        seen.Clear();
-        foreach (int s in standing) Enemies(world, table, s, seen, null);
-        bool breaks = (bySize > 0 && standing.Count < living * bySize) || (byEnemy > 0 && standing.Count < seen.Count * byEnemy);
+        bool breaks = bySize > 0 && standing.Count < living * bySize;
+        if (!breaks && byEnemy > 0 && AnyEnemy(squad.Faction))
+        {
+            // The enemies seen, only while they could still break it: a scan sees the whole crowd of a big fight, and a count past the threshold settles it.
+            seen.Clear();
+            foreach (int s in standing)
+            {
+                Enemies(world, table, s, seen, null, standing.Count / byEnemy);
+                if (breaks = standing.Count < seen.Count * byEnemy) break;
+            }
+        }
         if (!breaks) return;
         Broken++;
         foreach (int s in standing)
@@ -126,20 +137,20 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         public FactionRelations Relations;
         public int Self, Faction;
         public Vector3 Eye;
-        public float Range;
+        public float Range, Limit;
         public HashSet<int>? Into;
         public Action<int, Vector3>? Each;
         public bool Any;
     }
 
     /// <summary>The enemies standing within slot <paramref name="s"/>'s sight range (no view cone: the original's "in the vicinity" is what the senses hold).</summary>
-    bool Enemies(World world, CharacterTable table, int s, HashSet<int>? into, Action<int, Vector3>? each)
+    bool Enemies(World world, CharacterTable table, int s, HashSet<int>? into, Action<int, Vector3>? each, float limit = float.MaxValue)
     {
         var cold = table.Cold(s)!;
         var scan = new Scan
         {
             Table = table, Relations = Relations, Self = s, Faction = cold.Faction, Eye = table.Next[s].Position,
-            Range = AggroSystem.RangeOf(cold, SightRange), Into = into, Each = each,
+            Range = AggroSystem.RangeOf(cold, SightRange), Limit = limit, Into = into, Each = each,
         };
         world.Grid.Query(scan.Eye.X, scan.Eye.Z, scan.Range, ref scan, Visit);
         return scan.Any;
@@ -147,7 +158,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
 
     static void Visit(int slot, ref Scan s)
     {
-        if (slot == s.Self || !s.Table.Next[slot].Alive) return;
+        if (slot == s.Self || s.Into?.Count > s.Limit || !s.Table.Next[slot].Alive) return;
         var p = s.Table.Next[slot].Position;
         if (Vector3.DistanceSquared(p, s.Eye) > s.Range * s.Range) return;
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false } c || !AggroSystem.IsEnemy(s.Relations, s.Faction, c.Faction)) return;
@@ -156,7 +167,26 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         s.Each?.Invoke(slot, p);
     }
 
-    bool Safe(World world, CharacterTable table, int s) => !attacked.Contains(s) && !Enemies(world, table, s, null, null);
+    bool Safe(World world, CharacterTable table, int s) => !attacked.Contains(s) && (!AnyEnemy(table.Cold(s)!.Faction) || !Enemies(world, table, s, null, null));
+
+    /// <summary>Whether a faction standing anywhere this check (<see cref="StandingFactions"/>) is an enemy of <paramref name="faction"/>: when none is, no scan can find one.</summary>
+    bool AnyEnemy(int faction)
+    {
+        if (enemyMemo.TryGetValue(faction, out bool any)) return any;
+        any = false;
+        foreach (int other in standingFactions) if (AggroSystem.IsEnemy(Relations, faction, other)) { any = true; break; }
+        enemyMemo[faction] = any;
+        return any;
+    }
+
+    /// <summary>The factions with a character standing (alive, not down), for <see cref="AnyEnemy"/>; once per check.</summary>
+    void StandingFactions(CharacterTable table)
+    {
+        standingFactions.Clear();
+        enemyMemo.Clear();
+        for (int i = 0; i < table.HighWater; i++)
+            if (table.Next[i].Alive && table.Cold(i) is { Medical.Incapacitated: false } c) standingFactions.Add(c.Faction);
+    }
 
     /// <summary>The slots some living character is fighting (the combat state as of this tick).</summary>
     void Attacked(CharacterTable table)

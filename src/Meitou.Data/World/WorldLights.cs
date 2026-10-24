@@ -67,7 +67,7 @@ public sealed record WorldLight(
 
 /// <summary>
 /// The world's light list (docs/formats/lights.md): the LIGHT instances of every placed building, of the buildings' doors and of their
-/// exterior (and optionally interior) layout objects, placed by <see cref="WorldObjectLayout.Building(GameDatabase, GameRecord, string, Vector3, Quaternion, BuildingState?, List{PlacedLight}?)"/>,
+/// exterior (and optionally interior) layout objects, placed by <see cref="WorldObjectLayout.Building(GameDatabase, GameRecord, string, Vector3, Quaternion, BuildingState?, List{PlacedLight}?, List{PlacedEffect}?)"/>,
 /// plus the game's shading formulas for them.
 /// </summary>
 public static class WorldLights

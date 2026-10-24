@@ -93,6 +93,9 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         Node? last = null, nearest = first;
         float nearestDistance = float.MaxValue;
         float minFactor = Math.Min(1f, agent.WaterFactor);
+        // A start polygon none of whose exits leaves the radius clear (a sliver by a stair or a wall the walker was pushed into) is left through the narrow ones:
+        // the walker stands in it already (docs/game/pathfinding.md, "Own builder").
+        bool squeezeOut = false;
 
         while (open.Count > 0 && iterations++ < MaxIterations)
         {
@@ -115,6 +118,12 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             for (int i = 0; i < tl.Length; i += 2) Relax(node, mesh, tl[i], new NavRef(node.Ref.Zone, tl[i + 1]), factor);
             foreach (var link in World.LinksOf(node.Ref))
                 Relax(node, mesh, link.Edge, link.To, factor);
+            if (node == first && open.Count == 0 && last is null && !squeezeOut)
+            {
+                squeezeOut = true;
+                first.Closed = false;
+                open.Enqueue(first, first.F);
+            }
         }
         if (last is null && partial && nearest != first)
         {
@@ -141,7 +150,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             if (!Portal(from.Ref, edge, to, out var left, out var right, out bool leftWall, out bool rightWall)) return;
             // Only an end on a wall takes the radius off the portal (as Pull insets it); a tile-border, seam or area-change end has walkable ground beyond.
             float width = Vector2.Distance(new(left.X, left.Z), new(right.X, right.Z));
-            if (width < ((leftWall ? 1 : 0) + (rightWall ? 1 : 0)) * agent.Radius) return;
+            if (width < ((leftWall ? 1 : 0) + (rightWall ? 1 : 0)) * agent.Radius && !(squeezeOut && from == first)) return;
             var mid = BestCrossing(from.Position, left, right, goalPoint);
             float g = from.G + Vector3.Distance(from.Position, mid) * factor;
             if (area == NavArea.Door) g += OpenDoorCost;
@@ -329,19 +338,26 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         return path;
     }
 
+    /// <summary>
+    /// The point at the height of the corridor polygon it lies in; of stacked ones (a corridor through a ground floor and up onto the roof above it) the one nearest its own
+    /// height, so a goal on the roof is not put on the floor under it (Observed: the Bughouse roof beds at Squin).
+    /// </summary>
     Vector3 OnSurface(Vector3 p, List<NavRef> polys)
     {
-        float best = float.MaxValue;
+        float best = float.MaxValue, bestRise = float.MaxValue;
         var result = p;
         foreach (var r in polys)
         {
             var m = World.Mesh(r.Zone);
             var onPoly = NavWorld.ClosestPoint(m, r.Polygon, p);
-            float d = (onPoly.X - p.X) * (onPoly.X - p.X) + (onPoly.Z - p.Z) * (onPoly.Z - p.Z);
-            if (d < best - 1e-6f) { best = d; result = new Vector3(p.X, onPoly.Y, p.Z); if (d < 1e-6f) break; }
+            float d = (onPoly.X - p.X) * (onPoly.X - p.X) + (onPoly.Z - p.Z) * (onPoly.Z - p.Z), rise = MathF.Abs(onPoly.Y - p.Y);
+            if (d < 1e-6f && best < 1e-6f ? rise < bestRise - StackedGap : d < best - 1e-6f) { (best, bestRise) = (d, rise); result = new Vector3(p.X, onPoly.Y, p.Z); }
         }
         return result;
     }
+
+    /// <summary>How much nearer in height another polygon under a path point must be to count as the layer it stands on (engine choice: below a storey, as <see cref="NavmeshWalkability.StandRise"/>; overlapping stair polygons differ by ~1.3 at the Hub).</summary>
+    const float StackedGap = 12;
 
     static bool Same(Vector3 a, Vector3 b) => (a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z) < 1e-6f;
 

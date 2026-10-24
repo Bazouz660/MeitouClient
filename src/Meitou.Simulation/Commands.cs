@@ -90,8 +90,8 @@ public sealed record SelectCommand(IReadOnlyList<CharacterId> Characters, bool A
 /// <summary>Clears order selection and shows another faction's character in the HUD panels. <see cref="CharacterId.None"/> clears inspection only.</summary>
 public sealed record InspectCommand(CharacterId Target) : SimCommand;
 
-/// <summary>The player's character a pinned inventory window shows (<see cref="CharacterId.None"/>: none): the snapshot carries its item grid while it is not selected. Display only.</summary>
-public sealed record ShowInventoryCommand(CharacterId Target) : SimCommand;
+/// <summary>The player's characters the pinned inventory windows show: the snapshot carries their item grids while they are not selected. Display only.</summary>
+public sealed record ShowInventoryCommand(IReadOnlyList<CharacterId> Targets) : SimCommand;
 
 /// <summary>The building the HUD panels show (docs/game/ui-screens.md "Selected building"): the snapshot then carries its doors' state. A null instance clears it. Display only.</summary>
 public sealed record InspectBuildingCommand(string? Instance) : SimCommand;

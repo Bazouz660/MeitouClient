@@ -231,6 +231,7 @@ static partial class WorldApp
                 if (s != StageClock.DriverWait) cpuSum += StageClock.Ms[s];
             }
             Set("cpu:total", k, cpuSum);
+            for (int p = 0; p < StageClock.PartNames.Length; p++) Set("cpu:upd-chars/" + StageClock.PartNames[p], k, StageClock.PartMs[p]);
         }
         double measuredSeconds = measured.Elapsed.TotalSeconds;
         // The last frames' timestamps arrive when their slots come round: two empty frames bring them in.

@@ -630,7 +630,7 @@ Meitou: [simulation, captives](../simulation.md#captives).
   The slavers' event-38 lines ("shout at slave worker": chance temporary 10, six lines) are in "slaver guard MAIN" and "Holy Nation Paladin". Meitou paces it: a worker shouts at most every 60 to 180 game seconds.
 - **Capture** (167): the planner chain is 167 (effect isChained 134) <- 166 Restraining (`Task_CuffTarget`; needs 38, at location, 118 TARGET_IS_UNARMED, 7 target down) <- 181 Stripping weapons
   (`Task_StripWeapons`; effect 118). **Strip** (**Observed**, `FUN_14034e7b0`): `medic` for 0.8 s, then the items of the target's `hip` and `back` sections (`FUN_140747ff0`) go to the
-  stripper's inventory (else its storage), and the stripper's squad sets short-term tag 6 on the target (`FUN_1406744a0`; nothing found reads tag 6). **Cuff** (`FUN_14034af20`): a "Restraining" bar
+  stripper's inventory (else its storage), and the stripper's squad sets short-term tag 6 on the target (`FUN_1406744a0`; the NPC looting finder skips tag-6 targets, [carry-loot](carry-loot.md#33-npc-looting)). **Cuff** (`FUN_14034af20`): a "Restraining" bar
   with `medic`, progress += 0.1 x a per-update float of the character (`+0xc4`, read as frame time: about 10 s, **Unknown**), full at 0.99: the cuffer says event 37 RECAPTURED_A_SLAVE to the
   target (its lines "new slave capture" / "slave recapture", no effects) and posts message type 5 to the global list `DAT_1421346d8`. The shackles themselves are not put on anywhere in the task
   (**Unknown** where; Meitou puts the stock `SHACKLES` on). The list's only reader, `FUN_140a0af10` (via `DAT_1421346d0`), sums per-listener contributions around a point: no game logic
@@ -712,9 +712,12 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 **Verified** (registrations in `FUN_140319a60`, finder/desire stubs resolved by disassembly); readings of the finders' tests **Observed**.
 
 - 16 ATTACK_ENEMIES: effect state 6 `isNoEnemiesInVicinity` (registered without an evaluator). Finder `FUN_14059f3a0` walks the
-  looker's sensed characters (sense list kind 4) that are seen or heard (entry +0x38 / +0x39), drops those of a faction
-  `FUN_1406b23c0` accepts for the looker's (read as same/allied) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
+  looker's sensed characters tagged SENSE_ENEMY and not KO, ally or 0x300 (mask 4, 0x308; [sense tags](perception.md#sense-tags-who-is-an-enemy))
+  that are seen or heard (entry +0x38 / +0x39), drops those whose faction the looker's coexists with (`FUN_1406b23c0`) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
   and area tests, [perception](perception.md#the-attack-on-sight-tests)); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
+- 144 TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME ("Home territory aggression", finder `FUN_14059fd70`, **Verified** stub): SENSE_ENEMY
+  entries (mask 4, 0x208) within 1.3 x the home town's radius (`FUN_140926d50`), skipping a slave whose owner's faction is an ally; with no
+  home town it is `FUN_14059fa70` (the same mask). 21 ATTACK_ENEMIES_AND_NEUTRALS (`FUN_14059f720`) takes mask 6 (neutral or enemy, 0x308).
 - 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
   resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
   each squad mate the looker senses by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
@@ -883,7 +886,18 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - Nearness = 1 - d² / 3397386.5 (about 1843 units), clamped to at most 1, and at least 0.4 when both stand in the same building.
 - Score = need × nearness. The same faction always counts; another faction only when the score is at least 0.1 **and** the medic is not of the
   player's faction or Heal Allies is on. A patient in the give-up list scores × 0.05; ≥ 0.001 and on the planner's target list is taken at once.
-  The medic itself scores its plain need. The highest wins; with none, an NPC whose package says `heals strangers` looks again more widely.
+  The medic itself scores its plain need. The highest wins; with none, a second pass looks again more widely.
+- **Second pass** (**Observed**, same function): sensed (0x420a, 0x14), not of a robot race (job 58), no vfunc 0x248, not `not real`. An
+  imprisoned candidate (+0x2f8 == 2) counts when its cage passes `FUN_14032eb40` (false) and an ownership test against the medic
+  (cage +0x58 vfunc 8), and it is not an obedient slave (state 1); any other candidate needs the medic's faction to say `heals strangers` and
+  vfunc 0x30. Both then need equal vfunc 0x118 and a different platoon (+0x1d8 vfunc 0x10 false); scored as the first pass. So NPC
+  guards patch up their prisoners, without a kit ([first aid update](character-stats.md#first-aid-update)).
+- **NPCs run it as a goal**: the `Medic` AI_TASK (enum 58) is in the goal lists of most AI packages (Squad, Squad2 and Leader roles; e.g.
+  `Guard building, residents`, `Guard town`, `Shop`, `Wandering from town to town`, the slaver packages; **Verified** by a data survey of the
+  full load order, 2026-10-24).
+- Meitou: an idle NPC first tries the squad-mate rule (`FirstAidSystem.TreatSomeone`, engine stand-in for the first pass), then
+  `TreatPrisoner`: an occupied cage owned by its faction within sight (the ownership test read as owner faction = medic's), not its squad;
+  the `heals strangers` branch, vfunc 0x118 and the package's goal list are not modelled (every NPC runs it).
 
 ## Squad AI options
 

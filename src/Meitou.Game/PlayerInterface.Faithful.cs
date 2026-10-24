@@ -74,6 +74,7 @@ sealed partial class PlayerInterface
         ArrangeUi();
         if (InventoryWheel(p, steps)) return true;
         if (MapWheel(p, steps)) return true;
+        if (!faithfulScreens.Contains(p) && SquadBarWheel(p, steps)) return true;
         if (SquadsWheel(p, steps)) return true;
         if (FactionWheel(p, steps)) return true;
         return EditorWheel(p, steps) || faithfulScreens.Wheel(p, steps);
@@ -98,18 +99,21 @@ sealed partial class PlayerInterface
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
         else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });
-        else if (e.Screen is "inventory" or "bag")
+        else if (e.Screen is "inventory" or "bag" || IsPinnedInventory(e.Screen))
         {
             if (e.Widget == "OpenBagButton") ToggleBag();
             else if (e.Widget == "LimbsButton") ToggleLimbs();
-            else if (e.Widget == "ArrangeButton" && InventoryOwner() is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
+            else if (e.Widget == "ArrangeButton" && WindowCharacter(e.Screen) is { } lead) Say(new Meitou.Simulation.Items.ArrangeInventory(lead.Id) { Tick = session.World.Tick });
         }
     }
     UiBindings BindFaithfulScreen(string id)
     {
         var b = new UiBindings { TextHeight = c => uiPainter?.TextHeight(c, Height, StandardPixels) ?? 0 };
         var layout = faithfulScreens.Layout(id);
-        var lead = id is "inventory" or "bag" or "limbs" ? InventoryOwner() : Selected().FirstOrDefault();
+        string screen = id;
+        bool pinned = IsPinnedInventory(id);
+        if (pinned) id = "inventory";   // a pinned window binds as the inventory, for its own character
+        var lead = pinned ? WindowCharacter(screen) : id is "inventory" or "bag" or "limbs" ? InventoryOwner() : Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
         if (BindFrontend(id, b)) return b;
         if (id == "editor") { BindEditor(b); return b; }
@@ -134,7 +138,7 @@ sealed partial class PlayerInterface
                 if (id == "inventory")
                 {
                     b.Properties["datapanel"] = new Dictionary<string, string> { ["SkipCaption"] = "true" };
-                    if (lead?.ItemGrid is { BagWidth: > 0, BagHeight: > 0 }) { b.Disabled.Remove("OpenBagButton"); b.Actions["OpenBagButton"] = "OpenBagButton"; }
+                    if (!pinned && lead?.ItemGrid is { BagWidth: > 0, BagHeight: > 0 }) { b.Disabled.Remove("OpenBagButton"); b.Actions["OpenBagButton"] = "OpenBagButton"; }
                 }
                 if (id == "bag")
                 {
@@ -142,7 +146,7 @@ sealed partial class PlayerInterface
                 }
                 if (id != "limbs")
                     foreach (string name in id == "inventory" ? new[] { "ArrangeButton", "LimbsButton" } : ["ArrangeButton"])
-                    { b.Disabled.Remove(name); b.Actions[name] = name; if (lead is null || name == "LimbsButton" && !HasLimbWindow(lead)) b.Disabled.Add(name); }
+                    { b.Disabled.Remove(name); b.Actions[name] = name; if (lead is null || name == "LimbsButton" && (pinned || !HasLimbWindow(lead))) b.Disabled.Add(name); }
             }
             else
             {
@@ -210,8 +214,10 @@ sealed partial class PlayerInterface
         AddMapContent(id, controls);
         if (id == "overview") { AddResearchContent(controls); AddCraftContent(controls); AddAiContent(controls); AddSquadsContent(controls); AddFactionContent(controls); }
         if (id == "trader") { ArrangeTraderWindow(controls); AddTraderContent(controls); return; }
-        // The loot windows show the open loot's body as the character windows show the lead.
-        if (id is not ("inventory" or "bag" or "limbs" or "loot" or "loot-bag") || (IsLootScreen(id) ? LootBody() : InventoryOwner()) is not { ItemGrid: { } grid } lead) return;
+        // The loot windows show the open loot's body as the character windows show the lead; a pinned window its own character.
+        var shown = WindowCharacter(id);
+        if (IsPinnedInventory(id)) id = "inventory";
+        if (id is not ("inventory" or "bag" or "limbs" or "loot" or "loot-bag") || shown is not { ItemGrid: { } grid } lead) return;
         bool bagWindow = id is "bag" or "loot-bag";
         string gridSection = bagWindow ? "backpack_content" : "main";
         int columns = bagWindow ? grid.BagWidth : grid.Width, rows = bagWindow ? grid.BagHeight : grid.Height;

@@ -126,7 +126,7 @@ campaigns: [campaigns](#campaigns).
 | `BasePopulationManager` -> `TownPopulationManager`, `NestPopulationManager` | per town: two pools (residents, roaming) with a population budget and a `SpawnInfoList` | section 6.4 |
 | `SpawnInfoList` | the weighted list of squad templates a pool or biome group may spawn | section 6.1 |
 | `AreaSector`, `AreaBiomeGroup` | one cell of a 64 x 64 grid of 4608-unit cells, and the BIOME_GROUP data it belongs to | section 6.2 |
-| `BuildingItemGroup` | an ITEM_PLACEMENT_GROUP placed in a building: one item slot with a respawn timer | section 9 |
+| `BuildingItemGroup` | an ITEM_PLACEMENT_GROUP placed in a building: one item slot with a respawn timer | [loose items](#loose-items-in-buildings) |
 | `FactionWarMgr`, `CampaignData` (always `StartInvasionData`) / `CampaignInstance` (always `GatherAndMove`) | faction campaigns (FACTION_CAMPAIGN) | [campaigns](#campaigns); DIPLOMATIC_ASSAULTS not decoded |
 
 **Persistent platoons** (**Verified** by code): a zone's unload (`ZoneMapContent::deactivate`, `FUN_1409fe980`) touches no platoon; each platoon checks
@@ -255,6 +255,27 @@ Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witn
 | `building`, `building dislike`, `building designation`, `layout interior/exterior`, `public day/night`, `public beds`, `bed usage cost`, `sell home`, `building ruined`, `initial door state` | how the squad's home building is chosen and set up (resident squads) |
 | `vendors`, `is trader`, `vendor money`, `vendors fill total amount`, `vendors refresh time`, `buy mult`, `buys stolen`, `buys illegal`, `special items`, `special map items`, `*artifacts base value`, `regenerates` | shop and contents (section 8 for loot; the trading economy is in [economy.md](economy.md#shops-and-transactions)) |
 
+### Loose items in buildings
+
+**Verified** by code (`BuildingItemGroup`: constructor `FUN_1405534f0`, timer `vfunc_28` `FUN_140549e60`, spawn `FUN_140547ed0`, pick `FUN_1409540d0`, grade
+`FUN_14063cea0` / `FUN_140952320`, save `vfunc_17` `FUN_1405567b0`) and a census of the merged install data and `interiors.level`:
+
+- Interior layouts (`interiors.level` INSTANCE_COLLECTIONs) place ITEM_PLACEMENT_GROUP records like furniture: 4987 objects in the layouts of 31 associated buildings
+  (15307 slots over 129 towns once the level buildings take their layouts), each with its own state (`floornum`, `respawn time`, `is inside building`, `isInsideBuilding`
+  handle). The 21 groups have a vendor list's lists: `items`, `weapons`, `clothing`, `weapon manufacturers` (v0 the weight, 5..500), plus `random yaw` (true in all),
+  `min respawn time` / `max respawn time` (24 / 48 in 19, 72 / 72 in 2) and `placeholder` "".
+- A placed group is one item slot at its object's position and rotation, with a handle to its item and a respawn deadline in game hours (0 at start). Each update with no
+  item: once the clock reaches the deadline (and a test on the building's town `+0x1d8`, **Unknown**) it makes one. With an item whose handle is still a WEAPON, ARMOUR,
+  ITEM, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW or LIMB_REPLACEMENT that is not taken: nothing. Otherwise the handle clears and the deadline becomes now + an int in
+  [min, max] hours.
+- Making one: a weighted pick over the group's lists (a roll in [0, total weight) against running sums); a WEAPON pick takes a manufacturer from `weapon manufacturers`
+  and the weapon is made by it. Every item gets the quality of a weighted grade (0..5 -> 5, 20, 40, 60, 80, 95); the grade weights' source is **Unknown** (the item-list
+  object is cached per group record and a value of the building, probably its faction). The item gets a value of the group (**Observed**: likely the owner faction) and is put
+  at the slot. BLUEPRINT and MAP_ITEM picks get extra bookkeeping (**Unknown**).
+- Saved per group (in its generated interior): `base data sid`, `floornum`, `isInsideBuilding` handle, `is inside building`, `respawn time`, then its item.
+
+Meitou: [ground items](../simulation.md#items-and-eating).
+
 ### Town residents
 
 **Observed** (kenshi-named dump) unless marked; Meitou: `PopulationHomes.cs`.
@@ -286,7 +307,7 @@ Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witn
   (**Observed**). Destroyed buildings stay candidates (the Hub's ruins house squatters).
 - **Meitou engine choices**: the level data's assignment is kept where it fits the rules (interiors are drawn from it,
   not relaid to the template's layout); on a tie a building already laid out as the template wants wins; bar squads
-  stand in the town's bars; a loaded town keeps its saved squads, homes and bar squads and rolls no new bar squads.
+  stand in the town's bars and take the nearest bar as home (their templates, e.g. `Bar thugs`, have designation 0, **Verified** in the data); a loaded town keeps its saved squads, homes and bar squads and rolls no new bar squads.
 
 ### Off-screen world
 
@@ -335,16 +356,34 @@ Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witn
   0.5 × imprisoned/dead, clamped to [0, 2] for a sector by a town) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
   amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved by a town,
   (w + 1) × 2 when empty, and one squad is made there (`FUN_1408f8060`) if its count is below P × amount, retrying other sectors when that
-  fails. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a town (the template
-  faction's nearest unless any town is 9216 nearer, none beyond 50000); what it is used for is **Unknown** (saved homeless platoons have
-  no `basetown`/`hometown`, [save.md](../formats/save.md)).
-- **Patrol task** (`Task_Patrol`, loaded; **Verified** by code unless marked): its start sets the platoon's patrol state (+0x1e8, made
-  once with the template's `patrol approaches towns`) to loaded mode 1 / unloaded job 2 (PATROL_SHORTRANGE), then orders a move to the
-  state's point. The point (`FUN_1408fc730`): a coin flip takes the four diagonal or the four straight neighbouring sectors of the same
-  biome group, one drawn by a weight `FUN_1408f5ad0` (**Unknown**, its decompile is broken); with `patrol approaches towns` and towns in
-  it, each player town enters at even odds with weight 1 and each other town at 1 in 4 with weight 0.2, and a drawn town is the target;
-  else a placed spot in that sector (`FUN_1408f50d0`); with no neighbour, `FUN_1408fc1a0` picks another sector of the group. Off screen a
-  new point is picked within 500 of the last (`FUN_1407ee790`); the loaded re-pick rule is **Unknown** (Meitou uses the same 500).
+  fails. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
+  sector's own town when its faction is the squad's, else the faction's nearest town, or its nearest nest when that is 9216 nearer, none
+  beyond 50000 (`createRandomUnloadedSquad` → `Ownerships::setHomeTown`, KenshiLib 1ce4a16 names; **Verified** by code). It tethers the
+  patrol (below). Saved homeless platoons have no `basetown`/`hometown` ([save.md](../formats/save.md)); whether the home is saved
+  elsewhere is **Unknown**. Meitou decides it at the squad's first patrol, from where it stands (engine choice, so saved squads get one).
+- **Patrol task** (`Task_Patrol`, loaded; **Verified** by code and disassembly unless marked): the platoon's `PatrolInfo` (+0x1e8: biome
+  group, has-home flag and home town position, sector range near/far, `patrol approaches towns`, a smell factor) is made once; the
+  start sets the range to (1, 2), or (0, 1) when the platoon has a home town, then orders a move whose destination (`CharMovement`
+  slot 20, mode 3) is drawn by `FUN_1408fc730` from the leader's position:
+  1. A coin flip takes the four diagonal or the four straight neighbouring sectors; those of the same biome group with sector flag
+     +0x32 clear (its writer not found: **Unknown**) and weight > 0 enter a cumulative pick.
+  2. Weight (`FUN_1408f5ad0`): 1 for a sector whose zone is not active. Active: n = its counted platoons + 0.5 × the others (the area
+     tick's sets: non-persistent platoons not homed to a nest are counted); 10 / n when n = 0 (an infinite weight; the pick then
+     runs off its map, so the result is undefined), 5 / n when n < 2, else 1. Plus the zone's smell × the smell factor, but that factor
+     is `blood smell mult` read from the template's bool fields, so it is always 0 (**Observed**). With a home town, × 5 when the
+     sector's Chebyshev distance d from the home's sector equals near or far, × 10 between, × 0 outside: a homed patrol stays within one
+     sector of its home's sector, and homeless squads have one (above).
+  3. With `patrol approaches towns` and towns in the drawn sector (`TownList::getTownsInArea`), each player town enters at even odds
+     with weight 1 and each other town at 1 in 4 with weight 0.2; a drawn town's `getPositionForWaypoint` is the target (a cached point:
+     in front of a gate near the centre, or the centre; **Observed**). Else a placed spot in that sector (`FUN_1408f50d0`); with no
+     neighbour, `FUN_1408fc1a0` takes the first active sector of the group (not the player's, no town, fewer than 2 excluded platoons)
+     where a spot is placed, else a random sector of the group; it ignores the tether.
+  A loaded patrol draws again whenever its move order is re-issued (the task's update, once the move has ended); the order's radius is
+  1250 (**Observed**). Off screen a new point is picked within 500 of the last (`FUN_1407ee790`). Meitou: the weights above with n the
+  homeless squads standing in the zone and 10 for an empty active one (engine choice), the tether, re-pick within 500, the town's centre;
+  with no neighbour, a point of the home's sector, else of its own (engine choice).
+  `patrol approaches towns` is set on 933 of 961 squad templates of the merged load order, the Starving Bandit and Dust Bandit roamers
+  among them, so their patrols target NPC towns as above; no other town check was found (**Verified**, record dump).
 - **Traders**: restocked only while active, when the clock passes the platoon's `inventory refresh time`; an unloaded one catches up at
   its first active tick.
 - **Prisoners** (**Observed**): frozen with their platoon; sentences are absolute timestamps and release is a loaded AI task.

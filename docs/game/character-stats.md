@@ -17,7 +17,7 @@ resumes above101 until f>20 (stat >552 or < -350). A NaN stat stays NaN through
 continuous/event gains, race factors, skill difference and moving/carrying gains. Global XP3
 is stored as0.75; continuous base0.02*dt, event base0.075. Caller clamps are not assumed.
 
-**Observed** effective-stat multiplier (`FUN_1406457e0`): H=lerp(h0,1,clamp(hunger-1,0,1)),
+Effective-stat multiplier (`FUN_1406457e0`): H=lerp(h0,1,clamp(hunger-1,0,1)),
 L=lerp(l0,1,limb), m=H*L; optional light factor lerp(p0,1,clamp(2.5*P,0,1)); output
 clamp(lerp(f0,1,m),0,1), then requested limb-item/gear factors. **Verified** (decompile): P is the
 character's light level (Character +0xd8, [perception](perception.md#sight); the multiplier also sets
@@ -25,9 +25,24 @@ character's light level (Character +0xd8, [perception](perception.md#sight); the
 light of 0.4 or more costs nothing. Limb aggregates: A best arm, Hd head, T lowest torso health
 fraction. Perception/friendly-fire add the dust storm factor ([gear factors](#gear-factors)). Table
 preserves each stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
-The general stat getter `FUN_140884ac0` asks for every term; dexterity and strength readers
-(`FUN_140883a80`, `FUN_140883ba0`, ...) for all but light and dust. Meitou: `MedicalState.Light` from
-`SightMap.Light` each tick.
+**Verified** in game (#46: `CharStats::getStat` with and without the multiplier, new games, hunger 3 to 1.0,
+head 0.75, arms 0.5, torso 0.5): H, L, m=H*L, the output lerp, the aggregates and every row's h0/l0/f0 and
+`limb` column except stealth; the stored value never changes. Not tested: p0, the x0.01 and 0.66 arm terms,
+gear factors, hunger below 1. The general stat getter `FUN_140884ac0` asks for every term (but sends stealth
+[elsewhere](#effective-stealth)); dexterity and strength readers (`FUN_140883a80`, `FUN_140883ba0`, ...) for all
+but light and dust. Meitou: `MedicalState.Light` from `SightMap.Light` each tick.
+
+### Effective stealth
+
+**Verified** (decompile; in game "no hunger or arm term", #46): the getter sends stat 16 not to the table but
+to `FUN_140884850`: s = clamp(stored x 0.75 if carrying (Character +0x348) x 2 while the posture is not 0
+(vfunc 0x368 = `FUN_1405c7e10`, Character +0xe0: crawling or ragdolled, [ragdolls](ragdolls.md#forced-crawl)) x encumbrance (CharStats +0x190) x the body term (medical +0xb4) x the gear's stealth
+(CharStats +0x3c) x the fitted limbs' factor `FUN_140644b90(16)` x 0.01, 0, 1); the getter returns s x 100 and
+the sneak speed `FUN_140884920` reads s. Body term (`FUN_140644da0`): clamp(lowest health fraction over TORSO and
+LEG parts, 1 with none, + toughness x scale x 0.01, 0, 1). Its only caller is the sense update `FUN_1408586d0`,
+past an early return on a Character +0xd4 byte, so otherwise it keeps its last value (1 at start; **Observed**,
+fits #46's torso at 0.5 leaving stealth at 1). The table's stealth case (A; 0.9, 0.9, 0.8) exists, but no caller
+found reaches it. Meitou: `Orders.Stealth`; its x2 is for the forced crawl only (Meitou has no voluntary crawl).
 
 ### Gear factors
 
@@ -35,13 +50,19 @@ The general stat getter `FUN_140884ac0` asks for every term; dexterity and stren
 loader `FUN_140898e90`). Over the worn armour list (Character +0x4a8/+0x4b0) it multiplies the pieces' floats
 into CharStats: +0x40 `asassination mult` (assassination row), +0x44 `dexterity mult` (dexterity row), +0x48
 `damage output mult` (katana, sabres, hackers, heavy, blunt rows; used only when not 1 and above 0), +0x50
-`ranged skill mult` (crossbows and friendly fire rows), +0x38 `dodge mult`, +0x3c stealth (the backpack's +0x248
-times each piece's `stealth mult`), +0x4c `fist injury mult`; sums `perception bonus` (+0x30), `unarmed bonus`
-(+0x2c) and the attack/defence bonuses. With no armour and no backpack (inventory section 12) dodge and
-dexterity are 1.1 and stealth 1.2 (literals at `14169bb44`, `1416852f0`). The stun row factor `FUN_1406439f0`
+`ranged skill mult` (crossbows and friendly fire rows), +0x38 `dodge mult`, +0x3c stealth, +0x4c `fist injury
+mult`; sums `perception bonus` (+0x30), `unarmed bonus` (+0x2c) and the attack/defence bonuses. Stealth and dodge
+both start from the worn backpack's `stealth mult` (CONTAINER +0x248, `FUN_140763810`; negative becomes 1), 1
+without one. With no armour and no backpack (inventory section 12) dodge and dexterity are 1.1 and stealth 1.2
+(literals at `14169bb44`, `1416852f0`). A piece's stealth (ARMOUR +0x25c, disassembly of `FUN_140898e90`), with
+t = quality + `level bonus` x 0.01: lerp(t, material lo, hi) x lerp(t, class lo, hi) x `stealth mult`; 1 if
+`stealth mult` is negative; a hat (`slot` 3) that lists coverage is raised to 1. The tables (constructor
+`FUN_1408a8f90`, material +0x1c, class +0x18 of the [economy](economy.md#42-armour-and-clothing-type-3) tables):
+CLOTH and LEATHER 1..1, CHAIN 0.3..0.7, METAL_PLATE 0.1..0.8; GEAR_CLOTH and LIGHT 1..1, MEDIUM 0.9..0.9,
+HEAVY 0..0.4. The stun row factor `FUN_1406439f0`
 is the dust storm: lerp(1, 0.5, v) while medical +0x148 = 1, v = medical +0x14c = the storm strength x (1 -
 the gear's protection), clamped 0..1 (`FUN_140648ef0`, which also posts "You are in a dust storm, it affects
-your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` (no gear stealth term; the dust value is `MedicalState.DustStatFactor`,
+your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` / `StealthMult`, `ArmourPiece.Stealth` (the dust value is `MedicalState.DustStatFactor`,
 [weather](../formats/weather.md#effects-on-characters)); crossbow and assassination skills take their factor in `CombatSystem.Eff`,
 dexterity and damage output stay applied by the combat formulas (`DexterityMult`, `DamageOutput`, the latter
 to the whole packet where the original scales the weapon skill: **Observed** difference, not changed).
@@ -92,18 +113,64 @@ Meitou: `BodySystem.BedOf`, the bed fixture a character is held in (`BedSystem`)
 
 **Verified** (decompile): wounds lose `bleeding clot rate` x0.1 a second (`FUN_140646140`); a hit opens one of strength
 max(cut, pierce) x `bleed rate` x0.1 x scale (`FUN_1406508d0`). Bleeding = (`extra blood loss from bodyparts` x stumps
-(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`; blood falls by it a second and, with no bleeding,
-recovers `blood recovery rate` x0.1 x race `heal rate` a second. The KO timer +0xa0 falls by dt.
+(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`, floored at 0; blood falls by it a second, then is
+clamped to capacity every tick, and with no bleeding recovers `blood recovery rate` x0.1 x race `heal rate` a second
+(`FUN_140652000`). The wound is opened whatever the race's `bleed rate` (no race read in `FUN_1406508d0`; a bloodless race
+gets wounds that drain nothing). The KO timer +0xa0 falls by dt.
 
 **Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
 not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death distinctions.
+
+**Observed** (decompile; names KenshiLib 1ce4a16). The KO point (`pointOfNoReturn`, `140643ae0`) is read only by
+`getCollapseStage` (`140644450`), the GUI and `AI::myLegsAreMessedUpButCouldBeFixed`. Knock-out:
+- A combat blow (`applyDamage` `14064f300`, from `addWound`) that leaves a vital (`fatal`, part `+0x32`) part at h - s + rig < 0
+  restarts the KO timer `+0xa0` (`startKnockoutTimer` overwrites it, it does not take the longer) and sets unconscious
+  `+0x161`, on every such blow. Damage through the same function with its 4th argument set (load, weather) skips it for a
+  conscious character. A part going under 0 in the tick starts nothing.
+- `reassessCollapseMode` (`140649320`) rebuilds `+0x161` each update: set by a hunger KO, a KO timer > 0, a vital part at
+  collapse stage 2, or blood: for a character unconscious before the update, blood < 0 (and it sets `+0x163`); for a
+  conscious one (or on the update after a fresh limb loss, `hasFreshlySeveredALimb`), blood < 0, or < -25 once `+0x163`.
+  `+0x163` clears when blood is above 25 (`medicalUpdate`). So a character wakes once all of those are clear.
+- Stage of a torso/head part, v = h - s + rig: 0 when v >= 0; under the KO point 2, and a vital part sets the coma flag
+  `+0x162`; between the KO point and 0, 2 for a non-vital part, and for a vital one 2 only while `+0x162` is set. `+0x162`
+  clears on an update where no vital part is at stage 2. So a vital part between the KO point and 0 does not keep a
+  character down; one under it does ("Recovery coma") until every vital part is back to 0. Legs use h - s + bandage
+  against the KO point ([ragdolls](ragdolls.md)).
+- Save keys: `coma` = `+0x162`, `unconcious` = `+0x161`, `incapacitated` = `+0x160` (a leg-collapse part at stage > 0).
+- Meitou: `MedicalState.VitalPartsKeepDown`, `RestartKo`, the wake test `Blood >= 0`. The fresh-limb-loss case is not modelled.
 
 ## Aid, limbs and load
 
 First aid fills bandage; healing consumes it. Medkits, robot repair and beds apply separate
 skills/charges/rates. Limb replacements modify part health and stat factors; missing limbs,
 stumps and robot wear are not interchangeable. Race tables own HP/blood/hunger/heal/XP inputs.
+
+### First aid update
+
+**Verified** (decompile of `FUN_14033c5a0` (task), `FUN_14064d800`, `FUN_140649a00`, drain `FUN_140644250`). Each update, with
+skill x 0.8 when treating oneself and q = min(skill, kit quality):
+- **Wounds first.** While the patient has open wounds, the newest one's strength falls by `medic speed mult` x 2 x lerp(0.0005, 0.03,
+  q x 0.01) x dt and it closes below 0; the kit drains once; nothing is bandaged that update. The kit must match the patient (robot
+  kit for a robot race).
+- **Bandaging.** The first part in part order of the kit's kind with h + b < M takes rate x dt (rate below); only if that fills it
+  (clamped to M) does the next part also take the full rate x dt. The kit drains once per part bandaged. So a patient with n injured
+  parts takes about n times as long, and n times the charges, as one with a single part of the same damage.
+- **Drain** = lerp(`medkit drain 99`, `medkit drain 1`, (100 - skill) / 100) x dt (skill, not q), x `robot medic speed mult` for a
+  robot kit (function 12).
+- **Player only.** The bandaging step drains only when the medic's faction is the player's (Faction +0x250); NPC medics use up kits
+  only on wounds.
+- **Kitless.** `Task_FirstAid` (`FUN_1403563a0`) skips the kit search when the medic is not the player's and the patient is
+  imprisoned (+0x2f8 == 2) or a chained slave of the medic's faction (`FUN_14032e2a0`: +0x320 chained, +0x330 != 11, slave owner
+  +0x1a0 → +0xe0). Without a kit, wounds close with quality 5, every part (organic or robotic) takes 1 HP a second (no `medic speed
+  mult`, no skill), nothing drains. Other NPCs still need a kit. Who goes to a prisoner: [Medic jobs](ai-tasks.md#medic-jobs). Meitou: the imprisoned case (`FirstAidSystem.Apply`); chained
+  slaves are not modelled. **Unknown**: whether a kit stored on the task earlier is still used then; what +0x330 code 11 is.
+- **Skill.** `Task_FirstAid` (`FUN_1403563a0`) runs a first aid kit phase, then (none left) a robot repair kit phase; the skill is
+  CharStats +0x98 (`medic`) in the first, +0xdc (`robotics`) in the second, and the trained stat 9 or 6 likewise; the race's `heal
+  stat` is not read here.
+- **Unknown**: while no wound is open but bleeding (medical +0x78) is positive, `FUN_14064d800` bandages an extra time and lowers it
+  by q x 0.01 x dt; it is recomputed every medical tick, so Meitou leaves it out.
+- Meitou: `FirstAidSystem.Apply`, `MedicalState.CloseWound` / `Treat`; dt in game seconds (unit **Unknown**).
 
 **Observed** (`wade`, player Metaru's MEDICAL_STATE): injured parts have flesh + bandage ≈100,
 stun0 and bleeding0; the wounds are already treated. First Aid has nothing left to bandage;
@@ -114,8 +181,10 @@ any movement or animation, with the bubble "I don't have a medkit." Whether a sq
 avoids the refusal is **Unknown** (Meitou accepts any kit `FindKit` would use).
 
 **Verified** carried person adds CONSTANTS weight30, independent of body/race/inventory.
-**Observed** capacity C=1.2*strength*strength-injury-mult+15; encumbrance
-clamp((C-0.05W)/(0.95W),0,1), 1 through W<=C and0 at W>=20C. It affects speed, hunger, XP/dodge.
+**Verified** in game (1.0.65, scripted harness, issue #45; strength -20..45, W 15/16.4/46.4 kg, torso wounds, hunger):
+capacity C=1.2*s+15, unrounded, s = strength through its whole stat multiplier (hunger too, floor 0.1); encumbrance
+clamp((C-0.05W)/(0.95W),0,1), both clamps seen, W includes a carried person. Stored at CharStats+0x190, the return of
+`FUN_1408838b0`. **Observed**: it affects speed, hunger, XP/dodge (consumers not checked in game).
 Weapon inventory weight multiplier0.5; backpack effect scales contents.
 **Verified** ITEM `stackable` is integer capacity,1 means one per cell; bolt items use charges
 for shots. Gear/container/map/crossbow/limb item types cap1. Other stacks use
@@ -211,9 +280,9 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 
 ### Effective stats: injuries and hunger
 
-Decoded cases (hex constants converted; **Observed**, individual cells are only as reliable as the hand decoding
-of a Ghidra switch, which has fall-through cases. Every row was re-decoded from the constants; the science/robotics/cooking and
-friendly-fire rows were corrected because their cases fall through into the next case, all other rows agree):
+Decoded cases (hex constants converted). `limb`, h0, l0 and f0 are **Verified** in game for every row (#46,
+[above](#stats-and-xp)); p0, the arm-disabled terms and `extra` stay **Observed** (hand-decoded from a switch with
+fall-through cases):
 
 | Stats | `limb` | h0 | l0 | f0 | p0 | extra |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -223,7 +292,7 @@ friendly-fire rows were corrected because their cases fall through into the next
 | science, robotics, cooking (4,6,13) | Hd (falls through into the medic row) | 0.6 | 0.4 | 0.25 | 0.25 | |
 | medic, turrets, hive medic, vet (9,11,14,15) | Hd | 0.6 | 0.4 | 0.25 | none | |
 | thievery, lockpicking (10,37) | A, x0.01 if both arms disabled | 0.75 | 0.4 | 0.25 | none | |
-| stealth (16) | A | 0.9 | 0.9 | 0.8 | none | |
+| stealth (16) | A (unreached: [effective stealth](#effective-stealth)) | 0.9 | 0.9 | 0.8 | none | |
 | athletics (17) | 1 | 0.7 | 1 | 0.5 | none | |
 | dexterity (18) | A x T | 0.7 | 0 | 0.4 | none | x CharStats+0x44 if requested |
 | defence (19) | A x Hd | 0.75 | 0 | 0.8 | none | |
@@ -453,6 +522,7 @@ start, not statically readable (**Unknown**; the sliders' ranges are in the bind
 | Chance of death | 142133578 | 0.5 to 4 | multiplies the bleed rate (`FUN_140646140`) and the wound degeneration (`FUN_14064f5c0`); it does **not** touch starvation: the starvation time reads the *Hunger time* float, which is at +0x1c of this block (**Verified**: addresses of the slider bindings in `FUN_1409151d0` and the writer `FUN_140912f80`) |
 | Global damage multiplier | 142133580 | 0.5 to 4 | multiplies damage and combat XP ([combat.md](combat.md#global-tuning-the-constants-record)) |
 | Building speed / Research speed / Production speed | 142133584 / 14213358c / 142133590 | 0.5 to 2 | construction, research and production rates, [buildings-production.md](buildings-production.md#construction-tick) |
+| Bandits loot the player ("Makes life unfair"; CAMERA `bl`, default on) | 142133598 (byte) | checkbox | NPCs may loot the player's downed characters ([NPC looting](carry-loot.md#33-npc-looting)) |
 | Number of nests multiplier | 142133588 | 0.5 to 4 | scales the nest count of the area spawner, [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) (**Observed**: that doc's "global density float" `DAT_142133588` is this slider; [combat.md](combat.md#global-tuning-the-constants-record) lists the binding) |
 
 ### CONSTANTS used by this subsystem
@@ -512,8 +582,10 @@ read and at least one consumer found through the data cross-references; base val
 ## Unknowns
 
 - What the `dt * 0.05` factor and the small `0.04` / `0.002` / `1.2` constants in the medical update stand for.
-- The per-stat floors of `FUN_1406457e0` were re-decoded from the decompile by a second reader (two rows were
-  wrong and are fixed) but still not checked against assembly; the consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
+- The consumers of LOCATIONAL_DAMAGE `affects skills` / `affects move speed`.
+- In one #46 run (20261021-194120) perception and friendly fire read 0.7414 healthy and 0.6896 with the head at
+  0.75; both fit one extra factor of about 0.614 on m: light (p0 0.25) or dust (`FUN_1406439f0`). Crossbows
+  (light, no dust) would tell them apart.
 - The idle hunger factor CharStats+0x178; whether `food quality mult` scales raw food (function 15).
 - Which callers feed `FUN_1408c7250` / `FUN_1408c7310` for which activity (`DAT_142133794` is the scaled frame time, [game-loop.md](game-loop.md#the-three-time-values)), and the 0.1 floor / 6x cap of the skill-difference factor
   (not in `FUN_1408c5fa0`; maybe clamped by its callers). Meaning of XP event 6.
@@ -537,6 +609,6 @@ read and at least one consumer found through the data cross-references; base val
 - Damage into a part: `Dismemberment=1`
 - Degeneration, healing, stun: `D = clamp(((M - h - b) * 100 / M - 20) / (90 - 20), 0, 1)`; `degMult = lerp(degeneration mult 1 (1.7), degeneration mult 99 (0.03), toughness / 100)`; `heal = min(b, dt * 0.05 * heal rate mult (0.25) * R)`; `h <= M`; `R = (M / 100) * A`
 - Knock-out, coma, death: `k = lerp(knockout mult 1 (3.0), knockout mult 99 (0.75), toughness / 100)`
-- First aid, medkits and robot repair: `h + b <= M`; `rate = lerp(1, 15, min(skill, kit quality) * 0.01) * medic speed mult (3)`
-- Encumbrance and carrying: `C = carry weight mult * strength * strengthInjuryMultiplier + encumbrance base`; `e = clamp((C - 0.05 W) / (0.95 W), 0, 1)`; `W <= C`
+- First aid, medkits and robot repair: `h + b <= M`; `rate = lerp(1, 15, min(skill, kit quality) * 0.01) * medic speed mult (3)`, one part per update ([First aid update](#first-aid-update))
+- Encumbrance and carrying: `C = carry weight mult * strength * strengthInjuryMultiplier + encumbrance base` (strength's whole stat multiplier); `e = clamp((C - 0.05 W) / (0.95 W), 0, 1)`; `W <= C`
 - CONSTANTS used by this subsystem: `field address = 0x142133dd0 + 4 * index`

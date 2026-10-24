@@ -8,7 +8,21 @@ Game assembly rules: [characters](characters.md), [animation](animation.md).
 ## GPU layout and shading
 
 Instance bones/material offsets index shared storage buffers; group compatible mesh parts.
-CharacterShaders set0 bindings: bones6, materials7, morphs8, previous bones9; material20 texture
+The update places every in-range part once (model and previous matrix relative to the eye, LOD distance at bias 1) inside the
+parallel pose loop; the colour, motion and shadow views from that eye reuse it, cull and pick levels in parallel chunks of 16
+characters, and keep the serial order within each batch. Portraits, icons, hover masks and other eyes place their own.
+The shadow cascades drawn in a frame are gathered together before the first (`PrepareDepth`, from `ShadowPass`'s `CasterPrepare`): one
+parallel walk over the chunks tests each character and part against every cascade, then each cascade's batches and instance rows are
+filled in parallel; each cascade's draw only records. Every view has its own batches, named by an id per (mesh part, level, sidedness).
+Whether a character is indoors (the GI's interior flag; the host's hidden-indoors test too) is asked again only once it has moved farther
+than the nearest interior box was when last asked (at most 50 units) or the loaded interiors changed (`WorldObjectRenderer.InteriorMemo`).
+Each `PartMaterial` keeps its last record and is written again only in a new epoch (texture cache `Version`: an image loaded, swapped
+or unloaded; LOD bias, stand-in, sampler generation, skin settings) or after its own fields changed (blend, body build). The records live
+in `CharacterMaterialTable`, a persistent storage buffer (binding 7) with a slot per material: a record that came out different goes to a
+new slot (frames in flight still read the old one), uploaded in one copy; a slot comes back FramesInFlight + 1 frames after its material
+changed or went 600 updates undrawn. Texture needs
+are offered, and the textures marked used, only on the frame `CharacterTextureBudget` commits (every 500 ms, under the cache's 2 s idle limit).
+CharacterShaders set0 bindings: bones6, materials7 (persistent), morphs8, previous bones9; material20 texture
 slots. CharacterLayoutTests pins CPU/GLSL layouts. Push depthIndex is near-depth bindless index
 for motion,0 otherwise. Camera-relative transforms preserve precision; previous bone/transform
 state must match motion history. Skin/body/head/hair/item modes share world lighting/haze.
@@ -42,9 +56,10 @@ translucency (ears).
 uploads. Reuse appearances/content; replace only after ready and retire after GPU consumers.
 `CharacterTextureBudget` shares mip/VRAM pressure policy; unavailable content uses a stand-in.
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
-Generated four-level reductions are always enabled; pose rates fall with distance from the nearer of the eye and the camera's look-at
-point (`Focus`): past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
-distance throttling for presentation actors and the player's characters. Shadow LOD doubles choice with cascade floors.
+Generated four-level reductions are always enabled; with 100+ characters drawn in the world, pose rates fall with distance from the eye (a fight at the
+camera's pivot is thinned too once the boom is out): past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
+distance throttling for presentation actors, the first 10 of the player's characters (squad bar, then the
+other squads in order) and the first selected one (`PlayerInterface.FullRateCharacters`). Shadow LOD doubles choice with cascade floors.
 Clamp stored bounds to real mesh extent. Animation rendering does not independently integrate
 walk-loop root movement; simulation owns relocation. Quads/morph and motion buffers retain
 correct previous-frame data across skipped poses and content changes.

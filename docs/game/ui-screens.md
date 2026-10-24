@@ -174,8 +174,15 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
 
 Layer Middle, per-frame update FUN_140728d50 (**Observed**):
 
-**Observed** (user base-game reference): squad portrait frames occupy about 72% of the tab
-page height, leaving space below; Meitou uses 0.76 of the page height (frame ~125 px vs ~118 px at the same HUD scale, from the user's two screenshots; **Observed**), shrinking further for a full row.
+### Squad bar
+
+**Verified** (decompiled `FUN_14072d3b0`, `FUN_140415e00`, `FUN_1404131e0`, `FUN_140412ed0`; constant 10 read from the exe):
+`SquadPanel`'s layout TabItems ("Squad 1..3") are removed at start (`removeAllItems`); a tab per squad is added at run
+time, each page holding an `item_box_v.layout` ItemBox (vertical, fills the page) of `Kenshi_PortraitCharacter` cells. Cell
+side = min(int(0.9 × box height), int(0.9 × box width) / n), n = members (at least 1; 10 when more than 9), clamped to 60..128 px
+and rounded down to even. Cells fill rows left to right and wrap; the ItemBox scrolls past the last row. Matches the earlier
+observation of frames at ~72% of the page at 1080p (the 128 px cap). Meitou scales the px limits by height / 1080 and scrolls one
+row per wheel notch (the original's step per notch is **Unknown**).
 
 ### Portrait cells
 
@@ -385,8 +392,13 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   asks the object's slot 40 for its section (`FUN_1406fa7f0`). Building slot 40 (`FUN_140301840`) answers:
   - 5: slot 113 (`FUN_1402fdea0`): the building's name left; right the owner faction's name, the player's faction always, another
     faction only when the building is in a town that passes slot 0x340 and town+0x111 is clear, else empty.
-  - 3: `Type:` the record's name when it differs from the building's name, `Town:` the town's name, then the upgrade lines (slot 116:
-    Upgrade / Upgrades To: / Downgrade To:, power) and the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
+  - 3: `Type:` the record's name when it differs from the building's name, `Town:` the town's name, then the upgrade lines (slot 116, generic
+    `FUN_140303030`, **Verified**): with an upgrade target ([upgrades](buildings-production.md#upgrades)) a full-row button `[UPGRADE]` (Good:
+    colour tag + "[" + the uppercased translation of "Upgrade" + "]"), whose tooltip is a list of pairs `Upgrades To:` target name, a row per
+    material still owed (the target's required less the current state's delivered, > 0: six spaces + item name, `+` amount) and, for a building
+    with power, `Power` with the `power output` change (Good, Bad when negative); without a target the line is removed (`FUN_1406fd460`). With a
+    downgrade target while the construction state is not complete, `[DOWNGRADE]` (Main) with the tooltip `Downgrade To:` name. WallBuilding's
+    slot 116 (`FUN_1402ff760`) has only the upgrade, keyed `Upgradeable to:`. Then the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
     true: the owner is the player's faction and the building's +0xc0 byte is clear, with an exception for `creates player town` buildings not read in
     full): a full-row button `Dismantle` (caption BadBright) and, while the construction state is not complete, `PAUSE CONSTRUCTION` (Main), captioned
     `[PAUSED]` (#777777) while paused. Dismantle is slot 84 (`FUN_14054db30`, `General_Click`): "You cannot delete this building while it has mounted
@@ -395,8 +407,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
     "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
-  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building with
-    +0x1f0 set (taken to be its interior) a `Kenshi_Button2` toggle (Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
+  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building in a
+    town (+0x1f0, the town pointer the For sale rule reads) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
     82, `General_Click`). `For sale:` with a button `c.{1,num}` (both Good) when slot 88 (`FUN_14029c500`) is true: a building of class 0xb with no
     parent whose town (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
     allied, and its state's bool `sell home` set (true without a state). Price (`FUN_1407ad300`): int(f × target × the owner FACTION's float
@@ -426,19 +438,32 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   the sum of its BUILDING record's materials; the player's own site gets Dismantle (after "Are you sure?" the selection dismantles it, `DismantleOrder`,
   engine choice for the unknown callback) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
-  buildings only; its toggle and the For sale line are not built: the simulation has no public flag on a player building (and its consumers in the town AI are **Unknown**) and no purchase of a town building.
+  buildings. A building of the player's (its site, or a town building whose fixtures the player's faction owns, `BuildingDetail.Owned`) gets the
+  buttons: the door lines as full-row buttons, `[UPGRADE]` / `[DOWNGRADE]` on a site (`UpgradeSite` / `DowngradeSite`, same scope as the
+  simulation's), and in a town the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
+  both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). Not built: For sale (no purchase
+  of a town building), Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
   Value colours: open, closed and Unlocked in `#a8b774`, broken, a closed door that is locked, and Locked in BadBright. For the player's own door both
   lines are `Kenshi_Button2` buttons: Open/Close runs `FUN_140546fb0`, Security `FUN_140547060` ([locks](locks.md#doors); **Verified**: the
-  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. Meitou: the same lines, the buttons on the player's own
-  finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), drawn over the right half of the row (engine choice; the original's button width
-  argument, 1.0 here, 0.3 for the public toggle and 0.4 for For sale, is **Unknown** in meaning).
+  delegates' thunks `140018c69` / `140051faa` jump to them, exe bytes); for others plain text. `Kenshi_Button2` is a template, not a skin: its root
+  widget has `Kenshi_Button1Skin` (**Verified**, `data/gui/templates/kenshi_templates.xml`). Meitou: the same lines, the buttons on the player's own
+  finished building (`ToggleDoorsOrder` / `ToggleDoorLocksOrder`), over the whole row with no label. The original's button width argument
+  (1.0 here, 0.3 for the public toggle, 0.4 for For sale) is the button's share of the row, at its right; at 1.0 the key is not shown
+  (**Observed**: the owner's screenshots of a Defensive Gate III and a bought town house, `HudLine.ButtonWidth` in Meitou). Meitou engine choices: a moving door reads by where
+  it heads (opening: open, closing: closed), and an open door that wants its lock reads `Locked` with "The door will lock when it closes.".
 - **Beds, cages, containers, lamps** (Useable / Storage / Light slot 40 `FUN_140304e90`): 3 `Town:`, `Training:` (function 7), `Cost to use:`
   `Private` or `Pay c.{1,num}` (beds), `Lock state:` Locked / Unlocked, `Lock complexity:` `Level {1,num}`, `Empty`; 6 `Healing bonus:`
   `x{1,num}` (beds), `Max Skill Level:` (training); 0xf `Money:`. Turrets, machines, generators and batteries have their own lines
   (`FUN_14030d620`, `FUN_140300090`, `FUN_140307bf0` ...: Working / No power / Out of resource / Output full, power, workers, fuel).
+- **Richness** (**Observed**, ProductionBuilding slot 40 `FUN_1402ffeb0` section 6 calls slot 186 `getGUIFertility` `FUN_140309a40` first): for function 1 or 27 with a
+  functionality, a line by `world resource mining`: 1 `Iron Quality:`, 2 `Stone Richness:`, 3 `Copper Quality:`, 4 `Carbon Quality:`, 5 `Water Available:`, 6
+  `Ground Fertility:` (other: no label); value `{1,num}` of int(yield × 100) (slot 92, no `%`), coloured r = clamp(0.8 − y), g = clamp(0.8 y), b 0.1; tooltip "The
+  richness of natural {1} present in this location. Anything over 50% is considered good.", {1} the resource's name (`FUN_140a0c300`: Iron, Stone, Copper, Carbon,
+  Water, Fertility) lower-cased. No owner test: rocks, NPC and player mines, farms and wells. Meitou: the player's machines and rocks (before mining too,
+  `WorldSnapshot.InspectedRichness`); a mine without a resource shows no line; town buildings are not covered.
 - **Window.** Selecting a complete building of the player's faction opens its window (Building slot 38 → `FUN_1406e6640`; one window per
   building, made on first use by slot 48). Classes from RTTI vtable names, layouts **Verified** (each layout string is referenced only by
   the base constructor listed):
@@ -454,7 +479,10 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
 
 `Kenshi_GenericBuildingWindow` (**Verified**, layout read): Window `Kenshi_WindowCX` captioned "BUILDING NAME", layer Window; `CraftingPanel`
 (`CraftingName`, `QueueButton` "QUEUE..."), `TitlesPanel` (INPUTS / OUTPUT), `Input1Panel` / `Input2Panel` (`InputNText`, `InputNStatusText`,
-slot `inN`, `InputNProgressBar`), output (`out` slot, `OutputProgressBar`, `OutputText`, `OutputDataPanel`).
+slot `inN`, `InputNProgressBar`), output (`out` slot, `OutputProgressBar`, `OutputText`, `OutputDataPanel`). The `inN` / `out` inventory
+sections are the recipe item's `inventory footprint width` × `inventory footprint height` cells (**Verified**, `FUN_14029e7b0` code read). Where the
+grid sits in its content panel and whether the progress bar moves for a tall grid is **Unknown**; Meitou keeps the layout's top left and pushes the
+bar under an overlapping grid.
 
 ### Character stats runtime layout
 
@@ -650,8 +678,10 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     enabled only for a stump or a replaced limb, else drawn with the skin's `disabled` tile and taking no drop (MyGUI gives it no focus, **Observed**). A fitted prosthetic shows its
     icon; a stump's race item never sits in the slot. Labels `-ARMS-` / `-LEGS-`; `figure.png` never changes. The slots are built on open (a limb lost meanwhile shows on reopening,
     **Observed**; Meitou refreshes live).
-  The pin button (`Kenshi_PinButtonSkin` in the `Kenshi_WindowCXP` caption, drawn "O") keeps the inventory window, its bag and limbs on the character shown when it was pressed,
-  whoever is selected after; closing the window lets the pin go. Engine choice: the original's pin rule (one window, or a new one for the next selection) is **Unknown**.
+  The pin button (`Kenshi_PinButtonSkin` in the `Kenshi_WindowCXP` caption, drawn "O"; the skin's `*_checked` states while pinned) keeps the inventory window on the character shown
+  when it was pressed, and another squad member's inventory opens in a second window, so several show at once (**Observed** by the owner in the original). Engine choices: selecting
+  someone else after pinning opens their inventory left of the pinned one; I on a pinned character raises their window; unpinning gives the window back to the selection (closes it when
+  the inventory is already open); a pinned window has no bag or limbs window. A pinned window can still be dragged (**Observed** by the owner). The snapshot carries every pinned character's grid (`ShowInventoryCommand`).
   Esc while trading closes the trader and the character's windows in one press, whichever was clicked last (engine choice, as for loot).
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.
@@ -832,8 +862,7 @@ Full info "separate numbers for each damage type". Built at the end of `MedicalS
   callers of `FUN_14073faf0` (**Observed**).
 
 Meitou: the Simple/Full text and the gate follow the above; floaters rise 30 px and fade over 1.4 s (engine choice). Colour: red
-when a player's character is hit, green when one lands the blow, else grey. Healing is a Meitou addition: a green `+N` over a
-player character each time about a second of treated damage has healed (any non-Off setting).
+when a player's character is hit, green when one lands the blow, else grey. No healing floater, as in the original.
 
 ### Tooltips
 

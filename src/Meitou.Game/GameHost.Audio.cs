@@ -59,7 +59,7 @@ sealed partial class GameHost
     /// </summary>
     void UpdateAudio(double realSeconds)
     {
-        if (audio is not null) audio.Player.VoiceCap = o.MeitouVoices ? Meitou.Rendering.Enhancements.MeitouVoiceCap : 0;   // the voices switch
+        // The Audio settings' Sound voices slider (config.Audio.Voices) is applied by AudioSystem.Apply.
         if (audio is null || player is null || player.TitleOpen) return;
         var target = camera.Target;
         var eye = camera.Eye;

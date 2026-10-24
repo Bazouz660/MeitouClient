@@ -48,9 +48,9 @@ public sealed class MetalPipelines : IGpuPipelines
             attachment.PixelFormat = MetalConventions.Pixel(desc.Targets.Colour);
             attachment.IsBlendingEnabled = desc.Blend.Enable;
             attachment.SourceRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
-            attachment.SourceAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Src);
+            attachment.SourceAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.AlphaSrc ?? desc.Blend.Src);
             attachment.DestinationRGBBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
-            attachment.DestinationAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.Dst);
+            attachment.DestinationAlphaBlendFactor = MetalConventions.BlendFactor(desc.Blend.AlphaDst ?? desc.Blend.Dst);
             attachment.RgbBlendOperation = MetalConventions.BlendOp(desc.Blend.ColourOp);
             attachment.AlphaBlendOperation = MetalConventions.BlendOp(desc.Blend.AlphaOp);
             attachment.WriteMask = desc.ColourMask.HasFlag(ColorMask.R) ? attachment.WriteMask | MTLColorWriteMask.Red : attachment.WriteMask & ~MTLColorWriteMask.Red;

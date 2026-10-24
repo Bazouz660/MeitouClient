@@ -58,6 +58,14 @@ public readonly record struct TurnJoint(string PartId, Vector3 Pivot, Vector3 Ax
 public sealed record PlacedLight(GameRecord Light, GameRecord Holder, GameRecord Owner, string PlacementId, string InstanceId, Vector3 Position,
     Vector3 Direction, float Power, int Function = -1);
 
+/// <summary>An EFFECT instance of a placed building (docs/formats/lights.md, "Effects on buildings"): a campfire's fire, a furnace's smoke.</summary>
+/// <param name="Effect">The EFFECT record.</param>
+/// <param name="Holder">The record listing the instance: a BUILDING_PART, or the BUILDING itself.</param>
+/// <param name="Owner">The placed BUILDING (a door's own BUILDING for effects on door parts).</param>
+/// <param name="Position">World position: the instance position under the holder's node, not scaled.</param>
+/// <param name="Orientation">World turn: the holder node's rotation × the instance rotation.</param>
+public sealed record PlacedEffect(GameRecord Effect, GameRecord Holder, GameRecord Owner, string PlacementId, Vector3 Position, Quaternion Orientation);
+
 /// <summary>State of a placed building that changes what is drawn (from its GAMESTATE_BUILDING and its town).</summary>
 /// <param name="Destroyed">The state's <c>destroyed</c> flag: parts switch to their <c>destroyed mesh</c>, upper floors and stairs without one go.</param>
 /// <param name="TownMaterial">The building's town's material (see <see cref="WorldObjectLayout.TownMaterial"/>), used when the building has none of its own.</param>
@@ -131,14 +139,15 @@ public static class WorldObjectLayout
 
     /// <summary>
     /// As <see cref="Building(GameDatabase, GameRecord, string, Vector3, Quaternion, BuildingState?)"/>, and adds the building's LIGHT
-    /// instances (and its doors') to <paramref name="lights"/> when given (docs/formats/lights.md, "Placement"). The meshes are the same either way.
+    /// instances (and its doors') to <paramref name="lights"/> and its EFFECT instances to <paramref name="effects"/> when given (docs/formats/lights.md,
+    /// "Placement", "Effects on buildings"). The meshes are the same either way.
     /// </summary>
     public static List<PlacedMesh> Building(GameDatabase db, GameRecord building, string placementId, Vector3 worldPosition, Quaternion rotation,
-        BuildingState? state, List<PlacedLight>? lights)
+        BuildingState? state, List<PlacedLight>? lights, List<PlacedEffect>? effects = null)
     {
         state ??= new BuildingState();
         var result = new List<PlacedMesh>();
-        AddBuilding(db, building, placementId, worldPosition, rotation, state, result, lights);
+        AddBuilding(db, building, placementId, worldPosition, rotation, state, result, lights, effects);
         // Doors: one building per "doors" entry at the parent's position, rotation and scale (the door's own scale is not used: Defensive
         // Gate III/IV are 0.85, their doors 1), not for destroyed buildings (game: Building::createPhysical).
         if (!state.Destroyed && !building.GetBool("is node"))
@@ -146,12 +155,12 @@ public static class WorldObjectLayout
             var doors = building.GetReferences("doors");
             for (int i = 0; i < doors.Count; i++)
                 if (db.Find(doors[i].TargetStringId) is { Type: FcsRecordType.BUILDING } door)
-                    AddBuilding(db, door, placementId, worldPosition, rotation, state, result, lights, i, building.GetFloat("scale", 1));
+                    AddBuilding(db, door, placementId, worldPosition, rotation, state, result, lights, effects, i, building.GetFloat("scale", 1));
         }
         return result;
     }
 
-    sealed class Assembly(GameDatabase db, GameRecord building, string placementId, BuildingState state, List<PlacedMesh> result, List<PlacedLight>? lights)
+    sealed class Assembly(GameDatabase db, GameRecord building, string placementId, BuildingState state, List<PlacedMesh> result, List<PlacedLight>? lights, List<PlacedEffect>? effects)
     {
         public readonly GameDatabase Db = db;
         public readonly GameRecord Building = building;
@@ -161,6 +170,7 @@ public static class WorldObjectLayout
         public readonly BuildingState State = state;
         public readonly List<PlacedMesh> Result = result;
         public readonly List<PlacedLight>? Lights = lights;
+        public readonly List<PlacedEffect>? Effects = effects;
         public float Scale = 1;
         public GameRecord? BaseMaterial;
         public BuildingRandom Random = new(0);
@@ -172,11 +182,11 @@ public static class WorldObjectLayout
     }
 
     static void AddBuilding(GameDatabase db, GameRecord building, string placementId, Vector3 position, Quaternion rotation, BuildingState state,
-        List<PlacedMesh> result, List<PlacedLight>? lights, int doorIndex = -1, float? parentScale = null)
+        List<PlacedMesh> result, List<PlacedLight>? lights, List<PlacedEffect>? effects, int doorIndex = -1, float? parentScale = null)
     {
         if (building.GetBool("is node")) return;
         float scale = parentScale ?? building.GetFloat("scale", 1);
-        var a = new Assembly(db, building, placementId, state, result, lights)
+        var a = new Assembly(db, building, placementId, state, result, lights, effects)
         {
             Scale = scale > 0 ? scale : 1,
             // Base material: the building's first "material" (a collection resolved), else its town's (fcs.def: "the local town material").
@@ -267,8 +277,8 @@ public static class WorldObjectLayout
 
     /// <summary>
     /// A record's instances after its parts, with the rolls the game draws for them: two per LIGHT (its brightness variance, then a
-    /// second draw of the same range kept by the light's owner; docs/formats/lights.md), one per node BUILDING (its handle); effects:
-    /// Unknown, none. LIGHT instances are added to <see cref="Assembly.Lights"/> when it is set; <paramref name="holderNode"/> is the
+    /// second draw of the same range kept by the light's owner; docs/formats/lights.md), one per node BUILDING (its handle), none per
+    /// EFFECT. LIGHT and EFFECT instances are added to <see cref="Assembly.Lights"/> and <see cref="Assembly.Effects"/> when set; <paramref name="holderNode"/> is the
     /// holder's scene node (its part's node, or the building's when the holder is the building or made no entity).
     /// </summary>
     static void AddInstances(Assembly a, GameRecord holder, Matrix4x4 holderNode)
@@ -283,6 +293,13 @@ public static class WorldObjectLayout
                 float power = target.GetFloat("brightness", 1) + a.Random.NextFloat(-halfVariance, halfVariance);
                 a.Random.Next();
                 a.Lights?.Add(PlaceLight(a, holder, holderNode, instance, target, power));
+            }
+            else if (target.Type == FcsRecordType.EFFECT && a.Effects is { } effects)
+            {
+                // Unlike a light's, the effect node's offset is not multiplied by the building scale.
+                Matrix4x4.Decompose(holderNode, out _, out var turn, out _);
+                effects.Add(new PlacedEffect(target, holder, a.Building, a.Identity, Vector3.Transform(instance.Position, holderNode),
+                    Normalized(Normalized(turn) * Normalized(instance.Rotation))));
             }
             else if (target.Type == FcsRecordType.BUILDING && target.GetBool("is node"))
                 a.Random.Next();

@@ -21,6 +21,7 @@ public class ConstructionTests
 {
     const string Plank = "70-t", Iron = "71-t", Hut = "80-t", Shed = "81-t", Outpost = "82-t", Research = "90-t";
     const string WallRecord = "83-t", ShortRecord = "84-t", GateRecord = "85-t", ConnectorRecord = "86-t";
+    const string GateMk1 = "87-t", GateMk2 = "88-t", StoreMk1 = "91-t", StoreMk2 = "92-t";
     /// <summary>Engineering 41.17647: lerp(0.3, 2, e/100) is 1, the factor the build window's estimate leaves out.</summary>
     const float Unit = 100 * 0.7f / 1.7f;
 
@@ -61,11 +62,30 @@ public class ConstructionTests
         var gate = Wall(GateRecord, "Test Gate", 3, 100, 2);
         gate.Bools["is wall gate"] = true;
         gate.References["wall subsections"] = [new FcsReference(ConnectorRecord, 0, 0, 0)];
+        // A gate chain whose upgrade costs more than the 50 units an upgrade keeps.
+        var mk1 = Wall(GateMk1, "Test Gate Mk1", 3, 100, 55);
+        mk1.Bools["is wall gate"] = true;
+        mk1.References["upgrades to"] = [new FcsReference(GateMk2, 0, 0, 0)];
+        var mk2 = Wall(GateMk2, "Test Gate Mk2", 3, 100, 60);
+        mk2.Bools["is wall gate"] = true;
+        // A storage chain: its machine's inventory is where an upgrade takes materials from.
+        FcsRecord Store(string id, string name, int materials, int size)
+        {
+            var r = Rec(id, FcsRecordType.BUILDING, name);
+            r.Ints["build materials"] = materials;
+            r.Bools["has inventory"] = true;
+            (r.Ints["storage size width"], r.Ints["storage size height"]) = (size, size);
+            return r;
+        }
+        var store1 = Store(StoreMk1, "Test Store Mk1", 2, 4);
+        store1.References["upgrades to"] = [new FcsReference(StoreMk2, 0, 0, 0)];
+        var store2 = Store(StoreMk2, "Test Store Mk2", 10, 6);
         research.References["enable buildings"] = [new FcsReference(Hut, 0, 0, 0), new FcsReference(Shed, 0, 0, 0), new FcsReference(Outpost, 0, 0, 0),
-            new FcsReference(WallRecord, 0, 0, 0), new FcsReference(GateRecord, 0, 0, 0)];
+            new FcsReference(WallRecord, 0, 0, 0), new FcsReference(GateRecord, 0, 0, 0), new FcsReference(GateMk1, 0, 0, 0), new FcsReference(GateMk2, 0, 0, 0),
+            new FcsReference(StoreMk1, 0, 0, 0), new FcsReference(StoreMk2, 0, 0, 0)];
         var file = new FcsFile();
         file.Records.AddRange([Item(Plank, "Plank"), Item(Iron, "Iron"), Item(BuildingBuildData.BuildingMaterialsItem, "Building Materials"), hut, shed, outpost, research,
-            wall, gate, Wall(ShortRecord, "Test Wall Short", 4, 50, 1), Wall(ConnectorRecord, "Test Wall Connector", 1, 20, 1)]);
+            wall, gate, mk1, mk2, store1, store2, Wall(ShortRecord, "Test Wall Short", 4, 50, 1), Wall(ConnectorRecord, "Test Wall Connector", 1, 20, 1)]);
         var db = new GameDatabase();
         db.Apply(file, "test.mod");
         return db;
@@ -79,7 +99,7 @@ public class ConstructionTests
         public ItemFactory Items { get; }
         public List<CharacterId> Ids { get; } = [];
 
-        public Rig(int threads = 1, bool snapshots = false, ulong seed = 6)
+        public Rig(int threads = 1, bool snapshots = false, ulong seed = 6, bool production = false)
         {
             var db = Db = Database();
             Items = new ItemFactory(db, Constants);
@@ -89,6 +109,7 @@ public class ConstructionTests
                 new PlayerSystem(), new MovementSystem(new PathService(walk, true)),
                 new ConstructionSystem(db, Constants, BodyOptions.Default, Items, [], "", new ConstructionSettings()),
             };
+            if (production) systems.Add(new Meitou.Simulation.Production.ProductionSystem(db, Constants, BodyOptions.Default, Items, null));
             World = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = snapshots, MinPartitionSize = 1 }, walk, systems);
             World.Player.Faction = PlayerFaction;
             World.Research.Set(db, [Research]);
@@ -297,6 +318,54 @@ public class ConstructionTests
         {
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
+    }
+
+    // ------------------------------------------------------------------ upgrades
+
+    /// <summary>
+    /// A finished gate upgraded in place (docs/game/buildings-production.md "Upgrades"): same id, the next record's name and materials with the 55 delivered units carried over,
+    /// unfinished with progress capped at 50. Downgrading the unfinished upgrade finishes the lower gate at once, its materials being all delivered. A storage building's upgrade
+    /// takes what it still owes from its own inventory (5 of the 8), and its machine is made anew for the next record keeping the rest of the stock.
+    /// </summary>
+    [Fact]
+    public void A_building_upgrades_in_place_taking_owed_materials_from_its_stock_and_a_downgrade_of_the_unfinished_upgrade_finishes_at_once()
+    {
+        using var rig = new Rig(production: true);
+        rig.Say(new PlaceBuildings([new PlannedBuilding(GateMk1, HutAt, Quaternion.Identity)]) { Tick = 0 });
+        rig.World.RunTick();
+        var gate = Assert.Single(rig.World.Buildings.All);
+        foreach (var m in gate.Materials) m.Delivered = m.Required;
+        (gate.Progress, gate.Complete) = (gate.Target, true);
+
+        rig.Say(new UpgradeSite(gate.Id) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        Assert.Same(gate, Assert.Single(rig.World.Buildings.All));
+        Assert.Equal((GateMk2, "Test Gate Mk2", 60f, false, ConstructionSystem.UpgradeProgressCap), (gate.Record, gate.Name, gate.Target, gate.Complete, gate.Progress));
+        Assert.Equal(55, Assert.Single(gate.Materials).Delivered);
+        Assert.True(gate.Upgrading);
+
+        rig.Say(new DowngradeSite(gate.Id) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        Assert.Equal((GateMk1, 55f, true, 55f, false), (gate.Record, gate.Target, gate.Complete, gate.Progress, gate.Upgrading));
+
+        const string Materials = BuildingBuildData.BuildingMaterialsItem;
+        rig.Say(new PlaceBuildings([new PlannedBuilding(StoreMk1, ShedAt, Quaternion.Identity)]) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        var store = rig.World.Buildings.All.Single(s => s.Record == StoreMk1);
+        foreach (var m in store.Materials) m.Delivered = m.Required;
+        (store.Progress, store.Complete) = (store.Target, true);
+        rig.World.RunTick();
+        var stock = rig.World.Machines.Find(store.Id)!.Storage!;
+        for (int i = 0; i < 5; i++) Assert.True(stock.Add(rig.Items.Create(Materials, 1)!));
+        Assert.True(stock.Add(rig.Items.Create(Plank, 1)!));
+
+        rig.Say(new UpgradeSite(store.Id) { Tick = rig.World.Tick });
+        rig.World.RunTicks(2);
+        Assert.Equal((StoreMk2, 7f), (store.Record, Assert.Single(store.Materials).Delivered));
+        var machine = rig.World.Machines.Find(store.Id)!;
+        Assert.Equal(StoreMk2, machine.Data.Id);
+        Assert.Equal(Plank, Assert.Single(machine.Storage!.Items).Record);
+        Assert.Equal(1, rig.World.Machines.Count);
     }
 }
 

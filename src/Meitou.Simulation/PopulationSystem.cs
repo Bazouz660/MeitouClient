@@ -155,6 +155,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         Discover(world);
         StepRoaming(world);
         StepCampaigns(world);
+        world.ItemSlots.Step(world, data);
     }
 
     /// <summary>The XZ distance at which a player character explores a town (and discovers it).</summary>
@@ -334,6 +335,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         float radius = site.Town.SizeRadius * site.Town.TownRadiusMult;
         // The town's doors, cages, containers and beds, once (they stay registered when the town unloads).
         world.Fixtures.RegisterSite(world, data, town.Site);
+        world.ItemSlots.RegisterSite(world, data, town.Site);
         // A town made counts as visited in every zone of its buildings (engine choice: its residents and its buildings' locks are saved whole, docs/formats/save.md "Zone files"),
         // but for the centre zone of another town: a file there would tell the original that town was made, with no residents saved for it.
         foreach (var b in site.Buildings)

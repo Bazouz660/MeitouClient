@@ -28,6 +28,7 @@ public sealed partial class WwisePlayer : IDisposable
     // Owned by the audio thread.
     readonly Dictionary<uint, WwiseObject> objects = [];
     readonly Dictionary<uint, MediaClip> media = [];
+    readonly PcmCache pcm = new();
     readonly Dictionary<uint, float> parameters = [];
     readonly Dictionary<uint, uint> states = [];
     readonly Dictionary<uint, List<uint>> history = [];
@@ -49,10 +50,10 @@ public sealed partial class WwisePlayer : IDisposable
     public int MusicVoices { get; private set; }
 
     /// <summary>
-    /// Meitou's voice cap (docs/audio.md "Voice cap"): at most this many sounds besides the music are mixed in a block, the loudest at the listener; the others run on
+    /// Meitou's voice cap (docs/audio.md "Voice cap", the Audio settings' Sound voices slider, <see cref="AudioSettings.VoiceCap"/>): at most this many sounds besides the music are mixed in a block, the loudest at the listener; the others run on
     /// silently (no decoding) and come back in place when they are among the loudest again. 0: every sound is mixed. Set from any thread.
     /// </summary>
-    public int VoiceCap { get; set; }
+    public int VoiceCap { get; set; } = AudioSettings.MeitouVoices;
 
     /// <summary>The sounds the cap left silent in the last block.</summary>
     public int Silenced { get; private set; }
@@ -659,7 +660,8 @@ public sealed partial class WwisePlayer : IDisposable
                     delayFrames = Math.Ceiling(at - 1e-6);
                     phase = Math.Max(0, delayFrames - at) * clip.SampleRate / player.outputRate;
                 }
-                voice = new Voice(clip, plays, skip, limit, phase);
+                // A sound plays from the shared decoded samples (PcmCache) when its clip is short; a music clip (trimmed, long) streams.
+                voice = new Voice(clip, plays, skip, limit, phase, musicClip is null ? player.pcm.Get(clip) : null);
             }
         }
 

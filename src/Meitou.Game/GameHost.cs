@@ -135,7 +135,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             clock: clock,
             simulation: worldSettings = new Meitou.Simulation.WorldSettings
             {
-                Seed = g.Seed, MinPartitionSize = 128, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
+                Seed = g.Seed, MinPartitionSize = 32, Threads = Math.Max(1, config.SimThreads ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8)),
                 Sunrise = (float)clock.Sunrise, Sunset = (float)clock.Sunset,
             },
             systems: systems, walkability: walkability);
@@ -234,6 +234,11 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
         ui.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
             ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
+        // The upgrade chain of a BUILDING (the panel's [UPGRADE] / [DOWNGRADE]) and its build data (their tooltips' materials).
+        ui.UpgradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.UpgradeOf(d.Db, record) : null;
+        ui.DowngradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.DowngradeOf(d.Db, record) : null;
+        ui.BuildingData = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r) : null;
+        ui.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
         ui.SquadLimits = () => popData?.Bodies.Constants;
         ui.Rocks = () => popData?.ResourceNodes;
         ui.AlliedFaction = faction => popData is { } d && session.World.Player.Faction is (>= 0 and var mine) && d.Relations.Contains(faction) && d.Relations.IsAlly(mine, faction);
@@ -251,6 +256,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         };
         ui.ArmourOf = record => popData?.Combat.Armour(record);
         ui.RecordName = id => popData?.Db.Find(id)?.Name;
+        ui.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
         ui.ItemRecordOf = id => popData?.Db.Find(id);
         ui.CombatOf = () => popData?.Combat;
         ui.MapItemTowns = record =>
@@ -283,14 +289,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
-
-        player.MoveMarker = gpu.MoveMarker ??= MoveMarkerRenderer.Create(context, assets.Find);
+        player.FixLoadButton = config.FixLoadButton;
+        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
+        player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
+        player.Markers = gpu.Markers ??= MarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
         gpu.NavmeshOverlay ??= new NavmeshOverlayRenderer(context);
         navOverlayRenderer = gpu.NavmeshOverlay;
         player.MeshHit = (id, origin, direction) => gpu.Characters?.RayHit(DrawKey(id), origin, direction);
         player.Floor = (() => viewedFloor, StepFloor);
+        player.HiddenInWorld = hiddenIndoors.Contains;
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);
         player.SurfaceMoveHit = SurfaceMoveHit;
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
@@ -418,6 +428,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (gpu.Foliage is { } foliage && o.Screenshot is null) foliage.SwaySeconds = seconds;
         // The heat haze's gameTime: game hours since the start (it stops while paused, as in the game).
         gpu.GameHours = session.Clock.HoursSinceStart;
+        // The sim's sight counts the interior lamps the renderer shows (the interiorlamps switch).
+        session.World.Sight.InteriorLampsAllDay = gpu.Lamps?.InteriorAllDay ?? o.InteriorLamps;
         // The weather's three time bases: the game day and time of day (the hour below), the game speed (the last non-zero one while paused) and the paused flag.
         if (gpu.Weather is { } weather)
         {

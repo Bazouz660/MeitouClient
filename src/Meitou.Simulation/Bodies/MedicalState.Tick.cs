@@ -25,27 +25,46 @@ public sealed partial class MedicalState
     }
 
     /// <summary>
-    /// Treats the patient for <paramref name="dt"/>: each matching part's bandaged pool rises by the rate x dt, capped so h + b stays at most M. An ordinary kit treats only
-    /// organic parts, a robot kit only robotic ones. The unit of <c>dt</c> for treatment is <b>Unknown</b> in the original; the first aid code calls it with <b>game seconds</b>
-    /// (an engine choice: with hours a 100 HP part would take 2 to 33 game hours to bandage and a kit would never run out; the medic XP function takes seconds too). Returns the total bandaged.
+    /// One update of bandaging (<c>FUN_140649a00</c>): the first part in part order that the kit type treats and that has room (h + b &lt; M) gets the rate x dt on its bandaged
+    /// pool; only when that fills it (clamped to h + b = M) does the next such part get the full rate x dt too, and so on. An ordinary kit treats only organic parts, a robot kit
+    /// only robotic ones. <paramref name="touched"/> is how many parts took some (the kit drains once for each). The unit of <c>dt</c> is <b>Unknown</b> in the original; Meitou passes
+    /// <b>game seconds</b> (an engine choice: with hours a 100 HP part would take 2 to 33 game hours to bandage; the medic XP function takes seconds too). Returns the total bandaged.
     /// </summary>
-    public float Treat(float dt, float skill, float kitQuality, bool robotKit, in MedicalContext ctx) =>
-        Bandage(TreatmentRate(ctx.Constants, skill, kitQuality, robotKit) * dt, robotKit, ctx.Race);
+    public float Treat(float dt, float skill, float kitQuality, bool robotKit, in MedicalContext ctx, out int touched) =>
+        Bandage(TreatmentRate(ctx.Constants, skill, kitQuality, robotKit) * dt, robotKit, ctx.Race, out touched);
 
-    /// <summary>Raises the bandaged pool of every part the kit type treats by <paramref name="amount"/> (each), capped so h + b stays at most M. Returns the total added; a dead patient takes nothing.</summary>
-    public float Bandage(float amount, bool robotKit, RaceData race)
+    /// <summary>Gives <paramref name="amount"/> to the bandaged pool of the first part with room that the kit type treats (null: no kit, any part), moving on only when a part fills (see <see cref="Treat"/>). A dead patient takes nothing.</summary>
+    public float Bandage(float amount, bool? robotKit, RaceData race, out int touched)
     {
-        if (Dead) return 0;
+        touched = 0;
+        if (Dead || amount <= 0) return 0;
         float total = 0;
         foreach (var p in parts)
         {
-            if (p.IsRobotic(race) != robotKit) continue;
+            if (robotKit is { } robot && p.IsRobotic(race) != robot) continue;
             float room = p.MaxHp - p.Flesh - p.Bandage;
-            float add = Math.Clamp(amount, 0, MathF.Max(room, 0));
+            if (room <= 0) continue;
+            float add = MathF.Min(amount, room);
             p.Bandage += add;
             total += add;
+            touched++;
+            if (amount < room) break;   // not filled: one part per update
         }
         return total;
+    }
+
+    /// <summary>
+    /// One update of closing a wound (<c>FUN_14064d800</c>), which first aid does before any bandaging: the newest wound's strength falls by
+    /// <c>medic speed mult</c> x 2 x lerp(0.0005, 0.03, min(skill, kit quality) x 0.01) x dt, and it closes below 0. Returns false when there is no wound.
+    /// </summary>
+    public bool CloseWound(float dt, float skill, float kitQuality, GameConstants c)
+    {
+        if (wounds.Count == 0) return false;
+        float t = Math.Clamp(MathF.Min(skill, kitQuality) * 0.01f, 0, 1);
+        int last = wounds.Count - 1;
+        wounds[last] -= c.MedicSpeedMult * 2 * (0.0005f + (0.03f - 0.0005f) * t) * dt;
+        if (wounds[last] < 0) wounds.RemoveAt(last);
+        return true;
     }
 
     /// <summary>The untreated damage a kit of this type could still bandage: the sum over the parts it treats of max(0, M - h - b). Read-only.</summary>
@@ -164,7 +183,6 @@ public sealed partial class MedicalState
                 float heal = MathF.Min(p.Bandage, dtb * 0.05f * c.HealRateMult * r * (isRobotic ? 250 : 1));
                 p.Bandage -= heal;
                 p.Flesh = MathF.Min(p.Flesh + heal, m);
-                Healed += heal;
             }
             // Wear repair in a repair bed: wear moves into the treated pool, which stays within the part's HP.
             if (p.Wear > 0 && ctx.RepairRate > 0)
@@ -197,10 +215,15 @@ public sealed partial class MedicalState
             StartKo(ctx, events);
         }
 
+        // A vital part under the KO point puts the character into a coma at once, without a KO timer.
+        bool vitalDown = VitalPartsKeepDown(LegKoPoint);
+        if (vitalDown && !Unconscious) ApplyKo(0, events);
+
         if (Unconscious)
         {
             KoTimer -= dt;
-            if (KoTimer <= 0 && VitalPartsUp() && !BloodKo)
+            // Blood under 0 keeps an unconscious character out (reassessCollapseMode); the blood-KO flag only lowers the conscious threshold to -25 (CheckBlood).
+            if (KoTimer <= 0 && !vitalDown && Blood >= 0)
             {
                 Unconscious = false;
                 KoTimer = 0;
@@ -233,7 +256,6 @@ public sealed partial class MedicalState
             float heal = MathF.Min(p.Bandage, seconds * 0.05f * c.HealRateMult * r * (robotic ? 250 : 1));
             p.Bandage -= heal;
             p.Flesh = MathF.Min(p.Flesh + heal, m);
-            Healed += heal;
             p.Stun = 0;
             p.Rig = 0;
             p.HitMult = 1;
@@ -242,7 +264,7 @@ public sealed partial class MedicalState
         Bleeding = 0;
         Blood = MathF.Min(Capacity(ctx), Blood + c.BloodRecoveryRate * seconds * ctx.Race.HealRate * c.RestingHealRateMult);
         if (Blood > 25) BloodKo = false;
-        if (Unconscious && VitalPartsUp() && !BloodKo)
+        if (Unconscious && !VitalPartsKeepDown(KoPoint(c, ctx.Toughness)) && Blood >= 0)
         {
             Unconscious = false;
             KoTimer = 0;
@@ -270,9 +292,11 @@ public sealed partial class MedicalState
         float stump = 0;
         foreach (var p in parts)
             if (p.Limb == LimbState.Stump && p.Flesh + p.Bandage < 0) stump += -(p.Flesh + p.Bandage) * 0.002f;
-        Bleeding = (c.ExtraBloodLossFromBodyparts * stump + woundSum) * ctx.Options.ChanceOfDeath * 1.2f * race.BleedRate;
+        // Floored at 0 (a negative race `bleed rate` gains no blood); blood is then held to capacity every tick.
+        Bleeding = MathF.Max(0, (c.ExtraBloodLossFromBodyparts * stump + woundSum) * ctx.Options.ChanceOfDeath * 1.2f * race.BleedRate);
         Blood -= Bleeding * dt;
         float cap = Capacity(ctx);
+        Blood = MathF.Min(Blood, cap);
         if (Bleeding <= 0 && Blood < cap)
             Blood = MathF.Min(cap, Blood + c.BloodRecoveryRate * dt * race.HealRate * (ctx.Resting ? c.RestingHealRateMult : 1));
     }

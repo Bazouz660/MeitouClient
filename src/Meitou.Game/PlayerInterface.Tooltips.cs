@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Gameplay.Combat;
-using Meitou.Data.Textures;
 using Meitou.Data.Ui;
 using Meitou.Rendering.Ui;
 using Meitou.Simulation;
@@ -224,9 +223,7 @@ sealed partial class PlayerInterface
     bool TooltipPlateReady(UiPainter painter)
     {
         if (painter.HasTexture(TipPlate)) return true;
-        if (uiResolve?.Invoke("Kenshi_UI.png") is not { } path) return false;
-        try { uiAtlas ??= TextureLoader.LoadFile(path, allMips: false).Levels[0]; }
-        catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException) { return false; }
+        if (UiAtlas() is not { } uiAtlas) return false;
         painter.SetImage(TipPlate, MenuArt.WindowSurface(uiAtlas, 96, 96, 1), srgb: false);
         return true;
     }

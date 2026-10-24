@@ -23,6 +23,7 @@ static partial class WorldApp
     public static int Run(string[] args)
     {
         WorldOptions? options;
+        args = TerrainSandboxArgs(args);
         try { options = WorldOptions.Parse(args); }
         catch (Exception e) when (e is ArgumentException or FormatException or IndexOutOfRangeException)
         {
@@ -161,6 +162,7 @@ static partial class WorldApp
             gpu.Foliage?.Settle(camera.Eye);
         }
 
+        FieldTour(gpu, scene, camera, render, o, w, h, context, target);
         // With --orbit-step and weather particles the frame clock runs at 1/60 s a frame (the draw's time unit is 600 s), so they move as in play.
         int orbitFrames = 0;
         float Clock() => o.OrbitStep != 0 && gpu.Particles is { Groups.Count: > 0 } ? (float)(orbitFrames / 60.0 / 600) : 0;
@@ -302,6 +304,7 @@ static partial class WorldApp
                 mouse.MouseDown += (m, b) =>
                 {
                     if (b == MouseButton.Left && panel?.MouseDown(Pixels(m.Position)) == true) return;
+                    if (b == MouseButton.Left && profiler?.Click(Pixels(m.Position)) == true) return;
                     if (b == MouseButton.Left && cinema.MouseDown(Pixels(m.Position))) return;
                     if (cinema.Contains(Pixels(m.Position))) return;
                     if (panel?.Contains(Pixels(m.Position)) == true) return;
@@ -404,6 +407,7 @@ static partial class WorldApp
                 case Key.F9: fpsVisible = !fpsVisible; break;
                 case Key.F10 when overlay is not null: overlay.Visible = !overlay.Visible; break;
                 case Key.F11 when overlay is not null: statsVisible = !statsVisible; FoliageGpuCull.CountTriangles = statsVisible; break;
+                case Key.F12 when shift && profiler is not null && overlay is not null: profiler.ShowVram = !profiler.ShowVram; break;
                 case Key.F12 when profiler is not null && overlay is not null: profiler.Showing = (FrameProfiler.Mode)(((int)profiler.Showing + 1) % 3); break;
             }
         }
@@ -528,7 +532,7 @@ static partial class WorldApp
             string? takeFile = cinema.TakeFrame();
             if (gpu.Weather is { } clockWeather) clockWeather.Day = day;   // game speed 1, never paused: the viewer's time is the day and the hour set here
             Draw(gpu, scene, camera, render, size.X, size.Y, hour, (float)animSeconds / 600f, o.FogDistance);
-            if (audio is not null) { audio.Player.VoiceCap = o.MeitouVoices ? Enhancements.MeitouVoiceCap : 0; UpdateAudio(audio, gpu, scene, camera, hour, frameDt); }
+            if (audio is not null) UpdateAudio(audio, gpu, scene, camera, hour, frameDt);
             cpuMs += frameWatch.Elapsed.TotalMilliseconds;
             if (timing)
             {
@@ -578,7 +582,7 @@ static partial class WorldApp
                 var lines = keyItems.Select(item => KeyState(item.Split(' ')[0]) is { } state ? item.PadRight(width) + state : item).ToList();
                 overlay.Draw(size.X, size.Y, "Keys   (F10 hides this)", lines, panelsBottom);
             }
-            if (panels && overlay is not null) profiler?.Draw(overlay, size.X, size.Y);
+            if (panels && overlay is not null) { profiler?.Draw(overlay, size.X, size.Y); profiler?.DrawVram(overlay, size.X, size.Y); }
             // Last, over the statistics and the profiler: the settings sit at the top left.
             if (panels) panel?.Draw(size.X, size.Y);
             // Over everything: the letterbox, and the timeline editor (F6) or the cinema status line.

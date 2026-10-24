@@ -184,9 +184,6 @@ public sealed class CharacterCold
     public long StealthExposureTick { get; set; } = long.MinValue;
     /// <summary>The hostile NPCs noticing or detecting this sneaker lately (<see cref="AggroSystem"/>, serial commit; display only: not hashed, not saved).</summary>
     public List<StealthWatcher>? Watchers { get; set; }
-    /// <summary>How much of <see cref="Bodies.MedicalState.Healed"/> the heal floaters have shown, and the tick of the last one (display only: not hashed, not saved).</summary>
-    public float HealShown { get; set; }
-    public long HealTick { get; set; }
     /// <summary>Weapon and worn armour (track F, docs/simulation.md "Combat").</summary>
     public Meitou.Simulation.Combat.Fighter? Fighter { get; set; }
     /// <summary>The patient of the <see cref="CharacterTask.Treat"/> task (itself for self-treatment); meaningful only while the task is set (<see cref="FirstAid.FirstAidSystem"/>).</summary>
@@ -201,6 +198,8 @@ public sealed class CharacterCold
     public CharacterId Carrying { get; set; } = CharacterId.None;
     /// <summary>The character carrying this one (none: not carried); the original's <c>isBeingCarried</c> with the partner handle.</summary>
     public CharacterId CarriedBy { get; set; } = CharacterId.None;
+    /// <summary>While carried: where the body hangs on its carrier's shoulder, from the carrier's pose (<see cref="Ragdolls.RagdollSystem"/>, each tick); null without the carrier's skeleton.</summary>
+    public Carrying.CarryAttach? CarryAttach { get; set; }
     /// <summary>Whom the <see cref="CharacterTask.PickUp"/>, <see cref="CharacterTask.Loot"/> or <see cref="CharacterTask.StealthKo"/> task is for; meaningful only while one of those tasks is set.</summary>
     public CharacterId CarryTarget { get; set; } = CharacterId.None;
     /// <summary>Seconds into the <c>shoulder lift left</c> clip of a pick-up or put-down, or the <c>knockout</c> swing of a stealth KO, in progress (-1: not yet; the animation system plays the clip at this time).</summary>

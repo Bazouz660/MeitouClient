@@ -39,6 +39,11 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             () => (config.Audio ??= new()).MusicFrequency,
             v => { config.Audio = (config.Audio ?? new()) with { MusicFrequency = MathF.Round(v) }; AudioChanged?.Invoke(); },
             "0", Text: v => $"{v:0} min", Faithful: 5),
+        // Meitou's voice cap (docs/audio.md "Voice cap"): the top of the track mixes every sound.
+        new("Sound voices", AudioSettings.MinVoices, AudioSettings.MaxVoices,
+            () => (config.Audio ??= new()).Voices,
+            v => { config.Audio = (config.Audio ?? new()) with { Voices = (int)MathF.Round(v / 8) * 8 }; AudioChanged?.Invoke(); },
+            "0", Text: v => v >= AudioSettings.MaxVoices ? "All" : $"{v:0}", Faithful: AudioSettings.MaxVoices, Meitou: AudioSettings.MeitouVoices),
     ];
 
     Slider Volume(string label, Func<AudioSettings, float> get, Func<AudioSettings, float, AudioSettings> set) =>
@@ -84,6 +89,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<int>? AttackSlotsChanged { get; init; }
     /// <summary>Applies the late-dodges setting to the running combat system.</summary>
     public Action<bool>? LateDefencesChanged { get; init; }
+    /// <summary>Applies the turret gunner facing fix to the running combat system.</summary>
+    public Action<bool>? GunnerFacingChanged { get; init; }
     /// <summary>Called when an off-screen switch changes (the config holds the new values).</summary>
     public Action? OffscreenChanged { get; init; }
     /// <summary>The door auto-close switch changed (<see cref="UserConfig.DoorsCloseBehind"/>).</summary>
@@ -203,6 +210,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 "Volume of the interface sounds.",
                 "Volume of the voices.",
                 "Average minutes of silence between pieces of biome music.",
+                "The most sounds heard at once: the loudest play, quieter ones wait silently and come back when they are loud enough. Lower it if big fights stutter; All mixes every sound.",
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));
@@ -224,6 +232,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Load button", "The load window's Load button works only once a save that can be read is selected. "
                 + "The game keeps it live: with nothing selected a click does nothing, and an unreadable save fails to load.",
                 Toggle: new("Load button", () => config.FixLoadButton, v => player.FixLoadButton = config.FixLoadButton = v, Remaster: true, OnOff: true)));
+            result.Add(new("Turret gunners turn", "A turret's gunner turns with the gun, facing where it aims. "
+                + "In the game the gunner keeps facing the turret, so once the gun swings toward a target the gunner looks off to the side.",
+                Toggle: new("Turret gunners turn", () => config.FixGunnerFacing, v => { config.FixGunnerFacing = v; GunnerFacingChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
         }
         if (page == 4)
         {
@@ -492,6 +503,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         DoorsCloseChanged?.Invoke(true);
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
         player.FixLoadButton = config.FixLoadButton = true;
+        config.FixGunnerFacing = true;
+        GunnerFacingChanged?.Invoke(true);
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();

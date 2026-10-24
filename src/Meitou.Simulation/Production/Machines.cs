@@ -174,6 +174,16 @@ public sealed class MachineRegistry
         Touch();
     }
 
+    /// <summary>Puts <paramref name="machine"/> in place of its site's machine, keeping its place in the order (an upgraded building's machine for its new record).</summary>
+    internal void Replace(Machine machine)
+    {
+        int at = all.FindIndex(m => m.Site == machine.Site);
+        if (at < 0) all.Add(machine);
+        else all[at] = machine;
+        bySite[machine.Site] = machine;
+        Touch();
+    }
+
     internal bool Remove(string site)
     {
         if (!bySite.Remove(site, out var m)) return false;

@@ -99,13 +99,13 @@ public static class MachineSave
         return list;
     }
 
-    /// <summary>Reads the machines of the complete player buildings the world holds (after <see cref="BuildingSave.Read"/>).</summary>
+    /// <summary>Reads the machines of the player buildings the world holds (after <see cref="BuildingSave.Read"/>); an unfinished one keeps its stock too (an upgrade being built).</summary>
     public static void Read(SaveGame save, World world, ProductionSystem production, ItemFactory factory)
     {
         var states = HeldSave.BuildingStates(save);
         foreach (var site in world.Buildings.All)
         {
-            if (!site.Complete || site.Owner != world.Player.Faction || production.Data(site.Record) is null) continue;
+            if (site.Owner != world.Player.Faction || production.Data(site.Record) is null) continue;
             if (production.Ensure(world, site) is not { } m) continue;
             if (states.TryGetValue(BuildingKey.Of(site.Zone, site.Id), out var state))
             {

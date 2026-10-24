@@ -57,6 +57,8 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         public string? Diffuse, Normal;
         public int Slot = -1;
+        /// <summary>Its height's steepness factor once decoded (the relief texture's value: 1 / (side × steepness), 0 flat), for the field's labels.</summary>
+        public float Steep;
         public long Used;
         public int Needed;
         public bool Loading, Failed;
@@ -68,7 +70,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         public bool Resident;
     }
 
-    sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal, byte[][]? Height, float Relief = 0);
+    sealed record Decoded(Pair Pair, byte[][]? Diffuse, byte[][]? Normal, byte[][]? Height, float Steep = 0);
 
     /// <summary>Side of the height array's layers (<see cref="GroundRelief"/>): the layer size, at most 512.</summary>
     int HeightSize => Math.Min(layerSize, 512);
@@ -272,7 +274,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         if (GroundRelief.Enabled)
             heightArray = Make(InternalFormat.R8, HeightSize, HeightSize, (int)Math.Log2(HeightSize) + 1, Math.Max(Capacity, 1),
                 TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, "terrain textures height", kind: TextureKind.Texture2DArray);
-        // Each slot's relief depth factor (GroundRelief.LayerDepth; 0: flat), read by the slot's index.
+        // Each slot's steepness factor (1 / (side × its height's steepness); 0: flat), read by the slot's index: its depth (GroundRelief.LayerDepthCm).
         if (GroundRelief.Enabled)
         {
             reliefTexture = Make(InternalFormat.R32f, Math.Max(Capacity, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
@@ -361,11 +363,13 @@ public sealed unsafe class TerrainTextures : IDisposable
             if (printed++ < 20) Console.WriteLine($"warning   {m}");
         if (HasBiomes)
         {
+            if (GroundRelief.FieldCentre is { } fieldCentre && tiles.Length == 0) SetField(fieldCentre, GroundRelief.FieldCliffs ? GroundRelief.FieldTile / 2 : GroundRelief.FieldTile);
             while (decoded.TryDequeue(out var d)) Install(d, uploads);
             UpdateBiomes(eye, materialDistance, ahead, kept);
         }
         UpdateMaps(eye, uploads);
-        if (cellsDirty) UploadCells();
+        if (cellsDirty) { UploadCells(); fieldDirty = true; }
+        if (fieldDirty) UploadField();
     }
 
     /// <summary>The biomes of the cells near <paramref name="eye"/> and, during a character flight, near its arrival eye <paramref name="ahead"/> (kept and loaded alike).</summary>
@@ -376,6 +380,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         double cs = info.CellSize, half = WorldLayout.HalfWorldSize;
         double radius = materialDistance + cs / 2;
         var nearest = new Dictionary<int, double>();
+        foreach (int b in pinned) nearest[b] = -1;   // the texture field's biomes first, wherever the eye is
         // During a flight the arrival's cells come first: the eye's (the flight path) count as farther than any of them.
         void Gather(Vector3 at, double lead)
         {
@@ -425,10 +430,10 @@ public sealed unsafe class TerrainTextures : IDisposable
                 var local = new List<string>();
                 var d = LoadLayer(assets, pair.Diffuse, layerSize, true, [128, 128, 128, 60], local);
                 var n = LoadLayer(assets, pair.Normal, layerSize, false, [128, 128, 255, 255], local);
-                float relief = 0;
-                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, HeightSize, out relief) : null;
+                float steep = 0;
+                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, pair.Diffuse, HeightSize, out steep) : null;
                 foreach (var m in local) problems.Enqueue(m);
-                result = new Decoded(pair, d, n, h, relief);
+                result = new Decoded(pair, d, n, h, steep);
             }
             catch (Exception e)
             {
@@ -447,6 +452,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         var pair = d.Pair;
         if (d.Diffuse is null || d.Normal is null) { pair.Loading = false; inFlight--; pair.Failed = true; return; }
+        pair.Steep = d.Height is null ? 0 : d.Steep;
         int slot = AllocateSlot();
         if (slot < 0)
         {
@@ -485,7 +491,7 @@ public sealed unsafe class TerrainTextures : IDisposable
                     int s = Math.Max(HeightSize >> level, 1);
                     batch.Write(heightArray.Texture, level, slot, Rect(0, 0, s, s), height[level]);
                 }
-                if (reliefTexture is not null) batch.Write(reliefTexture.Texture, 0, 0, Rect(slot, 0, 1, 1), BitConverter.GetBytes(d.Height is null ? 0f : d.Relief));
+                if (reliefTexture is not null) batch.Write(reliefTexture.Texture, 0, 0, Rect(slot, 0, 1, 1), BitConverter.GetBytes(d.Height is null ? 0f : d.Steep));
             }, "height upload");
         }
         uploads.Add(() =>
@@ -633,31 +639,18 @@ public sealed unsafe class TerrainTextures : IDisposable
     }
 
     /// <summary>
-    /// The height levels of a layer for <see cref="GroundRelief"/>: its normal map decoded at <paramref name="size"/>² and integrated (<see cref="NormalHeight"/>),
-    /// R8 with mips; null for a normal map that is missing or cannot be read (the layer stays flat).
+    /// The height levels of a layer for <see cref="GroundRelief"/>, R8 with mips: its normal map decoded at <paramref name="size"/>² and integrated
+    /// (<see cref="NormalHeight.FromNormals"/>, its diffuse telling a turned frame's up), and <paramref name="steep"/> 1 / (side × the height's steepness):
+    /// the depth, as a fraction of the tile, that gives a root-mean-square slope of 1. Null for a normal map that is missing or cannot be read (the layer
+    /// stays flat).
     /// </summary>
-    static byte[][]? LoadHeight(AssetLocator assets, string? name, int size, out float relief)
+    static byte[][]? LoadHeight(AssetLocator assets, string? normalName, string? diffuseName, int size, out float steep)
     {
-        relief = 0;
-        if (name is null) return null;
-        var path = assets.Find(name) ?? assets.Find(Path.GetFileName(name.Replace('\\', '/')));
-        if (path is null) return null;
-        RgbaImage image;
-        try
-        {
-            var bytes = File.ReadAllBytes(path);
-            if (bytes.Length >= 4 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes) == DdsReader.Magic)
-            {
-                var dds = DdsReader.Read(bytes);
-                int level = 0;
-                while (level + 1 < dds.MipCount && Math.Max(dds.Width >> (level + 1), 1) >= size) level++;
-                image = DdsDecoder.Decode(dds, 0, level);
-            }
-            else image = TextureLoader.LoadImage(bytes);
-        }
-        catch (Exception e) when (e is DdsFormatException or InvalidOperationException or IOException or ArgumentException) { return null; }
-        var height = NormalHeight.FromNormals(Resize(image, size), size, out float range);
-        relief = GroundRelief.LayerDepth(range);
+        steep = 0;
+        if (ReadImage(assets, normalName, size) is not { } normals) return null;
+        var diffuse = ReadImage(assets, diffuseName, size) is { } d ? Resize(d, size) : null;
+        var height = NormalHeight.FromNormals(Resize(normals, size), size, out float steepness, diffuse, GroundRelief.Tilt);
+        steep = steepness > 0 ? 1 / (size * steepness) : 0;
         var levels = new byte[(int)Math.Log2(size) + 1][];
         levels[0] = height;
         for (int l = 1; l < levels.Length; l++)
@@ -672,7 +665,28 @@ public sealed unsafe class TerrainTextures : IDisposable
         return levels;
     }
 
-    /// <summary>The height of a layer without one: 255 (the top) everywhere, so the parallax offset is 0.</summary>
+    /// <summary>A layer texture decoded at its first level no smaller than <paramref name="size"/>; null when it is missing or cannot be read.</summary>
+    static RgbaImage? ReadImage(AssetLocator assets, string? name, int size)
+    {
+        if (name is null) return null;
+        var path = assets.Find(name) ?? assets.Find(Path.GetFileName(name.Replace('\\', '/')));
+        if (path is null) return null;
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            if (bytes.Length >= 4 && System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes) == DdsReader.Magic)
+            {
+                var dds = DdsReader.Read(bytes);
+                int level = 0;
+                while (level + 1 < dds.MipCount && Math.Max(dds.Width >> (level + 1), 1) >= size) level++;
+                return DdsDecoder.Decode(dds, 0, level);
+            }
+            return TextureLoader.LoadImage(bytes);
+        }
+        catch (Exception e) when (e is DdsFormatException or InvalidOperationException or IOException or ArgumentException) { return null; }
+    }
+
+    /// <summary>The height of a layer without one: 255 (the top) everywhere (its steepness factor 0 keeps it out of the relief).</summary>
     static byte[][] FlatHeight(int size)
     {
         var levels = new byte[(int)Math.Log2(size) + 1][];
@@ -908,13 +922,86 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>The terrain material's textures (null where one does not exist yet), for the native draws that read them by bindless index.</summary>
     internal readonly record struct TextureSet(TerrainTexture? Diffuse, TerrainTexture? Normal, TerrainTexture? Params, TerrainTexture? Cells, TerrainTexture? BlendMap,
-        TerrainTexture? Overlay, TerrainTexture? Colour, TerrainTexture? Ground, TerrainTexture? WorldColour, TerrainTexture? Height, TerrainTexture? Relief);
+        TerrainTexture? Overlay, TerrainTexture? Colour, TerrainTexture? Ground, TerrainTexture? WorldColour, TerrainTexture? Height, TerrainTexture? Relief,
+        TerrainTexture? Field);
 
-    internal TextureSet Textures => new(diffuseArray, normalArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture, heightArray, reliefTexture);
+    internal TextureSet Textures => new(diffuseArray, normalArray, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture, heightArray,
+        reliefTexture, fieldTexture);
+
+    // ---- the texture field (GroundRelief.FieldCentre: the terrain sandbox) ----
+
+    /// <summary>One tile of the texture field: the biome row it is drawn with, the layer it shows, and what to call it.</summary>
+    internal readonly record struct FieldEntry(int Row, TerrainLayer Layer, string Label);
+
+    TerrainTexture? fieldTexture;
+    FieldEntry[] tiles = [];
+    int[] pinned = [];
+    bool fieldDirty;
+
+    /// <summary>The texture field's lower left corner (world X, Z), tile side, tiles a row and tile count (0: no field).</summary>
+    public Vector2 FieldOrigin { get; private set; }
+    public float FieldTile { get; private set; }
+    public int FieldColumns { get; private set; }
+    public int FieldCount => tiles.Length;
+
+    /// <summary>
+    /// Lays the texture field out round <paramref name="centre"/>: one square tile of side <paramref name="tile"/> for each distinct ground texture pair
+    /// (the base, slope, grass, dirt and road layers of every biome; with <see cref="GroundRelief.FieldCliffs"/> the cliff layers instead, whose vertical
+    /// projections need a steep face), ordered by layer then name, from the first biome that uses it; those biomes are kept resident wherever the eye is.
+    /// </summary>
+    public void SetField(Vector2 centre, float tile)
+    {
+        var seen = new HashSet<(string?, string?)>();
+        var entries = new List<FieldEntry>();
+        foreach (var layer in GroundRelief.FieldCliffs ? [TerrainLayer.Cliff] : new[] { TerrainLayer.Base, TerrainLayer.Slope, TerrainLayer.Grass, TerrainLayer.Dirt, TerrainLayer.Road })
+            for (int b = 0; b < biomes.Count; b++)
+            {
+                var pair = state[b].Pairs[(int)layer];
+                if (pair.Normal is null || !seen.Add((pair.Diffuse?.ToLowerInvariant(), pair.Normal.ToLowerInvariant()))) continue;
+                entries.Add(new FieldEntry(b, layer, $"{Path.GetFileNameWithoutExtension(pair.Normal.Replace('\\', '/'))} ({biomes[b].Name}: {layer})"));
+            }
+        tiles = [.. entries.OrderBy(e => e.Layer).ThenBy(e => e.Label, StringComparer.OrdinalIgnoreCase)];
+        FieldColumns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(tiles.Length)));
+        int rows = (tiles.Length + FieldColumns - 1) / FieldColumns;
+        FieldTile = tile;
+        FieldOrigin = centre - new Vector2(FieldColumns, rows) * tile / 2;
+        pinned = [.. tiles.Select(e => e.Row).Distinct()];
+        fieldTexture ??= Make(InternalFormat.Rgba8ui, Math.Max(tiles.Length, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+            TextureWrapMode.ClampToEdge, "terrain texture field");
+        fieldDirty = true;
+        int needed = pinned.SelectMany(b => state[b].Pairs).Distinct().Count();
+        Console.WriteLine($"field     {tiles.Length} ground textures from {pinned.Length} biomes ({needed} texture pairs kept resident, room for {Capacity}), {FieldColumns} a row, tiles {tile:0} units, " +
+            $"from {FieldOrigin.X:0}, {FieldOrigin.Y:0}");
+    }
+
+    /// <summary>The texture field's tile at world (<paramref name="x"/>, <paramref name="z"/>): its label, or null outside the field.</summary>
+    public string? FieldLabel(float x, float z)
+    {
+        if (tiles.Length == 0) return null;
+        int cx = (int)MathF.Floor((x - FieldOrigin.X) / FieldTile), cz = (int)MathF.Floor((z - FieldOrigin.Y) / FieldTile), i = cz * FieldColumns + cx;
+        if (cx < 0 || cz < 0 || cx >= FieldColumns || i >= tiles.Length) return null;
+        var e = tiles[i];
+        var pair = state[e.Row].Pairs[(int)e.Layer];
+        float tile = 5000 / Math.Max((biomes[e.Row].Tiling[(int)e.Layer].X + biomes[e.Row].Tiling[(int)e.Layer].Y) / 2, 1e-3f);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{i + 1}/{tiles.Length}  {e.Label}  tile {tile / 10:0.#} m, depth {GroundRelief.LayerDepthCm(pair.Steep, tile) * (e.Layer == TerrainLayer.Cliff ? GroundRelief.CliffScale : 1):0.#} cm");
+    }
+
+    /// <summary>The field's tiles, one texel each: R biome row, G layer, B 1 once the biome is resident (until then the tile shows the world).</summary>
+    void UploadField()
+    {
+        fieldDirty = false;
+        if (fieldTexture is null || tiles.Length == 0) return;
+        var texels = new byte[tiles.Length * 4];
+        for (int i = 0; i < tiles.Length; i++)
+            (texels[i * 4], texels[i * 4 + 1], texels[i * 4 + 2]) = ((byte)tiles[i].Row, (byte)tiles[i].Layer, (byte)(state[tiles[i].Row].Resident ? 1 : 0));
+        using var batch = Gpu.Uploads.Begin();
+        batch.Write(fieldTexture.Texture, 0, 0, Rect(0, 0, tiles.Length, 1), texels);
+    }
 
     public void Dispose()
     {
-        foreach (var t in new[] { diffuseArray, normalArray, heightArray, reliefTexture, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture })
+        foreach (var t in new[] { diffuseArray, normalArray, heightArray, reliefTexture, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture, fieldTexture })
             t?.Dispose();
     }
 }

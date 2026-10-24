@@ -37,7 +37,7 @@ sealed partial class PlayerInterface
         {
             if (open.Contains(id)) continue;
             soundScreens.Remove(id);
-            switch (id)
+            switch (IsPinnedInventory(id) ? "inventory" : id)
             {
                 case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Close"); break;
                 case "stats": Sound("Stats_Close"); break;
@@ -48,7 +48,7 @@ sealed partial class PlayerInterface
         foreach (string id in open)
         {
             if (!soundScreens.Add(id)) continue;
-            switch (id)
+            switch (IsPinnedInventory(id) ? "inventory" : id)
             {
                 case "inventory" or "bag" or "limbs" or "trader" or "building" or "bench" or "storage": Sound("Inventory_Open"); break;
                 case "stats": Sound("Stats_Open"); break;

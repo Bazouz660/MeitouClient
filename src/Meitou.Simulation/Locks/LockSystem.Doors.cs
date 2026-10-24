@@ -50,12 +50,20 @@ public sealed partial class LockSystem
             {
                 var doors = PlayerDoors(world, toggle.Building);
                 if (doors.Count == 0) break;
-                bool anyOpen = doors.Any(d => d.Motion == DoorMotion.Open);
+                // Meitou: a door still moving counts by where it is heading and turns back (the original's open and close act only from closed / open, so a
+                // slow gate ignored the button for seconds).
+                bool anyOpen = doors.Any(d => d.Motion is DoorMotion.Open or DoorMotion.Opening);
                 foreach (var d in doors)
                 {
-                    if (anyOpen) { FixtureRegistry.CloseDoor(d); continue; }
+                    if (anyOpen)
+                    {
+                        if (d.Motion == DoorMotion.Opening) { d.Motion = DoorMotion.Closing; d.AutoOpened = false; }
+                        else FixtureRegistry.CloseDoor(d);
+                        continue;
+                    }
                     if (d.Lock is { EffectivelyLocked: true } l) { l.Locked = false; fixtures.Touch(d); }
-                    FixtureRegistry.OpenDoor(d);
+                    if (d.Motion == DoorMotion.Closing) d.Motion = DoorMotion.Opening;
+                    else FixtureRegistry.OpenDoor(d);
                 }
                 break;
             }
@@ -74,6 +82,10 @@ public sealed partial class LockSystem
                 }
                 break;
             }
+            case Construction.SetBuildingPublic open when world.Buildings.Find(open.Building) is null:
+                // A town building the player owns (a site's flag is the construction system's).
+                if (world.Fixtures.OfBuilding(open.Building).Any(f => f.Owner >= 0 && f.Owner == world.Player.Faction)) fixtures.SetPublic(open.Building, open.Public);
+                break;
         }
     }
 
@@ -165,11 +177,23 @@ public sealed partial class LockSystem
         if (reg.Revision == buildingsRevision) return;
         buildingsRevision = reg.Revision;
         var fixtures = world.Fixtures;
+        // An upgraded or downgraded building keeps its doors while it is built, and gets the new record's: their state carries over by door index.
+        var carried = new Dictionary<string, Fixture[]>(StringComparer.Ordinal);
         foreach (var b in fixtures.Buildings.ToArray())
-            if (fixtures.OfBuilding(b) is [{ Site: -1 }, ..] && reg.Find(b) is not { Complete: true, Destroyed: false }) fixtures.Unregister(b);
+            if (fixtures.OfBuilding(b) is [{ Site: -1 } first, ..] list)
+            {
+                var site = reg.Find(b);
+                if (site is { Destroyed: false } && (site.Complete || site.Upgrading) && first.HostRecordId == site.Record) continue;
+                if (site is { Destroyed: false, Upgrading: true } or { Destroyed: false, Complete: true }) carried[b] = [.. list];
+                fixtures.Unregister(b);
+            }
         if (reg.Count == 0 || world.Systems.OfType<PopulationSystem>().FirstOrDefault()?.Data is not { } data) return;
         foreach (var site in reg.All)
-            if (site.Complete && !site.Destroyed) fixtures.RegisterPlayerBuilding(world, data, site);
+            if ((site.Complete || site.Upgrading) && !site.Destroyed)
+            {
+                fixtures.RegisterPlayerBuilding(world, data, site);
+                if (carried.Remove(site.Id, out var old)) fixtures.CarryDoors(site.Id, old);
+            }
     }
 
     struct WalkerScan

@@ -45,6 +45,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Settings = settings ?? new CombatOptions();
         AttackSlots = Math.Max(1, Settings.AttackSlots ?? combat.MaxNumAttackSlots);
         LateDefences = Settings.LateDefences;
+        GunnerFacesBarrel = Settings.GunnerFacesBarrel;
         xp = new XpService(constants, options);
     }
 
@@ -55,6 +56,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
 
     /// <summary>A late but successfully rolled dodge or block still counts (<see cref="CombatOptions.LateDefences"/>); off is the game's rule.</summary>
     public bool LateDefences { get; set; }
+
+    /// <summary>A turret's gunner faces along the barrel as the gun turns (<see cref="CombatOptions.GunnerFacesBarrel"/>); off is the game's facing.</summary>
+    public bool GunnerFacesBarrel { get; set; }
 
     /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
     public Ragdolls.IRagdollEnvironment? Buildings { get; set; }
@@ -132,8 +136,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                 {
                     // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer
-                            && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                        if (Engage(world, table, id, order.Target, now) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
                             crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }
@@ -144,6 +147,15 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                     break;
                 case StopCommand stop:
                     foreach (var id in stop.Characters) Disengage(table, id);
+                    break;
+                // A move or follow order replaces the fight (the original's new task drops the fight task, and a new movement goal clears the stance): the runner
+                // neither swings at a chaser that comes into reach nor keeps its weapon out (docs/game/combat.md "Combat stance").
+                case MoveOrder move:
+                    foreach (var id in move.Characters.Count > 0 ? move.Characters : world.Player.Selection.ToArray()) LeaveFight(table, id);
+                    break;
+                case FollowOrder follow:
+                    foreach (var id in follow.Characters.Count > 0 ? follow.Characters : world.Player.Selection.ToArray())
+                        if (id != follow.Target) LeaveFight(table, id);
                     break;
             }
         }
@@ -171,7 +183,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         return true;
     }
 
-    void Disengage(CharacterTable table, CharacterId id)
+    internal void Disengage(CharacterTable table, CharacterId id)
     {
         if (!table.TryResolveNext(id, out int slot)) return;
         ref var s = ref read[slot];
@@ -180,6 +192,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.NextBlow = 0;
         s.Engaged = false;
         EndFight(table, slot);
+    }
+
+    void LeaveFight(CharacterTable table, CharacterId id)
+    {
+        if (table.TryResolveNext(id, out int slot) && (table.Cold(slot)!.InCombat || read[slot].TargetSlot >= 0)) Disengage(table, id);
     }
 
     static void EndFight(CharacterTable table, int slot)
@@ -200,6 +217,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         Array.Copy(read, write, world.Characters.HighWater);
         FlyProjectiles(world);
         TickTurrets(world);
+        index.Build(read, world.Characters, world.Grid);
     }
 
     public void Move(World world, Partition part)

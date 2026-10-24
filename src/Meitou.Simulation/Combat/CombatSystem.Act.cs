@@ -279,14 +279,12 @@ public sealed partial class CombatSystem
         bool atMe = target.TargetSlot == i && target.TargetGeneration == prev[i].Generation;
         if (target.YieldTo == i && now < target.YieldUntil) return true;
         if (target.AttackTech >= 0 && atMe) return false;   // it is swinging at me: I defend (FUN_140666a30)
-        // One that would not swing back (not fighting, the Block or Passive order) cannot take the initiative.
-        if (now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
-            || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive)) return true;
+        if (Open(t, tc, now)) return true;
         if (s.YieldTo == t && now < s.YieldUntil) return false;
         // The target is free (deciding or in its pause): one draw for the pair and tick, the lower slot's view.
         int lo = Math.Min(i, t), hi = Math.Max(i, t);
         float skillI = Eff(cold, cold.Fighter!.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
-        float skillT = Eff(tc, tc.Fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
+        float skillT = Eff(tc, tc.Fighter!.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack);
         float lowSkill = lo == i ? skillI : skillT, highSkill = lo == i ? skillT : skillI;
         float a = 1 + combat.AttackChanceFactor * MathF.Max(0, highSkill - lowSkill), b = 1 + combat.AttackChanceFactor * MathF.Max(0, lowSkill - highSkill);
         float k = b / a, lowWins = k >= 1 ? 1 - 1 / (2 * k) : k / 2;
@@ -298,11 +296,12 @@ public sealed partial class CombatSystem
         return false;
     }
 
-    struct IncomingScan
+    /// <summary>Whether <paramref name="t"/> would not swing back (staggered, defending, down, not fighting, the Block or Passive order), so it cannot take the initiative.</summary>
+    bool Open(int t, CharacterCold tc, int now)
     {
-        public CombatSlot[] Read;
-        public int Self, SelfGeneration, Now, Yielder;
-        public float Most;
+        ref readonly var target = ref read[t];
+        return now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
+            || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive);
     }
 
     /// <summary>
@@ -312,17 +311,25 @@ public sealed partial class CombatSystem
     float Incoming(World world, int i, int now, out int yielder)
     {
         var prev = world.Characters.Previous;
-        var scan = new IncomingScan { Read = read, Self = i, SelfGeneration = prev[i].Generation, Now = now, Most = -1, Yielder = -1 };
-        world.Grid.Query(prev[i].Position.X, prev[i].Position.Z, CombatTuning.ReactionScanRadius, ref scan, static (int other, ref IncomingScan st) =>
+        // Its neighbours within ReactionScanRadius (the grid's cells round it) that yield to it or swing at it: the index's lists, kept to those cells.
+        var range = world.Grid.Range(prev[i].Position.X, prev[i].Position.Z, CombatTuning.ReactionScanRadius);
+        int generation = prev[i].Generation;
+        yielder = -1;
+        foreach (var (_, other) in index.YieldingTo(i))
         {
-            if (other == st.Self) return;
-            ref readonly var a = ref st.Read[other];
-            if (a.YieldTo == st.Self && st.Now < a.YieldUntil && !a.Down && (st.Yielder < 0 || other < st.Yielder)) st.Yielder = other;
-            if (a.AttackTech < 0 || a.NextBlow == 0 || a.TargetSlot != st.Self || a.TargetGeneration != st.SelfGeneration || a.AttackTicks <= 0) return;
-            st.Most = MathF.Max(st.Most, Math.Clamp((st.Now - a.AttackStart) / (float)a.AttackTicks, 0, 1));
-        });
-        yielder = scan.Yielder;
-        return scan.Most;
+            if (other == i || !range.Holds(index.CellOf(other))) continue;
+            ref readonly var a = ref read[other];
+            if (now < a.YieldUntil && !a.Down && (yielder < 0 || other < yielder)) yielder = other;
+        }
+        float most = -1;
+        foreach (var (_, x, z, other) in index.AttackersOf(i))
+        {
+            if (other == i || !range.Holds((x, z))) continue;
+            ref readonly var a = ref read[other];
+            if (a.AttackTech < 0 || a.NextBlow == 0 || a.TargetGeneration != generation || a.AttackTicks <= 0) continue;
+            most = MathF.Max(most, Math.Clamp((now - a.AttackStart) / (float)a.AttackTicks, 0, 1));
+        }
+        return most;
     }
 
     /// <summary>Any leg part is down (flesh - stun + rig &lt; 0): the original's two leg parts at medical +0x4d8 / +0x4e0 in the kick factor (<c>FUN_140886030</c>).</summary>
@@ -332,55 +339,61 @@ public sealed partial class CombatSystem
         return false;
     }
 
-    struct SlotScan
-    {
-        public CombatSlot[] Read;
-        public CharacterTable Table;
-        public CharacterCold TargetCold;
-        public int Self, Target, TargetGeneration, Now, Holders, Ahead;
-        public Vector3 TargetPosition;
-    }
-
     /// <summary>
     /// Whether <paramref name="i"/> gets one of its target's attack slots for this swing (docs/game/combat.md "Attack slots and circling", <c>FUN_140666310</c> / <c>FUN_1406661d0</c>):
     /// <see cref="AttackSlots"/> plus the target race's <c>extra attack slots</c> (1 to 5), only 1 while the target swings itself. A slot is held from the grant to the swing's last
     /// blow (<c>FUN_14060a590</c> gives it back), so the holders are the fighters at the target whose swing has a blow to come. The original grants in its update order; here
-    /// the other fighters that may ask on the same tick (engaged, free, within their reach) and have a lower slot go first (engine choice).
+    /// the other fighters that may ask on the same tick and have a lower slot go first (engine choice). Their asks are foreseen from the last tick's state only, as Act gates
+    /// them (engaged, deciding now, out of the pause or attacked, within their reach), erring towards counting one that then does not ask, so the count is never exceeded.
     /// </summary>
     bool HasSlot(World world, int i, int t, CharacterCold tc, int now)
     {
         int slots = read[t].AttackTech >= 0 ? 1 : Math.Clamp(AttackSlots + (tc.Race?.ExtraAttackSlots ?? 0), 1, MaxAttackSlots);
-        var prev = world.Characters.Previous;
-        var scan = new SlotScan { Read = read, Table = world.Characters, TargetCold = tc, Self = i, Target = t, TargetGeneration = prev[t].Generation, Now = now, TargetPosition = prev[t].Position };
-        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref SlotScan st) =>
+        var table = world.Characters;
+        var prev = table.Previous;
+        // The fighters at the target within EngageScanRadius of it (the index's list, kept to the grid's cells round it).
+        var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
+        int generation = prev[t].Generation, holders = 0, ahead = 0;
+        var at = prev[t].Position;
+        bool open = Open(t, tc, now);
+        foreach (var (_, x, z, other) in index.AttackersOf(t))
         {
-            if (other == st.Self) return;
-            ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot != st.Target || o.TargetGeneration != st.TargetGeneration || o.Down || o.Ranged) return;
+            if (other == i || !range.Holds((x, z))) continue;
+            ref readonly var o = ref read[other];
+            if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
+            if (o.AttackTech >= 0 && o.NextBlow > 0)
+            {
+                holders++;
+                continue;
+            }
+            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t)) continue;
+            // It decides this tick when its swing or reaction ends now (Act's steps 4 and 5): a block's end and a swing's end start a pause (cut short by a blow at it).
+            int ready = o.ReadyTick;
             if (o.AttackTech >= 0)
             {
-                if (o.NextBlow > 0) st.Holders++;
-                return;
+                if (now < o.AttackEnd) continue;
+                ready = int.MaxValue;
             }
-            if (other > st.Self || !o.Engaged || o.ReactTech >= 0 || st.Now < o.StunUntil || st.Now < o.ReadyTick && !(st.Read[st.Target].YieldTo == other && st.Now < st.Read[st.Target].YieldUntil)) return;
-            if (o.YieldTo == st.Target && st.Now < o.YieldUntil) return;
-            var c = st.Table.Cold(other);
-            if (c is null || o.Reach <= 0 || CombatTuning.Gap(st.Table.Previous[other].Position, st.TargetPosition, c, st.TargetCold) > o.Reach) return;
-            st.Ahead++;
-        });
-        return scan.Holders + scan.Ahead < slots;
+            else if (o.ReactTech >= 0)
+            {
+                if (now < o.ReactStart + o.ReactTicks) continue;
+                if (!techniques[o.ReactTech].IsDodge) ready = Math.Max(ready, now + (int)MathF.Ceiling(CombatTuning.AfterBlockPause / world.TickSeconds));
+            }
+            if (now < ready && !(read[t].YieldTo == other && now < read[t].YieldUntil) && Incoming(world, other, now, out _) < 0) continue;
+            // A yielder asks in vain unless the target is open (HasInitiative).
+            if (o.YieldTo == t && now < o.YieldUntil && !open) continue;
+            // Its reach is known from its last ask (StartAttack); one that has never asked counts.
+            var c = table.Cold(other);
+            if (c is null || o.Reach > 0 && CombatTuning.Gap(prev[other].Position, at, c, tc) > o.Reach) continue;
+            ahead++;
+        }
+        return holders + ahead < slots;
     }
 
     /// <summary>The most attack slots a target can have (the slot count is clamped to 1 to 5, <c>FUN_1406661d0</c>).</summary>
     public const int MaxAttackSlots = 5;
     /// <summary>The most fighters a target lets close in at once (<c>FUN_140666e20</c> adds an asker while it has at most four).</summary>
     public const int MaxEngaged = 5;
-
-    struct JoinScan
-    {
-        public CombatSlot[] Read;
-        public int Self, Target, TargetGeneration, Count;
-    }
 
     /// <summary>
     /// Whether <paramref name="i"/> may join the fighters its target lets close in (<see cref="MaxEngaged"/>, <c>FUN_140666e20</c>): it joins while fewer are in. The ones that are
@@ -389,73 +402,74 @@ public sealed partial class CombatSystem
     bool MayJoin(World world, int i, int t)
     {
         var prev = world.Characters.Previous;
-        var scan = new JoinScan { Read = read, Self = i, Target = t, TargetGeneration = prev[t].Generation };
-        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref JoinScan st) =>
+        var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
+        int generation = prev[t].Generation, count = 0;
+        foreach (var (_, x, z, other) in index.AttackersOf(t))
         {
-            if (other == st.Self) return;
-            ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot != st.Target || o.TargetGeneration != st.TargetGeneration || o.Down || o.Ranged) return;
-            if (o.Engaged || other < st.Self) st.Count++;
-        });
-        return scan.Count < MaxEngaged;
+            if (other == i || !range.Holds((x, z))) continue;
+            ref readonly var o = ref read[other];
+            if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
+            if (o.Engaged || other < i) count++;
+        }
+        return count < MaxEngaged;
     }
 
-    struct CountScan
+    readonly AttackerIndex index = new();
+
+    /// <summary>
+    /// Lists who is after whom from the combat state as it stands (<see cref="AttackerIndex"/>), for <see cref="FightersAt"/> and the act's checks; serial phases only. Combat's
+    /// schedule builds it for the act; a system asking <see cref="FightersAt"/> in its own schedule before combat's builds it first.
+    /// </summary>
+    public void IndexAttackers(World world)
     {
-        public CombatSlot[] Read;
-        public int Target, TargetGeneration, Count;
+        index.Build(read, world.Characters, world.Grid);
     }
 
     /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).</summary>
     public int FightersAt(World world, int t)
     {
         var prev = world.Characters.Previous;
-        var scan = new CountScan { Read = read, Target = t, TargetGeneration = prev[t].Generation };
-        world.Grid.Query(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius, ref scan, static (int other, ref CountScan st) =>
+        var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
+        int generation = prev[t].Generation, count = 0;
+        foreach (var (_, x, z, other) in index.AttackersOf(t))
         {
-            ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot == st.Target && o.TargetGeneration == st.TargetGeneration && !o.Down && !o.Ranged) st.Count++;
-        });
-        return scan.Count;
-    }
-
-    struct Scan
-    {
-        public CombatSlot[] Read;
-        public CombatTechnique[] Techniques;
-        public int Self, SelfGeneration, Now;
-        public CombatSlot Me;
-        public int Attacker, Blow, Strike;
+            if (!range.Holds((x, z))) continue;
+            ref readonly var o = ref read[other];
+            if (o.TargetGeneration == generation && !o.Down && !o.Ranged) count++;
+        }
+        return count;
     }
 
     void React(World world, int i, ref CombatSlot s, CharacterCold cold, ulong key, int now, float dt)
     {
         var table = world.Characters;
         var prev = table.Previous;
-        var scan = new Scan { Read = read, Techniques = techniques, Self = i, SelfGeneration = prev[i].Generation, Now = now, Me = s, Attacker = -1, Strike = int.MaxValue };
-        world.Grid.Query(prev[i].Position.X, prev[i].Position.Z, CombatTuning.ReactionScanRadius, ref scan, static (int other, ref Scan st) =>
+        // The blow at it that lands first, from those swinging at it within ReactionScanRadius (the index's list, kept to the grid's cells round it, in the grid's order:
+        // the first of a tie wins); not the one it has reacted to already.
+        var range = world.Grid.Range(prev[i].Position.X, prev[i].Position.Z, CombatTuning.ReactionScanRadius);
+        int generation = prev[i].Generation, attacker = -1, blow = 0, first = int.MaxValue;
+        foreach (var (_, x, z, other) in index.AttackersOf(i))
         {
-            if (other == st.Self) return;
-            ref readonly var a = ref st.Read[other];
-            if (a.AttackTech < 0 || a.NextBlow == 0 || a.TargetSlot != st.Self || a.TargetGeneration != st.SelfGeneration) return;
-            var tech = st.Techniques[a.AttackTech];
-            int strike = a.AttackStart + (int)MathF.Ceiling(tech.StrikeProgress(a.NextBlow) * a.AttackTicks);
-            if (strike <= st.Now) return;
-            if (st.Me.ReactedSlot == other && st.Me.ReactedSeq == a.AttackSeq && st.Me.ReactedBlow == a.NextBlow) return;
-            if (strike < st.Strike) { st.Strike = strike; st.Attacker = other; st.Blow = a.NextBlow; }
-        });
-        if (scan.Attacker < 0) return;
+            if (other == i || !range.Holds((x, z))) continue;
+            ref readonly var a = ref read[other];
+            if (a.AttackTech < 0 || a.NextBlow == 0 || a.TargetGeneration != generation) continue;
+            int lands = a.AttackStart + (int)MathF.Ceiling(techniques[a.AttackTech].StrikeProgress(a.NextBlow) * a.AttackTicks);
+            if (lands <= now) continue;
+            if (s.ReactedSlot == other && s.ReactedSeq == a.AttackSeq && s.ReactedBlow == a.NextBlow) continue;
+            if (lands < first) { first = lands; attacker = other; blow = a.NextBlow; }
+        }
+        if (attacker < 0) return;
 
-        var attack = read[scan.Attacker];
+        var attack = read[attacker];
         var atkTech = techniques[attack.AttackTech];
-        int direction = atkTech.DirectionOf(scan.Blow);
-        s.ReactedSlot = scan.Attacker;
+        int direction = atkTech.DirectionOf(blow);
+        s.ReactedSlot = attacker;
         s.ReactedSeq = attack.AttackSeq;
-        s.ReactedBlow = scan.Blow;
+        s.ReactedBlow = blow;
 
         var fighter = cold.Fighter!;
         float meleeDefence = Eff(cold, StatsEnumerated.MeleeDefence);
-        ulong counter = CombatRolls.BlowCounter(scan.Attacker, attack.AttackSeq, scan.Blow, 0);
+        ulong counter = CombatRolls.BlowCounter(attacker, attack.AttackSeq, blow, 0);
         float chanceRoll = CombatRolls.Float(world.Seed, key, CombatRoll.Block, counter);
         float pickRoll = CombatRolls.Float(world.Seed, key, CombatRoll.Reaction, counter);
         float block, dodge = 0;
@@ -481,7 +495,7 @@ public sealed partial class CombatSystem
         int ticks = Ticks(reaction, PlayRate(cold, reaction, attack: false), dt, cold);
         // The reaction is timed so that it is at its "blocked frame" when the blow arrives; with less lead time it starts at once and is less far along,
         // With LateDefences (Meitou balance choice, docs/simulation.md "Combat") never too little for the roll it passed to count: a late one joins its clip partway.
-        int strike = scan.Strike;
+        int strike = first;
         int start = Math.Max(now, strike - (int)MathF.Round(reaction.StrikeProgress(1) * ticks));
         if (LateDefences)
         {

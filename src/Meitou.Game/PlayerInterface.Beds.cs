@@ -13,25 +13,35 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>How near the pointer a bed's projected middle must be, in pixels (an engine choice, as for containers: beds have no pick mesh here).</summary>
+    /// <summary>How near the pointer the projected middle of a bed without a footprint must be, in pixels (an engine choice, as for containers).</summary>
     const float BedPickPixels = 30;
 
     BedSpot? PickBed(Vector2 pixel) => PickBedAt(pixel)?.Bed;
 
-    /// <summary>The bed whose middle (half a unit above its spot) projects nearest the pixel within <see cref="BedPickPixels"/>, if any and not hidden behind a wall, with the ray distance.</summary>
+    /// <summary>
+    /// The bed under the pixel with the ray distance, when not hidden behind a wall: the nearest the ray meets on its record's collision (hull prism, then triangles), as a building is
+    /// picked; else the bed without a footprint whose middle (half a unit above its spot) projects nearest the pixel within <see cref="BedPickPixels"/>.
+    /// </summary>
     (BedSpot Bed, float T)? PickBedAt(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray) return null;
-        (BedSpot, float)? best = null;
-        float bestDistance = BedPickPixels;
+        (BedSpot, float)? hit = null, near = null;
+        float bestT = float.MaxValue, bestPixels = BedPickPixels;
         foreach (var b in session.CurrentSnapshot.Beds)
         {
+            if (buildHost?.Placement.Footprint(b.Record) is { } footprint)
+            {
+                var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, b.Yaw);
+                if (BuildingRayT(ray, footprint.Place(b.Position, yaw), footprint.YMin, footprint.YMax, b.Record, b.Position, b.Position.Y, yaw) is { } t && t < bestT && !Hidden(ray, t))
+                    (hit, bestT) = ((b, t), t);
+                continue;
+            }
             var middle = b.Position + new Vector3(0, 0.5f, 0);
             if (Project(middle) is not { } at) continue;
-            float d = Vector2.Distance(at, pixel), t = Vector3.Distance(ray.Origin, middle);
-            if (d < bestDistance && !Hidden(ray, t)) (best, bestDistance) = ((b, t), d);
+            float d = Vector2.Distance(at, pixel), distance = Vector3.Distance(ray.Origin, middle);
+            if (d < bestPixels && !Hidden(ray, distance)) (near, bestPixels) = ((b, distance), d);
         }
-        return best;
+        return hit ?? near;
     }
 
     (BedSpot Bed, Vector2 At, long Since)? bedPending;

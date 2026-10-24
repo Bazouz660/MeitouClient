@@ -71,6 +71,7 @@ public static class SaveLoader
         // A renamed player faction (the CAMERA's name differs from the data's).
         world.Player.FactionName = camera.PlayerFactionName is { Length: > 0 } savedName && playerIndex >= 0 && savedName != data.Factions[playerIndex].Name ? savedName : null;
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
+        world.Player.BanditsLoot = camera.Record.Bools.GetValueOrDefault("bl", true);
         BedSave.Read(camera.Record, world);
         LoadTownKnowledge(save, data, world.Player);
         LoadUniques(camera.Record, data, world.Uniques);
@@ -89,7 +90,7 @@ public static class SaveLoader
         // The machines of the player's complete buildings: recipe slots, storage, farms (docs/simulation.md "Production").
         if (playerFaction is not null && world.Systems.OfType<Production.ProductionSystem>().FirstOrDefault() is { } production) MachineSave.Read(save, world, production, data.Items);
         // The loose items of the zone files (docs/simulation.md "Ground items").
-        if (GroundItemSave.Load(save, world, data.Items) is > 0 and var lost) loaded.Notes.Add($"{lost} loose items name records this game does not have; they stay in the zone files.");
+        if (GroundItemSave.Load(save, world, data.Items, id => data.FactionIndex(id) is var f and >= 0 && !data.Factions[f].NotReal ? f : -1) is > 0 and var lost) loaded.Notes.Add($"{lost} loose items name records this game does not have; they stay in the zone files.");
 
         var races = new Dictionary<string, RaceData?>(StringComparer.Ordinal);
         var parts = new Dictionary<string, BodyPartTemplate?>(StringComparer.Ordinal);
@@ -111,14 +112,14 @@ public static class SaveLoader
             if (!town.IsNest && siteOf.TryGetValue(town.Instance, out int site) && !town.Handle.IsNull) context.TownSites.TryAdd((town.Handle.C, town.Handle.CS), site);
         foreach (var f in save.Factions)
             if (f.War is { } war) context.Wars.TryAdd(f.Id, war);
-        var campaignPlatoons = WarSave.PlatoonHandles(context.Wars.Values);
+        var campaignHomes = WarSave.PlatoonHomes(context.Wars.Values);
         foreach (var platoon in save.Platoons)
         {
             bool mine = playerFaction is not null && platoon.FactionId == playerFaction.Id;
             if (mine && platoon.IsLoaded)
                 LoadPlayerPlatoon(world, platoon, data, options, loaded, playerIndex, races, parts, bySource, assembly, context);
             else if (!mine && options.NpcPlatoons)
-                LoadNpcPlatoon(world, platoon, data, loaded, context, campaignPlatoons.Contains((platoon.Handle.C, platoon.Handle.CS)));
+                LoadNpcPlatoon(world, platoon, data, loaded, context, campaignHomes.TryGetValue((platoon.Handle.C, platoon.Handle.CS), out var home) ? home : null);
         }
         if (loaded.PlayerPlatoons.Count > 0) world.Player.Squad = loaded.PlayerPlatoons[0].Squad.Id;
         // What the player's squads remembered (of the characters made so far; an NPC not made yet is not named again).
@@ -250,14 +251,17 @@ public static class SaveLoader
     /// <summary>
     /// An NPC platoon of a placed town: a <see cref="Platoon"/> stand-in at its saved place carrying its saved characters (<see cref="SavedPlatoon"/>), made when a zone
     /// near it is active. Town-bound platoons (<see cref="Travels"/> false) are pinned to their town and are its whole population (it makes none of its own); the others travel.
-    /// A platoon a war state names (<paramref name="campaign"/>) always travels: its campaign takes it on when the war managers read their states.
+    /// A platoon a war state names (<paramref name="campaignHome"/>: its campaign's home town) always travels: its campaign takes it on when the war managers read their states.
+    /// One with no placed base town is homed at its campaign's home town, never made a wild platoon, which would leave its campaign without it.
     /// </summary>
-    static void LoadNpcPlatoon(World world, SavePlatoon platoon, PopulationData data, LoadedSave loaded, SavedPopulation context, bool campaign = false)
+    static void LoadNpcPlatoon(World world, SavePlatoon platoon, PopulationData data, LoadedSave loaded, SavedPopulation context, Hand? campaignHome = null)
     {
+        bool campaign = campaignHome is not null;
         string baseTown = platoon.Record.Strings.GetValueOrDefault("basetown", "");
         int origin = -1;
         for (int i = 0; i < data.Sites.Count && baseTown.Length > 0; i++)
             if (data.Sites[i].Town.Id == baseTown) { origin = i; break; }
+        if (origin < 0 && campaignHome is { IsNull: false } home && context.TownSites.TryGetValue((home.C, home.CS), out int homeSite)) origin = homeSite;
         if (origin < 0 && platoon.SquadTemplate.Length > 0 && LoadWildPlatoon(world, platoon, data, loaded, context)) return;
         if (origin < 0 || platoon.SquadTemplate.Length == 0)
         {

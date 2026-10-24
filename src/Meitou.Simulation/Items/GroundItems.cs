@@ -4,15 +4,23 @@ namespace Meitou.Simulation.Items;
 
 /// <summary>
 /// An item lying in the world, as the host draws it (docs/simulation.md "Ground items"): a saved one by its whole <see cref="Rotation"/>, a <see cref="Dropped"/> one turned by it
-/// about Y and laid flat on the ground by the host.
+/// about Y and laid flat on the ground by the host. <see cref="Type"/>, <see cref="Level"/> and <see cref="Quality"/> are the item's, for its label's grade colour, <see cref="OwnedBy"/> <see cref="GroundItem.OwnedBy"/>.
 /// </summary>
-public readonly record struct GroundItemSnapshot(int Id, string Record, string Name, Vector3 Position, Quaternion Rotation, bool Dropped);
+public readonly record struct GroundItemSnapshot(int Id, string Record, string Name, Vector3 Position, Quaternion Rotation, bool Dropped,
+    Meitou.Data.Fcs.FcsRecordType Type = default, int Level = 0, float Quality = 0, int OwnedBy = -1);
 
 /// <summary>One loose item: where it lies and how it is turned (a saved item's whole rotation, written back as read; a dropped one turned about Y).</summary>
 public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Quaternion Rotation)
 {
     /// <summary>Dropped in play (turned about Y only), not put back from the save.</summary>
     public bool Dropped { get; init; }
+    /// <summary>The loose-item slot it fills (<see cref="ItemSlots"/>; null: none). Such items are not counted against <see cref="GroundItems.Limit"/>.</summary>
+    public string? Slot { get; init; }
+    /// <summary>
+    /// The faction of its saved <c>ownedby</c> owner (-1: none, or a <c>not real</c> faction; <see cref="Saving.GroundItemSave"/>): taking it is stealing for another faction
+    /// (label red, pick-up "Steal", the item marked stolen).
+    /// </summary>
+    public int OwnedBy { get; init; } = -1;
 }
 
 /// <summary>
@@ -44,14 +52,35 @@ public sealed class GroundItems
     public void Drop(ItemInstance item, Vector3 position, float yaw)
     {
         items.Add(new GroundItem(nextId++, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true });
-        for (int extra = items.Count(i => i.Item.Saved is null) - limit; extra > 0; extra--) items.RemoveAt(items.FindIndex(i => i.Item.Saved is null));
+        for (int extra = items.Count(Capped) - limit; extra > 0; extra--) items.RemoveAt(items.FindIndex(Capped));
         Revision++;
     }
 
-    /// <summary>Puts a saved item back where the save had it (no limit).</summary>
-    public void Load(ItemInstance item, Vector3 position, Quaternion rotation)
+    static bool Capped(GroundItem i) => i.Item.Saved is null && i.Slot is null;
+
+    /// <summary>Lays a slot's item (<see cref="ItemSlots"/>) on the ground, turned <paramref name="yaw"/> about Y and laid flat as a dropped one (no limit); returns its id.</summary>
+    public int Place(ItemInstance item, Vector3 position, float yaw, string slot, int owner)
     {
-        items.Add(new GroundItem(nextId++, item, position, rotation));
+        items.Add(new GroundItem(nextId, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true, Slot = slot, OwnedBy = owner });
+        Revision++;
+        return nextId++;
+    }
+
+    /// <summary>Binds a lying item to a slot (a loaded save's item found in its slot): it takes the slot and owner, and a yaw-only one is laid flat again.</summary>
+    public void Claim(int id, string slot, int owner)
+    {
+        int k = items.FindIndex(i => i.Id == id);
+        if (k < 0) return;
+        var g = items[k];
+        bool yawOnly = MathF.Abs(g.Rotation.X) < 1e-4f && MathF.Abs(g.Rotation.Z) < 1e-4f;
+        items[k] = g with { Slot = slot, OwnedBy = owner, Dropped = g.Dropped || yawOnly };
+        Revision++;
+    }
+
+    /// <summary>Puts a saved item back where the save had it (no limit), owned by <paramref name="ownedBy"/> (<see cref="GroundItem.OwnedBy"/>).</summary>
+    public void Load(ItemInstance item, Vector3 position, Quaternion rotation, int ownedBy = -1)
+    {
+        items.Add(new GroundItem(nextId++, item, position, rotation) { OwnedBy = ownedBy });
         Revision++;
     }
 
@@ -71,7 +100,7 @@ public sealed class GroundItems
     /// <summary>The items as published, made again only when <see cref="Revision"/> changed.</summary>
     internal IReadOnlyList<GroundItemSnapshot> Published()
     {
-        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped))], Revision);
+        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped, i.Item.Type, i.Item.Level, i.Item.Quality, i.OwnedBy))], Revision);
         return published;
     }
     IReadOnlyList<GroundItemSnapshot> published = [];
@@ -90,6 +119,7 @@ public sealed class GroundItems
             h.Add(i.Rotation.Y);
             h.Add(i.Rotation.Z);
             h.Add(i.Rotation.W);
+            if (i.Slot is not null) { h.Add(Rng.StableHash(i.Slot)); h.Add(i.OwnedBy); }   // only for a slot's, so other items hash as before
         }
     }
 }

@@ -16,7 +16,7 @@ sealed partial class GameHost
     long buildingsRevision = -1;
     // What the overlays were last told, by instance id.
     readonly Dictionary<string, BuildingSnapshot> shownBuildings = new(StringComparer.Ordinal);
-    readonly HashSet<string> navBuildings = new(StringComparer.Ordinal), litBuildings = new(StringComparer.Ordinal);
+    readonly HashSet<string> navBuildings = new(StringComparer.Ordinal), litBuildings = new(StringComparer.Ordinal), effectBuildings = new(StringComparer.Ordinal);
     readonly Dictionary<string, float> constructionLook = new(StringComparer.Ordinal);
     Dictionary<string, BuildingBuildData>? buildData;
 
@@ -75,6 +75,7 @@ sealed partial class GameHost
             ActiveObjects?.RemoveRuntime(id);
             if (navBuildings.Remove(id)) nav?.RemoveRuntimeBuilding(id);
             if (litBuildings.Remove(id)) ActiveLamps?.RemoveRuntime(id);
+            if (effectBuildings.Remove(id)) gpu?.Particles?.RemoveBuildingEffects(id);
             shownBuildings.Remove(id);
         }
         foreach (var site in current.Values)
@@ -84,14 +85,17 @@ sealed partial class GameHost
             {
                 if (site.Complete && !shown.Complete) AddToNavmesh(site, placement);   // newly complete
                 UpdateLamps(site);
+                UpdateEffects(site);
                 shownBuildings[site.Id] = site;
                 continue;
             }
             if (shown is not null && navBuildings.Remove(site.Id)) nav?.RemoveRuntimeBuilding(site.Id);   // moved or changed: out, then in again
             if (shown is not null && litBuildings.Remove(site.Id)) ActiveLamps?.RemoveRuntime(site.Id);
+            if (shown is not null && effectBuildings.Remove(site.Id)) gpu?.Particles?.RemoveBuildingEffects(site.Id);
             ActiveObjects?.AddRuntime(placement);
             AddToNavmesh(site, placement);
             UpdateLamps(site);
+            UpdateEffects(site);
             shownBuildings[site.Id] = site;
         }
     }
@@ -114,6 +118,21 @@ sealed partial class GameHost
         lamps.SetRuntime(site.Id, placed.Select(p => WorldLights.FromPlaced(p, interior: false)));
     }
 
+    /// <summary>A building's effects (a campfire's fire; docs/formats/lights.md "Effects on buildings") run while it is complete, as its lamps.</summary>
+    void UpdateEffects(BuildingSnapshot site)
+    {
+        if (gpu.Particles is not { } particles) return;
+        if (!site.Complete)
+        {
+            if (effectBuildings.Remove(site.Id)) particles.RemoveBuildingEffects(site.Id);
+            return;
+        }
+        if (!effectBuildings.Add(site.Id) || scene.Database is not { } db || db.Find(site.Record) is not { } record) return;
+        var placed = new List<PlacedEffect>();
+        WorldObjectLayout.Building(db, record, site.Id, site.Position, site.Rotation, new BuildingState { Identity = site.Id }, null, placed);
+        particles.SetBuildingEffects(site.Id, placed);
+    }
+
     /// <summary>
     /// The render and navigation overlay type of a site (<c>StateId</c> null, <c>WorldY</c> the absolute height, the zone of its position). Its key is its own id: a player
     /// building's id is unique in the world (the simulation's registry reserves every saved id), and the overlays remove it by that id.
@@ -134,7 +153,10 @@ sealed partial class GameHost
     {
         ActiveObjects?.ClearRuntime();
         ActiveLamps?.ClearRuntime();
+        foreach (string id in effectBuildings) gpu?.Particles?.RemoveBuildingEffects(id);   // the world's own building effects stay
+        effectBuildings.Clear();
         litBuildings.Clear();
+        levelOwners = null;
         ForgetGroundItems();
         ForgetFarms();
         foreach (string id in navBuildings) nav?.RemoveRuntimeBuilding(id);
@@ -181,6 +203,9 @@ sealed partial class GameHost
                 CollisionMesh = footprints.Mesh,
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
+                // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.
+                FloorAlong = (origin, direction, length) => gpu.Objects?.FloorHit(origin, direction, viewedFloor, length) is { } hit
+                    ? (hit.Position, GhostFloorOf(hit.Room, hit.Room.FloorAt(hit.Position))) : null,
             },
             WorldInfo = placement =>
             {
@@ -215,5 +240,27 @@ sealed partial class GameHost
             PlayerFactionId = () => popData is { } d && d.PlayerFaction is >= 0 and var mine && mine < d.Factions.Count ? d.Factions[mine].Id : "",
             DrawGhosts = draws => ActiveObjects?.SetGhosts(draws),
         };
+    }
+
+    // A level building's instance id and owning faction id (its state's owner, else its town's faction), by placement key; made on first use.
+    Dictionary<string, (string Instance, string? Owner)>? levelOwners;
+
+    /// <summary>The floor a ghost stands on in <paramref name="room"/>: a player site's, else a level building's with whether the player's faction owns it.</summary>
+    Building.GhostFloor GhostFloorOf(InteriorVolume room, int floor)
+    {
+        if (shownBuildings.ContainsKey(room.PlacementId)) return new(room.PlacementId, room.Footprint, floor);
+        if (levelOwners is null && popData is { } d)
+        {
+            levelOwners = new(StringComparer.Ordinal);
+            foreach (var site in d.Sites)
+            {
+                string? townOwner = site.Index < d.SiteFactions.Count && d.SiteFactions[site.Index] is >= 0 and var f && f < d.Factions.Count ? d.Factions[f].Id : null;
+                foreach (var b in site.Buildings) levelOwners[b.Key] = (b.InstanceId, b.OwnerFactionId ?? townOwner);
+            }
+        }
+        string player = popData is { } p && p.PlayerFaction is >= 0 and var mine && mine < p.Factions.Count ? p.Factions[mine].Id : "";
+        return levelOwners?.TryGetValue(room.PlacementId, out var level) == true
+            ? new(room.PlacementId, room.Footprint, floor, level.Instance, player.Length > 0 && level.Owner == player)
+            : new(room.PlacementId, room.Footprint, floor, room.PlacementId);
     }
 }

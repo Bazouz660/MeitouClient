@@ -423,6 +423,8 @@ public sealed class AiMind
     public bool Resume { get; set; }
     /// <summary>Where the serial step puts it this tick (set by the think that took <see cref="Resume"/> up); null otherwise.</summary>
     public Vector3? PlaceAt { get; set; }
+    /// <summary>The bed the serial step lies it in this tick (set by the think that arrived at its home's bed spot to sleep); null otherwise.</summary>
+    public string? BedAt { get; set; }
     /// <summary>Whom its follow goal follows instead of the squad leader: the contract's mission target for a goal aimed at it (none: the leader).</summary>
     public CharacterId FollowTarget { get; set; } = CharacterId.None;
     /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
@@ -450,6 +452,7 @@ public sealed class AiMind
         if (WorkActive || WorkEpoch != 0) { hasher.Add(WorkEpoch); hasher.Add(WorkActive); }
         if (Resume) hasher.Add(0x52657375);
         if (PlaceAt is { } place) hasher.Add(place);
+        if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
     }
 }

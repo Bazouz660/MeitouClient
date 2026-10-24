@@ -111,6 +111,7 @@ public sealed partial class MedicalState
             Fed = floats.GetValueOrDefault("fed"),
             KoTimer = floats.GetValueOrDefault("KO"),
             Unconscious = bools.GetValueOrDefault("unconcious"),
+            Coma = bools.GetValueOrDefault("coma"),
             Dead = bools.GetValueOrDefault("dead"),
             Bleeding = floats.GetValueOrDefault("bleeding"),
         };

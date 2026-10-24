@@ -51,6 +51,14 @@ sealed partial class PlayerInterface
     Func<string, string?>? uiResolve;
     RgbaImage? uiAtlas;
     float menuArtScale;
+
+    /// <summary>The game's Kenshi_UI.png, decoded once and shared by the title menu, tooltips and settings; null when missing or unreadable.</summary>
+    internal RgbaImage? UiAtlas()
+    {
+        if (uiAtlas is not null || uiResolve?.Invoke("Kenshi_UI.png") is not { } path) return uiAtlas;
+        try { return uiAtlas = TextureLoader.LoadFile(path, allMips: false).Levels[0]; }
+        catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException) { return null; }
+    }
     Dictionary<string, (float Progress, long At)>? menuHover;
     (string Folder, DateTime Modified, SaveSlotInfo? Info) continueInfo;
 
@@ -169,9 +177,7 @@ sealed partial class PlayerInterface
         if (uiPainter is not { } painter) return false;
         float s = MenuScale;
         if (menuArtScale == s && painter.HasTexture(MenuPlateHover)) return true;
-        if (uiResolve?.Invoke("Kenshi_UI.png") is not { } path) return false;
-        try { uiAtlas ??= TextureLoader.LoadFile(path, allMips: false).Levels[0]; }
-        catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException) { return false; }
+        if (UiAtlas() is not { } uiAtlas) return false;
         int W(float v) => Math.Max(1, (int)MathF.Round(v * s));
         var paper = new UiRect(352, 457, 164, 81);   // GenericTextBoxSkin inside its soft alpha rim and worn corners (kit "paper-inner", cropped further)
         painter.SetImage(MenuCard, MenuArt.Card(uiAtlas, paper, W(MenuWidth), W(MenuCardHeight), s, MenuShadow * s, 1), srgb: false);

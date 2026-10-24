@@ -350,7 +350,7 @@ and the banner (`New_Biome`, `PlayerInterface.Biome.cs`).
 48 `Wall_Station_House`, 49 `Wall_Stone`, 50 `Wall_Wood`, 51 `Wood_Obj_Big`, 52 `Wood_Obj_Small`; the **Unknown** is which BUILDING records set which index, and whether the bank has a sound for each value). `Building_Lock_Unlock`: Meitou's stand-in for the Security button is the
 building menu's Lock Doors / Unlock Doors verb (all the doors at once; `Build_Lock` is the state before the press). `Create_or_Load_Game` comes from `MusicDirector.OnCreateOrLoadGame`, `Hover` from the poll.
 **No trigger in Meitou (not played):** `UI_Generator` (the machine panel has no power switch, [above](#machine-sounds-meitou)), `Create_Character` on a prisoner's release,
-`Slider` outside the editor (no data-panel slider yet; its drag events would sound through `SoundForScreen` as the editor's do); `Building_Place`'s `Indoors` value (Meitou's ghost has no parent building to ask) is always `Outdoors`.
+`Slider` outside the editor (no data-panel slider yet; its drag events would sound through `SoundForScreen` as the editor's do). `Building_Place` is `Indoors` for a ghost on a building's floor (a parent building), else `Outdoors`.
 
 ## Meitou's player
 
@@ -466,8 +466,9 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
 
 ### Voice cap
 
-Meitou's rule, the `voices` switch (Meitou by default; `--faithful voices` mixes every sound). Each block the player works out every sound's gains first
-(`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and the `Enhancements.MeitouVoiceCap` (96) loudest
+Meitou's rule, the Audio settings' Sound voices slider (`AudioSettings.Voices`, kept in meitou.user.json: 16 to 256 in steps of 8, Meitou 96, the top
+"All" mixes every sound; the viewer uses 96). Each block the player works out every sound's gains first
+(`SoundInstance.Prepare`: the node chain, buses, place and attenuation), then mixes the music and that many of the loudest
 other sounds at the listener (dry or sent); a sound mixed in the last block counts 1.5 times as loud, so one at the edge does not flip every block. The rest
 are silent: one heard last block first fades out over a block, then its voice keeps its clock without decoding (`Voice.Skip`); back among the loudest it
 moves its place within the decoded frames, or reopens and seeks (an error ends the voice, never the mix), and fades in over one block; a one-shot that ran out
@@ -475,6 +476,11 @@ meanwhile ends. Trimmed music clips are never
 capped. The game's own Wwise limits (`STMG` max voices and volume threshold, each node's max instances, read but not modelled) are not this rule. F11
 shows how many sounds were capped. After the mix a peak limiter (both modes, `AudioOutput.Limit`: ceiling 0.89, instant attack, 0.15 s release) turns a
 loud sum down instead of hard-clipping it at the 16-bit conversion.
+
+Starting a sound is the real cost of a big fight: opening a Vorbis stream (its codebooks) took about 1.7 ms and every voice decoded its clip again, so
+hundreds of footsteps, swings and hits a second overran the audio thread (**Observed** with `meitou-tools audio render`: 700 hits and grunts in 8 s cost 1.7 s
+of mixing). Clips up to 20 s are decoded once and shared by their voices (`PcmCache`, up to 256 MB; longer clips, the music and anything past the budget
+stream as before): the same render takes 0.57 s, about 0.3 ms a sound once its clip is decoded. A capped voice on shared samples catches up by moving its place.
 
 ### API for event sources
 

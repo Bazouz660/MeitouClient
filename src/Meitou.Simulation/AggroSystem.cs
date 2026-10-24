@@ -13,12 +13,6 @@ public sealed record AggroSettings
     /// <summary>How far an NPC sees, in world units (dm), before the race's <c>vision range mult</c>: the original's outdoor range (1500, <c>FUN_140851bc0</c>, Verified),
     /// in full daylight; straight ahead only, the view cone shortens it to the side (<see cref="AggroSystem.Visibility"/>).</summary>
     public float SightRange { get; init; } = AggroSystem.OutdoorSight;
-    /// <summary>An NPC fighting farther than this from where its fight began gives up. Engine choice: twice the daylight sight, so a fight begun at the edge of sight reaches
-    /// its target. The original has no such distance; it keeps targets inside the AI's area (6517 around the looker, or a package's point and radius, docs/game/perception.md
-    /// "The attack-on-sight tests"), whose radii Meitou does not have.</summary>
-    public float LeashRange { get; init; } = 3000;
-    /// <summary>Game seconds an NPC that gave up does not pick a new fight by itself (it still answers an attack).</summary>
-    public float CalmSeconds { get; init; } = 20;
     /// <summary>Keep a <see cref="AggroSystem.Log"/> of every fight started (the host prints it; tests read it).</summary>
     public bool RecordLog { get; init; }
 }
@@ -37,9 +31,10 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
 /// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
 /// the attacking-enemies job (<see cref="HuntsEnemies"/>); they have no leash, and after the fight go back to following or stand idle.</item>
-/// <item><b>Leash and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC that starts fighting (by this system, retaliation or anything else) has its position
-/// kept; beyond <see cref="AggroSettings.LeashRange"/> from it the NPC stops and stays calm (no looking) for <see cref="AggroSettings.CalmSeconds"/>. When its fight is
-/// over (target down, or stopped) it goes back to what it did before (wander or follow; a go-to becomes idle, which the roaming squads order again).</item>
+/// <item><b>Chase give-up and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC running after its target (<see cref="CharacterCold.CombatRunning"/>) senses that
+/// target on its look cadence (<c>Act</c>) and gives it up by the original's <c>ChaseMode</c> rule (<see cref="GiveUpGateSeconds"/>, <see cref="GiveUpSenseSeconds"/>,
+/// <see cref="GiveUpReach"/>). When its fight is over (target down, or stopped) it goes back to what it did before (wander or follow; a go-to becomes idle, which the roaming
+/// squads order again).</item>
 /// </list>
 /// The live relation table is hashed here once a deed has changed it (<see cref="FactionRelations.Changes"/>).
 /// </summary>
@@ -114,9 +109,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         public int Generation;
         public bool Tracked;
-        public Vector2 Origin;
         public byte Task;
-        public long CalmUntil;
+        /// <summary>The tick the running chase began (-1: none), the tick and place its target was last seen or heard, and whether the last look sensed it.</summary>
+        public long ChaseStart, SensedTick;
+        public Vector2 SensedAt;
+        public bool Sensed;
         /// <summary>The looker's spot meters on sneaking characters, in target slot order (null: none); written by its own partition only.</summary>
         public List<Spot>? Spots;
     }
@@ -198,7 +195,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             int old = slots.Length;
             Array.Resize(ref slots, Math.Max(n, slots.Length * 2));
-            for (int i = old; i < slots.Length; i++) slots[i] = new Slot { Generation = -1, Task = NoTask };
+            for (int i = old; i < slots.Length; i++) slots[i] = new Slot { Generation = -1, Task = NoTask, ChaseStart = -1 };
         }
         size = Math.Max(size, n);
         var next = table.Next;
@@ -207,7 +204,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         for (int i = 0; i < n; i++)
         {
             int generation = next[i].Alive ? next[i].Generation : -1;
-            if (slots[i].Generation != generation) slots[i] = new Slot { Generation = generation, Task = NoTask };
+            if (slots[i].Generation != generation) slots[i] = new Slot { Generation = generation, Task = NoTask, ChaseStart = -1 };
             if (generation >= 0 && table.Cold(i) is { Medical: not null } c && Relations.Contains(c.Faction))
             {
                 present[c.Faction] = true;
@@ -274,8 +271,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         int first = part.Start + ((phase - part.Start % every) % every + every) % every;
         for (int i = first; i < part.End; i += every)
         {
-            if (!prev[i].Alive || i >= slots.Length || world.Tick < slots[i].CalmUntil) continue;
+            if (!prev[i].Alive || i >= slots.Length) continue;
             byte task = next[i].Task;
+            if (task == (byte)CharacterTask.Attack && slots[i].ChaseStart >= 0)
+            {
+                SenseQuarry(world, table, i, ref slots[i]);
+                continue;
+            }
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
             if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold
                 || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task)) continue;
@@ -299,6 +301,38 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
             if (scan.Spots is not null || scan.Sightings.Count > 0) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings, every * world.TickSeconds, table);
         }
+    }
+
+    /// <summary>
+    /// A chaser's look at its own fight target (the original's sense entry that <c>ChaseMode</c> reads, docs/game/combat.md "Leaving a fight"): seen by the sight test, a sneaking
+    /// target with its stealth but without the spot meter (engine choice), else heard by the noise roll. Own senses only: whether squad-shared sightings count is not decoded.
+    /// Writes only the chaser's own slot.
+    /// </summary>
+    void SenseQuarry(World world, CharacterTable table, int i, ref Slot s)
+    {
+        if (Combat is null) return;
+        var prev = table.Previous;
+        var st = Combat.StateOf(new CharacterId(i, prev[i].Generation));
+        int t = st.TargetSlot;
+        if (t < 0 || t >= table.HighWater || !prev[t].Alive || prev[t].Generation != st.TargetGeneration || table.Cold(i) is not { } cold) return;
+        ref readonly var other = ref prev[t];
+        var tc = table.Cold(t);
+        float stealth = tc is not null && (tc.Orders & CharacterOrders.Sneak) != 0 ? Orders.Stealth(tc) : -1;
+        float outdoor = RangeOf(cold, Settings.SightRange);
+        bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, prev[i].Yaw, other.Position, outdoor, stealth) > 0;
+        if (!sensed)
+        {
+            float d = Vector3.Distance(prev[i].Position, other.Position);
+            float speed = new Vector2(other.Velocity.X, other.Velocity.Z).Length();
+            float p = stealth >= 0
+                ? speed > 0.01f ? Orders.SneakHearChance(d, Orders.SneakNoise(stealth, Noise(table, t)), stealth) : 0
+                : HearChance(d, NoiseRange(speed, other.MaxSpeed) * Noise(table, t));
+            sensed = p > 0 && Rng.Float(Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t)) < p;
+        }
+        s.Sensed = sensed;
+        if (!sensed) return;
+        s.SensedTick = world.Tick;
+        s.SensedAt = new Vector2(other.Position.X, other.Position.Z);
     }
 
     /// <summary>
@@ -500,42 +534,37 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     static bool HuntsEnemies(CharacterCold cold, byte task) =>
         (cold.Orders & CharacterOrders.Passive) == 0 && Production.PermaJobs.FreeFor(cold, (CharacterTask)task, Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES));
 
-    // ------------------------------------------------------------------ leash and stand down
+    // ------------------------------------------------------------------ chase give-up and stand down
+
+    /// <summary>No give-up before this many game seconds of a chase: the original's 5 game minutes (<c>ChaseMode</c>, Verified literal; 1 game hour = 1200/11 s).</summary>
+    public const float GiveUpGateSeconds = 5f / 60 * 1200 / 11;
+    /// <summary>A target unsensed for longer than this is given up: the original's 12 sense-age units of hours x 3600 / 33 x 0.5 (<c>FUN_140852150</c>), i.e. 24 s.</summary>
+    public const float GiveUpSenseSeconds = 24;
+    /// <summary>A chaser within this of where it last sensed an unsensed target gives it up (the original's squared 3600, Verified literal).</summary>
+    public const float GiveUpReach = 60;
 
     public void SlowWorld(World world)
     {
         var table = world.Characters;
         Sync(table);   // characters spawned this tick
         var next = table.Next;
-        float leash2 = Settings.LeashRange * Settings.LeashRange;
-        long calm = (long)MathF.Ceiling(Settings.CalmSeconds / world.TickSeconds);
         for (int i = 0; i < table.HighWater; i++)
         {
             ref var n = ref next[i];
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
-            // The player's characters have no leash; one with the attacking-enemies job goes back to following after its fight.
+            // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); one with the attacking-enemies job goes back
+            // to following after its fight.
             bool player = cold.IsPlayer;
             if (player && Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES) < 0) continue;
             ref var s = ref slots[i];
-            var here = new Vector2(n.Position.X, n.Position.Z);
             if (n.Task == (byte)CharacterTask.Attack)
             {
-                if (!s.Tracked)
-                {
-                    s.Tracked = true;
-                    s.Origin = here;
-                }
-                else if (!player && Vector2.DistanceSquared(here, s.Origin) > leash2 && world.Tick >= s.CalmUntil)
-                {
-                    world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });
-                    s.CalmUntil = world.Tick + calm;
-                    // Giving up the chase says so to the target (EV_GIVE_UP_CHASE, as the original's move and follow tasks do, docs/game/dialogue.md "Firing an event").
-                    if (Combat?.StateOf(table.IdOf(i)) is { TargetSlot: >= 0 } st && st.TargetSlot < table.HighWater && next[st.TargetSlot].Generation == st.TargetGeneration)
-                        world.Defer(new Dialogue.DialogueEvent(table.IdOf(i), table.IdOf(st.TargetSlot), 60) { Tick = world.Tick + 1 });
-                }
+                s.Tracked = true;
+                if (!player) Chase(world, table, i, ref s, cold);
                 continue;
             }
+            s.ChaseStart = -1;
             if (!s.Tracked)
             {
                 s.Task = n.Task;   // the routine to go back to after a fight
@@ -549,6 +578,40 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander;
             n.TaskTime = 0;
         }
+    }
+
+    /// <summary>
+    /// The original's chase give-up (<c>ChaseMode</c>, docs/game/combat.md "Leaving a fight"): after <see cref="GiveUpGateSeconds"/> of a chase, a target the chaser's last look
+    /// did not sense is given up when it was last sensed more than <see cref="GiveUpSenseSeconds"/> ago or the chaser stands within <see cref="GiveUpReach"/> of where it was.
+    /// The chaser stops and says so to the target (event 60 GIVE_UP_CHASE). Engine choice: the original tests this only in its path chase (fight state 11), Meitou in every
+    /// running chase (<see cref="CharacterCold.CombatRunning"/>), since how the original lets go on open ground is Unknown; a target still sensed is chased on either way.
+    /// </summary>
+    void Chase(World world, CharacterTable table, int i, ref Slot s, CharacterCold cold)
+    {
+        var next = table.Next;
+        if (!cold.CombatRunning || Combat?.StateOf(table.IdOf(i)) is not { TargetSlot: >= 0 and var t } st || t >= table.HighWater || !next[t].Alive
+            || next[t].Generation != st.TargetGeneration || table.Cold(t) is { Medical.Incapacitated: true })
+        {
+            s.ChaseStart = -1;
+            return;
+        }
+        var target = new Vector2(next[t].Position.X, next[t].Position.Z);
+        if (s.ChaseStart < 0)
+        {
+            // A chase begins with its target in view: the record starts as sensed now, so the first look's gap gives nothing up.
+            s.ChaseStart = s.SensedTick = world.Tick;
+            s.SensedAt = target;
+            s.Sensed = true;
+            return;
+        }
+        if (s.Sensed || (world.Tick - s.ChaseStart) * world.TickSeconds < GiveUpGateSeconds) return;
+        var here = new Vector2(next[i].Position.X, next[i].Position.Z);
+        // Engine choice: a runner within GiveUpReach of the chaser itself has not got away, though a look missed it (a chaser running past it has it at its back); a sneaker has.
+        if (Vector2.DistanceSquared(here, target) < GiveUpReach * GiveUpReach && (table.Cold(t)!.Orders & CharacterOrders.Sneak) == 0) return;
+        if ((world.Tick - s.SensedTick) * world.TickSeconds <= GiveUpSenseSeconds && Vector2.DistanceSquared(here, s.SensedAt) >= GiveUpReach * GiveUpReach) return;
+        s.ChaseStart = -1;
+        world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });
+        world.Defer(new Dialogue.DialogueEvent(table.IdOf(i), table.IdOf(t), 60) { Tick = world.Tick + 1 });
     }
 
     public void Hash(ref StateHasher hasher)
@@ -574,10 +637,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             ref readonly var s = ref slots[i];
             hasher.Add(s.Generation);
             hasher.Add(s.Tracked);
-            hasher.Add(s.Origin.X);
-            hasher.Add(s.Origin.Y);
             hasher.Add(s.Task);
-            hasher.Add(s.CalmUntil);
+            if (s.ChaseStart >= 0)   // only while a chase runs
+            {
+                hasher.Add(s.ChaseStart);
+                hasher.Add(s.SensedTick);
+                hasher.Add(s.SensedAt.X);
+                hasher.Add(s.SensedAt.Y);
+                hasher.Add(s.Sensed);
+            }
             if (s.Spots is { } spots)   // only while a looker has meters, so worlds without sneakers hash as before
                 foreach (var p in spots)
                 {

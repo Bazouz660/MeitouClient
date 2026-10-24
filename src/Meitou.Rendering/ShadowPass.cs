@@ -21,6 +21,14 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// <summary>Draws the casters of one cascade: the matrix maps absolute world positions to the tile's clip space (depth 0..1), the planes cull (no near plane), the eye picks levels of detail.</summary>
     public delegate void CasterDraw(ShadowCascade cascade, Matrix4x4 worldToClip, Vector4[] planes, Vector3 lodEye);
 
+    /// <summary>A cascade drawn this frame, as <see cref="CasterDraw"/> gets it (the same <c>Planes</c> array).</summary>
+    public readonly record struct CasterView(ShadowCascade Cascade, Matrix4x4 WorldToClip, Vector4[] Planes, Vector3 LodEye);
+
+    /// <summary>Called once a frame before the cascades are drawn, with every cascade about to be (a caster that works for them all at once: the characters).</summary>
+    public delegate void CasterPrepare(ReadOnlySpan<CasterView> cascades);
+
+    readonly CasterView[] casterViews = new CasterView[ShadowSettings.MaxCascades];
+
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; all native since phase 8 stage 3: the atlas's host hands the casters
     /// its targets and state, 8.9).</summary>
     public IGpuContext Gpu { get; }
@@ -142,15 +150,16 @@ public sealed unsafe partial class ShadowPass : IDisposable
     /// Draws the cascades for this camera and light, then publishes them to the receivers.
     /// <paramref name="toSun"/> is the lighting direction (towards the sun, height clamped to 0 under the horizon), <paramref name="sunHeight"/>
     /// the real sun's height (the map is drawn while it is at least <see cref="MinSunHeight"/>; by default the lighting direction's).
-    /// <paramref name="landmarks"/>: the landmarks for the Meitou shadows' landmark map (they cast shadows however far they are).
+    /// <paramref name="landmarks"/>: the landmarks for the Meitou shadows' landmark map (they cast shadows however far they are). <paramref name="prepare"/>: called with the
+    /// cascades about to be drawn, before the first.
     /// </summary>
-    public void Render(ShadowView view, Vector3 toSun, CasterDraw draw, float? sunHeight = null, LandmarkCasters? landmarks = null)
+    public void Render(ShadowView view, Vector3 toSun, CasterDraw draw, float? sunHeight = null, LandmarkCasters? landmarks = null, CasterPrepare? prepare = null)
     {
         Poll();
         UploadNoise();
         Cascades = null;
         if (!Enabled || (sunHeight ?? toSun.Y) < MinSunHeight || toSun.LengthSquared() < 1e-8f) { Disable(); return; }
-        if (Meitou) { RenderMeitou(view, Vector3.Normalize(toSun), draw, landmarks); return; }
+        if (Meitou) { RenderMeitou(view, Vector3.Normalize(toSun), draw, landmarks, prepare); return; }
         meitouValid = false;
         var watch = Stopwatch.StartNew();
         Array.Clear(PhaseMs);
@@ -160,15 +169,21 @@ public sealed unsafe partial class ShadowPass : IDisposable
         var cascades = ShadowCascades.Fit(view, Vector3.Normalize(toSun), Effective);
         timer.Begin();
 
-        var host = BeginHost("shadow atlas", clear: true);
+        int drawn = 0;
         foreach (var c in cascades)
+            if (!c.Unused)   // in front of the camera's near plane: nothing on screen reads it (a viewer saving)
+                casterViews[drawn++] = new CasterView(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
+        prepare?.Invoke(casterViews.AsSpan(0, drawn));
+        var host = BeginHost("shadow atlas", clear: true);
+        for (int k = 0; k < drawn; k++)
         {
-            if (c.Unused) continue;   // in front of the camera's near plane: nothing on screen reads it (a viewer saving)
+            var (c, worldToClip, planes, lodEye) = casterViews[k];
             int x = (int)MathF.Round(c.Tile.X * atlasSize), y = (int)MathF.Round(c.Tile.Y * atlasSize), s = Settings.TileSize;
             SetTile(x, y, s);
             SetCasterBias(new Vector4(c.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
-            draw(c, c.WorldToClip(), c.CullPlanes(), view.Eye);
+            draw(c, worldToClip, planes, lodEye);
         }
+        Array.Clear(casterViews);
         EndHost(host);
         timer.End();
         Cascades = cascades;

@@ -96,8 +96,8 @@ sealed partial class PlayerInterface
             var line = r.Resources[i];
             var area = new UiRect(list.Bounds.X, list.Bounds.Y + i * height, list.Bounds.Width, height);
             bool checkedRow = i == prospectRow;
-            controls.Add(new($"prospect-row-{i}", "Button", new(area.X, area.Y, area.Width * 0.662835f, area.Height), line.Name, "prospect-row:" + N(i), "Kenshi_TickButton2", true,
-                new Dictionary<string, string> { ["Checked"] = checkedRow ? "true" : "false", ["StateSelected"] = checkedRow ? "true" : "false" }, Vector4.Zero, Pickable: true, Clip: list.Bounds));
+            controls.Add(new($"prospect-row-{i}", "Button", new(area.X, area.Y, area.Width * 0.662835f, area.Height), line.Name, "prospect-row:" + N(i), "Kenshi_TickButton1Skin", true,
+                new Dictionary<string, string> { ["Checked"] = checkedRow ? "true" : "false", ["StateSelected"] = checkedRow ? "true" : "false", ["TextAlign"] = "Center" }, Vector4.Zero, Pickable: true, Clip: list.Bounds));
             string colour = line.Value > 0.75f ? GoodColour : line.Value < 0.5f ? BadColour : MyGuiColours.InkText;
             controls.Add(new($"prospect-value-{i}", "TextBox", new(area.X + area.Width * 0.724138f, area.Y, area.Width * 0.275862f, area.Height), N(line.Percent), "", "Kenshi_GenericTextBoxFlatSmall", true,
                 new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = colour }, Vector4.Zero, Pickable: false, Clip: list.Bounds));

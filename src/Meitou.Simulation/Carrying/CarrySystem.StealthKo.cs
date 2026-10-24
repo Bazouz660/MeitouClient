@@ -104,7 +104,9 @@ public sealed partial class CarrySystem
             var goal = Behind(next[t]);
             if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), goal) < KnockoutStartRange)
             {
-                MovementSystem.Stop(table, i);
+                // Only the path is dropped: MovementSystem.Stop would end the task too, and the swing with it.
+                n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
+                n.PathCursor = 0;
                 cold.PathRequest = 0;
                 n.Velocity = Vector3.Zero;
                 cold.LiftTime = 0;

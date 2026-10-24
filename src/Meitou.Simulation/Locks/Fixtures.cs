@@ -20,13 +20,20 @@ public enum FixtureKind : byte
 }
 
 /// <summary>A bed as the host picks it (<see cref="WorldSnapshot.Beds"/>): its fixture id, BUILDING record, where it is and its owner faction (-1: none).</summary>
-public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1);
+public sealed record BedSpot(string Id, string Record, Vector3 Position, int Owner = -1, float Yaw = 0);
 
 /// <summary>
 /// What a bed's BUILDING says (docs/game/locks.md "Beds"): its functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED), the clip it is lain in (the functionality's <c>animation</c>:
-/// <c>sleepinbed</c>, <c>sleeponfloor</c>) and the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times).
+/// <c>sleepinbed</c>, <c>sleeponfloor</c>), the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times) and its use nodes
+/// (null with fewer than 2: it is lain in at its own origin and facing).
 /// </summary>
-public readonly record struct BedData(int Function, string? Clip, float Materials);
+public readonly record struct BedData(int Function, string? Clip, float Materials, BedNode[]? Nodes = null);
+
+/// <summary>
+/// A <c>node type</c> 4 (NODE_USE) instance of a bed's BUILDING, in the bed's own space: where a sleeper is put and the way it faces (the node's yaw - 90°; a node looks
+/// along its local -X). <c>sleepinbed</c> holds <c>Bip01</c> about 12 units to the character's side, on the mattress (docs/game/locks.md "Beds").
+/// </summary>
+public readonly record struct BedNode(Vector3 At, float Yaw);
 
 /// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
 public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
@@ -100,7 +107,7 @@ public sealed class Fixture
     public bool DoorBroken { get; set; }
     public int GateCode { get; set; } = -1;
     public bool WantsLock { get; set; }
-    /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>).</summary>
+    /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>; a player building's bed has it too, so an upgrade is noticed).</summary>
     public DoorLeaf Leaf { get; init; }
     public string HostRecordId { get; init; } = "";
     /// <summary>Doors: where the leaf is in the world, once the door gate has told it (<see cref="FixtureRegistry.DoorSpotOf"/>); derived from the data, not hashed or saved.</summary>
@@ -140,11 +147,17 @@ public sealed class Fixture
 /// </summary>
 public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock, bool Broken = false, Vector3 Position = default, string Record = "");
 
-/// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say.</summary>
-public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors);
+/// <summary>
+/// The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say; whether a fixture of it is the player's
+/// (<paramref name="Owned"/>: a town building the player owns gets the panel's buttons) and its Open to public flag as the player set it (null: never set).
+/// </summary>
+public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors, bool Owned = false, bool? Public = null);
 
-/// <summary>One door for the panel: open, effectively locked, its lock's level (0..100), whether the door is broken, and its BUILDING record (its Door Condition row).</summary>
-public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken, string Record = "");
+/// <summary>
+/// One door for the panel: open (open or opening: where it is heading), effectively locked, whether it wants its lock, its lock's level (0..100), whether the door is broken, and its
+/// BUILDING record (its Door Condition row).
+/// </summary>
+public readonly record struct DoorDetail(bool Open, bool Locked, int Level, bool Broken, string Record = "", bool WantsLock = false);
 
 /// <summary>Where the simulation tells navigation that a building's doors are shut for paths (the game host forwards it to the navmesh's door table). Serial phases only.</summary>
 public interface IDoorGate

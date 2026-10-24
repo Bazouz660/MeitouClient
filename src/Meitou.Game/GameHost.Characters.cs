@@ -51,8 +51,8 @@ sealed partial class GameHost
         return at + CarriedOffset(c, c.Yaw);
     }
 
-    /// <summary>A carried body has its carrier's position; it is drawn at <see cref="Meitou.Simulation.Carrying.CarryPose"/> from it, where its ragdoll is posed too.</summary>
-    static Vector3 CarriedOffset(CharacterSnapshot c, float yaw) => c.CarriedBy.IsNone ? Vector3.Zero : Meitou.Simulation.Carrying.CarryPose.Offset(yaw);
+    /// <summary>A carried body has its carrier's position; it is drawn at <see cref="CharacterSnapshot.Carry"/> from it, where its ragdoll is posed too.</summary>
+    static Vector3 CarriedOffset(CharacterSnapshot c, float yaw) => c.Carry is { } carry ? carry.World(Vector3.Zero, yaw).Position : Vector3.Zero;
 
     /// <summary>Fills the renderer's list from the last two snapshots, interpolated by the simulation's alpha.</summary>
     void FillDrawList(CharacterDrawList list)
@@ -102,7 +102,7 @@ sealed partial class GameHost
             list.Add(new CharacterInstance(DrawKey(c.Id), c.Appearance, position, yaw, poses)
             {
                 WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer,
-                Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha),
+                Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha, ref Slot(ref ragdollsBySlot, c.Id.Slot)),
             });
         }
     }
@@ -162,6 +162,20 @@ sealed partial class GameHost
         return [.. editorStances.Select(s => new CharacterPose(s.Stance, animationLibrary?.IndexOf(s.Stance) is >= 0 and int k ? (float)now * animationLibrary.Definitions[k].PlaySpeed : 0, s.Weight))];
     }
 
+    readonly HashSet<CharacterId> fullRate = [];
+    // By character slot, what the draw list hands the renderer, refilled every frame instead of made anew (the renderer reads them only in that frame's update):
+    // the poses, the stuck bolts and the ragdoll between ticks.
+    CharacterPose[]?[] posesBySlot = [];
+    StuckBoltMesh[]?[] boltsBySlot = [];
+    Meitou.Data.Characters.BonePose?[] ragdollsBySlot = [];
+
+    /// <summary><paramref name="slots"/>[<paramref name="slot"/>], the array grown to hold it.</summary>
+    static ref T? Slot<T>(ref T?[] slots, int slot) where T : class
+    {
+        if (slot >= slots.Length) Array.Resize(ref slots, Math.Max(slot + 1, slots.Length * 2));
+        return ref slots[slot];
+    }
+
     void FillDrawListCore(CharacterDrawList list)
     {
         var current = session.CurrentSnapshot;
@@ -169,6 +183,7 @@ sealed partial class GameHost
         float alpha = session.SimulationAlpha;
         // The character editor is a scene of its own (GameHost.Editor.cs): only the character being edited is posed and drawn.
         var editing = player.EditorFocus?.Character;
+        player.FullRateCharacters(fullRate);
         foreach (var c in current.Characters)
         {
             if (c.Appearance is null || editing is { } edited && c.Id != edited) continue;
@@ -181,8 +196,9 @@ sealed partial class GameHost
                 position = Vector3.Lerp(found.Position, c.Position, alpha);
                 yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, alpha);
             }
-            position += CarriedOffset(c, yaw);
-            var poses = new CharacterPose[c.Animations.Count];
+            Quaternion? rotation = null;
+            if (c.Carry is { } carry) (position, rotation) = carry.World(position, yaw);
+            var poses = Slot(ref posesBySlot, c.Id.Slot) is { } kept && kept.Length == c.Animations.Count ? kept : posesBySlot[c.Id.Slot] = new CharacterPose[c.Animations.Count];
             for (int i = 0; i < poses.Length; i++)
             {
                 var layer = c.Animations[i];
@@ -204,9 +220,9 @@ sealed partial class GameHost
             var glide = player.EditorBlend(c.Id);   // after the preview, which may just have swapped the look
             list.Add(new CharacterInstance(DrawKey(c.Id), look, position, yaw, poses)
             {
-                WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, BackDrawn = c.BackDrawn, Shots = c.CrossbowShots, Bolts = BoltsOf(c), Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer,
-                Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha),
-                BlendFrom = glide?.From, Blend = glide?.Blend ?? 0, Build = c.Build,
+                WeaponDrawn = c.WeaponDrawn, RangedDrawn = c.RangedDrawn, BackDrawn = c.BackDrawn, Shots = c.CrossbowShots, Bolts = BoltsOf(c), Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = editing is not null || fullRate.Contains(c.Id),
+                Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha, ref Slot(ref ragdollsBySlot, c.Id.Slot)),
+                BlendFrom = glide?.From, Blend = glide?.Blend ?? 0, Build = c.Build, Rotation = rotation,
             });
             // The editor's next preview look, listed hidden so the renderer prepares it while the last one is still shown.
             if (player.EditorPending(c.Id) is { } pending)
@@ -233,15 +249,20 @@ sealed partial class GameHost
         return look;
     }
 
-    /// <summary>A ragdoll's bones between the last two ticks: rotations by nlerp, root positions and the get-up weight linearly; a bone only in the newer one as it is.</summary>
-    static Meitou.Data.Characters.BonePose? Blend(Meitou.Data.Characters.BonePose? from, Meitou.Data.Characters.BonePose? to, float alpha)
+    /// <summary>
+    /// A ragdoll's bones between the last two ticks: rotations by nlerp, root positions and the get-up weight linearly; a bone only in the newer one as it is. Written into
+    /// <paramref name="kept"/> (made when missing or of another size).
+    /// </summary>
+    static Meitou.Data.Characters.BonePose? Blend(Meitou.Data.Characters.BonePose? from, Meitou.Data.Characters.BonePose? to, float alpha, ref Meitou.Data.Characters.BonePose? kept)
     {
         if (to is null || from is null || from.Set.Length != to.Set.Length) return to;
-        var pose = new Meitou.Data.Characters.BonePose(to.Set.Length) { Weight = from.Weight + (to.Weight - from.Weight) * alpha };
+        if (kept is null || kept.Set.Length != to.Set.Length) kept = new Meitou.Data.Characters.BonePose(to.Set.Length);
+        var pose = kept;
+        pose.Weight = from.Weight + (to.Weight - from.Weight) * alpha;
         for (int h = 0; h < to.Set.Length; h++)
         {
-            if (!to.Set[h]) continue;
-            pose.Set[h] = true;
+            pose.Set[h] = to.Set[h];
+            if (!to.Set[h]) { (pose.Rotation[h], pose.Position[h]) = (default, default); continue; }
             if (!from.Set[h]) { (pose.Rotation[h], pose.Position[h]) = (to.Rotation[h], to.Position[h]); continue; }
             var b = to.Rotation[h];
             if (Quaternion.Dot(from.Rotation[h], b) < 0) b = -b;

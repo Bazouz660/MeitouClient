@@ -30,10 +30,12 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
 Meitou (`SightMap`): every sight test (aggro, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
 rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
 buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
-compared only within the character's building). No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
+compared only within the character's building). With the `interiorlamps` switch on (Meitou, default) interior lamps count at
+any daylight, as the renderer draws them; off, night-only ones count at daylight <= 0.1 as in the game. No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
 evaluated every tick for everyone. The overhead and floor queries are redone only when a character moves (headless, Release:
-0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data: the Hub's and Squin's houses have no
-interior lights, so indoors at night is unlit (light 0).
+0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data (headless probe of five big towns' 60
+lit rooms): standing under an interior lamp gives light 0.7-2.9, 444 of 462 lamps lighting the floor below them; the Hub's
+intact buildings are mostly ruins, which count as outdoors.
 
 Can-see first checks state/squad-shared sightings (within2R, no cone/light), then player rules,
 building compatibility, NPC test/stealth accumulation and conditional physics ray. Ray starts
@@ -53,21 +55,27 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
 - Seen (result 1) when the meter was above 1 before this check; else result 2 (noticing). No line of sight: result 0.
 - Not in view: the meter empties by dt / 260 (`FUN_140853aa0`) and is dropped at 0.
 - The target keeps a watcher list (+0x1f0, `FUN_140855f30`): level and time per looker; level 0 removes it.
-  `FUN_1408586d0` draws, for entries younger than 4 s, a short pointer at the sneaker (12 up, length
-  min(d - 7, 15) towards the looker): red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
-  looker test (vtable +0x3f0, **Unknown**) passes. The sneaker's state +0xe8 becomes 1 (any red) or 2 (any yellow).
+  `FUN_1408586d0` shows, for entries younger than 4 s, an `arrow.mesh` entity per looker (`FUN_1405dc7d0`, pooled, render
+  queue 0x57): dir = looker - sneaker (3D), tail at sneaker + (0, 12, 0) + dir x min(|dir| - 7, 15) (no skip when negative),
+  turned from -X onto dir, unscaled. The mesh runs from its origin (shaft radius 0.5) to the tip at -X 10, head ±1.2
+  (**Verified**, read with `OgreMeshReader`). Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
+  looker test (vtable +0x3f0, **Unknown**) passes. Material (`FUN_1409b7830`): `debug_marker` cloned as `debug_#rrggbb`,
+  pass 0 `colour` = (rgb, 1); with its last argument set (this call) pass 1 is kept as (rgb, 0.2), else removed. The
+  sneaker's state +0xe8 becomes 1 (any red) or 2 (any yellow).
 - Name tag (`FUN_1406e8100`, colours loaded in `FUN_1406eb3a0`): shown within 10954 of the camera (1.2e8
   squared). Tag state 1/2/3 tints a stealth icon with the GUI colours `NameTagStealthHidden` / `AlmostSeen` / `Seen`,
   fallbacks (0.25, 0.521, 0.745), (0.745, 0.721, 0.25), (0.745, 0.25, 0.29) (**Verified** literals; the GUI XML may
-  override). A second icon's frame is round((1 - x) x (frames - 1)), x = clamp(character +0xd8, 0, 1), probably the light
-  level of the sun icon (tutorial text; **Observed**). How tag state 1-3 is derived from +0xe8 is **Unknown**.
+  override). A second icon's frame is round((1 - x) x (frames - 1)), x = clamp(character +0xd8, 0, 1): the
+  `LightLevel` image of `Kenshi_CharacterNameTags` (7 frames, frame 0 full light; **Verified**, kenshi_images.xml), on the
+  panel's right in colour (0.942, 0.806, 0.341) (**Verified**, `Kenshi_CharacterNamePanel.layout`). How tag state 1-3 is
+  derived from +0xe8 is **Unknown**.
 - Stealth XP: see [character-stats](character-stats.md#levelling-xp).
 
 Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-sight ray, f = 0.5, dt = the scan interval,
 a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime witnesses keep the
 same meters on a sneaking culprit in `CrimeSystem` (any faction, not just hostile lookers). A sneaking player
-character gets the pointers (from 0.35 of their length to the tip, with a head) and the original's stealth icon left of its name in the tag
-colours: seen if any watcher detects, almost seen if any notices, else hidden. The light-level (sun) icon is not drawn.
+character gets the arrows (`MarkerRenderer`, both passes like the movement marker, lit by the sun; no green) and the original's stealth icon left of its name in the tag
+colours: seen if any watcher detects, almost seen if any notices, else hidden, and the light-level icon from its `SightMap` light.
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).
 
@@ -88,6 +96,27 @@ squad Run-Away order have different target/ending rules. Faction ratios tune bre
 normal squad trigger and exact selection remain partly unknown. Leash/home/running state must
 not be equated with the attack planner or discarded immediately after a lost sighting.
 
+### Sense tags: who is an enemy
+
+**Observed** (decompile of the perception update `FUN_1408580d0`; bit names from the senses debug panel `FUN_1407981b0`). Each sensed
+entry has a tag word (entry +0x30 → +0x30): bit 0 SENSE_ALLY, 1 SENSE_NEUTRAL, 2 SENSE_ENEMY, 3 SENSE_KO, 14 SENSE_CRAWLING; others
+(5, 6, 7, 9, 10, 11, 12, 13, 15) are set from slave state, prisoner, own faction and carrying tests. The combat finders read it ([ai-tasks](ai-tasks.md#combat-goals)).
+- Not the looker's enemy (Character slot 125, `vfunc_125` at 0x3e8): ALLY when slot 126 (0x3f0) says ally, else NEUTRAL.
+- Enemy: NEUTRAL when `FUN_140796240` holds (**Unknown**), else ENEMY (unless the looker's platoon object lacks a sensor that accepts it).
+- **Slot 125** (`CharacterAnimal::vfunc_125`, shared by all characters): never the same faction. Across platoons the looker's squad's
+  TEMP_ENEMY tag (or, for a looker whose faction has +0x250, the target's tag on it) makes an enemy and TEMP_ALLY prevents one. A disguise
+  (uniform faction at +0x108 while +0x100 > 0.6 and +0x110 <= 0) stands in for the target's faction. A slave target: not when its owner
+  is the looker's, and only when the looker is hostile to the owner's faction. A slave looker: never its owner's faction. A target of the
+  faction the looker's platoon object +0x80 names (**Unknown** role) is an enemy. Otherwise hostile(looker faction → target faction),
+  relation <= -30, when `FUN_1408569a0` fails and the looker's +0xea flag is clear (and the target's is clear, or the looker's faction is
+  not real or default-hostile).
+- So attack on sight is relations only: no fundamental-type BANDIT rule (**Observed**). In the base data the Shek Kingdom, Holy Nation and
+  United Cities start at -100 only with Bloodraiders, Cannibals, Rebel Farmers, Grass Pirates, Gorillo Bandits and Yabuta Outlaws (Holy
+  Nation also Holy Nation Outlaws); at -10 with Starving and Dust Bandits; at 0 with the other bandit factions (**Verified** by probe of
+  the merged data). Fights lower relations ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)), so a
+  bandit faction a town keeps fighting can drop to hostile. The only BANDIT-type target rule found is the player's Shoot first gunners
+  ([squad AI options](ai-tasks.md#squad-ai-options)).
+
 ### The attack-on-sight tests
 
 **Observed** (decompile; goal 16's finder, [ai-tasks](ai-tasks.md#combat-goals)). A sensed character of a faction that
@@ -104,8 +133,8 @@ is not the looker's ally becomes a target only when both tests pass:
   byte +299 and not a slave) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
   +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the post's point
   (+0x130; 140 when the target is fighting and faces the post) must be within 60 of the looker.
-- So there is no give-up distance measured from where a fight began: the leash is the AI's area. Meitou's
-  `AggroSettings.LeashRange` (3000 from the fight's start) stays an **engine choice**.
+- So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
+  chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)).
 
 
 ### Summary

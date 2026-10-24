@@ -75,7 +75,11 @@ DotRecast: cells2,height1,tile48 cells,agent18/climb5,ground/water/door areas. B
 cache tiles and gate population on readiness. Query A* through portal clearance (radius per wall end; tile-border, seam
 and area-change ends are open) and water/door costs. **Observed** (zone 18.39, `meitou-tools navmesh`): a Swamp Village
 shack's stair straddles the tile line x−62208 and its foot came out as 6..8-unit portals, so a 2*radius rule kept radius-4
-agents under the house; the west half's foot meets the walkboard in a near-miss T, joined as an inner seam. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
+agents under the house; the west half's foot meets the walkboard in a near-miss T, joined as an inner seam.
+A start polygon with no exit that clears the radius is left through its narrow exits (engine choice: the walker already stands
+in it). **Observed** (zone 39.16, Stoat, scratch probe from ground-level points round its 25 doors): slivers beside door steps
+(Y-House `16-` 35046..35064,−71590..−71582, 4..6 wide, one 6-unit wall-ended exit; Y-House `18-`; Old Storm House `20-`) held
+8 of 1999 starts with no path at all, so a walker stopped or pushed there stayed stuck at the door; with the rule all 1999 path. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
 reference evidence, not a runtime dependency or proof of DotRecast polygon parity.
 **Terrain** as the original: every second heightmap sample (36 units), slope 40° per triangle. **Observed** (zone 20.32, `meitou-tools navmesh`):
 at 18 units each right triangle (legs 18) near 40° was walkable or not on its own, and 2-unit cells kept every one, so cliff fringes were saw teeth
@@ -185,6 +189,8 @@ character takes the collision surface at the character's own height instead when
 **Observed** at the rock by the Hub's gate, -51686, 2740: our polygon spans its top (1595) and slope, sags to ~1580 and lies nearer a face inside the
 rock (~1567), stranding a walker on the top; the original's cached tile has a polygon flat at 1594.8 there); with no layer in range, a
 polygon within `EdgeTolerance` counts. A character already off every layer near its height still steps down.
+A path point takes the height of the corridor polygon under it; of stacked ones the corridor crosses, the one nearest the point's own height (`NavQuery.OnSurface`;
+**Observed** with `meitou-tools navmesh --town Squin --path`: a route into a Bughouse and up onto its roof beds ended on the floor below, y 372 for 482).
 **Long routes** (engine choice): goals in unloaded zones use `CoarseRoute` (192-unit terrain grid, slope and
 water costs; a step whose centre line crosses a building's footprint hull costs `BuildingCost` 40×, so routes go round
 walls and towns where open ground allows (a 5.5k-unit wall is walked round; 8× crossed it); the player's buildings are a second layer,

@@ -65,11 +65,14 @@ namespace Meitou.Simulation
                     world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
                     continue;
                 }
+                // Another faction's item is stolen from it (the "Steal" pick-up); what stays on the ground keeps its old mark.
+                int before = item.Item.Quantity, mark = item.Item.StolenFrom;
+                if (item.OwnedBy >= 0 && item.OwnedBy != c.Faction) item.Item.StolenFrom = item.OwnedBy;
                 // What does not fit stays on the ground (Inventory.Add leaves it in the item).
-                int before = item.Item.Quantity;
                 if (inventory.Add(item.Item)) { world.GroundItems.Take(id); world.EmitSound(SoundKind.PickedUp, s, next[s].Position); }
                 else
                 {
+                    item.Item.StolenFrom = mark;
                     // Task_Pickup sounds when any of the stack went in.
                     if (item.Item.Quantity < before) world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
                     world.Post($"{c.Name}: Not enough room in my inventory");

@@ -5,6 +5,7 @@ using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Locks;
 
 namespace Meitou.Simulation.FirstAid;
 
@@ -15,8 +16,8 @@ namespace Meitou.Simulation.FirstAid;
 /// (the pursuit system's pattern: a path at free speed, asked again when the patient has moved); <c>Act</c> (own slot, read-only on the patient) emits one effect per tick while the medic
 /// is in reach, awake, not fighting and still, and the patient is still or down; <c>Apply</c> (serial commit, in target / source order) picks the kit, bandages the patient, drains the kit
 /// and trains the medic. So nothing on another character is written in a parallel phase.</item>
-/// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of
-/// <c>dt</c>; the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c>. The skill is the patient race's <c>heal stat</c> of the medic times
+/// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of <c>dt</c> on the first part with room (the next only once it fills), after any open wound is closed;
+/// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (bandaging drains only the player's kits; character-stats.md "First aid update"). The skill is the medic's <c>medic</c> (first aid kit) or <c>robotics</c> (robot kit) times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
 /// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following character with a kit treats the most
 /// hurt squad mate within reach (knocked-out ones first), when no one in its squad is fighting: NPCs (engine stand-in until stage 9). The player's characters run their medic, robotics and
@@ -32,6 +33,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     public const int EffectTreat = 1;
     /// <summary>Untreated damage (HP) under which a treatment in progress counts as finished.</summary>
     const float Done = 1e-3f;
+    /// <summary>The kit quality closing a wound without a kit (<c>FUN_14064d800</c>).</summary>
+    const float KitlessQuality = 5;
 
     public FirstAidSettings Settings { get; } = settings ?? new FirstAidSettings();
     public GameConstants Constants { get; } = constants;
@@ -249,6 +252,43 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             Splint(world, m, medicCold, medical, stats, medicRace, body, race);
             return;
         }
+        float dt = world.TickSeconds;
+        // The skill and trained stat: medic with a first aid kit, robotics with a robot repair kit; treating oneself x0.8 (FUN_14033c5a0, Task_FirstAid's kit phase).
+        StatsEnumerated StatOf(bool robotKit) => robotKit ? StatsEnumerated.Robotics : StatsEnumerated.Medic;
+        float SkillOf(bool robotKit) => stats[StatOf(robotKit)] * medical.StatMultiplier(StatOf(robotKit)) * (m == p ? 0.8f : 1);
+        // A medic not of the player's treats an imprisoned patient without a kit (Task_FirstAid FUN_1403563a0 skips the kit search; the chained-slave case is not modelled).
+        bool kitless = !medicCold.IsPlayer && patientCold.IsImprisoned;
+        var ctx = new MedicalContext(Constants, bodyOptions, race);
+        // Open wounds are closed first, newest first, with a kit matching the patient's race (none: quality 5); nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
+        if (body.Wounds.Count > 0)
+        {
+            var woundKit = kitless ? null : FindKit(world, m, medicCold, FunctionOf(race.IsRobot));
+            if (woundKit is null && !kitless)
+            {
+                Say(world, m, medicCold.TreatTarget, KitEmpty);
+                End(table, m);
+                return;
+            }
+            float woundSkill = SkillOf(race.IsRobot && !kitless);
+            body.CloseWound(dt, woundSkill, woundKit is { } wk ? Items.Info(wk.Item.Record)?.Quality ?? 0 : KitlessQuality, Constants);
+            if (woundKit is { } used) Drain(used, woundSkill, dt, race.IsRobot, 1);
+            xp.Medic(stats, race, medicRace, dt, StatOf(race.IsRobot && !kitless));
+            return;
+        }
+        if (kitless)
+        {
+            // Without a kit every part takes 1 HP a second, organic or robotic alike, and nothing drains (FUN_140649a00).
+            if (body.Bandage(dt, null, race, out _) <= 0)
+            {
+                Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
+                patientCold.StuckBolts = null;
+                End(table, m);
+                return;
+            }
+            xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
+            Deeds?.FirstAid(world, m, p, dt);
+            return;
+        }
         // Ordinary kits first; a robotic part is treated once the organic ones are done. Treatment runs until the last bit is bandaged (the start threshold is MedicalState.FirstAidThreshold).
         bool robot = body.BandageRoom(race, false) <= Done;
         if (robot && body.BandageRoom(race, true) <= Done)
@@ -264,21 +304,16 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);   // no kit of the right kind within reach
             return;
         }
-        var (item, owner) = kit;
-        float dt = world.TickSeconds;
-        var stat = race.HealStat;
-        float skill = stats[stat] * medical.StatMultiplier(stat);
-        float quality = Items.Info(item.Record)?.Quality ?? 0;
-        var ctx = new MedicalContext(Constants, bodyOptions, race);
-        float bandaged = body.Treat(dt, skill, quality, robot, ctx);
+        float skill = SkillOf(robot);
+        float quality = Items.Info(kit.Item.Record)?.Quality ?? 0;
+        float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
         if (bandaged <= 0)
         {
             End(table, m);
             return;
         }
-        item.Charges -= MedicalState.KitDrain(Constants, skill, dt, robot);
-        if (item.Charges <= 0) owner.RemoveOne(item);   // a used-up kit is gone
-        xp.Medic(stats, race, medicRace, dt);
+        if (medicCold.IsPlayer) Drain(kit, skill, dt, robot, touched);   // once per part bandaged; only the player's medics use up kits here (FUN_140649a00: faction +0x250)
+        xp.Medic(stats, race, medicRace, dt, StatOf(robot));
         // An unconscious patient's faction is grateful to the medic's (engine choice: every update that bandages; the original's update fires it only when its loop got past the wounds).
         Deeds?.FirstAid(world, m, p, dt);
     }
@@ -295,7 +330,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);
             return;
         }
-        var (item, owner) = kit;
+        var item = kit.Item;
         float dt = world.TickSeconds;
         float skill = stats[StatsEnumerated.Medic] * medical.StatMultiplier(StatsEnumerated.Medic);
         float quality = Items.Info(item.Record)?.Quality ?? 0;
@@ -305,12 +340,18 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);   // nothing left to splint
             return;
         }
-        item.Charges -= MedicalState.KitDrain(Constants, skill, dt, false);
-        if (item.Charges <= 0) owner.RemoveOne(item);
+        Drain(kit, skill, dt, false, 1);
         xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
     }
 
     // ------------------------------------------------------------------ kits
+
+    /// <summary>Uses <paramref name="times"/> drains of a kit (<see cref="MedicalState.KitDrain"/>); a used-up kit is gone.</summary>
+    void Drain((ItemInstance Item, Inventory Owner) kit, float skill, float dt, bool robotKit, int times)
+    {
+        kit.Item.Charges -= MedicalState.KitDrain(Constants, skill, dt, robotKit) * times;
+        if (kit.Item.Charges <= 0) kit.Owner.RemoveOne(kit.Item);
+    }
 
     /// <summary>The best kit of a function in an inventory (and its backpack): the highest record quality with charges left; the first of equals.</summary>
     ItemInstance? Best(Inventory? inventory, int function)
@@ -371,7 +412,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             if (!Settings.AutoNpcs) continue;
             // Idle: no task, following, wandering or an implicit job.
             bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-            if (idle) TreatSomeone(world, i, taken);
+            if (idle && !TreatSomeone(world, i, taken)) TreatPrisoner(world, i, taken);
         }
     }
 
@@ -533,6 +574,37 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
         Begin(world, i, new CharacterId(best, next[best].Generation), resume);
         return true;
+    }
+
+    /// <summary>
+    /// The Medic goal's second pass for an NPC that found no patient (<c>FUN_14099f690</c>, docs/game/ai-tasks.md "Medic jobs"): a prisoner in a cage its faction owns, within its sight,
+    /// not of a robot race, not an obedient slave, not of its squad and not treated by another, scored by need x relation factor x nearness; the highest is treated, without a kit
+    /// (<see cref="Apply"/>). Need counts both kinds of damage, kit or not (<c>FUN_140998200</c>). True when it started.
+    /// </summary>
+    bool TreatPrisoner(World world, int i, HashSet<int> taken)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var cold = table.Cold(i)!;
+        if (cold.Medical is not { Incapacitated: false } || cold.Stats is null || cold.InCombat) return false;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
+        int best = -1;
+        float bestScore = 0;
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Cage || f.Owner != cold.Faction || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s)) continue;
+            if (s == i || taken.Contains(s) || table.Cold(s) is not { IsImprisoned: true, Medical: { Dead: false } med, Race: { IsRobot: false } race } other) continue;
+            if (other.SlaveState == 1 || other.SquadId >= 0 && other.SquadId == cold.SquadId) continue;
+            float dx = next[s].Position.X - next[i].Position.X, dz = next[s].Position.Z - next[i].Position.Z, d2 = dx * dx + dz * dz;
+            if (d2 > range * range) continue;
+            float relation = other.Faction == cold.Faction || Relations is null || !Relations.Contains(cold.Faction) || !Relations.Contains(other.Faction) ? 1 : MathF.Max(Relations.Get(cold.Faction, other.Faction) * 0.01f, 0.05f);
+            float score = Need(med, race, true, true) * relation * Nearness(d2);
+            if (score <= bestScore) continue;
+            best = s;
+            bestScore = score;
+        }
+        return best >= 0 && StartJob(world, i, best, taken, splint: false);
     }
 
     /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>

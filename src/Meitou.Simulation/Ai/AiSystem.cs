@@ -128,6 +128,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             CharacterTask.GoTo => mind.Behaviour is AiBehaviour.Post or AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.GoHome or AiBehaviour.Patrol or AiBehaviour.Turret
                 or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel or AiBehaviour.Work,
             CharacterTask.Rest => mind.Behaviour is AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.Relax,
+            // In the bed it went to (or lying in one when loaded, before its first think).
+            CharacterTask.Sleep => cold.InSomething == Locks.HeldState.Bed && (mind.Behaviour == AiBehaviour.Sleep || mind.Goal is null),
             _ => false,
         };
     }
@@ -275,7 +277,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// trade (<see cref="SquadTemplate.HasShop"/>; the original's shopping looks for BF_SHOP furniture inside, which Meitou does not read: engine choice).
     /// Residents are the squads living there, else the level data's <c>residents template</c>; the layout flags <c>is bar</c> / <c>is shop</c> count too.
     /// A building is public as its residents' template's <c>public day</c> (the original writes it over the home's flag), else as its level state's
-    /// <c>is public day</c>, else public (engine choice: the original's default is Unknown).
+    /// <c>is public day</c>, else public (engine choice: the original's default is Unknown); a town building the player owns as its Open to public toggle once set
+    /// (the stats panel, <see cref="Locks.FixtureRegistry.PublicOf"/>).
     /// </summary>
     void RefreshPlaces(World world)
     {
@@ -305,7 +308,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             var buildings = data.Sites[site].Buildings;
             foreach (var b in buildings)
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
-            bool IsPublic(TownBuilding b) => publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true;
+            bool IsPublic(TownBuilding b) => world.Fixtures.PublicOf(b.Key) ?? (publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true);
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
             places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
                 [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);
@@ -440,6 +443,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         mind.FollowTarget = CharacterId.None;   // set again below for a follow goal aimed at the squad's mission
         ref var n = ref table.Next[slot];
         bool leader = mind.Squad.Leader == table.IdOf(slot);
+        // Another goal gets it out of its bed (the get-up step's own think, or the goal's act-out where the plan has none); it stands where it lay.
+        if (behaviour != AiBehaviour.Sleep && table.Cold(slot)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, table.IdOf(slot));
         // Steps of the plan before the goal's own act-out: getting out of bed, sheathing (one think each); the walk and the rest are the goal's.
         switch (mind.Step)
         {
@@ -495,6 +500,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 }
                 else Become(table, slot, CharacterTask.Wander);
                 break;
+            case AiBehaviour.Sleep when table.Cold(slot)!.InSomething == Locks.HeldState.Bed:
+                break;   // lying in its bed
             case AiBehaviour.Post:
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
@@ -502,6 +509,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
+                    // At its home's bed: the serial step lies it in (Task_UseBed via 98 Sleeping); resting on the floor stays the fallback when no bed is free.
+                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && BedSpotOf(board, mind) is { } bed)
+                    {
+                        mind.BedAt = bed;
+                        Interlocked.Exchange(ref bedding, 1);
+                    }
                     if (home && board.Gate is { } gate && GateSpot(board, mind, type) is not null) table.Next[slot].Yaw = MathF.Atan2(gate.Out.X, gate.Out.Y);   // looking out
                     else if (facing is { } yaw) table.Next[slot].Yaw = yaw;   // at a node, facing its way (the barman over his counter)
                 }
@@ -628,6 +641,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         return null;
     }
 
+    /// <summary>The fixture id of the bed <see cref="SpotFor"/> sends a sleeper to (the <see cref="Pick"/> of its home's beds, numbered as <c>FixtureRegistry</c> numbers them); null without one.</summary>
+    static string? BedSpotOf(Blackboard board, AiMind mind)
+    {
+        if (board.Home is not { } home || mind.HomeUnreachable) return null;
+        int count = 0;
+        foreach (var s in home.Spots) if (s.Kind == HomeSpotKind.Bed) count++;
+        return count == 0 ? null : $"{home.Key}@bed{(mind.MemberIndex % count).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
     static Vector2 Flat(Vector3 p) => new(p.X, p.Z);
 
     /// <summary>
@@ -715,6 +737,44 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
     }
 
+    // Set by a think that left a sleeper to be laid in its bed (<see cref="AiMind.BedAt"/>).
+    int bedding;
+
+    /// <summary>How far (X/Z) from where it stands a sleeper takes another free bed of its home when its own is taken (units; engine choice).</summary>
+    const float BedReach = 30;
+
+    /// <summary>
+    /// Lies the sleepers that reached their bed spot in it (serial: beds are shared). A taken bed gives way to the nearest free bed of the same building within
+    /// <see cref="BedReach"/>; with none free it keeps resting on the floor there (engine choice).
+    /// </summary>
+    static void LieDown(World world)
+    {
+        var table = world.Characters;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (table.Cold(s) is not { Ai: { BedAt: { } id } mind } cold) continue;
+            mind.BedAt = null;
+            ref var n = ref table.Next[s];
+            if (!n.Alive || mind.Behaviour != AiBehaviour.Sleep || n.Task != (byte)CharacterTask.Rest || world.Fixtures.Find(id) is not { } bed) continue;
+            var here = new Vector2(n.Position.X, n.Position.Z);
+            bool Near(Locks.Fixture f) => Vector2.DistanceSquared(here, Flat(f.Position)) <= BedReach * BedReach;
+            if (!Locks.FixtureRegistry.IsFree(table, bed) || !Near(bed))
+            {
+                Locks.Fixture? best = null;
+                float bestD = float.MaxValue;
+                foreach (var f in world.Fixtures.OfBuilding(bed.Building))
+                {
+                    if (f.Kind != Locks.FixtureKind.Bed || !Locks.FixtureRegistry.IsFree(table, f) || !Near(f)) continue;
+                    float d = Vector2.DistanceSquared(here, Flat(f.Position));
+                    if (d < bestD) (best, bestD) = (f, d);
+                }
+                if (best is null) continue;
+                bed = best;
+            }
+            if (cold.InSomething == Locks.HeldState.None) world.Fixtures.EnterBed(world, table.IdOf(s), bed);
+        }
+    }
+
     /// <summary>What a character gives up when its walks to a spot keep failing: its home's spots (it uses its post), its post (where it stands becomes it), the target, or relaxing at its bar seat.</summary>
     enum GiveUp : byte { Home, Post, Target, Seat }
 
@@ -765,6 +825,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     {
         var table = world.Characters;
         if (Interlocked.Exchange(ref placing, 0) != 0) Place(table);
+        if (Interlocked.Exchange(ref bedding, 0) != 0) LieDown(world);
         bool cadence = world.Tick % Math.Max(1, Settings.PackageEveryTicks) == 0;
         // Each town's turrets are claimed once per cadence, by the squads in squad order (derived, not hashed).
         if (cadence) { turretTaken.Clear(); seatTaken.Clear(); ReserveSeats(world); RefreshPlaces(world); }
@@ -1054,7 +1115,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>
     /// The squad's own building: the one its town gave it (<see cref="Squad.HomeBuilding"/>, docs/game/factions-squads-towns.md "Town residents"); for a squad without
     /// one (made without building data, or a save's without a home) an <b>engine choice</b>: among its town's
-    /// buildings no other squad has, the nearest of the template's <c>building</c>; else by <c>building designation</c> a shop (SHOP) or the bar (BAR, shared);
+    /// buildings no other squad has, the nearest of the template's <c>building</c>; else by <c>building designation</c> a shop (SHOP) or the bar (BAR, or one of the
+    /// town's bar squads; shared);
     /// else the nearest with beds, else the nearest at all. None for a squad without a town or a town without building data.
     /// </summary>
     TownBuilding? AssignHome(World world, Squad squad, SquadTemplate? template)
@@ -1079,8 +1141,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
         if (template?.Building is { } wanted && Nearest(b => b.BuildingId == wanted.Id) is { } own) return own;
         if (template?.BuildingDesignation == 1 && Nearest(b => b.IsShop) is { } shop) return shop;
-        if (template?.BuildingDesignation == 3 && Nearest(b => b.IsBar, shared: true) is { } bar) return bar;
+        if ((template?.BuildingDesignation == 3 || IsBarSquad(squad)) && Nearest(b => b.IsBar, shared: true) is { } bar) return bar;
         return Nearest(b => b.Beds > 0) ?? Nearest(_ => true);
+    }
+
+    /// <summary>A squad made from one of its town's <c>bar squads</c> entries (the original gives it no home; Meitou keeps it at the bar, not in a free building with beds).</summary>
+    bool IsBarSquad(Squad squad)
+    {
+        int f = squad.Town < data.SiteFactions.Count ? data.SiteFactions[squad.Town] : -1;
+        return PopulationSystem.BarEntries(data.Sites[squad.Town].Town, f >= 0 ? data.Factions[f] : null).Any(e => e.Id == squad.TemplateId);
     }
 
     /// <summary>

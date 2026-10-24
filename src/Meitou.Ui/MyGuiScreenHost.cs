@@ -46,6 +46,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public bool IsOpen(string id) => open.Contains(id);
     /// <summary>Whether the open window's pin button is down (closing the window lets it go).</summary>
     public bool IsPinned(string id) => open.Contains(id) && screens[id].Pinned;
+    public void SetPinned(string id, bool pinned) => screens[id].Pinned = pinned;
+    public bool IsRegistered(string id) => screens.ContainsKey(id);
     public void Open(string id)
     {
         if (!screens.ContainsKey(id)) throw new KeyNotFoundException(id);
@@ -112,6 +114,11 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
             }
             PlaceRoots(s, b, width, height);
             var controls = MyGuiPresentation.Arrange(s.Layout, width, height, b, resources.Layers).ToList();
+            // A pinned window's pin button stays down (the skin's checked state, else pushed).
+            if (s.Pinned)
+                for (int i = 0; i < controls.Count; i++)
+                    if (controls[i].Action.StartsWith("mygui:pin", StringComparison.Ordinal))
+                        controls[i] = controls[i] with { Properties = new Dictionary<string, string>(controls[i].Properties) { ["Checked"] = "true", ["StateSelected"] = "true" } };
             decorate?.Invoke(id, controls);
             ArrangeKeyboard(id, controls);
             result.Add(new(id, controls));
@@ -169,7 +176,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         focus = null; edit = null;
         if (c.Type == "Button") { Activated?.Invoke(new(id, c.Name, c.Action)); return true; }
         var root = frame.First(f => f.Id == id).Controls.FirstOrDefault(n => n.Type == "Window");
-        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned && root.Properties.GetValueOrDefault("Movable") != "false")
+        if (root is not null && p.Y < root.Bounds.Y + 38 && root.Properties.GetValueOrDefault("Movable") != "false")
             drag = leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? (leader, p, screens[leader].Offset) : (id, p, s.Offset);
         return true;
     }

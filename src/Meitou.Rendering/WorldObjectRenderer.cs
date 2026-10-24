@@ -696,15 +696,18 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public IReadOnlyDictionary<string, int> InteriorView { get; set; } = new Dictionary<string, int>();
 
     /// <summary>The nearest loaded building's movement destination, using collision up to the viewed floor, before the terrain.</summary>
-    public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance)
+    public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance) => FloorHit(origin, direction, floor, maxDistance)?.Position;
+
+    /// <summary><see cref="MoveHit"/> with the building whose collision was hit.</summary>
+    public (Vector3 Position, InteriorVolume Room)? FloorHit(Vector3 origin, Vector3 direction, int floor, float maxDistance)
     {
-        Vector3? best = null;
+        (Vector3, InteriorVolume)? best = null;
         foreach (var zone in streamer.AllZones)
             foreach (var room in zone.Interiors)
                 if (room.MoveHit(origin, direction, floor, maxDistance) is { } hit)
                 {
                     maxDistance = hit.Distance;
-                    best = hit.Position;
+                    best = (hit.Position, room);
                 }
         return best;
     }
@@ -726,25 +729,94 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// Whether the instance stands in a loaded building's interior (<see cref="InteriorAt"/>), kept on it until the interiors or its place change: every view
     /// (the camera's, each shadow cascade's, the reflection's) asks it of each piece of furniture.
     /// </summary>
-    bool InInterior(ObjectStreamer.Instance inst)
+    bool InInterior(ObjectStreamer.Instance inst) => InteriorOf(inst).Inside;
+
+    /// <summary>
+    /// Whether the instance takes the indoor GI (docs/render-gi.md): a building's interior part, its layout furniture inside a hull, or a building of its own (furniture or a
+    /// station the player placed) standing in another building's hull; a building in its own hull is its outside.
+    /// </summary>
+    bool IndoorFurniture(ObjectStreamer.Instance inst)
+    {
+        var p = inst.Placed;
+        if (p.Interior) return true;
+        if (p.ParentPlacementId is not null) return InInterior(inst);
+        return p.Kind == PlacedKind.BuildingPart && InteriorOf(inst) is { Inside: true, Building: { } holder } && holder != p.PlacementId;
+    }
+
+    ObjectStreamer.InteriorAnswer InteriorOf(ObjectStreamer.Instance inst)
     {
         var at = inst.Transform.Translation;
-        if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known.Inside;
+        if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known;
         bool inside = InteriorAt(at) is not null;
-        inst.Interior = new(streamer.InteriorVersion, at, inside);
-        return inside;
+        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it.
+        var holder = InteriorAt(at, 2);
+        return inst.Interior = new(streamer.InteriorVersion, at, inside, holder?.PlacementId, holder?.FloorAt(at) ?? 0);
+    }
+
+    /// <summary>
+    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by where it
+    /// stands in that building's hull: it is hidden with that floor (game: FUN_1409fb540 hides objects above their building's floor, as the host does for characters).
+    /// </summary>
+    bool StandsAbove(ObjectStreamer.Instance inst)
+    {
+        var p = inst.Placed;
+        if (InteriorView.Count == 0 || AllFloors || p.Kind != PlacedKind.BuildingPart || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
+        var answer = InteriorOf(inst);
+        return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;
     }
 
     /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
     public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
     {
-        foreach (var zone in streamer.AllZones)
-        {
-            if (zone.Interiors.Count == 0 || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > 200) continue;   // a building may stand over its zone's edge
-            foreach (var v in zone.Interiors)
-                if (v.Contains(p, margin)) return v;
-        }
+        // The zones within 200 units of the point (a building may stand over its zone's edge): the one it is in and at most three beside it.
+        var (lo, hi) = (WorldLayout.ZoneOf(p.X - InteriorOver, p.Z - InteriorOver), WorldLayout.ZoneOf(p.X + InteriorOver, p.Z + InteriorOver));
+        for (int x = lo.X; x <= hi.X; x++)
+            for (int y = lo.Y; y <= hi.Y; y++)
+            {
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > InteriorOver) continue;
+                foreach (var v in zone.Interiors)
+                    if (v.Contains(p, margin)) return v;
+            }
         return null;
+    }
+
+    const float InteriorOver = 200, InteriorKeep = 50;
+
+    /// <summary>A point's last <see cref="InteriorAt(Vector3, ref InteriorMemo)"/> answer, kept by the asker (a character): good while the interiors are the same and the point within <c>Clear</c> of where it was asked.</summary>
+    public struct InteriorMemo
+    {
+        internal bool Set;
+        internal int Version;
+        internal Vector3 At;
+        internal float Clear;
+        internal InteriorVolume? Volume;
+    }
+
+    /// <summary>
+    /// <see cref="InteriorAt(Vector3, float)"/> without a margin, asked again only once <paramref name="p"/> has moved farther than the nearest interior's box was (at most 50 units,
+    /// over every zone the moved point could ask) or the interiors changed. Standing still inside asks nothing either: there the distance kept is 0.
+    /// </summary>
+    public InteriorVolume? InteriorAt(Vector3 p, ref InteriorMemo memo)
+    {
+        // Strictly nearer: a point on a box's edge can be inside.
+        if (memo.Set && memo.Version == streamer.InteriorVersion && Vector3.DistanceSquared(p, memo.At) is var moved && (moved == 0 || moved < memo.Clear * memo.Clear)) return memo.Volume;
+        float clear = InteriorKeep, reach = InteriorOver + InteriorKeep;
+        InteriorVolume? found = null;
+        var (lo, hi) = (WorldLayout.ZoneOf(p.X - reach, p.Z - reach), WorldLayout.ZoneOf(p.X + reach, p.Z + reach));
+        for (int x = lo.X; x <= hi.X && found is null; x++)
+            for (int y = lo.Y; y <= hi.Y && found is null; y++)
+            {
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone) continue;
+                float zoneDistance = ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p);
+                if (zoneDistance > reach) continue;
+                foreach (var v in zone.Interiors)
+                {
+                    clear = MathF.Min(clear, v.Distance(p));
+                    if (zoneDistance <= InteriorOver && v.Contains(p)) { found = v; break; }
+                }
+            }
+        memo = new InteriorMemo { Set = true, Version = streamer.InteriorVersion, At = p, Clear = found is null ? clear : 0, Volume = found };
+        return found;
     }
 
     /// <summary>
@@ -948,7 +1020,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     {
         if (inst.Gpu is not { } gpu) return;
         if (!ReferenceEquals(inst.Mesh.Gpu, gpu)) { Unresolve(zone, inst); return; }
-        if (InteriorHidden(inst.Placed)) return;
+        if (InteriorHidden(inst.Placed) || StandsAbove(inst)) return;
         if (inst.Placed.DoorIndex >= 0) PoseDoor(inst, gpu);
         if (inst.Placed.Joints is not null) PoseTurret(inst, gpu);
         float value = Vector3.Distance(inst.Centre, eye) - inst.Radius;
@@ -994,7 +1066,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (gpu.MinLevel > 0) blend = new LodBlend(Math.Max(blend.Lower, gpu.MinLevel), Math.Max(blend.Upper, gpu.MinLevel), blend.T);
         var m = inst.Transform;
         // Spare instance-matrix component: room GI gain without splitting shared furniture batches.
-        m.M34 = inst.Placed.Interior || inst.Placed.ParentPlacementId is not null && InInterior(inst) ? 1 : 0;
+        m.M34 = IndoorFurniture(inst) ? 1 : 0;
         // Another spare component, M44: 1, or for a construction site the height of its scaffold clip plane (BuildingLodShaders.ScaffoldBase + world Y).
         bool site = false;
         bool highlight = HighlightSigns && !depthPass && !inst.Stand && inst.Placed.Owner.GetBool("is sign");

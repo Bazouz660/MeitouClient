@@ -37,6 +37,18 @@ public sealed class SpatialGrid
 
     long CellOf(float x, float z) => Pack((int)MathF.Floor(x / cellSize), (int)MathF.Floor(z / cellSize));
 
+    /// <summary>The cell column and row of a point (the cell <see cref="Build"/> files it in).</summary>
+    internal (int X, int Z) Cell(Vector3 at) => ((int)MathF.Floor(at.X / cellSize), (int)MathF.Floor(at.Z / cellSize));
+
+    /// <summary>The cells <see cref="Query"/> visits for a circle: a character is visited exactly when its <see cref="Cell"/> lies in this range.</summary>
+    internal CellRange Range(float x, float z, float radius) =>
+        new((int)MathF.Floor((x - radius) / cellSize), (int)MathF.Floor((x + radius) / cellSize), (int)MathF.Floor((z - radius) / cellSize), (int)MathF.Floor((z + radius) / cellSize));
+
+    internal readonly record struct CellRange(int X0, int X1, int Z0, int Z1)
+    {
+        public bool Holds((int X, int Z) cell) => cell.X >= X0 && cell.X <= X1 && cell.Z >= Z0 && cell.Z <= Z1;
+    }
+
     static long Pack(int cx, int cz) => ((long)cx << 32) | (uint)cz;
 
     /// <summary>

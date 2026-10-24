@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Characters;
@@ -67,6 +68,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (skinShading == value) return;
             skinShading = value;
             portraitShown.Clear();
+            materialEpoch++;
         }
     }
     bool skinShading = true;
@@ -79,7 +81,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public IReadOnlyDictionary<string, bool>? SkinRaces
     {
         get => skinRaces;
-        set { skinRaces = value; portraitShown.Clear(); }
+        set { skinRaces = value; portraitShown.Clear(); materialEpoch++; }
     }
     IReadOnlyDictionary<string, bool>? skinRaces;
 
@@ -151,6 +153,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public Vector3 Centre;
         public float Radius;
         public int BoneBase, AttachBase, LayerStart, LayerCount;
+        /// <summary>Its parts' first entry in <see cref="partFrames"/> (one per asset part).</summary>
+        public int PartBase;
         public CharState State;
         public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
         public int Shots;
@@ -180,17 +184,19 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public readonly Dictionary<int, Matrix4x4> BoltLocal = [];
         public Vector3 Centre;
         public float Radius;
+        /// <summary>Its last indoors answer (<see cref="Live.Interior"/>), asked again once it has moved.</summary>
+        public WorldObjectRenderer.InteriorMemo Interior;
     }
 
     readonly Dictionary<long, CharState> states = [];
     /// <summary>
-    /// Characters farther than these distances from <see cref="Focus"/> (or the eye, whichever is nearer) are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
-    /// phase of its own so the poses spread over the frames; nearer ones every frame.
+    /// Characters farther than these distances from the eye are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
+    /// phase of its own so the poses spread over the frames; nearer ones every frame. A fight at the camera's pivot with the boom pulled out is thinned too: only
+    /// <see cref="CharacterInstance.FullRateAnimation"/> (the player's first characters and the selected one) keeps the full rate.
     /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
-    /// <summary>What the camera looks at (the strategy camera's pivot): the pose-rate distances are measured from it, so the characters in view keep the full rate
-    /// however far the boom is; null: from the eye.</summary>
-    public Vector3? Focus { get; set; }
+    /// <summary>With fewer characters than this drawn in the world, none is thinned: every one is posed every frame.</summary>
+    const int ThinFromCharacters = 100;
     /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
     const double PoseRateHz = 60;
     /// <summary>The seconds the pose rates count in (the game's animation clock, which a recorded flight steps by its frame time, so a take poses the same however slowly
@@ -215,7 +221,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     int layerCount;
     Matrix4x4[] attach = new Matrix4x4[256];
     int attachCount;
-    Transient bones, previousBones, materials;
+    Transient bones, previousBones;
     readonly List<AssetPart> slotParts = [];
     long updateStamp;
     readonly CharacterTextureBudget budget = new();
@@ -233,6 +239,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public bool SettleFirst { get; set; }
     float textureBias;
     uint textureStandIn;
+    // What every material record depends on besides its material: the texture cache's version, the bias, the stand-in and the samplers. A change (or a
+    // skin setting's) starts a new epoch, and each record is written again when next used.
+    (int, float, uint, int) materialInputs;
+    int materialEpoch = 1;
 
     public CharacterRenderer(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assetLocator, CharacterRigs? rigs = null)
     {
@@ -347,8 +357,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         var watch = Stopwatch.StartNew();
         Draws.Clear();
         Source?.Invoke(Draws);
+        StageClock.Part(StageClock.PartFill);
         GatherPortraitKeys();
         content.Textures.Pump(wait: LoadBudget == 0, max: 8, budgetMs: 1.0);
+        StageClock.Part(StageClock.PartTextures);
         textureBias = Gpu.LodBias;
         textureStandIn = Gpu.StandIn2D;
         updateStamp++;
@@ -356,7 +368,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
 
         // 1. Assets and the characters in range, with their layers resolved (the rig's caches are filled here, on this thread).
         liveCount = layerCount = attachCount = 0;
-        int built = 0, boneTotal = 0;
+        int built = 0, boneTotal = 0, partTotal = 0;
         var items = Draws.Items;
         for (int i = 0; i < items.Count; i++)
         {
@@ -382,27 +394,30 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             l.Asset = asset;
             (l.Key, l.PortraitOnly) = (inst.Key, far);
             // Lowered by the body shape's lift, so a short body's feet stay on the ground (CharacterAsset.GroundOffset); an animal scaled by its size (its node's scale).
-            l.World = Matrix4x4.CreateRotationY(inst.Yaw) * Matrix4x4.CreateTranslation(inst.Position - new Vector3(0, asset.GroundOffset, 0));
+            // A carried body's whole rotation lowers it in its own frame (CharacterRigs.Placement, as the simulation poses its ragdoll).
+            l.World = inst.Rotation is { } rotation
+                ? Matrix4x4.CreateTranslation(0, -asset.GroundOffset, 0) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(inst.Position)
+                : Matrix4x4.CreateRotationY(inst.Yaw) * Matrix4x4.CreateTranslation(inst.Position - new Vector3(0, asset.GroundOffset, 0));
             if (scale != 1) l.World = Matrix4x4.CreateScale(scale) * l.World;
             (l.WeaponDrawn, l.RangedDrawn, l.BackDrawn, l.Shots, l.Bolts) = (inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, inst.Shots, inst.Bolts);
             l.Centre = centre;
-            l.Interior = !far && InteriorObjects?.InteriorAt(centre) is not null;
             l.Radius = asset.Radius * scale;
             l.BoneBase = boneTotal;
             boneTotal += asset.Rig.BoneCount;
             l.AttachBase = attachCount;
             attachCount += asset.AttachCount;
+            l.PartBase = partTotal;
+            partTotal += asset.Parts.Count;
             if (!states.TryGetValue(inst.Key, out var state)) states[inst.Key] = state = new CharState();
             state.Seen = updateStamp;
             l.State = state;
+            l.Interior = !far && InteriorObjects?.InteriorAt(centre, ref state.Interior) is not null;
             (state.Asset, state.WeaponDrawn, state.RangedDrawn, state.BackDrawn, state.InWorld, state.Centre, state.Radius) = (asset, inst.WeaponDrawn, inst.RangedDrawn, inst.BackDrawn, !far, centre, l.Radius);
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
             // A ragdoll is posed every frame: its bones move by physics, not by a clip the distance rule could thin out.
-            // The nearer of the eye and the look-at point: the fight in view keeps the full rate however far the boom, and a stale focus (free camera) throttles no more than the eye would.
-            float paceDistance = Focus is { } focus ? MathF.Min(Vector3.Distance(focus, centre), Vector3.Distance(eye, centre)) : Vector3.Distance(eye, centre);
-            int interval = PoseInterval(paceDistance / MathF.Max(1, l.Radius / HumanRadius));
+            int interval = PoseInterval(Vector3.Distance(eye, centre) / MathF.Max(1, l.Radius / HumanRadius));
             // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
             long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + unchecked((ulong)inst.Key * 0x9E3779B97F4A7C15UL) / 18446744073709551616.0);
             l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || bucket != state.PoseBucket;
@@ -415,6 +430,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             foreach (var (def, time) in asset.Fixed) AddLayer(new ActiveLayer(def, time, 1));
             l.LayerCount = layerCount - l.LayerStart;
         }
+        int inWorld = 0;
+        for (int i = 0; i < liveCount; i++) if (!live[i].PortraitOnly) inWorld++;
+        if (inWorld < ThinFromCharacters)
+            for (int i = 0; i < liveCount; i++) live[i].Repose = true;
         Posed = 0;
         for (int i = 0; i < liveCount; i++) if (live[i].Repose) Posed++;
         if (updateStamp % 120 == 0) EvictStates();
@@ -422,6 +441,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (attach.Length < attachCount) attach = new Matrix4x4[Math.Max(attachCount, attach.Length * 2)];
 
         // 2. The bone palettes, posed in parallel straight into the frame's memory.
+        StageClock.Part(StageClock.PartGather);
         double gatherMs = watch.Elapsed.TotalMilliseconds;
         var poseWatch = Stopwatch.StartNew();
         bones = AllocateConstants((ulong)Math.Max(boneTotal, 1) * 64, 256);
@@ -429,6 +449,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         previousBones = Motion ? AllocateConstants((ulong)Math.Max(boneTotal, 1) * 64, 256) : bones;
         nint previousPointer = (nint)previousBones.Pointer;
         bool motion = Motion;
+        if (partFrames.Length < partTotal) partFrames = new PartFrame[Math.Max(partTotal, partFrames.Length * 2)];
         var liveArray = live;
         var layerArray = layers;
         var attachArray = attach;
@@ -463,9 +484,12 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                     (l.Repose ? state.Previous : state.Bones).CopyTo(new Span<Matrix4x4>((byte*)previousPointer + (long)l.BoneBase * 64, rig.BoneCount));
                     if (!l.Repose) state.Attach.CopyTo(state.PreviousAttach, 0);
                 }
+                if (!l.PortraitOnly) PlaceParts(in l, eye, motion);
             });
+        (partStamp, partOrigin, partMotion) = (updateStamp, eye, motion);
         LastPoseMs = poseWatch.Elapsed.TotalMilliseconds;
         PoseIcons();
+        StageClock.Part(StageClock.PartPose);
 
         // 3. The materials of the parts in range.
         slotParts.Clear();
@@ -478,35 +502,55 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 if (part.MaterialFrame != updateStamp)
                 {
                     part.MaterialFrame = updateStamp;
-                    part.MaterialSlot = slotParts.Count;
                     part.Near = float.PositiveInfinity;
                     slotParts.Add(part);
                 }
                 part.Near = Math.Min(part.Near, Math.Max(distance - live[i].Radius * 0.5f, 0.5f));
             }
         }
-        // Mip streaming: each texture's nearest user over how large a texel of its part is there; textures load at the size that need allows.
-        foreach (var part in slotParts)
-        {
-            float need = part.Near / part.UvScale * budget.NeedScale;
-            foreach (var t in part.Material.Tex) t?.OfferNow(need);
-        }
+        // Mip streaming: each texture's nearest user over how large a texel of its part is there; textures load at the size that need allows. Offered on
+        // the frame the budget commits them (every 500 ms), which also marks the textures used (reading the key), long before the cache's idle limits.
+        if (budget.Due)
+            foreach (var part in slotParts)
+            {
+                float need = part.Near / part.UvScale * budget.NeedScale;
+                foreach (var t in part.Material.Tex)
+                    if (t is not null) { t.OfferNow(need); _ = t.Key; }
+            }
         budget.Update(content.Textures);
-        materials = AllocateConstants((ulong)Math.Max(slotParts.Count, 1) * CharacterMaterialRecord.Size, 256);
-        // Each record is built in ordinary memory and copied over whole: the frame's constants are mapped GPU memory, where building a record field by
-        // field (its zeroing, the texture array's stores) cost about 14 µs a record.
+        // A record is written again only when something it reads changed (materialEpoch, or the material's own fields), and uploaded into the material table
+        // (CharacterMaterialTable) only when it came out different or the material has no slot.
+        var inputs = (content.Textures.Version, textureBias, textureStandIn, Gpu.Samplers.Generation);
+        if (inputs != materialInputs) (materialInputs, materialEpoch) = (inputs, materialEpoch + 1);
+        var table = content.Materials;
+        table.BeginFrame();
+        if (updateStamp % 120 == 0) table.Sweep(updateStamp - CharacterMaterialTable.IdleUpdates);
         CharacterMaterialRecord record = default;
         for (int s = 0; s < slotParts.Count; s++)
         {
-            Write(slotParts[s].Material, ref record);
-            *(CharacterMaterialRecord*)(materials.Pointer + (long)s * CharacterMaterialRecord.Size) = record;
+            var m = slotParts[s].Material;
+            m.SlotUsed = updateStamp;
+            if (m.RecordEpoch != materialEpoch)
+            {
+                Write(m, ref record);
+                m.RecordEpoch = materialEpoch;
+                if (m.Slot >= 0 && SameRecord(in record, in m.Record)) continue;
+                m.Record = record;
+                table.Place(m);
+            }
+            else if (m.Slot < 0) table.Place(m);
         }
+        table.Flush();
+        StageClock.Part(StageClock.PartMaterials);
         LastUpdateMs = watch.Elapsed.TotalMilliseconds;
         updateCount++;
         updateCpu.Add(LastUpdateMs);
         poseCpu.Add(LastPoseMs);
         gatherCpu.Add(gatherMs);
     }
+
+    static bool SameRecord(in CharacterMaterialRecord a, in CharacterMaterialRecord b) =>
+        MemoryMarshal.AsBytes(new ReadOnlySpan<CharacterMaterialRecord>(in a)).SequenceEqual(MemoryMarshal.AsBytes(new ReadOnlySpan<CharacterMaterialRecord>(in b)));
 
     readonly List<long> staleKeys = [];
 
@@ -563,6 +607,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                 part.Material.Tex[CharacterShaders.SlotNormal] = p.Normal;
                 part.Material.Tex[CharacterShaders.SlotBlendNormal] = p.Blend;
                 part.Material.MuscleBlend = p.Weight;
+                part.Material.RecordEpoch = 0;
             }
 
         // Reading the key asks for the texture; a missing file never becomes resident.

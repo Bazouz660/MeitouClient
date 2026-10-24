@@ -193,8 +193,94 @@ public sealed class ConstructionSystem : ITickSystem
                         reg.Touch();
                     }
                     break;
+                case UpgradeSite up:
+                    if (reg.Find(up.Site) is { } upgraded && CanUpgrade(world, upgraded) is { } higher) Swap(world, upgraded, higher, UpgradeProgressCap, upgrade: true);
+                    break;
+                case DowngradeSite down:
+                    if (reg.Find(down.Site) is { } downgraded && CanDowngrade(world, downgraded) is { } lower) Swap(world, downgraded, lower, DowngradeProgressCap, upgrade: false);
+                    break;
+                case SetBuildingPublic open:
+                    if (reg.Find(open.Building) is { } shown && shown.Owner == world.Player.Faction && shown.Public != open.Public)
+                    {
+                        shown.Public = open.Public;
+                        reg.Touch();
+                    }
+                    break;
             }
         }
+    }
+
+    /// <summary>The progress an upgrade keeps at most, and a downgrade (material units; <b>Verified</b>, Building slots 75 / 76 cap +0x164 at 50 / 80).</summary>
+    public const float UpgradeProgressCap = 50, DowngradeProgressCap = 80;
+
+    /// <summary>
+    /// The BUILDING a site of the player's can be upgraded to (docs/game/buildings-production.md "Upgrades"): its record's upgrade, unlocked by research. Engine scope: not walls (the
+    /// original's WallBuilding upgrades the whole wall line; a gate is a GatewayBuilding and upgrades alone); a building with a machine gets one for the new record that keeps its stock
+    /// (<see cref="Production.ProductionSystem"/>).
+    /// </summary>
+    public string? CanUpgrade(World world, BuildSite site) =>
+        Swappable(world, site) && BuildingUpgrades.UpgradeOf(db, site.Record) is { } target && world.Research.IsUnlocked(target) && Data(target) is not null ? target : null;
+
+    /// <summary>The BUILDING an unfinished site of the player's goes back to (the one that upgrades to it), shown while it is not complete; same scope as <see cref="CanUpgrade"/>.</summary>
+    public string? CanDowngrade(World world, BuildSite site) =>
+        !site.Complete && Swappable(world, site) && BuildingUpgrades.DowngradeOf(db, site.Record) is { } lower && Data(lower) is not null ? lower : null;
+
+    bool Swappable(World world, BuildSite site) =>
+        site.Owner == world.Player.Faction && !site.Destroyed && site.WallParent is null && Data(site.Record) is { LinksTogether: false } or { IsWallGate: true };
+
+    /// <summary>
+    /// Makes a site the BUILDING <paramref name="record"/> in place (Building slots 75 / 76, docs/game/buildings-production.md "Upgrades"): no longer complete or paused, progress capped
+    /// at <paramref name="cap"/>, the new record's materials with what was delivered of each item carried over (engine reading of the re-applied state), the name the new record's.
+    /// An <paramref name="upgrade"/> then takes each material still owed from the building's own stock, one unit at a time (<see cref="PullOwn"/>); a downgrade whose delivered
+    /// materials already cover the new record is finished at once. Its doors stay while it is built (<see cref="BuildSite.Upgrading"/>).
+    /// </summary>
+    void Swap(World world, BuildSite site, string record, float cap, bool upgrade)
+    {
+        var data = Data(record)!;
+        var had = new Dictionary<string, float>(StringComparer.Ordinal);
+        foreach (var m in site.Materials) had[m.Item] = had.GetValueOrDefault(m.Item) + m.Delivered;
+        var materials = new MaterialSlot[data.Materials.Count];
+        for (int i = 0; i < materials.Length; i++)
+        {
+            var cost = data.Materials[i];
+            float delivered = MathF.Min(had.GetValueOrDefault(cost.Item), cost.Required);
+            had[cost.Item] = had.GetValueOrDefault(cost.Item) - delivered;
+            materials[i] = new MaterialSlot(cost.Item, cost.Required) { Delivered = delivered };
+        }
+        site.Record = data.Id;
+        site.Name = data.Name;
+        site.Materials = materials;
+        site.Target = data.Target;
+        site.Rate = data.Rate;
+        site.Complete = false;
+        site.Paused = false;
+        site.Upgrading = true;
+        site.Progress = MathF.Min(site.Progress, MathF.Min(cap, site.Target));
+        if (upgrade) PullOwn(world, site);
+        if (!upgrade && site.Deliverable >= site.Target) Finish(world, site);
+        else world.Buildings.Changed();
+        SyncChildren(world, site);
+    }
+
+    /// <summary>
+    /// An upgrade's materials from the building's own inventory (<b>Verified</b>, Building slot 75: for each material, int(required - delivered) times, an item of it is taken from the
+    /// building's inventory and destroyed and one unit delivered, stopping when none is left). Meitou's inventory of a building is its machine's storage, then its input and output stock.
+    /// </summary>
+    static void PullOwn(World world, BuildSite site)
+    {
+        if (world.Machines.Find(site.Id) is not { } m) return;
+        bool took = false;
+        foreach (var slot in site.Materials)
+            for (int owed = (int)(slot.Required - slot.Delivered); owed > 0; owed--)
+            {
+                if (m.Storage?.Items.Find(i => i.Record == slot.Item && i.Quantity > 0) is { } item) m.Storage.RemoveOne(item);
+                else if (Array.Find(m.Inputs, i => i.Item == slot.Item && i.Count > 0) is { } input) input.Count--;
+                else if (m.Output is { Count: > 0 } output && output.Recipe.Item == slot.Item) output.Count--;
+                else break;
+                slot.Delivered++;
+                took = true;
+            }
+        if (took) world.Machines.Touch();
     }
 
     /// <summary>
@@ -270,7 +356,7 @@ public sealed class ConstructionSystem : ITickSystem
     int TownFor(World world, BuildSite site, BuildingBuildData data)
     {
         var reg = world.Buildings;
-        if (site.Parent is { } parent) return reg.Find(parent)?.Town ?? 0;
+        if (site.Parent is { } parent && reg.Find(parent) is { } home) return home.Town;   // a level building's town is not a player town: the rules below
         int faction = world.Player.Faction;
         PlayerTown? nearest = null;
         float best = float.MaxValue;
@@ -680,6 +766,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Progress = site.Target;
         site.Complete = true;
         site.Destroyed = false;
+        site.Upgrading = false;
         site.Ruined = false;
         world.Buildings.Changed();
         SyncChildren(world, site);
@@ -730,7 +817,8 @@ public sealed class ConstructionSystem : ITickSystem
     /// The material finder (<b>Verified</b>, the 115 "Finding building mats" target finder <c>FUN_1405a2a60</c> -> <c>FUN_14059d000</c>; docs/game/buildings-production.md "Material delivery"):
     /// for each material still owed, in the site's order, the first that has a source wins: a loose item of it within <see cref="GroundRadius"/> of the builder, else the nearest player storage
     /// holding it within <see cref="SourceRangeSquared"/>, else the nearest player machine whose output holds it. Engine choices: the nearest loose item (the original takes the first its grid
-    /// search meets), no town filter, no per-material memory of the last source, the exact record (the original also lets any record of the same type stand in for a non-ITEM material).
+    /// search meets), no town filter, no per-material memory of the last source, the exact record (the original also lets any record of the same type stand in for a non-ITEM material);
+    /// a loose item another faction owns (a town interior's, <see cref="Items.ItemSlots"/>) is left, as the original leaves items lying in another faction's building.
     /// </summary>
     MaterialSource? Source(World world, int slot, CharacterCold cold, BuildSite site)
     {
@@ -743,7 +831,7 @@ public sealed class ConstructionSystem : ITickSystem
             float best = GroundRadius * GroundRadius;
             foreach (var g in world.GroundItems.All)
             {
-                if (g.Item.Record != want || g.Item.Quantity <= 0 || g.Item.Contents is not null) continue;
+                if (g.Item.Record != want || g.Item.Quantity <= 0 || g.Item.Contents is not null || g.OwnedBy >= 0 && g.OwnedBy != cold.Faction) continue;
                 float d = Vector3.DistanceSquared(g.Position, at);
                 if (d <= best && (loose is null || d < best)) (loose, best) = (g.Id, d);
             }
