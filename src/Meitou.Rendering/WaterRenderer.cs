@@ -1,10 +1,12 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Textures;
 using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
+using Meitou.Rendering.Gpu.Shaders;
 
 namespace Meitou.Rendering;
 
@@ -18,6 +20,103 @@ namespace Meitou.Rendering;
 /// </summary>
 public sealed unsafe class WaterRenderer : IDisposable
 {
+    /// <summary>Set 2: the water's own values and the bindless indices of its maps (the native frame is set 0 and the table set 1).</summary>
+    const int ConstantsSet = 2;
+
+    /// <summary>The block <see cref="WaterConstants"/> mirrors. It is already placed, so <see cref="NativeShaders.Port"/> leaves it alone.</summary>
+    const string ConstantsBlock = """
+        layout(std140, set = 2, binding = 0) uniform WaterConstants
+        {
+            vec4 params;          // water height, half world, grid step, animation time
+            vec4 centreExtent;    // eye xz, plane extent, lean
+            vec4 seaA;
+            vec4 seaB;
+            vec4 seaColour;
+            vec4 sunDir;
+            vec4 sunColour;
+            vec4 glintDir;
+            vec4 glintColour;
+            vec4 ocean;
+            vec4 shoreRect;
+            vec4 shore;
+            vec4 waveFade;
+            vec4 clarity;
+            vec4 screenReflect;   // 1 / target xy, reflect, refract
+            mat4 reflectionViewProjection;
+            vec4 skySun;
+            vec4 skyZenith;
+            vec4 skyHorizon;
+            vec4 skySunColour;    // rgb, twilight
+            vec4 coarseRect;
+            vec4 fineRect;
+            vec4 coarseCellsFineBand; // coarse cells xy, fine band, has fine
+            vec4 fineCells;
+            uint colourMap;
+            uint flowMap;
+            uint foamMap;
+            uint normalMap;
+            uint rainMap;
+            uint paramsA;
+            uint paramsB;
+            uint reflectionMap;
+            uint refractionMap;
+            uint oceanMap;
+            uint shoreMap;
+            uint riverMap;
+            uint heightCoarse;
+            uint heightFine;
+            uint spare0;
+            uint spare1;
+        } water;
+
+        """;
+
+    /// <summary>The C# side of <see cref="ConstantsBlock"/> (std140).</summary>
+    [StructLayout(LayoutKind.Explicit, Size = 496)]
+    struct WaterConstants
+    {
+        [FieldOffset(0)] public Vector4 Params;
+        [FieldOffset(16)] public Vector4 CentreExtent;
+        [FieldOffset(32)] public Vector4 SeaA;
+        [FieldOffset(48)] public Vector4 SeaB;
+        [FieldOffset(64)] public Vector4 SeaColour;
+        [FieldOffset(80)] public Vector4 SunDir;
+        [FieldOffset(96)] public Vector4 SunColour;
+        [FieldOffset(112)] public Vector4 GlintDir;
+        [FieldOffset(128)] public Vector4 GlintColour;
+        [FieldOffset(144)] public Vector4 Ocean;
+        [FieldOffset(160)] public Vector4 ShoreRect;
+        [FieldOffset(176)] public Vector4 Shore;
+        [FieldOffset(192)] public Vector4 WaveFade;
+        [FieldOffset(208)] public Vector4 Clarity;
+        [FieldOffset(224)] public Vector4 ScreenReflect;
+        [FieldOffset(240)] public Matrix4x4 ReflectionViewProjection;
+        [FieldOffset(304)] public Vector4 SkySun;
+        [FieldOffset(320)] public Vector4 SkyZenith;
+        [FieldOffset(336)] public Vector4 SkyHorizon;
+        [FieldOffset(352)] public Vector4 SkySunColour;
+        [FieldOffset(368)] public Vector4 CoarseRect;
+        [FieldOffset(384)] public Vector4 FineRect;
+        [FieldOffset(400)] public Vector4 CoarseCellsFineBand;
+        [FieldOffset(416)] public Vector4 FineCells;
+        [FieldOffset(432)] public uint ColourMap;
+        [FieldOffset(436)] public uint FlowMap;
+        [FieldOffset(440)] public uint FoamMap;
+        [FieldOffset(444)] public uint NormalMap;
+        [FieldOffset(448)] public uint RainMap;
+        [FieldOffset(452)] public uint ParamsA;
+        [FieldOffset(456)] public uint ParamsB;
+        [FieldOffset(460)] public uint ReflectionMap;
+        [FieldOffset(464)] public uint RefractionMap;
+        [FieldOffset(468)] public uint OceanMap;
+        [FieldOffset(472)] public uint ShoreMap;
+        [FieldOffset(476)] public uint RiverMap;
+        [FieldOffset(480)] public uint HeightCoarse;
+        [FieldOffset(484)] public uint HeightFine;
+        [FieldOffset(488)] public uint Spare0;
+        [FieldOffset(492)] public uint Spare1;
+    }
+
     const string Vertex = """
         #version 330 core
         layout(location = 0) in vec2 aXZ;
@@ -96,7 +195,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             waterColour = mix(waterColour, uSeaColour, sea);
             vec3 toEye = uEye - vWorld;
             float dist = length(toEye);
-            vec3 view = toEye / dist;
+            vec3 toEyeDir = toEye / dist;
 
             // Flow: direction from the flow map, speed from the texture scale and the biome's distortion.
             vec2 tex = vWorld.xz * pa.xy;
@@ -112,7 +211,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             n += sampleNormal(tex + vec2(0.4, 0.7), direction, speed, time + 0.66);
             n.y *= pa.z;
             // Rain ripples (docs/formats/weather.md): three layers weighted by rainAmount, faded out at grazing view and with distance.
-            float rain = uWeatherWet.y * clamp(view.y * 2.0 - dist * 0.0001, 0.0, 1.0);
+            float rain = uWeatherWet.y * clamp(toEyeDir.y * 2.0 - dist * 0.0001, 0.0, 1.0);
             if (rain > 0.0)
             {
                 vec2 rainCoord = vWorld.xz * 0.01;
@@ -126,7 +225,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             float gloss = clamp(pb.x, 0.0, 1.0);
             vec3 l = normalize(uSunDir);
             vec3 glintL = normalize(uGlintDir);
-            vec3 h = normalize(glintL + view);
+            vec3 h = normalize(glintL + toEyeDir);
             // The ripples are finer than a pixel far away, so the glint widens and dims with distance instead of staying a hot point.
             float power = max(exp2(gloss * 11.0 + 1.0) / (1.0 + dist / 6000.0), 12.0);
             float spec = pow(max(dot(n, h), 0.0), power) * (power + 8.0) / 25.0 * gloss;
@@ -134,9 +233,9 @@ public sealed unsafe class WaterRenderer : IDisposable
             // a large patch of sea: weigh it by the Fresnel term the game's own sun specular has (F0 0.04), so it stays a soft sheen.
             float lh = clamp(dot(glintL, h), 0.0, 1.0);
             spec *= mix(1.0, 0.04 + 0.96 * exp2((-5.55473 * lh - 6.98316) * lh), uAtmoAltitude.z);
-            float cosv = max(dot(view, n), 0.0);
+            float cosv = max(dot(toEyeDir, n), 0.0);
             float schlick = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
-            vec3 reflected = skyColour(reflect(-view, n), false);
+            vec3 reflected = skyColour(reflect(-toEyeDir, n), false);
             if (uReflect > 0.5)
             {
                 // As the game's water: the normal pushes the lookup sideways by 60 / depth, less the further away.
@@ -152,7 +251,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             vec3 colour = mix(diffuse, reflected, schlick * gloss) + min(spec, 4.0) * uGlintColour * 0.25 + pb.y * waterColour;
 
             // Alpha as the game's water: see-through near the camera where shallow, opaque beyond 4000 units.
-            float depth = max(0.0, uWaterHeight - terrainHeight(vWorld.xz)) / max(view.y, 0.05);
+            float depth = max(0.0, uWaterHeight - terrainHeight(vWorld.xz)) / max(toEyeDir.y, 0.05);
             if (outside > 0.0) depth = 1e4;   // past the edge of the world there is only open sea
             float fresnel = 1.0 - pow(1.0 - cosv, 2.0);
             float a = clamp(1.0 - (dist - 4000.0) / 1000.0, 0.0, 1.0);
@@ -501,7 +600,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             waterColour = mix(waterColour, uSeaColour, sea);
             vec3 toEye = uEye - vWorld;
             float dist = length(toEye);
-            vec3 view = toEye / dist;
+            vec3 toEyeDir = toEye / dist;
 
             // The motion fades with the eye distance; beyond it (and past the world's edge) this is the game's flat water.
             float fade = outside <= 0.0 ? 1.0 - smoothstep(uWaveFade.z, uWaveFade.w, dist) : 0.0;
@@ -566,7 +665,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             // Near the eye the ocean's own slopes carry the detail; the game's map takes over with the distance.
             nm.xz *= (0.55 + 0.9 * rough) * mix(0.35, 1.0, smoothstep(1500.0, 6000.0, dist));
             nm.y *= pa.z;
-            float rain = uWeatherWet.y * clamp(view.y * 2.0 - dist * 0.0001, 0.0, 1.0);
+            float rain = uWeatherWet.y * clamp(toEyeDir.y * 2.0 - dist * 0.0001, 0.0, 1.0);
             if (rain > 0.0)
             {
                 vec2 rainCoord = p * 0.01;
@@ -594,7 +693,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             float gloss = clamp(pb.x, 0.0, 1.0);
             vec3 l = normalize(uSunDir);
             vec3 glintL = normalize(uGlintDir);
-            vec3 h = normalize(glintL + view);
+            vec3 h = normalize(glintL + toEyeDir);
             float power = max(exp2(gloss * 11.0 + 1.0) / (1.0 + dist / 6000.0), 12.0);
             float nh = max(dot(n, h), 0.0);
             float spec = pow(nh, power) * (power + 8.0) / 25.0 * gloss;
@@ -605,9 +704,9 @@ public sealed unsafe class WaterRenderer : IDisposable
             spec += pow(nh, power * 0.12) * (power * 0.12 + 8.0) / 25.0 * gloss * sparkle * far * 2.5;
             float lh = clamp(dot(glintL, h), 0.0, 1.0);
             spec *= mix(1.0, 0.04 + 0.96 * exp2((-5.55473 * lh - 6.98316) * lh), uAtmoAltitude.z);
-            float cosv = max(dot(view, n), 0.0);
+            float cosv = max(dot(toEyeDir, n), 0.0);
             float schlick = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
-            vec3 reflected = skyColour(reflect(-view, n), false);
+            vec3 reflected = skyColour(reflect(-toEyeDir, n), false);
             if (uReflect > 0.5)
             {
                 vec4 rc = uReflectionViewProjection * vec4(vWorld, 1.0);
@@ -638,14 +737,14 @@ public sealed unsafe class WaterRenderer : IDisposable
             // towards the sun), and not at all in the shallows.
             vec3 body = waterColour * light;
             float crest = smoothstep(1.0, 6.0, oceanHeight * open);
-            vec2 towardsSun = normalize(l.xz + vec2(1e-5)), looking = normalize(-view.xz + vec2(1e-5));
+            vec2 towardsSun = normalize(l.xz + vec2(1e-5)), looking = normalize(-toEyeDir.xz + vec2(1e-5));
             float back = pow(clamp(dot(looking, towardsSun), 0.0, 1.0), 3.0) * smoothstep(-0.05, 0.2, l.y);
-            body += (waterColour * 1.2 + vec3(0.02, 0.1, 0.09) * clean) * uSunColour * crest * deepWater * overcast * (back * 0.7 + 0.04) * (1.0 - 0.6 * view.y) * (1.0 - far);
+            body += (waterColour * 1.2 + vec3(0.02, 0.1, 0.09) * clean) * uSunColour * crest * deepWater * overcast * (back * 0.7 + 0.04) * (1.0 - 0.6 * toEyeDir.y) * (1.0 - far);
 
             // The water's depth along the view (the swash: its own thin sheet). The slant path grows to 20 times the depth at grazing angles, so
             // far water reads opaque; the far clarity (uClarity.y) shortens it towards the plain depth.
             float floorDepth = max(0.0, vWorld.y - (uLean > 0.5 && outside <= 0.0 ? uWaterHeight - s.depth : terrainHeight(p)));
-            float depth = (swash ? max(sheet, 0.0) : floorDepth) / pow(max(view.y, 0.05), 1.0 - uClarity.y);
+            float depth = (swash ? max(sheet, 0.0) : floorDepth) / pow(max(toEyeDir.y, 0.05), 1.0 - uClarity.y);
             if (outside > 0.0) depth = 1e4;
             bool refract = uRefract > 0.5;
             vec3 under = vec3(0.0);
@@ -660,7 +759,7 @@ public sealed unsafe class WaterRenderer : IDisposable
                 // texture's cell rims, multiplied).
                 if (uLean < 0.5 || (dist < 2500.0 && floorDepth > 1.5 && l.y > 0.0))
                 {
-                    vec2 floorP = p - view.xz / max(view.y, 0.05) * floorDepth * 0.75;
+                    vec2 floorP = p - toEyeDir.xz / max(toEyeDir.y, 0.05) * floorDepth * 0.75;
                     float tc = uTime * 30.0;
                     // Softer with the depth (the web blurs a few units down, as the real one does), weaker than a bright sand would show, and gone in
                     // the shallows, far away and in rain.
@@ -775,11 +874,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             // about uniform per quad: the cascades end well before).
 
             vec3 foamN = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.6));   // up, a little tilted by the waves
-        #ifndef METAL_WATER
             float foamShadow = dist < 8000.0 ? kenshiShadow(vWorld, foamN) : 1.0;
-        #else
-            float foamShadow = 1.0;
-        #endif
             if (foam > 0.004)
             {
                 vec3 dirt = mix(vec3(0.8), hue, 0.5) * mix(0.42, 0.6, smoothstep(0.02, 0.25, wLuma));
@@ -830,61 +925,66 @@ public sealed unsafe class WaterRenderer : IDisposable
 
     static readonly string MeitouFragment = "#version 330 core\n" + TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MeitouBody;
 
-    /// <summary>
-    /// The Metal body: the two RGBA32F parameter maps become one two-layer array.
-    /// </summary>
-    static readonly string MetalMeitouBody = MeitouBody
-        .Replace("uniform sampler2D uParamsA;", "uniform sampler2DArray uParams;")
-        .Replace("uniform sampler2D uParamsB;", "")
-        .Replace("texture(uParamsA, map)", "texture(uParams, vec3(map, 0.0))")
-        .Replace("texture(uParamsB, map)", "texture(uParams, vec3(map, 1.0))");
+    /// <summary>The water's own uniforms in the native model: <see cref="ConstantsBlock"/> and the bindless arrays.</summary>
+    static readonly Dictionary<string, string> NativeOwn = new()
+    {
+        ["uWaterHeight"] = "water.params.x", ["uHalfWorld"] = "water.params.y", ["uGridStep"] = "water.params.z", ["uTime"] = "water.params.w",
+        ["uCentre"] = "water.centreExtent.xy", ["uExtent"] = "water.centreExtent.z", ["uLean"] = "water.centreExtent.w",
+        ["uSeaA"] = "water.seaA", ["uSeaB"] = "water.seaB", ["uSeaColour"] = "water.seaColour.xyz", ["uWaterFar"] = "water.seaColour.w",
+        ["uSunDir"] = "water.sunDir.xyz", ["uSunColour"] = "water.sunColour.xyz", ["uGlintDir"] = "water.glintDir.xyz", ["uGlintColour"] = "water.glintColour.xyz",
+        ["uOcean"] = "water.ocean", ["uShoreRect"] = "water.shoreRect", ["uShore"] = "water.shore", ["uWaveFade"] = "water.waveFade",
+        ["uClarity"] = "water.clarity.xyz", ["uScreen"] = "water.screenReflect.xy", ["uReflect"] = "water.screenReflect.z", ["uRefract"] = "water.screenReflect.w",
+        ["uReflectionViewProjection"] = "water.reflectionViewProjection",
+        ["uSkySun"] = "water.skySun.xyz", ["uSkyZenith"] = "water.skyZenith.xyz", ["uSkyHorizon"] = "water.skyHorizon.xyz",
+        ["uSkySunColour"] = "water.skySunColour.xyz", ["uSkyTwilight"] = "water.skySunColour.w",
+        ["uCoarseRect"] = "water.coarseRect", ["uFineRect"] = "water.fineRect", ["uCoarseCells"] = "water.coarseCellsFineBand.xy",
+        ["uFineBand"] = "water.coarseCellsFineBand.z", ["uHasFine"] = "(water.coarseCellsFineBand.w > 0.5)", ["uFineCells"] = "water.fineCells.xy",
+        ["uHeightCoarse"] = "textures2D[water.heightCoarse]", ["uHeightFine"] = "textures2D[water.heightFine]",
+        ["uColourMap"] = "textures2D[water.colourMap]", ["uFlowMap"] = "textures2D[water.flowMap]", ["uFoamMap"] = "textures2D[water.foamMap]",
+        ["uNormalMap"] = "textures2D[water.normalMap]", ["uRainMap"] = "textures2D[water.rainMap]",
+        ["uParamsA"] = "textures2D[water.paramsA]", ["uParamsB"] = "textures2D[water.paramsB]",
+        ["uReflection"] = "textures2D[water.reflectionMap]", ["uRefraction"] = "textures2D[water.refractionMap]",
+        ["uOceanMaps"] = "textures2DArray[water.oceanMap]", ["uShoreField"] = "textures2D[water.shoreMap]", ["uRiverMap"] = "textures2D[water.riverMap]",
+    };
 
-    /// <summary>
-    /// Metal's Meitou fragment: the atmosphere's METAL_WATER sections keep the declarations and functions the water
-    /// actually reads (irradiance, ambient map, clouds, haze and the reflection), dropping GI, lamps, dust and the
-    /// material lighting used only by other shaders. Every sampler gets an explicit binding, so the removed specular
-    /// sampler cannot leave a hole that pushes the last one past Metal's 0..15 range.
-    /// </summary>
-    static readonly string MetalMeitouFragment = BindMetalSamplers("#version 450 core\n#define METAL_WATER 1\n" +
-        TerrainShaders.HeightFunctions + SkyRenderer.SkyFunctions + MeitouMotion + MetalMeitouBody);
+    static readonly Dictionary<string, string> NativeMap = NativeShaders.Map(NativeOwn);
 
-    /// <summary>The Metal fragment's 16 samplers, placed in 0..15 (glslang's auto-binder otherwise leaves holes).</summary>
-    static string BindMetalSamplers(string source) => source
-        .Replace("uniform sampler2D uHeightCoarse;", "layout(binding = 0) uniform sampler2D uHeightCoarse;")
-        .Replace("uniform sampler2D uHeightFine;", "layout(binding = 1) uniform sampler2D uHeightFine;")
-        .Replace("uniform samplerCube uAtmoIrradiance;", "layout(binding = 2) uniform samplerCube uAtmoIrradiance;")
-        .Replace("uniform sampler2D uAtmoAmbientMap;", "layout(binding = 3) uniform sampler2D uAtmoAmbientMap;")
-        .Replace("uniform sampler2D uAtmoClouds;", "layout(binding = 4) uniform sampler2D uAtmoClouds;")
-        .Replace("uniform sampler2DArray uOceanMaps;", "layout(binding = 5) uniform sampler2DArray uOceanMaps;")
-        .Replace("uniform sampler2D uShoreField;", "layout(binding = 6) uniform sampler2D uShoreField;")
-        .Replace("uniform sampler2D uRiverMap;", "layout(binding = 7) uniform sampler2D uRiverMap;")
-        .Replace("uniform sampler2D uColourMap;", "layout(binding = 8) uniform sampler2D uColourMap;")
-        .Replace("uniform sampler2D uFlowMap;", "layout(binding = 9) uniform sampler2D uFlowMap;")
-        .Replace("uniform sampler2D uFoamMap;", "layout(binding = 10) uniform sampler2D uFoamMap;")
-        .Replace("uniform sampler2D uNormalMap;", "layout(binding = 11) uniform sampler2D uNormalMap;")
-        .Replace("uniform sampler2D uRainMap;", "layout(binding = 12) uniform sampler2D uRainMap;")
-        .Replace("uniform sampler2DArray uParams;", "layout(binding = 13) uniform sampler2DArray uParams;")
-        .Replace("uniform sampler2D uReflection;", "layout(binding = 14) uniform sampler2D uReflection;")
-        .Replace("uniform sampler2D uRefraction;", "layout(binding = 15) uniform sampler2D uRefraction;");
+    /// <summary>Puts the water constants block after the version line, before the shared text.</summary>
+    static string WithConstants(string source)
+    {
+        int line = source.IndexOf('\n');
+        if (line < 0 || !source.StartsWith("#version", StringComparison.Ordinal))
+            throw new InvalidOperationException("WaterRenderer: a native water shader has no #version line");
+        return source[..(line + 1)] + ConstantsBlock + source[(line + 1)..];
+    }
+
+    static string NativeVertex(string source) => NativeShaders.Port(WithConstants(source), NativeMap);
+    static string NativeFragment(string source) => Gi.GiResolveShaders.WithAlbedo(NativeShaders.Port(WithConstants(source), NativeMap), none: true);
 
     /// <summary>The native GPU API (phase 8 stage 2: the water makes no GL call; docs/renderer-native.md 8.6).</summary>
     public IGpuContext Gpu { get; }
     readonly DeviceBuffer quad;
     readonly DeviceBuffer? grid, gridIndices;
-    readonly VertexArrayBindings quadSource;
-    readonly VertexArrayBindings? gridSource;   // the vertex inputs (the pipeline cache's key)
-    readonly GpuBufferBinding[] quadVertices, gridVertices;
     readonly uint gridIndexCount;
-    readonly SampledImage[] maps;   // colour, flow, normal, parameters A and B, rain ripples, foam (Meitou), in the order of WaterProgram.MapNames
-    readonly SampledImage? packedParams;   // Metal Meitou: A and B as one 2-layer array
+    readonly SampledImage[] maps;   // colour, flow, normal, parameters A and B, rain ripples, foam (Meitou), river, in the order of WaterProgram.MapNames
     readonly Vector4 seaA, seaB;
     readonly Vector3 seaColour;
+    readonly NativeFrame frame;
     readonly WaterProgram faithful;
     readonly WaterProgram? meitou;
+    readonly BindlessTexture[] mapTextures;
+    readonly BindlessTexture oceanMap, shoreMap, reflectionMap, refractionMap, heightCoarse, heightFine;
+    readonly GpuTexture standInArrayTexture;
+    readonly uint standInArray;
+    readonly GpuSetLayout constantsLayout;
+    readonly Dictionary<ulong, GpuSet> constantSets = [];
+    ulong constantSetKey;
+    GpuSet constantSet;
     readonly WaveSet waves = new();
     readonly OceanWaves? ocean;
     readonly ShoreField? shore;
     readonly float gridStep;
+    readonly ulong uniformAlign;
     GpuTexture? refraction;
     long refractionFrame = -1;
 
@@ -894,48 +994,64 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// <summary>The Meitou polar grid: segments round the eye (128 low, 256 default, 512 high), rings follow from it.</summary>
     public const int DefaultGridSegments = 256;
 
-    /// <summary>One water program with its handles resolved at load (the Faithful one has no motion uniforms: those handles are inactive).</summary>
+    /// <summary>One native water program: the vertex layout and buffers its one draw needs.</summary>
     sealed class WaterProgram : IDisposable
     {
         public static readonly string[] MapNames = ["uColourMap", "uFlowMap", "uNormalMap", "uParamsA", "uParamsB", "uRainMap", "uFoamMap", "uRiverMap"];
-        public readonly LegacyProgram P;
-        public readonly UniformHandle Lean;
-        public readonly NativeSegment Segment;
-        public readonly UniformHandle ViewProjection, WaterHeight, Centre, Extent, Eye, WaterFar, HalfWorld, SeaA, SeaB, SeaColour, Time, SunDir, SunColour, GlintDir, GlintColour,
-            FogColour, FogDistance, Reflect, ReflectionViewProjection, Ocean, ShoreRect, GridStep, Shore, WaveFade, Refract, Screen, Clarity;
-        public readonly SkyColourHandles Sky;
-        public readonly SamplerSlot[] Maps;
-        public readonly SamplerSlot Reflection, OceanMaps, ShoreField, Refraction, PackedParams;
+        public readonly NativeProg Program;
+        public readonly VertexLayout Layout;
+        public readonly GpuBufferBinding[] Vertices;
+        public readonly PrimitiveType Topology;
+        public GpuProgram Gpu => Program.P;
 
-        public WaterProgram(IGpuContext gpu, string vertex, string fragment, string name, PrimitiveType topology)
+        public WaterProgram(IGpuContext gpu, NativeFrame frame, string vertex, string fragment, string name, PrimitiveType topology,
+            ReadOnlySpan<LegacyProgram.Attribute?> attributes)
         {
-            P = LegacyProgram.Create(gpu, vertex, fragment, name);
-            Segment = new NativeSegment(gpu, P, topology, name);
-            (ViewProjection, WaterHeight, Centre, Extent, Eye, HalfWorld) = (P.Uniform("uViewProjection"), P.Uniform("uWaterHeight"), P.Uniform("uCentre"),
-                P.Uniform("uExtent"), P.Uniform("uEye"), P.Uniform("uHalfWorld"));
-            (GlintDir, GlintColour) = (P.Uniform("uGlintDir"), P.Uniform("uGlintColour"));
-            WaterFar = P.Uniform("uWaterFar");
-            (SeaA, SeaB, SeaColour, Time, SunDir, SunColour) = (P.Uniform("uSeaA"), P.Uniform("uSeaB"), P.Uniform("uSeaColour"), P.Uniform("uTime"),
-                P.Uniform("uSunDir"), P.Uniform("uSunColour"));
-            (FogColour, FogDistance, Reflect, ReflectionViewProjection) = (P.Uniform("uFogColour"), P.Uniform("uFogDistance"), P.Uniform("uReflect"),
-                P.Uniform("uReflectionViewProjection"));
-            (Ocean, ShoreRect, GridStep, Shore, WaveFade) = (P.Uniform("uOcean"), P.Uniform("uShoreRect"), P.Uniform("uGridStep"), P.Uniform("uShore"),
-                P.Uniform("uWaveFade"));
-            (OceanMaps, ShoreField) = (P.Sampler("uOceanMaps"), P.Sampler("uShoreField"));
-            Lean = P.Uniform("uLean");
-            (Refract, Screen, Refraction) = (P.Uniform("uRefract"), P.Uniform("uScreen"), P.Sampler("uRefraction"));
-            PackedParams = P.Sampler("uParams");
-            Clarity = P.Uniform("uClarity");
-            Sky = SkyColourHandles.Resolve(P);
-            Maps = MapNames.Select(P.Sampler).ToArray();
-            Reflection = P.Sampler("uReflection");
+            Program = new NativeProg(gpu, frame, vertex, fragment, name);
+            Layout = Program.Layout(attributes);
+            Vertices = Program.Buffers(attributes, attributes.Length);
+            Topology = topology;
+            // Every water texture is in the bindless table: the full atmosphere no longer competes for Metal's 16 direct slots.
+            if (Program.P.Info.FragmentReflection is { } reflection)
+                SamplerBudget.Require(name, reflection.Samplers, NativeShaders.BindlessSet);
         }
 
-        public void Dispose() => P.Dispose();
+        public void Dispose() => Program.Dispose();
+    }
+
+    /// <summary>A stable bindless entry for one water texture; its sampler may change with the upscaler's LOD bias.</summary>
+    sealed class BindlessTexture : IDisposable
+    {
+        readonly IGpuContext gpu;
+        readonly BindlessKind kind;
+        BindlessHandle handle;
+        SampledTexture registered;
+        bool has;
+
+        public BindlessTexture(IGpuContext gpu, BindlessKind kind) => (this.gpu, this.kind) = (gpu, kind);
+
+        public uint Index(in SampledTexture texture)
+        {
+            if (!has)
+            {
+                handle = new BindlessHandle(kind, gpu.Bindless.Register(kind, texture));
+                has = true;
+            }
+            else if (!texture.Equals(registered)) gpu.Bindless.Update(handle, texture);
+            registered = texture;
+            return handle.Index;
+        }
+
+        public uint IndexOr(in SampledTexture texture, uint fallback) => texture.IsNull ? fallback : Index(texture);
+
+        public void Dispose()
+        {
+            if (has) gpu.Bindless.Free(handle);
+        }
     }
 
     WaterRenderer(IGpuContext gpu, SampledImage[] maps, Vector4 seaA, Vector4 seaB, Vector3 seaColour, int gridSegments, int oceanSize,
-        bool meitouWaves, bool shoreField, SampledImage? packedParams)
+        bool meitouWaves, bool shoreField)
     {
         // The ocean FFT and the shore field are seam-neutral; the faithful water (the quad) simply does not read them.
         ocean = meitouWaves ? new OceanWaves(gpu, oceanSize) : null;
@@ -945,32 +1061,42 @@ public sealed unsafe class WaterRenderer : IDisposable
         (this.seaA, this.seaB, this.seaColour) = (seaA, seaB, seaColour);
         Gpu = gpu;
         this.maps = maps;
-        this.packedParams = packedParams;
-        faithful = new WaterProgram(gpu, Vertex, Gi.GiResolveShaders.WithAlbedo(Fragment, none: true), "water", PrimitiveType.TriangleStrip);
-        meitou = meitouWaves ? new WaterProgram(gpu, MeitouVertex, Gi.GiResolveShaders.WithAlbedo(gpu is GpuContext ? MeitouFragment : MetalMeitouFragment, none: true), "water meitou", PrimitiveType.Triangles) : null;
+        frame = new NativeFrame(gpu);
+        uniformAlign = Math.Max(gpu.UniformBufferAlign, 16);
+        constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
+        mapTextures = [.. WaterProgram.MapNames.Select(_ => new BindlessTexture(gpu, BindlessKind.Texture2D))];
+        oceanMap = new BindlessTexture(gpu, BindlessKind.Texture2DArray);
+        shoreMap = new BindlessTexture(gpu, BindlessKind.Texture2D);
+        reflectionMap = new BindlessTexture(gpu, BindlessKind.Texture2D);
+        refractionMap = new BindlessTexture(gpu, BindlessKind.Texture2D);
+        heightCoarse = new BindlessTexture(gpu, BindlessKind.Texture2D);
+        heightFine = new BindlessTexture(gpu, BindlessKind.Texture2D);
+        // A valid one-texel array view for the frames before the ocean's first FFT; the shader gates every read on uOcean.w.
+        standInArrayTexture = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Layers: 1, Kind: TextureKind.Texture2DArray,
+            Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "water array stand-in"));
+        standInArray = gpu.Bindless.Register(BindlessKind.Texture2DArray, new SampledTexture(gpu.Samplers.Get(ClampLinear), standInArrayTexture.View()));
+
         float[] corners = [-1, -1, -1, 1, 1, -1, 1, 1]; // triangle strip, counter-clockwise from above
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");
-        using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(corners.AsSpan()));
-        LegacyProgram.Attribute?[] attributes = [QuadAttribute(quad)];
-        quadSource = new VertexArrayBindings(attributes, default);
-        quadVertices = faithful.P.VertexBuffers(attributes, 0, 1);
+        using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, MemoryMarshal.AsBytes(corners.AsSpan()));
+        LegacyProgram.Attribute?[] quadAttributes = [QuadAttribute(quad)];
+        faithful = new WaterProgram(gpu, frame, NativeVertex(Vertex), NativeFragment(Fragment), "water", PrimitiveType.TriangleStrip, quadAttributes);
 
-        if (meitou is not null)
+        if (meitouWaves)
         {
             var (positions, indices) = PolarGrid(gridSegments);
             grid = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)positions.Length, BufferUse.Vertex, "water grid");
             gridIndices = DeviceBuffer.Create(gpu, sizeof(uint) * (ulong)indices.Length, BufferUse.Index, "water grid indices");
             using (var batch = gpu.Uploads.Begin())
             {
-                batch.Write(grid, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(positions.AsSpan()));
-                batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
+                batch.Write(grid, 0, MemoryMarshal.AsBytes(positions.AsSpan()));
+                batch.Write(gridIndices, 0, MemoryMarshal.AsBytes(indices.AsSpan()));
             }
             LegacyProgram.Attribute?[] gridAttributes = [QuadAttribute(grid)];
-            gridSource = new VertexArrayBindings(gridAttributes, new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size));
-            gridVertices = meitou.P.VertexBuffers(gridAttributes, 0, 1);
+            meitou = new WaterProgram(gpu, frame, NativeVertex(MeitouVertex), NativeFragment(MeitouFragment), "water meitou",
+                PrimitiveType.Triangles, gridAttributes);
             gridIndexCount = (uint)indices.Length;
         }
-        else gridVertices = [];
     }
 
     /// <summary>The quad's only vertex input, location 0: two floats, 8 bytes apart (the GL vertex array's
@@ -1076,16 +1202,13 @@ public sealed unsafe class WaterRenderer : IDisposable
         SampledImage riverMap = s.River is { } river
             ? SampledImage.Rgba8(gpu, s.RiverSize, s.RiverSize, river, repeat: false, mipmaps: false, "water river map")
             : SampledImage.Rgba8(gpu, 1, 1, [128, 128, 0, 0], repeat: false, mipmaps: false, "water river map");
-        var packedParams = gpu is not GpuContext && meitouWaves
-            ? SampledImage.Rgba32FArray(gpu, s.A, s.B, s.BlendWidth, s.BlendHeight, "water parameters")
-            : null;
         return new WaterRenderer(gpu,
             [Rgba(s.Colour, false, [0, 32, 64, 255], "water colour map"), Rgba(s.Flow, false, [128, 128, 0, 255], "water flow map"),
              Rgba(s.Normal, true, [128, 255, 128, 255], "water normal map"),
              SampledImage.Rgba32F(gpu, s.A, s.BlendWidth, s.BlendHeight, "water parameters a"), SampledImage.Rgba32F(gpu, s.B, s.BlendWidth, s.BlendHeight, "water parameters b"),
              Rgba(s.Rain, true, [0, 0, 0, 0], "water rain ripples"),
              SampledImage.Rgba8(gpu, WaterFoam.Size, WaterFoam.Size, s.Foam, repeat: true, mipmaps: true, "water foam"), riverMap],
-            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize, meitouWaves, shoreField, packedParams);
+            s.Sea.A, s.Sea.B, s.Sea.Colour, gridSegments, oceanSize, meitouWaves, shoreField);
     }
 
     /// <summary>
@@ -1241,87 +1364,13 @@ public sealed unsafe class WaterRenderer : IDisposable
     /// <param name="time">Animation time; the game's unit for it is Unknown (the viewer uses real hours). Meitou uses the game clock instead.</param>
     public void Draw(Matrix4x4 viewProjection, Vector3 eye, WorldLighting light, SkyColours colours, float time, float extent, ReflectionPass? reflection = null)
     {
+        var targets = Gpu.CurrentTargets();
         bool meitouWater = Meitou && meitou is not null;
         var p = meitouWater ? meitou! : faithful;
-        Prepare(p, viewProjection, eye, light, colours, meitouWater ? waves.NormalTime : time, extent, reflection);
-        if (meitouWater) Record(p, gridSource!, gridVertices, gridIndexCount);
-        else Record(p, quadSource, quadVertices, 0);
-    }
-
-    void Prepare(WaterProgram h, Matrix4x4 viewProjection, Vector3 eye, WorldLighting light, SkyColours colours, float time, float extent, ReflectionPass? reflection)
-    {
-        var p = h.P;
-        p.Set(h.Lean, Lean ? 1f : 0f);
-        p.Set(h.ViewProjection, in viewProjection);
-        p.Set(h.WaterHeight, WorldWater.Height);
-        p.Set(h.Centre, eye.X, eye.Z);
-        p.Set(h.Extent, extent);
-        p.Set(h.WaterFar, extent / 1.5f);
-        p.Set(h.Eye, eye.X, eye.Y, eye.Z);
-        p.Set(h.HalfWorld, (float)WorldLayout.HalfWorldSize);
-        p.Set(h.SeaA, seaA.X, seaA.Y, seaA.Z, seaA.W);
-        p.Set(h.SeaB, seaB.X, seaB.Y, seaB.Z, seaB.W);
-        p.Set(h.SeaColour, seaColour.X, seaColour.Y, seaColour.Z);
-        p.Set(h.Time, time);
-        p.Set(h.SunDir, light.SunDirection.X, light.SunDirection.Y, light.SunDirection.Z);
-        p.Set(h.SunColour, light.SunColour.X, light.SunColour.Y, light.SunColour.Z);
-        var (glintDirection, glintColour) = light.Glint;
-        if (h == meitou) glintColour *= GlintCloudFade(GlintCloudShade, Overcast);
-        p.Set(h.GlintDir, glintDirection.X, glintDirection.Y, glintDirection.Z);
-        p.Set(h.GlintColour, glintColour.X, glintColour.Y, glintColour.Z);
-        p.Set(h.FogColour, light.FogColour.X, light.FogColour.Y, light.FogColour.Z);
-        p.Set(h.FogDistance, light.FogDistance);
-        if (h == meitou)
-        {
-            p.Set(h.Ocean, ocean?.Lengths.X ?? 0, ocean?.Lengths.Y ?? 0, ocean?.Lengths.Z ?? 0, ocean is { Ready: true } o ? o.Size : 0);
-            p.Set(h.ShoreRect, shore is { Ready: true } s ? s.Rect : Vector4.Zero);
-            p.Set(h.GridStep, gridStep);
-            p.Set(h.Shore, waves.Shore);
-            p.Set(h.WaveFade, WaveFadeStart, WaveFadeEnd, ShoreFadeStart, ShoreFadeEnd);
-            p.Set(h.Clarity, 1f / Math.Max(Clarity, 0.01f), Math.Clamp(FarClarity, 0f, 1f), Math.Max(ClearDistance, 100f));
-            if (ocean is { Ready: true } readyOcean) p.Bind(h.OceanMaps, readyOcean.OceanMaps);
-            if (shore is { Ready: true } readyShore) p.Bind(h.ShoreField, readyShore.Sampled());
-            bool refract = Refraction && refraction is not null && refractionFrame == Gpu.Frame.Number;
-            p.Set(h.Refract, refract ? 1f : 0f);
-            if (refract)
-            {
-                var t = Gpu.CurrentTargets();
-                p.Set(h.Screen, 1f / t.Width, 1f / t.Height);
-                p.Bind(h.Refraction, new SampledTexture(Gpu.Samplers.Get(ClampLinear), refraction!.View()));
-            }
-        }
-        h.Sky.Set(p, colours);
-        p.ApplyGlobals();   // the atmosphere's and the heights' uniforms and textures, through the frame globals
-        if (h.PackedParams.IsValid && packedParams is not null)
-        {
-            for (int i = 0; i < maps.Length; i++)
-                if (i is not (3 or 4)) p.Bind(h.Maps[i], maps[i].Sampled());
-            p.Bind(h.PackedParams, packedParams.Sampled());
-        }
-        else for (int i = 0; i < maps.Length; i++) p.Bind(h.Maps[i], maps[i].Sampled());
-        bool reflect = reflection is { Valid: true };
-        p.Set(h.Reflect, reflect ? 1f : 0f);
-        if (reflect)
-        {
-            p.Bind(h.Reflection, reflection!.Sampled);
-            p.Set(h.ReflectionViewProjection, reflection.ViewProjection);
-        }
-    }
-
-    /// <summary>The eye distances over which the Meitou open waves fade into the flat water (the grid coarsens with the distance), and over which
-    /// the shore's breakers and foam fade (they read from much further).</summary>
-    public const float WaveFadeStart = 3000, WaveFadeEnd = 5500, ShoreFadeStart = 7000, ShoreFadeEnd = 10000;
-
-    static readonly SamplerDesc ClampLinear = new(TextureMinFilter.Linear, TextureMagFilter.Linear, false,
-        TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false,
-        DepthFunction.Always, false, false, 1, 0);
-
-    static readonly BlendState AlphaBlend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-
-    void Record(WaterProgram p, VertexArrayBindings va, GpuBufferBinding[] vertices, uint indexCount)
-    {
-        var cmd = Gpu.BeginGuest(p == meitou ? "water meitou" : "water");
-        var targets = Gpu.CurrentTargets();
+        var c = PrepareConstants(meitouWater, eye, light, colours, meitouWater ? waves.NormalTime : time, extent, reflection, targets);
+        var slice = Gpu.Frame.WriteConstants(MemoryMarshal.AsBytes(new ReadOnlySpan<WaterConstants>(in c)), uniformAlign);
+        var set = ConstantSet(slice.Handle);
+        var cmd = Gpu.BeginGuest(meitouWater ? "water meitou" : "water");
         // What the GL code's Enable(DepthTest), DepthMask(false), Disable(CullFace), Enable(Blend) and BlendFunc made of the pass's state (the
         // depth test and blending only with the attachment they need, as VkGl's CurrentState).
         bool hasDepth = targets.Formats.Depth != InternalFormat.None, hasColour = targets.Formats.Colour != InternalFormat.None;
@@ -1334,17 +1383,106 @@ public sealed unsafe class WaterRenderer : IDisposable
         cmd.SetRaster(state.Cull, state.Front);
         cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
         cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-        cmd.BindPipeline(p.Segment.Get(state, targets.Formats, va));
-        cmd.BindVertexBuffers(0, vertices);
-        p.P.Flush(cmd);
-        if (indexCount > 0)
+        var view = new ViewConstants
         {
-            cmd.BindIndexBuffer(va.Elements, IndexKind.U32);
-            cmd.DrawIndexed(indexCount);
+            ViewProjection = viewProjection, Eye = eye, Time = time,
+            LightDir = light.SunDirection, FogColour = light.FogColour, FogDistance = light.FogDistance,
+        };
+        frame.Bind(cmd, p.Gpu, in view);
+        uint offset = (uint)slice.Offset;
+        cmd.BindSets(p.Gpu, ConstantsSet, new ReadOnlySpan<GpuSet>(in set), new ReadOnlySpan<uint>(in offset));
+        cmd.BindPipeline(Gpu.Pipelines.Get(state.Pipeline(p.Gpu, p.Layout, p.Topology, targets.Formats, meitouWater ? "water meitou" : "water")));
+        cmd.BindVertexBuffers(0, p.Vertices);
+        if (meitouWater)
+        {
+            cmd.BindIndexBuffer(new GpuBufferBinding(gridIndices!.Handle, 0, gridIndices.Size), IndexKind.U32);
+            cmd.DrawIndexed(gridIndexCount);
         }
         else cmd.Draw(4);
         Gpu.EndGuest(cmd);
     }
+
+    WaterConstants PrepareConstants(bool meitouWater, Vector3 eye, WorldLighting light, SkyColours colours, float time, float extent,
+        ReflectionPass? reflection, PassTargets targets)
+    {
+        var (glintDirection, glintColour) = light.Glint;
+        if (meitouWater) glintColour *= GlintCloudFade(GlintCloudShade, Overcast);
+        bool reflect = reflection is { Valid: true };
+        bool refract = meitouWater && Refraction && refraction is not null && refractionFrame == Gpu.Frame.Number;
+        var c = new WaterConstants
+        {
+            Params = new Vector4(WorldWater.Height, (float)WorldLayout.HalfWorldSize, gridStep, time),
+            CentreExtent = new Vector4(eye.X, eye.Z, extent, Lean ? 1f : 0f),
+            SeaA = seaA, SeaB = seaB, SeaColour = new Vector4(seaColour, extent / 1.5f),
+            SunDir = new Vector4(light.SunDirection, 0f), SunColour = new Vector4(light.SunColour, 0f),
+            GlintDir = new Vector4(glintDirection, 0f), GlintColour = new Vector4(glintColour, 0f),
+            Ocean = new Vector4(ocean?.Lengths.X ?? 0, ocean?.Lengths.Y ?? 0, ocean?.Lengths.Z ?? 0, ocean is { Ready: true } o ? o.Size : 0),
+            ShoreRect = shore is { Ready: true } s ? s.Rect : Vector4.Zero,
+            Shore = waves.Shore,
+            WaveFade = new Vector4(WaveFadeStart, WaveFadeEnd, ShoreFadeStart, ShoreFadeEnd),
+            Clarity = new Vector4(1f / Math.Max(Clarity, 0.01f), Math.Clamp(FarClarity, 0f, 1f), Math.Max(ClearDistance, 100f), 0f),
+            ScreenReflect = new Vector4(1f / Math.Max(targets.Width, 1), 1f / Math.Max(targets.Height, 1), reflect ? 1f : 0f, refract ? 1f : 0f),
+            ReflectionViewProjection = reflect ? reflection!.ViewProjection : Matrix4x4.Identity,
+            SkySun = new Vector4(colours.Sun, 0f), SkyZenith = new Vector4(colours.Zenith, 0f),
+            SkyHorizon = new Vector4(colours.Horizon, 0f), SkySunColour = new Vector4(colours.SunColour, colours.Twilight),
+        };
+        var g = Gpu.Globals;
+        float half = (float)WorldLayout.HalfWorldSize;
+        var world = new Vector4(-half, -half, half, half);
+        c.CoarseRect = ReadGlobal(g, "uCoarseRect", world);
+        c.FineRect = ReadGlobal(g, "uFineRect", world);
+        var coarseCells = ReadGlobal(g, "uCoarseCells", Vector2.One);
+        var fineCells = ReadGlobal(g, "uFineCells", Vector2.One);
+        float fineBand = ReadGlobal(g, "uFineBand", 1f);
+        int hasFine = ReadGlobal(g, "uHasFine", 0);
+        c.CoarseCellsFineBand = new Vector4(coarseCells, fineBand, hasFine != 0 ? 1f : 0f);
+        c.FineCells = new Vector4(fineCells, 0f, 0f);
+
+        c.ColourMap = mapTextures[0].Index(maps[0].Sampled());
+        c.FlowMap = mapTextures[1].Index(maps[1].Sampled());
+        c.NormalMap = mapTextures[2].Index(maps[2].Sampled());
+        c.ParamsA = mapTextures[3].Index(maps[3].Sampled());
+        c.ParamsB = mapTextures[4].Index(maps[4].Sampled());
+        c.RainMap = mapTextures[5].Index(maps[5].Sampled());
+        c.FoamMap = mapTextures[6].Index(maps[6].Sampled());
+        c.RiverMap = mapTextures[7].Index(maps[7].Sampled());
+        c.OceanMap = ocean is { Ready: true } readyOcean ? oceanMap.Index(readyOcean.OceanMaps) : standInArray;
+        c.ShoreMap = shore is { Ready: true } readyShore ? shoreMap.Index(readyShore.Sampled()) : Gpu.StandIn2D;
+        c.HeightCoarse = heightCoarse.IndexOr(g.Texture("uHeightCoarse")?.Invoke() ?? default, Gpu.StandIn2D);
+        c.HeightFine = heightFine.IndexOr(g.Texture("uHeightFine")?.Invoke() ?? default, Gpu.StandIn2D);
+        c.ReflectionMap = reflect ? reflectionMap.Index(reflection!.Sampled) : Gpu.StandIn2D;
+        c.RefractionMap = refract
+            ? refractionMap.Index(new SampledTexture(Gpu.Samplers.Get(ClampLinear), refraction!.View()))
+            : Gpu.StandIn2D;
+        return c;
+    }
+
+    static T ReadGlobal<T>(FrameGlobals globals, string name, T fallback) where T : unmanaged
+    {
+        var value = fallback;
+        var bytes = MemoryMarshal.AsBytes(new Span<T>(ref value));
+        return globals.UniformValue(name)?.TryRead(bytes) == true ? value : fallback;
+    }
+
+    GpuSet ConstantSet(GpuBuffer buffer)
+    {
+        ulong key = (ulong)buffer.Index;
+        if (!constantSet.IsNull && key == constantSetKey) return constantSet;
+        if (!constantSets.TryGetValue(key, out var made))
+            constantSets[key] = made = Gpu.AllocateConstantSet(constantsLayout, buffer, (ulong)sizeof(WaterConstants));
+        (constantSetKey, constantSet) = (key, made);
+        return made;
+    }
+
+    /// <summary>The eye distances over which the Meitou open waves fade into the flat water (the grid coarsens with the distance), and over which
+    /// the shore's breakers and foam fade (they read from much further).</summary>
+    public const float WaveFadeStart = 3000, WaveFadeEnd = 5500, ShoreFadeStart = 7000, ShoreFadeEnd = 10000;
+
+    static readonly SamplerDesc ClampLinear = new(TextureMinFilter.Linear, TextureMagFilter.Linear, false,
+        TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false,
+        DepthFunction.Always, false, false, 1, 0);
+
+    static readonly BlendState AlphaBlend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
     public void Dispose()
     {
@@ -1354,13 +1492,22 @@ public sealed unsafe class WaterRenderer : IDisposable
         if (shore is { } field)
             Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"water     shore bake {field.LastBakeMs:F0} ms, {field.UploadedFields} fields uploaded and {field.UniformFields} uniform (one texel)"));
+        faithful.Dispose();
+        meitou?.Dispose();
+        frame.Dispose();
         quad.Dispose();
         grid?.Dispose();
         gridIndices?.Dispose();
+        foreach (var t in mapTextures) t.Dispose();
+        oceanMap.Dispose();
+        shoreMap.Dispose();
+        reflectionMap.Dispose();
+        refractionMap.Dispose();
+        heightCoarse.Dispose();
+        heightFine.Dispose();
+        Gpu.Bindless.Free(BindlessKind.Texture2DArray, standInArray);
+        standInArrayTexture.Dispose();
         foreach (var t in maps) t.Dispose();
-        packedParams?.Dispose();
-        faithful.Dispose();
-        meitou?.Dispose();
         ocean?.Dispose();
         shore?.Dispose();
         refraction?.Dispose();

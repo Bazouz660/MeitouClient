@@ -52,16 +52,12 @@ static class AtmosphereShaders
         uniform vec4 uAtmoMaps;       // x irradiance cube, y specular cube, z ambient map present (0: none, else 1 + the night ambient floor); w half the world's width
         uniform vec4 uAtmoNight;      // Meitou night air (docs/formats/sky.md "Night air"): rgb its colour at full night at the horizon, a its weight (0: Faithful, or by day)
         uniform samplerCube uAtmoIrradiance;
-        #ifndef METAL_WATER
         uniform samplerCube uAtmoSpecular;
-        #endif
         uniform sampler2D uAtmoAmbientMap;
         uniform vec4 uAtmoCloud;      // x strength, y legacy density offset or volume coverage, z base height, w 1 volume transmission map
         uniform vec4 uAtmoCloudWind;  // legacy: xy wind shift; volume: xy map origin, z map span
         uniform sampler2D uAtmoClouds;
-        #ifndef METAL_WATER
         uniform sampler2D uAtmoCloudsTile;
-        #endif
         // The sun light that gets past the cloud layer to a world point: the sun's ray from the point hits the world-anchored plane, where the sky pass's
         // overhead alpha (the game's second lookup and tile, the horizon band at 1, no fake volume) is read. textureLod only: the grass's vertex stage includes this.
         float atmoCloudShadow(vec3 world)
@@ -85,18 +81,13 @@ static class AtmosphereShaders
             vec2 uv = (world.xz + l.xz * (max(h - world.y, 0.0) / max(l.y, 1e-3))) * (0.1 / h);
             float o = uAtmoCloud.y;
             float cloud = textureLod(uAtmoClouds, uv + uAtmoCloudWind.xy + vec2({{F(CloudLayer.SecondLookupShift.X)}}, {{F(CloudLayer.SecondLookupShift.Y)}}), {{F(MeitouClouds.ShadowLod)}}).r;
-        #ifndef METAL_WATER
             float tile = textureLod(uAtmoCloudsTile, uv - uAtmoCloudWind.xy, {{F(MeitouClouds.ShadowLod)}}).r;
-        #else
-            float tile = 0.0;
-        #endif
             float density = (cloud + o) * {{F(CloudLayer.DensityMultiplier)}} + tile * {{F(CloudLayer.TileWeight)}} + 1.0;
             float alpha = clamp(density * clamp(1.0 - tile + o, 0.0, 1.0), 0.0, 1.0);
             return 1.0 - uAtmoCloud.x * alpha;
         }
         uniform vec4 uWeatherWet;     // the weather's shared surface values (WeatherSurfaces): x wetness, y rainAmount = saturate(rain / 50), z gameTime (hours)
         uniform vec4 uWeatherDust;    // xyz: dustAmount (current, inside, slope; docs/formats/weather.md "Dust")
-        #ifndef METAL_WATER
         uniform sampler2D uWeatherDustNoise;   // the dust noise (Turbulent.dds), sampled at world.xz * 0.002
         uniform sampler2D uWeatherGround;      // the terrain's whole-world ground colour map: the dust colour (the BIOMES `ground colour` where the object is)
         uniform vec4 uGiParams;       // Meitou probe GI: x on, y strength, z post resolve, w indoor surface gain (0 bypasses indoor GI; compute has its own params)
@@ -106,7 +97,6 @@ static class AtmosphereShaders
         uniform vec4 uLightGrid;      // the lamps (docs/render-lights.md): the grid's corner x, z, its cell size, cells per side (0: no lamps)
         uniform sampler2D uLightCells, uLightIndex, uLightData;
         {{LampShaders.Defines}}{{LampShaders.Lighting}}
-        #endif
 
         // ---- the weather's surfaces (docs/formats/weather.md "Rain and wetness", "Dust") ----
         // common/wet.hlsl makeWet: waterRel = the water's height minus the pixel's, edge the width of the water-line band (0.5 objects and foliage, 2 terrain).
@@ -123,7 +113,6 @@ static class AtmosphereShaders
             frag.a = mix(frag.a, 0.5, clamp(shine, 0.0, 1.0));
         }
         // objects.hlsl / triplanar.hlsl: how far a surface is covered by dust (0..1). n: its normal, gloss: the diffuse alpha before `specular mult`, amount: dustAmount.x (.y inside).
-        #ifndef METAL_WATER
         float dustCover(vec3 n, float gloss, vec3 world, float amount)
         {
             float noiseEffect = 2.2 - texture(uWeatherDustNoise, world.xz * 0.002).x * 6.0;
@@ -137,7 +126,6 @@ static class AtmosphereShaders
         {
             return texture(uWeatherGround, (world.xz + uAtmoMaps.w) / (2.0 * uAtmoMaps.w)).rgb;
         }
-        #endif
 
         // ---- SkyX (Meitou.Data SkyXModel) ----
         const float SKYX_INNER = {{F(SkyAtmosphere.InnerRadius)}};
@@ -213,9 +201,7 @@ static class AtmosphereShaders
         }
         vec3 atmoSky(vec3 dir) { float n; return atmoSky(dir, n); }
 
-        #ifndef METAL_WATER
         {{ShadowShaders.Functions}}
-        #endif
         // ---- the deferred lighting pass (deferred.hlsl main_fs, lightingFunctions.hlsl; docs/formats/lighting.md) ----
         {{AmbientFloorFunction}}
         vec4 atmoAmbientMapAt(vec3 world)
@@ -236,7 +222,6 @@ static class AtmosphereShaders
             float a0 = t.x * min(t.y, exp2(-9.28 * nv)) + t.z;
             return clamp(a0 + 0.04 * (t.w - a0), 0.0, 1.0);
         }
-        #ifndef METAL_WATER
         // The character editor's stage (a fog distance of -2): the game's rtt.hlsl (docs/characters.md "Character editor"): one punctual light of colour 0.6 (CalcPunctualLight: diffuse
         // pi * N.L * (1 - 0.04), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.04) plus the environment light of the irradiance and specular cubes
         // (CalcEnvironmentLight), times the exposure 0.5, stored as it is in an 8-bit target (UNORM, as the icons). l: towards the light, v: towards the eye.
@@ -334,7 +319,6 @@ static class AtmosphereShaders
             return lit;
         }
         vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world) { return kenshiLight(albedo, n, v, gloss, world, vec3(clamp(dot(n, uAtmoLight.xyz), 0.0, 1.0))); }
-        #endif
 
         // The distant water fades out before its far clip, revealing the sky already behind it.
         // The shafts use the same weight for their water correction, so it cannot leave a horizon band.
