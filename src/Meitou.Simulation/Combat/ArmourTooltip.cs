@@ -61,9 +61,10 @@ public static class ArmourTooltip
     }
 
     /// <summary>
-    /// The lines below the price: the coverage by part and the skill effects that differ from none (<b>Observed</b> on the Samurai Armour at six grades and the Samurai Legplates). The
-    /// Stealth effect is the piece's stealth factor (<see cref="ArmourPiece.StealthOf"/>); the Combat speed effect of a heavy piece is its <c>combat speed mult</c> x lerp(t, 0.9, 1)
-    /// (fits all six grades of the Samurai Armour and the Legplates; other classes are <b>Unknown</b>, so they show none). The Athletics effect of a heavy piece is its <c>athletics mult</c> x lerp(t, 0.8, 0.95) (the wiki's six grades of the Samurai Legplates, 0.8075 to 0.9425x, and the 0.94x the original printed). The dexterity, defence, perception and ranged bonus lines are not shown: their formulas and labels are <b>Unknown</b>.
+    /// The lines below the price: the coverage by part and the skill effects that are not neutral (<b>Observed</b>, docs/original-armour-tooltip.md; checked against the six grades of the Samurai
+    /// Armour and Legplates). Stealth effect is the piece's stealth factor (<see cref="ArmourPiece.StealthOf"/>); Athletics effect is the record's <c>athletics mult</c> x the class table's
+    /// lerp(t, lo, hi) (medium 0.85 to 1, heavy 0.8 to 0.95, forced to 1 for slots 3, 5 and 8) and Combat speed effect likewise (heavy 0.9 to 1, forced to 1 for a hat). The dexterity,
+    /// defence, perception and ranged bonus lines are not shown: their formulas and labels are <b>Unknown</b>.
     /// </summary>
     public static IReadOnlyList<Line> Tail(ArmourData a, Func<string, string?> partName, float quality)
     {
@@ -77,15 +78,22 @@ public static class ArmourTooltip
                 lines.Add(new("-" + name, percent + "%", LineKind.Stat));
         }
         var skills = new List<Line>();
-        // A value that prints as 1.00x is neutral. The colour follows the side of neutral (the original's red for a penalty).
-        void Multiplier(string label, float mult) { if (Number(mult, "0.00") != "1.00") skills.Add(new("-" + label, Number(mult, "0.00") + "x", LineKind.Effect, mult < 1 ? -1 : 1)); }
+        // A row is skipped at exactly 1 (the Athletics row also between 0.97 and 1); the colour follows the side of neutral (the original's red for a penalty).
+        void Multiplier(string label, float mult, bool hideNearOne = false)
+        {
+            if (mult == 1 || hideNearOne && mult is >= 0.97f and <= 1f) return;
+            skills.Add(new("-" + label, Number(mult, "0.00") + "x", LineKind.Effect, mult < 1 ? -1 : 1));
+        }
         void Bonus(string label, int bonus) { if (bonus != 0) skills.Add(new("-" + label, bonus.ToString(CultureInfo.InvariantCulture), LineKind.Effect, bonus < 0 ? -1 : 1)); }
         Multiplier("Crossbows effect", a.RangedSkillMult);
         Multiplier("Precision shooting effect", a.RangedSkillMult);
         Multiplier("Stealth effect", ArmourPiece.StealthOf(a, t));
         Multiplier("Dodge skill effect", a.DodgeMult);
-        if (a.Class == ArmourClass.Heavy) Multiplier("Athletics effect", a.AthleticsMult * WeaponStats.Lerp(t, 0.8f, 0.95f));
-        if (a.Class == ArmourClass.Heavy) Multiplier("Combat speed effect", a.CombatSpeedMult * WeaponStats.Lerp(t, 0.9f, 1f));
+        // The class table's athletics column (medium 0.85 to 1, heavy 0.8 to 0.95, else 1); a hat, a body armour (slot 5) and slot 8 are forced to 1.
+        float athletics = a.Slot is 3 or 5 or 8 ? 1 : a.AthleticsMult * a.Class switch { ArmourClass.Medium => WeaponStats.Lerp(t, 0.85f, 1f), ArmourClass.Heavy => WeaponStats.Lerp(t, 0.8f, 0.95f), _ => 1f };
+        Multiplier("Athletics effect", athletics, hideNearOne: true);
+        // The class table's combat speed column (heavy 0.9 to 1, else 1); a hat is forced to 1.
+        Multiplier("Combat speed effect", a.Slot == 3 ? 1 : a.CombatSpeedMult * (a.Class == ArmourClass.Heavy ? WeaponStats.Lerp(t, 0.9f, 1f) : 1f));
         Multiplier("Attack damage effect", a.DamageOutputMult);
         Multiplier("Assassination skill", a.AssassinationMult);
         Bonus("Melee attack bonus", a.CombatAttackBonus);

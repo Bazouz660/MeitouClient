@@ -60,7 +60,10 @@ public sealed class ItemInstance
     public int Width { get; init; } = 1;
     public int Height { get; init; } = 1;
     /// <summary>Weight of one unit in kg as it counts in the inventory total (weapons already scaled by <c>weapon inventory weight mult</c>).</summary>
-    public float UnitWeight { get; init; }
+    public float UnitWeight { get => Level > 0 && LevelWeight is { } byLevel ? byLevel(Level) : baseWeight; init => baseWeight = value; }
+    float baseWeight;
+    /// <summary>The weight of an armour piece by its level (<see cref="Meitou.Data.Gameplay.Combat.ArmourData.WeightAt"/>), which replaces <see cref="UnitWeight"/>'s record value while the level is above 0; null for anything else.</summary>
+    public Func<int, float>? LevelWeight { get; init; }
     /// <summary>How many units one cell holds (<see cref="ItemInfo.StackLimit"/>; 1: it does not stack). Inside a backpack the bag's bonus applies (<see cref="Inventory.LimitOf"/>).</summary>
     public int StackLimit { get; init; } = 1;
     public bool IsFood { get; init; }
@@ -85,7 +88,7 @@ public sealed class ItemInstance
     public ItemInstance WithQuantity(int quantity) => new()
     {
         Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level,
-        ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = UnitWeight, StackLimit = StackLimit,
+        ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = baseWeight, LevelWeight = LevelWeight, StackLimit = StackLimit,
         IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };
 

@@ -493,7 +493,9 @@ sealed partial class PlayerInterface
             if (armourHead is not null) lines.AddRange(armourHead);
             if (limbRows is not null) lines.AddRange(limbRows);
             // "{n} x {unit} kg ({total} kg)" for a stack.
-            weightText = (t.Quantity > 1 ? $"{t.Quantity} x " : "") + Number(unitWeight) + " kg" + (t.Quantity > 1 ? $" ({Number(t.Weight)} kg)" : "");
+            // An armour piece prints whole kilograms, truncated (FUN_1407a1650, Observed).
+            weightText = armour is not null ? ((int)unitWeight).ToString(CultureInfo.InvariantCulture) + " kg"
+                : (t.Quantity > 1 ? $"{t.Quantity} x " : "") + Number(unitWeight) + " kg" + (t.Quantity > 1 ? $" ({Number(t.Weight)} kg)" : "");
             lines.Add(Row("Weight", weightText));
         }
         if (t.Trade is { } trade)

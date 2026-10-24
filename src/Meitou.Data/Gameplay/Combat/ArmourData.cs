@@ -50,6 +50,26 @@ public sealed record ArmourData
     /// <summary><c>weather protection0</c>, <c>1</c>...: the <see cref="World.WeatherAffecting"/> kinds the piece protects from, without None and repeats (the loader's set).</summary>
     public IReadOnlyList<World.WeatherAffecting> WeatherProtection { get; init; } = [];
 
+    /// <summary>The Chest part of the base data (the coverage entry that counts one and a half times in the weight rule).</summary>
+    public const string ChestPartId = "101-gamedata.quack";
+
+    /// <summary>
+    /// The weight of the piece at <paramref name="level"/> (<b>Observed</b>, docs/original-armour-tooltip.md): when the level is above 0 and the record lists part coverage, the sum of the coverage
+    /// percentages (the Chest entry x1.5, truncated; 100 when the sum is 0) x 0.05 x the material's factor (cloth 0.1, leather 0.25, chain 0.9, metal plate 1), x1.25 for a hat (slot 3), x0.5 for
+    /// slot 8, at least 1; null otherwise, and the record's <c>weight kg</c> stands.
+    /// </summary>
+    public float? WeightAt(int level)
+    {
+        if (level <= 0 || Coverage.Count == 0) return null;
+        int total = 0;
+        foreach (var c in Coverage) total += c.PartStringId == ChestPartId ? (int)(c.Percent * 1.5f) : c.Percent;
+        if (total == 0) total = 100;
+        float weight = total * 0.05f * Material switch { ArmourType.Cloth => 0.1f, ArmourType.Leather => 0.25f, ArmourType.Chain => 0.9f, _ => 1f };
+        if (Slot == 3) weight *= 1.25f;
+        else if (Slot == 8) weight *= 0.5f;
+        return MathF.Max(weight, 1);
+    }
+
     /// <summary>Whether the piece protects from <paramref name="kind"/>.</summary>
     public bool Protects(World.WeatherAffecting kind) => WeatherProtection.Contains(kind);
 
