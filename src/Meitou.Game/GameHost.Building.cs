@@ -16,7 +16,7 @@ sealed partial class GameHost
     long buildingsRevision = -1;
     // What the overlays were last told, by instance id.
     readonly Dictionary<string, BuildingSnapshot> shownBuildings = new(StringComparer.Ordinal);
-    readonly HashSet<string> navBuildings = new(StringComparer.Ordinal), litBuildings = new(StringComparer.Ordinal);
+    readonly HashSet<string> navBuildings = new(StringComparer.Ordinal), litBuildings = new(StringComparer.Ordinal), effectBuildings = new(StringComparer.Ordinal);
     readonly Dictionary<string, float> constructionLook = new(StringComparer.Ordinal);
     Dictionary<string, BuildingBuildData>? buildData;
 
@@ -75,6 +75,7 @@ sealed partial class GameHost
             gpu.Objects?.RemoveRuntime(id);
             if (navBuildings.Remove(id)) nav?.RemoveRuntimeBuilding(id);
             if (litBuildings.Remove(id)) gpu.Lamps?.RemoveRuntime(id);
+            if (effectBuildings.Remove(id)) gpu.Particles?.RemoveBuildingEffects(id);
             shownBuildings.Remove(id);
         }
         foreach (var site in current.Values)
@@ -84,14 +85,17 @@ sealed partial class GameHost
             {
                 if (site.Complete && !shown.Complete) AddToNavmesh(site, placement);   // newly complete
                 UpdateLamps(site);
+                UpdateEffects(site);
                 shownBuildings[site.Id] = site;
                 continue;
             }
             if (shown is not null && navBuildings.Remove(site.Id)) nav?.RemoveRuntimeBuilding(site.Id);   // moved or changed: out, then in again
             if (shown is not null && litBuildings.Remove(site.Id)) gpu.Lamps?.RemoveRuntime(site.Id);
+            if (shown is not null && effectBuildings.Remove(site.Id)) gpu.Particles?.RemoveBuildingEffects(site.Id);
             gpu.Objects?.AddRuntime(placement);
             AddToNavmesh(site, placement);
             UpdateLamps(site);
+            UpdateEffects(site);
             shownBuildings[site.Id] = site;
         }
     }
@@ -114,6 +118,21 @@ sealed partial class GameHost
         lamps.SetRuntime(site.Id, placed.Select(p => WorldLights.FromPlaced(p, interior: false)));
     }
 
+    /// <summary>A building's effects (a campfire's fire; docs/formats/lights.md "Effects on buildings") run while it is complete, as its lamps.</summary>
+    void UpdateEffects(BuildingSnapshot site)
+    {
+        if (gpu.Particles is not { } particles) return;
+        if (!site.Complete)
+        {
+            if (effectBuildings.Remove(site.Id)) particles.RemoveBuildingEffects(site.Id);
+            return;
+        }
+        if (!effectBuildings.Add(site.Id) || scene.Database is not { } db || db.Find(site.Record) is not { } record) return;
+        var placed = new List<PlacedEffect>();
+        WorldObjectLayout.Building(db, record, site.Id, site.Position, site.Rotation, new BuildingState { Identity = site.Id }, null, placed);
+        particles.SetBuildingEffects(site.Id, placed);
+    }
+
     /// <summary>
     /// The render and navigation overlay type of a site (<c>StateId</c> null, <c>WorldY</c> the absolute height, the zone of its position). Its key is its own id: a player
     /// building's id is unique in the world (the simulation's registry reserves every saved id), and the overlays remove it by that id.
@@ -134,6 +153,8 @@ sealed partial class GameHost
     {
         gpu?.Objects?.ClearRuntime();
         gpu?.Lamps?.ClearRuntime();
+        foreach (string id in effectBuildings) gpu?.Particles?.RemoveBuildingEffects(id);   // the world's own building effects stay
+        effectBuildings.Clear();
         litBuildings.Clear();
         ForgetGroundItems();
         ForgetFarms();

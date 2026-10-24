@@ -160,8 +160,8 @@ block:  int32 count, count ×
   contents; the game's building layout lookup (the 13 unresolved exterior names) and nest debris scatter.
 - ROAD `start`/`end`, the road point x parameter, road foliage w.
 - `fogfeatures.dat`, `globalPathing.path` layouts (`blendinfo.dat`: see terrain.md).
-- Building assembly leftovers: rolls drawn by EFFECT instances and by part-material collections inside the
-  seeded sequence; which foliage mesh stands at an Iron/Copper Resource placement; door open state; turret aiming.
+- Building assembly leftovers: rolls drawn by part-material collections inside the seeded sequence (EFFECT
+  instances draw none, lights.md "Effects on buildings"); which foliage mesh stands at an Iron/Copper Resource placement; door open state; turret aiming.
 
 ## Expression reference
 

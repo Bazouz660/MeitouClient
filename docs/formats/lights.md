@@ -96,6 +96,21 @@ power  = powerScale · global (1.0) · effect
 - **Meitou** (engine choice): the light sits at the body hanging from the last spherical joint (not `root`), held rigidly
   relative to the bone; no swing. The lantern meshes (in the .phs points) and the animals' backpack meshes are not drawn.
 
+## Effects on buildings
+
+- **Data** (**Verified**, merged base game, `meitou-tools particles effects` "building effect" lines): EFFECT instances sit on
+  BUILDING Campfire and Cooking Pit (`small- fire1_small`) and on BUILDING_PARTs: torches (`small- fire2_torch`, Holy torches),
+  furnace smoke, generator smoke/sparks, stone processor and windmill sparks, Peeler blood, Droid streetlight jet. None has a `sound`.
+- **Placement** (**Observed**, 1.0.68 instance walk `140553dc0`, `FUN_1400f8db0`): the effect's node is a child of the holder's
+  node at the instance position, **not** scaled by the building `scale` (unlike a LIGHT), turned by the instance rotation. It draws
+  no roll from the building generator.
+- **When on** (**Observed**, KenshiLib `Building::effects` 0x250, `effectsVisible` 0x268, `effectsActive` 0x269; update
+  `1405626a0`): effects run while the building is visible, `effectsVisible` and complete. After the walk the exe calls
+  `switchEffects(isComplete)` and `switchLights(isComplete)`; `switchPowerOn` switches lights and effects together. No night rule.
+- **Meitou**: world buildings (not destroyed, state `power on` not false) and their exterior layout objects get their effects, run
+  always on; interior layouts are left out. Player buildings get them once complete. The effects' sounds are not played: the
+  buildings' own emitters play the fire.
+
 ## Expression reference
 
 - Shading: ` x = saturate(d / radius) atten = x < 0.649 ? 0.2 + 0.8 (1 − x)³ : x < 0.8 ? 0.242 − 3 (x − 0.6)² : 3 (x − 1)² 1 at the light, 0.30 at R/2, 0.235 at 0.649 R, 0.12 at 0.8 R, 0 at R spot = saturate(((L·dir − spot.y) / (spot.x − spot.y))^spot.z) spot lights only colour = (π · N·L · diffuse · Fresnel-diffuse · albedo + GGX specular(diffuse)) · atten · spot · power power = powerScale · global (1.0) · effect `

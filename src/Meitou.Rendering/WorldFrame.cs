@@ -648,6 +648,8 @@ static class WorldFrame
         internal Gi.GiDebugPass? GiDebugPass;
         internal Gi.GiProbes? Probes;
         internal WorldLamps? Lamps;
+        /// <summary>The placed buildings' effects (campfires, torches, smoke; docs/formats/lights.md "Effects on buildings"), read on a worker, handed to the particles once read.</summary>
+        internal Task<List<PlacedEffect>>? BuildingEffects;
         public int GiDebug;
         /// <summary>Whether the traced scene is updated (and the debug view drawn) this frame: the bench's gi-scene switch.</summary>
         public bool GiActive = true;
@@ -830,12 +832,16 @@ static class WorldFrame
         }
         if (scene.Database is { } lampDb && scene.Heightmap is { } lampMap)
         {
-            // The lamps (docs/render-lights.md), including room lights, read on a worker.
-            gpu.Lamps = new WorldLamps(context, () =>
+            // The lamps (docs/render-lights.md), including room lights, and the buildings' effects, read on workers from one level load.
+            var levels = new Lazy<(WorldLevelData Levels, BuildingLayouts Layouts)>(() =>
             {
-                var levels = WorldLevelData.Load(install, includeInteriors: true);
-                return WorldLights.ForWorld(lampDb, levels, lampMap.HeightAt, new BuildingLayouts(lampDb, levels.Interiors));
-            }) { InteriorAllDay = o.InteriorLamps };
+                var l = WorldLevelData.Load(install, includeInteriors: true);
+                return (l, new BuildingLayouts(lampDb, l.Interiors));
+            });
+            gpu.Lamps = new WorldLamps(context, () => WorldLights.ForWorld(lampDb, levels.Value.Levels, lampMap.HeightAt, levels.Value.Layouts))
+                { InteriorAllDay = o.InteriorLamps };
+            if (gpu.MakeParticles is not null)
+                gpu.BuildingEffects = Task.Run(() => BuildingEffects.ForWorld(lampDb, levels.Value.Levels, lampMap.HeightAt, levels.Value.Layouts));
         }
         if (scene.Heightmap is not null) gpu.Streamer = new TerrainStreamer(install, terrain, textures, scene.Window.Step) { MaterialDistance = o.MaterialDistance };
         if (!o.NoWater && scene.Database is not null)
@@ -1293,6 +1299,17 @@ static class WorldFrame
         // The weather's camera particles step on the caller's time (1/600 s units; the game's clock, so still while paused; constant, so still, in pictures).
         // They count as their own stage (the profiler's "particles", with their draw below).
         UpdateParticles(gpu, camera);
+        if (gpu.BuildingEffects is { IsCompleted: true } effectsLoad)
+        {
+            gpu.BuildingEffects = null;
+            if (!effectsLoad.IsCompletedSuccessfully) Console.WriteLine($"building effects not read: {effectsLoad.Exception?.InnerException?.Message}");
+            else if (gpu.Particles is { } buildingParticles)
+            {
+                foreach (var byBuilding in effectsLoad.Result.GroupBy(e => e.PlacementId)) buildingParticles.SetBuildingEffects(byBuilding.Key, byBuilding.ToList());
+                var (buildings, groups) = buildingParticles.BuildingEffectCount;
+                Console.WriteLine($"particles {effectsLoad.Result.Count} building effects on {buildings} buildings in {groups} groups");
+            }
+        }
         if (gpu.Particles is { } updated)
         {
             (updated.WeatherParticles, updated.World.Density) = (gpu.WeatherParticles, gpu.ParticleDensity);
