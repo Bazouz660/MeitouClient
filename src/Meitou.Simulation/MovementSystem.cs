@@ -402,9 +402,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             }
             if (cold.IsImprisoned || cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep)
             {
-                // Held in its cage or bed (put there by the fixture registry): no path, no steering, not pushed.
+                // Held in its cage or bed (put there by the fixture registry): no path, no steering, not pushed. Its position is left as it is: one laid in this
+                // tick's inputs is already at its spot in Next.
                 n.Velocity = Vector3.Zero;
-                n.Position = p.Position;
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
                 continue;
             }
