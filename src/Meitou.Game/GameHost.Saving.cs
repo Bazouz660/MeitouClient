@@ -48,6 +48,21 @@ sealed partial class GameHost
         };
     }
 
+    // The footprints a worker's reach of a building is measured to (docs/game/buildings-production.md "Work distance").
+    Meitou.Navigation.BuildingFootprints? siteFootprints;
+
+    /// <summary>
+    /// The X/Z gap from a point to a site's footprint hull (its collision, else for a building without it the hull of its parts' bounds); null while the record is being read, or
+    /// without a database.
+    /// </summary>
+    float? SiteEdgeGap(Meitou.Simulation.Construction.BuildSite site, Vector2 point)
+    {
+        if (scene.Database is not { } db) return null;
+        var footprints = siteFootprints ??= new Meitou.Navigation.BuildingFootprints(install, db, null);
+        if (!footprints.Ready(site.Record)) return null;
+        return (footprints.Of(site.Record) ?? footprints.Plot(site.Record))?.Gap(site.Position, site.Rotation, point);
+    }
+
     /// <summary>The system list and its order are <see cref="StandardSystems"/>' (docs/simulation.md "Threading"); built again for each world.</summary>
     Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
         Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
@@ -65,8 +80,8 @@ sealed partial class GameHost
                 CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
                 NestsMultiplier = (settings ?? difficulty)[6],
             },
-            Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5] },
-            Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4] },
+            Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5], EdgeGap = SiteEdgeGap },
+            Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4], EdgeGap = SiteEdgeGap },
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
             SynchronousPaths = !interactive || IsDuel,
             // The duel prints what its measured lap holds (MeasureLap).

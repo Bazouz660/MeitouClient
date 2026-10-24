@@ -118,7 +118,29 @@ is a candidate, a complete one contributes its mounted children that need work. 
 0.0001)` (d 3D), x0.5 when slot 89 is set, / (n + 1) with n = characters already working it; a stalled site the
 character has no material for (condition 50 false) is multiplied by the planner cost of the 115 finder (`FUN_14060f1d0`)
 and skipped at 0, i.e. when no source exists. The highest score wins. No cap on builders per site (**Observed**: the
-score and the 0.75 falloff spread them). Work distance (`isAtLocation`) is **Unknown**.
+score and the 0.75 falloff spread them). Work distance: [below](#work-distance).
+
+### Work distance
+
+**Observed** (decompile of kenshi_x64.exe 1.0.68, names from KenshiLib 1ce4a16): the AI's arrival condition `isAtLocation`
+(AI slot 11, `FUN_1405a2450`) at a Vector3 is 12 units X/Z and |dy| < 20, or the path has ended; at an object it is
+`AI::isWithinChoppingRange(target, isMoving)` (`FUN_14059c6d0`). For a building (type 0) that is arrived when:
+- the building `is foliage` (+0xc0, a rock) and the character is inside its bounds box scaled 1.2 (`getAABB`, slot 0x420), under a
+  movement flag (+0x640 +8, **Unknown**); or the character's movement reports touching the building's handle (+0x300 slot 1); or
+- the X/Z distance to `getPositionMarker(charPos)` (slot 0x470: the nearest valid usage node, else the construction position
+  +0x26c when fewer than 2) is below `getReachRange()` (slot 0x350), **doubled when not moving**, and the character is on the
+  same floor (slot 0x60) or |dy| < 15 (45 or 130 for some kinds, **Unknown** which).
+- Otherwise not; once the path has ended at the target it logs "Task impossible: X can't get to Y". There is no settle slack.
+
+`getReachRange`: `Building` 40 (construction), `WallBuilding` 60, `UseableStuff` (machines, storages, farms, mines, rocks) its
+`maxUseRange` +0x420, read from the functionality's `use range` (`FUN_1402a0900`), `DoorStuff` 45 (kind 7) or 25. Vanilla `use range`
+(**Verified** by a probe of the install): 10 to 25 for benches and storage, 50 ore mines and iron rocks, 80 wind generators,
+100 copper rocks, 140 hybrid stone mines. Which tasks reach their building through `isAtLocation` is **Observed** only through
+the goal conditions (the call is virtual).
+
+Meitou (`SiteReach`): builders 40 (walls 60), operators and storage fetches the `use range`, doubled once stopped, measured
+to the building's footprint hull (engine choice standing in for touching; a building without collision uses its parts' bounds
+hull) or, unknown, its position. A rock is also reached inside its bounds radius. No height test.
 
 Repair (**Verified**, Building slot 0x328 `FUN_1400f6b70`, `Task_Build` `FUN_14034a440`): a building needs repair when
 `progress < target`; building health is construction progress. Orders 2 and 95 are both `Task_Build`, which pushes the
@@ -624,7 +646,7 @@ original falls back to the template.
 
 ## Unknowns
 
-- How often Building slot 28 resets the builder counter, the work distance of builders, which HUD orders set the AI
+- How often Building slot 28 resets the builder counter, which HUD orders set the AI
   range mode, and what `FUN_14025c6d0` (holding dismantle work) tests.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
 - The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).

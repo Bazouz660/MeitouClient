@@ -14,6 +14,8 @@ public sealed partial class ProductionSystem
     const string NaturalPrefix = "natural:";
 
     readonly Dictionary<string, BuildSite?> naturalSites = new(StringComparer.Ordinal);
+    /// <summary>A rock site's centre (X/Z) and bounds radius from the host's rock source: an operator inside it has reached the rock.</summary>
+    readonly Dictionary<string, (Vector2 Centre, float Radius)> naturalBounds = new(StringComparer.Ordinal);
 
     /// <summary>The site id of the rock of BUILDING <paramref name="record"/> at <paramref name="at"/>.</summary>
     public static string NaturalId(string record, Vector3 at) =>
@@ -44,7 +46,12 @@ public sealed partial class ProductionSystem
             if (db.Find(record) is { Type: FcsRecordType.BUILDING } building && building.GetBool("is foliage") && Data(record) is { Operable: true, Resource: not 0 })
             {
                 // No rock there is not remembered: the host's rock source may not have placed that zone yet.
-                if (nodes is not null && !nodes.Near(0, x, z, 1).Any(n => n.Record == record)) return null;
+                if (nodes is not null)
+                {
+                    if (nodes.Near(0, x, z, 1).FirstOrDefault(n => n.Record == record) is not { Record.Length: > 0 } rock) return null;
+                    var centre = rock.Centre ?? rock.Position;
+                    naturalBounds[id] = (new Vector2(centre.X, centre.Z), rock.Radius);
+                }
                 site = new BuildSite { Id = id, Record = record, Name = building.Name, Position = position, Owner = -1, Materials = [], Complete = true };
             }
         }

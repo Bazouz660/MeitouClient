@@ -14,18 +14,10 @@ public sealed class ConstructionSettings
 {
     /// <summary>The <i>Building speed</i> option (0.5 to 2): multiplies build work. Its default is Unknown; 1 is neutral.</summary>
     public float BuildingSpeed { get; init; } = 1;
-    /// <summary>A builder works from within this far (X/Z units) of the site's footprint edge (<b>Unknown</b>; the engine reading is footprint edge + 20).</summary>
-    public float Reach { get; init; } = 20;
-    /// <summary>
-    /// A builder whose path has ended counts as arrived within this much beyond <see cref="Reach"/>: a site that is a navmesh obstacle cannot be walked into and the simulation does not know
-    /// the footprint (<b>engine choice</b>).
-    /// </summary>
-    public float SettleReach { get; init; } = 150;
-    /// <summary>
-    /// The footprint radius of a BUILDING record (the host knows it from the mesh); null: 0, so the reach is <see cref="Reach"/> plus <see cref="SettleReach"/> once the path has ended. A
-    /// dismantled building's refund falls within this far (X/Z, at least <see cref="Reach"/>) of its position.
-    /// </summary>
+    /// <summary>The footprint radius of a BUILDING record (the host knows it from the mesh); null: 0. A dismantled building's refund falls within this far (X/Z, at least 20) of its position.</summary>
     public Func<string, float>? Footprint { get; init; }
+    /// <summary>The X/Z gap from a point to a site's footprint hull, 0 inside (the host knows the hull); null, or a null answer: the gap to its position (<see cref="SiteReach"/>).</summary>
+    public Func<BuildSite, Vector2, float?>? EdgeGap { get; init; }
 }
 
 /// <summary>
@@ -565,27 +557,26 @@ public sealed class ConstructionSystem : ITickSystem
     static bool Able(CharacterCold cold) =>
         cold.Medical is not { Incapacitated: true } && !cold.InCombat && cold.CarriedBy.IsNone && cold.Carrying.IsNone && !cold.IsImprisoned;
 
-    float ReachOf(BuildSite site) => Settings.Reach + (Settings.Footprint?.Invoke(site.Record) ?? 0);
-
-    bool AtSite(in CharacterHot n, BuildSite site) => Arrived(n, site.Position, ReachOf(site), Settings.SettleReach);
-
-    /// <summary>Within <paramref name="reach"/> (X/Z) of <paramref name="at"/>, or within <paramref name="settle"/> more once the path has ended.</summary>
-    static bool Arrived(in CharacterHot n, Vector3 at, float reach, float settle)
-    {
-        float dx = n.Position.X - at.X, dz = n.Position.Z - at.Z, gap = MathF.Sqrt(dx * dx + dz * dz);
-        return gap <= reach || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && gap <= reach + settle);
-    }
+    /// <summary>A builder's reach of a site (<see cref="SiteReach.Building"/>, a wall's <see cref="SiteReach.Wall"/>).</summary>
+    float ReachOf(BuildSite site) => IsWall(site) ? SiteReach.Wall : SiteReach.Building;
 
     /// <summary>
-    /// Where a worker goes and from how near it works: the site, or for a fetcher its source (a building as a site; a ground item within <see cref="PlayerSystem.PickUpReach"/>, twice that once
-    /// the path has ended, engine choice). Null when the fetcher's source is gone.
+    /// Whether the worker is near enough its goal (<see cref="SiteReach.Within"/>): a site by its footprint, a ground item by its position (within <see cref="PlayerSystem.PickUpReach"/>,
+    /// twice that once stopped).
     /// </summary>
-    (Vector3 At, float Reach, float Settle)? Goal(World world, CharacterCold cold, byte task, BuildSite site)
+    bool Arrived(in CharacterHot n, (Vector3 At, BuildSite? Site, float Reach) goal) =>
+        SiteReach.Within(n, goal.Site is { } site ? SiteReach.Gap(Settings.EdgeGap, site, n.Position) : Vector2.Distance(new(n.Position.X, n.Position.Z), new(goal.At.X, goal.At.Z)), goal.Reach);
+
+    /// <summary>
+    /// Where a worker goes and from how near it works: the site, or for a fetcher its source (a storage by its machine's <c>use range</c>, the original's <c>UseableStuff::getReachRange</c>;
+    /// a ground item). Null when the fetcher's source is gone.
+    /// </summary>
+    (Vector3 At, BuildSite? Site, float Reach)? Goal(World world, CharacterCold cold, byte task, BuildSite site)
     {
-        if (task != (byte)CharacterTask.FetchMaterials) return (site.Position, ReachOf(site), Settings.SettleReach);
-        if (cold.FetchItem is { } item) return world.GroundItems.Find(item) is { } loose ? (loose.Position, PlayerSystem.PickUpReach, PlayerSystem.PickUpReach) : null;
-        return cold.FetchSite is { } from && world.Buildings.Find(from) is { Complete: true } store && world.Machines.Find(from) is not null
-            ? (store.Position, ReachOf(store), Settings.SettleReach) : null;
+        if (task != (byte)CharacterTask.FetchMaterials) return (site.Position, site, ReachOf(site));
+        if (cold.FetchItem is { } item) return world.GroundItems.Find(item) is { } loose ? (loose.Position, null, PlayerSystem.PickUpReach) : null;
+        return cold.FetchSite is { } from && world.Buildings.Find(from) is { Complete: true } store && world.Machines.Find(from) is { } machine
+            ? (store.Position, store, machine.Data.UseRange) : null;
     }
 
     /// <summary>Gives the character a site to work (serial phases): it stands, then walks there unless it is there already. <paramref name="resume"/> is the task to go back to (kept if already working).</summary>
@@ -603,7 +594,7 @@ public sealed class ConstructionSystem : ITickSystem
         cold.BuildBar = 0;
         ClearFetch(cold);
         cold.ResumeTask = keep;
-        if (!AtSite(n, site))
+        if (!Arrived(n, (site.Position, site, ReachOf(site))))
         {
             n.Goal = new Vector2(site.Position.X, site.Position.Z);
             n.Flags |= (ushort)MoveFlags.NeedPath;
@@ -671,7 +662,7 @@ public sealed class ConstructionSystem : ITickSystem
                 continue;
             }
             const ushort Path = (ushort)MoveFlags.AnyPath;
-            if (Arrived(n, goal.At, goal.Reach, goal.Settle))
+            if (Arrived(n, goal))
             {
                 // There: stand still and let the slow world work.
                 if ((n.Flags & Path) != 0)
@@ -742,7 +733,7 @@ public sealed class ConstructionSystem : ITickSystem
                 BackToSite(ref n, cold);
                 continue;
             }
-            if (!Arrived(n, goal.At, goal.Reach, goal.Settle)) continue;
+            if (!Arrived(n, goal)) continue;
             if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(goal.At.X - n.Position.X, goal.At.Z - n.Position.Z);
             switch ((CharacterTask)n.Task)
             {
@@ -1007,13 +998,15 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// The refund (<b>Verified</b>, <c>FUN_14029dc10</c>): each entry with something delivered gives <c>max(1, trunc(U[m, 1) x delivered))</c> units, m = CONSTANTS <c>min dismantle materials percentage</c> / 100,
-    /// each a ground item of its own at a random point of the building's bounds. Engine choice: the bounds are the square of the footprint radius (at least <see cref="ConstructionSettings.Reach"/>)
+    /// each a ground item of its own at a random point of the building's bounds. Engine choice: the bounds are the square of the footprint radius (at least <see cref="RefundSpread"/>)
     /// about the building's position, at its height (the host lays dropped items on the ground).
     /// </summary>
+    const float RefundSpread = 20;
+
     void Refund(World world, BuildSite site)
     {
         float m = constants.MinDismantleMaterialsFraction;
-        float r = MathF.Max(Settings.Footprint?.Invoke(site.Record) ?? 0, Settings.Reach);
+        float r = MathF.Max(Settings.Footprint?.Invoke(site.Record) ?? 0, RefundSpread);
         ulong key = Rng.StableHash(site.Id);
         for (int i = 0; i < site.Materials.Length; i++)
         {

@@ -17,14 +17,14 @@ public sealed class ProductionSettings
     public float ProductionOption { get; init; } = 1;
     /// <summary>The <i>Research speed</i> option (divides research hours); its default is Unknown, 1 is neutral.</summary>
     public float ResearchOption { get; init; } = 1;
-    /// <summary>An operator works from within the functionality's <c>use range</c> + footprint + this (engine choice; the original walks to the building's use points).</summary>
-    public float Reach { get; init; } = 20;
-    /// <summary>An operator whose path has ended counts as arrived within this much more (engine choice, as construction's).</summary>
+    /// <summary>A turret's gunner whose path has ended counts as at its spot within this much more (engine choice). Operators work within the machine's <c>use range</c> (<see cref="SiteReach"/>).</summary>
     public float SettleReach { get; init; } = 150;
     /// <summary>The footprint radius of a BUILDING record (the host knows it); null: 0.</summary>
     public Func<string, float>? Footprint { get; init; }
-    /// <summary>A character gives or takes items from within this far (X/Z) of a building, else "Out of trading range." (engine choice: the original allows the building's bounds radius + 40 for an item out of it and 60 for one out of a character's inventory, docs/game/economy.md "Trading range"; Meitou has no bounds radius in the sim).</summary>
-    public float TransferReach { get; init; } = 200;
+    /// <summary>The X/Z gap from a point to a site's footprint hull, 0 inside; null, or a null answer: the gap to its position (<see cref="SiteReach"/>).</summary>
+    public Func<BuildSite, Vector2, float?>? EdgeGap { get; init; }
+    /// <summary>A character gives or takes items from within this far (X/Z) of a building's footprint, else "Out of trading range." (the original: the building's bounds radius + 40 from its position for an item out of it, 60 for one out of a character's inventory, docs/game/economy.md "Trading range"; engine choice: 40 from the footprint both ways).</summary>
+    public float TransferReach { get; init; } = 40;
     /// <summary>Operators empty a full output into storages and fill empty inputs from them (docs/simulation.md "Production"; engine option: the original's wording "put any excess materials ... into storage" is the Ditch items squad AI option's, <see cref="SquadAi.Ditch"/>).</summary>
     public bool AutoHaul { get; init; } = true;
     /// <summary>How far (X/Z) from its machine an operator hauls (engine choice; the original's limit is Unknown).</summary>
@@ -327,8 +327,6 @@ public sealed partial class ProductionSystem : ITickSystem
         return n;
     }
 
-    float ReachOf(BuildSite site, Machine m) => m.Data.UseRange + Settings.Reach + (Settings.Footprint?.Invoke(site.Record) ?? 0);
-
     static float Gap(Vector3 a, Vector3 b)
     {
         float dx = a.X - b.X, dz = a.Z - b.Z;
@@ -343,8 +341,10 @@ public sealed partial class ProductionSystem : ITickSystem
             float off = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), spot);
             return off <= Ai.AiSystem.TurretSlack || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && off <= Ai.AiSystem.TurretSlack + Settings.SettleReach);
         }
-        float reach = ReachOf(site, m), gap = Gap(n.Position, site.Position);
-        return gap <= reach || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && gap <= reach + Settings.SettleReach);
+        // The machine's use range (UseableStuff::getReachRange); a rock is also reached from within its bounds (the original's 1.2 x bounds box of a foliage building).
+        // A rock's BUILDING footprint is not scaled like the rock, so a rock is measured from its position.
+        if (naturalBounds.TryGetValue(site.Id, out var rock) && Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), rock.Centre) < rock.Radius) return true;
+        return SiteReach.Within(n, SiteReach.Gap(IsNatural(site.Id) ? null : Settings.EdgeGap, site, n.Position), m.Data.UseRange);
     }
 
     /// <summary>The clip a turret's gunner holds.</summary>
@@ -884,7 +884,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var table = world.Characters;
         if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true } c || c.Inventory is null) return false;
         cold = c;
-        if (Gap(table.Next[slot].Position, site.Position) <= Settings.TransferReach + (Settings.Footprint?.Invoke(site.Record) ?? 0)) return true;
+        if (SiteReach.Gap(Settings.EdgeGap, site, table.Next[slot].Position) <= Settings.TransferReach) return true;
         world.Post("Out of trading range.");
         return false;
     }

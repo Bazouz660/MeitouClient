@@ -826,8 +826,8 @@ radius are [reassessed](game/buildings-production.md#placement) (`PlayerTown.Rad
 dialogue use). Hashed (towns, and `Town` when set) only once there is one.
 
 **ConstructionSystem** (`StandardParts.Construction`, in `All`; `StandardSystemSet.Construction`) runs after Carry, before
-Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option, 1), `Reach` 20, `SettleReach` 150,
-`Footprint` (record -> radius, optional).
+Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option, 1), `Footprint` (record -> radius,
+optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
 - `Inputs`: `PlaceBuildings` re-checks only the data half (a BUILDING, unlocked, `TownBlock`); a failing plan is dropped
   with `World.Post(Message)`. A total of 0 completes at once, so a free building is complete from the first snapshot.
   `BuildOrder` (player characters, awake, not carried or caged; Build and Repair alike work a site that `NeedsWork`:
@@ -839,10 +839,10 @@ Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option
   materials back."; `PauseSite` sets `Paused` (only the auto-job skips it). `PlaceBuildings`, `CancelSite` and `PauseSite`
   also apply while paused (`ApplyPausedInterfaceCommands`).
 - `Schedule`: a worker walks to the site like a medic to a patient (goal = site XZ, free speed, asked again after a wait
-  when the path failed). It has arrived within `Reach` + footprint of the site, or once its path has ended within
-  `SettleReach` more (**Unknown**: the original's work distance; a site that is a navmesh obstacle cannot be walked
-  into). A fetcher walks to its source instead (a building as a site; a ground item within `PlayerSystem.PickUpReach`, or
-  twice that once its path has ended; a source that is gone sends it back to building). Work ends when the site is gone,
+  when the path failed). It has arrived within the [work distance](game/buildings-production.md#work-distance) (`SiteReach`:
+  40, walls 60, twice that once stopped, from the footprint hull). A fetcher walks to its source instead (a storage within its
+  `use range`; a ground item within `PlayerSystem.PickUpReach`, twice that once stopped; a source that is gone sends it back
+  to building). Work ends when the site is gone,
   no longer `NeedsWork` (building), the character is down, fighting, carried, carrying or caged, or another order replaced
   the task.
 - `SlowWorld`: arrived workers in slot order. *Build*: a stalled site (`sum(min(delivered, required)) <= progress`) turns
@@ -988,8 +988,8 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - Fertility and the crop match come from the BIOME_GROUP's ENVIRONMENT_RESOURCES at the weather-area cell.
   - The altitude test uses the building's y.
   - **Observed** with the vanilla map: only the central biomes give farming ground.
-- **Operating.** `OperateOrder` sets `CharacterTask.Operate`. The character walks within use range of the building and
-  works it every tick; work is scaled by its skill factor and trains the stat.
+- **Operating.** `OperateOrder` sets `CharacterTask.Operate`. The character walks within the building's `use range` ([work
+  distance](game/buildings-production.md#work-distance)) and works it every tick; work is scaled by its skill factor and trains the stat.
   - Producers make output from their inputs.
   - Farms are harvested and cleared.
   - Research benches add to the research queue; crafting benches work their queue.
@@ -1004,7 +1004,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   owner: the base game's ore is picked up by hand), or a storage within `HaulRange` takes it as for any machine. Engine choices: the rock is picked by its mesh's triangles where the instance places them (the original picks its building's collision); its radius, the longest half-extent of the mesh's bounds box scaled by the instance and at least `NodeRadius` 25, sizes its resource richness (the original takes the mesh's bounds the same way); without the mesh file a rock is picked as a sphere of 25 round its origin; the pointer over a rock is `mine` (with characters selected, after sites and doors, as the click order is); level-placed `is foliage`
   buildings (not drawn, not in `FoliageResourceNodes`) cannot be mined. NPC town mines are not run (the original's make output while NPCs
   operate them).
-- **Items.** `PutInMachine` and `TakeFromMachine` move items between a character within 200 of the building and the machine:
+- **Items.** `PutInMachine` and `TakeFromMachine` move items between a character within 40 of the building's footprint and the machine:
   inputs, output, or storage cells.
 - **Research** (`Construction/ResearchState`). A queue paid at queue time from the benches' storage; a paid id is never
   charged again.

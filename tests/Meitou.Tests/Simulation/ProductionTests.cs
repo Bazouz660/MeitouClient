@@ -121,7 +121,8 @@ public class ProductionTests
             World.Research.Set(db, []);
             for (int i = 0; i < records.Length; i++)
             {
-                var p = At + new Vector3(i * 60, 0, 0);
+                // 30 apart: a character at one building is within the trading range (40) of the next.
+                var p = At + new Vector3(i * 30, 0, 0);
                 string id = World.Buildings.NewId(WorldLayout.ZoneOf(p.X, p.Z));
                 World.Buildings.Add(new BuildSite { Id = id, Record = records[i], Position = p, Owner = PlayerFaction, Materials = [], Complete = true });
                 Sites.Add(id);
@@ -406,18 +407,18 @@ public class ProductionTests
         Assert.Equal((1, 0), (rig.Count(farmer, Crop), tank.Items.Count));
         Assert.Contains(rig.World.TakeMessages(), m => m == "Test Tank does not take Crop.");
 
-        // The well makes nothing more, so the 10 water only move.
+        // The well makes nothing more, so the 10 water and the taker's 3 only move.
         well.Output.Count = 10;
         well.Yield = 0;
         rig.World.Commands.Enqueue(new OperateOrder([labourer], rig.Sites[0]) { Tick = rig.World.Tick });
         rig.World.Commands.Enqueue(new OperateOrder([farmer], rig.Sites[1]) { Tick = rig.World.Tick });
-        int TotalWater() => well.Output.Count + farm.Inputs[0].Count + tank.Items.Where(i => i.Record == Water).Sum(i => i.Quantity) + rig.Count(labourer, Water) + rig.Count(farmer, Water);
+        int TotalWater() => well.Output.Count + farm.Inputs[0].Count + tank.Items.Where(i => i.Record == Water).Sum(i => i.Quantity) + rig.Count(labourer, Water) + rig.Count(farmer, Water) + rig.Count(taker, Water);
         bool stored = false;
         for (int t = 0; t < 6000 && farm.Inputs[0].Count == 0; t++)
         {
             rig.World.RunTick();
             stored |= tank.Items.Any(i => i.Record == Water);
-            Assert.Equal(10, TotalWater());
+            Assert.Equal(13, TotalWater());
         }
         Assert.True(stored && farm.Inputs[0].Count > 0, $"tank {tank.Items.Count}, farm {farm.Inputs[0].Count}");
         Assert.Equal((1, 0), (rig.Count(farmer, Crop), tank.Items.Count(i => i.Record == Crop)));

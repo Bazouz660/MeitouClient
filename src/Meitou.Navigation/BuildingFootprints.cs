@@ -34,6 +34,26 @@ public sealed record BuildingFootprint(Vector2[] Hull, float YMin, float YMax)
         }
         return result;
     }
+
+    /// <summary>The X/Z distance from <paramref name="point"/> to the hull of a building at <paramref name="position"/> turned by <paramref name="rotation"/>, 0 inside it (the hull is convex).</summary>
+    public float Gap(Vector3 position, Quaternion rotation, Vector2 point)
+    {
+        var q = rotation.LengthSquared() < 1e-12f ? Quaternion.Identity : Quaternion.Normalize(rotation);
+        var local3 = Vector3.Transform(new Vector3(point.X - position.X, 0, point.Y - position.Z), Quaternion.Conjugate(q));
+        var p = new Vector2(local3.X, local3.Z);
+        float nearest = float.MaxValue;
+        int left = 0, right = 0;
+        for (int i = 0; i < Hull.Length; i++)
+        {
+            var a = Hull[i];
+            var e = Hull[(i + 1) % Hull.Length] - a;
+            float cross = e.X * (p.Y - a.Y) - e.Y * (p.X - a.X);
+            if (cross > 0) left++; else if (cross < 0) right++;
+            float t = e.LengthSquared() > 1e-12f ? Math.Clamp(Vector2.Dot(p - a, e) / e.LengthSquared(), 0, 1) : 0;
+            nearest = MathF.Min(nearest, Vector2.Distance(p, a + t * e));
+        }
+        return left == 0 || right == 0 ? 0 : nearest;
+    }
 }
 
 /// <summary>A placed building's footprint in the world.</summary>

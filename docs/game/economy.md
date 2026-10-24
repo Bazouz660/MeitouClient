@@ -64,8 +64,8 @@ inventory, `uses_building_category`), or an owner of type 1 whose +0x2f8 is 2, o
 its slot +0x260 (meanings **Unknown**). Flagged: the owners must not be enemies (faction test) and must be on the same floor, and the limit is 60, or the source owner's bounds radius + 40
 when the source is a building (class 0). Same owner: always allowed. **Unknown**: which windows the three drop callers flag; whether take-all uses the check.
 
-Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 200 of the building (the sim has no bounds
-radius), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. A held item given to a
+Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 40 of the building's footprint hull (for the
+bounds radius + 40), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. A held item given to a
 character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRange` 60 out of a non-player window. No faction or floor test, no sound (`gui_notrade` is in no bank, [audio](../audio.md)).
 
 ### Who trades
