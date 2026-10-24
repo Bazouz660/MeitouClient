@@ -14,7 +14,7 @@ sealed partial class SettingsMenu
         "Grading" => "Apply the scene's colour and contrast adjustments.",
         "Texture quality" => "Texture resolution; terrain changes need a restart.",
         "Anisotropic filtering" => "Keep textures sharp when viewed at an angle.",
-        "Metal upscaling" => "Balanced is the default; Native is the fallback when MetalFX is unavailable.",
+        "Metal upscaling" => "Balanced is the default; Native is the fallback when MetalFX is unavailable. Spatial 0.50 and temporal 0.40 are comparison presets.",
         "Render scale" => "Internal rendering resolution relative to the window.",
         "Upscaler sharpness" => "Sharpen the image after resolution reconstruction.",
         "Object draw distance" => "Maximum distance at which objects remain visible.",

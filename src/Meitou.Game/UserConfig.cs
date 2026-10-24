@@ -7,8 +7,9 @@ namespace Meitou.Game;
 /// <summary>The unit the run speed is shown in.</summary>
 enum SpeedUnit { Mph, Kmh }
 
-/// <summary>The Metal display path: native at full size, MetalFX temporal (quality/balanced), MetalFX spatial (performance), or the experimental TAA.</summary>
-enum MetalUpscalerMode { Native, Temporal, Spatial, Taa }
+/// <summary>The Metal display path: native at full size, MetalFX temporal (ultra/quality/balanced), MetalFX spatial
+/// (performance and the 0.50 comparison), the experimental temporal 0.40 test, or TAA.</summary>
+enum MetalUpscalerMode { Native, Temporal, Spatial, Taa, TemporalLow }
 
 /// <summary>
 /// The player's settings, kept in <c>meitou.user.json</c> (git-ignored) in the working directory, else next to the executable:

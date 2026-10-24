@@ -735,10 +735,11 @@ default.
 - **Upscaler**: MetalFX Balanced at render scale 0.50 is the Metal default, with Native as the fallback when
   MetalFX is unavailable; the choice is saved in `meitou.user.json`. TAA remains available for comparison; MEP-1
   fixed its Metal depth convention, sun-motion term and particle coverage, but it is still labelled experimental
-  until the user validates long camera moves. The **F10 settings panel** exposes
-  Native 1.00 / MetalFX Quality 0.67 / MetalFX Balanced 0.50 / MetalFX Performance 0.40 (spatial) / TAA 0.50 and a
-  custom render scale, along with VSync, frame limit, borderless full screen and the live Metal graphics controls.
-  The performance tier uses MetalFX Spatial because temporal 2.5x/3x darkens on this device.
+  until the user validates long camera moves. The **F10 settings panel** exposes Native 1.00, MetalFX Ultra Quality
+  0.80, Quality 0.67, Balanced 0.50, Performance 0.40 (spatial), an explicit **Spatial 0.50** comparison, an
+  experimental **Temporal 0.40**, TAA 0.50 and a custom render scale, along with VSync, frame limit, borderless full
+  screen and the live Metal graphics controls. The 0.40/0.50 spatial rows are the same no-history algorithm; the
+  temporal 0.40 row bypasses the usual 0.50 floor for the test (it renders but darkens on this device).
   `MEITOU_METAL_NO_TAA=1` is the clean native comparison (no jitter, no temporal resolve);
   `MEITOU_METALFX_SPATIAL=1` starts in the performance tier; `MEITOU_METAL_SETTINGS=1` opens the settings panel for
   a still.
@@ -893,9 +894,10 @@ plumbing, profiling, docs) need no Vulkan run.
   without GI where the device has no ray queries (macOS today), so a Metal path starts with GI
   off, like the Vulkan path on macOS.
 - **Upscaler**: MetalFX is the Metal default (balanced, 0.50) and is implemented behind `IUpscaler`:
-  `MetalFxUpscaler` is the temporal scaler at 0.50+, `MetalFxSpatialUpscaler` is the 0.40 performance tier; Native
-  is the fallback when MetalFX is unavailable, and temporal below 0.50 falls back to TAA. The FSR path stays for
-  Vulkan.
+  `MetalFxUpscaler` is the temporal scaler, normally at 0.50+ (0.80/0.67/0.50 presets); `MetalFxSpatialUpscaler`
+  covers the 0.40 performance preset and the explicit 0.50 comparison. The labelled temporal-0.40 test bypasses the
+  temporal floor and darkens on this device; Native is the fallback when MetalFX is unavailable. The FSR path stays
+  for Vulkan.
 
 ## Open questions
 

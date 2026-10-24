@@ -148,7 +148,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             return new(key == "Full screen" ? "Borderless full screen" : key == "VSync" ? "Vertical sync" : "Colour grading",
                 SliderHint(slider), Toggle: new(key, () => slider.Get() >= 0.5f, v => slider.Set(v ? 1 : 0)));
         string[]? options = key == MetalPresetSlider
-            ? ["Native 1.00", "MetalFX Quality 0.67", "MetalFX Balanced 0.50", "MetalFX Performance 0.40 (spatial)", "TAA 0.50 (experimental)", "Custom"]
+            ? ["Native 1.00", "MetalFX Ultra Quality 0.80", "MetalFX Quality 0.67", "MetalFX Balanced 0.50", "MetalFX Performance 0.40 (spatial)", "MetalFX Spatial 0.50 (compare)", "MetalFX Temporal 0.40 (experimental)", "TAA 0.50 (experimental)", "Custom"]
             : key == WorldFrame.UpscalerSliders[0] ? ["Off", "FXAA", "SMAA", "TAA", "FSR", "DLSS"]
             : key == WorldFrame.TextureQualitySlider ? global::Meitou.Data.Textures.TextureQuality.Labels
             : key == WorldFrame.ParticleSliders[0] ? ["Off", "Quarter resolution", "Half resolution", "Automatic", "Full resolution"]
@@ -159,7 +159,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         string label = key == WorldFrame.UpscalerSliders[0] ? "Anti-aliasing" : key == WorldFrame.ParticleSliders[0] ? "Weather particles"
             : key == WorldFrame.TextureQualitySlider ? "Texture quality" : key == WorldFrame.FilteringSlider ? "Texture filtering" : Label(key);
         string hint = key == MetalPresetSlider
-            ? "Balanced is the Metal default. Native is the fallback when MetalFX is unavailable; performance uses spatial upscaling."
+            ? "Balanced is the Metal default. Native is the fallback when MetalFX is unavailable; the 0.40 and 0.50 spatial rows are explicit comparisons, and temporal 0.40 is experimental."
             : key == WorldFrame.UpscalerSliders[0] ? "Smooths edges. Active: " + (UpscalerStatus?.Invoke() ?? "unavailable") : SliderHint(slider);
         return options is { } items ? new(label, hint, Choice: new(() => items, () => (int)MathF.Round(slider.Get()), i => slider.Set(i)))
             : new(label, hint, Slider: slider);

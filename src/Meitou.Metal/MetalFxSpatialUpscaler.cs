@@ -5,9 +5,9 @@ using SharpMetal.MetalFX;
 namespace Meitou.Metal;
 
 /// <summary>
-/// MetalFX's spatial upscaler for the performance preset: one color frame, no depth or motion history. It is a
-/// different quality tier from <see cref="MetalFxUpscaler"/> (which is temporal), but it supports the 0.40 render
-/// scale where the temporal scaler's 2.5x output darkens on this device.
+/// MetalFX's spatial upscaler: one color frame, no depth or motion history. It is a different algorithm from
+/// <see cref="MetalFxUpscaler"/> (temporal), used for the 0.40 performance preset and the explicit 0.50 comparison;
+/// it is available where the temporal scaler's 2.5x output darkens on this device.
 /// </summary>
 public sealed class MetalFxSpatialUpscaler : IUpscaler
 {
