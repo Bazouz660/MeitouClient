@@ -2,11 +2,11 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `f7afda30 Merge upstream master 57a7968a into metal-spike`  
-Current docs/plan: `7eb04a96 docs: plan Metal Effects Parity I (MEP-I) milestones`  
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Next iteration is
-[MEP-I](docs/metal-effects-parity-plan.md): post effects -> reflection quality -> debris lighting ->
-tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
+Last code/plan commit: `863a37b3 fix: read Metal depth correctly in the velocity pass`  
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. MEP-1 code is implemented and awaiting
+visual validation; [MEP-I](docs/metal-effects-parity-plan.md) then continues with reflection quality -> debris
+lighting -> tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull
+stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
