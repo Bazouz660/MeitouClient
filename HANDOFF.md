@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code/plan commit: `5da0ccd7 fix: use MetalFX's y-down motion vector convention`  
+Last code/plan commit: `416d3dfb fix: keep low-res dust out of the MetalFX reactive mask`  
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. MEP-1 code is implemented and awaiting
 visual validation; [MEP-I](docs/metal-effects-parity-plan.md) then continues with reflection quality -> debris
 lighting -> tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull
