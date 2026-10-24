@@ -109,6 +109,7 @@ sealed partial class GameHost
     void QuickSaveNow(string? destination = null)
     {
         if (!SavesAvailable(out string reason)) { player.Notice(reason, true); return; }
+        session.SettleAhead();   // a tick run ahead counts as run: the saved world and its clock agree
         var world = session.World;
         if (!world.Player.Exists) { player.Notice("Nothing to save: no player squad (start a new game)", true); return; }
         if (Busy()) { player.Notice("Save or load still in progress", true); return; }

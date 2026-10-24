@@ -417,8 +417,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         UpdateInteriorView();
         // The frame's animation time (particles, water, wet surfaces) is game time: still while paused, faster at higher speeds.
         float gameTime = (float)(session.Clock.GameSeconds / 600 % 1e4);
-        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
-            weatherHour: (float)session.Clock.HourOfDay);
+        // The next world tick runs on its own thread while the world is drawn from the shown snapshots (docs/simulation.md "Tick ahead"): from here to the
+        // join nothing the renderer calls back may touch the world, only the session's snapshots.
+        if (tickAhead) session.BeginTickAhead();
+        try
+        {
+            WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
+                weatherHour: (float)session.Clock.HourOfDay);
+        }
+        finally { session.EndTickAhead(); }
     }
+
+    /// <summary>This frame's world draw overlaps the next world tick (set by the interactive loop; never in stills, the duel, recorded flights or the play benchmark).</summary>
+    bool tickAhead;
 
 }

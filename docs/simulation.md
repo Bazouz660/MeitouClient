@@ -13,6 +13,19 @@ to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, ow
 clocks, input and camera, and disposes systems/services. Of a frame's ticks only the last two publish
 a snapshot (`RunTick(publish)`), the pair the host interpolates between.
 
+### Tick ahead
+
+The game runs the next tick on its own thread (`WorldSession.BeginTickAhead`, thread `Meitou.Tick`) during the world draw (`WorldFrame.Draw`, after
+`DrawWorld`'s host prefix), and joins it right after (`EndTickAhead`), so the frame costs about the slower of the two instead of their sum. The tick is
+ahead of the clock: it counts as the next one owed (`AdvanceSimulation` takes it, then runs the rest), and the game clock moves when it falls due.
+Until then `CurrentSnapshot`/`PreviousSnapshot` hold the pair from before it, so the picture is where it was; `ShownTick` is the world tick on
+screen. Between `BeginTickAhead` and `EndTickAhead` nothing may touch the `World`: the renderer's host callbacks (`Source`, `PoseClock`) read only
+the session's snapshots, and the world reads the renderer only through the weather source (a reference and a float per region). Consequences
+(**engine choice**): a command lands one tick later (33 ms at 1x); blood marks and sounds come out with the tick, up to a tick before it shows; a
+pause with a tick ahead takes it at once (the picture jumps a tick, then the paused interface's republished snapshots show); a save takes it first
+(`SettleAhead`); `ReplaceWorld` drops it. Off in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
+F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
+
 At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
 and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
 commands stay queued; neither world ticks, game time nor simulation phases advance.

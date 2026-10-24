@@ -567,7 +567,13 @@ sealed partial class GameHost
                 if (loading is not null) (loading.LoadBar, loading.Faithful) = (loadBar, faithfulUi);
                 if (sceneLoading && skyArrival is { AtStars: true })
                     WorldFrame.DrawLoadingSky(gpu, scene, camera, size.X, size.Y, presentationHour ?? 0, (float)animSeconds, o.FogDistance);
-                else if (!sceneLoading || skyArrival is not null) DrawWorld(size.X, size.Y);
+                else if (!sceneLoading || skyArrival is not null)
+                {
+                    // The duel's laps and recorded flights replay exactly, and the play benchmark is deterministic from its save: their ticks stay in step with the frame.
+                    tickAhead = !covered && skyArrival is null && !IsDuel && !cinema.Recording && g.PlayBench is null;
+                    DrawWorld(size.X, size.Y);
+                    tickAhead = false;
+                }
                 drawTotal += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 bool shot = screenshotRequested, take = takeFile is not null;
                 // The game's interface (markers, HUD, panels, debug overlays): hidden by F7, the cinema's clean picture and in recorded frames.
@@ -739,19 +745,21 @@ sealed partial class GameHost
         var profile = world.Profile;
         int phases = TickProfile.PhaseNames.Length;
         int systems = world.Systems.Count, parts = phases + 1 + systems;
-        if (simNamesFor != world || simNames.Length != parts + profile.Parts.Count)
+        if (simNamesFor != world || simNames.Length != parts + profile.Parts.Count + 1)
         {
             simNamesFor = world;
             simNames = [.. TickProfile.PhaseNames, "outside ticks", .. world.Systems.Select(s => s.GetType().Name is var n && n.EndsWith("System", StringComparison.Ordinal) && n.Length > 6 ? n[..^6] : n),
-                .. profile.Parts.Select(p => p.Name)];
+                .. profile.Parts.Select(p => p.Name), "tick ahead"];
             simMs = new double[simNames.Length];
         }
         Array.Clear(simMs);
-        double inTicks = 0;
+        double inTicks = 0, ahead = session.TakeAheadMs();
         for (int p = 0; p < phases; p++) inTicks += simMs[p] = profile.PhaseMs[p];
-        simMs[phases] = Math.Max(0, advanceMs - inTicks);
+        // The phases also hold the tick run ahead during the last draw (docs/simulation.md "Tick ahead"), which is not in this frame's advance.
+        simMs[phases] = Math.Max(0, advanceMs - Math.Max(0, inTicks - ahead));
         for (int k = 0; k < profile.SystemMs.Length && phases + 1 + k < parts; k++) simMs[phases + 1 + k] = profile.SystemMs[k];
         for (int k = 0; k < profile.Parts.Count && parts + k < simMs.Length; k++) simMs[parts + k] = profile.Parts[k].Ms;
+        simMs[^1] = ahead;
         int paths = world.Systems.OfType<MovementSystem>().FirstOrDefault()?.Paths.Pending ?? 0;
         profiler.Outside(advanceMs, profile.Ticks, simNames, simMs, phases + 1, systems, paths);
         profile.Clear();

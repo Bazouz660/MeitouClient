@@ -55,9 +55,24 @@ public sealed class WorldSession : IDisposable
     public GameClock Clock { get; }
     /// <summary>The simulated world; it ticks with the simulation clock. Replaced as a whole by <see cref="ReplaceWorld"/> (a loaded save); read it again after a frame, do not keep it.</summary>
     public World World { get; private set; }
-    /// <summary>The snapshot the last simulation tick published and the one before it, for interpolating by <see cref="SimulationAlpha"/>.</summary>
-    public WorldSnapshot CurrentSnapshot => World.Snapshot;
-    public WorldSnapshot PreviousSnapshot => World.PreviousSnapshot;
+    /// <summary>
+    /// The snapshot the last simulation tick published and the one before it, for interpolating by <see cref="SimulationAlpha"/>. While a tick runs ahead
+    /// (<see cref="BeginTickAhead"/>) or waits to fall due, the pair from before it: the picture moves on only when the clock reaches that tick.
+    /// </summary>
+    public WorldSnapshot CurrentSnapshot => held ? heldCurrent! : World.Snapshot;
+    public WorldSnapshot PreviousSnapshot => held ? heldPrevious! : World.PreviousSnapshot;
+    /// <summary>The world tick the shown snapshot is of (<see cref="World.Tick"/> less a tick run ahead).</summary>
+    public long ShownTick => World.Tick - (aheadDone ? 1 : 0);
+
+    // The tick run ahead (docs/simulation.md "Tick ahead"): the shown pair held meanwhile, the runner, and whether the tick is done but not yet due.
+    bool held, aheadDone;
+    WorldSnapshot? heldCurrent, heldPrevious;
+    TickRunner? runner;
+    bool running;
+
+    /// <summary>The wall time (ms) of the ticks run ahead since the last call, for the profiler; resets it.</summary>
+    public double TakeAheadMs() { double ms = aheadMs; aheadMs = 0; return ms; }
+    double aheadMs;
     /// <summary>Where the frame is between the previous and the current simulation tick (the snapshots' alpha, not the camera's).</summary>
     public float SimulationAlpha => Simulation.Alpha;
     public InputState Input { get; } = new();
@@ -83,11 +98,109 @@ public sealed class WorldSession : IDisposable
     /// <summary>Feeds real time to the simulation clock only and runs the ticks it owes; returns how many ran.</summary>
     public int AdvanceSimulation(double realSeconds)
     {
+        EnsureNotRunning();
         int n = Simulation.Advance(realSeconds);
+        int run = n;
+        // A tick run ahead is the first one owed. Paused, it is taken at once (the shown pair jumps a tick), so what the interface changes shows.
+        if (aheadDone && (n > 0 || Simulation.IsPaused))
+        {
+            SettleAhead();
+            if (n > 0) run--;
+        }
         // Only a frame's last two ticks publish: the host draws between those two snapshots, and the ones before would go unseen.
-        for (int i = 0; i < n; i++) SimulationTick(publish: i >= n - 2);
+        for (int i = 0; i < run; i++) SimulationTick(publish: i >= run - 2);
         if (Simulation.IsPaused) World.ApplyPausedInterfaceCommands();
         return n;
+    }
+
+    /// <summary>
+    /// Starts the next simulation tick on a thread of its own, ahead of the clock (docs/simulation.md "Tick ahead"), while the host draws the world from the shown
+    /// snapshots; <see cref="EndTickAhead"/> waits for it. Nothing may touch <see cref="World"/> in between. Does nothing while paused or with a tick already ahead.
+    /// </summary>
+    public void BeginTickAhead()
+    {
+        EnsureNotRunning();
+        if (aheadDone || Simulation.IsPaused) return;
+        (heldPrevious, heldCurrent, held) = (World.PreviousSnapshot, World.Snapshot, true);
+        World.GameHours = Clock.TotalHours;   // the tick's start, as SimulationTick sets it; the game clock moves when the tick falls due
+        runner ??= new TickRunner();
+        runner.Start(World);
+        running = true;
+    }
+
+    /// <summary>Waits for the tick <see cref="BeginTickAhead"/> started (rethrowing what it threw); it then waits to fall due.</summary>
+    public void EndTickAhead()
+    {
+        if (!running) return;
+        running = false;
+        aheadMs += runner!.Wait();
+        aheadDone = true;
+    }
+
+    /// <summary>Takes a tick run ahead as run now: the game clock moves by it and the snapshots shown are the world's again (before a save, say).</summary>
+    public void SettleAhead()
+    {
+        EnsureNotRunning();
+        if (!aheadDone) return;
+        aheadDone = held = false;
+        (heldPrevious, heldCurrent) = (null, null);
+        Clock.Advance(Simulation.TickSeconds);
+    }
+
+    void EnsureNotRunning()
+    {
+        if (running) throw new InvalidOperationException("a simulation tick is running ahead: call EndTickAhead first");
+    }
+
+    /// <summary>The thread a tick runs ahead on (one per session, idle between ticks).</summary>
+    sealed class TickRunner : IDisposable
+    {
+        readonly Thread thread;
+        readonly SemaphoreSlim start = new(0), done = new(0);
+        World? world;
+        double ms;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure;
+        volatile bool stopping;
+
+        public TickRunner()
+        {
+            thread = new Thread(Run) { IsBackground = true, Name = "Meitou.Tick" };
+            thread.Start();
+        }
+
+        public void Start(World w)
+        {
+            (world, failure) = (w, null);
+            start.Release();
+        }
+
+        public double Wait()
+        {
+            done.Wait();
+            world = null;
+            failure?.Throw();
+            return ms;
+        }
+
+        void Run()
+        {
+            while (true)
+            {
+                start.Wait();
+                if (stopping) return;
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                try { world!.RunTick(publish: true); }
+                catch (Exception e) { failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e); }
+                ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                done.Release();
+            }
+        }
+
+        public void Dispose()
+        {
+            stopping = true;
+            start.Release();
+        }
     }
 
     /// <summary>One simulation tick: the world runs its phases (publishing its snapshot when <paramref name="publish"/>), the game clock moves by one tick of game time.</summary>
@@ -106,6 +219,7 @@ public sealed class WorldSession : IDisposable
     /// </summary>
     public World ReplaceWorld(IEnumerable<ITickSystem> systems, Action<World>? setup = null)
     {
+        EnsureNotRunning();
         var list = systems.ToList();
         var next = new World(worldSettings, worldWalkability, list);
         next.Floaters = World.Floaters;   // the host keeps drawing the floaters across the swap
@@ -117,6 +231,8 @@ public sealed class WorldSession : IDisposable
         }
         var old = World;
         World = next;
+        // A tick the old world ran ahead goes with it.
+        (aheadDone, held, heldPrevious, heldCurrent) = (false, false, null, null);
         Discard(old);
         // The navmesh door table follows the new world: the old one's locked doors are forgotten, the new one's told.
         if (worldWalkability is Meitou.Simulation.Locks.IDoorGate gate) { gate.ResetDoors(); next.Fixtures.Doors = gate; }
@@ -130,7 +246,12 @@ public sealed class WorldSession : IDisposable
     }
 
     /// <summary>Called when the session is disposed, for the systems that own threads.</summary>
-    public void Dispose() => Discard(World);
+    public void Dispose()
+    {
+        if (running) { running = false; try { runner!.Wait(); } catch (Exception) { } }   // a tick still ahead finishes first; what it threw no longer matters
+        runner?.Dispose();
+        Discard(World);
+    }
 
     /// <summary>One control tick: the actions from the input (pause, speed), then the camera.</summary>
     public ActionState Tick()
