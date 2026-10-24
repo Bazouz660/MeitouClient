@@ -333,8 +333,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         PrepareConstants(material: true, patches: true);
         RecordPatches(patchColour, "terrain", PatchMode.Late, plainCount);
         if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Late, reliefCount, reliefDraws);
-        if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
-        if (cutReliefCount > 0) RecordPatches(patchColourCutTess!, "terrain relief interior cut", PatchMode.Late, cutReliefCount, cutReliefDraws);
+        // The cut patches' colour without the cut: their prepass discarded the cut fragments, so an equal depth test leaves them out early. The cut's
+        // discard here turned the early depth test off, and the GPU drained between these draws (1.4 ms for 19 of them; docs/render-terrain.md "Registers").
+        // Both passes run the same vertex and tessellation stages (invariant positions): a kept fragment meets its own depth.
+        if (cutCount > 0) RecordPatches(patchColour, "terrain interior cut", PatchMode.LateEqual, cutCount, cutDraws);
+        if (cutReliefCount > 0) RecordPatches(patchColourTess!, "terrain relief interior cut", PatchMode.LateEqual, cutReliefCount, cutReliefDraws);
     }
 
     /// <summary>
@@ -433,9 +436,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     }
 
     /// <summary>How <see cref="RecordPatches"/> draws: filled (colour or depth), or the debug outline.</summary>
-    enum PatchMode { Solid, Wireframe, Prepass, Late }
+    enum PatchMode { Solid, Wireframe, Prepass, Late, LateEqual }
 
-    DrawState? lastGlState, lastPatchState, lastWireState, lastPrepassState, lastLateState;
+    DrawState? lastGlState, lastPatchState, lastWireState, lastPrepassState, lastLateState, lastLateEqualState;
 
     /// <summary>
     /// The state the patches draw with: the pass's (its targets' depth test, write and compare, blending, colour mask, depth clamp, bias, as GL
@@ -451,8 +454,13 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             lastWireState = lastPatchState with { Polygon = Silk.NET.Vulkan.PolygonMode.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
             lastPrepassState = lastPatchState with { ColourMask = 0 };   // depth only
             lastLateState = lastPatchState with { DepthWrite = false };   // the prepass wrote it; equal depths pass (less-or-equal)
+            lastLateEqualState = lastLateState with { Compare = Silk.NET.Vulkan.CompareOp.Equal };   // only where the prepass's own depth stayed
         }
-        return mode switch { PatchMode.Wireframe => lastWireState!, PatchMode.Prepass => lastPrepassState!, PatchMode.Late => lastLateState!, _ => lastPatchState! };
+        return mode switch
+        {
+            PatchMode.Wireframe => lastWireState!, PatchMode.Prepass => lastPrepassState!, PatchMode.Late => lastLateState!, PatchMode.LateEqual => lastLateEqualState!,
+            _ => lastPatchState!,
+        };
     }
 
     // ---- the native model (docs/renderer-native.md 7.1, wave 3b agent B: step O) ----

@@ -97,8 +97,9 @@ cost more (the bumps overdraw themselves).
 registers a thread and a tenth of the pixel warps (SM throughput 20%, texture 22%: latency-bound), whether the parallax ran or not (a uniform branch
 does not lower the allocation). With the parallax off the colour programs are built without the march (`TerrainShaders.FragmentNative(march: false)`,
 `TerrainRenderer.UseColour`; a toggle builds the other set once): the terrain stage 3.37 -> 2.42 ms and the frame 7.0 -> 6.1 ms at a save's view,
-the picture unchanged. Still open there: the interior-cut colour patches (19 draws, 1.4 ms) stall on 8 wait-for-idles, the SMs idle a third of it
-(cause **Unknown**).
+the picture unchanged. The interior-cut patches' late colour took 1.4 ms for 19 draws with 8 wait-for-idles (the SMs idle a third of it): its `discard` turned the early
+depth test off. Their prepass already discards the cut, so the late colour draws them with the plain program and an equal depth test (both passes
+run the same vertex and tessellation stages, invariant positions): GPU frame 6.14 -> 5.80 ms, the picture unchanged (one pixel over 8 levels at a town view).
 
 **Texture field** (the game's and the viewer's `--terrain-sandbox [cliffs] [x,z]`, `GroundRelief.FieldCentre`): the empty world
 (no population, foliage or objects) round a spot, default (38376, -8280), the flattest 2000-unit square of the heightmap found
