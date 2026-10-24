@@ -36,7 +36,7 @@ public static class ArmourTooltip
 
     static string Number(float v, string format = "0.##") => v.ToString(format, CultureInfo.InvariantCulture);
     /// <summary>A resistance as the original prints it: whole numbers, truncated (<b>Observed</b>: 61.75 % reads 61 %, 73.56 % reads 73 %, 85.5 pts reads 85 pts).</summary>
-    static string Percent(float fraction) => ((int)(fraction * 100 + 0.001f)).ToString(CultureInfo.InvariantCulture) + "%";
+    static string Percent(float fraction) => ((int)(fraction * 100)).ToString(CultureInfo.InvariantCulture) + "%";
 
     /// <summary>
     /// The lines above the weight: grade, class and material, resistances. <paramref name="quality"/> is the item's <c>level</c> (0 to 100), the grade's quality (95 for Masterwork): a saved
@@ -44,7 +44,7 @@ public static class ArmourTooltip
     /// </summary>
     public static IReadOnlyList<Line> Head(ArmourData a, float quality)
     {
-        var piece = ArmourPiece.Create(a, Math.Clamp(quality, 0, 100) / 100f);
+        var piece = ArmourPiece.Create(a, Math.Clamp(quality, 0, 100) * 0.01f);   // level x 0.01 in single precision, as the original (80 x 0.01 is just below 0.8: 71 pts, not 72)
         int grade = GradeOf(quality);
         string material = a.Material == ArmourType.MetalPlate ? "Metal Plate" : a.Material.ToString();
         var lines = new List<Line>
@@ -53,7 +53,7 @@ public static class ArmourTooltip
             new($"[{a.Class} Armour Class]", $"[{material}]"),
             new("-Blunt resistance", Percent(piece.BluntDefence), LineKind.Stat),
             new("-Cut resistance", Percent(piece.CutDefence), LineKind.Stat),
-            new("-Harpoon resistance", ((int)(piece.PierceDefence + 0.001f)).ToString(CultureInfo.InvariantCulture) + " pts", LineKind.Stat),
+            new("-Harpoon resistance", ((int)piece.PierceDefence).ToString(CultureInfo.InvariantCulture) + " pts", LineKind.Stat),
         };
         // The efficiency line only appears below 100 per cent (<b>Observed</b>: the wiki's vanilla Legplates print 90 %, the same item with cut into stun 0 prints none).
         if (piece.CutIntoStun > 0) lines.Insert(4, new("-Cut resistance efficiency", Percent(1 - piece.CutIntoStun), LineKind.Stat));
@@ -68,7 +68,7 @@ public static class ArmourTooltip
     /// </summary>
     public static IReadOnlyList<Line> Tail(ArmourData a, Func<string, string?> partName, float quality)
     {
-        float t = Math.Clamp(quality, 0, 100) / 100f + a.LevelBonus * 0.01f;
+        float t = Math.Clamp(quality, 0, 100) * 0.01f + a.LevelBonus * 0.01f;
         var lines = new List<Line>();
         var parts = a.Coverage.Select(c => (Name: partName(c.PartStringId) ?? c.PartStringId, c.Percent)).ToList();
         if (parts.Count > 0)
