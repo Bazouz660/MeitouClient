@@ -149,6 +149,7 @@ A new game is set up by `FUN_14036cb80` and `FUN_140872e00` (`resetGame` and `ne
 - **Squad**: a SQUAD_TEMPLATE entry makes its squad; a CHARACTER entry makes v0 characters (0 counts as 1), joining the player's current squad.
   Nobody made: the Wanderer squad `45550-gamedata.base`.
 - **Research**: the start's `research`, or `5359-gamedata.base` when it lists none.
+- **Clock**: day 1 (set by the reset), 10:00.
 
 ### Loading screen
 

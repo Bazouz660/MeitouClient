@@ -63,7 +63,7 @@ sealed partial class GameHost
                 population = built.Population; aggro = built.Aggro; playerSquad = spawned;
                 if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
                 loadedSave = null; preparedBase = null; worldEpoch++;
-                session.Clock.SetTime(1, 13);
+                session.Clock.SetTime(Meitou.Engine.Time.GameClock.DefaultStartDay, Meitou.Engine.Time.GameClock.DefaultStartHour);
                 var lead = session.World.Characters.Previous[spawned!.Leader.Slot].Position;
                 var view = session.Camera.Current;
                 session.Camera.Place(new Vector2(lead.X, lead.Z), view.Yaw, view.Pitch, view.Distance);

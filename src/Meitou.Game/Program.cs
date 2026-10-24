@@ -155,6 +155,7 @@ static class Program
                 Meitou.Simulation.PopulationData.Create(db, Meitou.Data.World.WorldLevelData.Load(install).Towns()), game.Seed, start).Centre;
             (world.X, world.Z) = (at.X, at.Y);
             world.Town = null;
+            if (!rest.Contains("--time")) world.Hour = (float)Meitou.Engine.Time.GameClock.DefaultStartHour;
             Console.WriteLine($"new game  {start.Name}: {start.Money} cats, {start.Squad.Count} squad link(s), at {at.X:0}, {at.Y:0}");
         }
         Meitou.Data.Save.SaveGame? save = null;
