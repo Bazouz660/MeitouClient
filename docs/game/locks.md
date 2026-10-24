@@ -226,7 +226,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   town nodes ([ai-tasks](ai-tasks.md#town-goals)). Data (**Verified**, base game probe): `Bed` and `Skeleton Repair Bed` hold two `Node Use` (node type 4)
   instances at local Z +11.18 / -11.05 (+12.18 / -12.05), the second turned 180°; Old, Camp and Fish Bed have none. `sleepinbed` holds `Bip01` at about
   (-11.8, 6.7, -1.5) in model space (`gotobed` moves it there from the origin), so from a node the pelvis lands on the mattress centre. Meitou:
-  `FixtureRegistry.LieSpot`; bad nodes are not modelled.
+  `FixtureRegistry.LieSpot`, also applied to a sleeper bound on load (engine choice); bad nodes are not modelled.
 - **Rent cost** (UseableStuff slot 152 `FUN_140330ab0(bed, character)`): 0 with no bed faction, when the faction's flag +0x1d0 is set (**Unknown**),
   when ally(bed faction, character's) ([factions](factions-squads-towns.md) 3.3), for a `fundamental type` 8 (bandit) owner, or when the parent
   building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when a further test `FUN_140621230` fails (**Unknown**) or the house has no
