@@ -3,10 +3,10 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code/plan commit: `b2988b66 feat: light Metal debris through the shared atmosphere`  
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 and MEP-2 are accepted** (2026-10-24:
-MetalFX temporal dust/desert/LOD flicker fixed; reflection MSAA/characters validated) and **MEP-3 debris lighting is
-implemented, awaiting in-game validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with
-tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1, MEP-2 and MEP-3 are accepted**
+(2026-10-24: MetalFX temporal stability; reflection MSAA/characters; native bindless atmosphere-lit debris).
+[MEP-I](docs/metal-effects-parity-plan.md) now moves to **MEP-4 tessellation/terrain relief**, then water lighting.
+Vulkan remains the reference/default and the GPU cull stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
@@ -56,7 +56,7 @@ Metal-specific fallbacks or absent paths:
 |---|---|---|
 | Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax |
 | Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection now uses the shared 4x MSAA/resolve path |
-| Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3, awaiting visual validation) |
+| Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3 accepted) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
 | Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
 | Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **not present**; FogRate is a performance/quality path, not a missing pass; particle/sun terms affect temporal stability |
@@ -99,12 +99,12 @@ sample 0 of the multisample depth. Level 2 reflects characters on both backends 
 terrain/objects/foliage); levels 1-4 are terrain, characters, placed objects and foliage. `--reflection-samples <n>`
 selects the count (1 disables MSAA for the A/B).
 
-**MEP-3 debris lighting is implemented, awaiting manual validation.** `DebrisRenderer` is now a native bindless
-program on both backends: the full `kenshiLight`/`atmoApply` fragment reads frame, shadow, GI, lamp and debris textures
-from the bindless table, while a 128-byte push block carries the camera-relative model, simple-sky fallback light and
-per-part diffuse/cut-out state. Metal's old simple sun/ambient debris fragment is gone. `SamplerBudget` reports/checks
-the direct fragment-sampler count (debris has 0) and is the hook for MEP-5 water. Validate luckyren Mode, combat,
-normal play, sun/shade/night/haze against Vulkan before the preview gate.
+**MEP-3 debris lighting is accepted.** `DebrisRenderer` is a native bindless program on both backends: the full
+`kenshiLight`/`atmoApply` fragment reads frame, shadow, GI, lamp and debris textures from the bindless table, while a
+128-byte push block carries the camera-relative model, simple-sky fallback light and per-part diffuse/cut-out state.
+Metal's old simple sun/ambient debris fragment is gone. `SamplerBudget` reports/checks the direct fragment-sampler
+count (debris has 0) and is the hook for MEP-5 water. The Hub/desert gameplay check passed; bone/limb visibility was
+not separately exercised before the test character died, so luckyren Mode remains the quick explicit debris check.
 
 ## Upstream sync (2026-10-23)
 
@@ -360,9 +360,9 @@ Verified clean:
 
 ## Next work
 
-1. Validate **MEP-3 debris lighting** in game (luckyren Mode, combat, normal play; sun/shade/night/weather haze against
-   Vulkan), then run the MEP-3 preview gate and start MEP-4 tessellation/terrain relief. Do not start GPU culling or
-   default-switch work until the MEP-I preview gate is accepted.
+1. Start **MEP-4 tessellation/terrain relief**; MEP-3 passed the Hub/desert gameplay check (luckyren remains an
+   optional limb-visibility check). Do not start GPU culling or default-switch work until MEP-4/MEP-5 and the MEP-I
+   acceptance gates are settled.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal

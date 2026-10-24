@@ -1,6 +1,6 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1 and MEP-2 accepted (2026-10-24); MEP-3 implemented, awaiting in-game validation; MEP-4..MEP-5 not started.**
+Status: **MEP-1, MEP-2 and MEP-3 accepted (2026-10-24); MEP-4 (tessellation/terrain relief) next; MEP-5 not started.**
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -147,7 +147,7 @@ Acceptance:
 
 **Purpose:** replace Metal's simple debris lighting with Vulkan's atmosphere-lit and hazed path.
 
-**Implemented, awaiting in-game validation.** `DebrisRenderer` is now a native-model program on both backends: the
+**Accepted in game (2026-10-24).** `DebrisRenderer` is now a native-model program on both backends: the
 same `kenshiLight`/`atmoApply` fragment Vulkan used, with every frame and material texture read through the bindless
 table. The debris diffuse map gets a stable bindless index per loaded texture; the model matrix, simple-sky fallback
 lighting and per-part cut-out state travel in one 128-byte push block. Metal no longer has a debris-specific lighting
@@ -157,9 +157,10 @@ The sampler-budget helper is `src/Meitou.Rendering/Gpu/Shaders/SamplerBudget.cs`
 outside the native bindless set and fails with the shader's name instead of an opaque Metal pipeline error. Debris uses
 it at program creation (0 direct fragment samplers after the move); MEP-5 can use it to keep water within 16.
 
-Validation still needed: normal play, luckyren Mode, combat and stills, under sun, shade, night and weather haze; the
-existing depth/alpha behaviour must stay. **MEP-3 is the preview gate:** after this milestone a public test may ship as
-an explicitly labelled Metal preview, with MEP-4/MEP-5 listed as known limitations.
+The Hub/desert gameplay check passed. Bone/limb visibility was not separately exercised because the test character
+died before losing a limb; luckyren Mode remains the quickest explicit debris check if it is revisited. **MEP-3 is
+the preview gate:** a public test may ship as an explicitly labelled Metal preview, with MEP-4/MEP-5 listed as known
+limitations.
 
 ### MEP-4: Tessellation & Terrain Relief
 
@@ -291,6 +292,5 @@ not performance numbers.
 
 ## Immediate next action
 
-Validate MEP-3 in game (luckyren Mode, combat, normal play; sun/shade/night/weather haze; the same views on Vulkan), then
-run the **MEP-3 preview gate** and start MEP-4 tessellation/terrain relief. Do not start MEP-5 before MEP-4's
-tessellation decision is made.
+Start **MEP-4 tessellation/terrain relief**. Do not start MEP-5 before MEP-4's tessellation decision is made; keep
+the flat/parallax fallback and the GPU cull off until the pipeline and settings gates pass.
