@@ -51,6 +51,24 @@ public class FormulaTests
         Assert.Equal(combatSpeed + "x", Value("-Combat speed effect"));
     }
 
+    [Theory]
+    [InlineData(5, "0.00x", "0.81x", "0.89x")]
+    [InlineData(20, "0.01x", "0.83x", "0.90x")]
+    [InlineData(40, "0.03x", "0.86x", "0.92x")]
+    [InlineData(60, "0.06x", "0.89x", "0.94x")]
+    [InlineData(80, "0.11x", "0.92x", "0.96x")]
+    [InlineData(95, "0.15x", "0.94x", "0.98x")]
+    public void Samurai_legplates_effects_follow_the_wikis_six_grades(int level, string stealth, string athletics, string combatSpeed)
+    {
+        // The wiki's vanilla Legplates at each grade: stealth 0.00, 0.009, 0.03, 0.06, 0.1056, 0.14535x; athletics 0.8075, 0.83, 0.86, 0.89, 0.92, 0.9425x; combat speed 0.887, 0.90, 0.92, 0.94, 0.96, 0.9751x.
+        var legplates = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, StealthMult = 0.5f, CombatSpeedMult = 0.98f, AthleticsMult = 1, DodgeMult = 0.6f, LevelBonus = 0 };
+        var lines = ArmourTooltip.Tail(legplates, id => id, level);
+        string Value(string label) => lines.First(l => l.Label == label).Value;
+        Assert.Equal(stealth, Value("-Stealth effect"));
+        Assert.Equal(athletics, Value("-Athletics effect"));
+        Assert.Equal(combatSpeed, Value("-Combat speed effect"));
+    }
+
     [Fact]
     public void Samurai_legplates_tooltip_at_level_95_matches_the_original()
     {
@@ -65,6 +83,8 @@ public class FormulaTests
         var tail = ArmourTooltip.Tail(legplates, id => id, 95);
         Assert.Equal(["[Coverage]", "-Right Leg", "-Left Leg", "-Stomach"], tail.Select(l => l.Label).Take(4).ToArray());
         Assert.Equal("0.15x", tail.First(l => l.Label == "-Stealth effect").Value);
+        Assert.Equal("0.94x", tail.First(l => l.Label == "-Athletics effect").Value);
+        Assert.DoesNotContain(head, l => l.Label == "-Cut resistance efficiency");
         Assert.Equal("0.98x", tail.First(l => l.Label == "-Combat speed effect").Value);
     }
 
