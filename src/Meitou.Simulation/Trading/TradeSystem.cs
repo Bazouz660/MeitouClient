@@ -74,6 +74,8 @@ public sealed record TradeView(CharacterId Customer, CharacterId Trader, string 
 {
     /// <summary>The held item (<see cref="PlayerState.Held"/>) priced as stock (lifted from the stock) or as the customer's goods (lifted from the customer); null for none or another's.</summary>
     public TradeItemView? Held { get; init; }
+    /// <summary>The stock cells outside every container of a building shop (<see cref="Shop.Unused"/>), which hold nothing; empty for a squad shop.</summary>
+    public IReadOnlyList<GridRegion> Unused { get; init; } = [];
 }
 
 /// <summary>A system that has an open trade to publish (the trade system).</summary>
@@ -610,6 +612,6 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             { From.Holder: ItemHolder.Character } h when h.From.Character == customer => View(h.Item, -1, true, cold.Faction),
             _ => null,
         };
-        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen) { Held = held };
+        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen) { Held = held, Unused = shop.UnusedCells };
     }
 }

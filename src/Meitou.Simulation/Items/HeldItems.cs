@@ -278,7 +278,13 @@ public sealed partial class PlayerSystem
             if (item.Width > target.Columns || item.Height > target.Rows) { ReturnHeldItem(world); return; }
             x = Math.Clamp(place.X, 0, target.Columns - item.Width);
             y = Math.Clamp(place.Y, 0, target.Rows - item.Height);
-            if (!target.Grid.InRegion(x, y, item.Width, item.Height)) { ReturnHeldItem(world); return; }   // across two of a shop's containers
+            if (!target.Grid.InRegion(x, y, item.Width, item.Height))
+            {
+                // On a shop's greyed cells, or across two of its containers (engine message).
+                world.Post("No room for that item.");
+                ReturnHeldItem(world);
+                return;
+            }
             under = target.Grid.Items.Where(i => i.Section == target.Section && x < i.X + i.Width && i.X < x + item.Width && y < i.Y + i.Height && i.Y < y + item.Height).ToList();
         }
         if (under.Count >= 2) { ReturnHeldItem(world); return; }
