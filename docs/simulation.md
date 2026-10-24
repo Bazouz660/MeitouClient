@@ -1364,7 +1364,7 @@ rechecks the sale flag, town kind, owner and alliance, the quoted price and the 
 Sellable: function 19, or no function and interior meshes; no walls, gates or `is inside building` (the original's class and
 parent tests are not fully decoded). Ruined houses register without fixtures. The bought house's fixtures, loose-item slots and
 indoor build permission become the player's, NPC lock rounds on it stop, and it turns private (**Meitou** choice: the original
-callback's other effects are **Unknown**). Saved as `owner faction ID` with `sell home` false; a loaded owner other than the
+callback's other effects are **Unknown**). Saved as `owner faction ID` with `sell home` false; a loaded player owner that is not the
 level's counts as bought (saved again) and is applied before the fixtures are made.
 
 ## Open questions and known gaps

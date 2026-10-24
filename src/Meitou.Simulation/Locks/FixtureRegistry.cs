@@ -119,7 +119,7 @@ public sealed partial class FixtureRegistry
         int owner = levelOwner;
         if (Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } savedOwner && data.FactionIndex(savedOwner) is >= 0 and var savedFaction)
             owner = savedFaction;
-        RegisterProperty(data, site, b, owner, purchased: owner != levelOwner);   // a saved owner that is not the level's: bought, and saved again as such
+        RegisterProperty(data, site, b, owner, purchased: owner != levelOwner && owner == data.PlayerFaction);   // saved as the player's: bought, and saved again as such
         var faction = owner >= 0 && owner < data.Factions.Count ? data.Factions[owner] : null;
         var list = new List<Fixture>();
         var record = db.Find(b.BuildingId);
