@@ -14,7 +14,10 @@ public static class ArmourTooltip
 
     static readonly int[] GradeQualities = [5, 20, 40, 60, 80, 95];
 
-    /// <summary>The coverage list's order as the original prints it (<b>Observed</b>: Chest, Stomach, Right Arm, Left Arm); parts not named here follow in record order.</summary>
+    /// <summary>
+    /// The order of parts of equal coverage as the original prints them; the list runs from the highest coverage down (<b>Observed</b> on two armours: the Samurai Armour prints Chest 100, then Stomach, Right Arm, Left Arm
+    /// at 85; the Samurai Legplates Right Leg 100, Left Leg 100, Stomach 50, whose records list them in other orders). Parts not named here follow in record order.
+    /// </summary>
     static readonly string[] PartOrder = ["Head", "Chest", "Stomach", "Right Arm", "Left Arm", "Right Leg", "Left Leg"];
 
     /// <summary>The grade of a quality (0 to 100): the highest grade whose quality it reaches; below the first grade's quality it is grade 0. The cut-offs between grades are <b>Unknown</b> (items made or found have exactly the six qualities).</summary>
@@ -45,12 +48,12 @@ public static class ArmourTooltip
         string material = a.Material == ArmourType.MetalPlate ? "Metal Plate" : a.Material.ToString();
         return
         [
-            new(Loc.Tr("{1} Grade", Loc.Tr(GradeNames[grade])), "", LineKind.Grade, grade),
+            new("[" + Loc.Tr("{1} Grade", Loc.Tr(GradeNames[grade])) + "]", "", LineKind.Grade, grade),
             new($"[{a.Class} Armour Class]", $"[{material}]"),
             new("-Blunt resistance", Percent(piece.BluntDefence), LineKind.Stat),
             new("-Cut resistance", Percent(piece.CutDefence), LineKind.Stat),
             new("-Cut resistance efficiency", Percent(1 - piece.CutIntoStun), LineKind.Stat),
-            new("-Harpoon resistance", Number(piece.PierceDefence, "0.#") + "pts", LineKind.Stat),
+            new("-Harpoon resistance", Number(piece.PierceDefence, "0.#") + " pts", LineKind.Stat),
         ];
     }
 
@@ -68,7 +71,7 @@ public static class ArmourTooltip
         if (parts.Count > 0)
         {
             lines.Add(new("[Coverage]", ""));
-            foreach (var (name, percent) in parts.OrderBy(p => Array.IndexOf(PartOrder, p.Name) is var i and >= 0 ? i : PartOrder.Length))
+            foreach (var (name, percent) in parts.OrderByDescending(p => p.Percent).ThenBy(p => Array.IndexOf(PartOrder, p.Name) is var i and >= 0 ? i : PartOrder.Length))
                 lines.Add(new("-" + name, percent + "%", LineKind.Stat));
         }
         var skills = new List<Line>();

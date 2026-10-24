@@ -55,12 +55,15 @@ public class FormulaTests
     public void Samurai_legplates_tooltip_at_level_95_matches_the_original()
     {
         // The Legplates as the game's modded data have them (stealth 0.5, combat speed 0.98, dodge 0.6, unarmed -10, blunt +0.05, cut -0.081): the original shows 61 % / 73 % / 85 pts, 0.15x, 0.98x.
-        var legplates = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, StealthMult = 0.5f, CombatSpeedMult = 0.98f, DodgeMult = 0.6f, UnarmedBonus = -10, BluntDefBonus = 0.05f, CutDefBonus = -0.081f, CutIntoStun = 0, LevelBonus = 0 };
+        var legplates = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, StealthMult = 0.5f, CombatSpeedMult = 0.98f, DodgeMult = 0.6f, UnarmedBonus = -10, BluntDefBonus = 0.05f, CutDefBonus = -0.081f, CutIntoStun = 0, LevelBonus = 0,
+            Coverage = [new("Stomach", 50), new("Right Leg", 100), new("Left Leg", 100)] };
         var head = ArmourTooltip.Head(legplates, 95);
         Assert.Equal("61%", head.First(l => l.Label == "-Blunt resistance").Value.Split('.')[0] + "%");
         Assert.Equal("73%", head.First(l => l.Label == "-Cut resistance").Value.Split('.')[0] + "%");
-        Assert.Equal("85pts", head.First(l => l.Label == "-Harpoon resistance").Value.Split('.')[0] + "pts");
+        Assert.Equal("85 pts", head.First(l => l.Label == "-Harpoon resistance").Value.Split('.')[0] + " pts");
+        Assert.Equal("[Masterwork Grade]", head[0].Label);
         var tail = ArmourTooltip.Tail(legplates, id => id, 95);
+        Assert.Equal(["[Coverage]", "-Right Leg", "-Left Leg", "-Stomach"], tail.Select(l => l.Label).Take(4).ToArray());
         Assert.Equal("0.15x", tail.First(l => l.Label == "-Stealth effect").Value);
         Assert.Equal("0.98x", tail.First(l => l.Label == "-Combat speed effect").Value);
     }
