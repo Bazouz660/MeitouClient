@@ -14,6 +14,11 @@ namespace Meitou.Game;
 /// </summary>
 sealed class MetalPostChain : IWorldPostChain, IDisposable
 {
+    /// <summary>Diagnostic A/B for the temporal reactive path: MEITOU_METAL_NO_PARTICLE_COVERAGE=1 leaves the particle
+    /// color draw in place but stops it invalidating the temporal history.</summary>
+    static readonly bool ParticleCoverageEnabled =
+        Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_COVERAGE") is not ("1" or "true");
+
     readonly MetalContext ctx;
     readonly PostComposite composite;
     readonly PostTaa taa;
@@ -228,7 +233,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         if (!noTaa())
         {
             taa.Particles = Particles;
-            taa.ParticleCoverage = DrawParticleCoverage;
+            taa.ParticleCoverage = ParticleCoverageEnabled ? DrawParticleCoverage : null;
             var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
             resolved = taa.Draw(taaCmd, sceneColour, ctx.Depth, eye, view, fov, aspect, nearPlane, farPlane, JitterPixels,
                 displayWidth, displayHeight, DeltaSeconds(), WaterHeight);
@@ -248,11 +253,12 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     void DrawParticleCoverage(IGpuCommandList cmd, GpuTexture target, ColorMask mask, bool clear)
     {
         if (Particles is not { } particles) return;
-        var targets = PassTargets.Of(target, null);
+        var targets = PassTargets.Of(target, ctx.Depth);
         if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
         cmd.BeginRendering(targets.Rendering);
-        ctx.BeginHostPass((MetalCommandList)cmd, targets, DrawState.For(targets.Formats, ctx.DepthClamp, mask: mask));
-        particles.DrawCoverage(mask);
+        ctx.BeginHostPass((MetalCommandList)cmd, targets,
+            DrawState.For(targets.Formats, ctx.DepthClamp, depthTest: true, depthWrite: false, compare: DepthFunction.Lequal, mask: mask));
+        particles.DrawCoverage(mask, depthTest: true);
         cmd.EndRendering();
         ctx.EndHostPass(cmd);
         cmd.Order();

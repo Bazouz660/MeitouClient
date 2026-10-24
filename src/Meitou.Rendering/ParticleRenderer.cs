@@ -565,10 +565,11 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// <summary>
     /// The frame's particles again into the upscalers' reactive mask (docs/renderer-native.md 8.20): the same quads and matrices as the colour draw, adding
     /// their alpha (or brightness, for additive ones) into <paramref name="mask"/>'s channels. Without it the temporal history keeps about 90% of what was
-    /// behind a fast, thin particle (rain), which then barely shows. No depth test (a hidden particle only makes its pixels a little less stable).
+    /// behind a fast, thin particle (rain), which then barely shows. Without <paramref name="depthTest"/> a particle hidden behind terrain still makes its
+    /// pixels a little less stable; Metal's reactive path tests the scene depth so those pixels keep their history.
     /// Called by the post chain with the target bound (cleared or loaded as it wants), once per frame after <c>Draw</c>.
     /// </summary>
-    public void DrawCoverage(ColorMask mask)
+    public void DrawCoverage(ColorMask mask, bool depthTest = false)
     {
         if (!HasCoverage || FullCount == 0) return;
         var cmd = gpu.BeginGuest("particle coverage");
@@ -576,7 +577,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         var baseState = gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);
-        RecordDraws(cmd, in baseState, in targets, false, true, mask, Kind.Coverage);
+        RecordDraws(cmd, in baseState, in targets, depthTest, true, mask, Kind.Coverage);
         gpu.EndGuest(cmd);
     }
 
