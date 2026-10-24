@@ -338,19 +338,26 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         return path;
     }
 
+    /// <summary>
+    /// The point at the height of the corridor polygon it lies in; of stacked ones (a corridor through a ground floor and up onto the roof above it) the one nearest its own
+    /// height, so a goal on the roof is not put on the floor under it (Observed: the Bughouse roof beds at Squin).
+    /// </summary>
     Vector3 OnSurface(Vector3 p, List<NavRef> polys)
     {
-        float best = float.MaxValue;
+        float best = float.MaxValue, bestRise = float.MaxValue;
         var result = p;
         foreach (var r in polys)
         {
             var m = World.Mesh(r.Zone);
             var onPoly = NavWorld.ClosestPoint(m, r.Polygon, p);
-            float d = (onPoly.X - p.X) * (onPoly.X - p.X) + (onPoly.Z - p.Z) * (onPoly.Z - p.Z);
-            if (d < best - 1e-6f) { best = d; result = new Vector3(p.X, onPoly.Y, p.Z); if (d < 1e-6f) break; }
+            float d = (onPoly.X - p.X) * (onPoly.X - p.X) + (onPoly.Z - p.Z) * (onPoly.Z - p.Z), rise = MathF.Abs(onPoly.Y - p.Y);
+            if (d < 1e-6f && best < 1e-6f ? rise < bestRise - StackedGap : d < best - 1e-6f) { (best, bestRise) = (d, rise); result = new Vector3(p.X, onPoly.Y, p.Z); }
         }
         return result;
     }
+
+    /// <summary>How much nearer in height another polygon under a path point must be to count as the layer it stands on (engine choice: below a storey, as <see cref="NavmeshWalkability.StandRise"/>; overlapping stair polygons differ by ~1.3 at the Hub).</summary>
+    const float StackedGap = 12;
 
     static bool Same(Vector3 a, Vector3 b) => (a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z) < 1e-6f;
 
