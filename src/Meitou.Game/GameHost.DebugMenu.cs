@@ -15,16 +15,16 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class GameHost
 {
-    enum DebugRow { Teleport, SpawnNpc, GiveItem, Money, Heal, MaxSkills, Damage }
+    enum DebugRow { Teleport, SpawnNpc, GiveItem, Money, Heal, MaxSkills, Damage, UnlockResearch }
 
-    static readonly string[] DebugLabels = ["Teleport selected here", "Spawn NPC (hostile)", "Give item (name x5 q80)", "Money (+/- cats)", "Heal", "Max out skills", "Damage (cut)"];
-    readonly string[] debugFields = ["", "", "", "1000", "", "", "20"];
+    static readonly string[] DebugLabels = ["Teleport selected here", "Spawn NPC (hostile)", "Give item (name x5 q80)", "Money (+/- cats)", "Heal", "Max out skills", "Damage (cut)", "Unlock all research"];
+    readonly string[] debugFields = ["", "", "", "1000", "", "", "20", ""];
     readonly Dictionary<(bool Character, string Text), (string Id, string Name)?> debugMatches = [];
     bool debugMenuOpen;
     int debugRow;
     string debugStatus = "";
 
-    static bool DebugHasField(int row) => (DebugRow)row is not (DebugRow.Teleport or DebugRow.Heal or DebugRow.MaxSkills);
+    static bool DebugHasField(int row) => (DebugRow)row is not (DebugRow.Teleport or DebugRow.Heal or DebugRow.MaxSkills or DebugRow.UnlockResearch);
 
     void DebugMenuKey(EngineKey key)
     {
@@ -86,6 +86,9 @@ sealed partial class GameHost
                 if (!float.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out float cut) || !(cut > 0)) return "damage: a positive number";
                 world.Commands.Enqueue(new DebugDamage(targets, cut) { Tick = tick });
                 return $"{cut:0.#} cut damage to {targets.Length}";
+            case DebugRow.UnlockResearch:
+                world.Commands.Enqueue(new DebugUnlockResearch { Tick = tick });
+                return "every research finished";
         }
         return "";
     }
