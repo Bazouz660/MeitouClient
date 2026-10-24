@@ -30,7 +30,8 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
 Meitou (`SightMap`): every sight test (aggro, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
 rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
 buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
-compared only within the character's building). No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
+compared only within the character's building). With the `interiorlamps` switch on (Meitou, default) interior lamps count at
+any daylight, as the renderer draws them; off, night-only ones count at daylight <= 0.1 as in the game. No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
 evaluated every tick for everyone. The overhead and floor queries are redone only when a character moves (headless, Release:
 0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data (headless probe of five big towns' 60
 lit rooms): standing under an interior lamp gives light 0.7-2.9, 444 of 462 lamps lighting the floor below them; the Hub's

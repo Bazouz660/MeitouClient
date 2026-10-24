@@ -19,7 +19,8 @@ public interface ISightSource
 /// <item><b>Place</b>: the building whose indoor volume holds the character (a carried one takes its carrier's, a caged or bedded one its fixture's building), else outdoors. Standing in a
 /// building with nothing over it (a roof, a roofless part: the original's overhead query <c>0x8079e00</c>) is <b>on top</b>.</item>
 /// <item><b>Light</b> (<c>FUN_140a0af10</c>): 1 while the daylight factor is above 0.5, else 2 x daylight plus the lit lamps within their radius: <c>1.5 x power x (1 - d^2 / r^2)</c>
-/// (x the spot cone) for a lamp of the character's own indoor state, and on its floor when both are inside. An NPC keeps the bare daylight factor while it is 0.75 or more.</item>
+/// (x the spot cone) for a lamp of the character's own indoor state, and on its floor when both are inside; interior lamps lit at any daylight with <see cref="InteriorLampsAllDay"/>.
+/// An NPC keeps the bare daylight factor while it is 0.75 or more.</item>
 /// </list>
 /// Only the registered towns' buildings count (ruins and the player's buildings are outdoors); a character's carried lights are not counted.
 /// </summary>
@@ -52,6 +53,12 @@ public sealed class SightMap
     bool[] onTop = [];
     float[] light = [];
     int count;
+
+    /// <summary>
+    /// The <c>interiorlamps</c> switch's Meitou side, as the renderer's <c>WorldLamps.InteriorAllDay</c>: interior lamps count at every daylight (the game: night-only ones at
+    /// daylight 0.1 or less), so a lamp that is drawn on also lights. Set by the host.
+    /// </summary>
+    public bool InteriorLampsAllDay { get; set; } = true;
 
     /// <summary>The daylight factor of this tick (<see cref="WorldLights.DaylightFactor"/>).</summary>
     public float Daylight { get; private set; } = 1;
@@ -181,7 +188,7 @@ public sealed class SightMap
         foreach (int k in list)
         {
             var (l, room) = lamps[k];
-            if (!WorldLights.IsLit(l, Daylight) || l.Interior != inside) continue;
+            if (!WorldLights.IsLit(l, l.Interior && InteriorLampsAllDay ? 0 : Daylight) || l.Interior != inside) continue;
             // The original also matches the light's floor when both are inside; a lamp of another building's interior is taken as on another floor.
             if (inside && (room != place[slot] || l.Floor != floor)) continue;
             float d2 = Vector3.DistanceSquared(l.Position, at), r2 = l.Radius * l.Radius;

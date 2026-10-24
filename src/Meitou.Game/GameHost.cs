@@ -387,6 +387,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (gpu.Foliage is { } foliage && o.Screenshot is null) foliage.SwaySeconds = seconds;
         // The heat haze's gameTime: game hours since the start (it stops while paused, as in the game).
         gpu.GameHours = session.Clock.HoursSinceStart;
+        // The sim's sight counts the interior lamps the renderer shows (the interiorlamps switch).
+        session.World.Sight.InteriorLampsAllDay = gpu.Lamps?.InteriorAllDay ?? o.InteriorLamps;
         // The weather's three time bases: the game day and time of day (the hour below), the game speed (the last non-zero one while paused) and the paused flag.
         if (gpu.Weather is { } weather)
         {
