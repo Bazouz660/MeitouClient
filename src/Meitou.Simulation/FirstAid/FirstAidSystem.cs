@@ -15,8 +15,8 @@ namespace Meitou.Simulation.FirstAid;
 /// (the pursuit system's pattern: a path at free speed, asked again when the patient has moved); <c>Act</c> (own slot, read-only on the patient) emits one effect per tick while the medic
 /// is in reach, awake, not fighting and still, and the patient is still or down; <c>Apply</c> (serial commit, in target / source order) picks the kit, bandages the patient, drains the kit
 /// and trains the medic. So nothing on another character is written in a parallel phase.</item>
-/// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of
-/// <c>dt</c>; the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c>. The skill is the patient race's <c>heal stat</c> of the medic times
+/// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of <c>dt</c> on the first part with room (the next only once it fills), after any open wound is closed;
+/// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (character-stats.md "First aid update"). The skill is the patient race's <c>heal stat</c> of the medic times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
 /// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following character with a kit treats the most
 /// hurt squad mate within reach (knocked-out ones first), when no one in its squad is fighting: NPCs (engine stand-in until stage 9). The player's characters run their medic, robotics and
@@ -249,6 +249,23 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             Splint(world, m, medicCold, medical, stats, medicRace, body, race);
             return;
         }
+        float dt = world.TickSeconds;
+        var stat = race.HealStat;
+        float skill = stats[stat] * medical.StatMultiplier(stat) * (m == p ? 0.8f : 1);   // treating oneself: x0.8 (FUN_14033c5a0)
+        // Open wounds are closed first, newest first, with a kit matching the patient's race; nothing is bandaged meanwhile (FUN_14064d800).
+        if (body.Wounds.Count > 0)
+        {
+            if (FindKit(world, m, medicCold, FunctionOf(race.IsRobot)) is not { } woundKit)
+            {
+                Say(world, m, medicCold.TreatTarget, KitEmpty);
+                End(table, m);
+                return;
+            }
+            body.CloseWound(dt, skill, Items.Info(woundKit.Item.Record)?.Quality ?? 0, Constants);
+            Drain(woundKit, skill, dt, race.IsRobot, 1);
+            xp.Medic(stats, race, medicRace, dt);
+            return;
+        }
         // Ordinary kits first; a robotic part is treated once the organic ones are done. Treatment runs until the last bit is bandaged (the start threshold is MedicalState.FirstAidThreshold).
         bool robot = body.BandageRoom(race, false) <= Done;
         if (robot && body.BandageRoom(race, true) <= Done)
@@ -264,20 +281,15 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);   // no kit of the right kind within reach
             return;
         }
-        var (item, owner) = kit;
-        float dt = world.TickSeconds;
-        var stat = race.HealStat;
-        float skill = stats[stat] * medical.StatMultiplier(stat);
-        float quality = Items.Info(item.Record)?.Quality ?? 0;
+        float quality = Items.Info(kit.Item.Record)?.Quality ?? 0;
         var ctx = new MedicalContext(Constants, bodyOptions, race);
-        float bandaged = body.Treat(dt, skill, quality, robot, ctx);
+        float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
         if (bandaged <= 0)
         {
             End(table, m);
             return;
         }
-        item.Charges -= MedicalState.KitDrain(Constants, skill, dt, robot);
-        if (item.Charges <= 0) owner.RemoveOne(item);   // a used-up kit is gone
+        Drain(kit, skill, dt, robot, touched);   // once per part bandaged this update
         xp.Medic(stats, race, medicRace, dt);
         // An unconscious patient's faction is grateful to the medic's (engine choice: every update that bandages; the original's update fires it only when its loop got past the wounds).
         Deeds?.FirstAid(world, m, p, dt);
@@ -295,7 +307,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);
             return;
         }
-        var (item, owner) = kit;
+        var item = kit.Item;
         float dt = world.TickSeconds;
         float skill = stats[StatsEnumerated.Medic] * medical.StatMultiplier(StatsEnumerated.Medic);
         float quality = Items.Info(item.Record)?.Quality ?? 0;
@@ -305,12 +317,18 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);   // nothing left to splint
             return;
         }
-        item.Charges -= MedicalState.KitDrain(Constants, skill, dt, false);
-        if (item.Charges <= 0) owner.RemoveOne(item);
+        Drain(kit, skill, dt, false, 1);
         xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
     }
 
     // ------------------------------------------------------------------ kits
+
+    /// <summary>Uses <paramref name="times"/> drains of a kit (<see cref="MedicalState.KitDrain"/>); a used-up kit is gone.</summary>
+    void Drain((ItemInstance Item, Inventory Owner) kit, float skill, float dt, bool robotKit, int times)
+    {
+        kit.Item.Charges -= MedicalState.KitDrain(Constants, skill, dt, robotKit) * times;
+        if (kit.Item.Charges <= 0) kit.Owner.RemoveOne(kit.Item);
+    }
 
     /// <summary>The best kit of a function in an inventory (and its backpack): the highest record quality with charges left; the first of equals.</summary>
     ItemInstance? Best(Inventory? inventory, int function)

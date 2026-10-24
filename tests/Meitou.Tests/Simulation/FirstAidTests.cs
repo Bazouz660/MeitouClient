@@ -167,7 +167,7 @@ public class FirstAidTests
         Assert.True(rig.Where(medic).X > startX + 50);
         // One tick of treatment: skill 50 (injury multiplier 1), kit quality 40: lerp(1, 15, 0.4) x 3 per second, a tick is 1/30 s.
         float expected = MedicalState.TreatmentRate(BaseGame, 50, KitQuality, false) / 30;
-        Assert.Equal(2 * expected, Bandage(rig.Body(patient)) - before, 1e-3);   // both wounded parts take the rate
+        Assert.Equal(expected, Bandage(rig.Body(patient)) - before, 1e-3);   // only the first wounded part in part order takes the rate
         var kit = rig.Kit(medic);
         float charges = kit.Charges;
         float medicBefore = rig.Cold(medic).Stats![StatsEnumerated.Medic];

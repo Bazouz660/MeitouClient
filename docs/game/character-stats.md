@@ -126,6 +126,24 @@ First aid fills bandage; healing consumes it. Medkits, robot repair and beds app
 skills/charges/rates. Limb replacements modify part health and stat factors; missing limbs,
 stumps and robot wear are not interchangeable. Race tables own HP/blood/hunger/heal/XP inputs.
 
+### First aid update
+
+**Verified** (decompile of `FUN_14033c5a0` (task), `FUN_14064d800`, `FUN_140649a00`, drain `FUN_140644250`). Each update, with
+skill x 0.8 when treating oneself and q = min(skill, kit quality):
+- **Wounds first.** While the patient has open wounds, the newest one's strength falls by `medic speed mult` x 2 x lerp(0.0005, 0.03,
+  q x 0.01) x dt and it closes below 0; the kit drains once; nothing is bandaged that update. The kit must match the patient (robot
+  kit for a robot race).
+- **Bandaging.** The first part in part order of the kit's kind with h + b < M takes rate x dt (rate below); only if that fills it
+  (clamped to M) does the next part also take the full rate x dt. The kit drains once per part bandaged. So a patient with n injured
+  parts takes about n times as long, and n times the charges, as one with a single part of the same damage.
+- **Drain** = lerp(`medkit drain 99`, `medkit drain 1`, (100 - skill) / 100) x dt (skill, not q), x `robot medic speed mult` for a
+  robot kit (function 12).
+- **Unknown**: the drain in the bandaging step is skipped unless the medic's `vfunc 0x58` object has a non-null +0x250 (also the
+  gate for kitless treatment); Meitou always drains. While no wound is open but bleeding (medical +0x78) is positive, `FUN_14064d800`
+  bandages an extra time and lowers it by q x 0.01 x dt; it is recomputed every medical tick, so Meitou leaves it out. The task picks
+  CharStats +0x98 or +0xdc (robot repair) as the skill; Meitou uses the patient race's `heal stat`.
+- Meitou: `FirstAidSystem.Apply`, `MedicalState.CloseWound` / `Treat`; dt in game seconds (unit **Unknown**).
+
 **Observed** (`wade`, player Metaru's MEDICAL_STATE): injured parts have flesh + bandage ≈100,
 stun0 and bleeding0; the wounds are already treated. First Aid has nothing left to bandage;
 the HUD's yellow layer shows the treated damage awaiting passive recovery.
@@ -562,6 +580,6 @@ read and at least one consumer found through the data cross-references; base val
 - Damage into a part: `Dismemberment=1`
 - Degeneration, healing, stun: `D = clamp(((M - h - b) * 100 / M - 20) / (90 - 20), 0, 1)`; `degMult = lerp(degeneration mult 1 (1.7), degeneration mult 99 (0.03), toughness / 100)`; `heal = min(b, dt * 0.05 * heal rate mult (0.25) * R)`; `h <= M`; `R = (M / 100) * A`
 - Knock-out, coma, death: `k = lerp(knockout mult 1 (3.0), knockout mult 99 (0.75), toughness / 100)`
-- First aid, medkits and robot repair: `h + b <= M`; `rate = lerp(1, 15, min(skill, kit quality) * 0.01) * medic speed mult (3)`
+- First aid, medkits and robot repair: `h + b <= M`; `rate = lerp(1, 15, min(skill, kit quality) * 0.01) * medic speed mult (3)`, one part per update ([First aid update](#first-aid-update))
 - Encumbrance and carrying: `C = carry weight mult * strength * strengthInjuryMultiplier + encumbrance base` (strength's whole stat multiplier); `e = clamp((C - 0.05 W) / (0.95 W), 0, 1)`; `W <= C`
 - CONSTANTS used by this subsystem: `field address = 0x142133dd0 + 4 * index`
