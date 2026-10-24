@@ -43,7 +43,7 @@ public static class CombatTuning
     /// </summary>
     public const float LeadBase = 1.2f, LeadSlope = 2;
     /// <summary>A chaser's lead point is put this many times the two footprints beside the runner's track, so that solid bodies pass instead of pushing (engine choice).</summary>
-    public const float PassWidth = 2;
+    public const float PassWidth = 1.25f;
 
     /// <summary>The footprint radius of a human, used when a character has no race data.</summary>
     public const float DefaultFootprint = 4;
