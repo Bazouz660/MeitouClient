@@ -672,6 +672,10 @@ sealed partial class PlayerInterface
         if (selected.Any(c => Vector2.Distance(new(c.Position.X, c.Position.Z), at) <= StorageArrive))
         {
             storageOpening = null;
+            // A window shown alone (a left click) or closed by the player opens again through SyncMachineScreens, with the inventory beside it, as when the order opens both.
+            bool docked = storageWithInventory == pending.Site.Id && faithfulScreens?.IsOpen("inventory") == true;
+            if (!docked && shownMachine == pending.Site.Id) shownMachine = null;
+            if (closedMachine == pending.Site.Id) closedMachine = null;
             storageWithInventory = pending.Site.Id;
             SetBuilding(SiteBuilding(pending.Site));
         }

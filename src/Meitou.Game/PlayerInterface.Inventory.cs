@@ -396,6 +396,7 @@ sealed partial class PlayerInterface
     {
         if (InventoryOwner() is not { } lead) return;
         if (!bagOpen.Remove(lead.Id)) bagOpen.Add(lead.Id);
+        if (lootOpenedBag == lead.Id) lootOpenedBag = CharacterId.None;
         SyncBagScreen();
     }
 
@@ -431,7 +432,7 @@ sealed partial class PlayerInterface
         var lead = InventoryOwner();
         bool want = faithfulScreens.IsOpen("inventory") && lead is { ItemGrid: { BagWidth: > 0, BagHeight: > 0 } } && bagOpen.Contains(lead.Id);
         if (want == faithfulScreens.IsOpen("bag")) return;
-        if (!want) { faithfulScreens.Close("bag"); return; }
+        if (!want) { faithfulScreens.Close("bag"); if (shownTrader.IsNone && faithfulScreens.IsOpen("loot")) PlaceWindowRow(); return; }
         faithfulScreens.Open("bag");
         if (shownTrader.IsNone) PlaceBagWindow(); else PlaceTradeWindows();
     }
