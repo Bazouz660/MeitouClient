@@ -183,6 +183,17 @@ sealed partial class GameHost
         // Resource and node buildings are not selectable objects (TownBuildings leaves them out too).
         bool Pickable(string record) => pickable.TryGetValue(record, out bool known) ? known
             : pickable[record] = db.Find(record) is { } r && !r.GetBool("is node") && !r.GetBool("is foliage");
+        // The world's resources for the mine and farm row, remade when a new game or a load replaces the population data.
+        var machines = new Dictionary<string, Meitou.Data.Gameplay.Construction.MachineData?>(StringComparer.Ordinal);
+        (Meitou.Simulation.PopulationData Data, Meitou.Data.Gameplay.Construction.ResourceField Field)? field = null;
+        Meitou.Data.Gameplay.Construction.PlacementFailure Resources(string record, System.Numerics.Vector3 at)
+        {
+            if (popData is not { } d) return Meitou.Data.Gameplay.Construction.PlacementFailure.None;
+            if (field?.Data != d) field = (d, new Meitou.Data.Gameplay.Construction.ResourceField(d.Db, d.Biomes, d.ResourceNodes));
+            if (!machines.TryGetValue(record, out var machine))
+                machines[record] = machine = db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.MachineData.From(db, r) : null;
+            return Meitou.Data.Gameplay.Construction.PlacementRules.ResourceBlock(machine, field.Value.Field, at);
+        }
         return new Building.BuildServices
         {
             Menu = new Building.BuildMenu([.. BuildData().Values]),
@@ -207,6 +218,7 @@ sealed partial class GameHost
                 // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.
                 FloorAlong = (origin, direction, length) => gpu.Objects?.FloorHit(origin, direction, viewedFloor, length) is { } hit
                     ? (hit.Position, GhostFloorOf(hit.Room, hit.Room.FloorAt(hit.Position))) : null,
+                Resources = Resources,
             },
             WorldInfo = placement =>
             {

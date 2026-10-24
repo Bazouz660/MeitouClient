@@ -900,8 +900,10 @@ ticks and loads; the diff does not. Navmesh membership (engine reading of the Ob
 pure over the query (build data, transform, floor, queued ghosts, snapshot characters and sites, towns) and services
 (heightmap, collision cache, water level). It calls `PlacementRules.TownBlock` first and returns the first failure in
 the original's order. The geometric half depends on asynchronously loaded collision, so the simulation trusts it and
-re-checks only the data half. Ghost controls, tilt and the unconfirmed ghost queue (Undo) are host UI state.
-Implemented host-side, in the original's order: town block, site under the ghost, static building under it, interior
+re-checks only the town block. Ghost controls, tilt and the unconfirmed ghost queue (Undo) are host UI state.
+Implemented host-side, in the original's order: town block, resource row (`PlacementRules.ResourceBlock`: a farm's
+fertility factor x crop match, or a `world resource mining` building's `ResourceField.Yield`, below 0.01; skipped without an
+areas map, and for iron/copper/carbon without known rocks), site under the ghost, static building under it, interior
 rule, footprint overlap with static buildings, sites and queued ghosts (convex hulls of the collision shape, SAT),
 characters within 2.5 of the hull, LAND parts below the water level 98, slope (four rotated bounding-box corners, `max slope`,
 `match slope` tilts fully) and normal.y < 0.2. **Indoors:** the ghost (not walls) stands on the first building floor the
@@ -911,7 +913,7 @@ a finished player site or a level building the player's faction owns (its state'
 faction; else the original's "don't own" / "incomplete" texts); the parent is left out of the overlap tests, the slope test is skipped (floor taken as
 level), and interior-only furniture is refused only off a floor. Engine stand-in for the original's node boxes against the
 building's walls: the footprint must lie within the building's indoor hull. **Not decided** (never fail, so the ghost may
-show valid where the original refuses): resource/crop yield, snap nodes, usage nodes, blocked use nodes, the floor-number
+show valid where the original refuses): snap nodes, usage nodes, blocked use nodes, the floor-number
 check and ceilings, vertical margins, the 5 deg object-surface rule. A site inside another (its parent) is picked through
 the parent's roof and walls while the interior view shows the parent; a site in a level building takes the usual town rules. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
 

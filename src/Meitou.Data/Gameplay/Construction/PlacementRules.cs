@@ -17,7 +17,7 @@ public readonly record struct PlacementTown(TownData Town, Vector2 Position);
 
 /// <summary>
 /// The deterministic half of the placement checks (docs/simulation.md "Buildings"): pure functions of the data, run by the host for the ghost and again by the
-/// simulation on <c>PlaceBuildings</c>. The geometric half lives in the host.
+/// simulation on <c>PlaceBuildings</c> (the town block; <see cref="ResourceBlock"/> is the host's only). The geometric half lives in the host.
 /// </summary>
 public static class PlacementRules
 {
@@ -60,6 +60,28 @@ public static class PlacementRules
             if (Vector2.DistanceSquared(at, placed.Position) < limit * limit) return PlacementFailure.TooCloseToTown;
         }
         return PlacementFailure.None;
+    }
+
+    /// <summary>The resource value or crop yield below which a mine or farm is refused (<b>Verified</b>, docs/game/buildings-production.md "Placement").</summary>
+    public const float MinimumYield = 0.01f;
+
+    /// <summary>
+    /// The resource row of docs/game/buildings-production.md "Placement": a farm whose crop yield (fertility factor x crop match) or a building with a <c>world resource mining</c>
+    /// whose <see cref="ResourceField.Yield"/> at <paramref name="at"/> is below <see cref="MinimumYield"/>. Not decided (None) without an areas map, or for IRON, COPPER and
+    /// CARBON without known rocks, so a world without them refuses nothing.
+    /// </summary>
+    public static PlacementFailure ResourceBlock(MachineData? machine, ResourceField field, Vector3 at)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        if (machine is null || !field.HasMap) return PlacementFailure.None;
+        if (machine.Farm is { } farm)
+        {
+            float fertility = farm.Indoor ? 1 : field.Value(MachineData.GroundResource, at.X, at.Y, at.Z);
+            return farm.FertilityFactor(fertility) * field.CropMatch(farm, at.X, at.Z) < MinimumYield ? PlacementFailure.CropWillNotGrow : PlacementFailure.None;
+        }
+        if (machine.Resource == 0 || machine.Function == MachineData.NaturalMineFunction) return PlacementFailure.None;
+        if (!field.HasNodes && machine.Resource is ResourceField.IronResource or ResourceField.CopperResource or ResourceField.CarbonResource) return PlacementFailure.None;
+        return field.Yield(machine.Resource, at) < MinimumYield ? PlacementFailure.NoResources : PlacementFailure.None;
     }
 
     /// <summary>The text the original shows for a failure ("" for <see cref="PlacementFailure.None"/>); the engine's own for <see cref="PlacementFailure.NotAvailable"/>.</summary>

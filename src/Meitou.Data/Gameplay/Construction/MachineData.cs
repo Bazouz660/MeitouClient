@@ -263,6 +263,11 @@ public sealed class ResourceField
         this.nodes = nodes;
     }
 
+    /// <summary>Whether there is an areas map (without one every value is 0).</summary>
+    public bool HasMap => map is not null;
+    /// <summary>Whether rocks are known (without them IRON, COPPER and CARBON are 0).</summary>
+    public bool HasNodes => nodes is not null;
+
     /// <summary>The field prefix of a MiningResource (<c>read_stone_n3</c>).</summary>
     static string Prefix(int resource) => resource switch
     {

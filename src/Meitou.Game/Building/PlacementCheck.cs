@@ -39,6 +39,8 @@ public sealed class PlacementServices
     public Func<string, BuildingFootprint?> Plot { get; init; } = _ => null;
     /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>
     public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
+    /// <summary>The resource row for a BUILDING at a position (<see cref="PlacementRules.ResourceBlock"/>); None without the world's resources.</summary>
+    public Func<string, Vector3, PlacementFailure> Resources { get; init; } = (_, _) => PlacementFailure.None;
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>
@@ -57,8 +59,8 @@ public sealed record PlacementQuery(BuildingBuildData Building, Vector3 Position
 
 /// <summary>
 /// The host's half of the placement checks (docs/simulation.md "Buildings", "Placement validation"; the messages and their order are docs/game/buildings-production.md
-/// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> first and returns the first failure in the original's order.
-/// Not decided (so never failed): resource and crop yield, snap nodes, usage nodes, the floor number and ceilings. The ghost stands on the terrain or on a building's floor
+/// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> and the resource row first and returns the first failure in the
+/// original's order. Not decided (so never failed): snap nodes, usage nodes, the floor number and ceilings. The ghost stands on the terrain or on a building's floor
 /// (<see cref="PlacementQuery.On"/>).
 /// </summary>
 public static class PlacementCheck
@@ -80,11 +82,11 @@ public static class PlacementCheck
         // On a floor: the building must be ours, a level building the player's faction owns or a finished site.
         string? parent = q.On?.Building;
         if (q.On is { Level: not null, Owned: false }) return PlacementFailure.NotOwnedBuilding;
-        if (q.On is { Level: null })
-        {
-            if (q.Sites.FirstOrDefault(s => s.Id == parent) is not { } home) return PlacementFailure.NotOwnedBuilding;
-            if (!home.Complete) return PlacementFailure.InsideIncomplete;
-        }
+        if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is null) return PlacementFailure.NotOwnedBuilding;
+        // The resource row comes after the first row's "don't own" text and before "incomplete".
+        var resources = q.Services.Resources(b.Id, q.Position);
+        if (resources != PlacementFailure.None) return resources;
+        if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is { Complete: false }) return PlacementFailure.InsideIncomplete;
         // A building under the ghost's centre (the one it stands in aside): another town's or the level's (not ours), or an unfinished site of ours.
         foreach (var site in q.Sites)
             if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } siteFootprint
