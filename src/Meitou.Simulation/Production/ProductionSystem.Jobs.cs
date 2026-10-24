@@ -237,14 +237,22 @@ public sealed partial class ProductionSystem
         cold.Operating = true;
     }
 
-    /// <summary>A job of the list that may run now: Meitou runs its type, the jobs switch is on (or the type ignores it), and it is not blocked.</summary>
+    /// <summary>
+    /// The square of how far (3D) from the character a job's target may be (<b>Verified</b>, <c>AI::isTargetInRangeForOrders</c> <c>FUN_140597790</c> in the default ROAM_FAR mode: the walk a job
+    /// plans needs StateType 27 <c>isMovementAllowed</c>; about 6517 units). Farther, the job is skipped, so a character away from its base does not walk back for a job there.
+    /// </summary>
+    public const float JobRangeSq = 4.246733e7f;
+
+    /// <summary>A job of the list that may run now: Meitou runs its type, the jobs switch is on (or the type ignores it), its target is within <see cref="JobRangeSq"/>, and it is not blocked.</summary>
     bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
         if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
-        // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle").
-        if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is not null;
+        var at = world.Characters.Next[slot].Position;
+        // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle"); a pick out of range fails the job.
+        if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
+        if (job.Site is { } id && Site(world, id) is { } site && Vector3.DistanceSquared(at, site.Position) >= JobRangeSq) return false;
         return !Blocked(world, cold, job);
     }
 
