@@ -149,6 +149,9 @@ internal sealed class RagdollPhysics : IDisposable
     {
         try
         {
+            // Declared first so it outlives the physics: the pair cache keeps worker caches in the dispatcher's thread pools, read by every later
+            // step (single-threaded too) and freed when the simulation is disposed (disposed first, it was a use after free: a rare crash).
+            using var threads = new BepuUtilities.ThreadDispatcher(Math.Clamp(Environment.ProcessorCount / 2, 2, 4));
             using var physics = new RagdollPhysics();
             var simulation = physics.Simulation;
             physics.Cover(new Vector3(16, 0, 16), 20, new WarmUpEnvironment(), 0);
@@ -189,8 +192,7 @@ internal sealed class RagdollPhysics : IDisposable
             // Single-threaded, then on a dispatcher as RagdollSystem steps with more than one world thread: Bepu's multithreaded solver and broad phase are code
             // paths of their own (they still compiled 50 ms in the first moving tick with the single-threaded warm-up alone).
             for (int tick = 0; tick < 45; tick++) physics.Step(1 / 30f);
-            using (var threads = new BepuUtilities.ThreadDispatcher(Math.Clamp(Environment.ProcessorCount / 2, 2, 4)))
-                for (int tick = 0; tick < 45; tick++) physics.Step(1 / 30f, threads);
+            for (int tick = 0; tick < 45; tick++) physics.Step(1 / 30f, threads);
             // Frozen as RagdollSystem.Freeze does: the joints go, the bodies stop and turn kinematic; then the tiles are swept away.
             foreach (var joint in joints) simulation.Solver.Remove(joint);
             foreach (var handle in bodies)
