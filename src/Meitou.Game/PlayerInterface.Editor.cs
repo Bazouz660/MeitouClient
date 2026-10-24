@@ -99,6 +99,9 @@ sealed partial class PlayerInterface
     void ShowEditorCharacter()
     {
         if (editor is null || Draft(editor.Current) is not { } draft) return;
+        // At creation a character of a race the editor doesn't offer (a start's `force race`) takes the first offered race (FUN_1405efd60).
+        if (editor.Kind == EditKind.Creation && EditorData is { } data && EditorRaces(data.Db) is [{ } first, ..] groups && IndexOf(groups, draft.Race) < 0)
+            draft.SetRace(first.Races[0], editor.Seed++);
         faithfulScreens.SetText("editor", "NameText", draft.Name);
         Select([editor.Current], false);
     }

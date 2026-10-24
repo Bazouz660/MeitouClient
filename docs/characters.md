@@ -178,7 +178,9 @@ exe decompile unless marked; Meitou: `CharacterDraft` (data), `EditCharacter` / 
   (dialogue `DA_CHARACTER_EDITOR` on the talking player character; `DA_JOIN_SQUAD_WITH_EDIT` and slave purchases on the recruits). Mode 1
   hides the race, subrace and gender arrows; they are also hidden when there is no choice. Everything else works in both modes.
 - **Races**: RACE_GROUP name on RACE, RACE name on SUBRACE; a race is listed if not an animal, in a group, has its editor limits XML, `playable`
-  (mode 0) and, with a `force race` list, in it (none left: "Game start has no valid races", the list is unrestricted). Base data: Human
+  (mode 0) and, with a `force race` list, in it (none left: "Game start has no valid races", the list is unrestricted). Showing a character in
+  mode 0 (`FUN_1405efd60`) whose race isn't listed switches it to the first group's first race (a race missing from its group: that group's
+  first), so The Hive Exile's raceless `Exile` becomes a hive race. Base data: Human
   {Greenlander, Scorchlander}, Shek, Hive {Prince, Soldier Drone, Worker Drone}, Skeleton (**Verified** by probe). Group order **Unknown**
   (Meitou: data order). Gender "-" when the race's gender list has fewer than two entries (**Verified**, `FUN_1405ee0c0`; Meitou: `single gender`); the
   subrace box always shows the RACE name. Description = RACE `description`. Stats panel (`FUN_1405ee0c0`, **Observed**):
