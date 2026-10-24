@@ -252,8 +252,7 @@ public sealed partial class AiSystem
         foreach (var m in squad.Members)
         {
             if (!table.TryResolveNext(m, out int s) || table.Cold(s)?.Ai is not { } mind) continue;
-            float angle = mind.MemberIndex * 2.39996f, r = 20 + 6 * mind.MemberIndex;
-            mind.Post = centre + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * r;
+            mind.Post = PostRound(centre, mind.MemberIndex);
             // A stroll picked round the old post is dropped, so the next one is round the new.
             if (table.Next[s].Task == (byte)CharacterTask.Wander) Become(table, s, CharacterTask.Idle);
             if (say is { } e) world.Defer(new Dialogue.DialogueEvent(m, CharacterId.None, e) { Tick = world.Tick + 1 });
@@ -293,6 +292,20 @@ public sealed partial class AiSystem
     /// TAKEN_OVER_PLAYER_TOWN (73). The original also makes the platoon persistent while it lasts (the population keeps an occupier out of the world, <see cref="Occupies"/>) and
     /// lists it among the town's hostile occupiers (Town +0x118, its count +0x128, which the campaigns read: <see cref="Occupied"/>). The posts move into the town (<see cref="PostsInto"/>).
     /// </summary>
+    /// <summary>A member's post on the ring of <see cref="PostsInto"/>: by member index, 20 + 6 per index from the centre.</summary>
+    static Vector2 PostRound(Vector2 centre, int index)
+    {
+        float angle = index * 2.39996f, r = 20 + 6 * index;
+        return centre + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * r;
+    }
+
+    /// <summary>
+    /// The post of a member whose mind is made while the squad occupies a town (a loaded or kept occupier resumes before its members have minds): on the town's ring, so
+    /// its goals without a building there are not all acted out where it stood when it was saved.
+    /// </summary>
+    Vector2? OccupierPost(World world, Blackboard board, int index) =>
+        board.CurrentClass == PackageClass.OccupyTown && DestinationCentre(world, board) is { } centre ? PostRound(centre, index) : null;
+
     void OccupyStarted(World world, Squad squad, Blackboard board) => Occupy(world, squad, board, TakenOverPlayerTown);
 
     /// <summary>An occupier come back into the world (<see cref="Blackboard.Resume"/>): the occupation's state again from the town it is in, without the members' line.</summary>

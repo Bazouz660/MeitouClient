@@ -858,7 +858,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     var p = table.Next[s].Position;
                     cold.Ai = new AiMind
                     {
-                        Squad = squad, MemberIndex = k, Post = new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
+                        Squad = squad, MemberIndex = k, Post = OccupierPost(world, board, k) ?? new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
                     };
                 }
                 if (cold.Ai.Goal is { } g) board.Crowd[g.Task.Type] = board.Crowd.GetValueOrDefault(g.Task.Type) + 1;
