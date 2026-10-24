@@ -1,7 +1,7 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1, MEP-2 and MEP-3 accepted (2026-10-24); MEP-4 (tessellation/terrain relief) was evaluated and
-removed, so it is not shipping; MEP-5 not started.** Metal keeps the flat/parallax terrain path.
+Status: **MEP-1, MEP-2, MEP-3 and MEP-5 accepted (2026-10-24); MEP-4 (tessellation/terrain relief) was evaluated and
+removed, so it is not shipping.** MEP-I is not full Vulkan parity because Metal keeps the flat/parallax terrain path.
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -64,7 +64,7 @@ experimental GPU foliage cull stays off and unexposed.
 | **MEP-2** | **Reflection Quality** | Reflection MSAA/resolve and sampling parity at water views |
 | **MEP-3** | **Debris Lighting** | Full atmosphere lighting and haze for debris within Metal's sampler budget |
 | **MEP-4** | **Tessellation & Terrain Relief** | evaluated and removed (2026-10-24): performance/fallback risk outweighed the benefit; not shipping |
-| **MEP-5** | **Water Lighting Parity** | Full Meitou water lighting, foam shadows and lighting parity |
+| **MEP-5** | **Water Lighting Parity** | accepted 2026-10-24: native bindless water, full atmosphere path and foam shadows |
 
 ### MEP-1: Post Effects Parity
 
@@ -155,13 +155,13 @@ lighting and per-part cut-out state travel in one 128-byte push block. Metal no 
 approximation.
 
 The sampler-budget helper is `src/Meitou.Rendering/Gpu/Shaders/SamplerBudget.cs`: it counts a stage's direct samplers
-outside the native bindless set and fails with the shader's name instead of an opaque Metal pipeline error. Debris uses
-it at program creation (0 direct fragment samplers after the move); MEP-5 can use it to keep water within 16.
+outside the native bindless set and fails with the shader's name instead of an opaque Metal pipeline error. Debris and
+water use it at program creation; both have 0 direct fragment samplers.
 
 The Hub/desert gameplay check passed. Bone/limb visibility was not separately exercised because the test character
 died before losing a limb; luckyren Mode remains the quickest explicit debris check if it is revisited. **MEP-3 is
-the preview gate:** a public test may ship as an explicitly labelled Metal preview, with MEP-4/MEP-5 listed as known
-limitations.
+the preview gate:** a public test may ship as an explicitly labelled Metal preview, with MEP-4 listed as a known
+limitation.
 
 ### MEP-4: Tessellation & Terrain Relief (evaluated, not shipped)
 
@@ -190,36 +190,22 @@ If this is revisited, it needs a hard Metal performance budget, near-range tesse
 flat fallback (including factor-buffer allocation failure) and matched visual/soak validation. Do not re-enable it
 as a hidden default or a visible no-op.
 
-### MEP-5: Water Lighting Parity
+### MEP-5: Water Lighting Parity (accepted)
 
 **Purpose:** remove the `METAL_WATER` lighting compromise and finish water parity.
 
-Current gap: Metal keeps waves, foam, caustics, reflection and refraction, but `METAL_WATER` drops GI, lamps, dust,
-environment specular and material lighting; foam has no sun shadow. The 16-sampler limit is the constraint.
+The water now uses the native model on both backends: one `WaterConstants` block per segment and every water texture
+(including heights, ocean/shore/river maps, reflection and refraction) in the bindless table. The fragment and vertex
+programs therefore have **0 direct samplers**, and the full `AtmosphereShaders.Functions` path is compiled instead of
+the `METAL_WATER` subset. The shared water body still uses Meitou's own water formula (Vulkan's reference); the
+restored atmosphere path supplies the cloud-shadow tile and `kenshiShadow` for foam. `MetalMeitouFragment`,
+`BindMetalSamplers` and the two-layer parameter packing are gone. Reflection/refraction and the MEP-2 MSAA decision are
+unchanged, and `SamplerBudget.Require` checks the native water programs at creation.
 
-Work items:
-
-- Reuse the bindless/atlas helper from MEP-3 to bring the full atmosphere lighting to water without exceeding 16 direct
-  fragment samplers.
-- Restore foam sun shadows, lamp/GI response, dust and environment specular.
-- Keep reflection/refraction and the MSAA decision from MEP-2.
-- Validate sea, river, shoreline, night, rain, lamps and combat scenes against Vulkan.
-- Remove or relabel any remaining `METAL_WATER` simplification; no Metal-only water look.
-
-Likely files:
-
-- `src/Meitou.Rendering/WaterRenderer.cs` (`METAL_WATER`, `MetalMeitouFragment`, sampler bindings)
-- `src/Meitou.Rendering/AtmosphereShaders.cs` / bindless table
-- `src/Meitou.Rendering/ReflectionPass.cs`
-- `src/Meitou.Game/GameHost.Metal.cs` (settings)
-
-Acceptance:
-
-- Water and foam match Vulkan in daylight, night, rain and lamp light.
-- No sampler compile failure; reflection/refraction remain stable.
-- Fixed-scene water comparisons, a long sea/river route and a 30-minute soak.
-- **MEP-5 is the remaining effects gate.** It cannot restore full Vulkan parity on its own because MEP-4 tessellation is
-  not shipping; terrain displacement/rock smoothing/outline refinement remain documented limitations.
+**Acceptance (2026-10-24):** the user accepted the in-game swamp and desert water; build 0/0; quick suite 424 passed,
+2 skipped; Metal screenshot runs compiled and rendered both water views without a shader or GPU error. The 30-minute
+post-merge soak remains a separate gate. MEP-5 does not restore full Vulkan parity on its own because MEP-4
+tessellation is not shipping; terrain displacement/rock smoothing/outline refinement remain documented limitations.
 
 ## Cross-cutting requirements
 
@@ -229,8 +215,8 @@ Acceptance:
   temporal path is noisy. Compare regions/means, not bytes.
 - **Temporal comparisons.** Use the same camera, time, weather and simulation ticks; first compare at native/no
   temporal, then with MetalFX/TAA. Cloud/water time still follows real time on Metal, so stills are not byte-comparable.
-- **Memory.** Keep the 5120/6144/8120 MB soft budget behavior; MEP-5 is the remaining large consumer. Do not
-  raise the default to hide leaks.
+- **Memory.** Keep the 5120/6144/8120 MB soft budget behavior; water remains a large consumer, but MEP-5 adds no
+  per-frame map upload. Do not raise the default to hide leaks.
 - **GPU cull.** Leave the experimental GPU foliage cull off and hidden. It is not part of this iteration.
 - **Visual acceptance.** The user validates visual changes manually; an automated build/test pass is not visual
   acceptance.
@@ -274,8 +260,8 @@ not performance numbers.
 
 ## Risks and blockers
 
-- **Metal sampler limit:** debris now uses the native bindless table; water still has an exactly-16 `METAL_WATER`
-  direct-sampler path and should reuse `SamplerBudget` during MEP-5 if its declarations change.
+- **Metal sampler limit:** debris and water use the native bindless table and have 0 direct fragment samplers.
+  `SamplerBudget.Require` guards both at program creation.
 - **Tessellation:** the largest engineering risk; isolate it and stop the milestone if the Metal pipeline path cannot be
   made stable.
 - **TAA/MetalFX:** temporal artifacts are hard to compare; use native/no-temporal baselines first.
@@ -288,6 +274,6 @@ not performance numbers.
 
 ## Immediate next action
 
-MEP-4 is **closed as not shipping**; keep the flat/parallax fallback, the hidden tessellation toggles and the GPU cull
-off. MEP-5 (water lighting) remains not started; if it is pursued, treat tessellation absence as a permanent known
-limitation of the Metal preview rather than a reason to resurrect MEP-4.
+MEP-4 is **closed as not shipping**; keep the flat/parallax fallback and the hidden tessellation toggles. MEP-5 is
+accepted. The MEP-I effects work is complete apart from the tessellation limitation; the 30-minute post-merge soak and
+the separate performance/default-switch decision remain. Keep the experimental GPU cull off.

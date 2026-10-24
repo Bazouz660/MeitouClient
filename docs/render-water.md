@@ -27,8 +27,10 @@ River coverage, biome scum and object-contact foam are incomplete.
 
 Water combines Fresnel, normal distortion, depth absorption/refraction, sky/scene reflection,
 caustics, crest light/glitter and persistent foam. Surface colour/clarity depend on biome/Tab
-settings. Foam uses diffuse sun/ambient/weather lighting and dims at night, not emissive white.
-The reflected scene remains mirrored around Y100 despite waves. Reflect level/range, frustum,
+settings. Foam uses diffuse sun/ambient/weather lighting, reads the sun shadow and cloud-shadow
+tile, and dims at night, not emissive white. Metal uses the same native bindless water program as
+Vulkan; there is no Metal-only water fragment. The reflected scene remains mirrored around Y100
+despite waves. Reflect level/range, frustum,
 clip plane, water coverage and reuse age determine work; use original rules in Faithful.
 Meitou reflection skips unnecessary casters/shadows and shortens object/foliage reaches. The half-resolution
 target uses 4x MSAA by default on both backends (`--reflection-samples 1` disables it); level 2 reflects
@@ -52,6 +54,6 @@ near water, high-clarity far water, short-clarity shore and the15000 default bou
 check both topology/winding. **Observed** close-shore screenshots show256/128 differences;
 a still does not establish moving-wave quality. GPU savings on a shared card remain uncertain.
 Use a fixed water clock, wind, clarity, resolution/upscaler and texture quality for comparisons.
-**Unknown:** pictures demonstrating all foam shadows, incomplete river/scum/object interactions,
-and behaviour over all winds/biomes. A shutdown VkImageView leak was observed in validation;
+**Unknown:** incomplete river/scum/object interactions, and behaviour over all winds/biomes. A
+shutdown VkImageView leak was observed in validation;
 zero rendering-time errors alone does not establish clean destruction.

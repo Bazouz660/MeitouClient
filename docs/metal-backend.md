@@ -631,14 +631,13 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 ### 3. Water (plan step 6)
 
 **Meitou water is on Metal:** `WaterRenderer` takes `IGpuContext`; `OceanWaves`, `ShoreField` and the shared
-`ReflectionPass` are seam-neutral. Metal draws the Meitou waves, shore and foam with the `METAL_WATER` fragment:
-the atmosphere's GI, lamp, dust, specular and material-lighting declarations are compiled out, foam uses no sun
-shadow, and the two RGBA32F biome parameter maps are packed into one two-layer array. That leaves exactly Metal's
-16 fragment samplers. The reflection pass draws the mirrored sky, terrain, characters, objects and foliage with the
-same 4x (device-capped) MSAA colour+depth targets and colour resolve as Vulkan; `--reflection-samples 1` disables
-the path for an A/B. Refraction uses the shared half-res scene copy into a colour+sampled target;
-the faithful surface remains the fallback when the Meitou switch is off. The sea, Hub and river views still need a
-visual pass against Vulkan.
+`ReflectionPass` are seam-neutral. Water uses the native model on both backends: its own `WaterConstants` block (set 2)
+and the bindless table for the atmosphere, heights, biome maps, ocean/shore/river fields, reflection and refraction.
+There are no direct fragment samplers, so the full shared `AtmosphereShaders.Functions` path is compiled; foam reads
+`kenshiShadow` and the cloud-shadow tile. The reflection pass draws the mirrored sky, terrain, characters, objects and
+foliage with the same 4x (device-capped) MSAA colour+depth targets and colour resolve as Vulkan; `--reflection-samples 1`
+disables the path for an A/B. Refraction uses the shared half-res scene copy into a colour+sampled target; the faithful
+surface remains the fallback when the Meitou switch is off. Swamp and desert water were accepted on 2026-10-24 (MEP-5).
 
 ### 4. Characters and skinning (plan step 7)
 
@@ -813,16 +812,13 @@ default.
 - Metal screenshots are not byte-comparable run to run: cloud/water time still follows the real frame time, so the
   picture differs even when `--ticks` freezes simulation state. Compare regions / means, or freeze that clock for a
   pixel comparison.
-- Metal's fragment stage allows 16 samplers. The Meitou water builds at exactly 16 with `METAL_WATER`: the unused
-  GI/lamp/dust/specular/material-lighting declarations are compiled out, foam has no sun shadow, the two RGBA32F
-  parameter maps share one two-layer array, the displacement and slope cascades share one six-layer array, and all
-  samplers have explicit bindings 0..15 so a removed declaration cannot leave a hole. Reflection and refraction run
-  on Metal. Any further water sampler needs an atlas or a bindless path.
-- Debris now uses the native bindless model on both backends: the shared `kenshiLight`/`atmoApply` fragment reads the
-  atmosphere, shadows, GI, lamps and its diffuse map through the bindless set, with the model matrix, fallback light and
-  per-part diffuse/cut-out values in one 128-byte push block. That removes the old Metal-only simple sun/ambient path
-  and leaves **0 direct fragment samplers** for the debris program. `Gpu.Shaders.SamplerBudget` checks the direct count
-  at program creation and is the budget hook for MEP-5's water work.
+- Metal's fragment stage allows 16 direct samplers. Debris and water use the native bindless model on both backends,
+  so both have **0 direct fragment samplers**; water's atmosphere, heights, biome parameter arrays, ocean/shore/river
+  fields, reflection and refraction all live in the table. `Gpu.Shaders.SamplerBudget` checks the direct count at
+  program creation. The displacement and slope cascades still share one six-layer array.
+- Debris now uses the shared `kenshiLight`/`atmoApply` fragment: the atmosphere, shadows, GI, lamps and its diffuse map
+  come through the bindless set, with the model matrix, fallback light and per-part diffuse/cut-out values in one
+  128-byte push block. That removes the old Metal-only simple sun/ambient path.
 - UI shots: the Metal HUD is part of every screenshot. `--new-game --ui-panel inventory|stats|overview|menu`
   opens a panel; `MEITOU_METAL_OVERLAY=1` adds the frame-stats lines at the top-left. The Vulkan HUD/panel still
   renders (verified with `--ui-panel inventory` after the shared changes).
