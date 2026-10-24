@@ -1,10 +1,11 @@
 ﻿# Renders Kenshi message-banner labels (MessageSkin from Kenshi_UI.png, Exo 2 SemiBold) as transparent PNGs.
 # -Style Modern: a dark rounded chip in the bottom-left corner of a transparent 1920x1080 frame, for video overlays.
-# Usage: .\make-labels.ps1 [-Labels "Vanilla","Faithful","Meitou"] [-Style Modern [-Center]] [-Scale 1.5] [-Width 480] [-Align Left] [-Padding 40] [-HeightScale 1] [-Cap 1] [-Out .\labels]
+# Usage: .\make-labels.ps1 [-Labels "Vanilla","Faithful","Meitou"] [-Style Modern [-Center] [-Top]] [-Scale 1.5] [-Width 480] [-Align Left] [-Padding 40] [-HeightScale 1] [-Cap 1] [-Out .\labels]
 param(
   [string[]]$Labels = @('Vanilla', 'Faithful', 'Meitou'),
   [ValidateSet('Classic', 'Modern')][string]$Style = 'Classic',
-  [switch]$Center,           # Modern: chip at the bottom centre instead of the bottom left
+  [switch]$Center,           # Modern: chip centred horizontally instead of at the left
+  [switch]$Top,              # Modern: chip at the top edge instead of the bottom
   [double]$Scale = 1.5,
   [int]$Width = 480,
   [string]$Out = (Join-Path $PSScriptRoot 'labels'),
@@ -31,6 +32,7 @@ if ($Style -eq 'Modern') {
     $p.CloseFigure(); $p
   }
   $size = 32.3; $cx = 24; $cy = 966; $ch = 90; $baseline = 1024
+  if ($Top) { $cy = 24; $baseline = 82 }   # the same 24px margin, from the top edge
   $ascent = $size * $family.GetCellAscent(0) / $family.GetEmHeight(0)
   # **text** is set in Exo 2 Bold, on the same baseline.
   $boldFonts = New-Object System.Drawing.Text.PrivateFontCollection
