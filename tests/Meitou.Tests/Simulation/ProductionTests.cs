@@ -130,14 +130,17 @@ public class ProductionTests
         }
 
         /// <summary>A player character beside site <paramref name="site"/> with one stat and what it carries (one stack each).</summary>
-        public CharacterId Add(int site, StatsEnumerated stat, float level, params (string Item, int Count)[] carried)
+        public CharacterId Add(int site, StatsEnumerated stat, float level, params (string Item, int Count)[] carried) => Add(site, Vector3.Zero, stat, level, carried);
+
+        /// <summary>A worker <paramref name="offset"/> further from the building than the usual 10.</summary>
+        public CharacterId Add(int site, Vector3 offset, StatsEnumerated stat, float level, params (string Item, int Count)[] carried)
         {
             var inventory = new Inventory();
             foreach (var (item, count) in carried) inventory.Add(Items.Create(item, count)!);
             var stats = new CharacterStats();
             stats[stat] = level;
             var cold = new CharacterCold { Name = "worker" + site, Race = Human, Stats = stats, Medical = MedicalState.Create(Human, 50), Inventory = inventory, IsPlayer = true, Faction = PlayerFaction };
-            var p = World.Buildings.Find(Sites[site])!.Position + new Vector3(0, 0, 10);
+            var p = World.Buildings.Find(Sites[site])!.Position + new Vector3(0, 0, 10) + offset;
             return World.Characters.Spawn(new CharacterHot { Position = p, MaxSpeed = 40, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
         }
 
@@ -456,6 +459,19 @@ public class ProductionTests
         rig.World.Commands.Enqueue(new RemoveJob(w, 0) { Tick = rig.World.Tick });
         Look();
         Assert.Equal((rig.Sites[1], 0, 1), (cold.OperateSite, cold.JobIndex, cold.Jobs.Count));
+    }
+
+    /// <summary>A character takes a machine job just inside the original's job range (about 6517, docs/game/ai-tasks.md "Perma-jobs") and skips one just outside it.</summary>
+    [Fact]
+    public void A_machine_job_beyond_the_job_range_is_skipped()
+    {
+        using var rig = new Rig(Database(), Constants, [Well, Well]);
+        var (far, near) = (rig.Add(0, new Vector3(0, 0, 6600), StatsEnumerated.Labouring, Unit), rig.Add(1, new Vector3(0, 0, 6400), StatsEnumerated.Labouring, Unit));
+        rig.World.RunTick();
+        rig.World.Commands.Enqueue(new AddJob([far], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[0]) { Tick = rig.World.Tick });
+        rig.World.Commands.Enqueue(new AddJob([near], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[1]) { Tick = rig.World.Tick });
+        rig.World.RunTicks(2 * ProductionSystem.JobCheckTicks);
+        Assert.Equal((-1, 0), (rig.World.Characters.Cold(far.Slot)!.JobIndex, rig.World.Characters.Cold(near.Slot)!.JobIndex));
     }
 
     /// <summary>
