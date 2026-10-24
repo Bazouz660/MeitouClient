@@ -1,6 +1,6 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1 implemented, awaiting visual validation** (2026-10-24); MEP-2..MEP-5 not started.
+Status: **MEP-1 accepted (2026-10-24); MEP-2..MEP-5 not started.**
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -8,7 +8,7 @@ effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
 
 ## MEP-1 implementation (2026-10-24)
 
-The code is implemented; the user still has to validate the temporal and anti-aliasing behaviour in game.
+The code is implemented and the MetalFX path is accepted in game (desert/dust/LOD views, 2026-10-24).
 
 - **Particle coverage** is now passed through `IWorldPostChain.Particles`: full-size quads write their coverage in
   `ParticleRenderer.DrawCoverage`, and `PostComposite.ParticleCoverage` upsamples the half/quarter-size accumulations
@@ -32,8 +32,10 @@ The code is implemented; the user still has to validate the temporal and anti-al
 - **FogRate** is documented as a performance-only difference: Metal has no fragment-shading-rate attachment and
   renders fog/shafts at full rate. No no-op toggle was added.
 
-Validation still needs: a still camera with moving sun/clouds, rain and dust with camera motion, MetalFX temporal and
-TAA (including a long turn/teleport), and SMAA with no temporal upscaler.
+**Acceptance:** the MetalFX temporal path was validated in the desert with distant terrain, dust and LOD transitions;
+the visible corruption was traced to the MetalFX motion-vector Y convention and to particle reactive coverage, and
+is fixed. MetalFX spatial 0.4 was already clean. TAA remains labelled experimental until it gets a dedicated
+validation pass, and SMAA remains opt-in/no-temporal.
 
 **Goal:** close the remaining visual effect gaps between the Vulkan reference and Metal so Metal can move from an
 opt-in preview to a parity/default candidate. This iteration is about **visual effects**, not GPU culling, Hi-Z,

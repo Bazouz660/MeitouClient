@@ -3,10 +3,10 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code/plan commit: `416d3dfb fix: keep low-res dust out of the MetalFX reactive mask`  
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. MEP-1 code is implemented and awaiting
-visual validation; [MEP-I](docs/metal-effects-parity-plan.md) then continues with reflection quality -> debris
-lighting -> tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull
-stays off.
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 is accepted** (2026-10-24,
+MetalFX temporal: dust/desert/LOD flicker fixed); [MEP-I](docs/metal-effects-parity-plan.md) continues with
+**MEP-2 reflection quality**, then debris lighting -> tessellation/terrain relief -> water lighting. Vulkan remains
+the reference/default and the GPU cull stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
@@ -86,10 +86,11 @@ reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief
 (MEP-5). MEP-3 is the preview-test gate; MEP-5 is the full effects-parity gate. Vulkan stays the default/reference,
 the GPU cull stays off, and MEP-I covers visual effects only.
 
-**MEP-1 code is implemented and awaiting the user's in-game visual validation:** particle coverage in the temporal
-reactive mask, the shared sun-motion tracker, the Metal 0..1 velocity-depth fix, a camera-cut reset, and SMAA in
-`PostComposite`. FogRate remains a documented performance-only difference (Metal has no VRS attachment). Do not start
-MEP-2 until the user accepts the temporal/SMAA result.
+**MEP-1 is accepted:** particle coverage in the temporal reactive mask, the shared sun-motion tracker, the Metal
+0..1 velocity-depth fix, the MetalFX y-down motion convention, camera-cut resets and SMAA in `PostComposite`. The
+MetalFX reactive mask now gets full-size particle coverage only; low-resolution dust coverage remains TAA-only
+because it was unstable at distant terrain/LOD edges. FogRate remains a documented performance-only difference
+(Metal has no VRS attachment). **MEP-2 is next.**
 
 ## Upstream sync (2026-10-23)
 
@@ -345,9 +346,9 @@ Verified clean:
 
 ## Next work
 
-1. Validate the implemented MEP-1 in game, then continue MEP-I (reflection quality, debris lighting,
-   tessellation/terrain relief and water lighting). Do not start GPU culling or default-switch work until the MEP-I
-   preview gate is accepted.
+1. Start **MEP-2 reflection quality** (details in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md)),
+   then debris lighting, tessellation/terrain relief and water lighting. Do not start GPU culling or default-switch
+   work until the MEP-I preview gate is accepted.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal
