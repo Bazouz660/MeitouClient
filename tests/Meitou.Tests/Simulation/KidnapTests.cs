@@ -12,6 +12,7 @@ using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Combat;
 using Meitou.Simulation.Crime;
+using Meitou.Simulation.Items;
 using Meitou.Simulation.Kidnap;
 using Meitou.Simulation.Locks;
 using Meitou.Simulation.Saving;
@@ -85,6 +86,56 @@ public class KidnapTests
         // It covers what it is for: the downed player character was lifted, carried to a cage of the raiders' town and held there as kidnapped.
         Assert.True(seen.Caged && seen.Kidnapped && seen.Logged, $"{seen}");
         return hashes;
+    }
+
+    [Fact]
+    public void A_hungry_bandit_loots_only_food_from_a_downed_player_character_after_8_seconds_and_never_loots_it_again()
+    {
+        var data = ArrestTests.Town();
+        var carry = new CarrySystem(BaseGame, BodyOptions.Default, 1) { Relations = data.Relations };
+        using var population = new PopulationSystem(data);
+        var walk = new OpenGroundWalkability((_, _) => 150);
+        using var world = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk,
+            [new PlayerSystem(), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), carry, population, new Meitou.Simulation.Dialogue.DialogueSystem(data)]);
+        int city = data.FactionIndex("50-a");
+        // Goal 177 in every role list, always in its hours.
+        var goal = new AiGoal(new AiTask("t", "loot", TaskType.LOOT_THE_DEAD, TaskPriority.Urgent, TaskTargetType.Specific, TaskEndEvent.Nothing), 0, 100, 1);
+        var board = new Blackboard([new(0, new AiPackage { Id = "loot", Name = "loot", Roles = [[goal], [goal], [goal], [], []] })]);
+        board.Update();
+        var bandits = new Squad { Id = world.Squads.NextId(), TemplateId = "t", Faction = city, Ai = board };
+        world.Squads.Add(bandits);
+        var bandit = new Combatant { Name = "bandit" }.MakeCold();
+        var pack = new Inventory();
+        (bandit.Faction, bandit.NpcClass, bandit.Inventory, bandit.Ai) = (city, FundamentalType.Bandit, pack, new AiMind { Squad = bandits });
+        pack.Items.Add(new ItemInstance { Record = "sabre", Type = FcsRecordType.WEAPON, Section = "hip" });
+        var looter = Add(world, bandit, Vector2.Zero, bandits);
+
+        var players = new Squad { Id = world.Squads.NextId(), TemplateId = "p", Faction = data.Relations.PlayerFaction };
+        world.Squads.Add(players);
+        var hero = new Combatant { Name = "hero" }.MakeCold();
+        var pockets = new Inventory();
+        (hero.Faction, hero.IsPlayer, hero.Inventory) = (data.Relations.PlayerFaction, true, pockets);
+        var bread = new ItemInstance { Record = "bread", Type = FcsRecordType.ITEM, ItemFunction = 3 };
+        var wrench = new ItemInstance { Record = "wrench", Type = FcsRecordType.ITEM };
+        var katana = new ItemInstance { Record = "katana", Type = FcsRecordType.WEAPON, Section = "hip" };
+        Assert.True(pockets.Add(bread) && pockets.Add(wrench));
+        pockets.Items.Add(katana);
+        var victim = Add(world, hero, new Vector2(30, 0), players);
+        hero.Medical!.KnockOut(10000);
+
+        // The walk and 8 s at the body: nothing taken while it kneels.
+        world.RunTicks(30 * 7);
+        Assert.Equal(CharacterTask.Loot, (CharacterTask)world.Characters.Next[looter.Slot].Task);
+        Assert.Contains(bread, pockets.Items);
+        world.RunTicks(30 * 6);
+        Assert.Equal([bread], pack.Items.Where(i => i.Record == "bread"));
+        Assert.Contains(wrench, pockets.Items);
+        Assert.Contains(katana, pockets.Items);   // the bandit has its own weapon on
+        Assert.True(world.SystemOf<Meitou.Simulation.Dialogue.DialogueSystem>()!.Memory.HasShort(world, bandits.Id, victim, Meitou.Simulation.Dialogue.MemoryTag.Looted));
+        // Tagged: it is not looted again.
+        world.RunTicks(30 * 20);
+        Assert.Single(carry.Loots, e => e.Victim == victim);
+        Assert.NotEqual(CharacterTask.Loot, (CharacterTask)world.Characters.Next[looter.Slot].Task);
     }
 
     [Fact]
