@@ -480,9 +480,15 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
 `Kenshi_GenericBuildingWindow` (**Verified**, layout read): Window `Kenshi_WindowCX` captioned "BUILDING NAME", layer Window; `CraftingPanel`
 (`CraftingName`, `QueueButton` "QUEUE..."), `TitlesPanel` (INPUTS / OUTPUT), `Input1Panel` / `Input2Panel` (`InputNText`, `InputNStatusText`,
 slot `inN`, `InputNProgressBar`), output (`out` slot, `OutputProgressBar`, `OutputText`, `OutputDataPanel`). The `inN` / `out` inventory
-sections are the recipe item's `inventory footprint width` × `inventory footprint height` cells (**Verified**, `FUN_14029e7b0` code read). Where the
-grid sits in its content panel and whether the progress bar moves for a tall grid is **Unknown**; Meitou keeps the layout's top left and pushes the
-bar under an overlapping grid.
+sections are the recipe item's `inventory footprint width` × `inventory footprint height` cells (**Verified**, `FUN_14029e7b0` code read). The grid
+sits centred under its label and progress bar (**Observed**, owner's screenshot of an electrical workbench, 2026-10-24); the rule behind it and whether the bar
+moves for a tall grid are **Unknown**. Meitou keeps the layout's top, centres the grid on the bar (a grid wider than the bar keeps the slot's left edge)
+and pushes the bar under an overlapping grid.
+
+Opening (**Observed**, owner's screenshots of the original, 2026-10-24): selecting a machine, bench or storage shows its window alone, with no inventory.
+A right click that sends a character to a storage opens the character's inventory with the storage window beside it; once the inventory closes, the
+storage window is back where it stood (the screen's lower left). Meitou: the same for a window already shown alone, and a window the player closed
+opens again on such an order.
 
 ### Character stats runtime layout
 

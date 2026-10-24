@@ -16,6 +16,8 @@ sealed partial class PlayerInterface
     CharacterId shownLoot = CharacterId.None, closedLoot = CharacterId.None;
     /// <summary>The loot's bag window is wanted (OPEN BAG in the loot window toggles it).</summary>
     bool lootBagOpen = true;
+    /// <summary>The character whose bag the loot window opened (not left open with OPEN BAG): it closes again with the loot window unless OPEN BAG was pressed meanwhile.</summary>
+    CharacterId lootOpenedBag = CharacterId.None;
 
     static bool IsAnimal(CharacterSnapshot? c) => c?.Appearance?.Animal is not null;
 
@@ -51,6 +53,7 @@ sealed partial class PlayerInterface
     void SyncLootScreen()
     {
         if (faithfulScreens is null) return;
+        if (!lootOpenedBag.IsNone && !faithfulScreens.IsOpen("loot")) { bagOpen.Remove(lootOpenedBag); lootOpenedBag = CharacterId.None; }
         var open = session.CurrentSnapshot.OpenLoot;
         if (closedLoot != open) closedLoot = CharacterId.None;
         if (!shownLoot.IsNone && shownLoot == open && !faithfulScreens.IsOpen("loot"))
@@ -67,15 +70,16 @@ sealed partial class PlayerInterface
             {
                 if (Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
                 faithfulScreens.Open("loot");
-                // The original opens both characters' bags with the window (the looted one's is open by default); OPEN BAG still toggles them afterwards.
-                if (InventoryOwner() is { } mine) bagOpen.Add(mine.Id);
-                PlaceInventoryBeside("loot", left: false);
+                // The original opens both characters' bags with the window (the looted one's is open by default); OPEN BAG still toggles them afterwards. The looter's
+                // remembered OPEN BAG choice is kept: a bag opened here closes with the window.
+                if (InventoryOwner() is { } mine && bagOpen.Add(mine.Id)) lootOpenedBag = mine.Id;
+                PlaceWindowRow();
                 inventoryScroll.Remove("loot-bag");
             }
         }
         bool want = faithfulScreens.IsOpen("loot") && lootBagOpen && LootBody() is { ItemGrid: { BagWidth: > 0, BagHeight: > 0 } };
         if (want == faithfulScreens.IsOpen("loot-bag")) return;
-        if (!want) { faithfulScreens.Close("loot-bag"); return; }
+        if (!want) { faithfulScreens.Close("loot-bag"); if (faithfulScreens.IsOpen("loot")) PlaceWindowRow(); return; }
         faithfulScreens.Open("loot-bag");
         PlaceWindowRow();
     }

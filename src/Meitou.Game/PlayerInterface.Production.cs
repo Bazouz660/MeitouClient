@@ -176,11 +176,13 @@ sealed partial class PlayerInterface
             int index = controls.FindIndex(c => c.Name == name);
             if (index < 0) return;
             // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top and takes the progress bar's horizontal centre (the layout slot is not centred in its column), so it stays under its label and bar.
+            // A grid wider than the bar keeps the slot's left edge, so it overflows only to the right as before rather than into the column on its left.
             var slot = controls[index];
             var barRoot = controls.FirstOrDefault(c => c.Name == bar);
             float width = view.Width * InventoryCell;
-            float centre = barRoot is { } track ? track.Bounds.X + track.Bounds.Width / 2 : slot.Bounds.X + slot.Bounds.Width / 2;
-            var b = slot.Bounds with { X = centre - width / 2, Width = width, Height = view.Height * InventoryCell };
+            var column = barRoot?.Bounds ?? slot.Bounds;
+            float x = width <= column.Width ? column.X + (column.Width - width) / 2 : slot.Bounds.X;
+            var b = slot.Bounds with { X = x, Width = width, Height = view.Height * InventoryCell };
             // The grid and a moved bar may leave their content panel, so they clip to the window instead.
             var clip = controls.FirstOrDefault(c => c.Type == "Window")?.Bounds ?? slot.Clip;
             controls[index] = slot with

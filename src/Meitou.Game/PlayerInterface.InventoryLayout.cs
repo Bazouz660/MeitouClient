@@ -31,23 +31,33 @@ sealed partial class PlayerInterface
         if (faithfulScreens.IsOpen("loot")) PlaceWindowRow(); else PlaceInventoryBeside("bag", left: true);
     }
 
+    /// <summary>The open windows' bounds by screen, as laid out now.</summary>
+    Dictionary<string, UiRect> WindowRoots()
+    {
+        var roots = new Dictionary<string, UiRect>(StringComparer.Ordinal);
+        foreach (var f in faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent))
+            if (f.Controls.FirstOrDefault(c => c.Type == "Window") is { } window) roots[f.Id] = window.Bounds;
+        return roots;
+    }
+
     /// <summary>
-    /// Lays the open character, loot and bag windows out in one row, left to right: the character's bag, the character, the looted or traded character, its bag. The row is centred
-    /// (at the left edge when it is wider than the screen) with the character's top, so no window slides over another when the row is wider than the pair that placed them.
+    /// Lays the open character, loot and bag windows out in one row, left to right: the limbs window, the character's bag, the character, the looted or traded character, its bag. The row
+    /// is centred with the character's top (the limbs window keeps its margin top), so no window slides over another when the row is wider than the pair that placed them. A row wider
+    /// than the screen spans it, its windows overlapping evenly rather than the host stacking the last ones on the right edge.
     /// </summary>
     void PlaceWindowRow()
     {
-        var frames = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent);
-        UiRect? Root(string screen) => faithfulScreens.IsOpen(screen) ? frames.FirstOrDefault(f => f.Id == screen)?.Controls.FirstOrDefault(c => c.Type == "Window")?.Bounds : null;
-        var row = new[] { "bag", "inventory", "loot", "loot-bag" }.Where(s => Root(s) is not null).ToArray();
+        var roots = WindowRoots();
+        var row = new[] { "limbs", "bag", "inventory", "loot", "loot-bag" }.Where(roots.ContainsKey).ToArray();
         if (row.Length < 2) return;
         float gap = 6 * InventoryScale;
-        float total = row.Sum(s => Root(s)!.Value.Width) + gap * (row.Length - 1);
-        float x = total <= Width ? (Width - total) / 2 : 0, y = (Root("inventory") ?? Root(row[0]))!.Value.Y;
+        float total = row.Sum(s => roots[s].Width) + gap * (row.Length - 1);
+        if (total > Width) { gap -= (total - Width) / (row.Length - 1); total = Width; }
+        float x = (Width - total) / 2, y = (roots.TryGetValue("inventory", out var lead) ? lead : roots[row[0]]).Y, margin = 0.05f * Math.Min(Width, Height);
         foreach (string screen in row)
         {
-            var r = Root(screen)!.Value;
-            faithfulScreens.SetOffset(screen, faithfulScreens.GetOffset(screen) + new Vector2(x - r.X, y - r.Y));
+            var r = roots[screen];
+            faithfulScreens.SetOffset(screen, faithfulScreens.GetOffset(screen) + new Vector2(x - r.X, (screen == "limbs" ? margin : y) - r.Y));
             x += r.Width + gap;
         }
     }
@@ -55,11 +65,13 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The limbs window's place (<c>FUN_1406e4960</c>, <b>Verified</b>): its right edge on the left edge of the inventory (of its bag window when that is open), its top at the margin
     /// (5% of the smaller screen side); when that is off the screen, at the left edge with the inventory and its bag pushed right of it. Not moved with the inventory afterwards.
+    /// With a loot window open it joins the window row instead.
     /// </summary>
     void PlaceLimbsWindow()
     {
-        var frames = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent);
-        UiRect? Root(string screen) => faithfulScreens.IsOpen(screen) ? frames.FirstOrDefault(f => f.Id == screen)?.Controls.FirstOrDefault(c => c.Type == "Window")?.Bounds : null;
+        if (faithfulScreens.IsOpen("loot")) { PlaceWindowRow(); return; }
+        var roots = WindowRoots();
+        UiRect? Root(string screen) => roots.TryGetValue(screen, out var r) ? r : null;
         if (Root("limbs") is not { } limbs || (Root("bag") ?? Root("inventory")) is not { } anchor) return;
         float margin = 0.05f * Math.Min(Width, Height);
         float x = anchor.X - limbs.Width;
@@ -101,9 +113,8 @@ sealed partial class PlayerInterface
     /// <summary>Puts window <paramref name="id"/> beside <paramref name="anchor"/>'s, moving the anchor in when the pair would not fit the screen.</summary>
     void PlaceInventoryBeside(string id, bool left, string anchor = "inventory")
     {
-        var frames = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent);
-        UiRect? Root(string screen) => frames.FirstOrDefault(f => f.Id == screen)?.Controls.FirstOrDefault(c => c.Type == "Window")?.Bounds;
-        if (Root(id) is not { } other || Root(anchor) is not { } own) return;
+        var roots = WindowRoots();
+        if (!roots.TryGetValue(id, out var other) || !roots.TryGetValue(anchor, out var own)) return;
         float gap = 6 * InventoryScale;
         float x = left ? own.X - other.Width - gap : own.X + own.Width + gap;
         // Make room for the pair before the screen host clamps either window to the viewport.
