@@ -909,7 +909,7 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
 - **Item tooltips** are not user strings (**Observed**: the only ToolTipInventory constructor is in the inventory code): the Item classes' `vfunc_79` write rows into the Inventory tooltip (below).
 - **Timing** (**Verified**, MyGUI 3.2 `ToolTipManager`): shown 0.5 s after the pointer rests on the same widget (moving before it shows restarts the wait); once shown it follows the pointer; it hides when the
   widget under the pointer changes or the mouse is captured (a press). The delay Kenshi sets is **Unknown** (`setDelayVisible` is in neither the strings nor the call graph dump). Meitou: the topmost control under the pointer decides, a press
-  hides, a drag hides.
+  hides, a drag hides; the wait applies in the Faithful UI only, the Meitou UI shows a tooltip at once.
 - **Layout** (**Observed**, `FUN_140922680`, `FUN_1409208d0`, `FUN_140920d10`, `vfunc_9`s). One row per line: a `PanelEmpty` holding a `Kenshi_WordWrapEmpty` EditBox (WordWrap, Static, MultiLine) with the key
   aligned Left Top and, when there is a value, a second one aligned Right Top. The row sits `0.025` (`0.04` for the Inventory one) x UI scale of the widget's width from the left; its width is the key text width +
   the value text width + 2 offsets; its height the taller text. The first row starts round(0.1 x widget height) from the top, the next ones round(0.01 x widget height) below the one before, and the panel ends round(0.1 x

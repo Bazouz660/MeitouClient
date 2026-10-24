@@ -58,8 +58,8 @@ sealed partial class PlayerInterface
             (tipPoint, tipSince) = (mouse, now);
         }
         if (ResolveTooltip(hit) is not var (lines, kind) || lines.Count == 0) return;
-        // An item's (ToolTipInventory) shows at once: the inventory's mouse-move hook shows it, not MyGUI's tooltip timer (ToolTipInventory::vfunc_6, Verified).
-        if (!tipShown && (kind == TooltipKind.Inventory || Stopwatch.GetElapsedTime(tipSince, now).TotalSeconds >= UiTooltips.ShowDelaySeconds)) tipShown = true;
+        // An item's (ToolTipInventory) shows at once: the inventory's mouse-move hook shows it, not MyGUI's tooltip timer (ToolTipInventory::vfunc_6, Verified). The Meitou UI shows every one at once.
+        if (!tipShown && (kind == TooltipKind.Inventory || UiMode == UiMode.Meitou || Stopwatch.GetElapsedTime(tipSince, now).TotalSeconds >= UiTooltips.ShowDelaySeconds)) tipShown = true;
         if (!tipShown) return;
         // A static tooltip is shown in a widget of its own (the class names it: "static:AIToolTip"); an item's sits beside the window holding the item.
         UiRect? panel = kind == TooltipKind.Inventory ? ItemWindow(controls, hit) : null;
