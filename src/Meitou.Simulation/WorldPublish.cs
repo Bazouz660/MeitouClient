@@ -27,11 +27,14 @@ public sealed partial class World
         c.IsImprisoned ? c.InWhat is { } cage && Fixtures.Find(cage) is { } f ? f.Owner : -1
         : data is not null && data.TownAt(at) is >= 0 and var site && site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
 
+    /// <summary>Slots a publish job takes at a time: the characters are made on the worker pool, each one reading only the tick's state.</summary>
+    const int PublishChunk = 256;
+    CharacterSnapshot?[] published = [];
+
     /// <summary>Builds the <see cref="WorldSnapshot"/> of the tick that just ended from the state it left in <see cref="CharacterTable.Previous"/>.</summary>
     void Publish()
     {
         var table = Characters;
-        var list = new List<CharacterSnapshot>(table.Count);
         var state = table.Previous;
         // The selection's first member that could knock someone out from behind: the stealth KO chances are against it.
         int koSlot = -1;
@@ -41,16 +44,27 @@ public sealed partial class World
         var talk = systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault();
         var combat = systems.OfType<Combat.CombatSystem>().FirstOrDefault();
         var population = systems.OfType<PopulationSystem>().FirstOrDefault()?.Data;
-        for (int i = 0; i < state.Length; i++)
+        if (published.Length < state.Length) published = new CharacterSnapshot?[state.Length];
+        var made = published;
+        ParallelFor((state.Length + PublishChunk - 1) / PublishChunk, chunk =>
         {
-            if (!state[i].Alive) continue;
+            var state = table.Previous;
+            for (int i = chunk * PublishChunk, end = Math.Min(state.Length, i + PublishChunk); i < end; i++) made[i] = state[i].Alive ? Character(i) : null;
+        });
+        var list = new List<CharacterSnapshot>(table.Count);
+        for (int i = 0; i < state.Length; i++)
+            if (made[i] is { } snapshot) { list.Add(snapshot); made[i] = null; }
+
+        CharacterSnapshot Character(int i)
+        {
+            var state = table.Previous;
             var id = new CharacterId(i, state[i].Generation);
             var cold = table.Cold(i);
             // The details only the selection shows: asked once per character, the selection is a list.
             bool selected = cold is { IsPlayer: true } && Player.Selection.Contains(id), inspected = !selected && id == Player.Inspected, detailed = selected || inspected;
             bool sneaking = cold is { IsPlayer: true } && (cold.Orders & CharacterOrders.Sneak) != 0;
             var watchers = sneaking ? WatchersOf(cold!) : [];
-            list.Add(new CharacterSnapshot(id, cold?.Appearance, DrawnPosition(cold, state[i].Position), state[i].Yaw, cold?.Animation is { } anim && animations is not null ? animations.Publish(anim) : AnimationLayers.For(state[i].Animation, state[i].AnimationTime))
+            return new CharacterSnapshot(id, cold?.Appearance, DrawnPosition(cold, state[i].Position), state[i].Yaw, cold?.Animation is { } anim && animations is not null ? animations.Publish(anim) : AnimationLayers.For(state[i].Animation, state[i].AnimationTime))
             {
                 Faction = cold?.Faction ?? -1,
                 WeaponDrawn = cold is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None,
@@ -120,7 +134,7 @@ public sealed partial class World
                 Ragdoll = ragdolls?.Publish(id),
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
                     ? Carrying.CarrySystem.StealthKoChance(table.Cold(koSlot)!, cold, aggro?.Spotted(i, table.IdOf(koSlot)) == true) : null,
-            });
+            };
         }
         PreviousSnapshot = Snapshot;
         Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), CharacterTrade = dialogues?.PublishCharacterTrade(), Speech = PublishSpeech(), DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Squad, OpenLoot = Player.OpenLoot, LootOpener = Player.LootOpener,

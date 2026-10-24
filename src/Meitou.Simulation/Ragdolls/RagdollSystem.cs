@@ -173,7 +173,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             cold.CarryAttach = cold.CarriedBy.IsNone ? null : AttachOf(table, cold);
             var id = table.IdOf(i);
             ragdolls.TryGetValue(id, out var r);
-            var wanted = cold.Appearance is null || !HasRagdoll(cold) ? RagdollPart.None : Wanted(cold);
+            // The look's ragdoll file asked only of a character that wants one (two cache lookups per standing character every tick were most of this loop in a big battle).
+            var wanted = cold.Appearance is null ? RagdollPart.None : Wanted(cold);
+            if (wanted != RagdollPart.None && !HasRagdoll(cold)) wanted = RagdollPart.None;
             // A ragdoll a save holds (Saving.RagdollSave): taken the first time the character is seen, used when it starts as a whole body.
             SavedRagdoll? restore = null;
             if (cold.Save is { Ragdoll: { } saved })

@@ -128,9 +128,21 @@ public sealed class SkeletonRig
 
     readonly System.Collections.Concurrent.ConcurrentBag<PoseScratch> scratches = [];
 
+    // The scratch the thread gave back last, kept on the thread: a crowd of one rig posed in parallel then takes no lock (the shared bag's were contended).
+    [ThreadStatic] static PoseScratch? threadScratch;
+
     /// <summary>A working set for posing on the calling thread; give it back with <see cref="Return"/>.</summary>
-    public PoseScratch Rent() => scratches.TryTake(out var s) ? s : new PoseScratch(this);
-    public void Return(PoseScratch scratch) => scratches.Add(scratch);
+    public PoseScratch Rent()
+    {
+        if (threadScratch is { } kept && kept.Rig == this) { threadScratch = null; return kept; }
+        return scratches.TryTake(out var s) ? s : new PoseScratch(this);
+    }
+
+    public void Return(PoseScratch scratch)
+    {
+        if (threadScratch is { } kept) kept.Rig.scratches.Add(kept);
+        threadScratch = scratch;
+    }
 
     /// <summary>Handle of the bone called <paramref name="name"/>, or null.</summary>
     public int? Handle(string name) => handles.TryGetValue(name, out var h) ? h : null;
@@ -210,6 +222,7 @@ public sealed class SkeletonRig
 public sealed class PoseScratch
 {
     readonly SkeletonRig rig;
+    internal SkeletonRig Rig => rig;
     readonly Vector3[] pos, scale;
     readonly Quaternion[] rot;
     public readonly Vector3[] DerivedPosition, DerivedScale;

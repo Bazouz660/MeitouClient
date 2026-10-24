@@ -27,7 +27,8 @@ rendering is camera-relative.
 ## Threading
 
 Tick order: Inputs → Schedule → Think → Move → Act → ordered Apply → SlowWorld → Publish.
-Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier.
+Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier. Publish makes the character snapshots on the
+workers in 256-slot chunks (each reads only the tick's state), listed in slot order.
 `CharacterHot.Previous` is read-only; a partition writes only its own `Next` slots. Spawn/remove
 only in serial phases after consumers finish; generation IDs prevent stale slot references.
 Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish. Its checks round a target (who swings at
