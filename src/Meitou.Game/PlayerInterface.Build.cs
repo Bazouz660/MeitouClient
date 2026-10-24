@@ -16,7 +16,7 @@ namespace Meitou.Game;
 /// <summary>
 /// Build mode (docs/game/buildings-production.md "Placement" and "Build menu", docs/simulation.md "Buildings"): B opens <c>Kenshi_BuildWindow</c> (categories, groups, the stats, Confirm /
 /// Undo / Build, the floor arrows) and a ghost of the chosen building follows the cursor on the terrain, green where <see cref="PlacementCheck"/> allows it and red where not, with the
-/// original's message. A click (or the build map's apply key) queues the ghost, Confirm sends the queue as <see cref="PlaceBuildings"/>. The ghost's controls are the build map's keys at the
+/// original's message. A click (or the build map's apply key) queues the ghost, Confirm sends the queue as <see cref="PlaceBuildings"/> and leaves build mode. The ghost's controls are the build map's keys at the
 /// documented speeds. Right-clicking a site with characters selected orders them to build it; the context menu offers Dismantle.
 /// </summary>
 sealed partial class PlayerInterface
@@ -369,6 +369,7 @@ sealed partial class PlayerInterface
         Sound("Building_Confirm");
         Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, q.Parent))]) { Tick = session.World.Tick });
         buildQueue.Clear();
+        SetBuildMode(false);
     }
 
     /// <summary>The pointer in build mode: <c>build</c> over the world while the ghost can stand, <c>invalidmove</c> while it cannot.</summary>
