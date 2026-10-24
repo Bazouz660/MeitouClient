@@ -70,6 +70,17 @@ public class FormulaTests
     }
 
     [Fact]
+    public void Samurai_legplates_resistances_at_level_80_read_as_the_original_prints_them()
+    {
+        // The original prints the level-80 Legplates as 52 %, 63 % and 71 pts (not 72: 90 x (80 x 0.01f) is just below 72 in single precision).
+        var legplates = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, Slot = 6, BluntDefBonus = 0.05f, CutDefBonus = -0.081f, CutIntoStun = 0, LevelBonus = 0 };
+        var head = ArmourTooltip.Head(legplates, 80);
+        Assert.Equal("52%", head.First(l => l.Label == "-Blunt resistance").Value);
+        Assert.Equal("63%", head.First(l => l.Label == "-Cut resistance").Value);
+        Assert.Equal("71 pts", head.First(l => l.Label == "-Harpoon resistance").Value);
+    }
+
+    [Fact]
     public void Armour_weight_follows_the_part_coverage_as_the_original_prints_it()
     {
         // The wiki's weights of the Samurai pieces (12.5, 6.25, 20.25, 4 kg), all metal plate, from the coverage lists of the load order (docs/original-armour-tooltip.md).
