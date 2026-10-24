@@ -77,7 +77,8 @@ public sealed partial class MedicalState
         if (p.IsRobotic(race) && !ctx.ExemptFromWear)
             p.Wear += (hit.Cut + hit.Pierce + hit.Blunt) * 0.04f * c.RobotWearRate;
         // The wound (FUN_1406508d0): strength max(cut, pierce) x bleed rate x scale, losing `bleeding clot rate` a second (TickBlood).
-        if (MathF.Max(hit.Cut, hit.Pierce) > 0 && race.BleedRate > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
+        // Opened whatever the race's bleed rate; a bloodless race's wounds drain nothing but still need first aid.
+        if (MathF.Max(hit.Cut, hit.Pierce) > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
 
         p.HitMult = p.IsDestroyed ? 0 : p.Fraction < 0 ? MathF.Min(p.HitMult + 1, 2) : MathF.Min(p.HitMult + 1, 4);
 

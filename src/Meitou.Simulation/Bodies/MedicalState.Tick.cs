@@ -287,9 +287,11 @@ public sealed partial class MedicalState
         float stump = 0;
         foreach (var p in parts)
             if (p.Limb == LimbState.Stump && p.Flesh + p.Bandage < 0) stump += -(p.Flesh + p.Bandage) * 0.002f;
-        Bleeding = (c.ExtraBloodLossFromBodyparts * stump + woundSum) * ctx.Options.ChanceOfDeath * 1.2f * race.BleedRate;
+        // Floored at 0 (a negative race `bleed rate` gains no blood); blood is then held to capacity every tick.
+        Bleeding = MathF.Max(0, (c.ExtraBloodLossFromBodyparts * stump + woundSum) * ctx.Options.ChanceOfDeath * 1.2f * race.BleedRate);
         Blood -= Bleeding * dt;
         float cap = Capacity(ctx);
+        Blood = MathF.Min(Blood, cap);
         if (Bleeding <= 0 && Blood < cap)
             Blood = MathF.Min(cap, Blood + c.BloodRecoveryRate * dt * race.HealRate * (ctx.Resting ? c.RestingHealRateMult : 1));
     }
