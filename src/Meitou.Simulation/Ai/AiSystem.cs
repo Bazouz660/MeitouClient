@@ -1055,7 +1055,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>
     /// The squad's own building: the one its town gave it (<see cref="Squad.HomeBuilding"/>, docs/game/factions-squads-towns.md "Town residents"); for a squad without
     /// one (made without building data, or a save's without a home) an <b>engine choice</b>: among its town's
-    /// buildings no other squad has, the nearest of the template's <c>building</c>; else by <c>building designation</c> a shop (SHOP) or the bar (BAR, shared);
+    /// buildings no other squad has, the nearest of the template's <c>building</c>; else by <c>building designation</c> a shop (SHOP) or the bar (BAR, or one of the
+    /// town's bar squads; shared);
     /// else the nearest with beds, else the nearest at all. None for a squad without a town or a town without building data.
     /// </summary>
     TownBuilding? AssignHome(World world, Squad squad, SquadTemplate? template)
@@ -1080,8 +1081,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
         if (template?.Building is { } wanted && Nearest(b => b.BuildingId == wanted.Id) is { } own) return own;
         if (template?.BuildingDesignation == 1 && Nearest(b => b.IsShop) is { } shop) return shop;
-        if (template?.BuildingDesignation == 3 && Nearest(b => b.IsBar, shared: true) is { } bar) return bar;
+        if ((template?.BuildingDesignation == 3 || IsBarSquad(squad)) && Nearest(b => b.IsBar, shared: true) is { } bar) return bar;
         return Nearest(b => b.Beds > 0) ?? Nearest(_ => true);
+    }
+
+    /// <summary>A squad made from one of its town's <c>bar squads</c> entries (the original gives it no home; Meitou keeps it at the bar, not in a free building with beds).</summary>
+    bool IsBarSquad(Squad squad)
+    {
+        int f = squad.Town < data.SiteFactions.Count ? data.SiteFactions[squad.Town] : -1;
+        return PopulationSystem.BarEntries(data.Sites[squad.Town].Town, f >= 0 ? data.Factions[f] : null).Any(e => e.Id == squad.TemplateId);
     }
 
     /// <summary>

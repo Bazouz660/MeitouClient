@@ -307,7 +307,7 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   (**Observed**). Destroyed buildings stay candidates (the Hub's ruins house squatters).
 - **Meitou engine choices**: the level data's assignment is kept where it fits the rules (interiors are drawn from it,
   not relaid to the template's layout); on a tie a building already laid out as the template wants wins; bar squads
-  stand in the town's bars; a loaded town keeps its saved squads, homes and bar squads and rolls no new bar squads.
+  stand in the town's bars and take the nearest bar as home (their templates, e.g. `Bar thugs`, have designation 0, **Verified** in the data); a loaded town keeps its saved squads, homes and bar squads and rolls no new bar squads.
 
 ### Off-screen world
 
