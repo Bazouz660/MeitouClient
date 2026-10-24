@@ -6,7 +6,7 @@ using Meitou.Data.Gameplay;
 namespace Meitou.Simulation.Items;
 
 /// <summary>Makes item instances and the inventories of new characters from the game data.</summary>
-public sealed class ItemFactory(GameDatabase db, GameConstants constants)
+public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<Meitou.Data.Gameplay.Combat.CombatDatabase>? combat = null)
 {
     readonly ConcurrentDictionary<string, ItemInfo?> infos = new();
 
@@ -30,12 +30,24 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, Meitou.Data.Gameplay.Combat.ArmourData?> armourData = new();
 
-    /// <summary>The weight-by-level function of an armour record that lists part coverage (null: it keeps its record weight).</summary>
-    Func<int, float>? ArmourWeight(string recordId)
+    /// <summary>The weight function of an armour record that lists part coverage (null: it keeps its record weight).</summary>
+    Func<ItemInstance, float>? ArmourWeight(string recordId)
     {
         var data = armourData.GetOrAdd(recordId, id => Db.Find(id) is { Type: FcsRecordType.ARMOUR } r ? Meitou.Data.Gameplay.Combat.ArmourData.From(r) : null);
-        return data is { Coverage.Count: > 0 } ? level => data.WeightAt(level) ?? 0 : null;
+        return data is { Coverage.Count: > 0 } ? item => data.WeightAt(item.Level) ?? item.RecordWeight : null;
     }
+
+    /// <summary>
+    /// The weight function of a melee weapon (<b>Observed</b>, docs/original-carry-weight.md): its level, manufacturer and material give the larger of <c>weight kg</c> x the manufacturer's weight
+    /// mod and 40 x blunt multiplier x <c>weight mult</c> x <c>weapon inventory weight mult</c> (<see cref="Combat.WeaponStats"/>); without combat data the record's weight x the multiplier.
+    /// </summary>
+    Func<ItemInstance, float>? WeaponWeight(string recordId) => combat is null ? null : item =>
+    {
+        var data = combat();
+        return data.Weapon(recordId) is { } weapon
+            ? Combat.WeaponStats.Compute(item.Level * 0.01f, weapon, data.Manufacturer(item.CompanyId) ?? Meitou.Data.Gameplay.Combat.WeaponManufacturer.Neutral, data.WeaponMaterial(item.MaterialId) ?? Meitou.Data.Gameplay.Combat.WeaponMaterial.None, data.Constants).Weight
+            : item.RecordWeight;
+    };
 
     /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
     public ItemInstance? Create(string recordId, int quantity = 1, float quality = 0)
@@ -60,7 +72,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             Width = info.Width,
             Height = info.Height,
             UnitWeight = weapon ? info.Weight * Constants.WeaponInventoryWeightMult : info.Weight,
-            LevelWeight = info.Type == FcsRecordType.ARMOUR ? ArmourWeight(info.Id) : null,
+            DynamicWeight = info.Type == FcsRecordType.ARMOUR ? ArmourWeight(info.Id) : info.Type == FcsRecordType.WEAPON ? WeaponWeight(info.Id) : null,
             StackLimit = info.StackLimit,
             IsFood = info.IsFood,
             Contents = info.Type == FcsRecordType.CONTAINER

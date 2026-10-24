@@ -24,6 +24,13 @@ public static class Encumbrance
         c.CarryWeightMult * strength * strengthInjuryMultiplier + c.EncumbranceBase;
 
     /// <summary>
+    /// The maximum the inventory window prints (<b>Observed</b>, docs/original-carry-weight.md): the strength (with its injury multiplier) plus <c>encumbrance base</c>, truncated. It has no <c>carry weight mult</c>:
+    /// that only enters the capacity of the encumbrance factor (<see cref="Capacity"/>).
+    /// </summary>
+    public static float WindowCapacity(GameConstants c, float strength, float strengthInjuryMultiplier = 1) =>
+        MathF.Floor(strength * strengthInjuryMultiplier + c.EncumbranceBase);
+
+    /// <summary>
     /// The encumbrance factor e = clamp((C - 0.05 W) / (0.95 W), 0, 1): 1 while W &lt;= C, about 0.47 at W = 2C, 0 at W = 20C. It multiplies run speed, raises the hunger rate
     /// (1 + (1 - e) x <c>encumbrance hunger rate</c>) and feeds strength and athletics XP.
     /// </summary>
