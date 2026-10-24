@@ -83,7 +83,9 @@ for some facings. Not in the rock impostor bake (parallax 0 there).
 **Refinement** (needs tessellation): every main-view patch takes the tessellated programs; an edge is also split where the terrain
 leaves it (at its quarters and middle) by more than 0.5 px, level `sqrt(deviation px / 0.5)` (a split in n takes a smooth curve's
 deviation down by about n²), at most 16, and the new points are put on the terrain (`terrainHeight`); an unsplit edge keeps its
-ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined.
+ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined. On Metal
+the tessellation toggles stay hidden and the flat/parallax path is used; a 2026-10-24 prototype was removed for cost and
+fallback risk (`docs/metal-backend.md`, "Tessellation").
 
 **Cost** (**Observed**, `meitou-viewer --ab <switch>` at a save's view, RTX 4090, 1080p DLSS 0.83): the terrain stage without
 relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +0.88 ms

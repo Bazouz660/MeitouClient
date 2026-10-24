@@ -27,6 +27,16 @@ A picture of the sky alone, without the world, has the raw linear colours: the p
 path's picture goes through) is a later pass, so the two windows compare **structure** here — the gradient's shape, the sun's
 place, the clouds — not the tone. The pixel diff against Vulkan becomes the check when both draw the same passes.
 
+## Tessellation (evaluated, not shipped)
+
+Metal has no tessellation control stage, so a 2026-10-24 MEP-4 prototype wrote explicit triangle factors and used
+post-tessellation vertex stages. CPU factor generation cost ~103 ms/frame for terrain and ~25 ms/frame for rocks (3 fps
+at the Hub); a GPU compute pre-pass got the same view to ~35 fps against the ~54 fps MEP-3 baseline. The deferred-colour
+path also exposed `NotSupportedException: no Metal primitive for PatchList` when factor allocation failed and the job
+fell back to an indexed draw under a patch-topology pipeline. The prototype was removed: `HasTessellation` is false,
+terrain keeps the flat/parallax path, and the tessellation toggles stay hidden. Revisiting it needs a hard performance
+budget, near-range/quality caps, a per-patch flat fallback and full visual/soak validation.
+
 ## The shader chain
 
 The engine's own `GlslProgramCompiler` produces the SPIR-V; `Silk.NET.SPIRV.Cross` 2.23.0 (with

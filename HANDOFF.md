@@ -5,8 +5,8 @@ Branch: `metal-spike`
 Last code/plan commit: `b2988b66 feat: light Metal debris through the shared atmosphere`  
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1, MEP-2 and MEP-3 are accepted**
 (2026-10-24: MetalFX temporal stability; reflection MSAA/characters; native bindless atmosphere-lit debris).
-[MEP-I](docs/metal-effects-parity-plan.md) now moves to **MEP-4 tessellation/terrain relief**, then water lighting.
-Vulkan remains the reference/default and the GPU cull stays off.
+**MEP-4 tessellation/terrain relief was evaluated and removed**: it is not shipping, and Metal keeps the flat/parallax
+terrain path. MEP-5 water lighting is not started. Vulkan remains the reference/default and the GPU cull stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
@@ -29,8 +29,9 @@ in structure; the renderer-side adaptations are:
   `MetalPipelines` honours `BlendState.AlphaSrc`/`AlphaDst`, so Metal gets the game's additive alpha without the old
   two-pass workaround.
 - Terrain cut relief and the terrain-outline refinement remain tessellation-only; Metal reports
-  `HasTessellation == false` and keeps the flat/parallax path. The new `TerrainShaders.ReliefDepth` text is in the
-  shared fragment source but is not selected on Metal.
+  `HasTessellation == false` and keeps the flat/parallax path. A 2026-10-24 MEP-4 prototype was removed (see below),
+  so this remains a known limitation. The new `TerrainShaders.ReliefDepth` text is in the shared fragment source but
+  is not selected on Metal.
 - Upstream's Audio settings now own the voice cap (`Sound voices` -> `AudioSettings.Voices`). The earlier Metal-only
   `MeitouVoices` toggle was removed so there is one setting; the shared `SettingsMenu` exposes it on both backends.
 - `FillWorldDrawList` (the Metal no-interface path) now passes the reusable ragdoll buffer to `Blend`, as the shared
@@ -54,7 +55,7 @@ Metal-specific fallbacks or absent paths:
 
 | Area | Vulkan effect | Metal status |
 |---|---|---|
-| Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax |
+| Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax. A MEP-4 prototype was removed (performance/fallback failure) |
 | Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection now uses the shared 4x MSAA/resolve path |
 | Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3 accepted) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
@@ -71,9 +72,10 @@ falls under the first row.
 
 **Ship decision:** suitable for an **opt-in Metal test/preview** now (Vulkan remains the default and reference), but
 not for a “Metal is at 100% parity” or default-release claim. Before a public test, the visible blockers are water
-lighting/foam shadows, near-camera particles and tessellated terrain; debris lighting/haze is implemented and awaiting
-validation. GI/temporal/FogRate/Hi-Z are quality/performance follow-ups unless the test explicitly requires them. Keep
-the Metal UI hiding the tessellation toggles and the experimental GPU cull, and label TAA experimental.
+lighting/foam shadows, near-camera particles and tessellated terrain; debris lighting/haze is accepted. Tessellated
+terrain is a permanent known limitation of this preview, not a pending toggle. GI/temporal/FogRate/Hi-Z are
+quality/performance follow-ups unless the test explicitly requires them. Keep the Metal UI hiding the tessellation
+toggles and the experimental GPU cull, and label TAA experimental.
 
 Post-merge smoke: 120 s `--new-game Wanderer` at 800x600, 8120 MB budget, GPU cull off: 6,693 frames / 56 fps, no
 GPU timeout. This is not a substitute for the 30-minute acceptance soak; the full Metal test suite is still blocked by
@@ -82,9 +84,18 @@ the host's `MTLCompilerService` XPC.
 ## Next iteration: Metal Effects Parity I (MEP-I)
 
 The plan is in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md): post effects (MEP-1),
-reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief (MEP-4), then water lighting
-(MEP-5). MEP-3 is the preview-test gate; MEP-5 is the full effects-parity gate. Vulkan stays the default/reference,
-the GPU cull stays off, and MEP-I covers visual effects only.
+reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief (MEP-4, evaluated and removed), then
+water lighting (MEP-5, not started). MEP-3 is the preview-test gate; MEP-5 would be the remaining effects gate if it is
+pursued. Vulkan stays the default/reference, the GPU cull stays off, and MEP-I covers visual effects only.
+
+**MEP-4 was evaluated and removed (2026-10-24).** Metal has no tessellation control stage, so a prototype wrote
+explicit triangle factors and used post-tessellation vertex stages. CPU factor generation cost ~103 ms/frame for
+terrain plus ~25 ms/frame for rocks (3 fps); moving the factors to GPU compute raised the loaded Hub view to ~35 fps
+against the ~54 fps MEP-3 baseline. The deferred-colour path then hit `NotSupportedException: no Metal primitive for
+PatchList` when a factor allocation failed and the job fell back to an indexed draw under a patch-topology pipeline.
+Rather than ship a visible, fragile, performance-negative path, the code was removed; `HasTessellation` is false again
+and the tessellation toggles stay hidden. Revisiting it needs a hard performance budget, near-range/quality caps,
+per-patch flat fallback and full validation (see the plan). MEP-5 remains not started.
 
 **MEP-1 is accepted:** particle coverage in the temporal reactive mask, the shared sun-motion tracker, the Metal
 0..1 velocity-depth fix, the MetalFX y-down motion convention, camera-cut resets and SMAA in `PostComposite`. The
@@ -360,9 +371,9 @@ Verified clean:
 
 ## Next work
 
-1. Start **MEP-4 tessellation/terrain relief**; MEP-3 passed the Hub/desert gameplay check (luckyren remains an
-   optional limb-visibility check). Do not start GPU culling or default-switch work until MEP-4/MEP-5 and the MEP-I
-   acceptance gates are settled.
+1. **MEP-4 is closed as not shipping.** Do not re-enable the tessellation prototype; keep the flat/parallax path and
+   the hidden toggles. MEP-3 passed the Hub/desert gameplay check (luckyren remains an optional limb-visibility check).
+   Do not start GPU culling or default-switch work until MEP-5 and the MEP-I acceptance gates are settled.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal

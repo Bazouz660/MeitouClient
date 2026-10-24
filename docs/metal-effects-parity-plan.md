@@ -1,6 +1,7 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1, MEP-2 and MEP-3 accepted (2026-10-24); MEP-4 (tessellation/terrain relief) next; MEP-5 not started.**
+Status: **MEP-1, MEP-2 and MEP-3 accepted (2026-10-24); MEP-4 (tessellation/terrain relief) was evaluated and
+removed, so it is not shipping; MEP-5 not started.** Metal keeps the flat/parallax terrain path.
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -62,7 +63,7 @@ experimental GPU foliage cull stays off and unexposed.
 | **MEP-1** | **Post Effects Parity** | Particle coverage, sun-motion reprojection, SMAA/FogRate decisions and TAA/MetalFX stability |
 | **MEP-2** | **Reflection Quality** | Reflection MSAA/resolve and sampling parity at water views |
 | **MEP-3** | **Debris Lighting** | Full atmosphere lighting and haze for debris within Metal's sampler budget |
-| **MEP-4** | **Tessellation & Terrain Relief** | Metal tessellation: ground displacement, rock smoothing, outline refinement |
+| **MEP-4** | **Tessellation & Terrain Relief** | evaluated and removed (2026-10-24): performance/fallback risk outweighed the benefit; not shipping |
 | **MEP-5** | **Water Lighting Parity** | Full Meitou water lighting, foam shadows and lighting parity |
 
 ### MEP-1: Post Effects Parity
@@ -162,38 +163,32 @@ died before losing a limb; luckyren Mode remains the quickest explicit debris ch
 the preview gate:** a public test may ship as an explicitly labelled Metal preview, with MEP-4/MEP-5 listed as known
 limitations.
 
-### MEP-4: Tessellation & Terrain Relief
+### MEP-4: Tessellation & Terrain Relief (evaluated, not shipped)
 
 **Purpose:** bring Vulkan's tessellation-dependent terrain effects to Metal.
 
-Current gap: Metal reports `HasTessellation == false`; `GroundRelief.DisplaceActive` and
-`RockSmoothing.TessellateActive` are not selectable on Metal. Ground parallax works; displacement, rock smoothing and
-terrain-outline refinement do not.
+**Result (2026-10-24): removed from the runtime.** Metal reports `HasTessellation == false`, so the flat/parallax
+path, the hidden tessellation toggles and the existing terrain material remain. Ground displacement, rock smoothing
+and terrain-outline refinement are a **known Metal limitation**.
 
-Work items:
+What was tried and why it was rejected:
 
-- Add Metal tessellation pipeline stages: compile the existing tess control/evaluation GLSL through the Metal shader
-  path, add patch-list pipeline support and wire `MetalContext.HasTessellation` only when the device supports it.
-- Wire `GroundRelief` displacement, `RockSmoothing` and `GroundRelief.RefinePixels` through the shared terrain programs;
-  keep the flat/parallax fallback for older devices or unsupported patches.
-- Re-enable the terrain settings toggles only after the path is validated; do not leave a visible no-op.
-- Test performance and GPU stability carefully: this is the largest and riskiest milestone. Keep the experimental
-  GPU foliage cull off.
-- Preserve the same water/reflection/terrain cut behavior.
+- Metal has no tessellation control stage. A first prototype wrote each three-control-point patch's edge/inside half
+  factors on the CPU; Metal's post-tessellation vertex stage read the raw control points through per-patch-control-point
+  vertex descriptors. That path was **~3 fps** in the loaded Hub view: ~103 ms/frame of terrain height sampling plus
+  ~25 ms/frame for rocks.
+- Moving both factor kernels to a Metal GPU compute pre-pass removed the CPU cost and reached **~35 fps** at 800x600
+  points (1600×1200 pixels), versus the ~54 fps MEP-3 baseline in that scene. Tessellation itself still adds geometry
+  and GPU work; the drop was not acceptable.
+- The deferred-colour path then exposed `NotSupportedException: no Metal primitive for PatchList` when a factor
+  allocation failed and the job fell back to an indexed draw while the program still had patch topology. A safe
+  per-patch flat fallback, factor-allocation failure handling and a full visual/performance validation would still be
+  required.
+- The code was removed rather than left behind a disabled flag. The UI must keep hiding the tessellation toggles.
 
-Likely files:
-
-- `src/Meitou.Metal/MetalContext.cs` (capability)
-- `src/Meitou.Metal/MetalPipelines.cs` / `MetalShaders.cs`
-- `src/Meitou.Rendering/TerrainRenderer.cs`, `TerrainShaders.cs`, `GroundRelief.cs`, `RockSmoothing.cs`
-- `src/Meitou.Rendering/WorldFrame.cs` / settings
-
-Acceptance:
-
-- Ground displacement, rock smoothing and outline refinement match Vulkan at matched views.
-- Terrain/rocks/water still look correct with the effect off and on; no cracks or black terrain.
-- No GPU timeout; measure frame cost before/after and respect the 8120 MB budget.
-- Build/tests, fixed-scene comparisons and a long terrain flythrough.
+If this is revisited, it needs a hard Metal performance budget, near-range tessellation/quality caps, a per-patch
+flat fallback (including factor-buffer allocation failure) and matched visual/soak validation. Do not re-enable it
+as a hidden default or a visible no-op.
 
 ### MEP-5: Water Lighting Parity
 
@@ -223,7 +218,8 @@ Acceptance:
 - Water and foam match Vulkan in daylight, night, rain and lamp light.
 - No sampler compile failure; reflection/refraction remain stable.
 - Fixed-scene water comparisons, a long sea/river route and a 30-minute soak.
-- **MEP-5 is the full-parity gate.**
+- **MEP-5 is the remaining effects gate.** It cannot restore full Vulkan parity on its own because MEP-4 tessellation is
+  not shipping; terrain displacement/rock smoothing/outline refinement remain documented limitations.
 
 ## Cross-cutting requirements
 
@@ -233,7 +229,7 @@ Acceptance:
   temporal path is noisy. Compare regions/means, not bytes.
 - **Temporal comparisons.** Use the same camera, time, weather and simulation ticks; first compare at native/no
   temporal, then with MetalFX/TAA. Cloud/water time still follows real time on Metal, so stills are not byte-comparable.
-- **Memory.** Keep the 5120/6144/8120 MB soft budget behavior; MEP-4 and MEP-5 are the largest new consumers. Do not
+- **Memory.** Keep the 5120/6144/8120 MB soft budget behavior; MEP-5 is the remaining large consumer. Do not
   raise the default to hide leaks.
 - **GPU cull.** Leave the experimental GPU foliage cull off and hidden. It is not part of this iteration.
 - **Visual acceptance.** The user validates visual changes manually; an automated build/test pass is not visual
@@ -245,8 +241,8 @@ Acceptance:
 | Gate | Requirement |
 |---|---|
 | **Preview test** | After MEP-3: build 0/0, non-Metal tests, Metal smoke, no GPU timeout, known gaps documented; Vulkan remains default |
-| **Full effects parity** | After MEP-5: all five milestones accepted, Vulkan comparisons, 30-minute soak, no hidden no-op settings |
-| **Default switch** | Only after full parity and a separate performance/stability decision; not part of MEP-I |
+| **Remaining effects gate** | After MEP-5: MEP-1..3 and MEP-5 accepted, MEP-4 recorded as evaluated/removed, Vulkan comparisons, 30-minute soak, no hidden no-op settings. Not full parity while tessellation is absent |
+| **Default switch** | Only after a separate performance/stability decision and an explicit decision on the tessellation limitation; not part of MEP-I |
 
 ## Validation commands
 
@@ -292,5 +288,6 @@ not performance numbers.
 
 ## Immediate next action
 
-Start **MEP-4 tessellation/terrain relief**. Do not start MEP-5 before MEP-4's tessellation decision is made; keep
-the flat/parallax fallback and the GPU cull off until the pipeline and settings gates pass.
+MEP-4 is **closed as not shipping**; keep the flat/parallax fallback, the hidden tessellation toggles and the GPU cull
+off. MEP-5 (water lighting) remains not started; if it is pursued, treat tessellation absence as a permanent known
+limitation of the Metal preview rather than a reason to resurrect MEP-4.
