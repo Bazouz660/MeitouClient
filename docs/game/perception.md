@@ -32,8 +32,9 @@ rules. Rooms are the registered towns' buildings' `interior mask` volumes and la
 buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
 compared only within the character's building). No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
 evaluated every tick for everyone. The overhead and floor queries are redone only when a character moves (headless, Release:
-0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data: the Hub's and Squin's houses have no
-interior lights, so indoors at night is unlit (light 0).
+0.29 ms per tick for 840 characters, 540 indoors, standing). Observed in the data (headless probe of five big towns' 60
+lit rooms): standing under an interior lamp gives light 0.7-2.9, 444 of 462 lamps lighting the floor below them; the Hub's
+intact buildings are mostly ruins, which count as outdoors.
 
 Can-see first checks state/squad-shared sightings (within2R, no cone/light), then player rules,
 building compatibility, NPC test/stealth accumulation and conditional physics ray. Ray starts
@@ -59,15 +60,17 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
 - Name tag (`FUN_1406e8100`, colours loaded in `FUN_1406eb3a0`): shown within 10954 of the camera (1.2e8
   squared). Tag state 1/2/3 tints a stealth icon with the GUI colours `NameTagStealthHidden` / `AlmostSeen` / `Seen`,
   fallbacks (0.25, 0.521, 0.745), (0.745, 0.721, 0.25), (0.745, 0.25, 0.29) (**Verified** literals; the GUI XML may
-  override). A second icon's frame is round((1 - x) x (frames - 1)), x = clamp(character +0xd8, 0, 1), probably the light
-  level of the sun icon (tutorial text; **Observed**). How tag state 1-3 is derived from +0xe8 is **Unknown**.
+  override). A second icon's frame is round((1 - x) x (frames - 1)), x = clamp(character +0xd8, 0, 1): the
+  `LightLevel` image of `Kenshi_CharacterNameTags` (7 frames, frame 0 full light; **Verified**, kenshi_images.xml), on the
+  panel's right in colour (0.942, 0.806, 0.341) (**Verified**, `Kenshi_CharacterNamePanel.layout`). How tag state 1-3 is
+  derived from +0xe8 is **Unknown**.
 - Stealth XP: see [character-stats](character-stats.md#levelling-xp).
 
 Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-sight ray, f = 0.5, dt = the scan interval,
 a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime witnesses keep the
 same meters on a sneaking culprit in `CrimeSystem` (any faction, not just hostile lookers). A sneaking player
 character gets the pointers (from 0.35 of their length to the tip, with a head) and the original's stealth icon left of its name in the tag
-colours: seen if any watcher detects, almost seen if any notices, else hidden. The light-level (sun) icon is not drawn.
+colours: seen if any watcher detects, almost seen if any notices, else hidden, and the light-level icon from its `SightMap` light.
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).
 

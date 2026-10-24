@@ -159,6 +159,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     /// <see cref="StealthExposure.Noticed"/> almost seen, anything lower hidden; null when not a sneaking player character.
     /// </summary>
     public StealthExposure? Stealth { get; init; }
+    /// <summary>A sneaking player character's light level (<see cref="SightMap.Light"/>) for its tag's light icon; 1 otherwise.</summary>
+    public float Light { get; init; } = 1;
     /// <summary>The floating progress bar over a player character picking a lock (docs/game/locks.md "Lockpicking"); null when none.</summary>
     public TaskBar? Bar { get; init; }
     /// <summary>

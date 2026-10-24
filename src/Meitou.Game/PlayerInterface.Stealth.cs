@@ -17,6 +17,8 @@ sealed partial class PlayerInterface
 
     /// <summary>The original's name-tag range: 1.2e8 squared (about 10954 units) from the camera.</summary>
     const float NameTagRangeSquared = 1.2e8f;
+    /// <summary>The frames of the <c>LightLevel</c> icon in <c>Kenshi_CharacterNameTags</c> (Verified, kenshi_images.xml).</summary>
+    const int LightLevelFrames = 7;
 
     void DrawStealth(DebugOverlay o)
     {
@@ -50,7 +52,7 @@ sealed partial class PlayerInterface
     /// The name tag over each of the player's characters within the original's range: the <c>Kenshi_CharacterNamePanel</c> layout (<b>Verified</b>), 0.1057 x 0.0296 of the
     /// screen, the name centred in <c>Kenshi_StandardFont_Large</c> with a shadow in the middle 0.655, and while the character sneaks the <c>Stealth</c> icon on the left in
     /// the state's tag colour. The name is white and in square brackets when the character is selected, grey and bare otherwise (<c>NameTagSelected</c> / <c>NameTagUnselected</c>, the brackets from a screenshot of the original; <b>Observed</b>);
-    /// the light level icon is not drawn (no light model). The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
+    /// while it sneaks, also the <c>LightLevel</c> icon on the right from its light level. The panel stands on the head like a speech bubble does (the original's anchor is not mapped).
     /// </summary>
     void AddNameTags(List<UiControl> controls)
     {
@@ -76,6 +78,14 @@ sealed partial class PlayerInterface
                     {
                         ["ImageResource"] = "Kenshi_CharacterNameTags", ["ImageGroup"] = "Stealth", ["ImageName"] = "Stealth",
                         ["Colour"] = FormattableString.Invariant($"{tint.X} {tint.Y} {tint.Z} 1"),
+                    }, default, Pickable: false));
+                // The LightLevel icon on the right in the layout's colour: frame round((1 - light) x 6) of its 7, the sun at full light (FUN_1406e8100).
+                int frame = (int)MathF.Round((1 - Math.Clamp(c.Light, 0, 1)) * (LightLevelFrames - 1));
+                controls.Add(new($"nametag-light-{n}", "ImageBox", new(x + width * 0.842365f, y, width * 0.157635f, height), "", "", "", true,
+                    new Dictionary<string, string>
+                    {
+                        ["ImageResource"] = "Kenshi_CharacterNameTags", ["ImageGroup"] = "LightLevel", ["ImageName"] = "LightLevel",
+                        ["ImageFrame"] = frame.ToString(System.Globalization.CultureInfo.InvariantCulture), ["Colour"] = "0.94152 0.805549 0.34137 1",
                     }, default, Pickable: false));
             }
             n++;
