@@ -10,7 +10,7 @@ using SimWorld = Meitou.Simulation.World;
 
 namespace Meitou.Tests.Simulation;
 
-/// <summary>Faction relations driving fights: the relation table's rules, the auto-aggro, the leash, the player's self-defence and deeds.</summary>
+/// <summary>Faction relations driving fights: the relation table's rules, the auto-aggro, the chase give-up, the player's self-defence and deeds.</summary>
 public class AggroTests
 {
     // Factions: 0 raiders, 1 villagers (raiders hate them), 2 nomads (raiders hate them but coexist), 3 friends (allied to the raiders),
@@ -90,7 +90,15 @@ public class AggroTests
         public bool Fighting(CharacterId id) => World.Characters.Cold(id.Slot)!.InCombat;
     }
 
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null)
+    /// <summary>Catches the dialogue events the systems fire (there is no dialogue system here).</summary>
+    sealed class EventLog : ITickSystem
+    {
+        public readonly List<Meitou.Simulation.Dialogue.DialogueEvent> Events = [];
+        public void Inputs(SimWorld world, IReadOnlyList<SimCommand> commands) => Events.AddRange(commands.OfType<Meitou.Simulation.Dialogue.DialogueEvent>());
+        public void Hash(ref StateHasher hasher) { }
+    }
+
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -101,7 +109,7 @@ public class AggroTests
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
-            [new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro]);
+            [new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
         return new Arena(world, combat, aggro, relations);
     }
 
@@ -164,6 +172,47 @@ public class AggroTests
         // Now another squad of theirs, which nobody attacked (the victims' mates join them anyway), picks the fight with the player by itself.
         a.World.RunTicks(30);
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);
+    }
+
+    /// <summary>
+    /// The original's chase give-up (<c>ChaseMode</c>, docs/game/combat.md "Leaving a fight"): a raider chasing a runner that gets out of its sight and hearing stops once the
+    /// gate and 24 s without a sense of it have passed, saying event 60 GIVE_UP_CHASE to it; one whose runner stays in view keeps on.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_chaser_gives_up_a_target_it_no_longer_senses_and_keeps_one_it_sees(bool escapes)
+    {
+        var log = new EventLog();
+        using var a = Make(5, 1, extra: log);
+        a.Aggro.Combat = a.Combat;   // as the standard systems wire it: the chase reads the fight target
+        var o = new Vector2(2000, 2000);
+        var raider = a.SquadOf(Raiders, o, true, (o, 0f)).Members[0];
+        var runner = a.PlayerCharacter(o + new Vector2(0, 200));
+        a.World.Characters.Cold(runner.Slot)!.Orders |= CharacterOrders.Passive;   // it never turns to fight back
+        a.World.Commands.Enqueue(new AttackOrder([raider], runner) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new MoveOrder([runner], new Vector3(o.X, 150, o.Y + 20000)) { Tick = a.World.Tick });
+        a.World.RunTicks(60);
+        Assert.True(a.World.Characters.Cold(raider.Slot)!.CombatRunning, "the raider runs after it");
+        // Escaping: the runner is put far ahead, beyond any sight or noise range, and stands there (so it makes no noise either).
+        if (escapes) a.World.Characters.Place(runner.Slot, new Vector3(o.X, 150, o.Y + 9000), 0);
+        long from = a.World.Tick;
+        a.World.RunTicks((int)(60 / a.World.TickSeconds));
+        var gaveUp = log.Events.Where(e => e.Event == 60).ToList();
+        if (escapes)
+        {
+            var e = Assert.Single(gaveUp);
+            Assert.Equal((raider, runner), (e.Npc, e.Target));
+            // 24 s after the last look that sensed it, which came up to one look interval before it vanished.
+            float after = (e.Tick - from) * a.World.TickSeconds, look = new AggroSettings().ScanEveryTicks * a.World.TickSeconds;
+            Assert.InRange(after, AggroSystem.GiveUpSenseSeconds - look, AggroSystem.GiveUpSenseSeconds + look);
+            Assert.NotEqual((byte)CharacterTask.Attack, a.World.Characters.Next[raider.Slot].Task);
+        }
+        else
+        {
+            Assert.Empty(gaveUp);
+            Assert.Equal((byte)CharacterTask.Attack, a.World.Characters.Next[raider.Slot].Task);
+        }
     }
 
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
