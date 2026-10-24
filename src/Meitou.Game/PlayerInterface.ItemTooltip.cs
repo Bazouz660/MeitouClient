@@ -17,6 +17,8 @@ sealed partial class PlayerInterface
 
     /// <summary>The tone of a grade's name (<c>ItemGrade0</c> to <c>ItemGrade4</c> of kenshi_colours.xml; Specialist and Masterwork share the last).</summary>
     static TooltipTone GradeTone(int grade) => grade switch { 0 => TooltipTone.Grade0, 1 => TooltipTone.Grade1, 2 => TooltipTone.Grade2, 3 => TooltipTone.Grade3, _ => TooltipTone.Grade4 };
+    /// <summary>A weapon's grade colour by its level (<c>FUN_1401625c0</c>, <b>Observed</b>): below 16, 36, 51, 66, up to 80, above 80.</summary>
+    static int WeaponGrade(int level) => level < 16 ? 0 : level < 36 ? 1 : level < 51 ? 2 : level < 66 ? 3 : level <= 80 ? 4 : 5;
 
     /// <summary>An armour line (<see cref="ArmourTooltip"/>, docs/game/ui-screens.md "Item tooltip") as a tooltip row: a statistic's or effect's label in the title colour, a grade in its grade's colour, an effect's value in the bad colour below neutral and the good colour above.</summary>
     static TooltipLine ArmourRow(ArmourTooltip.Line line) => line.Kind switch

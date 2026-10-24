@@ -438,7 +438,7 @@ sealed partial class PlayerInterface
         if (t.Trade is { Buyback: true }) lines.Add(new("Buyback", ""));
         if (t.Brief) return lines;
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
-        if (model is not null) lines.Add(new(model, "", GradeTone(ArmourTooltip.GradeOf(t.Level))));
+        if (model is not null) lines.Add(new(model, "", GradeTone(WeaponGrade(t.Level))));
         else if (type == Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
         {
             int grade = ArmourTooltip.GradeOf(t.Level);
@@ -516,9 +516,16 @@ sealed partial class PlayerInterface
             lines.Add(new("-Value", "c." + Money(prices.Value), TooltipTone.Ink, TooltipTone.Ink));
             lines.Add(new("-Sell value", "c." + Money(prices.Sell), TooltipTone.Ink, TooltipTone.Ink));
         }
-        // A trade item's average price follows the prices, in and out of a trade.
+        // A trade item's average price follows the prices, in and out of a trade; while trading, the mark-up of the town and trader factors, Bad above 1 and Good below (FUN_1407ae130).
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && PricesOf?.Invoke(t) is { Average: { } average })
+        {
             lines.Add(new("-Avg. Price", "c." + Money(average), TooltipTone.Ink, TooltipTone.Ink));
+            if (t.Trade is { } quote)
+            {
+                float markup = quote.MarketFactor * quote.PriceFactor;
+                lines.Add(new("-Price mark-up", ((int)(markup * 100)).ToString(CultureInfo.InvariantCulture) + "%", TooltipTone.Ink, markup < 1 ? TooltipTone.Good : TooltipTone.Bad));
+            }
+        }
         if (armour is not null)
         {
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
@@ -547,7 +554,32 @@ sealed partial class PlayerInterface
             foreach (string row in note.Split('\n')) lines.Add(new(row, "", row.StartsWith("[Right", StringComparison.Ordinal) || row.StartsWith("[Location", StringComparison.Ordinal) ? TooltipTone.Cyan : TooltipTone.Ink));
         // The record's description closes every other item's tooltip, with no blank row before it (the second tooltip function, FUN_14079f4d0 and its overrides).
         if (armour is null && record?.GetString("description") is { Length: > 0 } text)
-            lines.Add(new(text, "", TooltipTone.Title, Paragraph: true));
+            lines.Add(new(text, "", TooltipTone.Ink, Paragraph: true));
+        if (type == Meitou.Data.Fcs.FcsRecordType.WEAPON) lines.AddRange(WeaponTail(t, model));
         return lines;
+    }
+
+    /// <summary>
+    /// A weapon's closing rows after its description (<c>FUN_14079fe80</c>, <b>Observed</b>): a blank row, <c>[Model # {model}]</c> in its level's grade colour, then
+    /// <c>[Manufactured by {company}]</c> and the company's description, or for a crafted weapon <c>[Crafted by {smith}]</c> and a sentence naming the smith and the player's faction
+    /// (the masterful one from level 45).
+    /// </summary>
+    IEnumerable<TooltipLine> WeaponTail(ItemTip t, string? model)
+    {
+        yield return new(" ");
+        // MyGUI prints "##" as one '#'.
+        if (model is not null) yield return new("[" + Loc.Tr("Model ##").Replace("##", "#", StringComparison.Ordinal) + " " + model + "]", "", GradeTone(WeaponGrade(t.Level)));
+        if (t.Crafter.Length > 0)
+        {
+            string faction = PlayerFactionName?.Invoke() ?? "";
+            yield return new("[" + Loc.Tr("Crafted by {1}", t.Crafter) + "]", "", TooltipTone.Main);
+            yield return new(t.Level >= 45 ? Loc.Tr("A masterful weapon crafted by the renowned smith {1} of {2}.", t.Crafter, faction)
+                : Loc.Tr("Crafted by the smith {1} of {2}.", t.Crafter, faction), "", TooltipTone.Ink, Paragraph: true);
+        }
+        else if (t.Company.Length > 0 && ItemRecordOf?.Invoke(t.Company) is { } company)
+        {
+            yield return new("[" + Loc.Tr("Manufactured by") + " " + company.Name + "]", "", TooltipTone.Main);
+            if (company.GetString("company description") is { Length: > 0 } about) yield return new(about, "", TooltipTone.Ink, Paragraph: true);
+        }
     }
 }

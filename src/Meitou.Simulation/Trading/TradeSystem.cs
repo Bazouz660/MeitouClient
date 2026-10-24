@@ -46,6 +46,8 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public float Charges { get; init; }
     public float MaxCharges { get; init; }
     public float PriceFactor { get; init; } = 1;
+    /// <summary>The trader's town market factor of the item (<see cref="Market.MarketFactor"/>, 1: none); with <see cref="PriceFactor"/> it makes a trade item's <c>Price mark-up</c>.</summary>
+    public float MarketFactor { get; init; } = 1;
     /// <summary>The faction a stolen item was stolen from, -1 when it is not stolen.</summary>
     public int StolenFrom { get; init; } = -1;
     /// <summary>The tooltip's two prices of one unit (<c>FUN_14079e7a0</c> calls slot 81, <b>Verified</b>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
@@ -587,7 +589,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             {
                 Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
-                Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
+                MarketFactor = m.MarketFactor(shop.Terms.Site, item.Record), Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceChance(thievery, item.StolenFrom == squad.Faction) is < 1 and var odds ? Math.Max(odds, 0) : null,
             };

@@ -438,7 +438,6 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   decides which neighbours have factors already.
 - **Whether `Zones_TownSetup` runs on a save load** and, if so, whether the saved `trade goods` factors (section 7.2, saved by `FUN_140376b80`,
   loaded by `FUN_1403715c0`) overwrite or are overwritten by a fresh roll. (That the factors are saved is settled.)
-- **The `Price mark-up` prefix strings** (`DAT_141f492c0`, `DAT_141f49310` below 1): the formula and the Avg. Price are decoded ([ui-screens.md](ui-screens.md#tooltips) "Item rows"), these two strings were not read.
 - **What `FUN_140745e30` really does** (it forwards a money delta to virtual slot 54 of the object at `+0x80`; the purse mutation itself) and how
   the trade window decides the `k` units priced with the opposite flag (`FUN_14070e3b0`, section 5).
 - **Where `MapItem+0x1e8` (the map price) comes from**, and which record `BlueprintItem+0xc0` points at (section 10).
