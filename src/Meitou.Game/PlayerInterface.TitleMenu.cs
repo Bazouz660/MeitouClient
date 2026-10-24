@@ -140,7 +140,7 @@ sealed partial class PlayerInterface
                 colour: FormattableString.Invariant($"1 1 1 {hoverAmount}")));
             // Use the sprite's tight visible box (stray pixels from neighbouring sprites dropped), fit it into the shared 24×20 slot
             // without upscaling, and centre it on the slot.
-            var tight = menuIconBounds.TryGetValue(icon, out var cached) ? cached : menuIconBounds[icon] = VisibleBounds(UiAtlas(), icon);
+            var tight = menuIconBounds.TryGetValue(icon, out var cached) ? cached : UiAtlas() is { } atlas ? menuIconBounds[icon] = VisibleBounds(atlas, icon) : icon;
             float fit = Math.Min(1f, Math.Min(24 / tight.Width, 20 / tight.Height)) * s;
             float iconX = b.X + 24 * s - tight.Width * fit / 2;
             float iconY = b.Y + b.Height / 2 - tight.Height * fit / 2 + 1.0f * s;
@@ -161,9 +161,8 @@ sealed partial class PlayerInterface
     /// The tight box around an atlas crop's visible sprite: pixels with alpha ≥ 40 grouped into 8-connected blobs, blobs smaller than a tenth of the
     /// biggest dropped (stray pixels from neighbouring sprites), the rest unioned. Falls back to the crop itself.
     /// </summary>
-    static UiRect VisibleBounds(RgbaImage? atlas, UiRect crop)
+    static UiRect VisibleBounds(RgbaImage atlas, UiRect crop)
     {
-        if (atlas is null) return crop;
         int left = Math.Max(0, (int)MathF.Floor(crop.X)), top = Math.Max(0, (int)MathF.Floor(crop.Y));
         int right = Math.Min(atlas.Width, (int)MathF.Ceiling(crop.X + crop.Width)), bottom = Math.Min(atlas.Height, (int)MathF.Ceiling(crop.Y + crop.Height));
         int w = right - left, h = bottom - top;

@@ -31,8 +31,8 @@ The project site ([site/](../site/), Astro + nginx container) uses a texture-fre
 - Radii: buttons/tabs 7, cards/windows/tooltips 10, portraits/badges 4, bars/items 3.
 - Main menu (1600×900): stack 320 wide, 56 from left, 36 from bottom; save card, 8 gap, plate
   buttons 38 tall 6 apart, Exit 4 further. Icon column 24, 12 to the label; menu sprites fit a
-  24×20 area and align by their alpha-weighted visible-pixel centre to compensate for transparent
-  padding in the atlas crops.
+  24×20 area (not upscaled) and centre by their visible pixels (alpha ≥ 40, stray blobs from
+  neighbouring sprites dropped), not by the transparent padding of the atlas crops.
 - Type: Exo 2 600. 24 window title, 22 primary label (upper, 0.08em), 20 headings, 16 body,
   14 menu items (upper, 0.1em) and stat rows, 12 captions, 10 key badges (upper).
 - Focus 2px `brass-light` ring offset 2. Meitou-only keyboard focus (Tab, Shift+Tab over a window's buttons) draws it round the button in the Meitou UI mode, also on the original layouts' windows ([ui-input](game/ui-input.md#edit-boxes-and-keyboard-focus)); the Faithful mode shows none. Disabled `greyed-bright`, plate at 50%. Paper brightens 10%
