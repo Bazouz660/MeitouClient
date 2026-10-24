@@ -96,9 +96,9 @@ public sealed partial class CollisionFile
         var convex = new Dictionary<string, CookedMesh>(StringComparer.Ordinal);
         var triangle = new Dictionary<string, CookedMesh>(StringComparer.Ordinal);
         foreach (var e in collection.Elements("NxConvexMeshDesc"))
-            convex[(string?)e.Attribute("id") ?? ""] = CookedMeshReader.ReadConvex(Cooked(e));
+            convex[(string?)e.Attribute("id") ?? ""] = e.Element("NxSimpleTriangleMesh") is { } plainHull ? Plain(plainHull, hull: true) : CookedMeshReader.ReadConvex(Cooked(e));
         foreach (var e in collection.Elements("NxTriangleMeshDesc"))
-            triangle[(string?)e.Attribute("id") ?? ""] = CookedMeshReader.ReadTriangleMesh(Cooked(e));
+            triangle[(string?)e.Attribute("id") ?? ""] = e.Element("NxSimpleTriangleMesh") is { } plain ? Plain(plain, hull: false) : CookedMeshReader.ReadTriangleMesh(Cooked(e));
         file.ConvexMeshCount = convex.Count;
         file.TriangleMeshCount = triangle.Count;
 
@@ -157,6 +157,30 @@ public sealed partial class CollisionFile
         var parts = (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 3) throw new InvalidDataException($"Vector needs 3 numbers: '{text}'");
         return new Vector3(float.Parse(parts[0], CultureInfo.InvariantCulture), float.Parse(parts[1], CultureInfo.InvariantCulture), float.Parse(parts[2], CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// A mesh given as plain <c>points</c> (x y z each) and <c>triangles</c> (three indices each) in an <c>NxSimpleTriangleMesh</c> instead of cooked data, as the files of some mods
+    /// are (Building Collision Fix: the Longhouse); the game cooks it itself when it loads. A convex hull keeps the points only.
+    /// </summary>
+    static CookedMesh Plain(XElement simple, bool hull)
+    {
+        static string[] Words(string? text) => (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var numbers = Words(simple.Element("points")?.Value);
+        if (numbers.Length % 3 != 0) throw new InvalidDataException($"points: {numbers.Length} numbers, not a multiple of 3");
+        var vertices = new Vector3[numbers.Length / 3];
+        for (int i = 0; i < vertices.Length; i++)
+            vertices[i] = new(float.Parse(numbers[3 * i], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 1], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 2], CultureInfo.InvariantCulture));
+        if (hull) return new CookedMesh(vertices, []);
+        var corners = Words(simple.Element("triangles")?.Value);
+        if (corners.Length % 3 != 0) throw new InvalidDataException($"triangles: {corners.Length} indices, not a multiple of 3");
+        var indices = new int[corners.Length];
+        for (int i = 0; i < indices.Length; i++)
+        {
+            indices[i] = int.Parse(corners[i], CultureInfo.InvariantCulture);
+            if ((uint)indices[i] >= (uint)vertices.Length) throw new InvalidDataException($"triangle index {indices[i]} of {vertices.Length} points");
+        }
+        return new CookedMesh(vertices, indices);
     }
 
     /// <summary>The <c>cookedData</c> hex blob of a mesh description (whitespace between the lines ignored), checked against <c>cookedDataSize</c>.</summary>

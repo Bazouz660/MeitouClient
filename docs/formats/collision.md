@@ -8,7 +8,7 @@ Clean-room PhysX/NxuStream facts; never link SDKs. **Verified** reader/probe che
 
 NXUSTREAM2/NxuPhysicsCollection sdk285/nxu103; Max .PxProj is exporter project, not loaded.
 NxSceneDesc actors/globalPose/shapes/localPose/materials/groups; poses row-major3x3 then
-translation. Empty points/triangles with cookedData hex is normal. Box dimensions half extents,
+translation. Empty points/triangles with cookedData hex is normal. A mesh description with no cookedData but `NxSimpleTriangleMesh` points and triangles (Building Collision Fix: the Longhouse base and stairs) is read from those plain lists (`CollisionFile.Plain`; **Observed**: without it the Longhouse had no ground floor in its interior navmesh). Box dimensions half extents,
 capsule radius/height, plane/sphere and mesh IDs retained. Exporter Z-up/gravity(0,0,-981).
 
 Triangle blob `NXS 01 MESH`: version1,flags,convex-edge threshold,heightfield-axis0xff,
