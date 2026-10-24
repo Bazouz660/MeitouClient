@@ -135,6 +135,7 @@ public sealed class WorldSession : IDisposable
     /// <summary>One control tick: the actions from the input (pause, speed), then the camera.</summary>
     public ActionState Tick()
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var actions = Bindings.Resolve(Input.Consume());
         if (actions.Pressed(InputAction.Pause)) Simulation.TogglePause();
         if (actions.Pressed(InputAction.Speed1)) Simulation.SetSpeed(1);
@@ -143,9 +144,17 @@ public sealed class WorldSession : IDisposable
         if (actions.Pressed(InputAction.TimeFaster)) Simulation.Faster();
         if (actions.Pressed(InputAction.TimeSlower)) Simulation.Slower();
         Camera.Update((float)Ticks.TickSeconds, actions);
+        long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
         Ticked?.Invoke(actions);
+        long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
+        CameraMs += (t1 - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        HandlersMs += (t2 - t1) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
         return actions;
     }
+
+    /// <summary>The control ticks' wall time since the host last cleared them: the input and camera, and the host's <see cref="Ticked"/> handlers (for the play benchmark).</summary>
+    public double CameraMs { get; set; }
+    public double HandlersMs { get; set; }
 
     /// <summary>The camera to draw this frame.</summary>
     public CameraState CameraAt() => Camera.At(Alpha);

@@ -350,13 +350,13 @@ public sealed unsafe partial class PostProcess : IDisposable
     // ---- targets ----
 
     IEnumerable<Target2D> Targets() =>
-        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, ldr, ldrFxaa, smaaEdges, smaaWeights, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
+        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, ldr, ldrFxaa, smaaEdges, smaaWeights, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, neutralRate, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
 
     void Free()
     {
         Hiz?.Invalidate();
         foreach (var t in Targets()) t.Texture.Dispose();   // released after the frames in flight
-        sceneColour = sceneDepth = farDepth = motion = upscaleDepth = reactive = historyA = historyB = rateDistance = rateImage = null;
+        sceneColour = sceneDepth = farDepth = motion = upscaleDepth = reactive = historyA = historyB = rateDistance = rateImage = neutralRate = null;
         rateBuiltFrame = long.MinValue;
         aoA = aoB = ldr = ldrFxaa = smaaEdges = smaaWeights = luminance = adaptA = adaptB = null;
         foreach (var l in lowTargets) l.Accum = l.Depth = null;

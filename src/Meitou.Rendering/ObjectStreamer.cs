@@ -249,8 +249,9 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         return taken;
     }
 
-    float NearKept(Vector3 p) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, Vector3.Distance(k, p)); return d; }
-    float NearKeptZone(double x0, double z0) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, ZoneDistance(x0, z0, k)); return d; }
+    // Indexed: a foreach over the interface boxed an enumerator per call, for every object and zone scanned.
+    float NearKept(Vector3 p) { float d = float.PositiveInfinity; var kept = Kept; for (int i = 0; i < kept.Count; i++) d = MathF.Min(d, Vector3.Distance(kept[i], p)); return d; }
+    float NearKeptZone(double x0, double z0) { float d = float.PositiveInfinity; var kept = Kept; for (int i = 0; i < kept.Count; i++) d = MathF.Min(d, ZoneDistance(x0, z0, kept[i])); return d; }
 
     /// <summary>Distance from the nearest of <paramref name="eye"/>, <see cref="Ahead"/> and <see cref="Kept"/> to <paramref name="p"/>.</summary>
     public float Near(Vector3 eye, Vector3 p)

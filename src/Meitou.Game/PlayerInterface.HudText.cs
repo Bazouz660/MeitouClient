@@ -254,7 +254,9 @@ sealed partial class PlayerInterface
     {
         foreach (var (bar, name, arrows) in medicalRows)
         {
-            if (controls.FirstOrDefault(c => c.Name == bar + "Datapanel") is not { } host) continue;
+            // The names made once per row: inside the predicates they were a new string for every control compared, every frame.
+            string panelName = bar + "Datapanel", valueName = bar + "Value";
+            if (controls.FirstOrDefault(c => c.Name == panelName) is not { } host) continue;
             var fullBar = controls.FirstOrDefault(c => c.Name == bar)?.Bounds ?? host.Bounds;
             var textBounds = new UiRect(host.Bounds.X, fullBar.Y, host.Bounds.Width, fullBar.Height);
             string pixels = Math.Max(8, (int)MathF.Round(sidePixels)).ToString(CultureInfo.InvariantCulture);
@@ -263,7 +265,7 @@ sealed partial class PlayerInterface
             if (arrows.Length > 0)
                 controls.Add(new($"{bar}-arrows", "TextBox", textBounds, arrows, "", "", true,
                     new Dictionary<string, string> { ["FontPixels"] = pixels, ["TextAlign"] = "Right VCenter", ["TextColour"] = AlertColour }, Vector4.Zero, Pickable: false, Clip: host.Clip));
-            int valueIndex = controls.FindIndex(c => c.Name == bar + "Value");
+            int valueIndex = controls.FindIndex(c => c.Name == valueName);
             if (valueIndex >= 0)
             {
                 var value = controls[valueIndex];
